@@ -226,6 +226,8 @@ begin
     return new;
   end if;
 
+  new.submitted_at := now();
+
   if new.submitted_by_person_id is distinct from public.current_person_id() then
     raise exception 'validation request submitter must be the current person';
   end if;
@@ -277,6 +279,9 @@ begin
     raise exception 'only an authorized captain can decide this validation request';
   end if;
 
+  new.decided_by := (select auth.uid());
+  new.decided_at := now();
+
   if old.status <> 'pending' then
     raise exception 'only pending validation requests can be decided by captains';
   end if;
@@ -326,7 +331,6 @@ grant execute on function public.has_role(text) to authenticated;
 grant execute on function public.has_any_role(text[]) to authenticated;
 grant execute on function public.current_person_id() to authenticated;
 grant execute on function public.is_captain_for_person(bigint, date) to authenticated;
-grant execute on function public.validation_request_scope_matches(bigint, bigint, bigint, timestamptz) to authenticated;
 grant execute on function public.is_captain_for_validation_request(bigint) to authenticated;
 
 alter table public.roles enable row level security;
@@ -385,7 +389,10 @@ create policy planning_role_read on public.planning_assignments
   for select to authenticated
   using (
     public.has_any_role(array['admin', 'direction', 'armement'])
-    or captain_person_id = public.current_person_id()
+    or (
+      public.has_role('capitaine')
+      and captain_person_id = public.current_person_id()
+    )
     or crew_person_id = public.current_person_id()
   );
 
@@ -409,12 +416,6 @@ create policy validation_requests_submitter_insert on public.validation_requests
     and status = 'pending'
     and decided_by is null
     and decided_at is null
-    and public.validation_request_scope_matches(
-      submitted_by_person_id,
-      captain_person_id,
-      vessel_id,
-      submitted_at
-    )
   );
 
 create policy validation_requests_captain_update on public.validation_requests
