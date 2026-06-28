@@ -152,18 +152,182 @@ as $$
     where assignment.captain_person_id = public.current_person_id()
       and assignment.crew_person_id = target_person_id
       and target_day between assignment.starts_on and assignment.ends_on
+  )
+  and public.has_role('capitaine');
+$$;
+
+create or replace function public.validation_request_scope_matches(
+  target_submitted_by_person_id bigint,
+  target_captain_person_id bigint,
+  target_vessel_id bigint,
+  target_submitted_at timestamptz
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select (
+    target_captain_person_id is null
+    and target_vessel_id is null
+  )
+  or exists (
+    select 1
+    from public.planning_assignments assignment
+    where assignment.crew_person_id = target_submitted_by_person_id
+      and target_submitted_at::date between assignment.starts_on and assignment.ends_on
+      and (
+        target_captain_person_id is null
+        or assignment.captain_person_id = target_captain_person_id
+      )
+      and (
+        target_vessel_id is null
+        or assignment.vessel_id = target_vessel_id
+      )
   );
 $$;
+
+create or replace function public.is_captain_for_validation_request(target_request_id bigint)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.has_role('capitaine')
+    and exists (
+      select 1
+      from public.validation_requests request
+      join public.planning_assignments assignment
+        on assignment.crew_person_id = request.submitted_by_person_id
+       and request.submitted_at::date between assignment.starts_on and assignment.ends_on
+       and (
+         request.vessel_id is null
+         or assignment.vessel_id = request.vessel_id
+       )
+       and (
+         request.captain_person_id is null
+         or assignment.captain_person_id = request.captain_person_id
+       )
+      where request.id = target_request_id
+        and assignment.captain_person_id = public.current_person_id()
+    );
+$$;
+
+create or replace function public.protect_validation_request_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public.has_any_role(array['admin', 'direction', 'armement']) then
+    return new;
+  end if;
+
+  if new.submitted_by_person_id is distinct from public.current_person_id() then
+    raise exception 'validation request submitter must be the current person';
+  end if;
+
+  if new.status <> 'pending' then
+    raise exception 'validation request inserts must start pending';
+  end if;
+
+  if new.decided_by is not null or new.decided_at is not null then
+    raise exception 'validation request inserts must be undecided';
+  end if;
+
+  if not public.validation_request_scope_matches(
+    new.submitted_by_person_id,
+    new.captain_person_id,
+    new.vessel_id,
+    new.submitted_at
+  ) then
+    raise exception 'validation request captain or vessel is not consistent with planning';
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.protect_validation_request_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public.has_any_role(array['admin', 'direction', 'armement']) then
+    return new;
+  end if;
+
+  if new.id is distinct from old.id
+    or new.submitted_by_person_id is distinct from old.submitted_by_person_id
+    or new.captain_person_id is distinct from old.captain_person_id
+    or new.vessel_id is distinct from old.vessel_id
+    or new.module_key is distinct from old.module_key
+    or new.request_type is distinct from old.request_type
+    or new.payload is distinct from old.payload
+    or new.submitted_at is distinct from old.submitted_at then
+    raise exception 'validation request immutable fields cannot be changed';
+  end if;
+
+  if not public.is_captain_for_validation_request(old.id) then
+    raise exception 'only an authorized captain can decide this validation request';
+  end if;
+
+  if old.status <> 'pending' then
+    raise exception 'only pending validation requests can be decided by captains';
+  end if;
+
+  if old.decided_by is not null or old.decided_at is not null then
+    raise exception 'only undecided validation requests can be decided by captains';
+  end if;
+
+  if new.status not in ('approved', 'rejected') then
+    raise exception 'captain decisions must approve or reject validation requests';
+  end if;
+
+  if new.decided_by is distinct from (select auth.uid()) then
+    raise exception 'captain decisions must be attributed to the current user';
+  end if;
+
+  if new.decided_at is null then
+    raise exception 'captain decisions must set decided_at';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_validation_request_insert on public.validation_requests;
+create trigger protect_validation_request_insert
+  before insert on public.validation_requests
+  for each row
+  execute function public.protect_validation_request_insert();
+
+drop trigger if exists protect_validation_request_update on public.validation_requests;
+create trigger protect_validation_request_update
+  before update on public.validation_requests
+  for each row
+  execute function public.protect_validation_request_update();
 
 revoke all on function public.has_role(text) from public;
 revoke all on function public.has_any_role(text[]) from public;
 revoke all on function public.current_person_id() from public;
 revoke all on function public.is_captain_for_person(bigint, date) from public;
+revoke all on function public.validation_request_scope_matches(bigint, bigint, bigint, timestamptz) from public;
+revoke all on function public.is_captain_for_validation_request(bigint) from public;
+revoke all on function public.protect_validation_request_insert() from public;
+revoke all on function public.protect_validation_request_update() from public;
 
 grant execute on function public.has_role(text) to authenticated;
 grant execute on function public.has_any_role(text[]) to authenticated;
 grant execute on function public.current_person_id() to authenticated;
 grant execute on function public.is_captain_for_person(bigint, date) to authenticated;
+grant execute on function public.validation_request_scope_matches(bigint, bigint, bigint, timestamptz) to authenticated;
+grant execute on function public.is_captain_for_validation_request(bigint) to authenticated;
 
 alter table public.roles enable row level security;
 alter table public.profiles enable row level security;
@@ -235,20 +399,31 @@ create policy validation_requests_role_read on public.validation_requests
   using (
     public.has_any_role(array['admin', 'direction', 'armement'])
     or submitted_by_person_id = public.current_person_id()
-    or captain_person_id = public.current_person_id()
+    or public.is_captain_for_validation_request(id)
   );
 
 create policy validation_requests_submitter_insert on public.validation_requests
   for insert to authenticated
-  with check (submitted_by_person_id = public.current_person_id());
+  with check (
+    submitted_by_person_id = public.current_person_id()
+    and status = 'pending'
+    and decided_by is null
+    and decided_at is null
+    and public.validation_request_scope_matches(
+      submitted_by_person_id,
+      captain_person_id,
+      vessel_id,
+      submitted_at
+    )
+  );
 
 create policy validation_requests_captain_update on public.validation_requests
   for update to authenticated
   using (
     public.has_any_role(array['admin', 'direction', 'armement'])
-    or captain_person_id = public.current_person_id()
+    or public.is_captain_for_validation_request(id)
   )
   with check (
     public.has_any_role(array['admin', 'direction', 'armement'])
-    or captain_person_id = public.current_person_id()
+    or public.is_captain_for_validation_request(id)
   );
