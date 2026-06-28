@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
-import { getVisibleModules } from '../permissions/moduleAccess';
+import { APP_MODULES, canAccessModule, getVisibleModules } from '../permissions/moduleAccess';
 import type { RoleKey } from '../permissions/roles';
 import { fetchCurrentUserRoles } from '../profiles/profileQueries';
 
@@ -14,28 +14,45 @@ interface AppShellProps {
 }
 
 export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
-  const { signOut } = useAuth();
+  const { session, signOut } = useAuth();
+  const location = useLocation();
+  const sessionUserId = session?.user.id;
   const [roles, setRoles] = useState<RoleKey[]>(rolesOverride || []);
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
+  const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
 
   useEffect(() => {
     if (rolesOverride) {
       setRoles(rolesOverride);
       setIsLoadingRoles(false);
+      setHasRoleLoadError(false);
+      return;
+    }
+
+    if (!sessionUserId) {
+      setRoles([]);
+      setIsLoadingRoles(true);
+      setHasRoleLoadError(false);
       return;
     }
 
     let isMounted = true;
 
+    setRoles([]);
+    setIsLoadingRoles(true);
+    setHasRoleLoadError(false);
+
     fetchCurrentUserRoles(client)
       .then((loadedRoles) => {
         if (isMounted) {
           setRoles(loadedRoles);
+          setHasRoleLoadError(false);
         }
       })
       .catch(() => {
         if (isMounted) {
           setRoles([]);
+          setHasRoleLoadError(true);
         }
       })
       .finally(() => {
@@ -47,12 +64,26 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
     return () => {
       isMounted = false;
     };
-  }, [client, rolesOverride]);
+  }, [client, rolesOverride, sessionUserId]);
 
   const visibleModules = getVisibleModules(roles);
+  const requestedModule = APP_MODULES.find((module) => location.pathname === `/modules/${module.key}`);
+  const isRequestedModuleDenied = requestedModule ? !canAccessModule(roles, requestedModule.key) : false;
 
   if (isLoadingRoles) {
     return <div className="auth-loading">Chargement des droits...</div>;
+  }
+
+  if (hasRoleLoadError) {
+    return (
+      <div className="auth-loading">
+        <p>Impossible de charger vos droits d'acces.</p>
+        <button onClick={() => void signOut()} type="button">
+          <LogOut aria-hidden="true" size={16} />
+          Deconnexion
+        </button>
+      </div>
+    );
   }
 
   if (visibleModules.length === 0) {
@@ -83,7 +114,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
           </button>
         </header>
         <main className="content-area">
-          <Outlet />
+          {isRequestedModuleDenied ? <div className="auth-loading">Acces refuse pour ce module.</div> : <Outlet />}
         </main>
       </div>
     </div>
