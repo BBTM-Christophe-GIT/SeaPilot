@@ -13,6 +13,17 @@ interface AppShellProps {
   client?: SupabaseClient;
 }
 
+function getRequestedModule(pathname: string) {
+  const normalizedPathname = pathname.replace(/\/+$/, '');
+  const [, section, moduleKey] = normalizedPathname.split('/');
+
+  if (section !== 'modules' || !moduleKey) {
+    return undefined;
+  }
+
+  return APP_MODULES.find((module) => module.key.toLowerCase() === moduleKey.toLowerCase());
+}
+
 export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
   const { session, signOut } = useAuth();
   const location = useLocation();
@@ -67,7 +78,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
   }, [client, rolesOverride, sessionUserId]);
 
   const visibleModules = getVisibleModules(roles);
-  const requestedModule = APP_MODULES.find((module) => location.pathname === `/modules/${module.key}`);
+  const requestedModule = getRequestedModule(location.pathname);
   const isRequestedModuleDenied = requestedModule ? !canAccessModule(roles, requestedModule.key) : false;
 
   if (isLoadingRoles) {

@@ -130,6 +130,42 @@ describe('AppShell', () => {
     expect(screen.queryByRole('heading', { name: 'Projets' })).not.toBeInTheDocument();
   });
 
+  it.each(['/modules/projects/', '/modules/PROJECTS'])(
+    'blocks equivalent direct module URL %s for unauthorized roles',
+    async (initialEntry) => {
+      const client = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
+          onAuthStateChange: vi.fn().mockReturnValue({
+            data: { subscription: { unsubscribe: vi.fn() } },
+          }),
+          signInWithPassword: vi.fn(),
+          signOut: vi.fn(),
+        },
+      };
+      const projectsModule = APP_MODULES.find((module) => module.key === 'projects');
+
+      if (!projectsModule) {
+        throw new Error('Projects module is missing');
+      }
+
+      render(
+        <AuthProvider client={client as never}>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <Routes>
+              <Route element={<AppShell rolesOverride={['marin']} />}>
+                <Route path="modules/projects" element={<ModulePage module={projectsModule} />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>,
+      );
+
+      expect(await screen.findByText('Acces refuse pour ce module.')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Projets' })).not.toBeInTheDocument();
+    },
+  );
+
   it('shows a distinct error state when roles cannot be loaded', async () => {
     const authClient = {
       auth: {
