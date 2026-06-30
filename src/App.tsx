@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { AdminPage } from './features/admin/AdminPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { ModulePage } from './features/modules/ModulePage';
@@ -19,7 +20,11 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<ModulePage module={homeModule} />} />
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
-            <Route key={module.key} path={`modules/${module.key}`} element={<ModulePage module={module} />} />
+            <Route
+              key={module.key}
+              path={`modules/${module.key}`}
+              element={module.key === 'admin' ? <AdminPage /> : <ModulePage module={module} />}
+            />
           ))}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
