@@ -13,6 +13,11 @@ interface AppShellProps {
   client?: SupabaseClient;
 }
 
+export interface AppShellOutletContext {
+  roles: RoleKey[];
+  client: SupabaseClient;
+}
+
 function getRequestedModule(pathname: string) {
   const normalizedPathname = pathname.replace(/\/+$/, '');
   const [, section, moduleKey] = normalizedPathname.split('/');
@@ -125,7 +130,11 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
           </button>
         </header>
         <main className="content-area">
-          {isRequestedModuleDenied ? <div className="auth-loading">Acces refuse pour ce module.</div> : <Outlet />}
+          {isRequestedModuleDenied ? (
+            <div className="auth-loading">Acces refuse pour ce module.</div>
+          ) : (
+            <Outlet context={{ roles, client } satisfies AppShellOutletContext} />
+          )}
         </main>
       </div>
     </div>

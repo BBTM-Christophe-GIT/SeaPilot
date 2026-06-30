@@ -414,6 +414,159 @@ button:disabled {
   pointer-events: none;
 }
 
+.hr-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1180px;
+}
+
+.hr-summary {
+  display: inline-flex;
+  min-width: 112px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #c9d5e3;
+  border-radius: 6px;
+  color: #0c3f78;
+  background: #ffffff;
+}
+
+.hr-summary span {
+  color: #536276;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.hr-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hr-inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.hr-inline-control input {
+  width: 16px;
+  height: 16px;
+}
+
+.hr-mode-write,
+.hr-mode-read {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.hr-mode-write {
+  color: #0c3f78;
+  background: #eaf3fb;
+}
+
+.hr-mode-read {
+  color: #536276;
+  background: #e8edf3;
+}
+
+.hr-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.hr-form-title {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  color: #0c3f78;
+}
+
+.hr-form label {
+  display: grid;
+  gap: 6px;
+  color: #354259;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.hr-form input {
+  min-width: 0;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #172033;
+  background: #fbfcfe;
+}
+
+.hr-form input:focus {
+  border-color: #0c66b7;
+  outline: 3px solid rgba(12, 102, 183, 0.16);
+}
+
+.hr-form button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: #0c5598;
+  font-weight: 800;
+}
+
+.hr-table td {
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.hr-status-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-weight: 800;
+}
+
+.hr-status-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.hr-status-active,
+.hr-status-inactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.hr-status-active {
+  color: #1d7a48;
+}
+
+.hr-status-inactive {
+  color: #7a4d16;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -437,5 +590,14 @@ button:disabled {
   .admin-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hr-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hr-form {
+    grid-template-columns: 1fr;
   }
 }
