@@ -91,6 +91,10 @@ create index if not exists planning_assignments_vessel_id_idx on public.planning
 create index if not exists planning_assignments_captain_person_id_idx on public.planning_assignments (captain_person_id);
 create index if not exists planning_assignments_crew_person_id_idx on public.planning_assignments (crew_person_id);
 create index if not exists planning_assignments_dates_idx on public.planning_assignments (starts_on, ends_on);
+create index if not exists planning_assignments_captain_crew_dates_idx
+  on public.planning_assignments (captain_person_id, crew_person_id, starts_on, ends_on);
+create index if not exists planning_assignments_crew_dates_scope_idx
+  on public.planning_assignments (crew_person_id, starts_on, ends_on, captain_person_id, vessel_id);
 create index if not exists validation_requests_submitted_by_person_id_idx on public.validation_requests (submitted_by_person_id);
 create index if not exists validation_requests_captain_person_id_idx on public.validation_requests (captain_person_id);
 create index if not exists validation_requests_vessel_id_idx on public.validation_requests (vessel_id);
@@ -168,14 +172,11 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select (
-    target_captain_person_id is null
-    and target_vessel_id is null
-  )
-  or exists (
+  select exists (
     select 1
     from public.planning_assignments assignment
     where assignment.crew_person_id = target_submitted_by_person_id
+      and assignment.captain_person_id is not null
       and target_submitted_at::date between assignment.starts_on and assignment.ends_on
       and (
         target_captain_person_id is null
@@ -222,13 +223,10 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if public.has_any_role(array['admin', 'direction', 'armement']) then
-    return new;
-  end if;
-
   new.submitted_at := now();
 
-  if new.submitted_by_person_id is distinct from public.current_person_id() then
+  if not public.has_any_role(array['admin', 'direction', 'armement'])
+    and new.submitted_by_person_id is distinct from public.current_person_id() then
     raise exception 'validation request submitter must be the current person';
   end if;
 
@@ -333,6 +331,31 @@ grant execute on function public.current_person_id() to authenticated;
 grant execute on function public.is_captain_for_person(bigint, date) to authenticated;
 grant execute on function public.is_captain_for_validation_request(bigint) to authenticated;
 
+grant usage on schema public to authenticated;
+grant select on
+  public.roles,
+  public.profiles,
+  public.user_roles,
+  public.people,
+  public.vessels,
+  public.planning_assignments,
+  public.validation_requests
+to authenticated;
+grant update on public.profiles to authenticated;
+grant insert, update, delete on
+  public.user_roles,
+  public.people,
+  public.vessels,
+  public.planning_assignments
+to authenticated;
+grant insert, update on public.validation_requests to authenticated;
+grant usage on
+  public.people_id_seq,
+  public.vessels_id_seq,
+  public.planning_assignments_id_seq,
+  public.validation_requests_id_seq
+to authenticated;
+
 alter table public.roles enable row level security;
 alter table public.profiles enable row level security;
 alter table public.user_roles enable row level security;
@@ -412,7 +435,10 @@ create policy validation_requests_role_read on public.validation_requests
 create policy validation_requests_submitter_insert on public.validation_requests
   for insert to authenticated
   with check (
-    submitted_by_person_id = public.current_person_id()
+    (
+      public.has_any_role(array['admin', 'direction', 'armement'])
+      or submitted_by_person_id = public.current_person_id()
+    )
     and status = 'pending'
     and decided_by is null
     and decided_at is null
