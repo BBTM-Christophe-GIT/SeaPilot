@@ -567,6 +567,132 @@ button:disabled {
   color: #7a4d16;
 }
 
+.planning-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1180px;
+}
+
+.planning-summary {
+  display: inline-flex;
+  min-width: 148px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #c9d5e3;
+  border-radius: 6px;
+  color: #0c3f78;
+  background: #ffffff;
+}
+
+.planning-summary span {
+  color: #536276;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.planning-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.planning-mode-write,
+.planning-mode-read {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.planning-mode-write {
+  color: #0c3f78;
+  background: #eaf3fb;
+}
+
+.planning-mode-read {
+  color: #536276;
+  background: #e8edf3;
+}
+
+.planning-forms {
+  display: grid;
+  gap: 12px;
+}
+
+.planning-form {
+  display: grid;
+  align-items: end;
+  gap: 12px;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.planning-vessel-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 180px) auto;
+}
+
+.planning-assignment-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+}
+
+.planning-form-title {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  color: #0c3f78;
+}
+
+.planning-form label {
+  display: grid;
+  gap: 6px;
+  color: #354259;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.planning-form input,
+.planning-form select {
+  min-width: 0;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #172033;
+  background: #fbfcfe;
+}
+
+.planning-form input:focus,
+.planning-form select:focus {
+  border-color: #0c66b7;
+  outline: 3px solid rgba(12, 102, 183, 0.16);
+}
+
+.planning-form button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: #0c5598;
+  font-weight: 800;
+}
+
+.planning-table th,
+.planning-table td {
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.planning-table td {
+  font-weight: 650;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -598,6 +724,15 @@ button:disabled {
   }
 
   .hr-form {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-toolbar {
+    justify-content: flex-start;
+  }
+
+  .planning-vessel-form,
+  .planning-assignment-form {
     grid-template-columns: 1fr;
   }
 }
