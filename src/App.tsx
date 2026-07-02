@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AdminPage } from './features/admin/AdminPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RequireAuth } from './features/auth/RequireAuth';
+import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
 import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
@@ -28,6 +29,8 @@ export default function App() {
               element={
                 module.key === 'admin' ? (
                   <AdminPage />
+                ) : module.key === 'certificates' ? (
+                  <FleetCertificatesPage />
                 ) : module.key === 'planning' ? (
                   <PlanningPage />
                 ) : module.key === 'humanResources' ? (

@@ -130,7 +130,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 - Enrichir le module RH avec les sections restantes de la fiche collaborateur.
 - Construire les modules encore placeholders:
-  - Certificats flotte
   - Procedures QHSE
   - DPR
   - Projets
@@ -145,6 +144,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Documents RH importes sans collaborateur rattache visibles par les roles bureau avec compteur de reconciliation.
 - Fiche RH enrichie avec champs collaborateur importes: identite, contrat, coordonnees, urgence, habilitations et mensurations.
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
+- Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 
 ### Deploiement
 

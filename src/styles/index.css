@@ -1137,6 +1137,51 @@ button:disabled {
   max-width: 1180px;
 }
 
+.certificates-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1240px;
+}
+
+.certificates-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.certificates-filter-panel {
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(150px, 190px) auto;
+}
+
+.certificates-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+}
+
+.certificates-table th,
+.certificates-table td {
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.certificates-table td {
+  font-weight: 650;
+}
+
+.certificate-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #172033;
+}
+
+.certificates-table small {
+  display: block;
+  margin-top: 4px;
+  color: #66758a;
+  font-weight: 700;
+}
+
 .planning-summary {
   display: inline-flex;
   min-width: 148px;
@@ -1404,7 +1449,9 @@ button:disabled {
 
   .planning-vessel-form,
   .planning-assignment-form,
-  .planning-filter-panel {
+  .certificates-form,
+  .planning-filter-panel,
+  .certificates-filter-panel {
     grid-template-columns: 1fr;
   }
 }
