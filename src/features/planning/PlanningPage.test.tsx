@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
@@ -44,10 +44,55 @@ const assignmentOverviewRow = {
   crew_name: 'Paul DURAND',
 };
 
+const planningDayRow = {
+  id: 200,
+  crew_name: 'Paul DURAND',
+  captain_name: 'Jean MARTIN',
+  vessel_name: 'COTENTIN',
+  manual_vessel_name: null,
+  work_date: '2026-07-01',
+  disembark_on: '2026-07-14',
+  year_number: 2026,
+  month_number: 7,
+  month_label: 'Juillet',
+  day_number: 1,
+  function_label: 'Pont',
+  sailor_status: 'Embarque',
+  day_status: 'Travaille',
+  rhythm_label: '12h',
+  watch_group: 'A',
+  slot365: 'SLOT-123',
+  departure_on: '2026-07-01',
+  worked_hours: 10.5,
+  rest_24h: 14,
+  cumulative_7d: 60,
+  comments: 'RAS',
+  source_label: 'sharepoint',
+};
+
+const planningPeriodRow = {
+  id: 300,
+  crew_name: 'Paul DURAND',
+  vessel_name: 'COTENTIN',
+  manual_vessel_name: null,
+  watch_group: 'A',
+  function_label: 'Pont',
+  sailor_status: 'Embarque',
+  starts_on: '2026-07-01',
+  ends_on: '2026-07-14',
+  year_number: 2026,
+  comments: 'Rotation A',
+  slot365_source_id: '200',
+  slot365_source_key: 'SLOT-123',
+  source_label: 'sharepoint',
+};
+
 function createSelectClient(options: {
   vessels?: unknown[];
   people?: unknown[];
   assignments?: unknown[];
+  days?: unknown[];
+  periods?: unknown[];
   createdVessel?: unknown;
   createdAssignment?: unknown;
 }) {
@@ -88,6 +133,26 @@ function createSelectClient(options: {
       };
     }
 
+    if (table === 'planning_days') {
+      return {
+        select: vi.fn().mockReturnValue({
+          order: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }),
+          }),
+        }),
+      };
+    }
+
+    if (table === 'planning_periods') {
+      return {
+        select: vi.fn().mockReturnValue({
+          order: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }),
+          }),
+        }),
+      };
+    }
+
     throw new Error(`Unexpected table ${table}`);
   });
   const rpc = vi.fn().mockImplementation((functionName: string) => {
@@ -115,6 +180,27 @@ describe('PlanningPage', () => {
     expect(screen.getByLabelText('Affectations planning')).toHaveTextContent('1');
   });
 
+  it('renders imported SMTR planning days and periods', async () => {
+    const { client } = createSelectClient({
+      assignments: [],
+      days: [planningDayRow],
+      periods: [planningPeriodRow],
+    });
+
+    render(<PlanningPage client={client as never} roles={['direction']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Journees SMTR')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Periodes SMTR')).toHaveTextContent('1');
+    expect(screen.getByRole('region', { name: 'Planning importe SharePoint' })).toBeInTheDocument();
+    expect(screen.getAllByText('SLOT-123').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getByText('Travaille')).toBeInTheDocument();
+    expect(screen.getByText('2026-07-01')).toBeInTheDocument();
+    expect(screen.getByText('2026-07-01 au 2026-07-14')).toBeInTheDocument();
+  });
+
   it('creates a vessel for office roles', async () => {
     const user = userEvent.setup();
     const createdVessel = {
@@ -132,8 +218,8 @@ describe('PlanningPage', () => {
     render(<PlanningPage client={client as never} roles={['armement']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.type(screen.getByLabelText('Nom navire'), 'SUROIT');
-    await user.type(screen.getByLabelText('Acronyme'), 'SRT');
+    fireEvent.change(screen.getByLabelText('Nom navire'), { target: { value: 'SUROIT' } });
+    fireEvent.change(screen.getByLabelText('Acronyme'), { target: { value: 'SRT' } });
     await user.click(screen.getByRole('button', { name: 'Ajouter navire' }));
 
     await waitFor(() =>
@@ -169,10 +255,9 @@ describe('PlanningPage', () => {
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
-    await user.type(screen.getByLabelText('Debut'), '2026-08-01');
-    await user.type(screen.getByLabelText('Fin'), '2026-08-07');
-    await user.clear(screen.getByLabelText('Fonction'));
-    await user.type(screen.getByLabelText('Fonction'), 'Quart');
+    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-08-01' } });
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-08-07' } });
+    fireEvent.change(screen.getByLabelText('Fonction'), { target: { value: 'Quart' } });
     await user.click(screen.getByRole('button', { name: 'Ajouter affectation' }));
 
     await waitFor(() =>

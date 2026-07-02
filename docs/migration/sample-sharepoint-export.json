@@ -1,0 +1,484 @@
+{
+  "exportedAt": "2026-07-01T22:00:00Z",
+  "sources": [
+    {
+      "sourceKey": "list-bbtm-flotte",
+      "items": [
+        {
+          "fields": {
+            "ID": 12,
+            "Title": "COTENTIN",
+            "Acronyme": "CTN",
+            "NavireActif": true
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-rh-personnel-bbtm",
+      "items": [
+        {
+          "fields": {
+            "ID": 42,
+            "Title": "LECOCQ",
+            "Pr_x00e9_nom": "Julien",
+            "Fonction": "Fleet Technical Manager",
+            "Grade": "Officier",
+            "Actif": "Oui"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-bbtm-clients",
+      "items": [
+        {
+          "fields": {
+            "ID": 77,
+            "Title": "IFREMER",
+            "CodeClient": "IFR",
+            "Email": "contact@ifremer.fr",
+            "Telephone": "+33 1 23 45 67 89",
+            "Adresse": "1625 route de Sainte-Anne",
+            "Ville": "Plouzane",
+            "Pays": "France",
+            "Actif": "Oui"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-brevets-visites-medicales",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Brevets/visite.pdf",
+          "fields": {
+            "ID": 555,
+            "FileLeafRef": "Visite medicale Julien LECOCQ.pdf",
+            "CollaborateurId": 42,
+            "Collaborateur": "Julien LECOCQ",
+            "DateEch_x00e9_ance": "2020-01-15",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Brevets/visite.pdf",
+            "FileRef": "/sites/QHSE/Brevets et Visites Medicales/Julien/visite.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-certificats-flotte",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Certificats/cotentin-navigation.pdf",
+          "fields": {
+            "ID": 901,
+            "FileLeafRef": "Permis de navigation COTENTIN.pdf",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "DateDelivrance": "2022-04-20",
+            "DateEch_x00e9_ance": "2027-04-20",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Certificats/cotentin-navigation.pdf",
+            "FileRef": "/sites/QHSE/Certificats Flotte BBTM/COTENTIN/permis-navigation.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-qsms",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/QSMS/QSMS-PRO-001.docx",
+          "fields": {
+            "ID": 300,
+            "FileLeafRef": "QSMS-PRO-001 Gestion des non-conformites.docx",
+            "Code": "QSMS-PRO-001",
+            "Revision": "5",
+            "Statut": "Approuve",
+            "DatePublication": "2026-01-10",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/QSMS/QSMS-PRO-001.docx",
+            "FileRef": "/sites/QHSE/QSMS/Procedures/QSMS-PRO-001 Gestion des non-conformites.docx"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-qsms-pdf",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/QSMS%20%20PDF/QSMS-PRO-001.pdf",
+          "fields": {
+            "ID": 301,
+            "FileLeafRef": "QSMS-PRO-001 Gestion des non-conformites.pdf",
+            "ProcedureId": 300,
+            "Code": "QSMS-PRO-001",
+            "Revision": "5",
+            "Statut": "Publie",
+            "DatePublication": "2026-01-10",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/QSMS%20%20PDF/QSMS-PRO-001.pdf",
+            "FileRef": "/sites/QHSE/QSMS  PDF/Procedures/QSMS-PRO-001 Gestion des non-conformites.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-bbtm-projets",
+      "items": [
+        {
+          "fields": {
+            "ID": 880,
+            "Title": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "ClientId": 77,
+            "Client": "IFREMER",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "Dated_x00e9_but": "2026-09-02",
+            "Datefin": "2026-09-15",
+            "Statut": "Contrat signe",
+            "Description": "Mission maritime"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-demande-achat",
+      "items": [
+        {
+          "fields": {
+            "ID": 700,
+            "Title": "DA-2026-001",
+            "NumeroDemande": "DA-2026-001",
+            "DateDemande": "2026-07-02",
+            "Demandeur": "Julien LECOCQ",
+            "Fournisseur": "Chantier Naval Manche",
+            "ProjetId": 880,
+            "Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "MontantHT": "12500,50",
+            "Devise": "EUR",
+            "Statut": "En cours",
+            "Objet": "Achat capteurs"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-audit",
+      "items": [
+        {
+          "fields": {
+            "ID": 810,
+            "Title": "Audit pont COTENTIN",
+            "Audit_x002f_VisiteHSE": "Audit",
+            "TypedAudit": "Interne",
+            "DateAudit": "2026-07-03",
+            "Echeance": "2026-07-31",
+            "Auditeur_x0028_s_x0029_": "Jean MARTIN",
+            "Responsable": "Arthur MAREST",
+            "ProjetId": 880,
+            "Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "Statut": "Ouvert",
+            "Priorite": "Haute",
+            "Description": "Controle pont",
+            "ActionCorrective": "Remplacer garde-corps"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-fiche-progres",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Fiche%20de%20Progrs/Audit-pont.pdf",
+          "fields": {
+            "ID": 811,
+            "FileLeafRef": "FP Audit pont COTENTIN.pdf",
+            "ActionId": 810,
+            "Action": "Audit pont COTENTIN",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Fiche%20de%20Progrs/Audit-pont.pdf",
+            "FileRef": "/sites/QHSE/Fiche de Progres/FP Audit pont COTENTIN.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-documents-projets",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/rapport.pdf",
+          "fields": {
+            "ID": 990,
+            "FileLeafRef": "P-2026-014 Rapport campagne.pdf",
+            "ProjetId": 880,
+            "Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/rapport.pdf",
+            "FileRef": "/sites/QHSE/Documents Projets/P-2026-014/rapport.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-documents-contractuels",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P-2026-014/contrat.pdf",
+          "fields": {
+            "ID": 991,
+            "FileLeafRef": "P-2026-014 Contrat signe.pdf",
+            "ProjetId": 880,
+            "Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P-2026-014/contrat.pdf",
+            "FileRef": "/sites/QHSE/Documents Contractuels/P-2026-014/contrat.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-mgo",
+      "items": [
+        {
+          "fields": {
+            "ID": 44,
+            "Title": "MGO juillet 2026",
+            "Date": "2026-07-01",
+            "PrixMGO_x002d_HT": "812,45",
+            "Devise": "EUR",
+            "Fournisseur": "TotalEnergies",
+            "Commentaires": "Prix mensuel"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "list-indicateurs-projet-p144emdt",
+      "items": [
+        {
+          "fields": {
+            "ID": 1200,
+            "Title": "DPR 2026-07-01",
+            "DPR_x002d_Date": "2026-07-01",
+            "Heure_x0020_du_x0020_DPR": "18:30",
+            "DPR_x002d_ProjetId": 880,
+            "DPR_x002d_Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "DPR_x002d_NavireId": 12,
+            "DPR_x002d_Navire": "COTENTIN",
+            "DPR_x002d_DescriptionJourn_x00e9": "Transit et mesures",
+            "DPR_x002d_ConsommationdeCarburan": "1250,5",
+            "DPR_x002d_AvitaillementMGO_x0028": "12,5",
+            "DPR_x002d_NoteQHSE": "RAS",
+            "DPR_x002d_ContactRadio": true,
+            "DPR_x002d_Incident_x002f_Acciden": 1,
+            "DPR_x002d_Accidents": 0,
+            "DPR_x002d_LEMS_x002d_NbdeSituati": 2
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-dpr",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/DPR/P-2026-014/DPR-2026-07-01.pdf",
+          "fields": {
+            "ID": 1201,
+            "FileLeafRef": "DPR P-2026-014 2026-07-01.pdf",
+            "DPRId": 1200,
+            "ProjetId": 880,
+            "Projet": "Campagne Atlantique 2026",
+            "NumeroProjet": "P-2026-014",
+            "DateduDPR": "2026-07-01",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/DPR/P-2026-014/DPR-2026-07-01.pdf",
+            "FileRef": "/sites/QHSE/DPR/P-2026-014/DPR-2026-07-01.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-logos-systeme",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Logos_Systeme/logo-bbtm.png",
+          "fields": {
+            "ID": 1501,
+            "FileLeafRef": "logo-bbtm.png",
+            "Categorie": "Identite",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Logos_Systeme/logo-bbtm.png",
+            "FileRef": "/sites/QHSE/Logos_Systeme/logo-bbtm.png"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-vehicules",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Vhicules/carte-grise.pdf",
+          "fields": {
+            "ID": 1502,
+            "FileLeafRef": "Carte grise vehicule.pdf",
+            "Categorie": "Vehicule",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Vhicules/carte-grise.pdf",
+            "FileRef": "/sites/QHSE/Vehicules/carte-grise.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-permis-travail",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Permis%20de%20Travail/PT-COTENTIN.pdf",
+          "fields": {
+            "ID": 1503,
+            "FileLeafRef": "Permis travail COTENTIN.pdf",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "Categorie": "Travaux a chaud",
+            "DateDocument": "2026-07-02",
+            "Statut": "Ouvert",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Permis%20de%20Travail/PT-COTENTIN.pdf",
+            "FileRef": "/sites/QHSE/Permis de Travail/PT-COTENTIN.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-suivi-temps-travail",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Suivi%20du%20Temps%20de%20Travail/julien.pdf",
+          "fields": {
+            "ID": 1504,
+            "FileLeafRef": "Suivi temps Julien LECOCQ.pdf",
+            "CollaborateurId": 42,
+            "Collaborateur": "Julien LECOCQ",
+            "DateDocument": "2026-07-01",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Suivi%20du%20Temps%20de%20Travail/julien.pdf",
+            "FileRef": "/sites/QHSE/Suivi du Temps de Travail/julien.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-archive-documentaire",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Archive%20Documentaire/archive.pdf",
+          "fields": {
+            "ID": 1505,
+            "FileLeafRef": "Archive documentaire.pdf",
+            "Categorie": "Archive",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Archive%20Documentaire/archive.pdf",
+            "FileRef": "/sites/QHSE/Archive Documentaire/archive.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-notes-service",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Notes%20de%20Service/note.pdf",
+          "fields": {
+            "ID": 1506,
+            "FileLeafRef": "Note de service armement.pdf",
+            "DateDocument": "2026-06-15",
+            "Statut": "Publie",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Notes%20de%20Service/note.pdf",
+            "FileRef": "/sites/QHSE/Notes de Service/note.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-alerte-securite",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Alerte%20Scurit/alerte.pdf",
+          "fields": {
+            "ID": 1507,
+            "FileLeafRef": "Alerte securite pont.pdf",
+            "Categorie": "Pont",
+            "DateDocument": "2026-06-20",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Alerte%20Scurit/alerte.pdf",
+            "FileRef": "/sites/QHSE/Alerte Securite/alerte.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-documentation-technique",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documentation%20Technique/COTENTIN/moteur.pdf",
+          "fields": {
+            "ID": 1508,
+            "FileLeafRef": "Notice moteur COTENTIN.pdf",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "Categorie": "Moteur",
+            "DateDocument": "2026-06-01",
+            "Revision": "A",
+            "Statut": "Valide",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documentation%20Technique/COTENTIN/moteur.pdf",
+            "FileRef": "/sites/QHSE/Documentation Technique/COTENTIN/moteur.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-fiche-navire-equipement",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Fiche%20Navire%20%20Equipement/COTENTIN.pdf",
+          "fields": {
+            "ID": 1509,
+            "FileLeafRef": "Fiche equipement COTENTIN.pdf",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "Categorie": "Equipement",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Fiche%20Navire%20%20Equipement/COTENTIN.pdf",
+            "FileRef": "/sites/QHSE/Fiche Navire  Equipement/COTENTIN.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-registre-apparaux-levage",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Registre%20des%20Apparaux%20de%20Levage%20%20Rapports/rapport.pdf",
+          "fields": {
+            "ID": 1510,
+            "FileLeafRef": "Rapport levage COTENTIN.pdf",
+            "NavireId": 12,
+            "Navire": "COTENTIN",
+            "DateEcheance": "2027-06-01",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Registre%20des%20Apparaux%20de%20Levage%20%20Rapports/rapport.pdf",
+            "FileRef": "/sites/QHSE/Registre des Apparaux de Levage  Rapports/rapport.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "sourceKey": "library-documents-partages",
+      "items": [
+        {
+          "webUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20partages/document.pdf",
+          "fields": {
+            "ID": 1511,
+            "FileLeafRef": "Document partage.pdf",
+            "Categorie": "General",
+            "EncodedAbsUrl": "https://bbtm668.sharepoint.com/sites/QHSE/Documents%20partages/document.pdf",
+            "FileRef": "/sites/QHSE/Documents partages/document.pdf"
+          }
+        }
+      ]
+    }
+  ]
+}

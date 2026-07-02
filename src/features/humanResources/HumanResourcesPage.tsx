@@ -1,12 +1,33 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CheckCircle2, UserPlus, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  ClipboardCheck,
+  FileCheck2,
+  FileText,
+  HeartPulse,
+  Search,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
-import { createPerson, fetchPeople, updatePersonActive, type PersonRecord } from './peopleQueries';
+import {
+  buildHumanResourcesDashboard,
+  createPerson,
+  fetchHumanResourcesData,
+  formatPersonName,
+  getHrDocumentCategoryLabel,
+  isHrDocumentRenewalDue,
+  updatePersonActive,
+  type HrDocumentRecord,
+  type PersonDashboardRecord,
+  type PersonRecord,
+} from './peopleQueries';
 
 interface HumanResourcesPageProps {
   client?: SupabaseClient;
@@ -19,6 +40,11 @@ interface PersonFormState {
   email: string;
   functionLabel: string;
   gradeLabel: string;
+  roleLabel: string;
+  registerLabel: string;
+  sex: string;
+  sailorNumber: string;
+  m365Account: string;
 }
 
 const EMPTY_FORM: PersonFormState = {
@@ -27,14 +53,23 @@ const EMPTY_FORM: PersonFormState = {
   email: '',
   functionLabel: '',
   gradeLabel: '',
+  roleLabel: '',
+  registerLabel: '',
+  sex: '',
+  sailorNumber: '',
+  m365Account: '',
+};
+
+const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
+  valid: 'A jour',
+  renew_due: 'A renouveler',
+  expired: 'Echu',
+  missing: 'Manquant',
+  pending_validation: 'Validation',
 };
 
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
-}
-
-function formatPersonName(person: PersonRecord): string {
-  return [person.firstName, person.lastName].filter(Boolean).join(' ');
 }
 
 function sortPeople(people: PersonRecord[]): PersonRecord[] {
@@ -44,14 +79,59 @@ function sortPeople(people: PersonRecord[]): PersonRecord[] {
   );
 }
 
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function personMatchesSearch(person: PersonRecord, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  const haystack = normalizeSearch(
+    [
+      person.firstName,
+      person.lastName,
+      person.email,
+      person.functionLabel,
+      person.gradeLabel,
+      person.roleLabel,
+      person.sailorNumber,
+      person.m365Account,
+    ].join(' '),
+  );
+
+  return haystack.includes(query);
+}
+
+function metricLabel(count: number, singular: string, plural: string): string {
+  return count > 1 ? plural : singular;
+}
+
+function FieldValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="hr-field-value">
+      <dt>{label}</dt>
+      <dd>{value || '-'}</dd>
+    </div>
+  );
+}
+
 export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
   const [people, setPeople] = useState<PersonRecord[]>([]);
+  const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [showInactive, setShowInactive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -63,10 +143,11 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetchPeople(effectiveClient)
-      .then((loadedPeople) => {
+    fetchHumanResourcesData(effectiveClient)
+      .then((loadedData) => {
         if (isMounted) {
-          setPeople(sortPeople(loadedPeople));
+          setPeople(sortPeople(loadedData.people));
+          setDocuments(loadedData.documents);
         }
       })
       .catch(() => {
@@ -85,8 +166,31 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     };
   }, [effectiveClient]);
 
-  const activeCount = useMemo(() => people.filter((person) => person.active).length, [people]);
-  const visiblePeople = showInactive ? people : people.filter((person) => person.active);
+  const normalizedSearchQuery = normalizeSearch(searchQuery.trim());
+  const visiblePeople = useMemo(
+    () =>
+      people
+        .filter((person) => showInactive || person.active)
+        .filter((person) => personMatchesSearch(person, normalizedSearchQuery)),
+    [normalizedSearchQuery, people, showInactive],
+  );
+  const visiblePersonIds = useMemo(() => new Set(visiblePeople.map((person) => person.id)), [visiblePeople]);
+  const visibleDocuments = useMemo(
+    () => documents.filter((document) => visiblePersonIds.has(document.personId)),
+    [documents, visiblePersonIds],
+  );
+  const dashboard = useMemo(
+    () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
+    [visibleDocuments, visiblePeople],
+  );
+  const selectedPerson = useMemo(
+    () => people.find((person) => person.id === selectedPersonId) || null,
+    [people, selectedPersonId],
+  );
+  const selectedPersonDocuments = useMemo(
+    () => (selectedPerson ? documents.filter((document) => document.personId === selectedPerson.id) : []),
+    [documents, selectedPerson],
+  );
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -105,6 +209,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
       const createdPerson = await createPerson(effectiveClient, form);
       setPeople((currentPeople) => sortPeople([...currentPeople, createdPerson]));
       setForm(EMPTY_FORM);
+      setIsCreateOpen(false);
       setStatusMessage('Collaborateur ajoute.');
     } catch {
       setErrorMessage("Impossible d'ajouter ce collaborateur.");
@@ -137,16 +242,55 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
   return (
     <section className="hr-page">
-      <div className="admin-header">
+      <div className="hr-dashboard-header">
         <div>
-          <p className="module-family">RH</p>
-          <h1>Personnel RH</h1>
+          <p className="module-family">QHSE - Bibliotheque documentaire</p>
+          <h1>Gestion des Ressources Humaines</h1>
+          <p className="hr-header-subtitle">
+            {visibleDocuments.length} {metricLabel(visibleDocuments.length, 'document affiche', 'documents affiches')} sur le
+            perimetre RH.
+          </p>
         </div>
-        <div className="hr-summary" aria-label="Personnel actif">
-          <Users aria-hidden="true" size={18} />
-          <strong>{activeCount}</strong>
-          <span>{activeCount > 1 ? 'actifs' : 'actif'}</span>
+        <div className="hr-actions" aria-label="Actions RH">
+          {isManager ? (
+            <button className="hr-action-button" onClick={() => setIsCreateOpen(true)} type="button">
+              <UserPlus aria-hidden="true" size={16} />
+              Nouveau Collaborateur
+            </button>
+          ) : null}
+          <button className="hr-action-button" type="button">
+            <FileText aria-hidden="true" size={16} />
+            Plan de formation
+          </button>
+          <button className="hr-action-button" type="button">
+            <ClipboardCheck aria-hidden="true" size={16} />
+            Crew competency
+          </button>
+          <button className="hr-action-button" type="button">
+            <HeartPulse aria-hidden="true" size={16} />
+            Diagnostic
+          </button>
         </div>
+      </div>
+
+      <div className="hr-kpi-grid" aria-label="Indicateurs RH">
+        <MetricCard icon={<Users aria-hidden="true" size={18} />} label="Effectif RH" value={dashboard.metrics.activePeople} />
+        <MetricCard label="Sedentaires" value={dashboard.metrics.sedentaryPeople} />
+        <MetricCard label="Navigants" value={dashboard.metrics.seafarerPeople} />
+        <MetricCard label="Stagiaires" value={dashboard.metrics.trainees} />
+        <MetricCard
+          tone="warning"
+          icon={<AlertTriangle aria-hidden="true" size={18} />}
+          label="Documents a renouveler"
+          value={dashboard.metrics.renewalDue}
+        />
+        <MetricCard
+          tone="danger"
+          icon={<AlertTriangle aria-hidden="true" size={18} />}
+          label="Urgent"
+          value={dashboard.metrics.urgent}
+        />
+        <MetricCard icon={<FileCheck2 aria-hidden="true" size={18} />} label="Documents RH" value={dashboard.metrics.documents} />
       </div>
 
       <div className="admin-notices" aria-live="polite">
@@ -154,7 +298,16 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
       </div>
 
-      <div className="hr-toolbar">
+      <div className="hr-filter-panel">
+        <label className="hr-search-field">
+          <span>Recherche RH</span>
+          <Search aria-hidden="true" size={16} />
+          <input
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Collaborateur, fichier, document..."
+            value={searchQuery}
+          />
+        </label>
         <label className="hr-inline-control">
           <input checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} type="checkbox" />
           Afficher les inactifs
@@ -162,90 +315,330 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
       </div>
 
-      {isManager ? (
-        <form className="hr-form" onSubmit={handleCreatePerson}>
-          <div className="hr-form-title">
-            <UserPlus aria-hidden="true" size={18} />
-            <strong>Nouveau collaborateur</strong>
+      {dashboard.groups.length === 0 ? (
+        <div className="admin-state">Aucun collaborateur a afficher.</div>
+      ) : (
+        <div className="hr-group-list">
+          {dashboard.groups.map((group) => (
+            <section className="hr-person-group" key={group.label}>
+              <div className="hr-group-heading">
+                <h2>{group.label}</h2>
+                <span>{group.people.length} collaborateur(s)</span>
+              </div>
+              <div className="hr-person-list">
+                {group.people.map((person) => (
+                  <PersonRow
+                    isManager={isManager}
+                    isSaving={isSaving}
+                    key={person.id}
+                    onActiveChange={handleActiveChange}
+                    onOpen={() => setSelectedPersonId(person.id)}
+                    person={person}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {isCreateOpen ? (
+        <CreatePersonDialog
+          form={form}
+          isSaving={isSaving}
+          onClose={() => setIsCreateOpen(false)}
+          onSubmit={handleCreatePerson}
+          onUpdate={updateFormValue}
+        />
+      ) : null}
+
+      {selectedPerson ? (
+        <PersonDetailsDialog
+          documents={selectedPersonDocuments}
+          onClose={() => setSelectedPersonId(null)}
+          person={selectedPerson}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function MetricCard({
+  icon,
+  label,
+  tone = 'neutral',
+  value,
+}: {
+  icon?: ReactNode;
+  label: string;
+  tone?: 'neutral' | 'warning' | 'danger';
+  value: number;
+}) {
+  return (
+    <div aria-label={label} className={`hr-kpi-card hr-kpi-${tone}`}>
+      <div className="hr-kpi-label">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PersonRow({
+  isManager,
+  isSaving,
+  onActiveChange,
+  onOpen,
+  person,
+}: {
+  isManager: boolean;
+  isSaving: boolean;
+  onActiveChange: (person: PersonRecord, active: boolean) => void;
+  onOpen: () => void;
+  person: PersonDashboardRecord;
+}) {
+  const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
+
+  return (
+    <article className="hr-person-row">
+      <div className="hr-person-main">
+        <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-person-open" onClick={onOpen} type="button">
+          <span>{formatPersonName(person)}</span>
+          <small>
+            {person.gradeLabel || 'Grade non renseigne'}
+            {person.sailorNumber ? ` - Marin ${person.sailorNumber}` : ''}
+          </small>
+        </button>
+        {renewalCount > 0 ? <span className="hr-alert-badge">{renewalCount} a renouveler</span> : null}
+      </div>
+      <div className="hr-category-row">
+        {person.categorySummaries.length > 0 ? (
+          person.categorySummaries.map((category) => (
+            <span className="hr-category-chip" key={category.key}>
+              {category.label}
+              <b>{category.count}</b>
+              {category.urgentCount > 0 ? <em>{category.urgentCount} urgent</em> : null}
+            </span>
+          ))
+        ) : (
+          <span className="hr-category-empty">Aucun document associe</span>
+        )}
+      </div>
+      <div className="hr-person-status">
+        {person.documents.some((document) => document.requiresCaptainValidation) ? (
+          <span className="hr-validation-badge">Validation capitaine</span>
+        ) : null}
+        {isManager ? (
+          <label className="hr-status-toggle">
+            <input
+              checked={person.active}
+              disabled={isSaving}
+              onChange={(event) => onActiveChange(person, event.target.checked)}
+              type="checkbox"
+            />
+            <span>{person.active ? 'Actif' : 'Inactif'}</span>
+          </label>
+        ) : (
+          <span className={person.active ? 'hr-status-active' : 'hr-status-inactive'}>
+            {person.active ? 'Actif' : 'Inactif'}
+          </span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function CreatePersonDialog({
+  form,
+  isSaving,
+  onClose,
+  onSubmit,
+  onUpdate,
+}: {
+  form: PersonFormState;
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (key: keyof PersonFormState, value: string) => void;
+}) {
+  return (
+    <div aria-label="Nouveau collaborateur" aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <form className="hr-dialog hr-create-dialog" onSubmit={onSubmit}>
+        <div className="hr-dialog-header">
+          <div>
+            <p>Fiche RH</p>
+            <h2>Nouveau Collaborateur</h2>
           </div>
+          <button aria-label="Fermer" className="hr-icon-button" onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="hr-form-grid">
           <label>
             Prenom
-            <input
-              onChange={(event) => updateFormValue('firstName', event.target.value)}
-              required
-              value={form.firstName}
-            />
+            <input onChange={(event) => onUpdate('firstName', event.target.value)} required value={form.firstName} />
           </label>
           <label>
             Nom
-            <input onChange={(event) => updateFormValue('lastName', event.target.value)} required value={form.lastName} />
-          </label>
-          <label>
-            Email
-            <input onChange={(event) => updateFormValue('email', event.target.value)} type="email" value={form.email} />
+            <input onChange={(event) => onUpdate('lastName', event.target.value)} required value={form.lastName} />
           </label>
           <label>
             Fonction
-            <input onChange={(event) => updateFormValue('functionLabel', event.target.value)} value={form.functionLabel} />
+            <input onChange={(event) => onUpdate('functionLabel', event.target.value)} value={form.functionLabel} />
           </label>
           <label>
             Grade
-            <input onChange={(event) => updateFormValue('gradeLabel', event.target.value)} value={form.gradeLabel} />
+            <input onChange={(event) => onUpdate('gradeLabel', event.target.value)} value={form.gradeLabel} />
           </label>
-          <button disabled={isSaving} type="submit">
-            Ajouter
-          </button>
-        </form>
-      ) : null}
-
-      {visiblePeople.length === 0 ? (
-        <div className="admin-state">Aucun collaborateur a afficher.</div>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table hr-table">
-            <thead>
-              <tr>
-                <th scope="col">Collaborateur</th>
-                <th scope="col">Fonction</th>
-                <th scope="col">Grade</th>
-                <th scope="col">Email</th>
-                <th scope="col">Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visiblePeople.map((person) => (
-                <tr key={person.id}>
-                  <th scope="row">
-                    <span className="admin-user-name">{formatPersonName(person)}</span>
-                    <span className="admin-user-email">ID RH {person.id}</span>
-                  </th>
-                  <td>{person.functionLabel || '-'}</td>
-                  <td>{person.gradeLabel || '-'}</td>
-                  <td>{person.email || '-'}</td>
-                  <td>
-                    {isManager ? (
-                      <label className="hr-status-toggle">
-                        <input
-                          checked={person.active}
-                          disabled={isSaving}
-                          onChange={(event) => void handleActiveChange(person, event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span>{person.active ? 'Actif' : 'Inactif'}</span>
-                      </label>
-                    ) : (
-                      <span className={person.active ? 'hr-status-active' : 'hr-status-inactive'}>
-                        <CheckCircle2 aria-hidden="true" size={16} />
-                        {person.active ? 'Actif' : 'Inactif'}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <label>
+            Role
+            <input onChange={(event) => onUpdate('roleLabel', event.target.value)} value={form.roleLabel} />
+          </label>
+          <label>
+            Registre
+            <input onChange={(event) => onUpdate('registerLabel', event.target.value)} value={form.registerLabel} />
+          </label>
+          <label>
+            Sexe
+            <input onChange={(event) => onUpdate('sex', event.target.value)} value={form.sex} />
+          </label>
+          <label>
+            Numero de marin
+            <input onChange={(event) => onUpdate('sailorNumber', event.target.value)} value={form.sailorNumber} />
+          </label>
+          <label>
+            Compte M365
+            <input onChange={(event) => onUpdate('m365Account', event.target.value)} value={form.m365Account} />
+          </label>
+          <label>
+            Email
+            <input onChange={(event) => onUpdate('email', event.target.value)} type="email" value={form.email} />
+          </label>
         </div>
-      )}
-    </section>
+        <div className="hr-dialog-footer">
+          <button className="hr-secondary-button" onClick={onClose} type="button">
+            Annuler
+          </button>
+          <button className="hr-primary-button" disabled={isSaving} type="submit">
+            Enregistrer
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PersonDetailsDialog({
+  documents,
+  onClose,
+  person,
+}: {
+  documents: HrDocumentRecord[];
+  onClose: () => void;
+  person: PersonRecord;
+}) {
+  return (
+    <div aria-label={`Fiche RH ${formatPersonName(person)}`} aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <div className="hr-dialog hr-details-dialog">
+        <div className="hr-dialog-header">
+          <div>
+            <p>Fiche RH</p>
+            <h2>{formatPersonName(person)}</h2>
+          </div>
+          <button aria-label="Fermer" className="hr-icon-button" onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="hr-details-layout">
+          <nav className="hr-section-nav" aria-label="Sections Fiche RH">
+            {[
+              'Identite et poste',
+              'Contrat et dates',
+              'Coordonnees',
+              'Contact urgence',
+              'Documents administratifs',
+              'Sante et habilitations',
+              'Tenues et mensurations',
+            ].map((section, index) => (
+              <span key={section}>
+                <b>{index + 1}</b>
+                {section}
+              </span>
+            ))}
+          </nav>
+          <div className="hr-details-content">
+            <section>
+              <h3>Identite et poste</h3>
+              <dl className="hr-field-grid">
+                <FieldValue label="Prenom" value={person.firstName} />
+                <FieldValue label="Nom" value={person.lastName} />
+                <FieldValue label="Fonction" value={person.functionLabel} />
+                <FieldValue label="Grade" value={person.gradeLabel} />
+                <FieldValue label="Role" value={person.roleLabel} />
+                <FieldValue label="Registre" value={person.registerLabel} />
+                <FieldValue label="Sexe" value={person.sex} />
+                <FieldValue label="Numero de marin" value={person.sailorNumber} />
+                <FieldValue label="Compte M365" value={person.m365Account} />
+                <FieldValue label="Email" value={person.email} />
+              </dl>
+            </section>
+            <section>
+              <h3>Contrat et dates</h3>
+              <dl className="hr-field-grid">
+                <FieldValue label="Type de contrat" value={person.contractType} />
+                <FieldValue label="Date embauche" value={person.hiredOn} />
+                <FieldValue label="Date depart" value={person.departedOn} />
+              </dl>
+            </section>
+            <section>
+              <h3>Coordonnees</h3>
+              <dl className="hr-field-grid">
+                <FieldValue label="Telephone" value={person.phone} />
+              </dl>
+            </section>
+            <section>
+              <h3>Contact urgence</h3>
+              <dl className="hr-field-grid">
+                <FieldValue label="Contact" value={person.emergencyContactName} />
+                <FieldValue label="Telephone urgence" value={person.emergencyContactPhone} />
+              </dl>
+            </section>
+            <section>
+              <h3>Documents administratifs</h3>
+              <DocumentList documents={documents.filter((document) => document.categoryKey === 'administrative')} />
+            </section>
+            <section>
+              <h3>Sante et habilitations</h3>
+              <DocumentList documents={documents.filter((document) => document.categoryKey !== 'administrative')} />
+            </section>
+            <section>
+              <h3>Tenues et mensurations</h3>
+              <p className="hr-muted">Mensurations et tailles EPI a importer depuis la liste SharePoint RH Personnel BBTM.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
+  if (documents.length === 0) {
+    return <p className="hr-muted">Aucun document renseigne.</p>;
+  }
+
+  return (
+    <ul className="hr-document-list">
+      {documents.map((document) => (
+        <li key={document.id}>
+          <span>
+            <strong>{document.title}</strong>
+            <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
+          </span>
+          <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

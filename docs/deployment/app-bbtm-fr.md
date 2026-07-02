@@ -17,6 +17,38 @@ Use the record type required by the hosting provider:
 
 Keep the public website and private app records separate so the public site can continue serving from `www.bbtm.fr`.
 
+## Vercel Project
+
+Recommended hosting target for the Vite application:
+
+- Repository: `BBTM-Christophe-GIT/SeaPilot`
+- Framework preset: `Vite`
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Production domain: `app.bbtm.fr`
+
+The repository includes `vercel.json` so direct links like `/login` and `/modules/planning` are rewritten to `index.html`.
+
+If deploying through the Vercel dashboard:
+
+1. Import the GitHub repository `BBTM-Christophe-GIT/SeaPilot`.
+2. Select the branch to deploy.
+3. Add the production environment variables below.
+4. Add the custom domain `app.bbtm.fr`.
+5. Copy the DNS target shown by Vercel into the DNS zone for `bbtm.fr`.
+
+If deploying through the CLI:
+
+```powershell
+npx vercel login
+npx vercel link
+npx vercel env add VITE_SUPABASE_URL production
+npx vercel env add VITE_SUPABASE_ANON_KEY production
+npx vercel env add VITE_APP_BASE_URL production
+npx vercel --prod
+```
+
 ## Supabase Auth
 
 Configure Supabase Auth URL settings:
@@ -36,6 +68,18 @@ VITE_APP_BASE_URL=https://app.bbtm.fr
 ```
 
 Keep the Supabase anon key in the hosting provider's environment variable settings. Do not commit real production values.
+
+## Supabase Production Migrations
+
+After creating the Supabase production project:
+
+```powershell
+supabase login
+supabase link --project-ref <production-project-ref>
+supabase db push
+```
+
+Then create the first admin user in Supabase Auth and assign roles in `public.user_roles`.
 
 ## First Production Smoke Check
 

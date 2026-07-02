@@ -13,7 +13,9 @@ import {
   formatPlanningPersonName,
   mapPlanningAssignmentRows,
   type PlanningAssignmentRecord,
+  type PlanningDayRecord,
   type PlanningOverview,
+  type PlanningPeriodRecord,
   type PlanningPerson,
   type PlanningVessel,
 } from './planningQueries';
@@ -41,6 +43,8 @@ const EMPTY_OVERVIEW: PlanningOverview = {
   vessels: [],
   people: [],
   assignments: [],
+  days: [],
+  periods: [],
 };
 
 const EMPTY_VESSEL_FORM: VesselFormState = {
@@ -75,6 +79,25 @@ function sortAssignments(assignments: PlanningAssignmentRecord[]): PlanningAssig
   );
 }
 
+function sortPlanningDays(days: PlanningDayRecord[]): PlanningDayRecord[] {
+  return [...days].sort(
+    (left, right) =>
+      left.workDate.localeCompare(right.workDate) ||
+      left.vesselName.localeCompare(right.vesselName, 'fr') ||
+      left.crewName.localeCompare(right.crewName, 'fr'),
+  );
+}
+
+function sortPlanningPeriods(periods: PlanningPeriodRecord[]): PlanningPeriodRecord[] {
+  return [...periods].sort(
+    (left, right) =>
+      left.startsOn.localeCompare(right.startsOn) ||
+      left.endsOn.localeCompare(right.endsOn) ||
+      left.vesselName.localeCompare(right.vesselName, 'fr') ||
+      left.crewName.localeCompare(right.crewName, 'fr'),
+  );
+}
+
 function vesselOptionLabel(vessel: PlanningVessel): string {
   return vessel.acronym ? `${vessel.name} (${vessel.acronym})` : vessel.name;
 }
@@ -82,6 +105,14 @@ function vesselOptionLabel(vessel: PlanningVessel): string {
 function personOptionLabel(person: PlanningPerson): string {
   const functionSuffix = person.functionLabel ? ` - ${person.functionLabel}` : '';
   return `${formatPlanningPersonName(person)}${functionSuffix}`;
+}
+
+function displayText(value: string): string {
+  return value || '-';
+}
+
+function displayHours(value: number | null): string {
+  return value === null ? '-' : `${value} h`;
 }
 
 export function PlanningPage({ client, roles }: PlanningPageProps) {
@@ -110,6 +141,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             vessels: sortVessels(loadedOverview.vessels),
             people: loadedOverview.people,
             assignments: sortAssignments(loadedOverview.assignments),
+            days: sortPlanningDays(loadedOverview.days),
+            periods: sortPlanningPeriods(loadedOverview.periods),
           });
         }
       })
@@ -200,10 +233,22 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           <p className="module-family">Planning</p>
           <h1>Planning</h1>
         </div>
-        <div className="planning-summary" aria-label="Affectations planning">
-          <CalendarDays aria-hidden="true" size={18} />
-          <strong>{overview.assignments.length}</strong>
-          <span>{overview.assignments.length > 1 ? 'affectations' : 'affectation'}</span>
+        <div className="planning-summary-grid">
+          <div className="planning-summary" aria-label="Affectations planning">
+            <CalendarDays aria-hidden="true" size={18} />
+            <strong>{overview.assignments.length}</strong>
+            <span>{overview.assignments.length > 1 ? 'affectations' : 'affectation'}</span>
+          </div>
+          <div className="planning-summary" aria-label="Journees SMTR">
+            <CalendarDays aria-hidden="true" size={18} />
+            <strong>{overview.days.length}</strong>
+            <span>journees SMTR</span>
+          </div>
+          <div className="planning-summary" aria-label="Periodes SMTR">
+            <CalendarDays aria-hidden="true" size={18} />
+            <strong>{overview.periods.length}</strong>
+            <span>periodes SMTR</span>
+          </div>
         </div>
       </div>
 
@@ -353,6 +398,87 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           </table>
         </div>
       )}
+
+      {overview.days.length > 0 || overview.periods.length > 0 ? (
+        <section className="planning-import-panel" aria-label="Planning importe SharePoint">
+          <div className="planning-import-header">
+            <div>
+              <p className="module-family">Import SharePoint</p>
+              <h2>Planning importe SharePoint</h2>
+            </div>
+          </div>
+
+          {overview.periods.length > 0 ? (
+            <div className="planning-import-block">
+              <h3>Periodes SMTR</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table planning-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Marin</th>
+                      <th scope="col">Navire</th>
+                      <th scope="col">Periode</th>
+                      <th scope="col">Fonction</th>
+                      <th scope="col">Statut</th>
+                      <th scope="col">Bordee</th>
+                      <th scope="col">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.periods.map((period) => (
+                      <tr key={period.id}>
+                        <th scope="row">{period.crewName}</th>
+                        <td>{period.vesselName}</td>
+                        <td>{`${period.startsOn} au ${period.endsOn}`}</td>
+                        <td>{displayText(period.functionLabel)}</td>
+                        <td>{displayText(period.sailorStatus)}</td>
+                        <td>{displayText(period.watchGroup)}</td>
+                        <td>{displayText(period.slot365SourceKey)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {overview.days.length > 0 ? (
+            <div className="planning-import-block">
+              <h3>Journees SMTR</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table planning-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Marin</th>
+                      <th scope="col">Navire</th>
+                      <th scope="col">Capitaine</th>
+                      <th scope="col">Statut jour</th>
+                      <th scope="col">Fonction</th>
+                      <th scope="col">Heures</th>
+                      <th scope="col">Slot365</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.days.map((day) => (
+                      <tr key={day.id}>
+                        <th scope="row">{day.workDate}</th>
+                        <td>{day.crewName}</td>
+                        <td>{day.vesselName}</td>
+                        <td>{displayText(day.captainName)}</td>
+                        <td>{displayText(day.dayStatus)}</td>
+                        <td>{displayText(day.functionLabel)}</td>
+                        <td>{displayHours(day.workedHours)}</td>
+                        <td>{displayText(day.slot365)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 }

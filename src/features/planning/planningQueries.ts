@@ -4,6 +4,10 @@ const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT = 'id, first_name, last_name, function_label, active';
 const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, source_label';
+const PLANNING_DAY_SELECT =
+  'id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
+const PLANNING_PERIOD_SELECT =
+  'id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 
 interface VesselRow {
   id: number;
@@ -37,6 +41,49 @@ export interface PlanningAssignmentOverviewRow extends PlanningAssignmentRow {
   crew_name: string | null;
 }
 
+interface PlanningDayRow {
+  id: number;
+  crew_name: string | null;
+  captain_name: string | null;
+  vessel_name: string | null;
+  manual_vessel_name: string | null;
+  work_date: string;
+  disembark_on: string | null;
+  year_number: number | null;
+  month_number: number | null;
+  month_label: string | null;
+  day_number: number | null;
+  function_label: string | null;
+  sailor_status: string | null;
+  day_status: string | null;
+  rhythm_label: string | null;
+  watch_group: string | null;
+  slot365: string | null;
+  departure_on: string | null;
+  worked_hours: number | string | null;
+  rest_24h: number | string | null;
+  cumulative_7d: number | string | null;
+  comments: string | null;
+  source_label: string;
+}
+
+interface PlanningPeriodRow {
+  id: number;
+  crew_name: string | null;
+  vessel_name: string | null;
+  manual_vessel_name: string | null;
+  watch_group: string | null;
+  function_label: string | null;
+  sailor_status: string | null;
+  starts_on: string;
+  ends_on: string;
+  year_number: number | null;
+  comments: string | null;
+  slot365_source_id: string | null;
+  slot365_source_key: string | null;
+  source_label: string;
+}
+
 export interface PlanningVessel {
   id: number;
   name: string;
@@ -66,10 +113,53 @@ export interface PlanningAssignmentRecord {
   sourceLabel: string;
 }
 
+export interface PlanningDayRecord {
+  id: number;
+  crewName: string;
+  captainName: string;
+  vesselName: string;
+  workDate: string;
+  disembarkOn: string;
+  yearNumber: number | null;
+  monthNumber: number | null;
+  monthLabel: string;
+  dayNumber: number | null;
+  functionLabel: string;
+  sailorStatus: string;
+  dayStatus: string;
+  rhythmLabel: string;
+  watchGroup: string;
+  slot365: string;
+  departureOn: string;
+  workedHours: number | null;
+  rest24h: number | null;
+  cumulative7d: number | null;
+  comments: string;
+  sourceLabel: string;
+}
+
+export interface PlanningPeriodRecord {
+  id: number;
+  crewName: string;
+  vesselName: string;
+  watchGroup: string;
+  functionLabel: string;
+  sailorStatus: string;
+  startsOn: string;
+  endsOn: string;
+  yearNumber: number | null;
+  comments: string;
+  slot365SourceId: string;
+  slot365SourceKey: string;
+  sourceLabel: string;
+}
+
 export interface PlanningOverview {
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   assignments: PlanningAssignmentRecord[];
+  days: PlanningDayRecord[];
+  periods: PlanningPeriodRecord[];
 }
 
 export interface CreateVesselInput {
@@ -88,6 +178,22 @@ export interface CreatePlanningAssignmentInput {
 
 export function formatPlanningPersonName(person: PlanningPerson): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
+}
+
+function textOrEmpty(value: string | null | undefined): string {
+  return value || '';
+}
+
+function numberOrNull(value: number | string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return Number(value);
+}
+
+function mapImportedVesselName(vesselName: string | null, manualVesselName: string | null): string {
+  return vesselName || manualVesselName || 'Navire non renseigne';
 }
 
 export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
@@ -158,6 +264,51 @@ export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOvervi
   }));
 }
 
+export function mapPlanningDayRows(rows: PlanningDayRow[]): PlanningDayRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    crewName: row.crew_name || 'Marin non renseigne',
+    captainName: textOrEmpty(row.captain_name),
+    vesselName: mapImportedVesselName(row.vessel_name, row.manual_vessel_name),
+    workDate: row.work_date,
+    disembarkOn: textOrEmpty(row.disembark_on),
+    yearNumber: row.year_number,
+    monthNumber: row.month_number,
+    monthLabel: textOrEmpty(row.month_label),
+    dayNumber: row.day_number,
+    functionLabel: textOrEmpty(row.function_label),
+    sailorStatus: textOrEmpty(row.sailor_status),
+    dayStatus: textOrEmpty(row.day_status),
+    rhythmLabel: textOrEmpty(row.rhythm_label),
+    watchGroup: textOrEmpty(row.watch_group),
+    slot365: textOrEmpty(row.slot365),
+    departureOn: textOrEmpty(row.departure_on),
+    workedHours: numberOrNull(row.worked_hours),
+    rest24h: numberOrNull(row.rest_24h),
+    cumulative7d: numberOrNull(row.cumulative_7d),
+    comments: textOrEmpty(row.comments),
+    sourceLabel: row.source_label,
+  }));
+}
+
+export function mapPlanningPeriodRows(rows: PlanningPeriodRow[]): PlanningPeriodRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    crewName: row.crew_name || 'Marin non renseigne',
+    vesselName: mapImportedVesselName(row.vessel_name, row.manual_vessel_name),
+    watchGroup: textOrEmpty(row.watch_group),
+    functionLabel: textOrEmpty(row.function_label),
+    sailorStatus: textOrEmpty(row.sailor_status),
+    startsOn: row.starts_on,
+    endsOn: row.ends_on,
+    yearNumber: row.year_number,
+    comments: textOrEmpty(row.comments),
+    slot365SourceId: textOrEmpty(row.slot365_source_id),
+    slot365SourceKey: textOrEmpty(row.slot365_source_key),
+    sourceLabel: row.source_label,
+  }));
+}
+
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
   const { data, error } = await client.from('vessels').select(VESSEL_SELECT).order('name', { ascending: true });
 
@@ -194,17 +345,49 @@ export async function fetchPlanningAssignmentOverviewRows(
   return (data || []) as PlanningAssignmentOverviewRow[];
 }
 
+export async function fetchPlanningDays(client: SupabaseClient): Promise<PlanningDayRecord[]> {
+  const { data, error } = await client
+    .from('planning_days')
+    .select(PLANNING_DAY_SELECT)
+    .order('work_date', { ascending: true })
+    .order('crew_name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPlanningDayRows((data || []) as PlanningDayRow[]);
+}
+
+export async function fetchPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {
+  const { data, error } = await client
+    .from('planning_periods')
+    .select(PLANNING_PERIOD_SELECT)
+    .order('starts_on', { ascending: true })
+    .order('crew_name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPlanningPeriodRows((data || []) as PlanningPeriodRow[]);
+}
+
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
+    fetchPlanningDays(client),
+    fetchPlanningPeriods(client),
   ]);
 
   return {
     vessels,
     people,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
+    days,
+    periods,
   };
 }
 
