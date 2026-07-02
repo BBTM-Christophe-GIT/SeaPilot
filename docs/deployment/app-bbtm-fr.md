@@ -20,9 +20,9 @@ Keep the public website and private app records separate so the public site can 
 Current Vercel verification for `app.bbtm.fr` recommends this OVH DNS record:
 
 ```text
-Type: CNAME
+Type: A
 Name: app
-Value: 6cf2b7c953ff550f.vercel-dns-017.com.
+Value: 76.76.21.21
 ```
 
 The current nameservers for `bbtm.fr` remain OVH (`dns18.ovh.net`, `ns18.ovh.net`), which is fine. Do not change nameservers unless intentionally moving all DNS management to Vercel.
