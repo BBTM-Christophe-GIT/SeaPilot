@@ -39,6 +39,14 @@ interface AssignmentFormState {
   assignmentRole: string;
 }
 
+interface PlanningFilterState {
+  vesselName: string;
+  personName: string;
+  startsOn: string;
+  endsOn: string;
+  status: string;
+}
+
 const EMPTY_OVERVIEW: PlanningOverview = {
   vessels: [],
   people: [],
@@ -59,6 +67,14 @@ const EMPTY_ASSIGNMENT_FORM: AssignmentFormState = {
   startsOn: '',
   endsOn: '',
   assignmentRole: 'crew',
+};
+
+const EMPTY_PLANNING_FILTERS: PlanningFilterState = {
+  vesselName: '',
+  personName: '',
+  startsOn: '',
+  endsOn: '',
+  status: '',
 };
 
 function canManagePlanning(roles: RoleKey[]): boolean {
@@ -115,6 +131,66 @@ function displayHours(value: number | null): string {
   return value === null ? '-' : `${value} h`;
 }
 
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+}
+
+function isPeriodWithinFilter(startsOn: string, endsOn: string, filters: PlanningFilterState): boolean {
+  return (!filters.startsOn || endsOn >= filters.startsOn) && (!filters.endsOn || startsOn <= filters.endsOn);
+}
+
+function isDayWithinFilter(workDate: string, filters: PlanningFilterState): boolean {
+  return (!filters.startsOn || workDate >= filters.startsOn) && (!filters.endsOn || workDate <= filters.endsOn);
+}
+
+function assignmentMatchesFilters(assignment: PlanningAssignmentRecord, filters: PlanningFilterState): boolean {
+  if (filters.vesselName && assignment.vesselName !== filters.vesselName) {
+    return false;
+  }
+
+  if (filters.personName && assignment.crewName !== filters.personName && assignment.captainName !== filters.personName) {
+    return false;
+  }
+
+  if (!isPeriodWithinFilter(assignment.startsOn, assignment.endsOn, filters)) {
+    return false;
+  }
+
+  return !filters.status;
+}
+
+function dayMatchesFilters(day: PlanningDayRecord, filters: PlanningFilterState): boolean {
+  if (filters.vesselName && day.vesselName !== filters.vesselName) {
+    return false;
+  }
+
+  if (filters.personName && day.crewName !== filters.personName && day.captainName !== filters.personName) {
+    return false;
+  }
+
+  if (!isDayWithinFilter(day.workDate, filters)) {
+    return false;
+  }
+
+  return !filters.status || day.sailorStatus === filters.status || day.dayStatus === filters.status;
+}
+
+function periodMatchesFilters(period: PlanningPeriodRecord, filters: PlanningFilterState): boolean {
+  if (filters.vesselName && period.vesselName !== filters.vesselName) {
+    return false;
+  }
+
+  if (filters.personName && period.crewName !== filters.personName) {
+    return false;
+  }
+
+  if (!isPeriodWithinFilter(period.startsOn, period.endsOn, filters)) {
+    return false;
+  }
+
+  return !filters.status || period.sailorStatus === filters.status;
+}
+
 export function PlanningPage({ client, roles }: PlanningPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -123,6 +199,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const [overview, setOverview] = useState<PlanningOverview>(EMPTY_OVERVIEW);
   const [vesselForm, setVesselForm] = useState<VesselFormState>(EMPTY_VESSEL_FORM);
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(EMPTY_ASSIGNMENT_FORM);
+  const [filters, setFilters] = useState<PlanningFilterState>(EMPTY_PLANNING_FILTERS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -164,6 +241,42 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
 
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const vesselFilterOptions = useMemo(
+    () =>
+      uniqueSorted([
+        ...overview.assignments.map((assignment) => assignment.vesselName),
+        ...overview.days.map((day) => day.vesselName),
+        ...overview.periods.map((period) => period.vesselName),
+      ]),
+    [overview.assignments, overview.days, overview.periods],
+  );
+  const personFilterOptions = useMemo(
+    () =>
+      uniqueSorted([
+        ...overview.assignments.flatMap((assignment) => [assignment.crewName, assignment.captainName === '-' ? '' : assignment.captainName]),
+        ...overview.days.flatMap((day) => [day.crewName, day.captainName]),
+        ...overview.periods.map((period) => period.crewName),
+      ]),
+    [overview.assignments, overview.days, overview.periods],
+  );
+  const statusFilterOptions = useMemo(
+    () =>
+      uniqueSorted([
+        ...overview.days.flatMap((day) => [day.sailorStatus, day.dayStatus]),
+        ...overview.periods.map((period) => period.sailorStatus),
+      ]),
+    [overview.days, overview.periods],
+  );
+  const filteredAssignments = useMemo(
+    () => overview.assignments.filter((assignment) => assignmentMatchesFilters(assignment, filters)),
+    [filters, overview.assignments],
+  );
+  const filteredDays = useMemo(() => overview.days.filter((day) => dayMatchesFilters(day, filters)), [filters, overview.days]);
+  const filteredPeriods = useMemo(
+    () => overview.periods.filter((period) => periodMatchesFilters(period, filters)),
+    [filters, overview.periods],
+  );
+  const hasActiveFilters = Object.values(filters).some(Boolean);
 
   function updateVesselFormValue(key: keyof VesselFormState, value: string) {
     setVesselForm((currentForm) => ({
@@ -175,6 +288,13 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   function updateAssignmentFormValue(key: keyof AssignmentFormState, value: string) {
     setAssignmentForm((currentForm) => ({
       ...currentForm,
+      [key]: value,
+    }));
+  }
+
+  function updateFilterValue(key: keyof PlanningFilterState, value: string) {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
       [key]: value,
     }));
   }
@@ -236,17 +356,17 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         <div className="planning-summary-grid">
           <div className="planning-summary" aria-label="Affectations planning">
             <CalendarDays aria-hidden="true" size={18} />
-            <strong>{overview.assignments.length}</strong>
-            <span>{overview.assignments.length > 1 ? 'affectations' : 'affectation'}</span>
+            <strong>{filteredAssignments.length}</strong>
+            <span>{filteredAssignments.length > 1 ? 'affectations' : 'affectation'}</span>
           </div>
           <div className="planning-summary" aria-label="Journees SMTR">
             <CalendarDays aria-hidden="true" size={18} />
-            <strong>{overview.days.length}</strong>
+            <strong>{filteredDays.length}</strong>
             <span>journees SMTR</span>
           </div>
           <div className="planning-summary" aria-label="Periodes SMTR">
             <CalendarDays aria-hidden="true" size={18} />
-            <strong>{overview.periods.length}</strong>
+            <strong>{filteredPeriods.length}</strong>
             <span>periodes SMTR</span>
           </div>
         </div>
@@ -261,6 +381,57 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>
           {isManager ? 'Modification' : 'Lecture seule'}
         </span>
+      </div>
+
+      <div className="planning-filter-panel" aria-label="Filtres planning">
+        <label>
+          Filtre navire
+          <select onChange={(event) => updateFilterValue('vesselName', event.target.value)} value={filters.vesselName}>
+            <option value="">Tous les navires</option>
+            {vesselFilterOptions.map((vesselName) => (
+              <option key={vesselName} value={vesselName}>
+                {vesselName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Filtre marin
+          <select onChange={(event) => updateFilterValue('personName', event.target.value)} value={filters.personName}>
+            <option value="">Tous les marins</option>
+            {personFilterOptions.map((personName) => (
+              <option key={personName} value={personName}>
+                {personName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Debut filtre
+          <input
+            onChange={(event) => updateFilterValue('startsOn', event.target.value)}
+            type="date"
+            value={filters.startsOn}
+          />
+        </label>
+        <label>
+          Fin filtre
+          <input onChange={(event) => updateFilterValue('endsOn', event.target.value)} type="date" value={filters.endsOn} />
+        </label>
+        <label>
+          Filtre statut
+          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
+            <option value="">Tous les statuts</option>
+            {statusFilterOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button disabled={!hasActiveFilters} onClick={() => setFilters(EMPTY_PLANNING_FILTERS)} type="button">
+          Reinitialiser
+        </button>
       </div>
 
       {isManager ? (
@@ -368,7 +539,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         </div>
       ) : null}
 
-      {overview.assignments.length === 0 ? (
+      {filteredAssignments.length === 0 ? (
         <div className="admin-state">Aucune affectation a afficher.</div>
       ) : (
         <div className="admin-table-wrap">
@@ -384,7 +555,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
               </tr>
             </thead>
             <tbody>
-              {overview.assignments.map((assignment) => (
+              {filteredAssignments.map((assignment) => (
                 <tr key={assignment.id}>
                   <th scope="row">{assignment.vesselName}</th>
                   <td>{assignment.crewName}</td>
@@ -399,7 +570,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         </div>
       )}
 
-      {overview.days.length > 0 || overview.periods.length > 0 ? (
+      {filteredDays.length > 0 || filteredPeriods.length > 0 ? (
         <section className="planning-import-panel" aria-label="Planning importe SharePoint">
           <div className="planning-import-header">
             <div>
@@ -408,7 +579,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             </div>
           </div>
 
-          {overview.periods.length > 0 ? (
+          {filteredPeriods.length > 0 ? (
             <div className="planning-import-block">
               <h3>Periodes SMTR</h3>
               <div className="admin-table-wrap">
@@ -425,7 +596,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {overview.periods.map((period) => (
+                    {filteredPeriods.map((period) => (
                       <tr key={period.id}>
                         <th scope="row">{period.crewName}</th>
                         <td>{period.vesselName}</td>
@@ -442,7 +613,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             </div>
           ) : null}
 
-          {overview.days.length > 0 ? (
+          {filteredDays.length > 0 ? (
             <div className="planning-import-block">
               <h3>Journees SMTR</h3>
               <div className="admin-table-wrap">
@@ -460,7 +631,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {overview.days.map((day) => (
+                    {filteredDays.map((day) => (
                       <tr key={day.id}>
                         <th scope="row">{day.workDate}</th>
                         <td>{day.crewName}</td>

@@ -130,7 +130,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 ### Application
 
 - Enrichir le module RH avec les sections restantes de la fiche collaborateur.
-- Enrichir le module Planning avec filtres par navire, marin, periode et statut.
 - Construire les modules encore placeholders:
   - Certificats flotte
   - Procedures QHSE
@@ -139,6 +138,10 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
   - Achats
   - Audit / plan d'action
 - Ajouter un ecran admin de suivi d'import.
+
+### Application - deja livre
+
+- Module Planning enrichi avec filtres par navire, marin, periode et statut.
 
 ### Deploiement
 

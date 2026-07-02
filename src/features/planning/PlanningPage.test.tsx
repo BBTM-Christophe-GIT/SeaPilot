@@ -87,6 +87,58 @@ const planningPeriodRow = {
   source_label: 'sharepoint',
 };
 
+const secondVesselRow = {
+  id: 2,
+  name: 'SUROIT',
+  acronym: 'SRT',
+  active: true,
+};
+
+const secondCrewRow = {
+  id: 12,
+  first_name: 'Luc',
+  last_name: 'MOREL',
+  function_label: 'Mecanicien',
+  active: true,
+};
+
+const secondAssignmentOverviewRow = {
+  ...assignmentOverviewRow,
+  id: 101,
+  vessel_id: 2,
+  crew_person_id: 12,
+  vessel_name: 'SUROIT',
+  crew_name: 'Luc MOREL',
+  starts_on: '2026-08-01',
+  ends_on: '2026-08-07',
+  assignment_role: 'Machine',
+};
+
+const secondPlanningDayRow = {
+  ...planningDayRow,
+  id: 201,
+  crew_name: 'Luc MOREL',
+  vessel_name: 'SUROIT',
+  work_date: '2026-08-03',
+  disembark_on: '2026-08-07',
+  sailor_status: 'Debarque',
+  day_status: 'Repos',
+  function_label: 'Machine',
+  slot365: 'SLOT-456',
+};
+
+const secondPlanningPeriodRow = {
+  ...planningPeriodRow,
+  id: 301,
+  crew_name: 'Luc MOREL',
+  vessel_name: 'SUROIT',
+  sailor_status: 'Debarque',
+  function_label: 'Machine',
+  starts_on: '2026-08-01',
+  ends_on: '2026-08-07',
+  slot365_source_key: 'SLOT-456',
+};
+
 function createSelectClient(options: {
   vessels?: unknown[];
   people?: unknown[];
@@ -173,9 +225,9 @@ describe('PlanningPage', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
-    expect(screen.getByText('COTENTIN')).toBeInTheDocument();
-    expect(screen.getByText('Paul DURAND')).toBeInTheDocument();
-    expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Jean MARTIN').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-07-01 au 2026-07-14')).toBeInTheDocument();
     expect(screen.getByLabelText('Affectations planning')).toHaveTextContent('1');
   });
@@ -196,9 +248,39 @@ describe('PlanningPage', () => {
     expect(screen.getAllByText('SLOT-123').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
-    expect(screen.getByText('Travaille')).toBeInTheDocument();
+    expect(screen.getAllByText('Travaille').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-07-01')).toBeInTheDocument();
     expect(screen.getByText('2026-07-01 au 2026-07-14')).toBeInTheDocument();
+  });
+
+  it('filters planning by vessel, sailor, period and status', async () => {
+    const user = userEvent.setup();
+    const { client } = createSelectClient({
+      vessels: [vesselRow, secondVesselRow],
+      people: [captainRow, crewRow, secondCrewRow],
+      assignments: [assignmentOverviewRow, secondAssignmentOverviewRow],
+      days: [planningDayRow, secondPlanningDayRow],
+      periods: [planningPeriodRow, secondPlanningPeriodRow],
+    });
+
+    render(<PlanningPage client={client as never} roles={['direction']} />);
+
+    expect((await screen.findAllByText('Luc MOREL')).length).toBeGreaterThan(0);
+
+    await user.selectOptions(screen.getByLabelText('Filtre navire'), 'COTENTIN');
+    await user.selectOptions(screen.getByLabelText('Filtre marin'), 'Paul DURAND');
+    fireEvent.change(screen.getByLabelText('Debut filtre'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('Fin filtre'), { target: { value: '2026-07-31' } });
+    await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Embarque');
+
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
+    expect(screen.queryByText('SLOT-456')).not.toBeInTheDocument();
+    expect(screen.queryByText('2026-08-03')).not.toBeInTheDocument();
+    expect(screen.queryByText('Machine')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Affectations planning')).toHaveTextContent('0');
+    expect(screen.getByLabelText('Journees SMTR')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Periodes SMTR')).toHaveTextContent('1');
   });
 
   it('creates a vessel for office roles', async () => {
@@ -280,7 +362,7 @@ describe('PlanningPage', () => {
 
     render(<PlanningPage client={client as never} roles={['marin']} />);
 
-    expect(await screen.findByText('Paul DURAND')).toBeInTheDocument();
+    expect((await screen.findAllByText('Paul DURAND')).length).toBeGreaterThan(0);
     expect(screen.getByText('Lecture seule')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter navire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter affectation' })).not.toBeInTheDocument();

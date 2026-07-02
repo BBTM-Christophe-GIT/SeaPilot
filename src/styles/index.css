@@ -1060,6 +1060,52 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.planning-filter-panel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.planning-filter-panel label {
+  display: grid;
+  gap: 6px;
+  color: #354259;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.planning-filter-panel input,
+.planning-filter-panel select {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #172033;
+  background: #fbfcfe;
+}
+
+.planning-filter-panel input:focus,
+.planning-filter-panel select:focus {
+  border-color: #0c66b7;
+  outline: 3px solid rgba(12, 102, 183, 0.16);
+}
+
+.planning-filter-panel button {
+  min-height: 38px;
+  border: 1px solid #c9d5e3;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #0c3f78;
+  background: #ffffff;
+  font-weight: 800;
+}
+
 .planning-mode-write,
 .planning-mode-read {
   display: inline-flex;
@@ -1248,7 +1294,8 @@ button:disabled {
   }
 
   .planning-vessel-form,
-  .planning-assignment-form {
+  .planning-assignment-form,
+  .planning-filter-panel {
     grid-template-columns: 1fr;
   }
 }
