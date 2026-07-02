@@ -592,6 +592,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                       <th scope="col">Fonction</th>
                       <th scope="col">Statut</th>
                       <th scope="col">Bordee</th>
+                      <th scope="col">Annee</th>
+                      <th scope="col">Commentaires</th>
+                      <th scope="col">Slot365</th>
+                      <th scope="col">Slot source</th>
                       <th scope="col">Source</th>
                     </tr>
                   </thead>
@@ -604,7 +608,11 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                         <td>{displayText(period.functionLabel)}</td>
                         <td>{displayText(period.sailorStatus)}</td>
                         <td>{displayText(period.watchGroup)}</td>
+                        <td>{period.yearNumber ?? '-'}</td>
+                        <td>{displayText(period.comments)}</td>
                         <td>{displayText(period.slot365SourceKey)}</td>
+                        <td>{period.slot365SourceId ? `Source #${period.slot365SourceId}` : '-'}</td>
+                        <td>{displayText(period.sourceLabel)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -624,10 +632,18 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                       <th scope="col">Marin</th>
                       <th scope="col">Navire</th>
                       <th scope="col">Capitaine</th>
+                      <th scope="col">Debarque</th>
+                      <th scope="col">Depart</th>
                       <th scope="col">Statut jour</th>
                       <th scope="col">Fonction</th>
+                      <th scope="col">Rythme</th>
+                      <th scope="col">Bordee</th>
                       <th scope="col">Heures</th>
+                      <th scope="col">Repos 24h</th>
+                      <th scope="col">Cumul 7j</th>
+                      <th scope="col">Commentaires</th>
                       <th scope="col">Slot365</th>
+                      <th scope="col">Source</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -637,10 +653,18 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                         <td>{day.crewName}</td>
                         <td>{day.vesselName}</td>
                         <td>{displayText(day.captainName)}</td>
+                        <td>{displayText(day.disembarkOn)}</td>
+                        <td>{displayText(day.departureOn)}</td>
                         <td>{displayText(day.dayStatus)}</td>
                         <td>{displayText(day.functionLabel)}</td>
+                        <td>{displayText(day.rhythmLabel)}</td>
+                        <td>{displayText(day.watchGroup)}</td>
                         <td>{displayHours(day.workedHours)}</td>
+                        <td>{displayHours(day.rest24h)}</td>
+                        <td>{displayHours(day.cumulative7d)}</td>
+                        <td>{displayText(day.comments)}</td>
                         <td>{displayText(day.slot365)}</td>
+                        <td>{displayText(day.sourceLabel)}</td>
                       </tr>
                     ))}
                   </tbody>

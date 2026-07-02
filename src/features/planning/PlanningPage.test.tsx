@@ -249,8 +249,18 @@ describe('PlanningPage', () => {
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Travaille').length).toBeGreaterThan(0);
-    expect(screen.getByText('2026-07-01')).toBeInTheDocument();
+    expect(screen.getAllByText('2026-07-01').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-07-01 au 2026-07-14')).toBeInTheDocument();
+    expect(screen.getByText('2026-07-14')).toBeInTheDocument();
+    expect(screen.getByText('12h')).toBeInTheDocument();
+    expect(screen.getAllByText('A').length).toBeGreaterThan(0);
+    expect(screen.getByText('10.5 h')).toBeInTheDocument();
+    expect(screen.getByText('14 h')).toBeInTheDocument();
+    expect(screen.getByText('60 h')).toBeInTheDocument();
+    expect(screen.getByText('RAS')).toBeInTheDocument();
+    expect(screen.getByText('Rotation A')).toBeInTheDocument();
+    expect(screen.getByText('Source #200')).toBeInTheDocument();
+    expect(screen.getAllByText('sharepoint').length).toBeGreaterThan(0);
   });
 
   it('filters planning by vessel, sailor, period and status', async () => {
