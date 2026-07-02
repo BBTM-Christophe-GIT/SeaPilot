@@ -150,7 +150,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 ### Deploiement
 
 - Pousser les migrations sur le projet Supabase Cloud de production.
-- Configurer `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` dans Vercel pour Preview si les previews doivent utiliser Supabase.
 - Creer les comptes utilisateurs et affecter les roles.
 - Realiser une recette avec comptes `Admin`, `Direction`, `Armement`, `Capitaine`, `Marin`.
 
@@ -160,4 +159,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - URL stable de production `https://sea-pilot-ten.vercel.app`.
 - `VITE_APP_BASE_URL=https://sea-pilot-ten.vercel.app` configure dans Vercel pour Production et Preview.
 - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Production.
+- `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Preview.
+- Supabase CLI installee et mise a jour en version `2.109.0`.
 - Deploiement production verifie jusqu'a l'ecran `/login`.

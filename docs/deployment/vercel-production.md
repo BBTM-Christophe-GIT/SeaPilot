@@ -32,9 +32,11 @@ As of 2026-07-02:
 - `VITE_APP_BASE_URL=https://sea-pilot-ten.vercel.app` is configured in Vercel for Production and Preview.
 - `VITE_SUPABASE_URL` is configured in Vercel for Production.
 - `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Production.
+- `VITE_SUPABASE_URL` is configured in Vercel for Preview.
+- `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Preview.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
-- Preview still needs its own `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` values if previews should connect to Supabase.
-- The Supabase CLI on this workstation is not logged in to Supabase Cloud.
+- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
+- The Supabase CLI is not logged in to Supabase Cloud.
 - Vercel does not expose the database password or service-role key through `vercel env pull`, so production migrations still need a Supabase CLI login, a `SUPABASE_ACCESS_TOKEN`, or the production Postgres connection string.
 
 ## Required Supabase Values
@@ -67,7 +69,7 @@ npx vercel deploy --prod --yes --scope bbtm-app
 
 After each env var change, redeploy because Vite reads `VITE_*` variables at build time.
 
-Production already has these three Vite variables configured. The commands above are kept for reconfiguration or for Preview.
+Production and Preview already have these three Vite variables configured. The commands above are kept for reconfiguration.
 
 ## Supabase Auth URL Settings
 
@@ -82,7 +84,16 @@ Configure Supabase Auth URL settings:
 After creating the Supabase production project and authenticating the CLI:
 
 ```powershell
-supabase login
+supabase login --token "<supabase-access-token>"
+supabase link --project-ref <production-project-ref>
+supabase db push
+```
+
+In a non-interactive terminal, `supabase login` requires `--token` or the `SUPABASE_ACCESS_TOKEN` environment variable:
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN = "<supabase-access-token>"
+supabase projects list
 supabase link --project-ref <production-project-ref>
 supabase db push
 ```
