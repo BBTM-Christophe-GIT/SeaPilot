@@ -42,13 +42,24 @@ Recommended hosting target for the Vite application:
 
 The repository includes `vercel.json` so direct links like `/login` and `/modules/planning` are rewritten to `index.html`.
 
-As of the first Vercel check:
+As of the latest Vercel check on 2026-07-02:
 
 - Project `bbtm-app/sea-pilot` exists and is linked locally.
-- Preview deployment from `codex/seapilot-foundation` is building successfully.
+- Preview deployment from `codex/seapilot-foundation` is building successfully and is ready.
 - `app.bbtm.fr` has been added to the Vercel project.
 - `VITE_APP_BASE_URL=https://app.bbtm.fr` is configured in Vercel for Production and Preview.
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` still need production values.
+- Vercel currently protects the `.vercel.app` deployments. Anonymous requests to Preview and Production aliases redirect to `https://vercel.com/login`, so these URLs are useful for project verification but not yet for normal SeaPilot users.
+- The latest Preview URL is `https://sea-pilot-l9p8bw2hg-bbtm-app.vercel.app`.
+- The stable branch Preview alias is `https://sea-pilot-git-codex-seapilot-foundation-bbtm-app.vercel.app`.
+- The current Production alias is `https://sea-pilot-bbtm-app.vercel.app`, but it is also protected by Vercel.
+
+To make the online app usable while keeping SeaPilot private through Supabase login:
+
+1. Configure the production Supabase project and add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel for Production and Preview.
+2. Disable or relax Vercel Deployment Protection for the production domain/aliases that should be reachable by BBTM users.
+3. Point `app.bbtm.fr` DNS to the Vercel target and verify the domain in Vercel.
+4. Confirm the app opens to `/login`; Supabase Auth then enforces the private application access.
 
 If deploying through the Vercel dashboard:
 

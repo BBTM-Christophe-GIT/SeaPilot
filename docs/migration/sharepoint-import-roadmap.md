@@ -137,10 +137,10 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
   - Projets
   - Achats
   - Audit / plan d'action
-- Ajouter un ecran admin de suivi d'import.
 
 ### Application - deja livre
 
+- Ecran admin de suivi d'import SharePoint avec sources, modules, tables cibles, priorites et statut de confirmation.
 - Module Planning enrichi avec filtres par navire, marin, periode et statut.
 - Documents RH enrichis avec dates, source, notes et lien vers le fichier importe.
 - Documents RH importes sans collaborateur rattache visibles par les roles bureau avec compteur de reconciliation.

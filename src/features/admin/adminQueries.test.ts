@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assignUserRole, fetchAdminUsers, mapAdminProfileRows, removeUserRole } from './adminQueries';
+import {
+  assignUserRole,
+  fetchAdminUsers,
+  fetchSharePointImportSources,
+  mapAdminProfileRows,
+  mapSharePointSourceRows,
+  removeUserRole,
+} from './adminQueries';
 
 describe('mapAdminProfileRows', () => {
   it('maps profiles and filters unknown roles', () => {
@@ -83,6 +90,72 @@ describe('fetchAdminUsers', () => {
     };
 
     await expect(fetchAdminUsers(client as never)).rejects.toThrow(error);
+  });
+});
+
+describe('mapSharePointSourceRows', () => {
+  it('maps SharePoint source rows for import monitoring', () => {
+    expect(
+      mapSharePointSourceRows([
+        {
+          key: 'list-rh-personnel-bbtm',
+          title: 'RH - Personnel BBTM',
+          source_type: 'list',
+          module_key: 'humanResources',
+          target_table: 'people',
+          import_priority: 20,
+          confirmed: true,
+        },
+      ]),
+    ).toEqual([
+      {
+        key: 'list-rh-personnel-bbtm',
+        title: 'RH - Personnel BBTM',
+        sourceType: 'list',
+        moduleKey: 'humanResources',
+        targetTable: 'people',
+        importPriority: 20,
+        confirmed: true,
+      },
+    ]);
+  });
+});
+
+describe('fetchSharePointImportSources', () => {
+  it('loads SharePoint sources ordered by import priority then title', async () => {
+    const orderByTitle = vi.fn().mockResolvedValue({
+      data: [
+        {
+          key: 'list-rh-personnel-bbtm',
+          title: 'RH - Personnel BBTM',
+          source_type: 'list',
+          module_key: 'humanResources',
+          target_table: 'people',
+          import_priority: 20,
+          confirmed: true,
+        },
+      ],
+      error: null,
+    });
+    const orderByPriority = vi.fn().mockReturnValue({ order: orderByTitle });
+    const select = vi.fn().mockReturnValue({ order: orderByPriority });
+    const from = vi.fn().mockReturnValue({ select });
+
+    await expect(fetchSharePointImportSources({ from } as never)).resolves.toEqual([
+      {
+        key: 'list-rh-personnel-bbtm',
+        title: 'RH - Personnel BBTM',
+        sourceType: 'list',
+        moduleKey: 'humanResources',
+        targetTable: 'people',
+        importPriority: 20,
+        confirmed: true,
+      },
+    ]);
+    expect(from).toHaveBeenCalledWith('sharepoint_sources');
+    expect(select).toHaveBeenCalledWith('key, title, source_type, module_key, target_table, import_priority, confirmed');
+    expect(orderByPriority).toHaveBeenCalledWith('import_priority', { ascending: true });
+    expect(orderByTitle).toHaveBeenCalledWith('title', { ascending: true });
   });
 });
 

@@ -12,11 +12,31 @@ interface AdminProfileRow {
   user_roles: AdminRoleRow[] | null;
 }
 
+interface SharePointSourceRow {
+  key: string;
+  title: string;
+  source_type: string;
+  module_key: string;
+  target_table: string | null;
+  import_priority: number;
+  confirmed: boolean;
+}
+
 export interface AdminUser {
   id: string;
   email: string;
   displayName: string;
   roles: RoleKey[];
+}
+
+export interface SharePointImportSource {
+  key: string;
+  title: string;
+  sourceType: string;
+  moduleKey: string;
+  targetTable: string;
+  importPriority: number;
+  confirmed: boolean;
 }
 
 function isRoleKey(role: string): role is RoleKey {
@@ -39,6 +59,18 @@ export function mapAdminProfileRows(rows: AdminProfileRow[]): AdminUser[] {
   });
 }
 
+export function mapSharePointSourceRows(rows: SharePointSourceRow[]): SharePointImportSource[] {
+  return rows.map((row) => ({
+    key: row.key,
+    title: row.title,
+    sourceType: row.source_type,
+    moduleKey: row.module_key,
+    targetTable: row.target_table || '',
+    importPriority: row.import_priority,
+    confirmed: row.confirmed,
+  }));
+}
+
 export async function fetchAdminUsers(client: SupabaseClient): Promise<AdminUser[]> {
   const { data, error } = await client
     .from('profiles')
@@ -50,6 +82,20 @@ export async function fetchAdminUsers(client: SupabaseClient): Promise<AdminUser
   }
 
   return mapAdminProfileRows((data || []) as AdminProfileRow[]);
+}
+
+export async function fetchSharePointImportSources(client: SupabaseClient): Promise<SharePointImportSource[]> {
+  const { data, error } = await client
+    .from('sharepoint_sources')
+    .select('key, title, source_type, module_key, target_table, import_priority, confirmed')
+    .order('import_priority', { ascending: true })
+    .order('title', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapSharePointSourceRows((data || []) as SharePointSourceRow[]);
 }
 
 export async function assignUserRole(client: SupabaseClient, userId: string, roleKey: RoleKey): Promise<void> {

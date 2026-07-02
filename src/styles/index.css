@@ -298,6 +298,17 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.admin-section-header {
+  margin-top: 10px;
+}
+
+.admin-section-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+}
+
 .admin-summary {
   display: inline-flex;
   min-width: 74px;
@@ -390,6 +401,27 @@ button:disabled {
   color: #66758a;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.admin-success-chip,
+.admin-warning-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-success-chip {
+  color: #115333;
+  background: #dff7eb;
+}
+
+.admin-warning-chip {
+  color: #8a4a00;
+  background: #fff2d9;
 }
 
 .role-toggle {

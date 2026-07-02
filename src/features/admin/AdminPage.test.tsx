@@ -11,24 +11,56 @@ function createProfilesQuery(data: unknown[]) {
   };
 }
 
-describe('AdminPage', () => {
-  it('renders users and their assigned roles', async () => {
-    const client = {
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'profiles') {
-          return createProfilesQuery([
+function createSharePointSourcesQuery(data: unknown[]) {
+  return {
+    select: vi.fn().mockReturnValue({
+      order: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data, error: null }),
+      }),
+    }),
+  };
+}
+
+function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] } = {}) {
+  return {
+    from: vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return createProfilesQuery(
+          options.profiles ?? [
             {
               id: 'user-1',
               email: 'admin@example.test',
               display_name: 'Admin',
               user_roles: [{ role_key: 'admin' }, { role_key: 'direction' }],
             },
-          ]);
-        }
+          ],
+        );
+      }
 
-        throw new Error(`Unexpected table ${table}`);
-      }),
-    };
+      if (table === 'sharepoint_sources') {
+        return createSharePointSourcesQuery(
+          options.sources ?? [
+            {
+              key: 'list-rh-personnel-bbtm',
+              title: 'RH - Personnel BBTM',
+              source_type: 'list',
+              module_key: 'humanResources',
+              target_table: 'people',
+              import_priority: 20,
+              confirmed: true,
+            },
+          ],
+        );
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    }),
+  };
+}
+
+describe('AdminPage', () => {
+  it('renders users and their assigned roles', async () => {
+    const client = createAdminClient();
 
     render(<AdminPage client={client as never} />);
 
@@ -37,6 +69,21 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Direction pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Marin pour admin@example.test' })).not.toBeChecked();
+  });
+
+  it('renders SharePoint import monitoring sources', async () => {
+    const client = createAdminClient();
+
+    render(<AdminPage client={client as never} />);
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Suivi import SharePoint' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Sources SharePoint')).toHaveTextContent('1');
+    expect(screen.getByText('RH - Personnel BBTM')).toBeInTheDocument();
+    expect(screen.getByText('humanResources')).toBeInTheDocument();
+    expect(screen.getByText('people')).toBeInTheDocument();
+    expect(screen.getByText('Priorite 20')).toBeInTheDocument();
+    expect(screen.getByText('Confirmee')).toBeInTheDocument();
   });
 
   it('assigns a role to a user', async () => {
@@ -57,6 +104,10 @@ describe('AdminPage', () => {
 
         if (table === 'user_roles') {
           return { insert };
+        }
+
+        if (table === 'sharepoint_sources') {
+          return createSharePointSourcesQuery([]);
         }
 
         throw new Error(`Unexpected table ${table}`);
@@ -95,6 +146,10 @@ describe('AdminPage', () => {
 
         if (table === 'user_roles') {
           return { delete: deleteRequest };
+        }
+
+        if (table === 'sharepoint_sources') {
+          return createSharePointSourcesQuery([]);
         }
 
         throw new Error(`Unexpected table ${table}`);
