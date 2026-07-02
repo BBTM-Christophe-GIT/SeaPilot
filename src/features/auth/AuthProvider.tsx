@@ -1,7 +1,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { getSupabaseClient } from '../../lib/supabaseClient';
 
 interface AuthContextValue {
   session: Session | null;
@@ -17,7 +17,48 @@ interface AuthProviderProps {
   client?: SupabaseClient;
 }
 
-export function AuthProvider({ children, client = supabase }: AuthProviderProps) {
+function resolveSupabaseClient(client?: SupabaseClient): { client: SupabaseClient } | { error: Error } {
+  if (client) {
+    return { client };
+  }
+
+  try {
+    return { client: getSupabaseClient() };
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error('Configuration Supabase invalide.') };
+  }
+}
+
+function AuthConfigurationError({ error }: { error: Error }) {
+  return (
+    <main className="configuration-page" role="alert">
+      <section className="configuration-panel" aria-label="Configuration application">
+        <div className="login-brand">
+          <strong>BBTM</strong>
+          <span>SeaPilot</span>
+        </div>
+        <h1>Configuration Supabase incomplete</h1>
+        <p>
+          L'application est bien chargee, mais les variables de connexion Supabase ne sont pas encore disponibles pour cet
+          environnement.
+        </p>
+        <code>{error.message}</code>
+      </section>
+    </main>
+  );
+}
+
+export function AuthProvider({ children, client }: AuthProviderProps) {
+  const resolution = useMemo(() => resolveSupabaseClient(client), [client]);
+
+  if ('error' in resolution) {
+    return <AuthConfigurationError error={resolution.error} />;
+  }
+
+  return <ResolvedAuthProvider client={resolution.client}>{children}</ResolvedAuthProvider>;
+}
+
+function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
