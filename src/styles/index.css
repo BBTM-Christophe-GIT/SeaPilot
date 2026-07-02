@@ -525,7 +525,7 @@ button:disabled {
 
 .hr-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 8px;
 }
 
@@ -653,6 +653,54 @@ button:disabled {
   border-radius: 8px;
   overflow: hidden;
   background: #ffffff;
+}
+
+.hr-unassigned-documents {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #f0b777;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffaf2;
+}
+
+.hr-unassigned-documents h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 1.08rem;
+}
+
+.hr-unassigned-documents ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-unassigned-documents li {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #efd2a6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.hr-unassigned-documents li > span {
+  display: grid;
+  gap: 4px;
+}
+
+.hr-unassigned-documents b {
+  color: #172033;
+}
+
+.hr-unassigned-documents small {
+  color: #66758a;
+  font-weight: 700;
 }
 
 .hr-group-heading {
@@ -1300,7 +1348,8 @@ button:disabled {
 
   .hr-kpi-grid,
   .hr-form-grid,
-  .hr-field-grid {
+  .hr-field-grid,
+  .hr-unassigned-documents li {
     grid-template-columns: 1fr;
   }
 

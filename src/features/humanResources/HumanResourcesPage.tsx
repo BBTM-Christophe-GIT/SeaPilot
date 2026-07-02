@@ -176,12 +176,20 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   );
   const visiblePersonIds = useMemo(() => new Set(visiblePeople.map((person) => person.id)), [visiblePeople]);
   const visibleDocuments = useMemo(
-    () => documents.filter((document) => visiblePersonIds.has(document.personId)),
-    [documents, visiblePersonIds],
+    () =>
+      documents.filter(
+        (document) =>
+          (document.personId !== null && visiblePersonIds.has(document.personId)) || (isManager && document.personId === null),
+      ),
+    [documents, isManager, visiblePersonIds],
   );
   const dashboard = useMemo(
     () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
     [visibleDocuments, visiblePeople],
+  );
+  const unassignedDocuments = useMemo(
+    () => (isManager ? visibleDocuments.filter((document) => document.personId === null) : []),
+    [isManager, visibleDocuments],
   );
   const selectedPerson = useMemo(
     () => people.find((person) => person.id === selectedPersonId) || null,
@@ -278,6 +286,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <MetricCard label="Sedentaires" value={dashboard.metrics.sedentaryPeople} />
         <MetricCard label="Navigants" value={dashboard.metrics.seafarerPeople} />
         <MetricCard label="Stagiaires" value={dashboard.metrics.trainees} />
+        {isManager ? (
+          <MetricCard tone="warning" label="Documents a rattacher" value={dashboard.metrics.unassignedDocuments} />
+        ) : null}
         <MetricCard
           tone="warning"
           icon={<AlertTriangle aria-hidden="true" size={18} />}
@@ -314,6 +325,8 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </label>
         <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
       </div>
+
+      {unassignedDocuments.length > 0 ? <UnassignedDocumentsPanel documents={unassignedDocuments} /> : null}
 
       {dashboard.groups.length === 0 ? (
         <div className="admin-state">Aucun collaborateur a afficher.</div>
@@ -653,5 +666,42 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function UnassignedDocumentsPanel({ documents }: { documents: HrDocumentRecord[] }) {
+  return (
+    <section className="hr-unassigned-documents" aria-label="Documents RH a rattacher">
+      <div>
+        <p className="module-family">Import SharePoint</p>
+        <h2>Documents RH a rattacher</h2>
+      </div>
+      <ul>
+        {documents.map((document) => (
+          <li key={document.id}>
+            <span>
+              <strong>{document.title}</strong>
+              <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
+            </span>
+            <span>
+              <b>{document.personName || 'Collaborateur non renseigne'}</b>
+              {document.personSharePointItemId ? <small>SharePoint ID {document.personSharePointItemId}</small> : null}
+            </span>
+            <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
+            {document.fileUrl ? (
+              <a
+                aria-label={`Ouvrir le fichier ${document.title}`}
+                className="hr-document-link"
+                href={document.fileUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Ouvrir le fichier
+              </a>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

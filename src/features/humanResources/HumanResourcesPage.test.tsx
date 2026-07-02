@@ -38,10 +38,28 @@ const inactivePerson = {
   active: false,
 };
 
-const documents = [
+interface HrDocumentFixture {
+  id: number;
+  person_id: number | null;
+  person_name: string;
+  person_sharepoint_item_id: string;
+  category_key: string;
+  title: string;
+  status: string;
+  issued_on: string;
+  expires_on: string;
+  requires_captain_validation: boolean;
+  source_label: string;
+  notes: string | null;
+  file_url: string | null;
+}
+
+const documents: HrDocumentFixture[] = [
   {
     id: 10,
     person_id: 1,
+    person_name: 'Jean MARTIN',
+    person_sharepoint_item_id: '1',
     category_key: 'medical_visit',
     title: 'Visite medicale',
     status: 'renew_due',
@@ -55,6 +73,8 @@ const documents = [
   {
     id: 11,
     person_id: 1,
+    person_name: 'Jean MARTIN',
+    person_sharepoint_item_id: '1',
     category_key: 'certificate',
     title: 'CGO',
     status: 'expired',
@@ -67,6 +87,16 @@ const documents = [
   },
 ];
 
+const unassignedDocument: HrDocumentFixture = {
+  ...documents[0],
+  id: 12,
+  person_id: null,
+  person_name: 'Julien LECOCQ',
+  person_sharepoint_item_id: '42',
+  title: 'Brevet pont a rattacher',
+  file_url: 'https://sharepoint.test/brevet-pont.pdf',
+};
+
 function createOrderedSelect(data: unknown[]) {
   return {
     select: vi.fn().mockReturnValue({
@@ -77,7 +107,7 @@ function createOrderedSelect(data: unknown[]) {
   };
 }
 
-function createDocumentsSelect(data = documents) {
+function createDocumentsSelect(data: HrDocumentFixture[] = documents) {
   return {
     select: vi.fn().mockReturnValue({
       order: vi.fn().mockResolvedValue({ data, error: null }),
@@ -85,7 +115,7 @@ function createDocumentsSelect(data = documents) {
   };
 }
 
-function createClient(people = [activePerson, inactivePerson], hrDocuments = documents) {
+function createClient(people = [activePerson, inactivePerson], hrDocuments: HrDocumentFixture[] = documents) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'people') {
@@ -181,6 +211,22 @@ describe('HumanResourcesPage', () => {
     );
   });
 
+  it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {
+    render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['armement']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des Ressources Humaines' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Documents RH')).toHaveTextContent('3');
+    expect(screen.getByLabelText('Documents a rattacher')).toHaveTextContent('1');
+    expect(screen.getByRole('region', { name: 'Documents RH a rattacher' })).toBeInTheDocument();
+    expect(screen.getByText('Brevet pont a rattacher')).toBeInTheDocument();
+    expect(screen.getByText('Julien LECOCQ')).toBeInTheDocument();
+    expect(screen.getByText('SharePoint ID 42')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Brevet pont a rattacher' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/brevet-pont.pdf',
+    );
+  });
+
   it('creates a personnel record for office roles', async () => {
     const user = userEvent.setup();
     const createdPerson = {
@@ -250,10 +296,12 @@ describe('HumanResourcesPage', () => {
   });
 
   it('keeps marins in read-only mode', async () => {
-    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} roles={['marin']} />);
+    render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['marin']} />);
 
     expect(await screen.findByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
     expect(screen.getByText('Lecture seule')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
+    expect(screen.queryByText('Brevet pont a rattacher')).not.toBeInTheDocument();
   });
 });

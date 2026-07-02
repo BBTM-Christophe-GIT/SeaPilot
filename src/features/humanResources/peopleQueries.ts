@@ -25,6 +25,8 @@ const PEOPLE_SELECT = [
 const HR_DOCUMENT_SELECT = [
   'id',
   'person_id',
+  'person_name',
+  'person_sharepoint_item_id',
   'category_key',
   'title',
   'status',
@@ -73,7 +75,9 @@ interface PersonRow {
 
 interface HrDocumentRow {
   id: number;
-  person_id: number;
+  person_id: number | null;
+  person_name: string | null;
+  person_sharepoint_item_id: string | null;
   category_key: string | null;
   title: string;
   status: string | null;
@@ -109,7 +113,9 @@ export interface PersonRecord {
 
 export interface HrDocumentRecord {
   id: number;
-  personId: number;
+  personId: number | null;
+  personName: string;
+  personSharePointItemId: string;
   categoryKey: string;
   title: string;
   status: HrDocumentStatus;
@@ -148,6 +154,7 @@ export interface HumanResourcesDashboardMetrics {
   renewalDue: number;
   urgent: number;
   missing: number;
+  unassignedDocuments: number;
 }
 
 export interface HumanResourcesDashboard {
@@ -247,6 +254,8 @@ export function mapHrDocumentRows(rows: HrDocumentRow[]): HrDocumentRecord[] {
   return rows.map((row) => ({
     id: row.id,
     personId: row.person_id,
+    personName: nullableText(row.person_name),
+    personSharePointItemId: nullableText(row.person_sharepoint_item_id),
     categoryKey: row.category_key || 'administrative',
     title: row.title,
     status: normalizeStatus(row.status),
@@ -294,6 +303,10 @@ export function buildHumanResourcesDashboard(
   documents: HrDocumentRecord[],
 ): HumanResourcesDashboard {
   const documentsByPersonId = documents.reduce<Map<number, HrDocumentRecord[]>>((result, document) => {
+    if (document.personId === null) {
+      return result;
+    }
+
     result.set(document.personId, (result.get(document.personId) || []).concat(document));
     return result;
   }, new Map<number, HrDocumentRecord[]>());
@@ -325,6 +338,7 @@ export function buildHumanResourcesDashboard(
       renewalDue: documents.filter(isHrDocumentRenewalDue).length,
       urgent: documents.filter(isHrDocumentUrgent).length,
       missing: documents.filter((document) => document.status === 'missing').length,
+      unassignedDocuments: documents.filter((document) => document.personId === null).length,
     },
     groups: [...groupMap.entries()]
       .map(([label, peopleInGroup]) => ({

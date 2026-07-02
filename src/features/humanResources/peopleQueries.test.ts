@@ -34,6 +34,8 @@ const personRow = {
 const documentRow = {
   id: 10,
   person_id: 1,
+  person_name: 'Jean MARTIN',
+  person_sharepoint_item_id: '1',
   category_key: 'medical_visit',
   title: 'Visite medicale',
   status: 'renew_due',
@@ -126,6 +128,8 @@ describe('mapHrDocumentRows', () => {
       {
         id: 10,
         personId: 1,
+        personName: 'Jean MARTIN',
+        personSharePointItemId: '1',
         categoryKey: 'medical_visit',
         title: 'Visite medicale',
         status: 'renew_due',
@@ -136,6 +140,16 @@ describe('mapHrDocumentRows', () => {
         notes: 'Validation capitaine requise',
         fileUrl: 'https://sharepoint.test/visite-medicale.pdf',
       },
+    ]);
+  });
+
+  it('keeps imported documents without a resolved collaborator link', () => {
+    expect(mapHrDocumentRows([{ ...documentRow, person_id: null, person_name: 'Julien LECOCQ', person_sharepoint_item_id: '42' }])).toEqual([
+      expect.objectContaining({
+        personId: null,
+        personName: 'Julien LECOCQ',
+        personSharePointItemId: '42',
+      }),
     ]);
   });
 });
@@ -183,6 +197,7 @@ describe('buildHumanResourcesDashboard', () => {
       renewalDue: 2,
       urgent: 2,
       missing: 1,
+      unassignedDocuments: 0,
     });
     expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Direction', 'Matelot Polyvalent']);
     expect(dashboard.groups[0].people[0].categorySummaries).toEqual([
