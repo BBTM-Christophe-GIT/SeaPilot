@@ -17,11 +17,33 @@ const activePerson = {
   sailor_number: '2009574',
   m365_account: 'jean.martin@bbtm.fr',
   phone: '+33 1 02 03 04 05',
+  postal_address: '1 quai des pilotes, 76000 Rouen',
+  birth_date: '1985-04-12',
+  birth_place: 'Rouen',
+  identity_document_number: 'ID-12345',
+  identity_document_type: 'Passeport',
   contract_type: 'CDI',
   hired_on: '2024-01-01',
   departed_on: null,
+  departure_reason: null,
   emergency_contact_name: 'Marie MARTIN',
+  emergency_contact_relationship: 'Conjointe',
   emergency_contact_phone: '+33 6 00 00 00 00',
+  emergency_contact_address: '2 rue du Port, 76000 Rouen',
+  waist_size: 84,
+  chest_size: 102,
+  full_height_size: 178,
+  inseam_size: 82,
+  hip_size: 96,
+  weight_kg: 78,
+  shoe_size: 43,
+  coverall_size: 'L',
+  pants_size: '42',
+  jacket_size: 'L',
+  deck_certificate_label: 'Capitaine 200',
+  engine_certificate_label: 'Mecanicien 250 kW',
+  crane_training_on: '2025-03-10',
+  crane_induction_on: '2025-03-12',
   active: true,
 };
 
@@ -182,6 +204,29 @@ describe('HumanResourcesPage', () => {
     expect(within(dialog).getByText('2009574')).toBeInTheDocument();
     expect(within(dialog).getByText('Compte M365')).toBeInTheDocument();
     expect(within(dialog).getByText('jean.martin@bbtm.fr')).toBeInTheDocument();
+    expect(within(dialog).getByText('Date naissance')).toBeInTheDocument();
+    expect(within(dialog).getByText('1985-04-12')).toBeInTheDocument();
+    expect(within(dialog).getByText('Lieu naissance')).toBeInTheDocument();
+    expect(within(dialog).getByText('Rouen')).toBeInTheDocument();
+    expect(within(dialog).getByText('Document identite')).toBeInTheDocument();
+    expect(within(dialog).getByText('Passeport ID-12345')).toBeInTheDocument();
+    expect(within(dialog).getByText('Adresse postale')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 quai des pilotes, 76000 Rouen')).toBeInTheDocument();
+    expect(within(dialog).getByText('Lien parente')).toBeInTheDocument();
+    expect(within(dialog).getByText('Conjointe')).toBeInTheDocument();
+    expect(within(dialog).getByText('Adresse urgence')).toBeInTheDocument();
+    expect(within(dialog).getByText('2 rue du Port, 76000 Rouen')).toBeInTheDocument();
+    expect(within(dialog).getByText('Brevet Pont')).toBeInTheDocument();
+    expect(within(dialog).getByText('Brevet Machine')).toBeInTheDocument();
+    expect(within(dialog).getByText('Mecanicien 250 kW')).toBeInTheDocument();
+    expect(within(dialog).getByText('Formation grutage')).toBeInTheDocument();
+    expect(within(dialog).getByText('2025-03-10')).toBeInTheDocument();
+    expect(within(dialog).getByText('Tour de taille')).toBeInTheDocument();
+    expect(within(dialog).getByText('84')).toBeInTheDocument();
+    expect(within(dialog).getByText('Pointure')).toBeInTheDocument();
+    expect(within(dialog).getByText('43')).toBeInTheDocument();
+    expect(within(dialog).getByText('Combinaison')).toBeInTheDocument();
+    expect(within(dialog).getByText('Veste')).toBeInTheDocument();
   });
 
   it('shows HR document metadata and source file links in the personnel file', async () => {

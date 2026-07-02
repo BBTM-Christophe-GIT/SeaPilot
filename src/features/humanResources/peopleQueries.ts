@@ -14,11 +14,33 @@ const PEOPLE_SELECT = [
   'sailor_number',
   'm365_account',
   'phone',
+  'postal_address',
+  'birth_date',
+  'birth_place',
+  'identity_document_number',
+  'identity_document_type',
   'contract_type',
   'hired_on',
   'departed_on',
+  'departure_reason',
   'emergency_contact_name',
+  'emergency_contact_relationship',
   'emergency_contact_phone',
+  'emergency_contact_address',
+  'waist_size',
+  'chest_size',
+  'full_height_size',
+  'inseam_size',
+  'hip_size',
+  'weight_kg',
+  'shoe_size',
+  'coverall_size',
+  'pants_size',
+  'jacket_size',
+  'deck_certificate_label',
+  'engine_certificate_label',
+  'crane_training_on',
+  'crane_induction_on',
   'active',
 ].join(', ');
 
@@ -65,11 +87,33 @@ interface PersonRow {
   sailor_number: string | null;
   m365_account: string | null;
   phone: string | null;
+  postal_address: string | null;
+  birth_date: string | null;
+  birth_place: string | null;
+  identity_document_number: string | null;
+  identity_document_type: string | null;
   contract_type: string | null;
   hired_on: string | null;
   departed_on: string | null;
+  departure_reason: string | null;
   emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
   emergency_contact_phone: string | null;
+  emergency_contact_address: string | null;
+  waist_size: number | string | null;
+  chest_size: number | string | null;
+  full_height_size: number | string | null;
+  inseam_size: number | string | null;
+  hip_size: number | string | null;
+  weight_kg: number | string | null;
+  shoe_size: number | string | null;
+  coverall_size: string | null;
+  pants_size: string | null;
+  jacket_size: string | null;
+  deck_certificate_label: string | null;
+  engine_certificate_label: string | null;
+  crane_training_on: string | null;
+  crane_induction_on: string | null;
   active: boolean;
 }
 
@@ -103,11 +147,33 @@ export interface PersonRecord {
   sailorNumber: string;
   m365Account: string;
   phone: string;
+  postalAddress: string;
+  birthDate: string;
+  birthPlace: string;
+  identityDocumentNumber: string;
+  identityDocumentType: string;
   contractType: string;
   hiredOn: string;
   departedOn: string;
+  departureReason: string;
   emergencyContactName: string;
+  emergencyContactRelationship: string;
   emergencyContactPhone: string;
+  emergencyContactAddress: string;
+  waistSize: string;
+  chestSize: string;
+  fullHeightSize: string;
+  inseamSize: string;
+  hipSize: string;
+  weightKg: string;
+  shoeSize: string;
+  coverallSize: string;
+  pantsSize: string;
+  jacketSize: string;
+  deckCertificateLabel: string;
+  engineCertificateLabel: string;
+  craneTrainingOn: string;
+  craneInductionOn: string;
   active: boolean;
 }
 
@@ -180,8 +246,8 @@ export interface CreatePersonInput {
   m365Account?: string;
 }
 
-function nullableText(value: string | null | undefined): string {
-  return value || '';
+function nullableText(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function optionalText(value: string | undefined): string | null {
@@ -241,11 +307,33 @@ export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
     sailorNumber: nullableText(row.sailor_number),
     m365Account: nullableText(row.m365_account),
     phone: nullableText(row.phone),
+    postalAddress: nullableText(row.postal_address),
+    birthDate: nullableText(row.birth_date),
+    birthPlace: nullableText(row.birth_place),
+    identityDocumentNumber: nullableText(row.identity_document_number),
+    identityDocumentType: nullableText(row.identity_document_type),
     contractType: nullableText(row.contract_type),
     hiredOn: nullableText(row.hired_on),
     departedOn: nullableText(row.departed_on),
+    departureReason: nullableText(row.departure_reason),
     emergencyContactName: nullableText(row.emergency_contact_name),
+    emergencyContactRelationship: nullableText(row.emergency_contact_relationship),
     emergencyContactPhone: nullableText(row.emergency_contact_phone),
+    emergencyContactAddress: nullableText(row.emergency_contact_address),
+    waistSize: nullableText(row.waist_size),
+    chestSize: nullableText(row.chest_size),
+    fullHeightSize: nullableText(row.full_height_size),
+    inseamSize: nullableText(row.inseam_size),
+    hipSize: nullableText(row.hip_size),
+    weightKg: nullableText(row.weight_kg),
+    shoeSize: nullableText(row.shoe_size),
+    coverallSize: nullableText(row.coverall_size),
+    pantsSize: nullableText(row.pants_size),
+    jacketSize: nullableText(row.jacket_size),
+    deckCertificateLabel: nullableText(row.deck_certificate_label),
+    engineCertificateLabel: nullableText(row.engine_certificate_label),
+    craneTrainingOn: nullableText(row.crane_training_on),
+    craneInductionOn: nullableText(row.crane_induction_on),
     active: row.active,
   }));
 }

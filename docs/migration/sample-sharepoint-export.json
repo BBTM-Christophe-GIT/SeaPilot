@@ -24,6 +24,30 @@
             "Pr_x00e9_nom": "Julien",
             "Fonction": "Fleet Technical Manager",
             "Grade": "Officier",
+            "Role": "Navigant",
+            "Registre": "RIF",
+            "Sexe": "Homme",
+            "NumerodeMarin": "2009574",
+            "CompteM365": "julien.lecocq@bbtm.fr",
+            "N_x00b0_T_x00e9_l_x00e9_phone": "+33 1 02 03 04 05",
+            "AdressePostale": "1 quai des pilotes, 76000 Rouen",
+            "DatedeNaissance": "1985-04-12",
+            "LieudeNaissance": "Rouen",
+            "TypedeContrat": "CDI",
+            "DatedEmbauche": "2024-01-01",
+            "Pr_x00e9_nometNOMContactdUrgence": "Marie MARTIN",
+            "LienParent_x00e9_ContactdUrgence": "Conjointe",
+            "Num_x00e9_rodet_x00e9_l_x00e9_ph": "+33 6 00 00 00 00",
+            "A_x002d_TourdeTaille": "84",
+            "Poids": "78,5",
+            "Pointure": 43,
+            "TailleCombinaison": "L",
+            "BrevetPont": {
+              "LookupValue": "Capitaine 200"
+            },
+            "BrevetMachine": {
+              "LookupValue": "Mecanicien 250 kW"
+            },
             "Actif": "Oui"
           }
         }

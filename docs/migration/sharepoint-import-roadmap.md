@@ -144,6 +144,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Module Planning enrichi avec filtres par navire, marin, periode et statut.
 - Documents RH enrichis avec dates, source, notes et lien vers le fichier importe.
 - Documents RH importes sans collaborateur rattache visibles par les roles bureau avec compteur de reconciliation.
+- Fiche RH enrichie avec champs collaborateur importes: identite, contrat, coordonnees, urgence, habilitations et mensurations.
 
 ### Deploiement
 

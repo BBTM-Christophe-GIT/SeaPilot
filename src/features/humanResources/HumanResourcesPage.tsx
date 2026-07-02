@@ -120,6 +120,10 @@ function FieldValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+function joinFieldValues(...values: string[]): string {
+  return values.filter(Boolean).join(' ');
+}
+
 export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -594,6 +598,12 @@ function PersonDetailsDialog({
                 <FieldValue label="Numero de marin" value={person.sailorNumber} />
                 <FieldValue label="Compte M365" value={person.m365Account} />
                 <FieldValue label="Email" value={person.email} />
+                <FieldValue label="Date naissance" value={person.birthDate} />
+                <FieldValue label="Lieu naissance" value={person.birthPlace} />
+                <FieldValue
+                  label="Document identite"
+                  value={joinFieldValues(person.identityDocumentType, person.identityDocumentNumber)}
+                />
               </dl>
             </section>
             <section>
@@ -602,19 +612,23 @@ function PersonDetailsDialog({
                 <FieldValue label="Type de contrat" value={person.contractType} />
                 <FieldValue label="Date embauche" value={person.hiredOn} />
                 <FieldValue label="Date depart" value={person.departedOn} />
+                <FieldValue label="Cause depart" value={person.departureReason} />
               </dl>
             </section>
             <section>
               <h3>Coordonnees</h3>
               <dl className="hr-field-grid">
                 <FieldValue label="Telephone" value={person.phone} />
+                <FieldValue label="Adresse postale" value={person.postalAddress} />
               </dl>
             </section>
             <section>
               <h3>Contact urgence</h3>
               <dl className="hr-field-grid">
                 <FieldValue label="Contact" value={person.emergencyContactName} />
+                <FieldValue label="Lien parente" value={person.emergencyContactRelationship} />
                 <FieldValue label="Telephone urgence" value={person.emergencyContactPhone} />
+                <FieldValue label="Adresse urgence" value={person.emergencyContactAddress} />
               </dl>
             </section>
             <section>
@@ -623,11 +637,28 @@ function PersonDetailsDialog({
             </section>
             <section>
               <h3>Sante et habilitations</h3>
+              <dl className="hr-field-grid">
+                <FieldValue label="Brevet Pont" value={person.deckCertificateLabel} />
+                <FieldValue label="Brevet Machine" value={person.engineCertificateLabel} />
+                <FieldValue label="Formation grutage" value={person.craneTrainingOn} />
+                <FieldValue label="Induction grutage" value={person.craneInductionOn} />
+              </dl>
               <DocumentList documents={documents.filter((document) => document.categoryKey !== 'administrative')} />
             </section>
             <section>
               <h3>Tenues et mensurations</h3>
-              <p className="hr-muted">Mensurations et tailles EPI a importer depuis la liste SharePoint RH Personnel BBTM.</p>
+              <dl className="hr-field-grid">
+                <FieldValue label="Tour de taille" value={person.waistSize} />
+                <FieldValue label="Poitrine" value={person.chestSize} />
+                <FieldValue label="Taille totale" value={person.fullHeightSize} />
+                <FieldValue label="Entrejambe" value={person.inseamSize} />
+                <FieldValue label="Tour de hanche" value={person.hipSize} />
+                <FieldValue label="Poids" value={person.weightKg} />
+                <FieldValue label="Pointure" value={person.shoeSize} />
+                <FieldValue label="Combinaison" value={person.coverallSize} />
+                <FieldValue label="Pantalon" value={person.pantsSize} />
+                <FieldValue label="Veste" value={person.jacketSize} />
+              </dl>
             </section>
           </div>
         </div>
