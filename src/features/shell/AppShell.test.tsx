@@ -8,6 +8,8 @@ import { AppShell } from './AppShell';
 
 describe('AppShell', () => {
   it('renders the private application navigation', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+
     const client = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
@@ -33,7 +35,7 @@ describe('AppShell', () => {
 
     expect(await screen.findByText('SeaPilot')).toBeInTheDocument();
     expect(screen.getByText('Projets')).toBeInTheDocument();
-    expect(screen.getByText('app.bbtm.fr')).toBeInTheDocument();
+    expect(screen.getByText('sea-pilot-ten.vercel.app')).toBeInTheDocument();
   });
 
   it('loads roles from Supabase when no override is provided', async () => {

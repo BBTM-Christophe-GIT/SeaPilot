@@ -47,11 +47,17 @@ export function LoginPage() {
         <h1>Connexion a SeaPilot</h1>
         <label>
           Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+          <input autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
         </label>
         <label>
           Mot de passe
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
+          <input
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            required
+          />
         </label>
         {error ? <p className="form-error">{error}</p> : null}
         <button disabled={isSubmitting} type="submit">

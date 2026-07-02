@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { readRequiredEnv } from '../../lib/env';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
 import { APP_MODULES, canAccessModule, getVisibleModules } from '../permissions/moduleAccess';
@@ -27,6 +28,16 @@ function getRequestedModule(pathname: string) {
   }
 
   return APP_MODULES.find((module) => module.key.toLowerCase() === moduleKey.toLowerCase());
+}
+
+function getAppHost() {
+  const appBaseUrl = readRequiredEnv(import.meta.env, 'VITE_APP_BASE_URL');
+
+  try {
+    return new URL(appBaseUrl).host;
+  } catch {
+    return appBaseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  }
 }
 
 export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
@@ -85,6 +96,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
   const visibleModules = getVisibleModules(roles);
   const requestedModule = getRequestedModule(location.pathname);
   const isRequestedModuleDenied = requestedModule ? !canAccessModule(roles, requestedModule.key) : false;
+  const appHost = getAppHost();
 
   if (isLoadingRoles) {
     return <div className="auth-loading">Chargement des droits...</div>;
@@ -123,7 +135,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
       </aside>
       <div className="content-shell">
         <header className="topbar">
-          <span>app.bbtm.fr</span>
+          <span>{appHost}</span>
           <button onClick={() => void signOut()} type="button">
             <LogOut aria-hidden="true" size={16} />
             Deconnexion

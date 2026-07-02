@@ -149,9 +149,15 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 ### Deploiement
 
-- Creer le projet Supabase de production.
-- Configurer les variables d'environnement de production.
-- Deployer l'application sur le domaine `app.bbtm.fr`.
-- Configurer DNS, HTTPS et redirection eventuelle depuis le site existant.
+- Pousser les migrations sur le projet Supabase Cloud de production.
+- Configurer `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` dans Vercel pour Preview si les previews doivent utiliser Supabase.
 - Creer les comptes utilisateurs et affecter les roles.
 - Realiser une recette avec comptes `Admin`, `Direction`, `Armement`, `Capitaine`, `Marin`.
+
+### Deploiement - deja livre
+
+- Projet Vercel `bbtm-app/sea-pilot` cree et lie au depot GitHub.
+- URL stable de production `https://sea-pilot-ten.vercel.app`.
+- `VITE_APP_BASE_URL=https://sea-pilot-ten.vercel.app` configure dans Vercel pour Production et Preview.
+- `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Production.
+- Deploiement production verifie jusqu'a l'ecran `/login`.
