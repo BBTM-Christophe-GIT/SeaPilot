@@ -36,8 +36,14 @@ As of 2026-07-02:
 - `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Preview.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
-- The Supabase CLI is not logged in to Supabase Cloud.
-- Vercel does not expose the database password or service-role key through `vercel env pull`, so production migrations still need a Supabase CLI login, a `SUPABASE_ACCESS_TOKEN`, or the production Postgres connection string.
+- The Supabase CLI is logged in to Supabase Cloud.
+- The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
+- The 16 local migrations have been pushed to Supabase Cloud.
+- `supabase db push --dry-run` reports the remote database is up to date.
+- `supabase db lint --linked` reports no schema errors.
+- Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
+- Supabase Auth redirect allow-list includes the production URL, current Vercel aliases, branch preview alias, and local dev URLs.
+- Supabase public signup is disabled; users must be created or invited administratively.
 
 ## Required Supabase Values
 
@@ -73,15 +79,27 @@ Production and Preview already have these three Vite variables configured. The c
 
 ## Supabase Auth URL Settings
 
-Configure Supabase Auth URL settings:
+Supabase Auth URL settings are currently configured as:
 
 - Site URL: `https://sea-pilot-ten.vercel.app`
-- Redirect URL: `https://sea-pilot-ten.vercel.app/*`
-- Local redirect URL for development: `http://localhost:5173/*`
+- Redirect URLs:
+  - `https://sea-pilot-ten.vercel.app`
+  - `https://sea-pilot-ten.vercel.app/**`
+  - `https://sea-pilot-bbtm-app.vercel.app`
+  - `https://sea-pilot-bbtm-app.vercel.app/**`
+  - `https://sea-pilot-christophe-5647-bbtm-app.vercel.app`
+  - `https://sea-pilot-christophe-5647-bbtm-app.vercel.app/**`
+  - `https://sea-pilot-git-codex-seapilot-foundation-bbtm-app.vercel.app`
+  - `https://sea-pilot-git-codex-seapilot-foundation-bbtm-app.vercel.app/**`
+  - `http://localhost:5173`
+  - `http://localhost:5173/**`
+  - `http://127.0.0.1:5173`
+  - `http://127.0.0.1:5173/**`
+- Public signup: disabled.
 
 ## Supabase Production Migrations
 
-After creating the Supabase production project and authenticating the CLI:
+The current production project is already linked and migrated. For a fresh workstation or a future project, authenticate the CLI and link the project:
 
 ```powershell
 supabase login --token "<supabase-access-token>"
@@ -108,7 +126,7 @@ Then create the first admin user in Supabase Auth and assign roles in `public.us
 
 ## First Production Smoke Check
 
-After the Supabase variables are configured and the deployment is rebuilt:
+After creating the first admin user:
 
 1. Open `https://sea-pilot-ten.vercel.app`.
 2. Confirm unauthenticated users are redirected to `/login`.

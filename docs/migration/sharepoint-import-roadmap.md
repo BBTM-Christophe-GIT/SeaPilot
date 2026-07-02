@@ -125,7 +125,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 ### Base Supabase
 
 - Completer les policies RLS par module.
-- Preparer un environnement Supabase distant et appliquer les migrations.
 
 ### Application
 
@@ -149,7 +148,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 ### Deploiement
 
-- Pousser les migrations sur le projet Supabase Cloud de production.
 - Creer les comptes utilisateurs et affecter les roles.
 - Realiser une recette avec comptes `Admin`, `Direction`, `Armement`, `Capitaine`, `Marin`.
 
@@ -161,4 +159,8 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Production.
 - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Preview.
 - Supabase CLI installee et mise a jour en version `2.109.0`.
+- Projet Supabase Cloud `SeaPilot` (`szlvyrrmvdvhzixilymh`) lie au depot local.
+- 16 migrations appliquees sur Supabase Cloud.
+- Base distante verifiee avec `supabase db push --dry-run` et `supabase db lint --linked`.
+- Supabase Auth configure sur `https://sea-pilot-ten.vercel.app` avec inscriptions publiques desactivees.
 - Deploiement production verifie jusqu'a l'ecran `/login`.
