@@ -17,11 +17,23 @@ Use the record type required by the hosting provider:
 
 Keep the public website and private app records separate so the public site can continue serving from `www.bbtm.fr`.
 
+Current Vercel verification for `app.bbtm.fr` recommends this OVH DNS record:
+
+```text
+Type: CNAME
+Name: app
+Value: 6cf2b7c953ff550f.vercel-dns-017.com.
+```
+
+The current nameservers for `bbtm.fr` remain OVH (`dns18.ovh.net`, `ns18.ovh.net`), which is fine. Do not change nameservers unless intentionally moving all DNS management to Vercel.
+
 ## Vercel Project
 
 Recommended hosting target for the Vite application:
 
 - Repository: `BBTM-Christophe-GIT/SeaPilot`
+- Vercel team: `BBTM` / `bbtm-app`
+- Vercel project: `sea-pilot`
 - Framework preset: `Vite`
 - Install command: `npm ci`
 - Build command: `npm run build`
@@ -29,6 +41,14 @@ Recommended hosting target for the Vite application:
 - Production domain: `app.bbtm.fr`
 
 The repository includes `vercel.json` so direct links like `/login` and `/modules/planning` are rewritten to `index.html`.
+
+As of the first Vercel check:
+
+- Project `bbtm-app/sea-pilot` exists and is linked locally.
+- Preview deployment from `codex/seapilot-foundation` is building successfully.
+- `app.bbtm.fr` has been added to the Vercel project.
+- `VITE_APP_BASE_URL=https://app.bbtm.fr` is configured in Vercel for Production and Preview.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` still need production values.
 
 If deploying through the Vercel dashboard:
 
