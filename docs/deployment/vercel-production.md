@@ -44,6 +44,8 @@ As of 2026-07-02:
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
 - Supabase Auth redirect allow-list includes the production URL, current Vercel aliases, branch preview alias, and local dev URLs.
 - Supabase public signup is disabled; users must be created or invited administratively.
+- The first production admin user `christophe@bbtm.fr` exists in Supabase Auth, has a matching `public.profiles` row, and has the `admin` role in `public.user_roles`.
+- Production login was validated with this admin user, including access to the private navigation and `/modules/planning`.
 
 ## Required Supabase Values
 
@@ -123,6 +125,8 @@ supabase db push --db-url "<production-postgres-connection-string>"
 ```
 
 Then create the first admin user in Supabase Auth and assign roles in `public.user_roles`.
+
+The current first admin user has already been created for `christophe@bbtm.fr`. Do not store passwords in this repository or in deployment notes.
 
 ## First Production Smoke Check
 

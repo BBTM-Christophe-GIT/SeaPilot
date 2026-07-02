@@ -148,7 +148,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 ### Deploiement
 
-- Creer les comptes utilisateurs et affecter les roles.
+- Creer les autres comptes utilisateurs et affecter les roles metier.
 - Realiser une recette avec comptes `Admin`, `Direction`, `Armement`, `Capitaine`, `Marin`.
 
 ### Deploiement - deja livre
@@ -163,4 +163,5 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - 16 migrations appliquees sur Supabase Cloud.
 - Base distante verifiee avec `supabase db push --dry-run` et `supabase db lint --linked`.
 - Supabase Auth configure sur `https://sea-pilot-ten.vercel.app` avec inscriptions publiques desactivees.
-- Deploiement production verifie jusqu'a l'ecran `/login`.
+- Premier compte admin `christophe@bbtm.fr` cree dans Supabase Auth avec profil applicatif et role `admin`.
+- Deploiement production verifie avec connexion admin, navigation privee et acces au module `/modules/planning`.
