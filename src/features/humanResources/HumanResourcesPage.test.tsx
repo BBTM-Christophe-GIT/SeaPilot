@@ -50,6 +50,7 @@ const documents = [
     requires_captain_validation: true,
     source_label: 'SharePoint',
     notes: 'Validation capitaine requise',
+    file_url: 'https://sharepoint.test/visite-medicale.pdf',
   },
   {
     id: 11,
@@ -62,6 +63,7 @@ const documents = [
     requires_captain_validation: false,
     source_label: 'SharePoint',
     notes: null,
+    file_url: null,
   },
 ];
 
@@ -150,6 +152,33 @@ describe('HumanResourcesPage', () => {
     expect(within(dialog).getByText('2009574')).toBeInTheDocument();
     expect(within(dialog).getByText('Compte M365')).toBeInTheDocument();
     expect(within(dialog).getByText('jean.martin@bbtm.fr')).toBeInTheDocument();
+  });
+
+  it('shows HR document metadata and source file links in the personnel file', async () => {
+    const user = userEvent.setup();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
+    const documentTitle = within(dialog).getByText('Visite medicale');
+    const documentItem = documentTitle.closest('li');
+
+    expect(documentItem).not.toBeNull();
+
+    if (!documentItem) {
+      return;
+    }
+
+    expect(within(documentItem).getByText('Delivre le 2025-01-15')).toBeInTheDocument();
+    expect(within(documentItem).getByText('Expire le 2026-08-15')).toBeInTheDocument();
+    expect(within(documentItem).getByText('Source SharePoint')).toBeInTheDocument();
+    expect(within(documentItem).getByText('Validation capitaine requise')).toBeInTheDocument();
+    expect(within(documentItem).getByRole('link', { name: 'Ouvrir le fichier' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/visite-medicale.pdf',
+    );
   });
 
   it('creates a personnel record for office roles', async () => {

@@ -33,6 +33,7 @@ const HR_DOCUMENT_SELECT = [
   'requires_captain_validation',
   'source_label',
   'notes',
+  'file_url',
 ].join(', ');
 
 export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
@@ -81,6 +82,7 @@ interface HrDocumentRow {
   requires_captain_validation: boolean | null;
   source_label: string | null;
   notes: string | null;
+  file_url: string | null;
 }
 
 export interface PersonRecord {
@@ -116,6 +118,7 @@ export interface HrDocumentRecord {
   requiresCaptainValidation: boolean;
   sourceLabel: string;
   notes: string;
+  fileUrl: string;
 }
 
 export interface PersonCategorySummary {
@@ -252,6 +255,7 @@ export function mapHrDocumentRows(rows: HrDocumentRow[]): HrDocumentRecord[] {
     requiresCaptainValidation: row.requires_captain_validation === true,
     sourceLabel: nullableText(row.source_label),
     notes: nullableText(row.notes),
+    fileUrl: nullableText(row.file_url),
   }));
 }
 

@@ -632,11 +632,24 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
     <ul className="hr-document-list">
       {documents.map((document) => (
         <li key={document.id}>
-          <span>
+          <span className="hr-document-main">
             <strong>{document.title}</strong>
             <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
+            <span className="hr-document-meta">
+              {document.issuedOn ? <small>Delivre le {document.issuedOn}</small> : null}
+              {document.expiresOn ? <small>Expire le {document.expiresOn}</small> : null}
+              {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
+            </span>
+            {document.notes ? <em>{document.notes}</em> : null}
           </span>
-          <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
+          <span className="hr-document-actions">
+            <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
+            {document.fileUrl ? (
+              <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
+                Ouvrir le fichier
+              </a>
+            ) : null}
+          </span>
         </li>
       ))}
     </ul>

@@ -42,6 +42,7 @@ const documentRow = {
   requires_captain_validation: true,
   source_label: 'SharePoint',
   notes: 'Validation capitaine requise',
+  file_url: 'https://sharepoint.test/visite-medicale.pdf',
 };
 
 describe('mapPersonRows', () => {
@@ -133,6 +134,7 @@ describe('mapHrDocumentRows', () => {
         requiresCaptainValidation: true,
         sourceLabel: 'SharePoint',
         notes: 'Validation capitaine requise',
+        fileUrl: 'https://sharepoint.test/visite-medicale.pdf',
       },
     ]);
   });

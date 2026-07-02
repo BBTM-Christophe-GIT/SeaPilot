@@ -142,6 +142,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 ### Application - deja livre
 
 - Module Planning enrichi avec filtres par navire, marin, periode et statut.
+- Documents RH enrichis avec dates, source, notes et lien vers le fichier importe.
 
 ### Deploiement
 

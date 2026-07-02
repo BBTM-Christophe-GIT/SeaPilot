@@ -955,7 +955,7 @@ button:disabled {
 
 .hr-document-list li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border: 1px solid #dbe3ed;
@@ -963,14 +963,42 @@ button:disabled {
   padding: 10px 12px;
 }
 
-.hr-document-list span:first-child {
+.hr-document-main,
+.hr-document-actions {
   display: grid;
-  gap: 3px;
+  gap: 6px;
 }
 
 .hr-document-list small {
   color: #66758a;
   font-weight: 700;
+}
+
+.hr-document-main em {
+  color: #536276;
+  font-size: 0.84rem;
+  font-style: normal;
+}
+
+.hr-document-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.hr-document-actions {
+  justify-items: end;
+}
+
+.hr-document-link {
+  color: #0c3f78;
+  font-size: 0.84rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.hr-document-link:hover {
+  text-decoration: underline;
 }
 
 .hr-document-valid {
