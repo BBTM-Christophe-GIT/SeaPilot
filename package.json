@@ -9,7 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "export:sharepoint:list": "node --experimental-strip-types scripts/export-sharepoint-list.ts",
+    "export:sharepoint:rh": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --output .data/sharepoint-rh-personnel-bbtm.json",
     "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
+    "import:sharepoint:linked": "node --experimental-strip-types scripts/import-sharepoint-linked.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

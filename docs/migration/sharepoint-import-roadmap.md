@@ -34,19 +34,36 @@ Un exemple complet est disponible dans `docs/migration/sample-sharepoint-export.
 
 ## Commande locale
 
+Exporter la liste RH depuis SharePoint avec Microsoft 365 CLI:
+
+```powershell
+pnpm --package=@pnp/cli-microsoft365 dlx m365 login --authType browser
+npm run export:sharepoint:rh
+```
+
+L'export RH est ecrit dans `.data/sharepoint-rh-personnel-bbtm.json`. Le dossier `.data/` est ignore par git car il peut contenir des donnees personnelles.
+
 Verifier un export sans ecrire en base:
 
 ```powershell
 npm run import:sharepoint -- --file docs/migration/sample-sharepoint-export.json --dry-run
 ```
 
-Importer dans Supabase:
+Importer dans Supabase local:
 
 ```powershell
 $env:SUPABASE_URL = "http://127.0.0.1:54321"
 $env:SUPABASE_SERVICE_ROLE_KEY = "<service-role-key>"
 npm run import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json
 ```
+
+Importer le RH dans le projet Supabase Cloud lie via la CLI Supabase:
+
+```powershell
+npm run import:sharepoint:linked -- --file .data/sharepoint-rh-personnel-bbtm.json
+```
+
+Cette variante genere un SQL d'upsert puis appelle `supabase db query --linked`; elle n'a pas besoin de stocker une cle service-role dans le depot.
 
 Importer puis rattacher automatiquement les lignes Planning aux marins/navires deja importes:
 
