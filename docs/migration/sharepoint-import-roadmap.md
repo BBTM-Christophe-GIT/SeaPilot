@@ -145,6 +145,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Module Projets raccorde a `projects`, `clients`, `project_documents` et `contract_documents` avec KPIs, filtres projet/client/navire/date/recherche, liens fichiers et creation de projet pour les roles Direction/Admin.
 - Module Achats raccorde a `purchase_requests` avec KPIs, filtres statut/projet/fournisseur/date/recherche et creation de demande pour les roles bureau.
 - Module Plan d'action raccorde a `action_items` et `action_documents` avec KPIs, filtres statut/priorite/navire/projet/date/recherche, fiches de progres et creation d'action pour les roles bureau.
+- Module QHSE documentaire raccorde aux bibliotheques documentaires normalisees avec KPIs, filtres bibliotheque/navire/statut/categorie/date/recherche, liens fichiers et creation de document pour les roles bureau.
 
 ### Deploiement
 

@@ -12,6 +12,7 @@ import { PlanningPage } from './features/planning/PlanningPage';
 import { ProceduresPage } from './features/procedures/ProceduresPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
+import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
 import { AppShell } from './features/shell/AppShell';
 
 export default function App() {
@@ -50,6 +51,8 @@ export default function App() {
                   <ProjectsPage />
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
+                ) : module.key === 'qhse' ? (
+                  <QhseDocumentsPage />
                 ) : (
                   <ModulePage module={module} />
                 )

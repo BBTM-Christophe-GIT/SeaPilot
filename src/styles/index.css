@@ -1173,6 +1173,12 @@ button:disabled {
   max-width: 1440px;
 }
 
+.qhse-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1440px;
+}
+
 .certificates-summary-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1215,6 +1221,13 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.qhse-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .certificates-filter-panel {
   grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(150px, 190px) auto;
 }
@@ -1247,6 +1260,12 @@ button:disabled {
     minmax(140px, 180px) minmax(130px, 160px) minmax(130px, 160px) auto;
 }
 
+.qhse-filter-panel {
+  grid-template-columns:
+    minmax(220px, 1.1fr) minmax(170px, 220px) minmax(140px, 180px) minmax(140px, 180px)
+    minmax(140px, 180px) minmax(130px, 160px) minmax(130px, 160px) auto;
+}
+
 .certificates-form {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 }
@@ -1271,6 +1290,10 @@ button:disabled {
   grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
 }
 
+.qhse-form {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+}
+
 .certificates-table th,
 .certificates-table td,
 .procedures-table th,
@@ -1282,7 +1305,9 @@ button:disabled {
 .purchase-table th,
 .purchase-table td,
 .action-table th,
-.action-table td {
+.action-table td,
+.qhse-table th,
+.qhse-table td {
   color: #334155;
   font-size: 0.9rem;
 }
@@ -1293,6 +1318,10 @@ button:disabled {
 .projects-table td,
 .purchase-table td,
 .action-table td {
+  font-weight: 650;
+}
+
+.qhse-table td {
   font-weight: 650;
 }
 
@@ -1327,7 +1356,8 @@ button:disabled {
 .dpr-table small,
 .projects-table small,
 .purchase-table small,
-.action-table small {
+.action-table small,
+.qhse-table small {
   display: block;
   margin-top: 4px;
   color: #66758a;
@@ -1785,13 +1815,15 @@ button:disabled {
   .projects-form,
   .purchase-form,
   .action-form,
+  .qhse-form,
   .planning-filter-panel,
   .certificates-filter-panel,
   .procedures-filter-panel,
   .dpr-filter-panel,
   .projects-filter-panel,
   .purchase-filter-panel,
-  .action-filter-panel {
+  .action-filter-panel,
+  .qhse-filter-panel {
     grid-template-columns: 1fr;
   }
 
@@ -1800,7 +1832,8 @@ button:disabled {
   .dpr-summary-grid,
   .projects-summary-grid,
   .purchase-summary-grid,
-  .action-summary-grid {
+  .action-summary-grid,
+  .qhse-summary-grid {
     justify-content: flex-start;
   }
 

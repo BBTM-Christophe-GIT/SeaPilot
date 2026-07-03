@@ -627,4 +627,99 @@ describe('App', () => {
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
+
+  it('renders the QHSE document module with imported document libraries', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      const rowsByTable: Record<string, unknown[]> = {
+        fleet_documents: [],
+        lifting_reports: [],
+        service_notes: [],
+        shared_documents: [],
+        safety_alerts: [
+          {
+            id: 1507,
+            person_id: null,
+            person_sharepoint_item_id: '',
+            person_name: '',
+            vessel_id: null,
+            vessel_sharepoint_item_id: '',
+            vessel_name: '',
+            category_key: 'Pont',
+            document_date: '2026-06-20',
+            expires_on: '',
+            revision_label: '',
+            status: 'Publie',
+            title: 'Alerte securite pont.pdf',
+            source_label: 'SharePoint',
+            source_sharepoint_id: '1507',
+            file_url: 'https://sharepoint.test/alerte-securite.pdf',
+            notes: '/sites/QHSE/Alerte Securite/alerte.pdf',
+          },
+        ],
+        technical_documents: [
+          {
+            id: 1508,
+            person_id: null,
+            person_sharepoint_item_id: '',
+            person_name: '',
+            vessel_id: 12,
+            vessel_sharepoint_item_id: '12',
+            vessel_name: 'COTENTIN',
+            category_key: 'Moteur',
+            document_date: '2026-06-01',
+            expires_on: '',
+            revision_label: 'A',
+            status: 'Valide',
+            title: 'Notice moteur COTENTIN.pdf',
+            source_label: 'SharePoint',
+            source_sharepoint_id: '1508',
+            file_url: 'https://sharepoint.test/notice-moteur.pdf',
+            notes: '/sites/QHSE/Documentation Technique/COTENTIN/moteur.pdf',
+          },
+        ],
+        vessel_equipment_documents: [],
+        work_permits: [],
+      };
+
+      if (table in rowsByTable) {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: rowsByTable[table], error: null }),
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/qhse']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'QHSE documentaire' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Documents QHSE')).toHaveTextContent('2');
+    expect(screen.getByLabelText('Alertes securite')).toHaveTextContent('1');
+    expect(screen.getByText('Alerte securite pont.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Notice moteur COTENTIN.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Alerte securite pont.pdf' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/alerte-securite.pdf',
+    );
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
 });
