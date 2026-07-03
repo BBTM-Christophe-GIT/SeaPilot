@@ -93,4 +93,30 @@ describe('runSharePointLinkedImportCli', () => {
     expect(runCommand).toHaveBeenCalledWith('supabase', ['db', 'query', '--linked', '--file', 'C:\\exports\\rh.sql']);
     expect(writeLine).toHaveBeenCalledWith('Imported 1 row(s) from 1 source(s) through Supabase linked database.');
   });
+
+  it('accepts UTF-8 BOM export files produced by PowerShell', async () => {
+    const readTextFile = vi.fn().mockResolvedValue(
+      `\uFEFF${JSON.stringify({
+        sources: [
+          {
+            sourceKey: 'list-rh-personnel-bbtm',
+            items: [{ fields: { ID: 42, Title: 'LECOCQ', Pr_x00e9_nom: 'Julien' } }],
+          },
+        ],
+      })}`,
+    );
+    const runCommand = vi.fn().mockResolvedValue({ exitCode: 0, stderr: '', stdout: '' });
+    const writeTextFile = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runSharePointLinkedImportCli(['--file', 'C:\\exports\\rh.json'], {
+        readTextFile,
+        runCommand,
+        tempSqlPath: () => 'C:\\exports\\rh.sql',
+        writeTextFile,
+      }),
+    ).resolves.toBe(0);
+
+    expect(writeTextFile).toHaveBeenCalledWith('C:\\exports\\rh.sql', expect.stringContaining('insert into public."people"'));
+  });
 });

@@ -129,6 +129,72 @@ describe('SharePoint import mapping', () => {
     });
   });
 
+  it('maps RH Personnel Excel IQY display headers to people upserts', () => {
+    const batch = buildSharePointUpsertBatch('list-rh-personnel-bbtm', [
+      {
+        id: 'excel-row-2',
+        fields: {
+          Titre: 'LECOCQ',
+          Prénom: 'Julien',
+          Mail: 'julien.lecocq@bbtm.fr',
+          Fonction: 'Fleet Technical Manager',
+          Grade: 'Officier',
+          Registre: 'RIF',
+          Sexe: 'Homme',
+          'Numero de Marin': '2009574',
+          'N° Téléphone': '+33 1 02 03 04 05',
+          'Adresse Postale': '1 quai des pilotes, 76000 Rouen',
+          'Date de Naissance': '12/04/1985',
+          'Lieu de naissance': 'Rouen',
+          'Numéro Document Identité': 'ID-12345',
+          "Type de Document d'Identité": 'Passeport',
+          'Type de Contrat': 'CDI',
+          "Date d'Embauche": '01/01/2024',
+          'Date de départ': '',
+          'Cause du départ': '',
+          "Prénom et NOM Contact d'Urgence": 'Marie MARTIN',
+          "Lien Parenté Contact d'Urgence": 'Conjointe',
+          "Numéro de téléphone Contact d'Urgence": '+33 6 00 00 00 00',
+          "Adresse complète Contact d'Urgence": '2 rue du Port, 76000 Rouen',
+          'A - Tour de Taille': '84',
+          'B - Poitrine': '102',
+          'C - Taille totale': '178',
+          'D - Longueur Entrejambe': '82',
+          'E - Tour de Hanche': '96',
+          Poids: '78,5',
+          Pointure: '43',
+          'Taille Combinaison': 'L',
+          'Taille Pantalon Homme': '42',
+          'Taille Veste Homme': 'L',
+          'Numero du Brevet Pont': 'Capitaine 200',
+          'Brevet Machine: Brevet Machine': 'Mecanicien 250 kW',
+          'Formation Grutage - APAVE LMG130': '10/03/2025',
+          'Induction Grutage': '12/03/2025',
+          'Contrat actif': 'Oui',
+          "Chemin d'accès": '/sites/QHSE/Lists/RH Personnel BBTM/42_.000',
+        },
+      },
+    ]);
+
+    expect(batch.rows[0]).toMatchObject({
+      first_name: 'Julien',
+      last_name: 'LECOCQ',
+      email: 'julien.lecocq@bbtm.fr',
+      function_label: 'Fleet Technical Manager',
+      sailor_number: '2009574',
+      birth_date: '1985-04-12',
+      hired_on: '2024-01-01',
+      emergency_contact_name: 'Marie MARTIN',
+      waist_size: 84,
+      deck_certificate_label: 'Capitaine 200',
+      engine_certificate_label: 'Mecanicien 250 kW',
+      crane_training_on: '2025-03-10',
+      active: true,
+      sharepoint_item_id: 'excel-row-2',
+      sharepoint_file_ref: '/sites/QHSE/Lists/RH Personnel BBTM/42_.000',
+    });
+  });
+
   it('maps SMTR planning day items to planning_days upserts', () => {
     const batch = buildSharePointUpsertBatch('list-smtr-journees-planning', [
       {
@@ -973,6 +1039,37 @@ describe('SharePoint import mapping', () => {
           source_modified_at: '2026-06-30T08:15:00Z',
         },
       ],
+    });
+  });
+
+  it('maps Brevets et Visites Medicales Excel IQY display headers to HR document upserts', () => {
+    const batch = buildSharePointUpsertBatch('library-brevets-visites-medicales', [
+      {
+        id: 'excel-row-10',
+        fields: {
+          Nom: 'Visite medicale Julien LECOCQ.pdf',
+          Collaborateur: 'LECOCQ',
+          'Collaborateur: Prénom & NOM': 'Julien LECOCQ',
+          Brevet: 'Visite medicale',
+          'Brevet: Catégorie': 'Visite Medicale',
+          'Brevet: Nom de Fichier': 'Visite medicale Julien LECOCQ.pdf',
+          'Date Echéance': '15/01/2020',
+          "Chemin d'accès": '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
+        },
+      },
+    ]);
+
+    expect(batch.rows[0]).toMatchObject({
+      person_sharepoint_item_id: null,
+      person_name: 'Julien LECOCQ',
+      category_key: 'medical_visit',
+      title: 'Visite medicale Julien LECOCQ.pdf',
+      status: 'expired',
+      expires_on: '2020-01-15',
+      requires_captain_validation: true,
+      file_url: '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
+      notes: '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
+      sharepoint_item_id: 'excel-row-10',
     });
   });
 

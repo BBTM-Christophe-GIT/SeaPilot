@@ -121,7 +121,7 @@ function requiredEnv(env: EnvSource, keys: string[]): string | null {
 }
 
 function parseBundle(rawContent: string): SharePointExportBundle {
-  const bundle = JSON.parse(rawContent) as SharePointExportBundle;
+  const bundle = JSON.parse(rawContent.replace(/^\uFEFF/, '')) as SharePointExportBundle;
 
   if (!Array.isArray(bundle.sources)) {
     throw new Error('Invalid SharePoint export bundle: sources must be an array.');

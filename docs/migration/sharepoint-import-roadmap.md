@@ -43,6 +43,20 @@ npm run export:sharepoint:rh
 
 L'export RH est ecrit dans `.data/sharepoint-rh-personnel-bbtm.json`. Le dossier `.data/` est ignore par git car il peut contenir des donnees personnelles.
 
+Exporter la liste RH et la bibliotheque `Brevets et Visites Medicales` dans un seul bundle:
+
+```powershell
+npm run export:sharepoint:rh-full
+```
+
+Si les fichiers `.iqy` de SharePoint sont disponibles, les fournir au script permet d'utiliser les vues exactes de SharePoint, par exemple `Personnel Actif`:
+
+```powershell
+npm run export:sharepoint:rh-full -- --iqy "list-rh-personnel-bbtm=C:\Users\chris\Downloads\RH - Personnel BBTM.iqy" --iqy "library-brevets-visites-medicales=C:\Users\chris\Downloads\Brevets et Visites Médicales.iqy"
+```
+
+L'export complet est ecrit dans `.data/sharepoint-rh-full.json`.
+
 Verifier un export sans ecrire en base:
 
 ```powershell
@@ -64,6 +78,13 @@ npm run import:sharepoint:linked -- --file .data/sharepoint-rh-personnel-bbtm.js
 ```
 
 Cette variante genere un SQL d'upsert puis appelle `supabase db query --linked`; elle n'a pas besoin de stocker une cle service-role dans le depot.
+
+Importer le bundle RH complet puis rattacher les documents aux collaborateurs:
+
+```powershell
+npm run import:sharepoint:linked -- --file .data/sharepoint-rh-full.json
+supabase db query "select * from public.resolve_sharepoint_hr_document_links();" --linked
+```
 
 Importer puis rattacher automatiquement les lignes Planning aux marins/navires deja importes:
 

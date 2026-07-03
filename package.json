@@ -11,6 +11,8 @@
     "build": "tsc -b && vite build",
     "export:sharepoint:list": "node --experimental-strip-types scripts/export-sharepoint-list.ts",
     "export:sharepoint:rh": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --output .data/sharepoint-rh-personnel-bbtm.json",
+    "export:sharepoint:rh-documents": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-documents.json",
+    "export:sharepoint:rh-full": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-full.json",
     "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
     "import:sharepoint:linked": "node --experimental-strip-types scripts/import-sharepoint-linked.ts",
     "preview": "vite preview",

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { runSharePointListExportCli } from '../src/features/sharepoint/sharePointListExportCli.ts';
 
@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 
 const exitCode = await runSharePointListExportCli(process.argv.slice(2), {
   now: () => new Date(),
+  readTextFile: (path) => readFile(path, 'utf8'),
   runCommand: async (command, args) => {
     const executable = process.platform === 'win32' && command === 'pnpm' ? 'pnpm.cmd' : command;
 

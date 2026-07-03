@@ -314,7 +314,7 @@ function normalizeSearchText(value: string): string {
 }
 
 function sourceItemId(item: SharePointListItem): string | null {
-  return text(item, ['Id', 'ID']) || (item.id !== undefined ? String(item.id) : null);
+  return text(item, ['Id', 'ID']) || (item.id !== undefined ? String(item.id) : null) || text(item, ["Chemin d'accès", 'Path']);
 }
 
 function reconciliationPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
@@ -324,7 +324,7 @@ function reconciliationPayload(item: SharePointListItem, source: SharePointMigra
     sharepoint_list_title: source.title,
     sharepoint_item_id: sourceItemId(item),
     sharepoint_unique_id: text(item, ['UniqueId', 'GUID', 'UniqueID']),
-    sharepoint_file_ref: text(item, ['FileRef', 'ServerRelativeUrl']),
+    sharepoint_file_ref: text(item, ['FileRef', 'ServerRelativeUrl', "Chemin d'accès", 'Path']),
     sharepoint_encoded_abs_url: text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl),
     source_modified_at: text(item, ['Modified', 'LastModifiedDateTime']),
   };
@@ -343,61 +343,94 @@ function withReconciliation(
 
 function mapPersonPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   return withReconciliation(item, source, {
-    first_name: requiredText(item, ['Pr_x00e9_nom', 'Prenom', 'FirstName'], ''),
-    last_name: requiredText(item, ['Title', 'Nom', 'LastName'], ''),
+    first_name: requiredText(item, ['Pr_x00e9_nom', 'Prenom', 'Prénom', 'FirstName'], ''),
+    last_name: requiredText(item, ['Title', 'Titre', 'Nom', 'LastName'], ''),
     email: text(item, ['Email', 'Mail']),
     function_label: text(item, ['Fonction']),
     grade_label: text(item, ['Grade']),
-    role_label: text(item, ['Role', 'R_x00f4_le']),
+    role_label: text(item, ['Role', 'R_x00f4_le', 'Mono-Polyvalent']),
     register_label: text(item, ['Registre']),
     sex: text(item, ['Sexe']),
-    sailor_number: text(item, ['NumerodeMarin', 'NumeroMarin', 'Num_x00e9_rodeMarin']),
+    sailor_number: text(item, ['NumerodeMarin', 'NumeroMarin', 'Numero de Marin', 'Num_x00e9_rodeMarin']),
     m365_account: text(item, ['CompteM365', 'Compte_x0020_M365', 'M365Account']),
-    phone: text(item, ['N_x00b0_T_x00e9_l_x00e9_phone', 'Telephone', 'Phone']),
-    postal_address: text(item, ['AdressePostale', 'Adresse_x0020_Postale', 'PostalAddress']),
-    birth_date: dateOnly(item, ['DatedeNaissance', 'DateNaissance', 'BirthDate']),
-    birth_place: text(item, ['LieudeNaissance', 'LieuNaissance', 'BirthPlace']),
-    identity_document_number: text(item, ['Num_x00e9_roIdentit_x00e9_', 'NumeroIdentite', 'IdentityDocumentNumber']),
-    identity_document_type: text(item, ['TypedeDocumentdIdentit_x00e9_', 'TypeDocumentIdentite', 'IdentityDocumentType']),
-    contract_type: text(item, ['TypedeContrat', 'TypeContrat', 'ContractType']),
-    hired_on: dateOnly(item, ['DatedEmbauche', 'DateEmbauche', 'HiredOn']),
-    departed_on: dateOnly(item, ['Dateded_x00e9_part', 'DateDepart', 'DepartedOn']),
-    departure_reason: text(item, ['Causedud_x00e9_part', 'CauseDepart', 'DepartureReason']),
+    phone: text(item, ['N_x00b0_T_x00e9_l_x00e9_phone', 'N° Téléphone', 'Telephone', 'Phone']),
+    postal_address: text(item, ['AdressePostale', 'Adresse_x0020_Postale', 'Adresse Postale', 'PostalAddress']),
+    birth_date: dateOnly(item, ['DatedeNaissance', 'DateNaissance', 'Date de Naissance', 'BirthDate']),
+    birth_place: text(item, ['LieudeNaissance', 'LieuNaissance', 'Lieu de naissance', 'BirthPlace']),
+    identity_document_number: text(item, [
+      'Num_x00e9_roIdentit_x00e9_',
+      'NumeroIdentite',
+      'Numéro Document Identité',
+      'IdentityDocumentNumber',
+    ]),
+    identity_document_type: text(item, [
+      'TypedeDocumentdIdentit_x00e9_',
+      'TypeDocumentIdentite',
+      "Type de Document d'Identité",
+      'IdentityDocumentType',
+    ]),
+    contract_type: text(item, ['TypedeContrat', 'TypeContrat', 'Type de Contrat', 'ContractType']),
+    hired_on: dateOnly(item, ['DatedEmbauche', 'DateEmbauche', "Date d'Embauche", 'HiredOn']),
+    departed_on: dateOnly(item, ['Dateded_x00e9_part', 'DateDepart', 'Date de départ', 'DepartedOn']),
+    departure_reason: text(item, ['Causedud_x00e9_part', 'CauseDepart', 'Cause du départ', 'DepartureReason']),
     emergency_contact_name: text(item, [
       'Pr_x00e9_nometNOMContactdUrgence',
+      "Prénom et NOM Contact d'Urgence",
       'ContactUrgence',
       'EmergencyContactName',
     ]),
     emergency_contact_relationship: text(item, [
       'LienParent_x00e9_ContactdUrgence',
       'LienParenteContactUrgence',
+      "Lien Parenté Contact d'Urgence",
       'EmergencyContactRelationship',
     ]),
     emergency_contact_phone: text(item, [
       'Num_x00e9_rodet_x00e9_l_x00e9_ph',
       'TelephoneUrgence',
+      "Numéro de téléphone Contact d'Urgence",
       'EmergencyContactPhone',
     ]),
     emergency_contact_address: text(item, [
       'Adressecompl_x00e8_teContactdUrg',
       'AdresseContactUrgence',
+      "Adresse complète Contact d'Urgence",
       'EmergencyContactAddress',
     ]),
-    waist_size: numeric(item, ['A_x002d_TourdeTaille', 'TourdeTaille', 'WaistSize']),
-    chest_size: numeric(item, ['B_x002d_Poitrine', 'Poitrine', 'ChestSize']),
-    full_height_size: numeric(item, ['C_x002d_Tailletotale', 'TailleTotale', 'FullHeightSize']),
-    inseam_size: numeric(item, ['DLongueurEntrejambe', 'LongueurEntrejambe', 'InseamSize']),
-    hip_size: numeric(item, ['E_x002d_TourdeHanche', 'TourdeHanche', 'HipSize']),
+    waist_size: numeric(item, ['A_x002d_TourdeTaille', 'A - Tour de Taille', 'TourdeTaille', 'WaistSize']),
+    chest_size: numeric(item, ['B_x002d_Poitrine', 'B - Poitrine', 'Poitrine', 'ChestSize']),
+    full_height_size: numeric(item, ['C_x002d_Tailletotale', 'C - Taille totale', 'TailleTotale', 'FullHeightSize']),
+    inseam_size: numeric(item, ['DLongueurEntrejambe', 'D - Longueur Entrejambe', 'LongueurEntrejambe', 'InseamSize']),
+    hip_size: numeric(item, ['E_x002d_TourdeHanche', 'E - Tour de Hanche', 'TourdeHanche', 'HipSize']),
     weight_kg: numeric(item, ['Poids', 'WeightKg']),
     shoe_size: numeric(item, ['Pointure', 'ShoeSize']),
-    coverall_size: text(item, ['TailleCombinaison', 'CoverallSize']),
-    pants_size: text(item, ['TaillePantalon', 'TaillePantalonHomme', 'TaillePantalonFemme', 'PantsSize']),
-    jacket_size: text(item, ['TailleVesteHomme', 'TailleVesteFemme', 'TailleVeste', 'JacketSize']),
-    deck_certificate_label: text(item, ['BrevetPont', 'BrevetPontLookupValue', 'DeckCertificate']),
-    engine_certificate_label: text(item, ['BrevetMachine', 'BrevetMachineLookupValue', 'EngineCertificate']),
-    crane_training_on: dateOnly(item, ['FormationGrutage', 'CraneTrainingOn']),
-    crane_induction_on: dateOnly(item, ['InductionGrutage', 'CraneInductionOn']),
-    active: booleanValue(item, ['Actif', 'Active'], true),
+    coverall_size: text(item, ['TailleCombinaison', 'Taille Combinaison', 'CoverallSize']),
+    pants_size: text(item, [
+      'TaillePantalon',
+      'TaillePantalonHomme',
+      'Taille Pantalon Homme',
+      'TaillePantalonFemme',
+      'Taille Pantalon Femme',
+      'PantsSize',
+    ]),
+    jacket_size: text(item, [
+      'TailleVesteHomme',
+      'Taille Veste Homme',
+      'TailleVesteFemme',
+      'Taille Veste Femme',
+      'TailleVeste',
+      'JacketSize',
+    ]),
+    deck_certificate_label: text(item, ['BrevetPont', 'BrevetPontLookupValue', 'Numero du Brevet Pont', 'DeckCertificate']),
+    engine_certificate_label: text(item, [
+      'BrevetMachine',
+      'BrevetMachineLookupValue',
+      'Brevet Machine: Brevet Machine',
+      'EngineCertificate',
+    ]),
+    crane_training_on: dateOnly(item, ['FormationGrutage', 'Formation Grutage - APAVE LMG130', 'CraneTrainingOn']),
+    crane_induction_on: dateOnly(item, ['InductionGrutage', 'Induction Grutage', 'CraneInductionOn']),
+    active: booleanValue(item, ['Actif', 'Contrat actif', 'Active'], true),
   });
 }
 
@@ -562,15 +595,33 @@ function inferProcedureStatus(statusLabel: string | null): string {
 
 function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   const itemId = sourceItemId(item);
-  const title = requiredText(item, ['FileLeafRef', 'Title'], `Document SharePoint ${itemId || ''}`.trim());
-  const expiresOn = dateOnly(item, ['DateEch_x00e9_ance', 'DateEcheance', 'DateExpiration', 'ExpiresOn']);
-  const categoryKey = text(item, ['CategoryKey', 'Categorie']) || inferHrDocumentCategory(title);
-  const fileUrl = text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl);
+  const title = requiredText(
+    item,
+    ['FileLeafRef', 'Brevet: Nom de Fichier', 'Nom', 'Brevet: Titre', 'Title'],
+    `Document SharePoint ${itemId || ''}`.trim(),
+  );
+  const expiresOn = dateOnly(item, [
+    'DateEch_x00e9_ance',
+    'Date Echéance',
+    'Date Échéance',
+    'DateEcheance',
+    'DateExpiration',
+    'ExpiresOn',
+  ]);
+  const categoryLabel = text(item, ['CategoryKey', 'Categorie', 'Catégorie', 'Brevet: Catégorie', 'Brevet']);
+  const categoryKey = categoryLabel ? inferHrDocumentCategory(categoryLabel) : inferHrDocumentCategory(title);
+  const fileUrl = text(item, ['EncodedAbsUrl', "Chemin d'accès"]) || stringifyValue(item.webUrl);
 
   return withReconciliation(item, source, {
     person_id: null,
     person_sharepoint_item_id: text(item, ['CollaborateurId', 'CollaborateurLookupId', 'PersonId']),
-    person_name: text(item, ['Collaborateur', 'CollaborateurLookupValue', 'NomMarin', 'PersonName']),
+    person_name: text(item, [
+      'Collaborateur: Prénom & NOM',
+      'Collaborateur',
+      'CollaborateurLookupValue',
+      'NomMarin',
+      'PersonName',
+    ]),
     category_key: categoryKey,
     title,
     status: inferHrDocumentStatus(text(item, ['Status', 'Statut']), expiresOn),
@@ -581,7 +632,7 @@ function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrat
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: fileUrl,
-    notes: text(item, ['FileRef', 'ServerRelativeUrl']),
+    notes: text(item, ['FileRef', 'ServerRelativeUrl', "Chemin d'accès"]),
   });
 }
 
