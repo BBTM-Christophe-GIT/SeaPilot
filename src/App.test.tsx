@@ -309,4 +309,154 @@ describe('App', () => {
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
+
+  it('renders the projects module with imported projects and documents', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      if (table === 'projects') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 880,
+                    title: 'Campagne Atlantique 2026',
+                    project_code: 'P-2026-014',
+                    client_id: 50,
+                    client_sharepoint_item_id: '50',
+                    client_name: 'Ifremer',
+                    primary_vessel_id: 12,
+                    primary_vessel_sharepoint_item_id: '12',
+                    primary_vessel_name: 'COTENTIN',
+                    secondary_vessel_id: null,
+                    secondary_vessel_sharepoint_item_id: null,
+                    secondary_vessel_name: null,
+                    starts_on: '2026-07-01',
+                    ends_on: '2026-07-15',
+                    status: 'Contrat Signe',
+                    description: 'Campagne bathymetrie',
+                    source_label: 'SharePoint',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'project_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 881,
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    category_key: 'planning',
+                    title: 'Plan projet Atlantique.pdf',
+                    source_label: 'SharePoint',
+                    source_sharepoint_id: '881',
+                    file_url: 'https://sharepoint.test/projets/plan.pdf',
+                    notes: '/sites/QHSE/Documents Projets/P-2026-014/plan.pdf',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'contract_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 882,
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    category_key: 'contract',
+                    title: 'Contrat Atlantique signe.pdf',
+                    source_label: 'SharePoint',
+                    source_sharepoint_id: '882',
+                    file_url: 'https://sharepoint.test/contrats/contrat.pdf',
+                    notes: '/sites/QHSE/Documents Contractuels/P-2026-014/contrat.pdf',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'clients') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  id: 50,
+                  name: 'Ifremer',
+                  code: 'IFR',
+                  email: 'contact@ifremer.test',
+                  phone: '',
+                  address: '',
+                  city: 'Brest',
+                  country: 'France',
+                  active: true,
+                  source_label: 'SharePoint',
+                },
+              ],
+              error: null,
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/projects']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Projets actifs')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Documents projets')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Documents contractuels')).toHaveTextContent('1');
+    expect(screen.getAllByText('Campagne Atlantique 2026').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Plan projet Atlantique.pdf' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/projets/plan.pdf',
+    );
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
 });

@@ -9,6 +9,7 @@ import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
 import { PlanningPage } from './features/planning/PlanningPage';
 import { ProceduresPage } from './features/procedures/ProceduresPage';
+import { ProjectsPage } from './features/projects/ProjectsPage';
 import { AppShell } from './features/shell/AppShell';
 
 export default function App() {
@@ -41,6 +42,8 @@ export default function App() {
                   <HumanResourcesPage />
                 ) : module.key === 'procedures' ? (
                   <ProceduresPage />
+                ) : module.key === 'projects' ? (
+                  <ProjectsPage />
                 ) : (
                   <ModulePage module={module} />
                 )
