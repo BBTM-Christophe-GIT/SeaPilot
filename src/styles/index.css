@@ -1143,7 +1143,20 @@ button:disabled {
   max-width: 1240px;
 }
 
+.procedures-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1280px;
+}
+
 .certificates-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.procedures-summary-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -1154,32 +1167,96 @@ button:disabled {
   grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(150px, 190px) auto;
 }
 
+.procedures-filter-panel {
+  grid-template-columns: minmax(240px, 1fr) minmax(160px, 210px) minmax(170px, 220px) auto;
+}
+
 .certificates-form {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 }
 
+.procedures-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+}
+
 .certificates-table th,
-.certificates-table td {
+.certificates-table td,
+.procedures-table th,
+.procedures-table td {
   color: #334155;
   font-size: 0.9rem;
 }
 
-.certificates-table td {
+.certificates-table td,
+.procedures-table td {
   font-weight: 650;
 }
 
-.certificate-title {
+.certificate-title,
+.procedure-title {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: #172033;
 }
 
-.certificates-table small {
+.certificates-table small,
+.procedures-table small {
   display: block;
   margin-top: 4px;
   color: #66758a;
   font-weight: 700;
+}
+
+.procedures-sections {
+  display: grid;
+  gap: 16px;
+}
+
+.procedures-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.procedures-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.procedures-section-heading h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.procedures-section-heading span {
+  color: #536276;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.procedure-status-approved {
+  color: #1d7a48;
+  background: #e6f8ee;
+}
+
+.procedure-status-review {
+  color: #0c3f78;
+  background: #eaf3fb;
+}
+
+.procedure-status-draft {
+  color: #7a4d16;
+  background: #fff0d7;
+}
+
+.procedure-status-archived,
+.procedure-status-unknown {
+  color: #536276;
+  background: #e8edf3;
 }
 
 .planning-summary {
@@ -1450,8 +1527,15 @@ button:disabled {
   .planning-vessel-form,
   .planning-assignment-form,
   .certificates-form,
+  .procedures-form,
   .planning-filter-panel,
-  .certificates-filter-panel {
+  .certificates-filter-panel,
+  .procedures-filter-panel {
     grid-template-columns: 1fr;
+  }
+
+  .procedures-summary-grid,
+  .certificates-summary-grid {
+    justify-content: flex-start;
   }
 }

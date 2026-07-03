@@ -43,6 +43,7 @@ describe('App', () => {
 
   it('renders the fleet certificates module with imported certificate data', async () => {
     vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
     supabaseMock.from.mockImplementation((table: string) => {
       if (table === 'user_roles') {
         return {
@@ -96,6 +97,92 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: 'Ouvrir le fichier Permis de navigation COTENTIN' })).toHaveAttribute(
       'href',
       'https://sharepoint.test/certificat.pdf',
+    );
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
+
+  it('renders the procedures module with imported QHSE procedures and publications', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      if (table === 'procedures') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 12,
+                    procedure_code: 'QSMS-OPS-01',
+                    title: 'Procedure embarquement ROZEL',
+                    status: 'approved',
+                    revision_label: 'Rev. 4',
+                    published_on: '2026-03-15',
+                    source_label: 'SharePoint',
+                    file_url: 'https://sharepoint.test/procedure.docx',
+                    notes: 'Document source QSMS',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'published_procedures') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 32,
+                    procedure_id: 12,
+                    procedure_sharepoint_item_id: '12',
+                    procedure_code: 'QSMS-OPS-01',
+                    title: 'Procedure embarquement ROZEL PDF',
+                    status: 'approved',
+                    revision_label: 'Rev. 4',
+                    published_on: '2026-03-20',
+                    source_label: 'SharePoint PDF',
+                    file_url: 'https://sharepoint.test/procedure.pdf',
+                    notes: 'Publication signee',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/procedures']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Procedures QHSE' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Procedures approuvees')).toHaveTextContent('1');
+    expect(screen.getByText('Procedure embarquement ROZEL')).toBeInTheDocument();
+    expect(screen.getAllByText('QSMS-OPS-01').length).toBeGreaterThan(0);
+    expect(screen.getByText('Procedure embarquement ROZEL PDF')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Procedure embarquement ROZEL PDF' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/procedure.pdf',
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
