@@ -935,6 +935,12 @@ button:disabled {
   border-bottom: 1px solid #e3e9f0;
 }
 
+.hr-dialog-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .hr-dialog-header p {
   margin: 0 0 4px;
   color: #536276;
@@ -955,6 +961,12 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.hr-details-form {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .hr-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -971,7 +983,18 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.hr-form-grid input {
+.hr-edit-field {
+  display: grid;
+  gap: 6px;
+  color: #536276;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hr-form-grid input,
+.hr-edit-field input,
+.hr-edit-field textarea {
   min-width: 0;
   border: 1px solid #c7d2df;
   border-radius: 8px;
@@ -980,8 +1003,14 @@ button:disabled {
   background: #fbfcfe;
 }
 
+.hr-edit-field textarea {
+  resize: vertical;
+}
+
 .hr-search-field input:focus,
-.hr-form-grid input:focus {
+.hr-form-grid input:focus,
+.hr-edit-field input:focus,
+.hr-edit-field textarea:focus {
   border-color: #0c66b7;
   outline: 3px solid rgba(12, 102, 183, 0.16);
 }

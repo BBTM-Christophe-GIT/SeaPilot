@@ -6,6 +6,7 @@ import {
   fetchPeople,
   mapHrDocumentRows,
   mapPersonRows,
+  updatePersonDetails,
   updatePersonActive,
 } from './peopleQueries';
 
@@ -436,6 +437,109 @@ describe('updatePersonActive', () => {
 
     await expect(updatePersonActive({ from } as never, 1, false)).resolves.toEqual(mapPersonRows([updatedRow])[0]);
     expect(update).toHaveBeenCalledWith({ active: false });
+    expect(eq).toHaveBeenCalledWith('id', 1);
+  });
+});
+
+describe('updatePersonDetails', () => {
+  it('updates the full personnel file and normalizes empty fields', async () => {
+    const updatedRow = {
+      ...personRow,
+      email: 'jean.updated@example.test',
+      phone: '+33 6 11 22 33 44',
+      postal_address: '3 quai BBTM, 76600 Le Havre',
+      contract_type: 'CDD',
+      departed_on: null,
+      waist_size: 90.5,
+    };
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ update });
+
+    await expect(
+      updatePersonDetails({ from } as never, 1, {
+        firstName: ' Jean ',
+        lastName: ' MARTIN ',
+        email: ' jean.updated@example.test ',
+        functionLabel: ' Capitaine ',
+        gradeLabel: ' Capitaine 200 ',
+        roleLabel: ' Navigant ',
+        registerLabel: ' RIF ',
+        sex: ' Homme ',
+        sailorNumber: ' 2009574 ',
+        m365Account: ' jean.martin@bbtm.fr ',
+        phone: ' +33 6 11 22 33 44 ',
+        postalAddress: ' 3 quai BBTM, 76600 Le Havre ',
+        birthDate: '1985-04-12',
+        birthPlace: ' Rouen ',
+        identityDocumentNumber: ' ID-12345 ',
+        identityDocumentType: ' Passeport ',
+        contractType: ' CDD ',
+        hiredOn: '2024-01-01',
+        departedOn: '',
+        departureReason: '',
+        emergencyContactName: ' Marie MARTIN ',
+        emergencyContactRelationship: ' Conjointe ',
+        emergencyContactPhone: ' +33 6 00 00 00 00 ',
+        emergencyContactAddress: ' 2 rue du Port, 76000 Rouen ',
+        waistSize: '90,5',
+        chestSize: '102',
+        fullHeightSize: '178',
+        inseamSize: '82',
+        hipSize: '96',
+        weightKg: '78',
+        shoeSize: '43',
+        coverallSize: 'L',
+        pantsSize: '42',
+        jacketSize: 'L',
+        deckCertificateLabel: ' Capitaine 200 ',
+        engineCertificateLabel: ' Mecanicien 250 kW ',
+        craneTrainingOn: '2025-03-10',
+        craneInductionOn: '2025-03-12',
+      }),
+    ).resolves.toEqual(mapPersonRows([updatedRow])[0]);
+    expect(update).toHaveBeenCalledWith({
+      first_name: 'Jean',
+      last_name: 'MARTIN',
+      email: 'jean.updated@example.test',
+      function_label: 'Capitaine',
+      grade_label: 'Capitaine 200',
+      role_label: 'Navigant',
+      register_label: 'RIF',
+      sex: 'Homme',
+      sailor_number: '2009574',
+      m365_account: 'jean.martin@bbtm.fr',
+      phone: '+33 6 11 22 33 44',
+      postal_address: '3 quai BBTM, 76600 Le Havre',
+      birth_date: '1985-04-12',
+      birth_place: 'Rouen',
+      identity_document_number: 'ID-12345',
+      identity_document_type: 'Passeport',
+      contract_type: 'CDD',
+      hired_on: '2024-01-01',
+      departed_on: null,
+      departure_reason: null,
+      emergency_contact_name: 'Marie MARTIN',
+      emergency_contact_relationship: 'Conjointe',
+      emergency_contact_phone: '+33 6 00 00 00 00',
+      emergency_contact_address: '2 rue du Port, 76000 Rouen',
+      waist_size: 90.5,
+      chest_size: 102,
+      full_height_size: 178,
+      inseam_size: 82,
+      hip_size: 96,
+      weight_kg: 78,
+      shoe_size: 43,
+      coverall_size: 'L',
+      pants_size: '42',
+      jacket_size: 'L',
+      deck_certificate_label: 'Capitaine 200',
+      engine_certificate_label: 'Mecanicien 250 kW',
+      crane_training_on: '2025-03-10',
+      crane_induction_on: '2025-03-12',
+    });
     expect(eq).toHaveBeenCalledWith('id', 1);
   });
 });

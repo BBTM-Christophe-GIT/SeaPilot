@@ -249,6 +249,47 @@ export interface CreatePersonInput {
   m365Account?: string;
 }
 
+export interface UpdatePersonDetailsInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  functionLabel: string;
+  gradeLabel: string;
+  roleLabel: string;
+  registerLabel: string;
+  sex: string;
+  sailorNumber: string;
+  m365Account: string;
+  phone: string;
+  postalAddress: string;
+  birthDate: string;
+  birthPlace: string;
+  identityDocumentNumber: string;
+  identityDocumentType: string;
+  contractType: string;
+  hiredOn: string;
+  departedOn: string;
+  departureReason: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactPhone: string;
+  emergencyContactAddress: string;
+  waistSize: string;
+  chestSize: string;
+  fullHeightSize: string;
+  inseamSize: string;
+  hipSize: string;
+  weightKg: string;
+  shoeSize: string;
+  coverallSize: string;
+  pantsSize: string;
+  jacketSize: string;
+  deckCertificateLabel: string;
+  engineCertificateLabel: string;
+  craneTrainingOn: string;
+  craneInductionOn: string;
+}
+
 function nullableText(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
 }
@@ -256,6 +297,18 @@ function nullableText(value: string | number | null | undefined): string {
 function optionalText(value: string | undefined): string | null {
   const trimmed = value?.trim() || '';
   return trimmed || null;
+}
+
+function optionalNumber(value: string | undefined): number | null {
+  const normalized = value?.trim().replace(',', '.') || '';
+
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeStatus(status: string | null): HrDocumentStatus {
@@ -518,6 +571,60 @@ export async function updatePersonActive(
   active: boolean,
 ): Promise<PersonRecord> {
   const { data, error } = await client.from('people').update({ active }).eq('id', personId).select(PEOPLE_SELECT).single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPersonRows([data as unknown as PersonRow])[0];
+}
+
+export async function updatePersonDetails(
+  client: SupabaseClient,
+  personId: number,
+  input: UpdatePersonDetailsInput,
+): Promise<PersonRecord> {
+  const payload = {
+    first_name: input.firstName.trim(),
+    last_name: input.lastName.trim(),
+    email: optionalText(input.email),
+    function_label: optionalText(input.functionLabel),
+    grade_label: optionalText(input.gradeLabel),
+    role_label: optionalText(input.roleLabel),
+    register_label: optionalText(input.registerLabel),
+    sex: optionalText(input.sex),
+    sailor_number: optionalText(input.sailorNumber),
+    m365_account: optionalText(input.m365Account),
+    phone: optionalText(input.phone),
+    postal_address: optionalText(input.postalAddress),
+    birth_date: optionalText(input.birthDate),
+    birth_place: optionalText(input.birthPlace),
+    identity_document_number: optionalText(input.identityDocumentNumber),
+    identity_document_type: optionalText(input.identityDocumentType),
+    contract_type: optionalText(input.contractType),
+    hired_on: optionalText(input.hiredOn),
+    departed_on: optionalText(input.departedOn),
+    departure_reason: optionalText(input.departureReason),
+    emergency_contact_name: optionalText(input.emergencyContactName),
+    emergency_contact_relationship: optionalText(input.emergencyContactRelationship),
+    emergency_contact_phone: optionalText(input.emergencyContactPhone),
+    emergency_contact_address: optionalText(input.emergencyContactAddress),
+    waist_size: optionalNumber(input.waistSize),
+    chest_size: optionalNumber(input.chestSize),
+    full_height_size: optionalNumber(input.fullHeightSize),
+    inseam_size: optionalNumber(input.inseamSize),
+    hip_size: optionalNumber(input.hipSize),
+    weight_kg: optionalNumber(input.weightKg),
+    shoe_size: optionalNumber(input.shoeSize),
+    coverall_size: optionalText(input.coverallSize),
+    pants_size: optionalText(input.pantsSize),
+    jacket_size: optionalText(input.jacketSize),
+    deck_certificate_label: optionalText(input.deckCertificateLabel),
+    engine_certificate_label: optionalText(input.engineCertificateLabel),
+    crane_training_on: optionalText(input.craneTrainingOn),
+    crane_induction_on: optionalText(input.craneInductionOn),
+  };
+  const { data, error } = await client.from('people').update(payload).eq('id', personId).select(PEOPLE_SELECT).single();
 
   if (error) {
     throw error;

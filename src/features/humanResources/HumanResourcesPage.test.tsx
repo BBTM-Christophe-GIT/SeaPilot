@@ -297,6 +297,68 @@ describe('HumanResourcesPage', () => {
     );
   });
 
+  it('updates the structured personnel file for office roles', async () => {
+    const user = userEvent.setup();
+    const updatedPerson = {
+      ...activePerson,
+      phone: '+33 6 11 22 33 44',
+      postal_address: '3 quai BBTM, 76600 Le Havre',
+      contract_type: 'CDD',
+      waist_size: 90,
+    };
+    const single = vi.fn().mockResolvedValue({ data: updatedPerson, error: null });
+    const updateSelect = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select: updateSelect });
+    const update = vi.fn().mockReturnValue({ eq });
+    const client = createClient([activePerson], documents) as ReturnType<typeof createClient> & {
+      from: ReturnType<typeof vi.fn>;
+    };
+
+    client.from.mockImplementation((table: string) => {
+      if (table === 'people') {
+        return {
+          ...createOrderedSelect([activePerson]),
+          update,
+        };
+      }
+
+      if (table === 'hr_documents') {
+        return createDocumentsSelect(documents);
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
+    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
+    fireEvent.change(within(dialog).getByLabelText('Telephone'), { target: { value: '+33 6 11 22 33 44' } });
+    fireEvent.change(within(dialog).getByLabelText('Adresse postale'), {
+      target: { value: '3 quai BBTM, 76600 Le Havre' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
+    fireEvent.change(within(dialog).getByLabelText('Tour de taille'), { target: { value: '90' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la fiche' }));
+
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phone: '+33 6 11 22 33 44',
+          postal_address: '3 quai BBTM, 76600 Le Havre',
+          contract_type: 'CDD',
+          waist_size: 90,
+        }),
+      ),
+    );
+    expect(eq).toHaveBeenCalledWith('id', 1);
+    expect(await screen.findByText('Fiche collaborateur mise a jour.')).toBeInTheDocument();
+    expect(within(dialog).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
+    expect(within(dialog).getByText('CDD')).toBeInTheDocument();
+  });
+
   it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['armement']} />);
 
