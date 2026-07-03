@@ -130,7 +130,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 - Enrichir le module RH avec les sections restantes de la fiche collaborateur.
 - Construire les modules encore placeholders:
-  - DPR
   - Projets
   - Achats
   - Audit / plan d'action
@@ -145,6 +144,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.
+- Module Daily Progress Report raccorde a `dpr_items`, `dpr_archives` et `mgo_prices` avec KPIs, filtres projet/navire/date/recherche, archives PDF, dernier prix MGO et creation de rapport pour les roles bureau.
 
 ### Deploiement
 

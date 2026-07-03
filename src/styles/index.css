@@ -1149,6 +1149,12 @@ button:disabled {
   max-width: 1280px;
 }
 
+.dpr-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1320px;
+}
+
 .certificates-summary-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1163,12 +1169,25 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.dpr-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .certificates-filter-panel {
   grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(150px, 190px) auto;
 }
 
 .procedures-filter-panel {
   grid-template-columns: minmax(240px, 1fr) minmax(160px, 210px) minmax(170px, 220px) auto;
+}
+
+.dpr-filter-panel {
+  grid-template-columns:
+    minmax(220px, 1.2fr) minmax(140px, 180px) minmax(140px, 180px) minmax(130px, 160px)
+    minmax(130px, 160px) auto;
 }
 
 .certificates-form {
@@ -1179,29 +1198,46 @@ button:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 }
 
+.dpr-form {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+}
+
 .certificates-table th,
 .certificates-table td,
 .procedures-table th,
-.procedures-table td {
+.procedures-table td,
+.dpr-table th,
+.dpr-table td {
   color: #334155;
   font-size: 0.9rem;
 }
 
 .certificates-table td,
-.procedures-table td {
+.procedures-table td,
+.dpr-table td {
   font-weight: 650;
 }
 
 .certificate-title,
-.procedure-title {
+.procedure-title,
+.dpr-title,
+.dpr-inline-icon,
+.dpr-radio-ok,
+.dpr-radio-off {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.certificate-title,
+.procedure-title,
+.dpr-title {
   color: #172033;
 }
 
 .certificates-table small,
-.procedures-table small {
+.procedures-table small,
+.dpr-table small {
   display: block;
   margin-top: 4px;
   color: #66758a;
@@ -1257,6 +1293,85 @@ button:disabled {
 .procedure-status-unknown {
   color: #536276;
   background: #e8edf3;
+}
+
+.dpr-sections {
+  display: grid;
+  gap: 16px;
+}
+
+.dpr-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.dpr-table th:first-child {
+  width: 30%;
+}
+
+.dpr-qhse-clear,
+.dpr-qhse-warning,
+.dpr-radio-ok,
+.dpr-radio-off {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.dpr-qhse-clear,
+.dpr-radio-ok {
+  color: #1d7a48;
+  background: #e6f8ee;
+}
+
+.dpr-qhse-warning {
+  color: #8a4a0a;
+  background: #fff0d7;
+}
+
+.dpr-radio-off {
+  color: #536276;
+  background: #e8edf3;
+}
+
+.dpr-radio-toggle {
+  align-content: center;
+}
+
+.dpr-radio-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.dpr-mgo-strip {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #253044;
+  background: #ffffff;
+}
+
+.dpr-mgo-strip strong {
+  color: #172033;
+}
+
+.dpr-mgo-strip span {
+  color: #0c3f78;
+  font-weight: 900;
+}
+
+.dpr-mgo-strip small {
+  color: #66758a;
+  font-weight: 750;
 }
 
 .planning-summary {
@@ -1528,14 +1643,22 @@ button:disabled {
   .planning-assignment-form,
   .certificates-form,
   .procedures-form,
+  .dpr-form,
   .planning-filter-panel,
   .certificates-filter-panel,
-  .procedures-filter-panel {
+  .procedures-filter-panel,
+  .dpr-filter-panel {
     grid-template-columns: 1fr;
   }
 
   .procedures-summary-grid,
-  .certificates-summary-grid {
+  .certificates-summary-grid,
+  .dpr-summary-grid {
     justify-content: flex-start;
+  }
+
+  .dpr-mgo-strip {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

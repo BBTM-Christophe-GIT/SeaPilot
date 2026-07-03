@@ -186,4 +186,127 @@ describe('App', () => {
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
+
+  it('renders the daily progress report module with imported DPR data', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      if (table === 'dpr_items') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 1200,
+                    title: 'DPR 2026-07-01',
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    vessel_id: 12,
+                    vessel_sharepoint_item_id: '12',
+                    vessel_name: 'COTENTIN',
+                    report_date: '2026-07-01',
+                    report_time: '18:30',
+                    description: 'Transit et mesures',
+                    fuel_consumption_l: 1250.5,
+                    mgo_refueling_m3: 12.5,
+                    qhse_note: 'RAS',
+                    radio_contact: true,
+                    environment_incident_count: 1,
+                    person_accident_count: 0,
+                    dangerous_situation_count: 2,
+                    source_label: 'SharePoint',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'dpr_archives') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 1201,
+                    dpr_item_id: 1200,
+                    dpr_sharepoint_item_id: '1200',
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    report_date: '2026-07-01',
+                    title: 'DPR P-2026-014 2026-07-01.pdf',
+                    source_label: 'SharePoint',
+                    source_sharepoint_id: '1201',
+                    file_url: 'https://sharepoint.test/dpr.pdf',
+                    notes: '/sites/QHSE/DPR/P-2026-014/DPR-2026-07-01.pdf',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'mgo_prices') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  id: 44,
+                  price_date: '2026-07-01',
+                  price_ht: 812.45,
+                  currency: 'EUR',
+                  supplier_name: 'TotalEnergies',
+                  title: 'MGO juillet 2026',
+                  notes: 'Prix mensuel',
+                  source_label: 'SharePoint',
+                },
+              ],
+              error: null,
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/dpr']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Daily Progress Report' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Rapports DPR')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Archives DPR importees')).toHaveTextContent('1');
+    expect(screen.getAllByText('Campagne Atlantique 2026').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.getByText('Transit et mesures')).toBeInTheDocument();
+    expect(screen.getByText('MGO juillet 2026')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier DPR P-2026-014 2026-07-01.pdf' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/dpr.pdf',
+    );
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
 });
