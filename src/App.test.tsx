@@ -524,4 +524,107 @@ describe('App', () => {
     expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
+
+  it("renders the action plan module with imported audits and progress sheets", async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      if (table === 'action_items') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 810,
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    vessel_id: 12,
+                    vessel_sharepoint_item_id: '12',
+                    vessel_name: 'COTENTIN',
+                    category_key: 'audit',
+                    action_type: 'Audit',
+                    audit_type: 'Interne',
+                    title: 'Audit pont COTENTIN',
+                    status: 'Ouvert',
+                    priority_label: 'Haute',
+                    opened_on: '2026-07-03',
+                    due_on: '2026-07-31',
+                    owner_name: 'Arthur MAREST',
+                    auditor_name: 'Jean MARTIN',
+                    description: 'Controle pont',
+                    corrective_action: 'Remplacer garde-corps',
+                    source_label: 'SharePoint',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'action_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 811,
+                    action_item_id: 810,
+                    action_sharepoint_item_id: '810',
+                    action_title: 'Audit pont COTENTIN',
+                    category_key: 'progress_sheet',
+                    title: 'FP Audit pont COTENTIN.pdf',
+                    source_label: 'SharePoint',
+                    source_sharepoint_id: '811',
+                    file_url: 'https://sharepoint.test/fiche-progres/audit-pont.pdf',
+                    notes: '/sites/QHSE/Fiche de Progres/FP Audit pont COTENTIN.pdf',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/actionPlan']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
+    expect(screen.getByLabelText('Actions ouvertes')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Actions haute priorite')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Echeances actions')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Fiches progres')).toHaveTextContent('1');
+    expect(screen.getAllByText('Audit pont COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getByText('Controle pont')).toBeInTheDocument();
+    expect(screen.getByText('Remplacer garde-corps')).toBeInTheDocument();
+    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    expect(screen.getByText('FP Audit pont COTENTIN.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ouvrir le fichier FP Audit pont COTENTIN.pdf' })).toHaveAttribute(
+      'href',
+      'https://sharepoint.test/fiche-progres/audit-pont.pdf',
+    );
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
 });

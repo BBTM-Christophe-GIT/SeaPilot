@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { ActionPlanPage } from './features/actionPlan/ActionPlanPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RequireAuth } from './features/auth/RequireAuth';
@@ -33,6 +34,8 @@ export default function App() {
               element={
                 module.key === 'admin' ? (
                   <AdminPage />
+                ) : module.key === 'actionPlan' ? (
+                  <ActionPlanPage />
                 ) : module.key === 'dpr' ? (
                   <DprPage />
                 ) : module.key === 'certificates' ? (
