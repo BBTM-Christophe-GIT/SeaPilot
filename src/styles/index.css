@@ -1161,6 +1161,12 @@ button:disabled {
   max-width: 1360px;
 }
 
+.purchase-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1360px;
+}
+
 .certificates-summary-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1189,6 +1195,13 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.purchase-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .certificates-filter-panel {
   grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(150px, 190px) auto;
 }
@@ -1209,6 +1222,12 @@ button:disabled {
     minmax(130px, 160px) minmax(130px, 160px) auto;
 }
 
+.purchase-filter-panel {
+  grid-template-columns:
+    minmax(220px, 1.1fr) minmax(150px, 180px) minmax(150px, 190px) minmax(170px, 220px)
+    minmax(130px, 160px) minmax(130px, 160px) auto;
+}
+
 .certificates-form {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 }
@@ -1225,6 +1244,10 @@ button:disabled {
   grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
 }
 
+.purchase-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+}
+
 .certificates-table th,
 .certificates-table td,
 .procedures-table th,
@@ -1232,7 +1255,9 @@ button:disabled {
 .dpr-table th,
 .dpr-table td,
 .projects-table th,
-.projects-table td {
+.projects-table td,
+.purchase-table th,
+.purchase-table td {
   color: #334155;
   font-size: 0.9rem;
 }
@@ -1240,7 +1265,8 @@ button:disabled {
 .certificates-table td,
 .procedures-table td,
 .dpr-table td,
-.projects-table td {
+.projects-table td,
+.purchase-table td {
   font-weight: 650;
 }
 
@@ -1249,6 +1275,7 @@ button:disabled {
 .dpr-title,
 .project-title,
 .project-document-title,
+.purchase-title,
 .project-vessel,
 .dpr-inline-icon,
 .dpr-radio-ok,
@@ -1262,14 +1289,16 @@ button:disabled {
 .procedure-title,
 .dpr-title,
 .project-title,
-.project-document-title {
+.project-document-title,
+.purchase-title {
   color: #172033;
 }
 
 .certificates-table small,
 .procedures-table small,
 .dpr-table small,
-.projects-table small {
+.projects-table small,
+.purchase-table small {
   display: block;
   margin-top: 4px;
   color: #66758a;
@@ -1355,7 +1384,12 @@ button:disabled {
   width: 32%;
 }
 
-.project-status-chip {
+.purchase-table th:first-child {
+  width: 28%;
+}
+
+.project-status-chip,
+.purchase-status-chip {
   display: inline-flex;
   width: fit-content;
   min-height: 24px;
@@ -1704,18 +1738,21 @@ button:disabled {
   .procedures-form,
   .dpr-form,
   .projects-form,
+  .purchase-form,
   .planning-filter-panel,
   .certificates-filter-panel,
   .procedures-filter-panel,
   .dpr-filter-panel,
-  .projects-filter-panel {
+  .projects-filter-panel,
+  .purchase-filter-panel {
     grid-template-columns: 1fr;
   }
 
   .procedures-summary-grid,
   .certificates-summary-grid,
   .dpr-summary-grid,
-  .projects-summary-grid {
+  .projects-summary-grid,
+  .purchase-summary-grid {
     justify-content: flex-start;
   }
 

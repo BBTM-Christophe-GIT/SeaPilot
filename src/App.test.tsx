@@ -459,4 +459,69 @@ describe('App', () => {
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
+
+  it("renders the purchase requests module with imported requests", async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') {
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
+        };
+      }
+
+      if (table === 'purchase_requests') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 700,
+                    request_number: 'DA-2026-001',
+                    title: 'DA-2026-001',
+                    requested_on: '2026-07-02',
+                    requester_name: 'Julien LECOCQ',
+                    supplier_name: 'Chantier Naval Manche',
+                    project_id: 880,
+                    project_sharepoint_item_id: '880',
+                    project_code: 'P-2026-014',
+                    project_title: 'Campagne Atlantique 2026',
+                    amount_ht: 12500.5,
+                    currency: 'EUR',
+                    status: 'En cours',
+                    description: 'Achat capteurs',
+                    source_label: 'SharePoint',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'user-1' } });
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/purchaseRequests']}>
+          <App />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: "Demandes d'achat" })).toBeInTheDocument();
+    expect(screen.getByLabelText('Demandes achat')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Demandes en cours')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Montant HT')).toHaveTextContent('12');
+    expect(screen.getByLabelText('Fournisseurs achats')).toHaveTextContent('1');
+    expect(screen.getAllByText('DA-2026-001').length).toBeGreaterThan(0);
+    expect(screen.getByText('Achat capteurs')).toBeInTheDocument();
+    expect(screen.getAllByText('Chantier Naval Manche').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
 });
