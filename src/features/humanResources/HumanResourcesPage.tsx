@@ -47,6 +47,13 @@ interface PersonFormState {
   m365Account: string;
 }
 
+interface HrFilterState {
+  functionLabel: string;
+  gradeLabel: string;
+  registerLabel: string;
+  roleLabel: string;
+}
+
 const EMPTY_FORM: PersonFormState = {
   firstName: '',
   lastName: '',
@@ -58,6 +65,13 @@ const EMPTY_FORM: PersonFormState = {
   sex: '',
   sailorNumber: '',
   m365Account: '',
+};
+
+const EMPTY_FILTERS: HrFilterState = {
+  functionLabel: '',
+  gradeLabel: '',
+  registerLabel: '',
+  roleLabel: '',
 };
 
 const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
@@ -99,16 +113,34 @@ function personMatchesSearch(person: PersonRecord, query: string): boolean {
       person.functionLabel,
       person.gradeLabel,
       person.roleLabel,
+      person.registerLabel,
       person.sailorNumber,
       person.m365Account,
+      person.contractType,
+      person.emergencyContactName,
+      person.deckCertificateLabel,
+      person.engineCertificateLabel,
     ].join(' '),
   );
 
   return haystack.includes(query);
 }
 
+function personMatchesFilters(person: PersonRecord, filters: HrFilterState): boolean {
+  return (
+    (!filters.functionLabel || person.functionLabel === filters.functionLabel) &&
+    (!filters.gradeLabel || person.gradeLabel === filters.gradeLabel) &&
+    (!filters.registerLabel || person.registerLabel === filters.registerLabel) &&
+    (!filters.roleLabel || person.roleLabel === filters.roleLabel)
+  );
+}
+
 function metricLabel(count: number, singular: string, plural: string): string {
   return count > 1 ? plural : singular;
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
 }
 
 function FieldValue({ label, value }: { label: string; value: string }) {
@@ -133,6 +165,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
@@ -175,9 +208,14 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     () =>
       people
         .filter((person) => showInactive || person.active)
+        .filter((person) => personMatchesFilters(person, filters))
         .filter((person) => personMatchesSearch(person, normalizedSearchQuery)),
-    [normalizedSearchQuery, people, showInactive],
+    [filters, normalizedSearchQuery, people, showInactive],
   );
+  const functionOptions = useMemo(() => uniqueSorted(people.map((person) => person.functionLabel)), [people]);
+  const gradeOptions = useMemo(() => uniqueSorted(people.map((person) => person.gradeLabel)), [people]);
+  const registerOptions = useMemo(() => uniqueSorted(people.map((person) => person.registerLabel)), [people]);
+  const roleOptions = useMemo(() => uniqueSorted(people.map((person) => person.roleLabel)), [people]);
   const visiblePersonIds = useMemo(() => new Set(visiblePeople.map((person) => person.id)), [visiblePeople]);
   const visibleDocuments = useMemo(
     () =>
@@ -207,6 +245,13 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
       ...currentForm,
+      [key]: value,
+    }));
+  }
+
+  function updateFilterValue(key: keyof HrFilterState, value: string) {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
       [key]: value,
     }));
   }
@@ -290,6 +335,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <MetricCard label="Sedentaires" value={dashboard.metrics.sedentaryPeople} />
         <MetricCard label="Navigants" value={dashboard.metrics.seafarerPeople} />
         <MetricCard label="Stagiaires" value={dashboard.metrics.trainees} />
+        <MetricCard label="Contrats renseignes" value={dashboard.metrics.contractsReady} />
+        <MetricCard label="Contacts urgence" value={dashboard.metrics.emergencyContactsReady} />
+        <MetricCard label="Habilitations" value={dashboard.metrics.habilitationsReady} />
         {isManager ? (
           <MetricCard tone="warning" label="Documents a rattacher" value={dashboard.metrics.unassignedDocuments} />
         ) : null}
@@ -322,6 +370,50 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             placeholder="Collaborateur, fichier, document..."
             value={searchQuery}
           />
+        </label>
+        <label className="hr-filter-field">
+          Filtre fonction RH
+          <select onChange={(event) => updateFilterValue('functionLabel', event.target.value)} value={filters.functionLabel}>
+            <option value="">Toutes les fonctions</option>
+            {functionOptions.map((functionLabel) => (
+              <option key={functionLabel} value={functionLabel}>
+                {functionLabel}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="hr-filter-field">
+          Filtre grade RH
+          <select onChange={(event) => updateFilterValue('gradeLabel', event.target.value)} value={filters.gradeLabel}>
+            <option value="">Tous les grades</option>
+            {gradeOptions.map((gradeLabel) => (
+              <option key={gradeLabel} value={gradeLabel}>
+                {gradeLabel}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="hr-filter-field">
+          Filtre registre RH
+          <select onChange={(event) => updateFilterValue('registerLabel', event.target.value)} value={filters.registerLabel}>
+            <option value="">Tous les registres</option>
+            {registerOptions.map((registerLabel) => (
+              <option key={registerLabel} value={registerLabel}>
+                {registerLabel}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="hr-filter-field">
+          Filtre role RH
+          <select onChange={(event) => updateFilterValue('roleLabel', event.target.value)} value={filters.roleLabel}>
+            <option value="">Tous les roles</option>
+            {roleOptions.map((roleLabel) => (
+              <option key={roleLabel} value={roleLabel}>
+                {roleLabel}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="hr-inline-control">
           <input checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} type="checkbox" />
@@ -427,6 +519,13 @@ function PersonRow({
             {person.sailorNumber ? ` - Marin ${person.sailorNumber}` : ''}
           </small>
         </button>
+        <div className="hr-person-badges" aria-label={`Synthese RH ${formatPersonName(person)}`}>
+          {person.registerLabel ? <span>Registre {person.registerLabel}</span> : null}
+          {person.contractType ? <span>Contrat {person.contractType}</span> : null}
+          <span>{person.emergencyContactName && person.emergencyContactPhone ? 'Urgence OK' : 'Urgence incomplete'}</span>
+          {person.deckCertificateLabel ? <span>Pont {person.deckCertificateLabel}</span> : null}
+          {person.engineCertificateLabel ? <span>Machine {person.engineCertificateLabel}</span> : null}
+        </div>
         {renewalCount > 0 ? <span className="hr-alert-badge">{renewalCount} a renouveler</span> : null}
       </div>
       <div className="hr-category-row">

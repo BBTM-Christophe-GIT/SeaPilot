@@ -151,7 +151,6 @@ function createClientWithCreatedAction(createdAction: unknown) {
 
 describe('ActionPlanPage', () => {
   it('filters actions and progress sheets by status, priority, vessel, project, dates and search text', async () => {
-    const user = userEvent.setup();
     const { client } = createClient();
 
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
@@ -159,10 +158,10 @@ describe('ActionPlanPage', () => {
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
     expect(screen.getAllByText('Visite machine SUROIT').length).toBeGreaterThan(0);
 
-    await user.selectOptions(screen.getByLabelText('Filtre statut action'), 'Ouvert');
-    await user.selectOptions(screen.getByLabelText('Filtre priorite action'), 'Haute');
-    await user.selectOptions(screen.getByLabelText('Filtre navire action'), 'COTENTIN');
-    await user.selectOptions(screen.getByLabelText('Filtre projet action'), 'P-2026-014');
+    fireEvent.change(screen.getByLabelText('Filtre statut action'), { target: { value: 'Ouvert' } });
+    fireEvent.change(screen.getByLabelText('Filtre priorite action'), { target: { value: 'Haute' } });
+    fireEvent.change(screen.getByLabelText('Filtre navire action'), { target: { value: 'COTENTIN' } });
+    fireEvent.change(screen.getByLabelText('Filtre projet action'), { target: { value: 'P-2026-014' } });
     fireEvent.change(screen.getByLabelText('Action depuis'), { target: { value: '2026-07-01' } });
     fireEvent.change(screen.getByLabelText("Action jusqu'au"), { target: { value: '2026-07-31' } });
     fireEvent.change(screen.getByLabelText('Recherche actions'), { target: { value: 'garde-corps' } });

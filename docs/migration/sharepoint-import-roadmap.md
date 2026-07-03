@@ -138,6 +138,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Documents RH enrichis avec dates, source, notes et lien vers le fichier importe.
 - Documents RH importes sans collaborateur rattache visibles par les roles bureau avec compteur de reconciliation.
 - Fiche RH enrichie avec champs collaborateur importes: identite, contrat, coordonnees, urgence, habilitations et mensurations.
+- Module RH enrichi avec filtres fonction/grade/registre/role, KPIs contrat/urgence/habilitations et badges de synthese collaborateur.
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.

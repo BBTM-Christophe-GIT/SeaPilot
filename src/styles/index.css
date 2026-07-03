@@ -604,7 +604,9 @@ button:disabled {
 
 .hr-filter-panel {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto auto;
+  grid-template-columns:
+    minmax(240px, 1.2fr) minmax(140px, 180px) minmax(140px, 180px) minmax(130px, 170px)
+    minmax(130px, 170px) auto auto;
   gap: 12px;
   align-items: end;
   border: 1px solid #dbe3ed;
@@ -638,6 +640,31 @@ button:disabled {
   padding: 9px 12px 9px 36px;
   color: #172033;
   background: #fbfcfe;
+}
+
+.hr-filter-field {
+  display: grid;
+  gap: 6px;
+  color: #354259;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hr-filter-field select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #172033;
+  background: #fbfcfe;
+}
+
+.hr-search-field input:focus,
+.hr-filter-field select:focus {
+  border-color: #286fbb;
+  outline: 3px solid rgba(40, 111, 187, 0.14);
 }
 
 .hr-inline-control {
@@ -815,6 +842,25 @@ button:disabled {
 .hr-alert-badge {
   color: #8a4a0a;
   background: #fff0d7;
+}
+
+.hr-person-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hr-person-badges span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #34516f;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  font-weight: 850;
 }
 
 .hr-validation-badge {

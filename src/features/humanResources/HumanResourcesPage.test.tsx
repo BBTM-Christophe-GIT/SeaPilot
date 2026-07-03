@@ -60,6 +60,21 @@ const inactivePerson = {
   active: false,
 };
 
+const yardManagerPerson = {
+  ...activePerson,
+  id: 3,
+  user_id: null,
+  first_name: 'Lea',
+  last_name: 'BUREAU',
+  email: 'lea@example.test',
+  function_label: 'Yard Manager - Le Havre',
+  grade_label: 'Officier',
+  role_label: 'Sedentaire',
+  register_label: 'ENIM',
+  sailor_number: '',
+  contract_type: 'CDD',
+};
+
 interface HrDocumentFixture {
   id: number;
   person_id: number | null;
@@ -161,12 +176,38 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents RH')).toHaveTextContent('2');
     expect(screen.getByLabelText('Documents a renouveler')).toHaveTextContent('2');
-    expect(screen.getByText('Capitaine')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contrats renseignes')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Contacts urgence')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Habilitations')).toHaveTextContent('1');
+    expect(screen.getAllByText('Capitaine').length).toBeGreaterThan(0);
     expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
+    expect(screen.getByText('Registre RIF')).toBeInTheDocument();
+    expect(screen.getByText('Contrat CDI')).toBeInTheDocument();
+    expect(screen.getByText('Urgence OK')).toBeInTheDocument();
+    expect(screen.getByText('Pont Capitaine 200')).toBeInTheDocument();
+    expect(screen.getByText('Machine Mecanicien 250 kW')).toBeInTheDocument();
     expect(screen.getByText('Visite Medicale')).toBeInTheDocument();
     expect(screen.getByText('Certificats')).toBeInTheDocument();
     expect(screen.getByText('Validation capitaine')).toBeInTheDocument();
+  });
+
+  it('filters the RH dashboard by function, grade, register and role', async () => {
+    const user = userEvent.setup();
+
+    render(<HumanResourcesPage client={createClient([activePerson, yardManagerPerson], []) as never} roles={['admin']} />);
+
+    expect(await screen.findByText('Jean MARTIN')).toBeInTheDocument();
+    expect(screen.getByText('Lea BUREAU')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Filtre fonction RH'), 'Capitaine');
+    await user.selectOptions(screen.getByLabelText('Filtre grade RH'), 'Capitaine 200');
+    await user.selectOptions(screen.getByLabelText('Filtre registre RH'), 'RIF');
+    await user.selectOptions(screen.getByLabelText('Filtre role RH'), 'Navigant');
+
+    expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
+    expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
   });
 
   it('filters the RH dashboard by search and can show inactive collaborators', async () => {

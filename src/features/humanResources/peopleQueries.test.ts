@@ -252,6 +252,13 @@ describe('buildHumanResourcesDashboard', () => {
         user_id: null,
         first_name: 'Paul',
         last_name: 'DURAND',
+        contract_type: null,
+        emergency_contact_name: null,
+        emergency_contact_phone: null,
+        deck_certificate_label: null,
+        engine_certificate_label: null,
+        crane_training_on: null,
+        crane_induction_on: null,
         function_label: 'Matelot Polyvalent',
         role_label: 'Navigant',
         active: true,
@@ -286,6 +293,9 @@ describe('buildHumanResourcesDashboard', () => {
       urgent: 2,
       missing: 1,
       unassignedDocuments: 0,
+      contractsReady: 2,
+      emergencyContactsReady: 2,
+      habilitationsReady: 2,
     });
     expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Direction', 'Matelot Polyvalent']);
     expect(dashboard.groups[0].people[0].categorySummaries).toEqual([

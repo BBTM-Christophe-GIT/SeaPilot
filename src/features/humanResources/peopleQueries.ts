@@ -221,6 +221,9 @@ export interface HumanResourcesDashboardMetrics {
   urgent: number;
   missing: number;
   unassignedDocuments: number;
+  contractsReady: number;
+  emergencyContactsReady: number;
+  habilitationsReady: number;
 }
 
 export interface HumanResourcesDashboard {
@@ -365,6 +368,20 @@ function isTrainee(person: PersonRecord): boolean {
   return normalizeSearchValue(`${person.roleLabel} ${person.functionLabel} ${person.gradeLabel}`).includes('stagiaire');
 }
 
+function hasContractReady(person: PersonRecord): boolean {
+  return Boolean(person.contractType);
+}
+
+function hasEmergencyContactReady(person: PersonRecord): boolean {
+  return Boolean(person.emergencyContactName && person.emergencyContactPhone);
+}
+
+function hasHabilitationReady(person: PersonRecord): boolean {
+  return Boolean(
+    person.deckCertificateLabel || person.engineCertificateLabel || person.craneTrainingOn || person.craneInductionOn,
+  );
+}
+
 function buildCategorySummaries(documents: HrDocumentRecord[]): PersonCategorySummary[] {
   const summaries = documents.reduce<Map<string, PersonCategorySummary>>((result, document) => {
     const current = result.get(document.categoryKey) || {
@@ -427,6 +444,9 @@ export function buildHumanResourcesDashboard(
       urgent: documents.filter(isHrDocumentUrgent).length,
       missing: documents.filter((document) => document.status === 'missing').length,
       unassignedDocuments: documents.filter((document) => document.personId === null).length,
+      contractsReady: activePeople.filter(hasContractReady).length,
+      emergencyContactsReady: activePeople.filter(hasEmergencyContactReady).length,
+      habilitationsReady: activePeople.filter(hasHabilitationReady).length,
     },
     groups: [...groupMap.entries()]
       .map(([label, peopleInGroup]) => ({
