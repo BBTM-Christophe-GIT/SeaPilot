@@ -114,6 +114,18 @@ const HR_CATEGORY_ORDER = [
   'administrative',
 ];
 
+const HR_DETAILS_SECTIONS = [
+  { key: 'identity', label: 'Identite et poste' },
+  { key: 'contract', label: 'Contrat et dates' },
+  { key: 'contact', label: 'Coordonnees' },
+  { key: 'emergency', label: 'Contact urgence' },
+  { key: 'administrative', label: 'Documents administratifs' },
+  { key: 'health', label: 'Sante et habilitations' },
+  { key: 'clothing', label: 'Tenues et mensurations' },
+] as const;
+
+type HrDetailsSectionKey = (typeof HR_DETAILS_SECTIONS)[number]['key'];
+
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
@@ -263,12 +275,22 @@ function sortDocumentsForTree(documents: HrDocumentRecord[]): HrDocumentRecord[]
   });
 }
 
+function formatDateForDisplay(value: string): string {
+  const dateParts = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (!dateParts) {
+    return value;
+  }
+
+  return `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}`;
+}
+
 function buildDocumentExpiryText(document: HrDocumentRecord): string {
   if (!document.expiresOn) {
     return '';
   }
 
-  return `arrive a echeance le ${document.expiresOn}`;
+  return `arrive a echeance le ${formatDateForDisplay(document.expiresOn)}`;
 }
 
 function FieldValue({ label, value }: { label: string; value: string }) {
@@ -311,10 +333,6 @@ function EditableField({
       )}
     </label>
   );
-}
-
-function joinFieldValues(...values: string[]): string {
-  return values.filter(Boolean).join(' ');
 }
 
 function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput {
@@ -863,8 +881,6 @@ function PersonRow({
       label: getHrDocumentCategoryLabel(key),
     }))
     .sort((left, right) => compareHrCategories(left.key, right.key));
-  const hasCaptainValidation = person.documents.some((document) => document.requiresCaptainValidation);
-
   function toggleCategory(key: string) {
     setCollapsedCategoryKeys((currentKeys) => {
       const nextKeys = new Set(currentKeys);
@@ -901,9 +917,6 @@ function PersonRow({
               {isPersonExpanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
               <span>{formatPersonName(person)}</span>
             </button>
-            {hasCaptainValidation ? (
-              <em className="hr-person-inline-alert">Validation capitaine</em>
-            ) : null}
           </div>
           <small>{person.documents.length} document(s)</small>
         </div>
@@ -957,7 +970,15 @@ function PersonRow({
                           <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
                           <FileText aria-hidden="true" size={16} />
                           <span className="hr-document-tree-main">
-                            <strong>{document.title}</strong>
+                            <strong>
+                              {document.fileUrl ? (
+                                <a className="hr-document-title-link" href={document.fileUrl} rel="noreferrer" target="_blank">
+                                  {document.title}
+                                </a>
+                              ) : (
+                                document.title
+                              )}
+                            </strong>
                             {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
                             {notesForDisplay ? <small className="hr-document-note">{notesForDisplay}</small> : null}
                             {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
@@ -1080,9 +1101,11 @@ function PersonDetailsDialog({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<UpdatePersonDetailsInput>(() => buildPersonDetailsForm(person));
+  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>('identity');
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
+    setActiveSectionKey('identity');
   }, [person]);
 
   function updateFormValue(key: keyof UpdatePersonDetailsInput, value: string) {
@@ -1100,6 +1123,240 @@ function PersonDetailsDialog({
       setIsEditing(false);
     } catch {
       // The page-level notice already tells the user why the save failed.
+    }
+  }
+
+  function renderActiveSection() {
+    switch (activeSectionKey) {
+      case 'identity':
+        return (
+          <section>
+            <h3>Identite et poste</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField field="firstName" form={form} label="Prenom" onUpdate={updateFormValue} />
+                  <EditableField field="lastName" form={form} label="Nom" onUpdate={updateFormValue} />
+                  <EditableField field="functionLabel" form={form} label="Fonction" onUpdate={updateFormValue} />
+                  <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={updateFormValue} />
+                  <EditableField field="roleLabel" form={form} label="Role" onUpdate={updateFormValue} />
+                  <EditableField field="registerLabel" form={form} label="Registre" onUpdate={updateFormValue} />
+                  <EditableField field="sex" form={form} label="Sexe" onUpdate={updateFormValue} />
+                  <EditableField field="sailorNumber" form={form} label="Numero de marin" onUpdate={updateFormValue} />
+                  <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={updateFormValue} />
+                  <EditableField field="email" form={form} label="Email" onUpdate={updateFormValue} type="email" />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Prenom" value={person.firstName} />
+                  <FieldValue label="Nom" value={person.lastName} />
+                  <FieldValue label="Fonction" value={person.functionLabel} />
+                  <FieldValue label="Grade" value={person.gradeLabel} />
+                  <FieldValue label="Role" value={person.roleLabel} />
+                  <FieldValue label="Registre" value={person.registerLabel} />
+                  <FieldValue label="Sexe" value={person.sex} />
+                  <FieldValue label="Numero de marin" value={person.sailorNumber} />
+                  <FieldValue label="Compte M365" value={person.m365Account} />
+                  <FieldValue label="Email" value={person.email} />
+                </>
+              )}
+            </DetailsGrid>
+          </section>
+        );
+      case 'contract':
+        return (
+          <section>
+            <h3>Contrat et dates</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField field="contractType" form={form} label="Type de contrat" onUpdate={updateFormValue} />
+                  <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={updateFormValue} type="date" />
+                  <EditableField field="departedOn" form={form} label="Date depart" onUpdate={updateFormValue} type="date" />
+                  <EditableField field="departureReason" form={form} label="Cause depart" onUpdate={updateFormValue} />
+                  <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={updateFormValue} type="date" />
+                  <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={updateFormValue} />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Type de contrat" value={person.contractType} />
+                  <FieldValue label="Date embauche" value={person.hiredOn} />
+                  <FieldValue label="Date depart" value={person.departedOn} />
+                  <FieldValue label="Cause depart" value={person.departureReason} />
+                  <FieldValue label="Date naissance" value={person.birthDate} />
+                  <FieldValue label="Lieu naissance" value={person.birthPlace} />
+                </>
+              )}
+            </DetailsGrid>
+          </section>
+        );
+      case 'contact':
+        return (
+          <section>
+            <h3>Coordonnees</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField
+                    field="postalAddress"
+                    form={form}
+                    label="Adresse postale"
+                    multiline
+                    onUpdate={updateFormValue}
+                  />
+                  <EditableField field="phone" form={form} label="Telephone" onUpdate={updateFormValue} />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Adresse postale" value={person.postalAddress} />
+                  <FieldValue label="Telephone" value={person.phone} />
+                </>
+              )}
+            </DetailsGrid>
+          </section>
+        );
+      case 'emergency':
+        return (
+          <section>
+            <h3>Contact urgence</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField field="emergencyContactName" form={form} label="Contact" onUpdate={updateFormValue} />
+                  <EditableField
+                    field="emergencyContactRelationship"
+                    form={form}
+                    label="Lien parente"
+                    onUpdate={updateFormValue}
+                  />
+                  <EditableField
+                    field="emergencyContactPhone"
+                    form={form}
+                    label="Telephone urgence"
+                    onUpdate={updateFormValue}
+                  />
+                  <EditableField
+                    field="emergencyContactAddress"
+                    form={form}
+                    label="Adresse urgence"
+                    multiline
+                    onUpdate={updateFormValue}
+                  />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Contact" value={person.emergencyContactName} />
+                  <FieldValue label="Lien parente" value={person.emergencyContactRelationship} />
+                  <FieldValue label="Telephone urgence" value={person.emergencyContactPhone} />
+                  <FieldValue label="Adresse urgence" value={person.emergencyContactAddress} />
+                </>
+              )}
+            </DetailsGrid>
+          </section>
+        );
+      case 'administrative':
+        return (
+          <section>
+            <h3>Documents administratifs</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField
+                    field="identityDocumentType"
+                    form={form}
+                    label="Type document identite"
+                    onUpdate={updateFormValue}
+                  />
+                  <EditableField
+                    field="identityDocumentNumber"
+                    form={form}
+                    label="Numero document identite"
+                    onUpdate={updateFormValue}
+                  />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Type document identite" value={person.identityDocumentType} />
+                  <FieldValue label="Numero document identite" value={person.identityDocumentNumber} />
+                </>
+              )}
+            </DetailsGrid>
+            <DocumentList documents={documents.filter((document) => document.categoryKey === 'administrative')} />
+          </section>
+        );
+      case 'health':
+        return (
+          <section>
+            <h3>Sante et habilitations</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField field="deckCertificateLabel" form={form} label="Brevet Pont" onUpdate={updateFormValue} />
+                  <EditableField field="engineCertificateLabel" form={form} label="Brevet Machine" onUpdate={updateFormValue} />
+                  <EditableField
+                    field="craneInductionOn"
+                    form={form}
+                    label="Induction grutage"
+                    onUpdate={updateFormValue}
+                    type="date"
+                  />
+                  <EditableField
+                    field="craneTrainingOn"
+                    form={form}
+                    label="Formation grutage"
+                    onUpdate={updateFormValue}
+                    type="date"
+                  />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Brevet Pont" value={person.deckCertificateLabel} />
+                  <FieldValue label="Brevet Machine" value={person.engineCertificateLabel} />
+                  <FieldValue label="Induction grutage" value={person.craneInductionOn} />
+                  <FieldValue label="Formation grutage" value={person.craneTrainingOn} />
+                </>
+              )}
+            </DetailsGrid>
+            <DocumentList documents={documents.filter((document) => document.categoryKey !== 'administrative')} />
+          </section>
+        );
+      case 'clothing':
+        return (
+          <section>
+            <h3>Tenues et mensurations</h3>
+            <DetailsGrid isEditing={isEditing}>
+              {isEditing ? (
+                <>
+                  <EditableField field="coverallSize" form={form} label="Combinaison" onUpdate={updateFormValue} />
+                  <EditableField field="pantsSize" form={form} label="Pantalon" onUpdate={updateFormValue} />
+                  <EditableField field="jacketSize" form={form} label="Veste" onUpdate={updateFormValue} />
+                  <EditableField field="shoeSize" form={form} label="Pointure" onUpdate={updateFormValue} />
+                  <EditableField field="weightKg" form={form} label="Poids" onUpdate={updateFormValue} />
+                  <EditableField field="waistSize" form={form} label="Tour de taille" onUpdate={updateFormValue} />
+                  <EditableField field="chestSize" form={form} label="Poitrine" onUpdate={updateFormValue} />
+                  <EditableField field="fullHeightSize" form={form} label="Taille totale" onUpdate={updateFormValue} />
+                  <EditableField field="inseamSize" form={form} label="Entrejambe" onUpdate={updateFormValue} />
+                  <EditableField field="hipSize" form={form} label="Tour de hanche" onUpdate={updateFormValue} />
+                </>
+              ) : (
+                <>
+                  <FieldValue label="Combinaison" value={person.coverallSize} />
+                  <FieldValue label="Pantalon" value={person.pantsSize} />
+                  <FieldValue label="Veste" value={person.jacketSize} />
+                  <FieldValue label="Pointure" value={person.shoeSize} />
+                  <FieldValue label="Poids" value={person.weightKg} />
+                  <FieldValue label="Tour de taille" value={person.waistSize} />
+                  <FieldValue label="Poitrine" value={person.chestSize} />
+                  <FieldValue label="Taille totale" value={person.fullHeightSize} />
+                  <FieldValue label="Entrejambe" value={person.inseamSize} />
+                  <FieldValue label="Tour de hanche" value={person.hipSize} />
+                </>
+              )}
+            </DetailsGrid>
+          </section>
+        );
+      default:
+        return null;
     }
   }
 
@@ -1124,223 +1381,29 @@ function PersonDetailsDialog({
         </div>
         <form className="hr-details-form" onSubmit={handleSubmit}>
           <div className="hr-details-layout">
-          <nav className="hr-section-nav" aria-label="Sections Fiche RH">
-            {[
-              'Identite et poste',
-              'Contrat et dates',
-              'Coordonnees',
-              'Contact urgence',
-              'Documents administratifs',
-              'Sante et habilitations',
-              'Tenues et mensurations',
-            ].map((section, index) => (
-              <span key={section}>
-                <b>{index + 1}</b>
-                {section}
-              </span>
-            ))}
-          </nav>
-          <div className="hr-details-content">
-            <section>
-              <h3>Identite et poste</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="firstName" form={form} label="Prenom" onUpdate={updateFormValue} />
-                    <EditableField field="lastName" form={form} label="Nom" onUpdate={updateFormValue} />
-                    <EditableField field="functionLabel" form={form} label="Fonction" onUpdate={updateFormValue} />
-                    <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={updateFormValue} />
-                    <EditableField field="roleLabel" form={form} label="Role" onUpdate={updateFormValue} />
-                    <EditableField field="registerLabel" form={form} label="Registre" onUpdate={updateFormValue} />
-                    <EditableField field="sex" form={form} label="Sexe" onUpdate={updateFormValue} />
-                    <EditableField field="sailorNumber" form={form} label="Numero de marin" onUpdate={updateFormValue} />
-                    <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={updateFormValue} />
-                    <EditableField field="email" form={form} label="Email" onUpdate={updateFormValue} type="email" />
-                    <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={updateFormValue} type="date" />
-                    <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={updateFormValue} />
-                    <EditableField
-                      field="identityDocumentType"
-                      form={form}
-                      label="Type document identite"
-                      onUpdate={updateFormValue}
-                    />
-                    <EditableField
-                      field="identityDocumentNumber"
-                      form={form}
-                      label="Numero document identite"
-                      onUpdate={updateFormValue}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Prenom" value={person.firstName} />
-                    <FieldValue label="Nom" value={person.lastName} />
-                    <FieldValue label="Fonction" value={person.functionLabel} />
-                    <FieldValue label="Grade" value={person.gradeLabel} />
-                    <FieldValue label="Role" value={person.roleLabel} />
-                    <FieldValue label="Registre" value={person.registerLabel} />
-                    <FieldValue label="Sexe" value={person.sex} />
-                    <FieldValue label="Numero de marin" value={person.sailorNumber} />
-                    <FieldValue label="Compte M365" value={person.m365Account} />
-                    <FieldValue label="Email" value={person.email} />
-                    <FieldValue label="Date naissance" value={person.birthDate} />
-                    <FieldValue label="Lieu naissance" value={person.birthPlace} />
-                    <FieldValue
-                      label="Document identite"
-                      value={joinFieldValues(person.identityDocumentType, person.identityDocumentNumber)}
-                    />
-                  </>
-                )}
-              </DetailsGrid>
-            </section>
-            <section>
-              <h3>Contrat et dates</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="contractType" form={form} label="Type de contrat" onUpdate={updateFormValue} />
-                    <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={updateFormValue} type="date" />
-                    <EditableField field="departedOn" form={form} label="Date depart" onUpdate={updateFormValue} type="date" />
-                    <EditableField field="departureReason" form={form} label="Cause depart" onUpdate={updateFormValue} />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Type de contrat" value={person.contractType} />
-                    <FieldValue label="Date embauche" value={person.hiredOn} />
-                    <FieldValue label="Date depart" value={person.departedOn} />
-                    <FieldValue label="Cause depart" value={person.departureReason} />
-                  </>
-                )}
-              </DetailsGrid>
-            </section>
-            <section>
-              <h3>Coordonnees</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="phone" form={form} label="Telephone" onUpdate={updateFormValue} />
-                    <EditableField
-                      field="postalAddress"
-                      form={form}
-                      label="Adresse postale"
-                      multiline
-                      onUpdate={updateFormValue}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Telephone" value={person.phone} />
-                    <FieldValue label="Adresse postale" value={person.postalAddress} />
-                  </>
-                )}
-              </DetailsGrid>
-            </section>
-            <section>
-              <h3>Contact urgence</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="emergencyContactName" form={form} label="Contact" onUpdate={updateFormValue} />
-                    <EditableField
-                      field="emergencyContactRelationship"
-                      form={form}
-                      label="Lien parente"
-                      onUpdate={updateFormValue}
-                    />
-                    <EditableField
-                      field="emergencyContactPhone"
-                      form={form}
-                      label="Telephone urgence"
-                      onUpdate={updateFormValue}
-                    />
-                    <EditableField
-                      field="emergencyContactAddress"
-                      form={form}
-                      label="Adresse urgence"
-                      multiline
-                      onUpdate={updateFormValue}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Contact" value={person.emergencyContactName} />
-                    <FieldValue label="Lien parente" value={person.emergencyContactRelationship} />
-                    <FieldValue label="Telephone urgence" value={person.emergencyContactPhone} />
-                    <FieldValue label="Adresse urgence" value={person.emergencyContactAddress} />
-                  </>
-                )}
-              </DetailsGrid>
-            </section>
-            <section>
-              <h3>Documents administratifs</h3>
-              <DocumentList documents={documents.filter((document) => document.categoryKey === 'administrative')} />
-            </section>
-            <section>
-              <h3>Sante et habilitations</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="deckCertificateLabel" form={form} label="Brevet Pont" onUpdate={updateFormValue} />
-                    <EditableField field="engineCertificateLabel" form={form} label="Brevet Machine" onUpdate={updateFormValue} />
-                    <EditableField
-                      field="craneTrainingOn"
-                      form={form}
-                      label="Formation grutage"
-                      onUpdate={updateFormValue}
-                      type="date"
-                    />
-                    <EditableField
-                      field="craneInductionOn"
-                      form={form}
-                      label="Induction grutage"
-                      onUpdate={updateFormValue}
-                      type="date"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Brevet Pont" value={person.deckCertificateLabel} />
-                    <FieldValue label="Brevet Machine" value={person.engineCertificateLabel} />
-                    <FieldValue label="Formation grutage" value={person.craneTrainingOn} />
-                    <FieldValue label="Induction grutage" value={person.craneInductionOn} />
-                  </>
-                )}
-              </DetailsGrid>
-              <DocumentList documents={documents.filter((document) => document.categoryKey !== 'administrative')} />
-            </section>
-            <section>
-              <h3>Tenues et mensurations</h3>
-              <DetailsGrid isEditing={isEditing}>
-                {isEditing ? (
-                  <>
-                    <EditableField field="waistSize" form={form} label="Tour de taille" onUpdate={updateFormValue} />
-                    <EditableField field="chestSize" form={form} label="Poitrine" onUpdate={updateFormValue} />
-                    <EditableField field="fullHeightSize" form={form} label="Taille totale" onUpdate={updateFormValue} />
-                    <EditableField field="inseamSize" form={form} label="Entrejambe" onUpdate={updateFormValue} />
-                    <EditableField field="hipSize" form={form} label="Tour de hanche" onUpdate={updateFormValue} />
-                    <EditableField field="weightKg" form={form} label="Poids" onUpdate={updateFormValue} />
-                    <EditableField field="shoeSize" form={form} label="Pointure" onUpdate={updateFormValue} />
-                    <EditableField field="coverallSize" form={form} label="Combinaison" onUpdate={updateFormValue} />
-                    <EditableField field="pantsSize" form={form} label="Pantalon" onUpdate={updateFormValue} />
-                    <EditableField field="jacketSize" form={form} label="Veste" onUpdate={updateFormValue} />
-                  </>
-                ) : (
-                  <>
-                    <FieldValue label="Tour de taille" value={person.waistSize} />
-                    <FieldValue label="Poitrine" value={person.chestSize} />
-                    <FieldValue label="Taille totale" value={person.fullHeightSize} />
-                    <FieldValue label="Entrejambe" value={person.inseamSize} />
-                    <FieldValue label="Tour de hanche" value={person.hipSize} />
-                    <FieldValue label="Poids" value={person.weightKg} />
-                    <FieldValue label="Pointure" value={person.shoeSize} />
-                    <FieldValue label="Combinaison" value={person.coverallSize} />
-                    <FieldValue label="Pantalon" value={person.pantsSize} />
-                    <FieldValue label="Veste" value={person.jacketSize} />
-                  </>
-                )}
-              </DetailsGrid>
-            </section>
-          </div>
+            <nav className="hr-section-nav" aria-label="Sections Fiche RH">
+              <div className="hr-section-nav-header">
+                <span>Sections</span>
+                <strong>Fiche RH</strong>
+              </div>
+              <ol>
+                {HR_DETAILS_SECTIONS.map((section, index) => (
+                  <li key={section.key}>
+                    <button
+                      aria-current={activeSectionKey === section.key ? 'step' : undefined}
+                      aria-label={section.label}
+                      className={activeSectionKey === section.key ? 'is-active' : undefined}
+                      onClick={() => setActiveSectionKey(section.key)}
+                      type="button"
+                    >
+                      <b>{index + 1}</b>
+                      <span>{section.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+            <div className="hr-details-content">{renderActiveSection()}</div>
           </div>
           {isEditing ? (
             <div className="hr-dialog-footer">
@@ -1381,8 +1444,8 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
               <strong>{document.title}</strong>
               <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
               <span className="hr-document-meta">
-                {document.issuedOn ? <small>Delivre le {document.issuedOn}</small> : null}
-                {document.expiresOn ? <small>Expire le {document.expiresOn}</small> : null}
+                {document.issuedOn ? <small>Delivre le {formatDateForDisplay(document.issuedOn)}</small> : null}
+                {document.expiresOn ? <small>Expire le {formatDateForDisplay(document.expiresOn)}</small> : null}
                 {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
               </span>
               {notesForDisplay ? <em>{notesForDisplay}</em> : null}
