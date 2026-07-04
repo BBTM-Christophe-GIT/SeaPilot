@@ -193,6 +193,39 @@ describe('HumanResourcesPage', () => {
     expect(within(personRegion).getByText('Validation capitaine')).toBeInTheDocument();
   });
 
+  it('collapses collaborator and document category levels with tree chevrons', async () => {
+    const user = userEvent.setup();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    const personRegion = await screen.findByRole('region', { name: 'Documents de Jean MARTIN' });
+    const collaboratorToggle = within(personRegion).getByRole('button', { name: 'Jean MARTIN' });
+
+    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
+
+    await user.click(collaboratorToggle);
+
+    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(personRegion).queryByText('Capitaine 200')).not.toBeInTheDocument();
+
+    await user.click(collaboratorToggle);
+
+    const categoryToggle = within(personRegion).getByRole('button', { name: 'Pont 1' });
+
+    expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(categoryToggle);
+
+    expect(categoryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(personRegion).queryByText('Capitaine 200')).not.toBeInTheDocument();
+
+    await user.click(categoryToggle);
+
+    expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
+  });
+
   it('filters the RH dashboard by collaborator, category, status and due state', async () => {
     const user = userEvent.setup();
     const leaDocument = {

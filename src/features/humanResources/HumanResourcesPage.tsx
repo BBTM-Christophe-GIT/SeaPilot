@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   ClipboardCheck,
   FileText,
   HeartPulse,
@@ -826,6 +828,8 @@ function PersonRow({
   person: PersonDashboardRecord;
 }) {
   const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
+  const [isPersonExpanded, setIsPersonExpanded] = useState(true);
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
   const documentGroups = Array.from(
     person.documents.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
       result.set(document.categoryKey, (result.get(document.categoryKey) || []).concat(document));
@@ -838,12 +842,27 @@ function PersonRow({
       label: getHrDocumentCategoryLabel(key),
     }))
     .sort((left, right) => compareHrCategories(left.key, right.key));
+  const hasCaptainValidation = person.documents.some((document) => document.requiresCaptainValidation);
+
+  function toggleCategory(key: string) {
+    setCollapsedCategoryKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+
+      if (nextKeys.has(key)) {
+        nextKeys.delete(key);
+      } else {
+        nextKeys.add(key);
+      }
+
+      return nextKeys;
+    });
+  }
 
   return (
     <article aria-label={`Documents de ${formatPersonName(person)}`} className="hr-person-row" role="region">
       <header className="hr-person-tree-header">
         <div className="hr-person-actions">
-          <button aria-label={`Fiche de ${formatPersonName(person)}`} className="hr-icon-button" onClick={onOpen} type="button">
+          <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-icon-button" onClick={onOpen} type="button">
             <Users aria-hidden="true" size={16} />
           </button>
           <button aria-label={`Ouvrir les documents de ${formatPersonName(person)}`} className="hr-icon-button" type="button">
@@ -851,12 +870,20 @@ function PersonRow({
           </button>
         </div>
         <div className="hr-person-main">
-          <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-person-open" onClick={onOpen} type="button">
-            <span>{formatPersonName(person)}</span>
-            {person.documents.some((document) => document.requiresCaptainValidation) ? (
+          <div className="hr-person-title-line">
+            <button
+              aria-expanded={isPersonExpanded}
+              className="hr-person-tree-toggle"
+              onClick={() => setIsPersonExpanded((currentValue) => !currentValue)}
+              type="button"
+            >
+              {isPersonExpanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
+              <span>{formatPersonName(person)}</span>
+            </button>
+            {hasCaptainValidation ? (
               <em className="hr-person-inline-alert">Validation capitaine</em>
             ) : null}
-          </button>
+          </div>
           <small>{person.documents.length} document(s)</small>
         </div>
         <div className="hr-person-status">
@@ -879,42 +906,54 @@ function PersonRow({
         </div>
       </header>
 
-      {documentGroups.length > 0 ? (
+      {isPersonExpanded && documentGroups.length > 0 ? (
         <div className="hr-document-tree">
           {documentGroups.map((group) => {
             const groupRenewalCount = group.documents.filter(isHrDocumentRenewalDue).length;
+            const isCategoryExpanded = !collapsedCategoryKeys.has(group.key);
 
             return (
               <section className="hr-document-category" key={group.key}>
-                <button aria-label={`${group.label} ${group.documents.length}`} className="hr-document-category-button" type="button">
+                <button
+                  aria-expanded={isCategoryExpanded}
+                  aria-label={`${group.label} ${group.documents.length}`}
+                  className="hr-document-category-button"
+                  onClick={() => toggleCategory(group.key)}
+                  type="button"
+                >
+                  {isCategoryExpanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
                   <span>{group.label}</span>
                   <b>{group.documents.length}</b>
                   {groupRenewalCount > 0 ? <em aria-hidden="true">{groupRenewalCount} a renouveler</em> : null}
                 </button>
-                <ul className="hr-document-tree-list">
-                  {group.documents.map((document) => (
-                    <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
-                      <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
-                      <FileText aria-hidden="true" size={16} />
-                      <span className="hr-document-tree-main">
-                        <strong>{document.title}</strong>
-                        {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
-                        {document.notes ? <small className="hr-document-note">{document.notes}</small> : null}
-                        {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
-                      </span>
-                      <span className={`hr-document-status hr-document-${document.status}`}>
-                        {DOCUMENT_STATUS_LABELS[document.status]}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {isCategoryExpanded ? (
+                  <ul className="hr-document-tree-list">
+                    {group.documents.map((document) => (
+                      <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
+                        <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
+                        <FileText aria-hidden="true" size={16} />
+                        <span className="hr-document-tree-main">
+                          <strong>{document.title}</strong>
+                          {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
+                          {document.notes ? <small className="hr-document-note">{document.notes}</small> : null}
+                          {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
+                        </span>
+                        <span className={`hr-document-status hr-document-${document.status}`}>
+                          {DOCUMENT_STATUS_LABELS[document.status]}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </section>
             );
           })}
         </div>
-      ) : (
+      ) : null}
+
+      {isPersonExpanded && documentGroups.length === 0 ? (
         <p className="hr-category-empty">Aucun document associe</p>
-      )}
+      ) : null}
     </article>
   );
 }
