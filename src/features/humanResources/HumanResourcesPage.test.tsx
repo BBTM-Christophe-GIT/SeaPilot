@@ -345,6 +345,29 @@ describe('HumanResourcesPage', () => {
     );
   });
 
+  it('hides SharePoint Brevets library paths from RH document notes', async () => {
+    const user = userEvent.setup();
+    const documentsWithLibraryPath = [
+      {
+        ...documents[0],
+        notes: '/sites/QHSE/Brevets et Visites Mdicales\r\nNote terrain conservee',
+      },
+      documents[1],
+    ];
+
+    render(<HumanResourcesPage client={createClient([activePerson], documentsWithLibraryPath) as never} roles={['admin']} />);
+
+    expect(await screen.findByText('Visite medicale')).toBeInTheDocument();
+    expect(screen.queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Note terrain conservee')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
+    expect(within(dialog).queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Note terrain conservee')).toBeInTheDocument();
+  });
+
   it('updates the structured personnel file for office roles', async () => {
     const user = userEvent.setup();
     const updatedPerson = {

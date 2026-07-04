@@ -132,6 +132,27 @@ function normalizeSearch(value: string): string {
     .toLowerCase();
 }
 
+function isHiddenSharePointLibraryNote(value: string): boolean {
+  const normalized = normalizeSearch(value)
+    .replace(/\\/g, '/')
+    .replace(/%20/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (
+    normalized.includes('sites/qhse/brevets et visites medicales') ||
+    normalized.includes('sites/qhse/brevets et visites mdicales')
+  );
+}
+
+function getDocumentNotesForDisplay(notes: string): string {
+  return notes
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !isHiddenSharePointLibraryNote(line))
+    .join('\n');
+}
+
 function personMatchesSearch(person: PersonRecord, query: string): boolean {
   if (!query) {
     return true;
@@ -928,21 +949,25 @@ function PersonRow({
                 </button>
                 {isCategoryExpanded ? (
                   <ul className="hr-document-tree-list">
-                    {group.documents.map((document) => (
-                      <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
-                        <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
-                        <FileText aria-hidden="true" size={16} />
-                        <span className="hr-document-tree-main">
-                          <strong>{document.title}</strong>
-                          {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
-                          {document.notes ? <small className="hr-document-note">{document.notes}</small> : null}
-                          {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
-                        </span>
-                        <span className={`hr-document-status hr-document-${document.status}`}>
-                          {DOCUMENT_STATUS_LABELS[document.status]}
-                        </span>
-                      </li>
-                    ))}
+                    {group.documents.map((document) => {
+                      const notesForDisplay = getDocumentNotesForDisplay(document.notes);
+
+                      return (
+                        <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
+                          <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
+                          <FileText aria-hidden="true" size={16} />
+                          <span className="hr-document-tree-main">
+                            <strong>{document.title}</strong>
+                            {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
+                            {notesForDisplay ? <small className="hr-document-note">{notesForDisplay}</small> : null}
+                            {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
+                          </span>
+                          <span className={`hr-document-status hr-document-${document.status}`}>
+                            {DOCUMENT_STATUS_LABELS[document.status]}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
               </section>
@@ -1347,28 +1372,32 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
 
   return (
     <ul className="hr-document-list">
-      {documents.map((document) => (
-        <li key={document.id}>
-          <span className="hr-document-main">
-            <strong>{document.title}</strong>
-            <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
-            <span className="hr-document-meta">
-              {document.issuedOn ? <small>Delivre le {document.issuedOn}</small> : null}
-              {document.expiresOn ? <small>Expire le {document.expiresOn}</small> : null}
-              {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
+      {documents.map((document) => {
+        const notesForDisplay = getDocumentNotesForDisplay(document.notes);
+
+        return (
+          <li key={document.id}>
+            <span className="hr-document-main">
+              <strong>{document.title}</strong>
+              <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
+              <span className="hr-document-meta">
+                {document.issuedOn ? <small>Delivre le {document.issuedOn}</small> : null}
+                {document.expiresOn ? <small>Expire le {document.expiresOn}</small> : null}
+                {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
+              </span>
+              {notesForDisplay ? <em>{notesForDisplay}</em> : null}
             </span>
-            {document.notes ? <em>{document.notes}</em> : null}
-          </span>
-          <span className="hr-document-actions">
-            <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
-            {document.fileUrl ? (
-              <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
-                Ouvrir le fichier
-              </a>
-            ) : null}
-          </span>
-        </li>
-      ))}
+            <span className="hr-document-actions">
+              <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
+              {document.fileUrl ? (
+                <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
+                  Ouvrir le fichier
+                </a>
+              ) : null}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
