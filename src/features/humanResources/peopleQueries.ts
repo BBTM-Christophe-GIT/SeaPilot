@@ -66,8 +66,8 @@ export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
   deck: 'Pont',
   engine: 'Machine',
   lifting: 'Levage',
-  medical_visit: 'Visite Medicale',
-  safety_training: 'Formation de Securite',
+  medical_visit: 'Visite Médicale',
+  safety_training: 'Formation de Sécurité',
   safety_induction: 'Safety Induction',
 };
 
@@ -220,6 +220,9 @@ export interface HumanResourcesDashboardMetrics {
   renewalDue: number;
   urgent: number;
   missing: number;
+  expiredDocuments: number;
+  certificateRenewals: number;
+  medicalVisitRenewals: number;
   unassignedDocuments: number;
   contractsReady: number;
   emergencyContactsReady: number;
@@ -234,6 +237,11 @@ export interface HumanResourcesDashboard {
 export interface HumanResourcesData {
   people: PersonRecord[];
   documents: HrDocumentRecord[];
+}
+
+export interface StaffEvolutionPoint {
+  year: number;
+  count: number;
 }
 
 export interface CreatePersonInput {
@@ -342,6 +350,10 @@ export function isHrDocumentUrgent(document: HrDocumentRecord): boolean {
 
 export function isHrDocumentRenewalDue(document: HrDocumentRecord): boolean {
   return document.status === 'expired' || document.status === 'renew_due';
+}
+
+function isCertificateLikeDocument(document: HrDocumentRecord): boolean {
+  return document.categoryKey !== 'medical_visit' && document.categoryKey !== 'administrative';
 }
 
 export function formatPersonName(person: PersonRecord): string {
@@ -496,6 +508,13 @@ export function buildHumanResourcesDashboard(
       renewalDue: documents.filter(isHrDocumentRenewalDue).length,
       urgent: documents.filter(isHrDocumentUrgent).length,
       missing: documents.filter((document) => document.status === 'missing').length,
+      expiredDocuments: documents.filter((document) => document.status === 'expired').length,
+      certificateRenewals: documents.filter(
+        (document) => isCertificateLikeDocument(document) && isHrDocumentRenewalDue(document),
+      ).length,
+      medicalVisitRenewals: documents.filter(
+        (document) => document.categoryKey === 'medical_visit' && isHrDocumentRenewalDue(document),
+      ).length,
       unassignedDocuments: documents.filter((document) => document.personId === null).length,
       contractsReady: activePeople.filter(hasContractReady).length,
       emergencyContactsReady: activePeople.filter(hasEmergencyContactReady).length,
@@ -508,6 +527,32 @@ export function buildHumanResourcesDashboard(
       }))
       .sort((left, right) => left.label.localeCompare(right.label, 'fr')),
   };
+}
+
+export function buildStaffEvolution(
+  people: PersonRecord[],
+  years: number[] = [2020, 2021, 2022, 2023, 2024, 2025, 2026],
+): StaffEvolutionPoint[] {
+  const activePeople = people.filter((person) => person.active);
+  const sortedYears = [...years].sort((left, right) => left - right);
+  const latestYear = sortedYears[sortedYears.length - 1];
+
+  return sortedYears.map((year) => ({
+    year,
+    count: activePeople.filter((person) => {
+      if (!person.hiredOn) {
+        return year === latestYear;
+      }
+
+      const hiredYear = Number(person.hiredOn.slice(0, 4));
+
+      if (!Number.isFinite(hiredYear)) {
+        return year === latestYear;
+      }
+
+      return hiredYear <= year;
+    }).length,
+  }));
 }
 
 export async function fetchPeople(client: SupabaseClient): Promise<PersonRecord[]> {

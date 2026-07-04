@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildHumanResourcesDashboard,
+  buildStaffEvolution,
   createPerson,
   fetchHumanResourcesData,
   fetchPeople,
@@ -293,6 +294,9 @@ describe('buildHumanResourcesDashboard', () => {
       renewalDue: 2,
       urgent: 2,
       missing: 1,
+      expiredDocuments: 1,
+      certificateRenewals: 1,
+      medicalVisitRenewals: 1,
       unassignedDocuments: 0,
       contractsReady: 2,
       emergencyContactsReady: 2,
@@ -301,7 +305,25 @@ describe('buildHumanResourcesDashboard', () => {
     expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Direction', 'Matelot Polyvalent']);
     expect(dashboard.groups[0].people[0].categorySummaries).toEqual([
       { key: 'certificate', label: 'Certificats', count: 1, urgentCount: 1, renewalDueCount: 1 },
-      { key: 'medical_visit', label: 'Visite Medicale', count: 1, urgentCount: 0, renewalDueCount: 1 },
+      { key: 'medical_visit', label: 'Visite Médicale', count: 1, urgentCount: 0, renewalDueCount: 1 },
+    ]);
+  });
+});
+
+describe('buildStaffEvolution', () => {
+  it('builds cumulative active staff counts for the RH evolution chart', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2021-06-01', active: true },
+      { ...personRow, id: 2, hired_on: '2023-01-10', active: true },
+      { ...personRow, id: 3, hired_on: null, active: true },
+      { ...personRow, id: 4, hired_on: '2022-03-01', active: false },
+    ]);
+
+    expect(buildStaffEvolution(people, [2020, 2021, 2022, 2023])).toEqual([
+      { year: 2020, count: 0 },
+      { year: 2021, count: 1 },
+      { year: 2022, count: 1 },
+      { year: 2023, count: 3 },
     ]);
   });
 });

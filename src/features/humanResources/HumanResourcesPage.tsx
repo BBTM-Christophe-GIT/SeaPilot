@@ -2,7 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   ClipboardCheck,
-  FileCheck2,
   FileText,
   HeartPulse,
   Search,
@@ -17,6 +16,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import {
+  buildStaffEvolution,
   buildHumanResourcesDashboard,
   createPerson,
   fetchHumanResourcesData,
@@ -50,10 +50,10 @@ interface PersonFormState {
 }
 
 interface HrFilterState {
-  functionLabel: string;
-  gradeLabel: string;
-  registerLabel: string;
-  roleLabel: string;
+  collaboratorId: string;
+  categoryKey: string;
+  status: string;
+  dueState: string;
 }
 
 const EMPTY_FORM: PersonFormState = {
@@ -70,10 +70,10 @@ const EMPTY_FORM: PersonFormState = {
 };
 
 const EMPTY_FILTERS: HrFilterState = {
-  functionLabel: '',
-  gradeLabel: '',
-  registerLabel: '',
-  roleLabel: '',
+  collaboratorId: '',
+  categoryKey: '',
+  status: '',
+  dueState: '',
 };
 
 const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
@@ -83,6 +83,34 @@ const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
   missing: 'Manquant',
   pending_validation: 'Validation',
 };
+
+const DOCUMENT_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: 'Tous', value: '' },
+  { label: 'A jour', value: 'valid' },
+  { label: 'A renouveler', value: 'renew_due' },
+  { label: 'Echu', value: 'expired' },
+  { label: 'Manquant', value: 'missing' },
+  { label: 'Validation', value: 'pending_validation' },
+];
+
+const DOCUMENT_DUE_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: 'Toutes', value: '' },
+  { label: 'A renouveler', value: 'renewal_due' },
+  { label: 'Urgent', value: 'urgent' },
+  { label: 'Documents echus', value: 'expired' },
+  { label: 'Documents manquants', value: 'missing' },
+];
+
+const HR_CATEGORY_ORDER = [
+  'deck',
+  'engine',
+  'safety_training',
+  'medical_visit',
+  'lifting',
+  'safety_induction',
+  'certificate',
+  'administrative',
+];
 
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
@@ -128,13 +156,51 @@ function personMatchesSearch(person: PersonRecord, query: string): boolean {
   return haystack.includes(query);
 }
 
-function personMatchesFilters(person: PersonRecord, filters: HrFilterState): boolean {
-  return (
-    (!filters.functionLabel || person.functionLabel === filters.functionLabel) &&
-    (!filters.gradeLabel || person.gradeLabel === filters.gradeLabel) &&
-    (!filters.registerLabel || person.registerLabel === filters.registerLabel) &&
-    (!filters.roleLabel || person.roleLabel === filters.roleLabel)
+function documentMatchesSearch(document: HrDocumentRecord, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  const haystack = normalizeSearch(
+    [
+      document.title,
+      document.personName,
+      document.personSharePointItemId,
+      document.sourceLabel,
+      document.notes,
+      getHrDocumentCategoryLabel(document.categoryKey),
+    ].join(' '),
   );
+
+  return haystack.includes(query);
+}
+
+function documentMatchesDueState(document: HrDocumentRecord, dueState: string): boolean {
+  if (!dueState) {
+    return true;
+  }
+
+  if (dueState === 'renewal_due') {
+    return isHrDocumentRenewalDue(document);
+  }
+
+  if (dueState === 'urgent') {
+    return document.status === 'expired' || document.status === 'missing';
+  }
+
+  return document.status === dueState;
+}
+
+function documentMatchesFilters(document: HrDocumentRecord, filters: HrFilterState): boolean {
+  return (
+    (!filters.categoryKey || document.categoryKey === filters.categoryKey) &&
+    (!filters.status || document.status === filters.status) &&
+    documentMatchesDueState(document, filters.dueState)
+  );
+}
+
+function hasDocumentFilter(filters: HrFilterState): boolean {
+  return Boolean(filters.categoryKey || filters.status || filters.dueState);
 }
 
 function metricLabel(count: number, singular: string, plural: string): string {
@@ -143,6 +209,43 @@ function metricLabel(count: number, singular: string, plural: string): string {
 
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+}
+
+function compareHrCategories(leftKey: string, rightKey: string): number {
+  const leftIndex = HR_CATEGORY_ORDER.indexOf(leftKey);
+  const rightIndex = HR_CATEGORY_ORDER.indexOf(rightKey);
+
+  if (leftIndex !== -1 || rightIndex !== -1) {
+    return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) - (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+  }
+
+  return getHrDocumentCategoryLabel(leftKey).localeCompare(getHrDocumentCategoryLabel(rightKey), 'fr');
+}
+
+function sortDocumentsForTree(documents: HrDocumentRecord[]): HrDocumentRecord[] {
+  return [...documents].sort((left, right) => {
+    if (left.status !== right.status) {
+      const statusPriority: Record<HrDocumentRecord['status'], number> = {
+        expired: 0,
+        missing: 1,
+        renew_due: 2,
+        pending_validation: 3,
+        valid: 4,
+      };
+
+      return statusPriority[left.status] - statusPriority[right.status];
+    }
+
+    return left.title.localeCompare(right.title, 'fr');
+  });
+}
+
+function buildDocumentExpiryText(document: HrDocumentRecord): string {
+  if (!document.expiresOn) {
+    return '';
+  }
+
+  return `arrive a echeance le ${document.expiresOn}`;
 }
 
 function FieldValue({ label, value }: { label: string; value: string }) {
@@ -282,35 +385,92 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   }, [effectiveClient]);
 
   const normalizedSearchQuery = normalizeSearch(searchQuery.trim());
+  const documentsByPersonId = useMemo(
+    () =>
+      documents.reduce<Map<number, HrDocumentRecord[]>>((result, document) => {
+        if (document.personId === null) {
+          return result;
+        }
+
+        result.set(document.personId, (result.get(document.personId) || []).concat(document));
+        return result;
+      }, new Map<number, HrDocumentRecord[]>()),
+    [documents],
+  );
   const visiblePeople = useMemo(
     () =>
       people
         .filter((person) => showInactive || person.active)
-        .filter((person) => personMatchesFilters(person, filters))
-        .filter((person) => personMatchesSearch(person, normalizedSearchQuery)),
-    [filters, normalizedSearchQuery, people, showInactive],
+        .filter((person) => !filters.collaboratorId || String(person.id) === filters.collaboratorId)
+        .filter((person) => {
+          const personDocuments = documentsByPersonId.get(person.id) || [];
+          const personTextMatches = personMatchesSearch(person, normalizedSearchQuery);
+          const documentTextMatches = personDocuments.some((document) => documentMatchesSearch(document, normalizedSearchQuery));
+          const documentFilterMatches = personDocuments.some(
+            (document) => documentMatchesFilters(document, filters) && documentMatchesSearch(document, normalizedSearchQuery),
+          );
+
+          if (hasDocumentFilter(filters)) {
+            return documentFilterMatches;
+          }
+
+          return personTextMatches || documentTextMatches;
+        }),
+    [documentsByPersonId, filters, normalizedSearchQuery, people, showInactive],
   );
-  const functionOptions = useMemo(() => uniqueSorted(people.map((person) => person.functionLabel)), [people]);
-  const gradeOptions = useMemo(() => uniqueSorted(people.map((person) => person.gradeLabel)), [people]);
-  const registerOptions = useMemo(() => uniqueSorted(people.map((person) => person.registerLabel)), [people]);
-  const roleOptions = useMemo(() => uniqueSorted(people.map((person) => person.roleLabel)), [people]);
+  const collaboratorOptions = useMemo(
+    () =>
+      sortPeople(people).map((person) => ({
+        label: `${formatPersonName(person)} - ${person.functionLabel || 'Fonction non renseignee'}`,
+        value: String(person.id),
+      })),
+    [people],
+  );
+  const categoryOptions = useMemo(
+    () =>
+      uniqueSorted(documents.map((document) => document.categoryKey)).sort((left, right) => compareHrCategories(left, right)),
+    [documents],
+  );
   const visiblePersonIds = useMemo(() => new Set(visiblePeople.map((person) => person.id)), [visiblePeople]);
+  const visiblePeopleSearchMatches = useMemo(
+    () =>
+      visiblePeople.reduce<Map<number, boolean>>((result, person) => {
+        result.set(person.id, personMatchesSearch(person, normalizedSearchQuery));
+        return result;
+      }, new Map<number, boolean>()),
+    [normalizedSearchQuery, visiblePeople],
+  );
   const visibleDocuments = useMemo(
     () =>
-      documents.filter(
-        (document) =>
-          (document.personId !== null && visiblePersonIds.has(document.personId)) || (isManager && document.personId === null),
-      ),
-    [documents, isManager, visiblePersonIds],
+      documents.filter((document) => {
+        const belongsToVisiblePerson = document.personId !== null && visiblePersonIds.has(document.personId);
+        const isVisibleUnassigned = isManager && document.personId === null;
+
+        if (!belongsToVisiblePerson && !isVisibleUnassigned) {
+          return false;
+        }
+
+        if (!documentMatchesFilters(document, filters)) {
+          return false;
+        }
+
+        if (!normalizedSearchQuery) {
+          return true;
+        }
+
+        if (document.personId !== null && visiblePeopleSearchMatches.get(document.personId)) {
+          return true;
+        }
+
+        return documentMatchesSearch(document, normalizedSearchQuery);
+      }),
+    [documents, filters, isManager, normalizedSearchQuery, visiblePeopleSearchMatches, visiblePersonIds],
   );
   const dashboard = useMemo(
     () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
     [visibleDocuments, visiblePeople],
   );
-  const unassignedDocuments = useMemo(
-    () => (isManager ? visibleDocuments.filter((document) => document.personId === null) : []),
-    [isManager, visibleDocuments],
-  );
+  const staffEvolution = useMemo(() => buildStaffEvolution(people), [people]);
   const selectedPerson = useMemo(
     () => people.find((person) => person.id === selectedPersonId) || null,
     [people, selectedPersonId],
@@ -396,61 +556,75 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
   return (
     <section className="hr-page">
-      <div className="hr-dashboard-header">
-        <div>
+      <div className="hr-dashboard-shell">
+        <aside className="hr-dashboard-sidebar">
           <p className="module-family">QHSE - Bibliotheque documentaire</p>
           <h1>Gestion des Ressources Humaines</h1>
           <p className="hr-header-subtitle">
             {visibleDocuments.length} {metricLabel(visibleDocuments.length, 'document affiche', 'documents affiches')} sur le
             perimetre RH.
           </p>
-        </div>
-        <div className="hr-actions" aria-label="Actions RH">
-          {isManager ? (
-            <button className="hr-action-button" onClick={() => setIsCreateOpen(true)} type="button">
-              <UserPlus aria-hidden="true" size={16} />
-              Nouveau Collaborateur
+          <div className="hr-actions" aria-label="Actions RH">
+            {isManager ? (
+              <button className="hr-action-button" onClick={() => setIsCreateOpen(true)} type="button">
+                <UserPlus aria-hidden="true" size={16} />
+                Nouveau Collaborateur
+              </button>
+            ) : null}
+            <button className="hr-action-button" type="button">
+              <FileText aria-hidden="true" size={16} />
+              Plan de formation
             </button>
-          ) : null}
-          <button className="hr-action-button" type="button">
-            <FileText aria-hidden="true" size={16} />
-            Plan de formation
-          </button>
-          <button className="hr-action-button" type="button">
-            <ClipboardCheck aria-hidden="true" size={16} />
-            Crew competency
-          </button>
-          <button className="hr-action-button" type="button">
-            <HeartPulse aria-hidden="true" size={16} />
-            Diagnostic
-          </button>
-        </div>
-      </div>
+            <button className="hr-action-button" type="button">
+              <ClipboardCheck aria-hidden="true" size={16} />
+              Crew competency
+            </button>
+            <button className="hr-action-button hr-action-button-compact" type="button">
+              <HeartPulse aria-hidden="true" size={16} />
+              Diagnostic
+            </button>
+          </div>
+        </aside>
 
-      <div className="hr-kpi-grid" aria-label="Indicateurs RH">
-        <MetricCard icon={<Users aria-hidden="true" size={18} />} label="Effectif RH" value={dashboard.metrics.activePeople} />
-        <MetricCard label="Sedentaires" value={dashboard.metrics.sedentaryPeople} />
-        <MetricCard label="Navigants" value={dashboard.metrics.seafarerPeople} />
-        <MetricCard label="Stagiaires" value={dashboard.metrics.trainees} />
-        <MetricCard label="Contrats renseignes" value={dashboard.metrics.contractsReady} />
-        <MetricCard label="Contacts urgence" value={dashboard.metrics.emergencyContactsReady} />
-        <MetricCard label="Habilitations" value={dashboard.metrics.habilitationsReady} />
-        {isManager ? (
-          <MetricCard tone="warning" label="Documents a rattacher" value={dashboard.metrics.unassignedDocuments} />
-        ) : null}
-        <MetricCard
-          tone="warning"
-          icon={<AlertTriangle aria-hidden="true" size={18} />}
-          label="Documents a renouveler"
-          value={dashboard.metrics.renewalDue}
-        />
-        <MetricCard
-          tone="danger"
-          icon={<AlertTriangle aria-hidden="true" size={18} />}
-          label="Urgent"
-          value={dashboard.metrics.urgent}
-        />
-        <MetricCard icon={<FileCheck2 aria-hidden="true" size={18} />} label="Documents RH" value={dashboard.metrics.documents} />
+        <div className="hr-dashboard-main">
+          <StaffEvolutionChart points={staffEvolution} />
+          <div className="hr-kpi-band" aria-label="Indicateurs RH">
+            <MetricCluster
+              icon={<Users aria-hidden="true" size={18} />}
+              label="Effectif RH"
+              value={dashboard.metrics.activePeople}
+              items={[
+                { label: 'Sedentaires', value: dashboard.metrics.sedentaryPeople },
+                { label: 'Navigants', value: dashboard.metrics.seafarerPeople },
+                { label: 'Stagiaires', value: dashboard.metrics.trainees },
+              ]}
+            />
+            <MetricCluster
+              icon={<AlertTriangle aria-hidden="true" size={18} />}
+              label="A revalider"
+              tone="warning"
+              value={dashboard.metrics.renewalDue}
+              items={[
+                { ariaLabel: 'Certificats a revalider', label: 'Certificats', value: dashboard.metrics.certificateRenewals },
+                {
+                  ariaLabel: 'Visites medicales a revalider',
+                  label: 'Visite Medicale',
+                  value: dashboard.metrics.medicalVisitRenewals,
+                },
+              ]}
+            />
+            <MetricCluster
+              icon={<AlertTriangle aria-hidden="true" size={18} />}
+              label="Urgent"
+              tone="danger"
+              value={dashboard.metrics.urgent}
+              items={[
+                { ariaLabel: 'Documents echus', label: 'Documents echus', value: dashboard.metrics.expiredDocuments },
+                { ariaLabel: 'Documents manquants', label: 'Documents manquant(s)', value: dashboard.metrics.missing },
+              ]}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="admin-notices" aria-live="polite">
@@ -460,54 +634,53 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
       <div className="hr-filter-panel">
         <label className="hr-search-field">
-          <span>Recherche RH</span>
+          <span>Recherche</span>
           <Search aria-hidden="true" size={16} />
           <input
+            aria-label="Recherche RH"
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Collaborateur, fichier, document..."
             value={searchQuery}
           />
         </label>
         <label className="hr-filter-field">
-          Filtre fonction RH
-          <select onChange={(event) => updateFilterValue('functionLabel', event.target.value)} value={filters.functionLabel}>
-            <option value="">Toutes les fonctions</option>
-            {functionOptions.map((functionLabel) => (
-              <option key={functionLabel} value={functionLabel}>
-                {functionLabel}
+          Collaborateur
+          <select onChange={(event) => updateFilterValue('collaboratorId', event.target.value)} value={filters.collaboratorId}>
+            <option value="">Tous</option>
+            {collaboratorOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
         </label>
         <label className="hr-filter-field">
-          Filtre grade RH
-          <select onChange={(event) => updateFilterValue('gradeLabel', event.target.value)} value={filters.gradeLabel}>
-            <option value="">Tous les grades</option>
-            {gradeOptions.map((gradeLabel) => (
-              <option key={gradeLabel} value={gradeLabel}>
-                {gradeLabel}
+          Categories
+          <select onChange={(event) => updateFilterValue('categoryKey', event.target.value)} value={filters.categoryKey}>
+            <option value="">Toutes</option>
+            {categoryOptions.map((categoryKey) => (
+              <option key={categoryKey} value={categoryKey}>
+                {getHrDocumentCategoryLabel(categoryKey)}
               </option>
             ))}
           </select>
         </label>
         <label className="hr-filter-field">
-          Filtre registre RH
-          <select onChange={(event) => updateFilterValue('registerLabel', event.target.value)} value={filters.registerLabel}>
-            <option value="">Tous les registres</option>
-            {registerOptions.map((registerLabel) => (
-              <option key={registerLabel} value={registerLabel}>
-                {registerLabel}
+          Statut
+          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
+            {DOCUMENT_STATUS_OPTIONS.map((option) => (
+              <option key={option.value || 'all-status'} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
         </label>
         <label className="hr-filter-field">
-          Filtre role RH
-          <select onChange={(event) => updateFilterValue('roleLabel', event.target.value)} value={filters.roleLabel}>
-            <option value="">Tous les roles</option>
-            {roleOptions.map((roleLabel) => (
-              <option key={roleLabel} value={roleLabel}>
-                {roleLabel}
+          Echeances
+          <select onChange={(event) => updateFilterValue('dueState', event.target.value)} value={filters.dueState}>
+            {DOCUMENT_DUE_OPTIONS.map((option) => (
+              <option key={option.value || 'all-due'} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -518,8 +691,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </label>
         <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
       </div>
-
-      {unassignedDocuments.length > 0 ? <UnassignedDocumentsPanel documents={unassignedDocuments} /> : null}
 
       {dashboard.groups.length === 0 ? (
         <div className="admin-state">Aucun collaborateur a afficher.</div>
@@ -572,25 +743,72 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   );
 }
 
-function MetricCard({
+function StaffEvolutionChart({ points }: { points: Array<{ count: number; year: number }> }) {
+  const maxCount = Math.max(1, ...points.map((point) => point.count));
+  const chartPoints = points.map((point, index) => {
+    const x = points.length <= 1 ? 24 : 24 + (index * 552) / (points.length - 1);
+    const y = 78 - (point.count / maxCount) * 56;
+
+    return { ...point, x, y };
+  });
+  const polylinePoints = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+
+  return (
+    <section aria-label="Evolution des effectifs" className="hr-evolution-card">
+      <div className="hr-evolution-title">
+        <FileText aria-hidden="true" size={18} />
+        <span>Evolution des effectifs</span>
+      </div>
+      <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
+        <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
+        <polyline className="hr-evolution-line" points={polylinePoints} />
+        {chartPoints.map((point) => (
+          <g key={point.year}>
+            <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
+            <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
+              {point.count}
+            </text>
+            <text className="hr-evolution-year" x={point.x} y="93">
+              {point.year}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </section>
+  );
+}
+
+function MetricCluster({
   icon,
+  items,
   label,
   tone = 'neutral',
   value,
 }: {
   icon?: ReactNode;
+  items: Array<{ ariaLabel?: string; label: string; value: number }>;
   label: string;
   tone?: 'neutral' | 'warning' | 'danger';
   value: number;
 }) {
   return (
-    <div aria-label={label} className={`hr-kpi-card hr-kpi-${tone}`}>
-      <div className="hr-kpi-label">
-        {icon}
-        <span>{label}</span>
+    <section aria-label={label} className={`hr-kpi-cluster hr-kpi-cluster-${tone}`}>
+      <div className="hr-kpi-cluster-total">
+        <span className="hr-kpi-cluster-label">
+          {icon}
+          {label}
+        </span>
+        <strong>{value}</strong>
       </div>
-      <strong>{value}</strong>
-    </div>
+      <div className="hr-kpi-cluster-items">
+        {items.map((item) => (
+          <span aria-label={item.ariaLabel || item.label} className="hr-kpi-submetric" key={item.ariaLabel || item.label}>
+            <strong>{item.value}</strong>
+            <small>{item.label}</small>
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -608,59 +826,95 @@ function PersonRow({
   person: PersonDashboardRecord;
 }) {
   const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
+  const documentGroups = Array.from(
+    person.documents.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
+      result.set(document.categoryKey, (result.get(document.categoryKey) || []).concat(document));
+      return result;
+    }, new Map<string, HrDocumentRecord[]>()),
+  )
+    .map(([key, categoryDocuments]) => ({
+      documents: sortDocumentsForTree(categoryDocuments),
+      key,
+      label: getHrDocumentCategoryLabel(key),
+    }))
+    .sort((left, right) => compareHrCategories(left.key, right.key));
 
   return (
-    <article className="hr-person-row">
-      <div className="hr-person-main">
-        <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-person-open" onClick={onOpen} type="button">
-          <span>{formatPersonName(person)}</span>
-          <small>
-            {person.gradeLabel || 'Grade non renseigne'}
-            {person.sailorNumber ? ` - Marin ${person.sailorNumber}` : ''}
-          </small>
-        </button>
-        <div className="hr-person-badges" aria-label={`Synthese RH ${formatPersonName(person)}`}>
-          {person.registerLabel ? <span>Registre {person.registerLabel}</span> : null}
-          {person.contractType ? <span>Contrat {person.contractType}</span> : null}
-          <span>{person.emergencyContactName && person.emergencyContactPhone ? 'Urgence OK' : 'Urgence incomplete'}</span>
-          {person.deckCertificateLabel ? <span>Pont {person.deckCertificateLabel}</span> : null}
-          {person.engineCertificateLabel ? <span>Machine {person.engineCertificateLabel}</span> : null}
+    <article aria-label={`Documents de ${formatPersonName(person)}`} className="hr-person-row" role="region">
+      <header className="hr-person-tree-header">
+        <div className="hr-person-actions">
+          <button aria-label={`Fiche de ${formatPersonName(person)}`} className="hr-icon-button" onClick={onOpen} type="button">
+            <Users aria-hidden="true" size={16} />
+          </button>
+          <button aria-label={`Ouvrir les documents de ${formatPersonName(person)}`} className="hr-icon-button" type="button">
+            <FileText aria-hidden="true" size={16} />
+          </button>
         </div>
-        {renewalCount > 0 ? <span className="hr-alert-badge">{renewalCount} a renouveler</span> : null}
-      </div>
-      <div className="hr-category-row">
-        {person.categorySummaries.length > 0 ? (
-          person.categorySummaries.map((category) => (
-            <span className="hr-category-chip" key={category.key}>
-              {category.label}
-              <b>{category.count}</b>
-              {category.urgentCount > 0 ? <em>{category.urgentCount} urgent</em> : null}
+        <div className="hr-person-main">
+          <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-person-open" onClick={onOpen} type="button">
+            <span>{formatPersonName(person)}</span>
+            {person.documents.some((document) => document.requiresCaptainValidation) ? (
+              <em className="hr-person-inline-alert">Validation capitaine</em>
+            ) : null}
+          </button>
+          <small>{person.documents.length} document(s)</small>
+        </div>
+        <div className="hr-person-status">
+          {renewalCount > 0 ? <span className="hr-alert-badge">{renewalCount} a renouveler</span> : null}
+          {isManager ? (
+            <label className="hr-status-toggle">
+              <input
+                checked={person.active}
+                disabled={isSaving}
+                onChange={(event) => onActiveChange(person, event.target.checked)}
+                type="checkbox"
+              />
+              <span>{person.active ? 'Actif' : 'Inactif'}</span>
+            </label>
+          ) : (
+            <span className={person.active ? 'hr-status-active' : 'hr-status-inactive'}>
+              {person.active ? 'Actif' : 'Inactif'}
             </span>
-          ))
-        ) : (
-          <span className="hr-category-empty">Aucun document associe</span>
-        )}
-      </div>
-      <div className="hr-person-status">
-        {person.documents.some((document) => document.requiresCaptainValidation) ? (
-          <span className="hr-validation-badge">Validation capitaine</span>
-        ) : null}
-        {isManager ? (
-          <label className="hr-status-toggle">
-            <input
-              checked={person.active}
-              disabled={isSaving}
-              onChange={(event) => onActiveChange(person, event.target.checked)}
-              type="checkbox"
-            />
-            <span>{person.active ? 'Actif' : 'Inactif'}</span>
-          </label>
-        ) : (
-          <span className={person.active ? 'hr-status-active' : 'hr-status-inactive'}>
-            {person.active ? 'Actif' : 'Inactif'}
-          </span>
-        )}
-      </div>
+          )}
+        </div>
+      </header>
+
+      {documentGroups.length > 0 ? (
+        <div className="hr-document-tree">
+          {documentGroups.map((group) => {
+            const groupRenewalCount = group.documents.filter(isHrDocumentRenewalDue).length;
+
+            return (
+              <section className="hr-document-category" key={group.key}>
+                <button aria-label={`${group.label} ${group.documents.length}`} className="hr-document-category-button" type="button">
+                  <span>{group.label}</span>
+                  <b>{group.documents.length}</b>
+                  {groupRenewalCount > 0 ? <em aria-hidden="true">{groupRenewalCount} a renouveler</em> : null}
+                </button>
+                <ul className="hr-document-tree-list">
+                  {group.documents.map((document) => (
+                    <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
+                      <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
+                      <FileText aria-hidden="true" size={16} />
+                      <span className="hr-document-tree-main">
+                        <strong>{document.title}</strong>
+                        {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
+                        {document.notes ? <small className="hr-document-note">{document.notes}</small> : null}
+                        {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
+                      </span>
+                      <span className={`hr-document-status hr-document-${document.status}`}>
+                        {DOCUMENT_STATUS_LABELS[document.status]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="hr-category-empty">Aucun document associe</p>
+      )}
     </article>
   );
 }
@@ -1077,42 +1331,5 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function UnassignedDocumentsPanel({ documents }: { documents: HrDocumentRecord[] }) {
-  return (
-    <section className="hr-unassigned-documents" aria-label="Documents RH a rattacher">
-      <div>
-        <p className="module-family">Import SharePoint</p>
-        <h2>Documents RH a rattacher</h2>
-      </div>
-      <ul>
-        {documents.map((document) => (
-          <li key={document.id}>
-            <span>
-              <strong>{document.title}</strong>
-              <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
-            </span>
-            <span>
-              <b>{document.personName || 'Collaborateur non renseigne'}</b>
-              {document.personSharePointItemId ? <small>SharePoint ID {document.personSharePointItemId}</small> : null}
-            </span>
-            <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
-            {document.fileUrl ? (
-              <a
-                aria-label={`Ouvrir le fichier ${document.title}`}
-                className="hr-document-link"
-                href={document.fileUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Ouvrir le fichier
-              </a>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }

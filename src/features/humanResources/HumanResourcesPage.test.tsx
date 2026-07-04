@@ -112,8 +112,8 @@ const documents: HrDocumentFixture[] = [
     person_id: 1,
     person_name: 'Jean MARTIN',
     person_sharepoint_item_id: '1',
-    category_key: 'certificate',
-    title: 'CGO',
+    category_key: 'deck',
+    title: 'Capitaine 200',
     status: 'expired',
     issued_on: '2024-01-15',
     expires_on: '2026-01-15',
@@ -173,41 +173,56 @@ describe('HumanResourcesPage', () => {
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Gestion des Ressources Humaines' })).toBeInTheDocument();
+    expect(screen.getByText('Evolution des effectifs')).toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Documents RH')).toHaveTextContent('2');
-    expect(screen.getByLabelText('Documents a renouveler')).toHaveTextContent('2');
-    expect(screen.getByLabelText('Contrats renseignes')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Contacts urgence')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Habilitations')).toHaveTextContent('1');
+    expect(screen.getByLabelText('A revalider')).toHaveTextContent('2');
+    expect(screen.getByLabelText('Certificats a revalider')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Visites medicales a revalider')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Urgent')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Documents echus')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
     expect(screen.getAllByText('Capitaine').length).toBeGreaterThan(0);
     expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
-    expect(screen.getByText('Registre RIF')).toBeInTheDocument();
-    expect(screen.getByText('Contrat CDI')).toBeInTheDocument();
-    expect(screen.getByText('Urgence OK')).toBeInTheDocument();
-    expect(screen.getByText('Pont Capitaine 200')).toBeInTheDocument();
-    expect(screen.getByText('Machine Mecanicien 250 kW')).toBeInTheDocument();
-    expect(screen.getByText('Visite Medicale')).toBeInTheDocument();
-    expect(screen.getByText('Certificats')).toBeInTheDocument();
-    expect(screen.getByText('Validation capitaine')).toBeInTheDocument();
+    const personRegion = screen.getByRole('region', { name: 'Documents de Jean MARTIN' });
+    expect(within(personRegion).getByText('2 document(s)')).toBeInTheDocument();
+    expect(within(personRegion).getByRole('button', { name: 'Pont 1' })).toBeInTheDocument();
+    expect(within(personRegion).getByRole('button', { name: 'Visite Médicale 1' })).toBeInTheDocument();
+    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(personRegion).getByText('Visite medicale')).toBeInTheDocument();
+    expect(within(personRegion).getByText('Validation capitaine')).toBeInTheDocument();
   });
 
-  it('filters the RH dashboard by function, grade, register and role', async () => {
+  it('filters the RH dashboard by collaborator, category, status and due state', async () => {
     const user = userEvent.setup();
+    const leaDocument = {
+      ...documents[0],
+      id: 13,
+      person_id: 3,
+      person_name: 'Lea BUREAU',
+      category_key: 'safety_training',
+      title: 'CFBS',
+      status: 'valid',
+      expires_on: '2028-01-17',
+    };
 
-    render(<HumanResourcesPage client={createClient([activePerson, yardManagerPerson], []) as never} roles={['admin']} />);
+    render(
+      <HumanResourcesPage client={createClient([activePerson, yardManagerPerson], [...documents, leaDocument]) as never} roles={['admin']} />,
+    );
 
     expect(await screen.findByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.getByText('Lea BUREAU')).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText('Filtre fonction RH'), 'Capitaine');
-    await user.selectOptions(screen.getByLabelText('Filtre grade RH'), 'Capitaine 200');
-    await user.selectOptions(screen.getByLabelText('Filtre registre RH'), 'RIF');
-    await user.selectOptions(screen.getByLabelText('Filtre role RH'), 'Navigant');
+    await user.selectOptions(screen.getByLabelText('Collaborateur'), '1');
+    await user.selectOptions(screen.getByLabelText('Categories'), 'medical_visit');
+    await user.selectOptions(screen.getByLabelText('Statut'), 'renew_due');
+    await user.selectOptions(screen.getByLabelText('Echeances'), 'renewal_due');
 
     expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
+    expect(screen.getByText('Visite medicale')).toBeInTheDocument();
+    expect(screen.queryByText('Capitaine 200')).not.toBeInTheDocument();
   });
 
   it('filters the RH dashboard by search and can show inactive collaborators', async () => {
@@ -363,16 +378,9 @@ describe('HumanResourcesPage', () => {
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['armement']} />);
 
     expect(await screen.findByRole('heading', { name: 'Gestion des Ressources Humaines' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Documents RH')).toHaveTextContent('3');
-    expect(screen.getByLabelText('Documents a rattacher')).toHaveTextContent('1');
-    expect(screen.getByRole('region', { name: 'Documents RH a rattacher' })).toBeInTheDocument();
-    expect(screen.getByText('Brevet pont a rattacher')).toBeInTheDocument();
-    expect(screen.getByText('Julien LECOCQ')).toBeInTheDocument();
-    expect(screen.getByText('SharePoint ID 42')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Brevet pont a rattacher' })).toHaveAttribute(
-      'href',
-      'https://sharepoint.test/brevet-pont.pdf',
-    );
+    expect(screen.getByText('3 documents affiches sur le perimetre RH.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
+    expect(screen.queryByRole('region', { name: 'Documents RH a rattacher' })).not.toBeInTheDocument();
   });
 
   it('creates a personnel record for office roles', async () => {
