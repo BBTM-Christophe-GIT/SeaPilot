@@ -313,6 +313,59 @@ function normalizeSearchText(value: string): string {
     .toLowerCase();
 }
 
+function looksLikeFilePath(value: string): boolean {
+  return /\.[a-z0-9]{2,8}(?:$|[?#])/i.test(value.trim());
+}
+
+function buildSharePointAbsoluteUrl(source: SharePointMigrationSource, pathOrUrl: string): string {
+  const trimmed = pathOrUrl.trim().replace(/\\/g, '/');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const originMatch = source.siteUrl.match(/^(https?:\/\/[^/]+)/i);
+  const origin = originMatch ? originMatch[1] : source.siteUrl.replace(/\/$/, '');
+  const serverRelativePath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+
+  return encodeURI(`${origin}${serverRelativePath}`);
+}
+
+function buildSharePointDocumentUrl(
+  item: SharePointListItem,
+  source: SharePointMigrationSource,
+  fileNameAliases: string[],
+): string | null {
+  const encodedUrl = text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl);
+
+  if (encodedUrl) {
+    return buildSharePointAbsoluteUrl(source, encodedUrl);
+  }
+
+  const fileRef = text(item, ['FileRef', 'ServerRelativeUrl']);
+
+  if (fileRef && looksLikeFilePath(fileRef)) {
+    return buildSharePointAbsoluteUrl(source, fileRef);
+  }
+
+  const exportedPath = text(item, ["Chemin d'accès", 'Path']);
+  const fileName = text(item, fileNameAliases);
+
+  if (exportedPath && fileName && !looksLikeFilePath(exportedPath)) {
+    return buildSharePointAbsoluteUrl(source, `${exportedPath.replace(/\/$/, '')}/${fileName.replace(/^\//, '')}`);
+  }
+
+  if (exportedPath) {
+    return buildSharePointAbsoluteUrl(source, exportedPath);
+  }
+
+  return null;
+}
+
 function sourceItemId(item: SharePointListItem): string | null {
   return text(item, ['Id', 'ID']) || (item.id !== undefined ? String(item.id) : null) || text(item, ["Chemin d'accès", 'Path']);
 }
@@ -595,6 +648,7 @@ function inferProcedureStatus(statusLabel: string | null): string {
 
 function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   const itemId = sourceItemId(item);
+  const fileName = text(item, ['FileLeafRef', 'Nom']);
   const title = requiredText(
     item,
     ['FileLeafRef', 'Brevet: Nom de Fichier', 'Nom', 'Brevet: Titre', 'Title'],
@@ -610,7 +664,7 @@ function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrat
   ]);
   const categoryLabel = text(item, ['CategoryKey', 'Categorie', 'Catégorie', 'Brevet: Catégorie', 'Brevet']);
   const categoryKey = categoryLabel ? inferHrDocumentCategory(categoryLabel) : inferHrDocumentCategory(title);
-  const fileUrl = text(item, ['EncodedAbsUrl', "Chemin d'accès"]) || stringifyValue(item.webUrl);
+  const fileUrl = buildSharePointDocumentUrl(item, source, ['FileLeafRef', 'Nom', 'Brevet: Nom de Fichier']);
 
   return withReconciliation(item, source, {
     person_id: null,
@@ -632,7 +686,7 @@ function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrat
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: fileUrl,
-    notes: text(item, ['FileRef', 'ServerRelativeUrl', "Chemin d'accès"]),
+    notes: text(item, ['FileRef', 'ServerRelativeUrl', "Chemin d'accès"]) || fileName,
   });
 }
 

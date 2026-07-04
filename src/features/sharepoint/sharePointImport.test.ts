@@ -1054,7 +1054,7 @@ describe('SharePoint import mapping', () => {
           'Brevet: Catégorie': 'Visite Medicale',
           'Brevet: Nom de Fichier': 'Visite medicale Julien LECOCQ.pdf',
           'Date Echéance': '15/01/2020',
-          "Chemin d'accès": '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
+          "Chemin d'accès": 'sites/QHSE/Brevets et Visites Mdicales',
         },
       },
     ]);
@@ -1067,8 +1067,9 @@ describe('SharePoint import mapping', () => {
       status: 'expired',
       expires_on: '2020-01-15',
       requires_captain_validation: true,
-      file_url: '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
-      notes: '/sites/QHSE/Brevets et Visites Médicales/Julien/visite.pdf',
+      file_url:
+        'https://bbtm668.sharepoint.com/sites/QHSE/Brevets%20et%20Visites%20Mdicales/Visite%20medicale%20Julien%20LECOCQ.pdf',
+      notes: 'sites/QHSE/Brevets et Visites Mdicales',
       sharepoint_item_id: 'excel-row-10',
     });
   });

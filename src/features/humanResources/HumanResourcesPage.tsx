@@ -126,6 +126,8 @@ const HR_DETAILS_SECTIONS = [
 
 type HrDetailsSectionKey = (typeof HR_DETAILS_SECTIONS)[number]['key'];
 
+const SHAREPOINT_SITE_ORIGIN = 'https://bbtm668.sharepoint.com';
+
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
@@ -163,6 +165,24 @@ function getDocumentNotesForDisplay(notes: string): string {
     .map((line) => line.trim())
     .filter((line) => line && !isHiddenSharePointLibraryNote(line))
     .join('\n');
+}
+
+function getDocumentFileHref(fileUrl: string): string {
+  const trimmed = fileUrl.trim().replace(/\\/g, '/');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^\/?sites\//i.test(trimmed)) {
+    return encodeURI(`${SHAREPOINT_SITE_ORIGIN}/${trimmed.replace(/^\/+/, '')}`);
+  }
+
+  return trimmed;
 }
 
 function personMatchesSearch(person: PersonRecord, query: string): boolean {
@@ -964,6 +984,7 @@ function PersonRow({
                   <ul className="hr-document-tree-list">
                     {group.documents.map((document) => {
                       const notesForDisplay = getDocumentNotesForDisplay(document.notes);
+                      const documentHref = getDocumentFileHref(document.fileUrl);
 
                       return (
                         <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
@@ -971,8 +992,8 @@ function PersonRow({
                           <FileText aria-hidden="true" size={16} />
                           <span className="hr-document-tree-main">
                             <strong>
-                              {document.fileUrl ? (
-                                <a className="hr-document-title-link" href={document.fileUrl} rel="noreferrer" target="_blank">
+                              {documentHref ? (
+                                <a className="hr-document-title-link" href={documentHref} rel="noreferrer" target="_blank">
                                   {document.title}
                                 </a>
                               ) : (
@@ -1437,6 +1458,7 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
     <ul className="hr-document-list">
       {documents.map((document) => {
         const notesForDisplay = getDocumentNotesForDisplay(document.notes);
+        const documentHref = getDocumentFileHref(document.fileUrl);
 
         return (
           <li key={document.id}>
@@ -1452,8 +1474,8 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
             </span>
             <span className="hr-document-actions">
               <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
-              {document.fileUrl ? (
-                <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
+              {documentHref ? (
+                <a className="hr-document-link" href={documentHref} rel="noreferrer" target="_blank">
                   Ouvrir le fichier
                 </a>
               ) : null}

@@ -120,7 +120,7 @@ const documents: HrDocumentFixture[] = [
     requires_captain_validation: false,
     source_label: 'SharePoint',
     notes: null,
-    file_url: 'https://sharepoint.test/capitaine-200.pdf',
+    file_url: 'sites/QHSE/Brevets et Visites Mdicales/Jean/capitaine-200.pdf',
   },
 ];
 
@@ -192,7 +192,7 @@ describe('HumanResourcesPage', () => {
     expect(within(personRegion).getByText('arrive a echeance le 15/01/2026')).toBeInTheDocument();
     expect(within(personRegion).getByRole('link', { name: 'Capitaine 200' })).toHaveAttribute(
       'href',
-      'https://sharepoint.test/capitaine-200.pdf',
+      'https://bbtm668.sharepoint.com/sites/QHSE/Brevets%20et%20Visites%20Mdicales/Jean/capitaine-200.pdf',
     );
     expect(within(personRegion).getByRole('link', { name: 'Capitaine 200' })).toHaveAttribute('target', '_blank');
     expect(within(personRegion).getByText('Visite medicale')).toBeInTheDocument();
