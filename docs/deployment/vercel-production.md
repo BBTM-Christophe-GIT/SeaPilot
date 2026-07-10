@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+## Application shell and navigation permissions
+
+SeaPilot displays its semantic application version in the sidebar. The source version is kept in
+`src/config/appVersion.ts` and follows the dashboard convention: major for incompatible or structural changes,
+minor for compatible features, and patch for fixes, performance, stability, or security work.
+
+Apply `supabase/migrations/202607100001_role_module_permissions.sql` before deploying this shell version. The
+`role_module_permissions` table is the source of truth for menu visibility and direct-route access. Authenticated
+users can read the matrix; only administrators can change it from the Administration module.
+
 ## Current Production Target
 
 The active public URL is:

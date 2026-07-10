@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { AuthProvider } from './features/auth/AuthProvider';
+import { APP_MODULES } from './features/permissions/moduleAccess';
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
@@ -23,6 +24,21 @@ function createAuthClient(session: { user: { id: string } } | null = null) {
       signInWithPassword: vi.fn(),
       signOut: vi.fn(),
     },
+  };
+}
+
+function createNavigationPermissionsQuery() {
+  return {
+    select: vi.fn().mockReturnValue({
+      in: vi.fn().mockResolvedValue({
+        data: APP_MODULES.map((module) => ({
+          module_key: module.key,
+          role_key: 'admin',
+          is_visible: true,
+        })),
+        error: null,
+      }),
+    }),
   };
 }
 
@@ -49,6 +65,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       if (table === 'fleet_certificates') {
@@ -109,6 +129,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       if (table === 'procedures') {
@@ -195,6 +219,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       if (table === 'dpr_items') {
@@ -318,6 +346,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       if (table === 'projects') {
@@ -470,6 +502,10 @@ describe('App', () => {
         };
       }
 
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
+      }
+
       if (table === 'purchase_requests') {
         return {
           select: vi.fn().mockReturnValue({
@@ -533,6 +569,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       if (table === 'action_items') {
@@ -636,6 +676,10 @@ describe('App', () => {
         return {
           select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }),
         };
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       const rowsByTable: Record<string, unknown[]> = {

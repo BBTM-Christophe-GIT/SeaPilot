@@ -21,6 +21,16 @@ function createSharePointSourcesQuery(data: unknown[]) {
   };
 }
 
+function createNavigationPermissionsQuery(data: unknown[] = []) {
+  return {
+    select: vi.fn().mockReturnValue({
+      order: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data, error: null }),
+      }),
+    }),
+  };
+}
+
 function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] } = {}) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
@@ -51,6 +61,10 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
             },
           ],
         );
+      }
+
+      if (table === 'role_module_permissions') {
+        return createNavigationPermissionsQuery();
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -110,6 +124,10 @@ describe('AdminPage', () => {
           return createSharePointSourcesQuery([]);
         }
 
+        if (table === 'role_module_permissions') {
+          return createNavigationPermissionsQuery();
+        }
+
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -152,6 +170,10 @@ describe('AdminPage', () => {
           return createSharePointSourcesQuery([]);
         }
 
+        if (table === 'role_module_permissions') {
+          return createNavigationPermissionsQuery();
+        }
+
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -165,5 +187,43 @@ describe('AdminPage', () => {
     expect(eqUser).toHaveBeenCalledWith('user_id', 'user-1');
     expect(eqRole).toHaveBeenCalledWith('role_key', 'marin');
     expect(marinCheckbox).not.toBeChecked();
+  });
+
+  it('lets an administrator configure menu visibility by role', async () => {
+    const user = userEvent.setup();
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const client = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return createProfilesQuery([]);
+        }
+
+        if (table === 'sharepoint_sources') {
+          return createSharePointSourcesQuery([]);
+        }
+
+        if (table === 'role_module_permissions') {
+          return { ...createNavigationPermissionsQuery(), upsert };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    };
+
+    render(<AdminPage client={client as never} />);
+
+    const projectsForSailor = await screen.findByRole('checkbox', { name: 'Projets visible pour Marin' });
+    expect(projectsForSailor).not.toBeChecked();
+
+    await user.click(projectsForSailor);
+
+    await waitFor(() =>
+      expect(upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ role_key: 'marin', module_key: 'projects', is_visible: true }),
+        { onConflict: 'role_key,module_key' },
+      ),
+    );
+    expect(projectsForSailor).toBeChecked();
+    expect(screen.getByText('Acces de navigation mis a jour.')).toBeInTheDocument();
   });
 });

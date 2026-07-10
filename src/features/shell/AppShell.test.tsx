@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { APP_VERSION_LABEL } from '../../config/appVersion';
 import { AuthProvider } from '../auth/AuthProvider';
 import { ModulePage } from '../modules/ModulePage';
 import { APP_MODULES } from '../permissions/moduleAccess';
@@ -8,8 +9,6 @@ import { AppShell } from './AppShell';
 
 describe('AppShell', () => {
   it('renders the private application navigation', async () => {
-    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
-
     const client = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
@@ -35,7 +34,8 @@ describe('AppShell', () => {
 
     expect(await screen.findByText('SeaPilot')).toBeInTheDocument();
     expect(screen.getByText('Projets')).toBeInTheDocument();
-    expect(screen.getByText('sea-pilot-ten.vercel.app')).toBeInTheDocument();
+    expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reduire le menu' })).toBeInTheDocument();
   });
 
   it('loads roles from Supabase when no override is provided', async () => {
@@ -49,9 +49,27 @@ describe('AppShell', () => {
         signOut: vi.fn(),
       },
     };
-    const select = vi.fn().mockResolvedValue({ data: [{ role_key: 'direction' }], error: null });
+    const roleSelect = vi.fn().mockResolvedValue({ data: [{ role_key: 'direction' }], error: null });
+    const permissionIn = vi.fn().mockResolvedValue({
+      data: APP_MODULES.filter((module) => module.allowedRoles.includes('direction')).map((module) => ({
+        role_key: 'direction',
+        module_key: module.key,
+        is_visible: true,
+      })),
+      error: null,
+    });
     const roleClient = {
-      from: vi.fn().mockReturnValue({ select }),
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'user_roles') {
+          return { select: roleSelect };
+        }
+
+        if (table === 'role_module_permissions') {
+          return { select: vi.fn().mockReturnValue({ in: permissionIn }) };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
     };
 
     render(
@@ -69,7 +87,8 @@ describe('AppShell', () => {
     expect(screen.getByText('Chargement des droits...')).toBeInTheDocument();
     expect(await screen.findByText('Projets')).toBeInTheDocument();
     expect(roleClient.from).toHaveBeenCalledWith('user_roles');
-    expect(select).toHaveBeenCalledWith('role_key');
+    expect(roleSelect).toHaveBeenCalledWith('role_key');
+    expect(permissionIn).toHaveBeenCalledWith('role_key', ['direction']);
   });
 
   it('shows an empty access message when no modules are visible', async () => {
@@ -218,12 +237,34 @@ describe('AppShell', () => {
         signOut: vi.fn(),
       },
     };
-    const select = vi
+    const roleSelect = vi
       .fn()
       .mockResolvedValueOnce({ data: [{ role_key: 'marin' }], error: null })
       .mockResolvedValueOnce({ data: [{ role_key: 'direction' }], error: null });
+    const permissionIn = vi.fn().mockImplementation((_column: string, requestedRoles: string[]) => {
+      const role = requestedRoles[0];
+
+      return Promise.resolve({
+        data: APP_MODULES.filter((module) => module.allowedRoles.includes(role as never)).map((module) => ({
+          role_key: role,
+          module_key: module.key,
+          is_visible: true,
+        })),
+        error: null,
+      });
+    });
     const roleClient = {
-      from: vi.fn().mockReturnValue({ select }),
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'user_roles') {
+          return { select: roleSelect };
+        }
+
+        if (table === 'role_module_permissions') {
+          return { select: vi.fn().mockReturnValue({ in: permissionIn }) };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
     };
 
     render(
@@ -238,12 +279,15 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByText('Accueil')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Accueil' })).toBeInTheDocument();
     expect(screen.queryByText('Projets')).not.toBeInTheDocument();
 
-    authStateChange?.({ user: { id: 'user-2' } });
+    await act(async () => {
+      authStateChange?.({ user: { id: 'user-2' } });
+    });
 
     expect(await screen.findByText('Projets')).toBeInTheDocument();
-    expect(select).toHaveBeenCalledTimes(2);
+    expect(roleSelect).toHaveBeenCalledTimes(2);
+    expect(permissionIn).toHaveBeenCalledTimes(2);
   });
 });

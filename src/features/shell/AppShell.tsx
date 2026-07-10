@@ -1,12 +1,36 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { LogOut } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  BarChart3,
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ClipboardCheck,
+  FileCheck2,
+  FileText,
+  FolderKanban,
+  Gauge,
+  Home,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Settings,
+  ShieldCheck,
+  ShoppingCart,
+  Users,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { readRequiredEnv } from '../../lib/env';
+import { APP_BUILD_VERSION, APP_VERSION_LABEL } from '../../config/appVersion';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
-import { APP_MODULES, canAccessModule, getVisibleModules } from '../permissions/moduleAccess';
-import type { RoleKey } from '../permissions/roles';
+import { APP_MODULES, type AppModule, type ModuleKey } from '../permissions/moduleAccess';
+import { fetchVisibleModulesForRoles, getDefaultVisibleModules } from '../permissions/navigationPermissions';
+import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import { fetchCurrentUserRoles } from '../profiles/profileQueries';
 
 interface AppShellProps {
@@ -19,9 +43,48 @@ export interface AppShellOutletContext {
   client: SupabaseClient;
 }
 
+const NAVIGATION_FAMILIES: AppModule['family'][] = [
+  'Accueil',
+  'Operations',
+  'QHSE',
+  'Achats',
+  'Planning',
+  'RH',
+  'Administration',
+];
+
+const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
+  Accueil: Home,
+  Operations: Gauge,
+  QHSE: ShieldCheck,
+  Achats: ShoppingCart,
+  Planning: CalendarDays,
+  RH: Users,
+  Administration: Settings,
+};
+
+const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
+  home: LayoutDashboard,
+  kpi: BarChart3,
+  qhse: ShieldCheck,
+  certificates: FileCheck2,
+  procedures: FileText,
+  actionPlan: ClipboardCheck,
+  dpr: Gauge,
+  purchaseRequests: ShoppingCart,
+  planning: CalendarDays,
+  humanResources: Users,
+  projects: FolderKanban,
+  admin: Settings,
+};
+
 function getRequestedModule(pathname: string) {
   const normalizedPathname = pathname.replace(/\/+$/, '');
   const [, section, moduleKey] = normalizedPathname.split('/');
+
+  if (!section && !moduleKey) {
+    return APP_MODULES.find((module) => module.key === 'home');
+  }
 
   if (section !== 'modules' || !moduleKey) {
     return undefined;
@@ -30,14 +93,17 @@ function getRequestedModule(pathname: string) {
   return APP_MODULES.find((module) => module.key.toLowerCase() === moduleKey.toLowerCase());
 }
 
-function getAppHost() {
-  const appBaseUrl = readRequiredEnv(import.meta.env, 'VITE_APP_BASE_URL');
+function getInitials(displayName: string): string {
+  const words = displayName.trim().split(/\s+/).filter(Boolean);
 
-  try {
-    return new URL(appBaseUrl).host;
-  } catch {
-    return appBaseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (words.length === 0) {
+    return 'SP';
   }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join('');
 }
 
 export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
@@ -45,12 +111,22 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
   const location = useLocation();
   const sessionUserId = session?.user.id;
   const [roles, setRoles] = useState<RoleKey[]>(rolesOverride || []);
+  const [visibleModules, setVisibleModules] = useState<AppModule[]>(
+    rolesOverride ? getDefaultVisibleModules(rolesOverride) : [],
+  );
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
   const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
+    () => new Set(NAVIGATION_FAMILIES),
+  );
 
   useEffect(() => {
     if (rolesOverride) {
       setRoles(rolesOverride);
+      setVisibleModules(getDefaultVisibleModules(rolesOverride));
       setIsLoadingRoles(false);
       setHasRoleLoadError(false);
       return;
@@ -58,6 +134,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
 
     if (!sessionUserId) {
       setRoles([]);
+      setVisibleModules([]);
       setIsLoadingRoles(true);
       setHasRoleLoadError(false);
       return;
@@ -66,19 +143,24 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
     let isMounted = true;
 
     setRoles([]);
+    setVisibleModules([]);
     setIsLoadingRoles(true);
     setHasRoleLoadError(false);
 
     fetchCurrentUserRoles(client)
-      .then((loadedRoles) => {
+      .then(async (loadedRoles) => {
+        const loadedVisibleModules = await fetchVisibleModulesForRoles(client, loadedRoles);
+
         if (isMounted) {
           setRoles(loadedRoles);
+          setVisibleModules(loadedVisibleModules);
           setHasRoleLoadError(false);
         }
       })
       .catch(() => {
         if (isMounted) {
           setRoles([]);
+          setVisibleModules([]);
           setHasRoleLoadError(true);
         }
       })
@@ -93,10 +175,45 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
     };
   }, [client, rolesOverride, sessionUserId]);
 
-  const visibleModules = getVisibleModules(roles);
+  useEffect(() => {
+    setIsMobileNavigationOpen(false);
+    setIsUserMenuOpen(false);
+  }, [location.pathname]);
+
   const requestedModule = getRequestedModule(location.pathname);
-  const isRequestedModuleDenied = requestedModule ? !canAccessModule(roles, requestedModule.key) : false;
-  const appHost = getAppHost();
+  const isRequestedModuleDenied = requestedModule
+    ? !visibleModules.some((module) => module.key === requestedModule.key)
+    : false;
+  const groupedModules = useMemo(
+    () =>
+      NAVIGATION_FAMILIES.map((family) => ({
+        family,
+        modules: visibleModules.filter((module) => module.family === family),
+      })).filter((group) => group.modules.length > 0),
+    [visibleModules],
+  );
+  const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
+  const userEmail = session?.user.email || 'utilisateur@bbtm.fr';
+  const userDisplayName =
+    [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    ) || userEmail.split('@')[0] || 'Utilisateur';
+  const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
+  const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
+
+  function toggleFamily(family: AppModule['family']) {
+    setExpandedFamilies((currentFamilies) => {
+      const nextFamilies = new Set(currentFamilies);
+
+      if (nextFamilies.has(family)) {
+        nextFamilies.delete(family);
+      } else {
+        nextFamilies.add(family);
+      }
+
+      return nextFamilies;
+    });
+  }
 
   if (isLoadingRoles) {
     return <div className="auth-loading">Chargement des droits...</div>;
@@ -119,28 +236,142 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${isSidebarCollapsed ? ' sidebar-is-collapsed' : ''}`}>
+      <button
+        aria-label="Fermer la navigation"
+        className={`sidebar-backdrop${isMobileNavigationOpen ? ' is-visible' : ''}`}
+        onClick={() => setIsMobileNavigationOpen(false)}
+        type="button"
+      />
+      <aside className={`sidebar${isMobileNavigationOpen ? ' is-mobile-open' : ''}`}>
         <div className="brand-block">
-          <strong>BBTM</strong>
-          <span>SeaPilot</span>
+          <img alt="BBTM" className="brand-logo" src="/bbtm-logo.png" />
+          <span className="brand-name">SeaPilot</span>
+          <button
+            aria-label="Fermer le menu"
+            className="sidebar-mobile-close"
+            onClick={() => setIsMobileNavigationOpen(false)}
+            type="button"
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
         </div>
-        <nav aria-label="Navigation principale">
-          {visibleModules.map((module) => (
-            <NavLink key={module.key} to={module.key === 'home' ? '/' : `/modules/${module.key}`}>
-              {module.label}
-            </NavLink>
-          ))}
+
+        <nav aria-label="Navigation principale" className="sidebar-navigation">
+          {groupedModules.map(({ family, modules }) => {
+            const FamilyIcon = FAMILY_ICONS[family];
+            const isExpanded = expandedFamilies.has(family);
+
+            return (
+              <section className="navigation-family" key={family}>
+                <button
+                  aria-expanded={isExpanded}
+                  className="navigation-family-button"
+                  onClick={() => toggleFamily(family)}
+                  title={family}
+                  type="button"
+                >
+                  <FamilyIcon aria-hidden="true" size={17} />
+                  <span>{family}</span>
+                  {isExpanded ? (
+                    <ChevronUp aria-hidden="true" className="navigation-chevron" size={15} />
+                  ) : (
+                    <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
+                  )}
+                </button>
+                {isExpanded ? (
+                  <div className="navigation-family-links">
+                    {modules.map((module) => {
+                      const ModuleIcon = MODULE_ICONS[module.key];
+
+                      return (
+                        <NavLink
+                          aria-label={module.label}
+                          key={module.key}
+                          title={module.label}
+                          to={module.key === 'home' ? '/' : `/modules/${module.key}`}
+                        >
+                          <ModuleIcon aria-hidden="true" size={16} />
+                          <span>{module.label}</span>
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </nav>
+
+        <div className="sidebar-footer">
+          <div className="app-version" title={`Build ${APP_BUILD_VERSION}`}>
+            <span>Version</span>
+            <strong>{APP_VERSION_LABEL}</strong>
+          </div>
+          <button
+            aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Reduire le menu'}
+            className="sidebar-collapse-button"
+            onClick={() => setIsSidebarCollapsed((isCollapsed) => !isCollapsed)}
+            type="button"
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight aria-hidden="true" size={17} />
+            ) : (
+              <ChevronLeft aria-hidden="true" size={17} />
+            )}
+            <span>{isSidebarCollapsed ? 'Agrandir' : 'Reduire le menu'}</span>
+          </button>
+        </div>
       </aside>
+
       <div className="content-shell">
         <header className="topbar">
-          <span>{appHost}</span>
-          <button onClick={() => void signOut()} type="button">
-            <LogOut aria-hidden="true" size={16} />
-            Deconnexion
-          </button>
+          <div className="topbar-context">
+            <button
+              aria-label="Ouvrir la navigation"
+              className="topbar-menu-button"
+              onClick={() => setIsMobileNavigationOpen(true)}
+              type="button"
+            >
+              <Menu aria-hidden="true" size={20} />
+            </button>
+            <span>{requestedModule?.family || 'SeaPilot'}</span>
+            <ChevronRight aria-hidden="true" size={16} />
+            <strong>{requestedModule?.label || 'Accueil'}</strong>
+          </div>
+
+          <div className="topbar-actions">
+            <button aria-label="Notifications" className="topbar-icon-button" type="button">
+              <Bell aria-hidden="true" size={19} />
+            </button>
+            <div className="user-menu">
+              <button
+                aria-expanded={isUserMenuOpen}
+                aria-haspopup="menu"
+                className="user-menu-trigger"
+                onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
+                type="button"
+              >
+                <span className="user-avatar">{getInitials(userDisplayName)}</span>
+                <span className="user-identity">
+                  <strong>{userDisplayName}</strong>
+                  <small>{primaryRoleLabel}</small>
+                </span>
+                <ChevronDown aria-hidden="true" size={15} />
+              </button>
+              {isUserMenuOpen ? (
+                <div className="user-menu-popover" role="menu">
+                  <span>{userEmail}</span>
+                  <button onClick={() => void signOut()} role="menuitem" type="button">
+                    <LogOut aria-hidden="true" size={16} />
+                    Deconnexion
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </header>
+
         <main className="content-area">
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
