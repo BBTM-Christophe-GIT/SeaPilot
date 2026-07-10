@@ -1,60 +1,33 @@
-# SeaPilot application shell design QA
+# Design QA — Tableau de bord RH, proposition 2
 
-- Source visual truth: `C:/Users/chris/AppData/Local/Temp/codex-clipboard-1b3799a2-8733-4d6f-b38f-0ab9b9136db7.png`
-- Supplied logo truth: `C:/Users/chris/OneDrive/Images/Logo BBTM Vectorisé noir.png`
-- Navigation structure truth: `C:/Users/chris/Downloads/Structure Menus.xlsx`, `Feuil1!B4:C19`
-- Final implementation screenshot: `C:/CODEX/SeaPilot/.design-qa/implementation-desktop-final.png`
-- Final navigation screenshot: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1.png`
-- Final mobile navigation screenshot: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1-mobile.png`
-- Full-view and focused sidebar comparison: `C:/CODEX/SeaPilot/.design-qa/full-and-sidebar-comparison-final.png`
-- Viewport: 1370 × 770 desktop; 390 × 844 mobile
-- State: authenticated administrator, Accueil active, all navigation families expanded
+## Référence et état contrôlé
 
-**Findings**
+- Référence sélectionnée : `C:/CODEX/SeaPilot/docs/design/hr-dashboard-option-2.png`
+- Capture de l'implémentation : `C:/CODEX/SeaPilot/docs/design/hr-dashboard-implementation.png`
+- Comparaison côte à côte : `C:/CODEX/SeaPilot/docs/design/hr-dashboard-comparison.png`
+- Viewport : 1536 × 1024
+- État : administrateur, tableau de bord RH, filtres par défaut, groupes métier dépliés, aucune modale ouverte.
 
-- No actionable P0, P1, or P2 mismatch remains in the requested application shell.
-- Fonts and typography: the existing Inter/system sans-serif stack preserves the compact dashboard hierarchy, optical weight, line height, truncation, and small-label legibility of the reference. The implementation stays within the established SeaPilot type system.
-- Spacing and layout rhythm: the final 220 px sidebar and 60 px black header match the reference region proportions. Navigation density was tightened until every current family fits at 1370 × 770 without scrolling. Card radii, dividers, padding, and active-state rhythm are consistent.
-- Colors and visual tokens: the reference navy shell is intentionally replaced with solid black as requested. White foregrounds and the blue active-menu accent retain accessible contrast and the source hierarchy.
-- Image quality and asset fidelity: the supplied BBTM raster logo is used directly at its natural aspect ratio, with no CSS, SVG, text-glyph, or placeholder approximation. It remains sharp against the black shell.
-- Copy and content: version 1.1.0 follows the approved workbook hierarchy and labels. Accueil, Planning, Levage, and Administration are direct entries; QHSE, Opérations, Achats, Ressources Humaines, and Maintenance are accordions. The existing QHSE documentary route remains available without adding an unapproved menu item.
+## Contrôles effectués
 
-**Open Questions**
+- Hiérarchie visuelle : bandeau d'indicateurs, analyses, filtres puis liste des marins.
+- Ordre métier : Capitaine, Chef Mécanicien, 2nd Capitaine, Maître d'Equipage, Matelot polyvalent, Matelot Qualifié, Stagiaire.
+- Libellés : préfixes numériques masqués et fonctions vides omises.
+- Responsive : mise en page desktop à la largeur cible et règles mobiles vérifiées dans la feuille de style.
+- Interactions : ouverture du paramétrage des accès, ouverture d'une fiche marin, passage en modification, accès à Santé et habilitations, édition des informations médicales, action d'enregistrement visible.
+- Champs contrôlés : type de document d'identité, fonction, rôle, registre, sexe et type de contrat sont proposés sous forme de listes adaptées.
+- Console navigateur : aucune erreur ni alerte sur les parcours vérifiés.
 
-- None blocking this shell and navigation pass.
+## Itérations issues de la comparaison
 
-**Comparison History**
+- P1 — Le pied de formulaire de la fiche marin pouvait être masqué : grille corrigée pour conserver l'action « Enregistrer la fiche » visible.
+- P1 — Un préfixe numérique pouvait réapparaître dans la fiche détaillée : normalisation appliquée à la lecture et à l'édition.
+- P2 — Un espace vertical inutile subsistait sans message système : zone de notification rendue conditionnelle.
+- P2 — Le filtre par fonction manquait dans la barre de recherche : filtre ajouté.
 
-1. Initial desktop pass: `C:/CODEX/SeaPilot/.design-qa/implementation-desktop-1.png`.
-   - Earlier P2 findings: sidebar was 252 px instead of the reference's approximately 220 px; header was 70 px instead of approximately 60 px; the final navigation items required a small vertical scroll.
-   - Fixes: reduced the shell tracks to 220 px and 60 px, tightened family and item heights, reduced navigation gaps, corrected the desktop mobile-menu visibility, and forced the brand wordmark to white.
-2. Post-fix evidence: `C:/CODEX/SeaPilot/.design-qa/implementation-desktop-final.png` and `C:/CODEX/SeaPilot/.design-qa/full-and-sidebar-comparison-final.png`.
-   - Result: shell proportions align, all current families fit, the supplied logo is clear, and the intended black replacement is consistent across header and sidebar.
-3. Navigation structure pass: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1.png` and `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1-mobile.png`.
-   - Result: every approved menu and submenu is present in workbook order, the full administrator navigation fits at 1370 × 770 without scrolling or clipped labels, and the 390 × 844 drawer remains responsive.
+## Écarts acceptés
 
-**Primary Interactions Tested**
-
-- Desktop sidebar expand/collapse: 220 px to 78 px.
-- Navigation family accordion: QHSE collapses and hides its child links.
-- User menu: opens and exposes the sign-out action.
-- Mobile navigation at 390 × 844: closed state, open drawer, backdrop, and close control.
-- Administrator navigation matrix: covered by automated tests for a role visibility update.
-- Workbook hierarchy: covered by an exact ordered module-access test.
-- Direct versus accordion behavior: Planning stays a single direct link; Maintenance collapses and hides Marad/Documents Techniques.
-- Browser console: no warnings or errors during visual verification.
-
-**Implementation Checklist**
-
-- [x] Black desktop shell and responsive mobile drawer.
-- [x] Supplied BBTM logo and SeaPilot brand lockup.
-- [x] Semantic application version in the sidebar.
-- [x] Administrator-managed module visibility by role and direct-route enforcement.
-- [x] Responsive, keyboard-addressable controls and visible active states.
-- [x] Automated tests, production build, and browser-rendered QA.
-
-**Follow-up Polish**
-
-- P3: add badges or deeper submenu levels only if a future business requirement defines them.
+- La référence inclut la navigation globale SeaPilot ; la capture QA isole volontairement la page RH. L'implémentation reste rendue dans le shell existant en production.
+- Les valeurs d'indicateurs et les personnes diffèrent de la maquette, car l'interface calcule les données réelles. La structure et les priorités visuelles sont conservées.
 
 final result: passed

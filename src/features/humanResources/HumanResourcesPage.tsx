@@ -1,14 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
+  BarChart3,
   ChevronDown,
   ChevronRight,
-  ClipboardCheck,
   FileText,
-  HeartPulse,
   Download,
   Upload,
   Search,
+  Settings2,
+  ShieldCheck,
+  TrendingUp,
   UserPlus,
   Users,
   X,
@@ -24,19 +26,27 @@ import {
   buildStaffEvolution,
   buildHumanResourcesDashboard,
   buildGeneratedHrDocumentFileName,
+  compareHrFunctionLabels,
   createPerson,
   createHrDocumentSignedUrl,
   downloadHrDocumentBlob,
   fetchHumanResourcesData,
   formatPersonName,
   getHrDocumentCategoryLabel,
+  getHrFunctionVisibilityKey,
+  HR_DOCUMENT_CATEGORY_LABELS,
+  HR_PRIMARY_FUNCTIONS,
   isHrDocumentRenewalDue,
+  normalizeHrFunctionLabel,
   renewHrDocument,
+  saveHrVisibilityRules,
   stripFileExtension,
   updateHrDocumentMedicalDetails,
   updatePersonDetails,
   updatePersonActive,
   type HrDocumentRecord,
+  type HrVisibilityRule,
+  type HrVisibilityScope,
   type PersonDashboardRecord,
   type PersonRecord,
   type UpdateHrDocumentMedicalInput,
@@ -63,6 +73,7 @@ interface PersonFormState {
 
 interface HrFilterState {
   collaboratorId: string;
+  functionKey: string;
   categoryKey: string;
   status: string;
   dueState: string;
@@ -83,6 +94,7 @@ const EMPTY_FORM: PersonFormState = {
 
 const EMPTY_FILTERS: HrFilterState = {
   collaboratorId: '',
+  functionKey: '',
   categoryKey: '',
   status: '',
   dueState: '',
@@ -135,6 +147,68 @@ const HR_DETAILS_SECTIONS = [
 ] as const;
 
 type HrDetailsSectionKey = (typeof HR_DETAILS_SECTIONS)[number]['key'];
+
+const HR_VISIBILITY_ROLES: Array<{ key: RoleKey; label: string }> = [
+  { key: 'admin', label: 'Admin' },
+  { key: 'direction', label: 'Direction' },
+  { key: 'armement', label: 'Armement' },
+  { key: 'capitaine', label: 'Capitaine' },
+  { key: 'marin', label: 'Marin' },
+];
+
+const DEFAULT_VISIBILITY_ROLES = HR_VISIBILITY_ROLES.map((role) => role.key);
+
+function isVisibilityItemAllowed(
+  rules: HrVisibilityRule[],
+  scope: HrVisibilityScope,
+  itemKey: string,
+  roles: RoleKey[],
+): boolean {
+  if (roles.includes('admin')) {
+    return true;
+  }
+
+  const rule = rules.find((candidate) => candidate.scope === scope && candidate.itemKey === itemKey);
+  return !rule || roles.some((role) => rule.visibleToRoles.includes(role));
+}
+
+function buildVisibilityCatalog(
+  people: PersonRecord[],
+  documents: HrDocumentRecord[],
+  savedRules: HrVisibilityRule[],
+): HrVisibilityRule[] {
+  const catalog = new Map<string, HrVisibilityRule>();
+  const addItem = (scope: HrVisibilityScope, itemKey: string, itemLabel: string) => {
+    if (!itemKey || !itemLabel) {
+      return;
+    }
+
+    const savedRule = savedRules.find((rule) => rule.scope === scope && rule.itemKey === itemKey);
+    catalog.set(`${scope}:${itemKey}`, savedRule || { scope, itemKey, itemLabel, visibleToRoles: DEFAULT_VISIBILITY_ROLES });
+  };
+
+  HR_PRIMARY_FUNCTIONS.forEach((label) => addItem('function', getHrFunctionVisibilityKey(label), label));
+  people.forEach((person) => {
+    const label = normalizeHrFunctionLabel(person.functionLabel);
+    addItem('function', getHrFunctionVisibilityKey(label), label);
+  });
+  Object.entries(HR_DOCUMENT_CATEGORY_LABELS).forEach(([key, label]) => addItem('document_type', key, label));
+  documents.forEach((document) => addItem('document_type', document.categoryKey, getHrDocumentCategoryLabel(document.categoryKey)));
+  HR_DETAILS_SECTIONS.forEach((section) => addItem('section', section.key, section.label));
+
+  return [...catalog.values()].sort((left, right) => {
+    const scopeOrder: HrVisibilityScope[] = ['function', 'document_type', 'section'];
+    const scopeDifference = scopeOrder.indexOf(left.scope) - scopeOrder.indexOf(right.scope);
+
+    if (scopeDifference !== 0) {
+      return scopeDifference;
+    }
+
+    return left.scope === 'function'
+      ? compareHrFunctionLabels(left.itemLabel, right.itemLabel)
+      : left.itemLabel.localeCompare(right.itemLabel, 'fr');
+  });
+}
 
 const SHAREPOINT_SITE_ORIGIN = 'https://bbtm668.sharepoint.com';
 
@@ -266,10 +340,6 @@ function documentMatchesFilters(document: HrDocumentRecord, filters: HrFilterSta
 
 function hasDocumentFilter(filters: HrFilterState): boolean {
   return Boolean(filters.categoryKey || filters.status || filters.dueState);
-}
-
-function metricLabel(count: number, singular: string, plural: string): string {
-  return count > 1 ? plural : singular;
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -480,6 +550,7 @@ function EditableField({
   label,
   multiline = false,
   onUpdate,
+  options,
   type = 'text',
 }: {
   field: keyof UpdatePersonDetailsInput;
@@ -487,13 +558,25 @@ function EditableField({
   label: string;
   multiline?: boolean;
   onUpdate: (key: keyof UpdatePersonDetailsInput, value: string) => void;
+  options?: string[];
   type?: string;
 }) {
+  const selectOptions = options && form[field] && !options.includes(form[field]) ? [form[field], ...options] : options;
+
   return (
     <label className="hr-edit-field">
       {label}
       {multiline ? (
         <textarea onChange={(event) => onUpdate(field, event.target.value)} rows={3} value={form[field]} />
+      ) : selectOptions ? (
+        <select onChange={(event) => onUpdate(field, event.target.value)} value={form[field]}>
+          <option value="">Sélectionner</option>
+          {selectOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
       ) : (
         <input onChange={(event) => onUpdate(field, event.target.value)} type={type} value={form[field]} />
       )}
@@ -506,7 +589,7 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
     firstName: person.firstName,
     lastName: person.lastName,
     email: person.email,
-    functionLabel: person.functionLabel,
+    functionLabel: normalizeHrFunctionLabel(person.functionLabel),
     gradeLabel: person.gradeLabel,
     roleLabel: person.roleLabel,
     registerLabel: person.registerLabel,
@@ -549,8 +632,10 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
+  const isAdmin = effectiveRoles.includes('admin');
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
+  const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
@@ -559,6 +644,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
+  const [isVisibilityOpen, setIsVisibilityOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -576,6 +662,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         if (isMounted) {
           setPeople(sortPeople(loadedData.people));
           setDocuments(loadedData.documents);
+          setVisibilityRules(loadedData.visibilityRules);
         }
       })
       .catch(() => {
@@ -595,9 +682,27 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   }, [effectiveClient]);
 
   const normalizedSearchQuery = normalizeSearch(searchQuery.trim());
+  const roleVisiblePeople = useMemo(
+    () =>
+      people.filter((person) => {
+        const functionLabel = normalizeHrFunctionLabel(person.functionLabel);
+        return (
+          Boolean(functionLabel) &&
+          isVisibilityItemAllowed(visibilityRules, 'function', getHrFunctionVisibilityKey(functionLabel), effectiveRoles)
+        );
+      }),
+    [effectiveRoles, people, visibilityRules],
+  );
+  const roleVisibleDocuments = useMemo(
+    () =>
+      documents.filter((document) =>
+        isVisibilityItemAllowed(visibilityRules, 'document_type', document.categoryKey, effectiveRoles),
+      ),
+    [documents, effectiveRoles, visibilityRules],
+  );
   const documentsByPersonId = useMemo(
     () =>
-      documents.reduce<Map<number, HrDocumentRecord[]>>((result, document) => {
+      roleVisibleDocuments.reduce<Map<number, HrDocumentRecord[]>>((result, document) => {
         if (document.personId === null) {
           return result;
         }
@@ -605,13 +710,17 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         result.set(document.personId, (result.get(document.personId) || []).concat(document));
         return result;
       }, new Map<number, HrDocumentRecord[]>()),
-    [documents],
+    [roleVisibleDocuments],
   );
   const visiblePeople = useMemo(
     () =>
-      people
+      roleVisiblePeople
         .filter((person) => showInactive || person.active)
         .filter((person) => !filters.collaboratorId || String(person.id) === filters.collaboratorId)
+        .filter(
+          (person) =>
+            !filters.functionKey || getHrFunctionVisibilityKey(person.functionLabel) === filters.functionKey,
+        )
         .filter((person) => {
           const personDocuments = documentsByPersonId.get(person.id) || [];
           const personTextMatches = personMatchesSearch(person, normalizedSearchQuery);
@@ -626,20 +735,27 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
           return personTextMatches || documentTextMatches;
         }),
-    [documentsByPersonId, filters, normalizedSearchQuery, people, showInactive],
+    [documentsByPersonId, filters, normalizedSearchQuery, roleVisiblePeople, showInactive],
   );
   const collaboratorOptions = useMemo(
     () =>
-      sortPeople(people).map((person) => ({
-        label: `${formatPersonName(person)} - ${person.functionLabel || 'Fonction non renseignee'}`,
+      sortPeople(roleVisiblePeople).map((person) => ({
+        label: `${formatPersonName(person)} - ${normalizeHrFunctionLabel(person.functionLabel)}`,
         value: String(person.id),
       })),
-    [people],
+    [roleVisiblePeople],
   );
   const categoryOptions = useMemo(
     () =>
-      uniqueSorted(documents.map((document) => document.categoryKey)).sort((left, right) => compareHrCategories(left, right)),
-    [documents],
+      uniqueSorted(roleVisibleDocuments.map((document) => document.categoryKey)).sort((left, right) => compareHrCategories(left, right)),
+    [roleVisibleDocuments],
+  );
+  const functionOptions = useMemo(
+    () =>
+      uniqueSorted(roleVisiblePeople.map((person) => normalizeHrFunctionLabel(person.functionLabel))).sort(
+        compareHrFunctionLabels,
+      ),
+    [roleVisiblePeople],
   );
   const visiblePersonIds = useMemo(() => new Set(visiblePeople.map((person) => person.id)), [visiblePeople]);
   const visiblePeopleSearchMatches = useMemo(
@@ -652,7 +768,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   );
   const visibleDocuments = useMemo(
     () =>
-      documents.filter((document) => {
+      roleVisibleDocuments.filter((document) => {
         const belongsToVisiblePerson = document.personId !== null && visiblePersonIds.has(document.personId);
         const isVisibleUnassigned = isManager && document.personId === null;
 
@@ -674,20 +790,20 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
         return documentMatchesSearch(document, normalizedSearchQuery);
       }),
-    [documents, filters, isManager, normalizedSearchQuery, visiblePeopleSearchMatches, visiblePersonIds],
+    [filters, isManager, normalizedSearchQuery, roleVisibleDocuments, visiblePeopleSearchMatches, visiblePersonIds],
   );
   const dashboard = useMemo(
     () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
     [visibleDocuments, visiblePeople],
   );
-  const staffEvolution = useMemo(() => buildStaffEvolution(people), [people]);
+  const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
   const selectedPerson = useMemo(
-    () => people.find((person) => person.id === selectedPersonId) || null,
-    [people, selectedPersonId],
+    () => roleVisiblePeople.find((person) => person.id === selectedPersonId) || null,
+    [roleVisiblePeople, selectedPersonId],
   );
   const selectedPersonDocuments = useMemo(
-    () => (selectedPerson ? documents.filter((document) => document.personId === selectedPerson.id) : []),
-    [documents, selectedPerson],
+    () => (selectedPerson ? roleVisibleDocuments.filter((document) => document.personId === selectedPerson.id) : []),
+    [roleVisibleDocuments, selectedPerson],
   );
   const selectedDocuments = useMemo(
     () => documents.filter((document) => selectedDocumentIds.has(document.id)),
@@ -700,6 +816,19 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const renewalPerson = useMemo(
     () => (renewalDocument?.personId ? people.find((person) => person.id === renewalDocument.personId) || null : null),
     [people, renewalDocument],
+  );
+  const visibleSectionKeys = useMemo(
+    () =>
+      new Set(
+        HR_DETAILS_SECTIONS.filter((section) =>
+          isVisibilityItemAllowed(visibilityRules, 'section', section.key, effectiveRoles),
+        ).map((section) => section.key),
+      ),
+    [effectiveRoles, visibilityRules],
+  );
+  const visibilityCatalog = useMemo(
+    () => buildVisibilityCatalog(people, documents, visibilityRules),
+    [documents, people, visibilityRules],
   );
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
@@ -883,89 +1012,121 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     }
   }
 
+  async function handleSaveVisibilityRules(rules: HrVisibilityRule[]) {
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setIsSaving(true);
+
+    try {
+      const savedRules = await saveHrVisibilityRules(effectiveClient, rules);
+      setVisibilityRules(savedRules);
+      setIsVisibilityOpen(false);
+      setStatusMessage('Visibilité RH mise à jour.');
+    } catch {
+      setErrorMessage("Impossible de mettre à jour la visibilité RH. Vérifiez que la migration a bien été appliquée.");
+      throw new Error('hr-visibility-update-failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   if (isLoading) {
     return <div className="admin-state">Chargement du personnel RH...</div>;
   }
 
   return (
     <section className="hr-page">
-      <div className="hr-dashboard-shell">
-        <aside className="hr-dashboard-sidebar">
-          <p className="module-family">QHSE - Bibliotheque documentaire</p>
-          <h1>Gestion des Ressources Humaines</h1>
-          <p className="hr-header-subtitle">
-            {visibleDocuments.length} {metricLabel(visibleDocuments.length, 'document affiche', 'documents affiches')} sur le
-            perimetre RH.
-          </p>
-          <div className="hr-actions" aria-label="Actions RH">
-            {isManager ? (
-              <button className="hr-action-button" onClick={() => setIsCreateOpen(true)} type="button">
-                <UserPlus aria-hidden="true" size={16} />
-                Nouveau Collaborateur
-              </button>
-            ) : null}
-            <button className="hr-action-button" type="button">
-              <FileText aria-hidden="true" size={16} />
-              Plan de formation
-            </button>
-            <button className="hr-action-button" type="button">
-              <ClipboardCheck aria-hidden="true" size={16} />
-              Crew competency
-            </button>
-            <button className="hr-action-button hr-action-button-compact" type="button">
-              <HeartPulse aria-hidden="true" size={16} />
-              Diagnostic
-            </button>
-          </div>
-        </aside>
-
-        <div className="hr-dashboard-main">
-          <StaffEvolutionChart points={staffEvolution} />
-          <div className="hr-kpi-band" aria-label="Indicateurs RH">
-            <MetricCluster
-              icon={<Users aria-hidden="true" size={18} />}
-              label="Effectif RH"
-              value={dashboard.metrics.activePeople}
-              items={[
-                { label: 'Sedentaires', value: dashboard.metrics.sedentaryPeople },
-                { label: 'Navigants', value: dashboard.metrics.seafarerPeople },
-                { label: 'Stagiaires', value: dashboard.metrics.trainees },
-              ]}
-            />
-            <MetricCluster
-              icon={<AlertTriangle aria-hidden="true" size={18} />}
-              label="A revalider"
-              tone="warning"
-              value={dashboard.metrics.renewalDue}
-              items={[
-                { ariaLabel: 'Certificats a revalider', label: 'Certificats', value: dashboard.metrics.certificateRenewals },
-                {
-                  ariaLabel: 'Visites medicales a revalider',
-                  label: 'Visite Medicale',
-                  value: dashboard.metrics.medicalVisitRenewals,
-                },
-              ]}
-            />
-            <MetricCluster
-              icon={<AlertTriangle aria-hidden="true" size={18} />}
-              label="Urgent"
-              tone="danger"
-              value={dashboard.metrics.urgent}
-              items={[
-                { ariaLabel: 'Documents echus', label: 'Documents echus', value: dashboard.metrics.expiredDocuments },
-                { ariaLabel: 'Documents manquants', label: 'Documents manquant(s)', value: dashboard.metrics.missing },
-              ]}
-            />
-          </div>
+      <header className="hr-command-header">
+        <div>
+          <h1>Ressources humaines</h1>
+          <p>Pilotage RH analytique · {visibleDocuments.length} documents suivis</p>
         </div>
+        <div className="hr-command-actions">
+          {isManager ? (
+            <button aria-label="Nouveau Collaborateur" className="hr-primary-button" onClick={() => setIsCreateOpen(true)} type="button">
+              <UserPlus aria-hidden="true" size={17} />
+              Ajouter un collaborateur
+            </button>
+          ) : null}
+          {isAdmin ? (
+            <button className="hr-secondary-button" onClick={() => setIsVisibilityOpen(true)} type="button">
+              <Settings2 aria-hidden="true" size={17} />
+              Paramétrer les accès
+            </button>
+          ) : null}
+          {isAdmin ? (
+            <span className="hr-visibility-summary">
+              <ShieldCheck aria-hidden="true" size={17} />
+              <span>
+                <strong>Visibilité par rôle</strong>
+                Fonctions, documents et sections
+              </span>
+            </span>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="hr-kpi-band" aria-label="Indicateurs RH">
+        <MetricCluster
+          icon={<Users aria-hidden="true" size={18} />}
+          label="Effectif RH"
+          value={dashboard.metrics.activePeople}
+          items={[
+            { label: 'Sédentaires', value: dashboard.metrics.sedentaryPeople },
+            { label: 'Navigants', value: dashboard.metrics.seafarerPeople },
+            { label: 'Stagiaires', value: dashboard.metrics.trainees },
+          ]}
+        />
+        <MetricCluster
+          icon={<TrendingUp aria-hidden="true" size={18} />}
+          label="À revalider"
+          tone="warning"
+          value={dashboard.metrics.renewalDue}
+          items={[
+            { ariaLabel: 'Certificats a revalider', label: 'Certificats', value: dashboard.metrics.certificateRenewals },
+            {
+              ariaLabel: 'Visites medicales a revalider',
+              label: 'Visites médicales',
+              value: dashboard.metrics.medicalVisitRenewals,
+            },
+          ]}
+        />
+        <MetricCluster
+          icon={<AlertTriangle aria-hidden="true" size={18} />}
+          label="Urgent"
+          tone="danger"
+          value={dashboard.metrics.urgent}
+          items={[
+            { ariaLabel: 'Documents echus', label: 'Documents échus', value: dashboard.metrics.expiredDocuments },
+            { ariaLabel: 'Documents manquants', label: 'Documents manquants', value: dashboard.metrics.missing },
+          ]}
+        />
+        <StrategicMetric label="Turnover 12 mois" suffix="%" value={dashboard.metrics.turnoverRate} />
+        <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
+        <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
       </div>
 
-      <div className="admin-notices" aria-live="polite">
-        {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      <div className="hr-analytics-grid">
+        <StaffEvolutionChart points={staffEvolution} turnoverRate={dashboard.metrics.turnoverRate} />
+        <FunctionDistribution groups={dashboard.groups} />
       </div>
 
-      <div className="hr-filter-panel">
+      {statusMessage || errorMessage ? (
+        <div className="admin-notices" aria-live="polite">
+          {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
+          {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+        </div>
+      ) : null}
+
+      <section className="hr-roster-panel">
+        <div className="hr-roster-heading">
+          <div>
+            <h2>Marins par fonction</h2>
+            <p>Les fonctions sont classées selon l’ordre métier défini.</p>
+          </div>
+          <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
+        </div>
+        <div className="hr-filter-panel">
         <label className="hr-search-field">
           <span>Recherche</span>
           <Search aria-hidden="true" size={16} />
@@ -983,6 +1144,17 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             {collaboratorOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="hr-filter-field">
+          Fonction
+          <select onChange={(event) => updateFilterValue('functionKey', event.target.value)} value={filters.functionKey}>
+            <option value="">Toutes</option>
+            {functionOptions.map((functionLabel) => (
+              <option key={functionLabel} value={getHrFunctionVisibilityKey(functionLabel)}>
+                {functionLabel}
               </option>
             ))}
           </select>
@@ -1022,8 +1194,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           <input checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} type="checkbox" />
           Afficher les inactifs
         </label>
-        <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
-      </div>
+        </div>
 
       {selectedDocuments.length > 0 ? (
         <section aria-label="Selection documentaire RH" className="hr-selection-bar">
@@ -1040,36 +1211,27 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </section>
       ) : null}
 
-      {dashboard.groups.length === 0 ? (
-        <div className="admin-state">Aucun collaborateur a afficher.</div>
-      ) : (
-        <div className="hr-group-list">
-          {dashboard.groups.map((group) => (
-            <section className="hr-person-group" key={group.label}>
-              <div className="hr-group-heading">
-                <h2>{group.label}</h2>
-                <span>{group.people.length} collaborateur(s)</span>
-              </div>
-              <div className="hr-person-list">
-                {group.people.map((person) => (
-                  <PersonRow
-                    isManager={isManager}
-                    isSaving={isSaving}
-                    key={person.id}
-                    onActiveChange={handleActiveChange}
-                    onDocumentOpen={handleOpenDocument}
-                    onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
-                    onDocumentSelect={toggleDocumentSelection}
-                    onOpen={() => setSelectedPersonId(person.id)}
-                    person={person}
-                    selectedDocumentIds={selectedDocumentIds}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
+        {dashboard.groups.length === 0 ? (
+          <div className="admin-state">Aucun collaborateur à afficher.</div>
+        ) : (
+          <div className="hr-group-list">
+            {dashboard.groups.map((group) => (
+              <PersonnelGroup
+                group={group}
+                isManager={isManager}
+                isSaving={isSaving}
+                key={group.label}
+                onActiveChange={handleActiveChange}
+                onDocumentOpen={handleOpenDocument}
+                onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
+                onDocumentSelect={toggleDocumentSelection}
+                onPersonOpen={setSelectedPersonId}
+                selectedDocumentIds={selectedDocumentIds}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {isCreateOpen ? (
         <CreatePersonDialog
@@ -1089,6 +1251,16 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onClose={() => setSelectedPersonId(null)}
           onSave={handleSavePersonDetails}
           person={selectedPerson}
+          visibleSectionKeys={visibleSectionKeys}
+        />
+      ) : null}
+
+      {isVisibilityOpen ? (
+        <VisibilitySettingsDialog
+          isSaving={isSaving}
+          onClose={() => setIsVisibilityOpen(false)}
+          onSave={handleSaveVisibilityRules}
+          rules={visibilityCatalog}
         />
       ) : null}
 
@@ -1105,7 +1277,13 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   );
 }
 
-function StaffEvolutionChart({ points }: { points: Array<{ count: number; year: number }> }) {
+function StaffEvolutionChart({
+  points,
+  turnoverRate,
+}: {
+  points: Array<{ count: number; year: number }>;
+  turnoverRate: number;
+}) {
   const maxCount = Math.max(1, ...points.map((point) => point.count));
   const chartPoints = points.map((point, index) => {
     const x = points.length <= 1 ? 24 : 24 + (index * 552) / (points.length - 1);
@@ -1117,25 +1295,89 @@ function StaffEvolutionChart({ points }: { points: Array<{ count: number; year: 
 
   return (
     <section aria-label="Evolution des effectifs" className="hr-evolution-card">
-      <div className="hr-evolution-title">
-        <FileText aria-hidden="true" size={18} />
-        <span>Evolution des effectifs</span>
+      <div className="hr-analytics-title">
+        <span>
+          <BarChart3 aria-hidden="true" size={18} />
+          Évolution des effectifs
+        </span>
+        <small>2020 – 2026</small>
       </div>
-      <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
-        <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
-        <polyline className="hr-evolution-line" points={polylinePoints} />
-        {chartPoints.map((point) => (
-          <g key={point.year}>
-            <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
-            <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
-              {point.count}
-            </text>
-            <text className="hr-evolution-year" x={point.x} y="93">
-              {point.year}
-            </text>
-          </g>
+      <div className="hr-evolution-content">
+        <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
+          <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
+          <polyline className="hr-evolution-line" points={polylinePoints} />
+          {chartPoints.map((point) => (
+            <g key={point.year}>
+              <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
+              <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
+                {point.count}
+              </text>
+              <text className="hr-evolution-year" x={point.x} y="93">
+                {point.year}
+              </text>
+            </g>
+          ))}
+        </svg>
+        <aside className="hr-turnover-panel" aria-label="Turnover sur 12 mois">
+          <small>Turnover 12 mois</small>
+          <strong>{formatMetric(turnoverRate)} %</strong>
+          <span>Départs sur effectif moyen</span>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function formatMetric(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+}
+
+function StrategicMetric({
+  label,
+  suffix,
+  tone = 'neutral',
+  value,
+}: {
+  label: string;
+  suffix: string;
+  tone?: 'neutral' | 'success';
+  value: number;
+}) {
+  return (
+    <section aria-label={label} className={`hr-strategic-metric hr-strategic-metric-${tone}`}>
+      <small>{label}</small>
+      <strong>
+        {formatMetric(value)}
+        {suffix}
+      </strong>
+      <span>{tone === 'success' ? 'Dossiers à jour' : 'Indicateur sur 12 mois'}</span>
+    </section>
+  );
+}
+
+function FunctionDistribution({ groups }: { groups: Array<{ label: string; people: PersonDashboardRecord[] }> }) {
+  const maxCount = Math.max(1, ...groups.map((group) => group.people.length));
+
+  return (
+    <section aria-label="Effectifs par fonction" className="hr-function-distribution">
+      <div className="hr-analytics-title">
+        <span>
+          <Users aria-hidden="true" size={18} />
+          Effectifs par fonction
+        </span>
+        <small>{groups.reduce((total, group) => total + group.people.length, 0)} personnes</small>
+      </div>
+      <div className="hr-function-bars">
+        {groups.map((group) => (
+          <div className="hr-function-bar-row" key={group.label}>
+            <span>{group.label}</span>
+            <div aria-hidden="true" className="hr-function-bar-track">
+              <i style={{ width: `${Math.max(8, (group.people.length / maxCount) * 100)}%` }} />
+            </div>
+            <strong>{group.people.length}</strong>
+          </div>
         ))}
-      </svg>
+      </div>
     </section>
   );
 }
@@ -1174,6 +1416,66 @@ function MetricCluster({
   );
 }
 
+function PersonnelGroup({
+  group,
+  isManager,
+  isSaving,
+  onActiveChange,
+  onDocumentOpen,
+  onDocumentRenew,
+  onDocumentSelect,
+  onPersonOpen,
+  selectedDocumentIds,
+}: {
+  group: { label: string; people: PersonDashboardRecord[] };
+  isManager: boolean;
+  isSaving: boolean;
+  onActiveChange: (person: PersonRecord, active: boolean) => void;
+  onDocumentOpen: (document: HrDocumentRecord) => void;
+  onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentSelect: (documentId: number) => void;
+  onPersonOpen: (personId: number) => void;
+  selectedDocumentIds: Set<number>;
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  return (
+    <section className="hr-person-group">
+      <button
+        aria-expanded={isExpanded}
+        aria-label={`${group.label}, ${group.people.length} collaborateur(s)`}
+        className="hr-group-heading"
+        onClick={() => setIsExpanded((currentValue) => !currentValue)}
+        type="button"
+      >
+        <span>
+          {isExpanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
+          <strong>{group.label}</strong>
+        </span>
+        <b>{group.people.length}</b>
+      </button>
+      {isExpanded ? (
+        <div className="hr-person-list">
+          {group.people.map((person) => (
+            <PersonRow
+              isManager={isManager}
+              isSaving={isSaving}
+              key={person.id}
+              onActiveChange={onActiveChange}
+              onDocumentOpen={onDocumentOpen}
+              onDocumentRenew={onDocumentRenew}
+              onDocumentSelect={onDocumentSelect}
+              onOpen={() => onPersonOpen(person.id)}
+              person={person}
+              selectedDocumentIds={selectedDocumentIds}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function PersonRow({
   isManager,
   isSaving,
@@ -1196,7 +1498,8 @@ function PersonRow({
   selectedDocumentIds: Set<number>;
 }) {
   const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
-  const [isPersonExpanded, setIsPersonExpanded] = useState(true);
+  const urgentCount = person.documents.filter((document) => document.status === 'expired' || document.status === 'missing').length;
+  const [isPersonExpanded, setIsPersonExpanded] = useState(false);
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
   const documentGroups = Array.from(
     person.documents.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
@@ -1227,14 +1530,6 @@ function PersonRow({
   return (
     <article aria-label={`Documents de ${formatPersonName(person)}`} className="hr-person-row" role="region">
       <header className="hr-person-tree-header">
-        <div className="hr-person-actions">
-          <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-icon-button" onClick={onOpen} type="button">
-            <Users aria-hidden="true" size={16} />
-          </button>
-          <button aria-label={`Ouvrir les documents de ${formatPersonName(person)}`} className="hr-icon-button" type="button">
-            <FileText aria-hidden="true" size={16} />
-          </button>
-        </div>
         <div className="hr-person-main">
           <div className="hr-person-title-line">
             <button
@@ -1247,10 +1542,21 @@ function PersonRow({
               <span>{formatPersonName(person)}</span>
             </button>
           </div>
-          <small>{person.documents.length} document(s)</small>
+          <small>{person.sailorNumber ? `N° marin ${person.sailorNumber}` : person.gradeLabel || normalizeHrFunctionLabel(person.functionLabel)}</small>
         </div>
+        <span className="hr-roster-metric">
+          <strong>{person.documents.length}</strong>
+          <small>Documents</small>
+        </span>
+        <span className={`hr-roster-metric ${renewalCount > 0 ? 'is-warning' : ''}`}>
+          <strong>{renewalCount}</strong>
+          <small>À revalider</small>
+        </span>
+        <span className={`hr-roster-metric ${urgentCount > 0 ? 'is-danger' : ''}`}>
+          <strong>{urgentCount}</strong>
+          <small>Urgent</small>
+        </span>
         <div className="hr-person-status">
-          {renewalCount > 0 ? <span className="hr-alert-badge">{renewalCount} a renouveler</span> : null}
           {isManager ? (
             <label className="hr-status-toggle">
               <input
@@ -1267,6 +1573,9 @@ function PersonRow({
             </span>
           )}
         </div>
+        <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-icon-button" onClick={onOpen} type="button">
+          <ChevronRight aria-hidden="true" size={17} />
+        </button>
       </header>
 
       {isPersonExpanded && documentGroups.length > 0 ? (
@@ -1583,23 +1892,42 @@ function CreatePersonDialog({
           </label>
           <label>
             Fonction
-            <input onChange={(event) => onUpdate('functionLabel', event.target.value)} value={form.functionLabel} />
+            <input list="hr-function-options" onChange={(event) => onUpdate('functionLabel', event.target.value)} value={form.functionLabel} />
+            <datalist id="hr-function-options">
+              {HR_PRIMARY_FUNCTIONS.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </label>
           <label>
             Grade
             <input onChange={(event) => onUpdate('gradeLabel', event.target.value)} value={form.gradeLabel} />
           </label>
           <label>
-            Role
-            <input onChange={(event) => onUpdate('roleLabel', event.target.value)} value={form.roleLabel} />
+            Rôle
+            <select onChange={(event) => onUpdate('roleLabel', event.target.value)} value={form.roleLabel}>
+              <option value="">Sélectionner</option>
+              {['Navigant', 'Sédentaire', 'Stagiaire'].map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
           </label>
           <label>
             Registre
-            <input onChange={(event) => onUpdate('registerLabel', event.target.value)} value={form.registerLabel} />
+            <select onChange={(event) => onUpdate('registerLabel', event.target.value)} value={form.registerLabel}>
+              <option value="">Sélectionner</option>
+              <option>RIF</option>
+              <option>ENIM</option>
+            </select>
           </label>
           <label>
             Sexe
-            <input onChange={(event) => onUpdate('sex', event.target.value)} value={form.sex} />
+            <select onChange={(event) => onUpdate('sex', event.target.value)} value={form.sex}>
+              <option value="">Sélectionner</option>
+              <option>Femme</option>
+              <option>Homme</option>
+              <option>Autre</option>
+            </select>
           </label>
           <label>
             Numero de marin
@@ -1627,6 +1955,132 @@ function CreatePersonDialog({
   );
 }
 
+function VisibilitySettingsDialog({
+  isSaving,
+  onClose,
+  onSave,
+  rules,
+}: {
+  isSaving: boolean;
+  onClose: () => void;
+  onSave: (rules: HrVisibilityRule[]) => Promise<void>;
+  rules: HrVisibilityRule[];
+}) {
+  const [draftRules, setDraftRules] = useState(rules);
+  const [formError, setFormError] = useState('');
+  const scopeLabels: Record<HrVisibilityScope, string> = {
+    function: 'Fonctions',
+    document_type: 'Types de document',
+    section: 'Sections de la fiche RH',
+  };
+
+  useEffect(() => setDraftRules(rules), [rules]);
+
+  function toggleRole(rule: HrVisibilityRule, role: RoleKey, checked: boolean) {
+    if (role === 'admin') {
+      return;
+    }
+
+    setDraftRules((currentRules) =>
+      currentRules.map((candidate) => {
+        if (candidate.scope !== rule.scope || candidate.itemKey !== rule.itemKey) {
+          return candidate;
+        }
+
+        const nextRoles = new Set(candidate.visibleToRoles);
+        if (checked) {
+          nextRoles.add(role);
+        } else {
+          nextRoles.delete(role);
+        }
+        nextRoles.add('admin');
+
+        return { ...candidate, visibleToRoles: [...nextRoles] };
+      }),
+    );
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError('');
+
+    try {
+      await onSave(draftRules);
+    } catch {
+      setFormError("L'enregistrement a échoué.");
+    }
+  }
+
+  return (
+    <div aria-label="Paramétrer la visibilité RH" aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <form className="hr-dialog hr-visibility-dialog" onSubmit={handleSubmit}>
+        <div className="hr-dialog-header">
+          <div>
+            <p>Administration RH</p>
+            <h2>Visibilité par rôle</h2>
+            <span>Définissez les fonctions, documents et sections accessibles à chaque profil.</span>
+          </div>
+          <button aria-label="Fermer" className="hr-icon-button" disabled={isSaving} onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="hr-visibility-body">
+          {(['function', 'document_type', 'section'] as HrVisibilityScope[]).map((scope) => (
+            <section className="hr-visibility-scope" key={scope}>
+              <div className="hr-visibility-scope-title">
+                <h3>{scopeLabels[scope]}</h3>
+                <small>Administrateur toujours autorisé</small>
+              </div>
+              <div className="hr-visibility-table-wrap">
+                <table className="hr-visibility-table">
+                  <thead>
+                    <tr>
+                      <th>Élément</th>
+                      {HR_VISIBILITY_ROLES.map((role) => (
+                        <th key={role.key}>{role.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftRules
+                      .filter((rule) => rule.scope === scope)
+                      .map((rule) => (
+                        <tr key={`${rule.scope}:${rule.itemKey}`}>
+                          <th>{rule.itemLabel}</th>
+                          {HR_VISIBILITY_ROLES.map((role) => (
+                            <td key={role.key}>
+                              <input
+                                aria-label={`${rule.itemLabel} visible pour ${role.label}`}
+                                checked={role.key === 'admin' || rule.visibleToRoles.includes(role.key)}
+                                disabled={isSaving || role.key === 'admin'}
+                                onChange={(event) => toggleRole(rule, role.key, event.currentTarget.checked)}
+                                type="checkbox"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+        </div>
+        {formError ? <p className="form-error">{formError}</p> : null}
+        <footer className="hr-dialog-footer">
+          <button className="hr-secondary-button" disabled={isSaving} onClick={onClose} type="button">
+            Annuler
+          </button>
+          <button className="hr-primary-button" disabled={isSaving} type="submit">
+            <ShieldCheck aria-hidden="true" size={17} />
+            {isSaving ? 'Enregistrement...' : 'Enregistrer la visibilité'}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
 function PersonDetailsDialog({
   documents,
   isManager,
@@ -1634,6 +2088,7 @@ function PersonDetailsDialog({
   onClose,
   onSave,
   person,
+  visibleSectionKeys,
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
@@ -1645,18 +2100,26 @@ function PersonDetailsDialog({
     medicalUpdates: MedicalDocumentUpdate[],
   ) => Promise<void>;
   person: PersonRecord;
+  visibleSectionKeys: Set<HrDetailsSectionKey>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<UpdatePersonDetailsInput>(() => buildPersonDetailsForm(person));
   const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
     buildMedicalDetailsForms(documents),
   );
-  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>('identity');
+  const availableSections = HR_DETAILS_SECTIONS.filter((section) => visibleSectionKeys.has(section.key));
+  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>(availableSections[0]?.key || 'identity');
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
-    setActiveSectionKey('identity');
+    setActiveSectionKey(availableSections[0]?.key || 'identity');
   }, [person]);
+
+  useEffect(() => {
+    if (!visibleSectionKeys.has(activeSectionKey) && availableSections[0]) {
+      setActiveSectionKey(availableSections[0].key);
+    }
+  }, [activeSectionKey, availableSections, visibleSectionKeys]);
 
   useEffect(() => {
     setMedicalForms(buildMedicalDetailsForms(documents));
@@ -1708,11 +2171,35 @@ function PersonDetailsDialog({
                 <>
                   <EditableField field="firstName" form={form} label="Prenom" onUpdate={updateFormValue} />
                   <EditableField field="lastName" form={form} label="Nom" onUpdate={updateFormValue} />
-                  <EditableField field="functionLabel" form={form} label="Fonction" onUpdate={updateFormValue} />
+                  <EditableField
+                    field="functionLabel"
+                    form={form}
+                    label="Fonction"
+                    onUpdate={updateFormValue}
+                    options={[...HR_PRIMARY_FUNCTIONS]}
+                  />
                   <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={updateFormValue} />
-                  <EditableField field="roleLabel" form={form} label="Role" onUpdate={updateFormValue} />
-                  <EditableField field="registerLabel" form={form} label="Registre" onUpdate={updateFormValue} />
-                  <EditableField field="sex" form={form} label="Sexe" onUpdate={updateFormValue} />
+                  <EditableField
+                    field="roleLabel"
+                    form={form}
+                    label="Rôle"
+                    onUpdate={updateFormValue}
+                    options={['Navigant', 'Sédentaire', 'Stagiaire']}
+                  />
+                  <EditableField
+                    field="registerLabel"
+                    form={form}
+                    label="Registre"
+                    onUpdate={updateFormValue}
+                    options={['RIF', 'ENIM']}
+                  />
+                  <EditableField
+                    field="sex"
+                    form={form}
+                    label="Sexe"
+                    onUpdate={updateFormValue}
+                    options={['Femme', 'Homme', 'Autre']}
+                  />
                   <EditableField field="sailorNumber" form={form} label="Numero de marin" onUpdate={updateFormValue} />
                   <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={updateFormValue} />
                   <EditableField field="email" form={form} label="Email" onUpdate={updateFormValue} type="email" />
@@ -1721,7 +2208,7 @@ function PersonDetailsDialog({
                 <>
                   <FieldValue label="Prenom" value={person.firstName} />
                   <FieldValue label="Nom" value={person.lastName} />
-                  <FieldValue label="Fonction" value={person.functionLabel} />
+                  <FieldValue label="Fonction" value={normalizeHrFunctionLabel(person.functionLabel)} />
                   <FieldValue label="Grade" value={person.gradeLabel} />
                   <FieldValue label="Role" value={person.roleLabel} />
                   <FieldValue label="Registre" value={person.registerLabel} />
@@ -1741,7 +2228,13 @@ function PersonDetailsDialog({
             <DetailsGrid isEditing={isEditing}>
               {isEditing ? (
                 <>
-                  <EditableField field="contractType" form={form} label="Type de contrat" onUpdate={updateFormValue} />
+                  <EditableField
+                    field="contractType"
+                    form={form}
+                    label="Type de contrat"
+                    onUpdate={updateFormValue}
+                    options={['CDI', 'CDD', 'Intérim', 'Alternance', 'Stage', 'Prestataire']}
+                  />
                   <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={updateFormValue} type="date" />
                   <EditableField field="departedOn" form={form} label="Date depart" onUpdate={updateFormValue} type="date" />
                   <EditableField field="departureReason" form={form} label="Cause depart" onUpdate={updateFormValue} />
@@ -1837,6 +2330,7 @@ function PersonDetailsDialog({
                     form={form}
                     label="Type document identite"
                     onUpdate={updateFormValue}
+                    options={['Carte nationale d’identité', 'Passeport', 'Titre de séjour', 'Livret maritime']}
                   />
                   <EditableField
                     field="identityDocumentNumber"
@@ -1963,7 +2457,7 @@ function PersonDetailsDialog({
                 <strong>Fiche RH</strong>
               </div>
               <ol>
-                {HR_DETAILS_SECTIONS.map((section, index) => (
+                {availableSections.map((section) => (
                   <li key={section.key}>
                     <button
                       aria-current={activeSectionKey === section.key ? 'step' : undefined}
@@ -1972,7 +2466,7 @@ function PersonDetailsDialog({
                       onClick={() => setActiveSectionKey(section.key)}
                       type="button"
                     >
-                      <b>{index + 1}</b>
+                      <b>{HR_DETAILS_SECTIONS.findIndex((candidate) => candidate.key === section.key) + 1}</b>
                       <span>{section.label}</span>
                     </button>
                   </li>

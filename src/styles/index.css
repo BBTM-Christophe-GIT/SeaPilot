@@ -1674,8 +1674,13 @@ button:disabled {
 
 .hr-details-form {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.hr-details-dialog {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .hr-form-grid {
@@ -1744,7 +1749,9 @@ button:disabled {
 }
 
 .hr-form-grid input,
+.hr-form-grid select,
 .hr-edit-field input,
+.hr-edit-field select,
 .hr-edit-field textarea {
   min-width: 0;
   border: 1px solid #c7d2df;
@@ -1760,7 +1767,9 @@ button:disabled {
 
 .hr-search-field input:focus,
 .hr-form-grid input:focus,
+.hr-form-grid select:focus,
 .hr-edit-field input:focus,
+.hr-edit-field select:focus,
 .hr-edit-field textarea:focus {
   border-color: #0c66b7;
   outline: 3px solid rgba(12, 102, 183, 0.16);
@@ -2621,6 +2630,464 @@ button:disabled {
   font-size: 1rem;
 }
 
+/* RH analytical cockpit */
+.hr-command-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.hr-command-header h1,
+.hr-roster-heading h2 {
+  margin: 0;
+  color: #101d36;
+  letter-spacing: -0.02em;
+}
+
+.hr-command-header h1 {
+  font-size: 1.7rem;
+  line-height: 1.08;
+}
+
+.hr-command-header p,
+.hr-roster-heading p {
+  margin: 5px 0 0;
+  color: #5f7089;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.hr-command-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.hr-visibility-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  color: #566780;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.hr-visibility-summary svg {
+  flex: 0 0 auto;
+  color: #0f5fc4;
+}
+
+.hr-visibility-summary span,
+.hr-visibility-summary strong {
+  display: block;
+}
+
+.hr-visibility-summary strong {
+  color: #243d63;
+  font-size: 0.75rem;
+}
+
+.hr-kpi-band {
+  grid-template-columns:
+    minmax(230px, 1.4fr) minmax(230px, 1.35fr) minmax(230px, 1.35fr)
+    repeat(3, minmax(122px, 0.7fr));
+}
+
+.hr-kpi-cluster,
+.hr-strategic-metric {
+  min-height: 88px;
+  border-radius: 10px;
+}
+
+.hr-kpi-cluster {
+  grid-template-columns: minmax(104px, 0.55fr) minmax(0, 1fr);
+}
+
+.hr-kpi-cluster-total strong {
+  font-size: 1.72rem;
+}
+
+.hr-strategic-metric {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid #d7e0eb;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
+.hr-strategic-metric small {
+  color: #50617a;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.hr-strategic-metric strong {
+  color: #10264a;
+  font-size: 1.45rem;
+  line-height: 1.05;
+}
+
+.hr-strategic-metric span {
+  color: #75849a;
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.hr-strategic-metric-success strong {
+  color: #157548;
+}
+
+.hr-analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  gap: 12px;
+}
+
+.hr-evolution-card,
+.hr-function-distribution {
+  display: grid;
+  min-width: 0;
+  border: 1px solid #d7e0eb;
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: #ffffff;
+}
+
+.hr-evolution-card {
+  grid-template-columns: 1fr;
+  min-height: 248px;
+}
+
+.hr-analytics-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #142849;
+}
+
+.hr-analytics-title > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.hr-analytics-title svg {
+  color: #1465d8;
+}
+
+.hr-analytics-title small {
+  border: 1px solid #dbe3ed;
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: #5d6d84;
+  background: #fbfcfe;
+  font-weight: 750;
+}
+
+.hr-evolution-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 14px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.hr-evolution-chart {
+  height: 174px;
+  align-self: end;
+}
+
+.hr-turnover-panel {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  border-left: 1px solid #e1e8f0;
+  text-align: center;
+}
+
+.hr-turnover-panel small,
+.hr-turnover-panel span {
+  color: #60718a;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.hr-turnover-panel strong {
+  color: #102d5c;
+  font-size: 1.7rem;
+}
+
+.hr-function-distribution {
+  align-content: start;
+  gap: 18px;
+}
+
+.hr-function-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.hr-function-bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(100px, 1.7fr) 24px;
+  align-items: center;
+  gap: 10px;
+  color: #263a59;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.hr-function-bar-track {
+  display: block;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf2f8;
+}
+
+.hr-function-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1769e8;
+}
+
+.hr-roster-panel {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #d7e0eb;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.hr-roster-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px 10px;
+}
+
+.hr-roster-heading h2 {
+  font-size: 1.08rem;
+}
+
+.hr-roster-panel .hr-filter-panel {
+  grid-template-columns: minmax(210px, 1.25fr) repeat(5, minmax(112px, 0.68fr)) auto;
+  border: 0;
+  border-top: 1px solid #eef2f7;
+  border-bottom: 1px solid #e1e8f0;
+  border-radius: 0;
+  padding: 10px 14px;
+  background: #fbfcfe;
+}
+
+.hr-roster-panel .hr-search-field > span,
+.hr-roster-panel .hr-filter-field {
+  font-size: 0.68rem;
+}
+
+.hr-roster-panel .hr-group-list {
+  gap: 0;
+}
+
+.hr-roster-panel .hr-person-group {
+  border: 0;
+  border-bottom: 1px solid #e6ecf3;
+  border-radius: 0;
+}
+
+.hr-roster-panel .hr-person-group:last-child {
+  border-bottom: 0;
+}
+
+.hr-group-heading {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid #eef2f7;
+  padding: 10px 14px;
+  color: #172b4d;
+  background: #f8faff;
+  text-align: left;
+}
+
+.hr-group-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hr-group-heading strong {
+  font-size: 0.88rem;
+}
+
+.hr-group-heading b {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  color: #245db2;
+  background: #e9f1ff;
+  font-size: 0.72rem;
+}
+
+.hr-person-tree-header {
+  grid-template-columns: minmax(220px, 1.7fr) repeat(3, minmax(76px, 0.58fr)) minmax(104px, 0.7fr) 34px;
+  min-height: 58px;
+  padding: 6px 14px 6px 30px;
+  background: #ffffff;
+}
+
+.hr-person-tree-toggle span {
+  font-size: 0.88rem;
+}
+
+.hr-person-main > small {
+  padding-left: 20px;
+  color: #738198;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.hr-roster-metric {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: #687991;
+  font-size: 0.68rem;
+}
+
+.hr-roster-metric strong {
+  color: #244167;
+  font-size: 0.86rem;
+}
+
+.hr-roster-metric.is-warning strong {
+  color: #c35f0b;
+}
+
+.hr-roster-metric.is-danger strong {
+  color: #c6283a;
+}
+
+.hr-status-toggle,
+.hr-status-active,
+.hr-status-inactive {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
+.hr-status-toggle {
+  color: #14653e;
+  background: #e4f7ed;
+}
+
+.hr-status-toggle input {
+  width: 13px;
+  height: 13px;
+}
+
+.hr-document-tree {
+  border-top: 1px solid #eef2f7;
+  background: #fbfcfe;
+}
+
+.hr-visibility-dialog {
+  width: min(100%, 1120px);
+}
+
+.hr-visibility-body {
+  display: grid;
+  gap: 22px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.hr-visibility-scope {
+  display: grid;
+  gap: 10px;
+}
+
+.hr-visibility-scope-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hr-visibility-scope-title h3 {
+  margin: 0;
+  color: #173457;
+  font-size: 1rem;
+}
+
+.hr-visibility-scope-title small {
+  color: #6c7b90;
+  font-weight: 650;
+}
+
+.hr-visibility-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+}
+
+.hr-visibility-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hr-visibility-table th,
+.hr-visibility-table td {
+  border-bottom: 1px solid #e8edf3;
+  padding: 9px 12px;
+  text-align: center;
+}
+
+.hr-visibility-table th:first-child {
+  min-width: 230px;
+  text-align: left;
+}
+
+.hr-visibility-table thead th {
+  color: #50617a;
+  background: #f7f9fc;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.hr-visibility-table tbody th {
+  color: #243956;
+  font-size: 0.8rem;
+}
+
+.hr-visibility-table tr:last-child th,
+.hr-visibility-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.hr-visibility-table input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1769e8;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -2728,6 +3195,33 @@ button:disabled {
   .admin-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hr-command-header,
+  .hr-command-actions,
+  .hr-roster-heading,
+  .hr-visibility-scope-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hr-command-actions {
+    width: 100%;
+  }
+
+  .hr-analytics-grid,
+  .hr-evolution-content {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-turnover-panel {
+    border-top: 1px solid #e1e8f0;
+    border-left: 0;
+    padding-top: 12px;
+  }
+
+  .hr-function-bar-row {
+    grid-template-columns: minmax(110px, 1fr) minmax(90px, 1fr) 24px;
   }
 
   .hr-dashboard-shell,

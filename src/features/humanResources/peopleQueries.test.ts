@@ -5,9 +5,12 @@ import {
   createPerson,
   fetchHumanResourcesData,
   fetchPeople,
+  getHrFunctionVisibilityKey,
   mapHrDocumentRows,
   mapPersonRows,
+  normalizeHrFunctionLabel,
   renewHrDocument,
+  saveHrVisibilityRules,
   updateHrDocumentMedicalDetails,
   updatePersonDetails,
   updatePersonActive,
@@ -387,6 +390,25 @@ describe('updateHrDocumentMedicalDetails', () => {
   });
 });
 
+describe('HR function ordering', () => {
+  it('removes numeric prefixes, normalizes primary labels and omits empty functions', () => {
+    expect(normalizeHrFunctionLabel('3-2nd Capitaine')).toBe('2nd Capitaine');
+    expect(normalizeHrFunctionLabel(' 5 - Matelot Polyvalent ')).toBe('Matelot polyvalent');
+    expect(getHrFunctionVisibilityKey("Maître d'Equipage")).toBe('maitre-d-equipage');
+
+    const dashboard = buildHumanResourcesDashboard(
+      mapPersonRows([
+        { ...personRow, id: 1, function_label: '3-2nd Capitaine' },
+        { ...personRow, id: 2, function_label: '1-Capitaine' },
+        { ...personRow, id: 3, function_label: null },
+      ]),
+      [],
+    );
+
+    expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', '2nd Capitaine']);
+  });
+});
+
 describe('buildHumanResourcesDashboard', () => {
   it('computes RH metrics, grouped collaborators and document alerts', () => {
     const people = mapPersonRows([
@@ -404,7 +426,7 @@ describe('buildHumanResourcesDashboard', () => {
         engine_certificate_label: null,
         crane_training_on: null,
         crane_induction_on: null,
-        function_label: 'Matelot Polyvalent',
+        function_label: '5-Matelot Polyvalent',
         role_label: 'Navigant',
         active: true,
       },
@@ -444,8 +466,11 @@ describe('buildHumanResourcesDashboard', () => {
       contractsReady: 2,
       emergencyContactsReady: 2,
       habilitationsReady: 2,
+      turnoverRate: 0,
+      averageTenureYears: expect.any(Number),
+      medicalComplianceRate: 50,
     });
-    expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Direction', 'Matelot Polyvalent']);
+    expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Matelot polyvalent', 'Direction']);
     expect(dashboard.groups[0].people[0].categorySummaries).toEqual([
       { key: 'certificate', label: 'Certificats', count: 1, urgentCount: 1, renewalDueCount: 1 },
       { key: 'medical_visit', label: 'Visite Médicale', count: 1, urgentCount: 0, renewalDueCount: 1 },
@@ -554,9 +579,55 @@ describe('fetchHumanResourcesData', () => {
     await expect(fetchHumanResourcesData({ from } as never)).resolves.toEqual({
       people: mapPersonRows([personRow]),
       documents: mapHrDocumentRows([documentRow]),
+      visibilityRules: [],
     });
     expect(from).toHaveBeenCalledWith('people');
     expect(from).toHaveBeenCalledWith('hr_documents');
+  });
+});
+
+describe('saveHrVisibilityRules', () => {
+  it('persists role visibility and always keeps admin access', async () => {
+    const rows = [
+      {
+        scope: 'section',
+        item_key: 'health',
+        item_label: 'Santé et habilitations',
+        visible_to_roles: ['admin', 'armement'],
+      },
+    ];
+    const select = vi.fn().mockResolvedValue({ data: rows, error: null });
+    const upsert = vi.fn().mockReturnValue({ select });
+    const from = vi.fn().mockReturnValue({ upsert });
+
+    await expect(
+      saveHrVisibilityRules({ from } as never, [
+        {
+          scope: 'section',
+          itemKey: 'health',
+          itemLabel: 'Santé et habilitations',
+          visibleToRoles: ['armement'],
+        },
+      ]),
+    ).resolves.toEqual([
+      {
+        scope: 'section',
+        itemKey: 'health',
+        itemLabel: 'Santé et habilitations',
+        visibleToRoles: ['admin', 'armement'],
+      },
+    ]);
+
+    expect(upsert).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          scope: 'section',
+          item_key: 'health',
+          visible_to_roles: ['admin', 'armement'],
+        }),
+      ],
+      { onConflict: 'scope,item_key' },
+    );
   });
 });
 

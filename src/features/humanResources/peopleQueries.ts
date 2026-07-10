@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RoleKey } from '../permissions/roles';
 
 const PEOPLE_SELECT = [
   'id',
@@ -77,6 +78,37 @@ export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
   safety_training: 'Formation de Sécurité',
   safety_induction: 'Safety Induction',
 };
+
+export const HR_PRIMARY_FUNCTIONS = [
+  'Capitaine',
+  'Chef Mécanicien',
+  '2nd Capitaine',
+  "Maître d'Equipage",
+  'Matelot polyvalent',
+  'Matelot Qualifié',
+  'Stagiaire',
+] as const;
+
+const HR_FUNCTION_ALIASES = new Map<string, string>([
+  ['capitaine', 'Capitaine'],
+  ['chef mecanicien', 'Chef Mécanicien'],
+  ['2nd capitaine', '2nd Capitaine'],
+  ['second capitaine', '2nd Capitaine'],
+  ["maitre d'equipage", "Maître d'Equipage"],
+  ['maitre equipage', "Maître d'Equipage"],
+  ['matelot polyvalent', 'Matelot polyvalent'],
+  ['matelot qualifie', 'Matelot Qualifié'],
+  ['stagiaire', 'Stagiaire'],
+]);
+
+export type HrVisibilityScope = 'function' | 'document_type' | 'section';
+
+interface HrVisibilityRuleRow {
+  scope: HrVisibilityScope;
+  item_key: string;
+  item_label: string;
+  visible_to_roles: string[] | null;
+}
 
 type HrDocumentStatus = 'valid' | 'renew_due' | 'expired' | 'missing' | 'pending_validation';
 
@@ -248,6 +280,9 @@ export interface HumanResourcesDashboardMetrics {
   contractsReady: number;
   emergencyContactsReady: number;
   habilitationsReady: number;
+  turnoverRate: number;
+  averageTenureYears: number;
+  medicalComplianceRate: number;
 }
 
 export interface HumanResourcesDashboard {
@@ -258,6 +293,14 @@ export interface HumanResourcesDashboard {
 export interface HumanResourcesData {
   people: PersonRecord[];
   documents: HrDocumentRecord[];
+  visibilityRules: HrVisibilityRule[];
+}
+
+export interface HrVisibilityRule {
+  scope: HrVisibilityScope;
+  itemKey: string;
+  itemLabel: string;
+  visibleToRoles: RoleKey[];
 }
 
 export interface StaffEvolutionPoint {
@@ -403,6 +446,31 @@ function normalizeSearchValue(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+export function normalizeHrFunctionLabel(value: string): string {
+  const withoutOrderPrefix = (value || '').replace(/^\s*\d+\s*[-–—.)]\s*/, '').replace(/\s+/g, ' ').trim();
+
+  if (!withoutOrderPrefix) {
+    return '';
+  }
+
+  return HR_FUNCTION_ALIASES.get(normalizeSearchValue(withoutOrderPrefix)) || withoutOrderPrefix;
+}
+
+export function getHrFunctionVisibilityKey(value: string): string {
+  return normalizeSearchValue(normalizeHrFunctionLabel(value)).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+export function compareHrFunctionLabels(left: string, right: string): number {
+  const normalizedLeft = normalizeHrFunctionLabel(left);
+  const normalizedRight = normalizeHrFunctionLabel(right);
+  const leftIndex = HR_PRIMARY_FUNCTIONS.indexOf(normalizedLeft as (typeof HR_PRIMARY_FUNCTIONS)[number]);
+  const rightIndex = HR_PRIMARY_FUNCTIONS.indexOf(normalizedRight as (typeof HR_PRIMARY_FUNCTIONS)[number]);
+  const leftRank = leftIndex === -1 ? HR_PRIMARY_FUNCTIONS.length : leftIndex;
+  const rightRank = rightIndex === -1 ? HR_PRIMARY_FUNCTIONS.length : rightIndex;
+
+  return leftRank - rightRank || normalizedLeft.localeCompare(normalizedRight, 'fr');
 }
 
 export function getHrDocumentCategoryLabel(categoryKey: string): string {
@@ -569,6 +637,59 @@ function hasHabilitationReady(person: PersonRecord): boolean {
   );
 }
 
+function parseIsoDate(value: string): Date | null {
+  const date = value ? new Date(`${value.slice(0, 10)}T00:00:00`) : null;
+  return date && Number.isFinite(date.getTime()) ? date : null;
+}
+
+function roundMetric(value: number, digits = 1): number {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function buildStrategicMetrics(
+  people: PersonRecord[],
+  activePeople: PersonDashboardRecord[],
+  documentsByPersonId: Map<number, HrDocumentRecord[]>,
+) {
+  const today = new Date();
+  const twelveMonthsAgo = new Date(today);
+  twelveMonthsAgo.setFullYear(today.getFullYear() - 1);
+  const departuresLastTwelveMonths = people.filter((person) => {
+    const departedOn = parseIsoDate(person.departedOn);
+    return departedOn && departedOn >= twelveMonthsAgo && departedOn <= today;
+  }).length;
+  const headcountAtPeriodStart = people.filter((person) => {
+    const hiredOn = parseIsoDate(person.hiredOn);
+    const departedOn = parseIsoDate(person.departedOn);
+    return (!hiredOn || hiredOn <= twelveMonthsAgo) && (!departedOn || departedOn > twelveMonthsAgo);
+  }).length;
+  const averageHeadcount = (headcountAtPeriodStart + activePeople.length) / 2;
+  const tenureYears = activePeople.flatMap((person) => {
+    const hiredOn = parseIsoDate(person.hiredOn);
+    return hiredOn ? [(today.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)] : [];
+  });
+  const peopleRequiringMedicalVisit = activePeople.filter((person) => !isSedentary(person) && !isTrainee(person));
+  const medicallyCompliant = peopleRequiringMedicalVisit.filter((person) =>
+    (documentsByPersonId.get(person.id) || []).some(
+      (document) =>
+        document.categoryKey === 'medical_visit' &&
+        (document.status === 'valid' || document.status === 'renew_due') &&
+        !document.medicalUnfit,
+    ),
+  ).length;
+
+  return {
+    turnoverRate: averageHeadcount > 0 ? roundMetric((departuresLastTwelveMonths / averageHeadcount) * 100) : 0,
+    averageTenureYears:
+      tenureYears.length > 0 ? roundMetric(tenureYears.reduce((total, value) => total + value, 0) / tenureYears.length) : 0,
+    medicalComplianceRate:
+      peopleRequiringMedicalVisit.length > 0
+        ? Math.round((medicallyCompliant / peopleRequiringMedicalVisit.length) * 100)
+        : 0,
+  };
+}
+
 function buildCategorySummaries(documents: HrDocumentRecord[]): PersonCategorySummary[] {
   const summaries = documents.reduce<Map<string, PersonCategorySummary>>((result, document) => {
     const current = result.get(document.categoryKey) || {
@@ -615,10 +736,16 @@ export function buildHumanResourcesDashboard(
 
   const activePeople = dashboardPeople.filter((person) => person.active);
   const groupMap = dashboardPeople.reduce<Map<string, PersonDashboardRecord[]>>((result, person) => {
-    const groupLabel = person.functionLabel || 'Fonction non renseignee';
+    const groupLabel = normalizeHrFunctionLabel(person.functionLabel);
+
+    if (!groupLabel) {
+      return result;
+    }
+
     result.set(groupLabel, (result.get(groupLabel) || []).concat(person));
     return result;
   }, new Map<string, PersonDashboardRecord[]>());
+  const strategicMetrics = buildStrategicMetrics(people, activePeople, documentsByPersonId);
 
   return {
     metrics: {
@@ -641,13 +768,14 @@ export function buildHumanResourcesDashboard(
       contractsReady: activePeople.filter(hasContractReady).length,
       emergencyContactsReady: activePeople.filter(hasEmergencyContactReady).length,
       habilitationsReady: activePeople.filter(hasHabilitationReady).length,
+      ...strategicMetrics,
     },
     groups: [...groupMap.entries()]
       .map(([label, peopleInGroup]) => ({
         label,
         people: peopleInGroup.sort((left, right) => formatPersonName(left).localeCompare(formatPersonName(right), 'fr')),
       }))
-      .sort((left, right) => left.label.localeCompare(right.label, 'fr')),
+      .sort((left, right) => compareHrFunctionLabels(left.label, right.label)),
   };
 }
 
@@ -704,10 +832,63 @@ export async function fetchHrDocuments(client: SupabaseClient): Promise<HrDocume
   return mapHrDocumentRows((data || []) as unknown as HrDocumentRow[]);
 }
 
-export async function fetchHumanResourcesData(client: SupabaseClient): Promise<HumanResourcesData> {
-  const [people, documents] = await Promise.all([fetchPeople(client), fetchHrDocuments(client)]);
+function mapHrVisibilityRules(rows: HrVisibilityRuleRow[]): HrVisibilityRule[] {
+  return rows.map((row) => ({
+    scope: row.scope,
+    itemKey: row.item_key,
+    itemLabel: row.item_label,
+    visibleToRoles: (row.visible_to_roles || []).filter(
+      (role): role is RoleKey =>
+        role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine' || role === 'marin',
+    ),
+  }));
+}
 
-  return { people, documents };
+export async function fetchHrVisibilityRules(client: SupabaseClient): Promise<HrVisibilityRule[]> {
+  const { data, error } = await client
+    .from('hr_visibility_rules')
+    .select('scope, item_key, item_label, visible_to_roles')
+    .order('scope', { ascending: true })
+    .order('item_label', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapHrVisibilityRules((data || []) as unknown as HrVisibilityRuleRow[]);
+}
+
+export async function saveHrVisibilityRules(
+  client: SupabaseClient,
+  rules: HrVisibilityRule[],
+): Promise<HrVisibilityRule[]> {
+  const payload = rules.map((rule) => ({
+    scope: rule.scope,
+    item_key: rule.itemKey,
+    item_label: rule.itemLabel,
+    visible_to_roles: Array.from(new Set(['admin', ...rule.visibleToRoles])),
+    updated_at: new Date().toISOString(),
+  }));
+  const { data, error } = await client
+    .from('hr_visibility_rules')
+    .upsert(payload, { onConflict: 'scope,item_key' })
+    .select('scope, item_key, item_label, visible_to_roles');
+
+  if (error) {
+    throw error;
+  }
+
+  return mapHrVisibilityRules((data || []) as unknown as HrVisibilityRuleRow[]);
+}
+
+export async function fetchHumanResourcesData(client: SupabaseClient): Promise<HumanResourcesData> {
+  const [people, documents, visibilityRules] = await Promise.all([
+    fetchPeople(client),
+    fetchHrDocuments(client),
+    fetchHrVisibilityRules(client).catch(() => []),
+  ]);
+
+  return { people, documents, visibilityRules };
 }
 
 export async function createPerson(client: SupabaseClient, input: CreatePersonInput): Promise<PersonRecord> {

@@ -180,12 +180,13 @@ function createClient(people = [activePerson, inactivePerson], hrDocuments: HrDo
 
 describe('HumanResourcesPage', () => {
   it('renders the RH dashboard with active collaborators, document metrics and category summaries', async () => {
+    const user = userEvent.setup();
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Gestion des Ressources Humaines' })).toBeInTheDocument();
-    expect(screen.getByText('Evolution des effectifs')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ressources humaines' })).toBeInTheDocument();
+    expect(screen.getByText('Évolution des effectifs')).toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
-    expect(screen.getByLabelText('A revalider')).toHaveTextContent('2');
+    expect(screen.getByLabelText('À revalider')).toHaveTextContent('2');
     expect(screen.getByLabelText('Certificats a revalider')).toHaveTextContent('1');
     expect(screen.getByLabelText('Visites medicales a revalider')).toHaveTextContent('1');
     expect(screen.getByLabelText('Urgent')).toHaveTextContent('1');
@@ -195,7 +196,8 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
     const personRegion = screen.getByRole('region', { name: 'Documents de Jean MARTIN' });
-    expect(within(personRegion).getByText('2 document(s)')).toBeInTheDocument();
+    expect(within(personRegion).getByText('Documents')).toBeInTheDocument();
+    await user.click(within(personRegion).getByRole('button', { name: 'Jean MARTIN' }));
     expect(within(personRegion).getByRole('button', { name: 'Pont 1' })).toBeInTheDocument();
     expect(within(personRegion).getByRole('button', { name: 'Visite Médicale 1' })).toBeInTheDocument();
     expect(within(personRegion).queryByText('Validation capitaine')).not.toBeInTheDocument();
@@ -222,15 +224,13 @@ describe('HumanResourcesPage', () => {
     const personRegion = await screen.findByRole('region', { name: 'Documents de Jean MARTIN' });
     const collaboratorToggle = within(personRegion).getByRole('button', { name: 'Jean MARTIN' });
 
-    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
-
-    await user.click(collaboratorToggle);
-
     expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'false');
     expect(within(personRegion).queryByText('Capitaine 200')).not.toBeInTheDocument();
 
     await user.click(collaboratorToggle);
+
+    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
 
     const categoryToggle = within(personRegion).getByRole('button', { name: 'Pont 1' });
 
@@ -245,6 +245,21 @@ describe('HumanResourcesPage', () => {
 
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
     expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
+  });
+
+  it('lets administrators configure visibility by function, document type and section', async () => {
+    const user = userEvent.setup();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Paramétrer les accès' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Paramétrer la visibilité RH' });
+    expect(within(dialog).getByRole('heading', { name: 'Fonctions' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Types de document' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Sections de la fiche RH' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('checkbox', { name: 'Capitaine visible pour Marin' })).toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Capitaine visible pour Admin' })).toBeDisabled();
   });
 
   it('filters the RH dashboard by collaborator, category, status and due state', async () => {
@@ -275,6 +290,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
     expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
+    await user.click(screen.getByRole('button', { name: 'Jean MARTIN' }));
     expect(screen.getByText('Visite medicale')).toBeInTheDocument();
     expect(screen.queryByText('Capitaine 200')).not.toBeInTheDocument();
   });
@@ -393,6 +409,20 @@ describe('HumanResourcesPage', () => {
     );
   });
 
+  it('uses controlled dropdowns for structured personnel fields', async () => {
+    const user = userEvent.setup();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
+    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Documents administratifs' }));
+
+    expect(within(dialog).getByLabelText('Type document identite')).toHaveRole('combobox');
+    expect(within(dialog).getByLabelText('Type document identite')).toHaveValue('Passeport');
+  });
+
   it('edits the medical visit statement directly from Sante et habilitations', async () => {
     const user = userEvent.setup();
     const updatedMedicalDocument = {
@@ -475,7 +505,8 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient([activePerson], documentsWithLibraryPath) as never} roles={['admin']} />);
 
-    expect(await screen.findByText('Visite medicale')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Jean MARTIN' }));
+    expect(screen.getByText('Visite medicale')).toBeInTheDocument();
     expect(screen.queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
     expect(screen.getByText('Note terrain conservee')).toBeInTheDocument();
 
@@ -558,8 +589,8 @@ describe('HumanResourcesPage', () => {
   it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['armement']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Gestion des Ressources Humaines' })).toBeInTheDocument();
-    expect(screen.getByText('3 documents affiches sur le perimetre RH.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ressources humaines' })).toBeInTheDocument();
+    expect(screen.getByText('Pilotage RH analytique · 3 documents suivis')).toBeInTheDocument();
     expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
     expect(screen.queryByRole('region', { name: 'Documents RH a rattacher' })).not.toBeInTheDocument();
   });
@@ -607,11 +638,12 @@ describe('HumanResourcesPage', () => {
 
     await screen.findByText('Jean MARTIN');
     await user.click(screen.getByRole('button', { name: 'Nouveau Collaborateur' }));
-    fireEvent.change(screen.getByLabelText('Prenom'), { target: { value: 'Marie' } });
-    fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'LEGRAND' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'marie@example.test' } });
-    fireEvent.change(screen.getByLabelText('Fonction'), { target: { value: 'Lieutenant' } });
-    fireEvent.change(screen.getByLabelText('Grade'), { target: { value: 'Pont' } });
+    const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
+    fireEvent.change(within(dialog).getByLabelText('Prenom'), { target: { value: 'Marie' } });
+    fireEvent.change(within(dialog).getByLabelText('Nom'), { target: { value: 'LEGRAND' } });
+    fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: 'marie@example.test' } });
+    fireEvent.change(within(dialog).getByLabelText('Fonction'), { target: { value: 'Lieutenant' } });
+    fireEvent.change(within(dialog).getByLabelText('Grade'), { target: { value: 'Pont' } });
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
     await waitFor(() =>
