@@ -256,9 +256,9 @@ button:disabled {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
-  padding: 8px 8px 12px;
+  padding: 4px 8px;
   scrollbar-color: #3f3f46 transparent;
   scrollbar-width: thin;
 }
@@ -273,7 +273,8 @@ button:disabled {
 }
 
 .navigation-family-button,
-.navigation-family-links a {
+.navigation-family-links a,
+.navigation-direct-link {
   display: grid;
   width: 100%;
   align-items: center;
@@ -283,13 +284,13 @@ button:disabled {
 
 .navigation-family-button {
   grid-template-columns: 22px minmax(0, 1fr) auto;
-  min-height: 27px;
+  min-height: 26px;
   gap: 7px;
   border-radius: 6px;
   padding: 4px 8px;
   color: #f7f7f7;
   background: transparent;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 760;
 }
 
@@ -298,7 +299,8 @@ button:disabled {
 }
 
 .navigation-family-button > span,
-.navigation-family-links a > span {
+.navigation-family-links a > span,
+.navigation-direct-link > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -315,7 +317,7 @@ button:disabled {
 
 .navigation-family-links a {
   grid-template-columns: 22px minmax(0, 1fr);
-  min-height: 26px;
+  min-height: 25px;
   gap: 7px;
   border-radius: 5px;
   padding: 4px 8px;
@@ -325,12 +327,30 @@ button:disabled {
   text-decoration: none;
 }
 
+.navigation-direct-link {
+  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: 29px;
+  gap: 7px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #f7f7f7;
+  font-size: 0.84rem;
+  font-weight: 760;
+  text-decoration: none;
+}
+
 .navigation-family-links a:hover {
   color: #ffffff;
   background: #242424;
 }
 
-.navigation-family-links a.active {
+.navigation-direct-link:hover {
+  color: #ffffff;
+  background: #1d1d1d;
+}
+
+.navigation-family-links a.active,
+.navigation-direct-link.active {
   color: #ffffff;
   background: #2454d7;
   box-shadow: 0 6px 18px rgba(36, 84, 215, 0.26);
@@ -389,6 +409,7 @@ button:disabled {
 .sidebar-is-collapsed .brand-name,
 .sidebar-is-collapsed .navigation-family-button span,
 .sidebar-is-collapsed .navigation-family-links a span,
+.sidebar-is-collapsed .navigation-direct-link span,
 .sidebar-is-collapsed .navigation-chevron,
 .sidebar-is-collapsed .app-version span,
 .sidebar-is-collapsed .sidebar-collapse-button span {
@@ -396,7 +417,8 @@ button:disabled {
 }
 
 .sidebar-is-collapsed .navigation-family-button,
-.sidebar-is-collapsed .navigation-family-links a {
+.sidebar-is-collapsed .navigation-family-links a,
+.sidebar-is-collapsed .navigation-direct-link {
   display: flex;
   justify-content: center;
   padding-right: 7px;
@@ -2638,13 +2660,15 @@ button:disabled {
   .sidebar-is-collapsed .brand-name,
   .sidebar-is-collapsed .navigation-family-button span,
   .sidebar-is-collapsed .navigation-family-links a span,
+  .sidebar-is-collapsed .navigation-direct-link span,
   .sidebar-is-collapsed .navigation-chevron,
   .sidebar-is-collapsed .app-version span {
     display: initial;
   }
 
   .sidebar-is-collapsed .navigation-family-button,
-  .sidebar-is-collapsed .navigation-family-links a {
+  .sidebar-is-collapsed .navigation-family-links a,
+  .sidebar-is-collapsed .navigation-direct-link {
     display: grid;
     justify-content: initial;
     padding-right: 8px;

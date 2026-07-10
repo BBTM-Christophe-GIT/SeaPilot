@@ -8,7 +8,7 @@ import {
 } from './navigationPermissions';
 
 describe('navigation permissions', () => {
-  it('keeps the legacy role matrix as the seeded default', () => {
+  it('keeps the role matrix as the seeded default for configured navigation items', () => {
     const permissions = getDefaultNavigationPermissions();
     const adminModules = getVisibleModulesForPermissions(['admin'], permissions);
     const sailorModules = getVisibleModulesForPermissions(['marin'], permissions);
@@ -16,6 +16,8 @@ describe('navigation permissions', () => {
     expect(adminModules).toHaveLength(APP_MODULES.length);
     expect(sailorModules.map((module) => module.key)).not.toContain('admin');
     expect(sailorModules.map((module) => module.key)).not.toContain('projects');
+    expect(sailorModules.map((module) => module.key)).toContain('workingTime');
+    expect(sailorModules.map((module) => module.key)).toContain('lifting');
   });
 
   it('uses administrator configuration to reveal a module for a role', () => {

@@ -2,7 +2,10 @@
 
 - Source visual truth: `C:/Users/chris/AppData/Local/Temp/codex-clipboard-1b3799a2-8733-4d6f-b38f-0ab9b9136db7.png`
 - Supplied logo truth: `C:/Users/chris/OneDrive/Images/Logo BBTM Vectorisé noir.png`
+- Navigation structure truth: `C:/Users/chris/Downloads/Structure Menus.xlsx`, `Feuil1!B4:C19`
 - Final implementation screenshot: `C:/CODEX/SeaPilot/.design-qa/implementation-desktop-final.png`
+- Final navigation screenshot: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1.png`
+- Final mobile navigation screenshot: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1-mobile.png`
 - Full-view and focused sidebar comparison: `C:/CODEX/SeaPilot/.design-qa/full-and-sidebar-comparison-final.png`
 - Viewport: 1370 × 770 desktop; 390 × 844 mobile
 - State: authenticated administrator, Accueil active, all navigation families expanded
@@ -14,11 +17,11 @@
 - Spacing and layout rhythm: the final 220 px sidebar and 60 px black header match the reference region proportions. Navigation density was tightened until every current family fits at 1370 × 770 without scrolling. Card radii, dividers, padding, and active-state rhythm are consistent.
 - Colors and visual tokens: the reference navy shell is intentionally replaced with solid black as requested. White foregrounds and the blue active-menu accent retain accessible contrast and the source hierarchy.
 - Image quality and asset fidelity: the supplied BBTM raster logo is used directly at its natural aspect ratio, with no CSS, SVG, text-glyph, or placeholder approximation. It remains sharp against the black shell.
-- Copy and content: existing SeaPilot module labels are retained intentionally. The user requested that final menu and submenu information architecture be handled in a later iteration; this pass changes the shell and makes current visibility administrator-managed by role.
+- Copy and content: version 1.1.0 follows the approved workbook hierarchy and labels. Accueil, Planning, Levage, and Administration are direct entries; QHSE, Opérations, Achats, Ressources Humaines, and Maintenance are accordions. The existing QHSE documentary route remains available without adding an unapproved menu item.
 
 **Open Questions**
 
-- None blocking this shell pass. Final menu names, families, and submenu structure remain a later product decision by request.
+- None blocking this shell and navigation pass.
 
 **Comparison History**
 
@@ -27,6 +30,8 @@
    - Fixes: reduced the shell tracks to 220 px and 60 px, tightened family and item heights, reduced navigation gaps, corrected the desktop mobile-menu visibility, and forced the brand wordmark to white.
 2. Post-fix evidence: `C:/CODEX/SeaPilot/.design-qa/implementation-desktop-final.png` and `C:/CODEX/SeaPilot/.design-qa/full-and-sidebar-comparison-final.png`.
    - Result: shell proportions align, all current families fit, the supplied logo is clear, and the intended black replacement is consistent across header and sidebar.
+3. Navigation structure pass: `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1.png` and `C:/CODEX/SeaPilot/.design-qa/navigation-structure-v1.1-mobile.png`.
+   - Result: every approved menu and submenu is present in workbook order, the full administrator navigation fits at 1370 × 770 without scrolling or clipped labels, and the 390 × 844 drawer remains responsive.
 
 **Primary Interactions Tested**
 
@@ -35,6 +40,8 @@
 - User menu: opens and exposes the sign-out action.
 - Mobile navigation at 390 × 844: closed state, open drawer, backdrop, and close control.
 - Administrator navigation matrix: covered by automated tests for a role visibility update.
+- Workbook hierarchy: covered by an exact ordered module-access test.
+- Direct versus accordion behavior: Planning stays a single direct link; Maintenance collapses and hides Marad/Documents Techniques.
 - Browser console: no warnings or errors during visual verification.
 
 **Implementation Checklist**
@@ -48,6 +55,6 @@
 
 **Follow-up Polish**
 
-- P3: revisit family names, ordering, badges, and submenu depth when the navigation information architecture is defined.
+- P3: add badges or deeper submenu levels only if a future business requirement defines them.
 
 final result: passed

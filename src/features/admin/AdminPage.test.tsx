@@ -83,6 +83,7 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Direction pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Marin pour admin@example.test' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Suivi du Temps de travail visible pour Marin' })).toBeChecked();
   });
 
   it('renders SharePoint import monitoring sources', async () => {

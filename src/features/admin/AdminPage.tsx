@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, PanelLeft, ShieldCheck, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { APP_MODULES, type ModuleKey } from '../permissions/moduleAccess';
+import { NAVIGATION_MODULES, type ModuleKey } from '../permissions/moduleAccess';
 import {
   fetchNavigationPermissions,
   setNavigationPermission,
@@ -223,7 +223,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
           </div>
           <div className="admin-summary" aria-label="Modules configurables">
             <PanelLeft aria-hidden="true" size={18} />
-            <strong>{APP_MODULES.length}</strong>
+            <strong>{NAVIGATION_MODULES.length}</strong>
           </div>
         </div>
 
@@ -240,7 +240,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
               </tr>
             </thead>
             <tbody>
-              {APP_MODULES.map((module) => (
+              {NAVIGATION_MODULES.map((module) => (
                 <tr key={module.key}>
                   <th scope="row">
                     <span className="admin-user-name">{module.label}</span>

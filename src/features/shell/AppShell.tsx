@@ -2,12 +2,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BarChart3,
   Bell,
+  BookOpenCheck,
   CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Clock3,
   ClipboardCheck,
+  Construction,
   FileCheck2,
   FileText,
   FolderKanban,
@@ -20,6 +23,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   Users,
+  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,21 +49,25 @@ export interface AppShellOutletContext {
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
-  'Operations',
   'QHSE',
+  'Opérations',
   'Achats',
   'Planning',
-  'RH',
+  'Ressources Humaines',
+  'Maintenance',
+  'Levage',
   'Administration',
 ];
 
 const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Accueil: Home,
-  Operations: Gauge,
   QHSE: ShieldCheck,
+  Opérations: Gauge,
   Achats: ShoppingCart,
   Planning: CalendarDays,
-  RH: Users,
+  'Ressources Humaines': Users,
+  Maintenance: Wrench,
+  Levage: Construction,
   Administration: Settings,
 };
 
@@ -74,7 +82,11 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   purchaseRequests: ShoppingCart,
   planning: CalendarDays,
   humanResources: Users,
+  workingTime: Clock3,
   projects: FolderKanban,
+  marad: Wrench,
+  technicalDocuments: BookOpenCheck,
+  lifting: Construction,
   admin: Settings,
 };
 
@@ -188,7 +200,9 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
     () =>
       NAVIGATION_FAMILIES.map((family) => ({
         family,
-        modules: visibleModules.filter((module) => module.family === family),
+        modules: visibleModules.filter(
+          (module) => module.family === family && module.navigationKind !== 'hidden',
+        ),
       })).filter((group) => group.modules.length > 0),
     [visibleModules],
   );
@@ -261,6 +275,25 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
           {groupedModules.map(({ family, modules }) => {
             const FamilyIcon = FAMILY_ICONS[family];
             const isExpanded = expandedFamilies.has(family);
+            const directModule =
+              modules.length === 1 && modules[0]?.navigationKind === 'direct' ? modules[0] : undefined;
+
+            if (directModule) {
+              return (
+                <section className="navigation-family navigation-direct-family" key={family}>
+                  <NavLink
+                    aria-label={directModule.label}
+                    className="navigation-direct-link"
+                    end={directModule.key === 'home'}
+                    title={directModule.label}
+                    to={directModule.key === 'home' ? '/' : `/modules/${directModule.key}`}
+                  >
+                    <FamilyIcon aria-hidden="true" size={17} />
+                    <span>{directModule.label}</span>
+                  </NavLink>
+                </section>
+              );
+            }
 
             return (
               <section className="navigation-family" key={family}>

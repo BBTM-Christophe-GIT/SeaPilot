@@ -34,6 +34,12 @@ describe('AppShell', () => {
 
     expect(await screen.findByText('SeaPilot')).toBeInTheDocument();
     expect(screen.getByText('Projets')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'QHSE' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Planning' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reduire le menu' })).toBeInTheDocument();
   });

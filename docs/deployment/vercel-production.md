@@ -10,6 +10,11 @@ Apply `supabase/migrations/202607100001_role_module_permissions.sql` before depl
 `role_module_permissions` table is the source of truth for menu visibility and direct-route access. Authenticated
 users can read the matrix; only administrators can change it from the Administration module.
 
+Apply `supabase/migrations/202607100002_navigation_structure.sql` for version `1.1.0`. It adds the role defaults
+required by the approved navigation structure: QHSE, Operations, Purchasing, Planning, Human Resources,
+Maintenance, and Lifting. The hierarchy and labels live in `src/features/permissions/moduleAccess.ts`; the
+administrator matrix continues to decide which of those items each role can see.
+
 ## Current Production Target
 
 The active public URL is:
