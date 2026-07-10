@@ -89,6 +89,14 @@ export const HR_PRIMARY_FUNCTIONS = [
   'Stagiaire',
 ] as const;
 
+export const HR_SEDENTARY_FUNCTIONS = [
+  'Directeur QHSE / Chef de Projet',
+  'Directrice Administrative et Financière',
+  'Fleet Technical Manager',
+  'Président',
+  'Yard Manager - Le Havre',
+] as const;
+
 const HR_FUNCTION_ALIASES = new Map<string, string>([
   ['capitaine', 'Capitaine'],
   ['chef mecanicien', 'Chef Mécanicien'],
@@ -262,6 +270,10 @@ export interface PersonDashboardRecord extends PersonRecord {
 export interface HumanResourcesDashboardGroup {
   label: string;
   people: PersonDashboardRecord[];
+}
+
+export interface HumanResourcesRosterGroup extends HumanResourcesDashboardGroup {
+  children?: HumanResourcesDashboardGroup[];
 }
 
 export interface HumanResourcesDashboardMetrics {
@@ -471,6 +483,39 @@ export function compareHrFunctionLabels(left: string, right: string): number {
   const rightRank = rightIndex === -1 ? HR_PRIMARY_FUNCTIONS.length : rightIndex;
 
   return leftRank - rightRank || normalizedLeft.localeCompare(normalizedRight, 'fr');
+}
+
+export function buildHumanResourcesRosterGroups(
+  groups: HumanResourcesDashboardGroup[],
+): HumanResourcesRosterGroup[] {
+  const sedentaryOrder = new Map(
+    HR_SEDENTARY_FUNCTIONS.map((label, index) => [normalizeSearchValue(label), index]),
+  );
+  const sedentaryGroups = groups
+    .filter((group) => sedentaryOrder.has(normalizeSearchValue(group.label)))
+    .sort(
+      (left, right) =>
+        (sedentaryOrder.get(normalizeSearchValue(left.label)) ?? Number.MAX_SAFE_INTEGER) -
+        (sedentaryOrder.get(normalizeSearchValue(right.label)) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const regularGroups = groups.filter((group) => !sedentaryOrder.has(normalizeSearchValue(group.label)));
+  const primaryLabels = new Set<string>(HR_PRIMARY_FUNCTIONS);
+  const primaryGroups = regularGroups.filter((group) => primaryLabels.has(group.label));
+  const otherGroups = regularGroups.filter((group) => !primaryLabels.has(group.label));
+
+  if (sedentaryGroups.length === 0) {
+    return regularGroups;
+  }
+
+  return [
+    ...primaryGroups,
+    {
+      label: 'Sédentaire',
+      people: sedentaryGroups.flatMap((group) => group.people),
+      children: sedentaryGroups,
+    },
+    ...otherGroups,
+  ];
 }
 
 export function getHrDocumentCategoryLabel(categoryKey: string): string {

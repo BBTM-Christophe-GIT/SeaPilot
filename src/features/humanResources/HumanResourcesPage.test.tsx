@@ -180,7 +180,6 @@ function createClient(people = [activePerson, inactivePerson], hrDocuments: HrDo
 
 describe('HumanResourcesPage', () => {
   it('renders the RH dashboard with active collaborators, document metrics and category summaries', async () => {
-    const user = userEvent.setup();
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Ressources humaines' })).toBeInTheDocument();
@@ -193,58 +192,35 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByLabelText('Documents echus')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
     expect(screen.getAllByText('Capitaine').length).toBeGreaterThan(0);
-    expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
-    const personRegion = screen.getByRole('region', { name: 'Documents de Jean MARTIN' });
-    expect(within(personRegion).getByText('Documents')).toBeInTheDocument();
-    await user.click(within(personRegion).getByRole('button', { name: 'Jean MARTIN' }));
-    expect(within(personRegion).getByRole('button', { name: 'Pont 1' })).toBeInTheDocument();
-    expect(within(personRegion).getByRole('button', { name: 'Visite Médicale 1' })).toBeInTheDocument();
-    expect(within(personRegion).queryByText('Validation capitaine')).not.toBeInTheDocument();
-    expect(within(personRegion).getByText('arrive a echeance le 15/01/2026')).toBeInTheDocument();
-    expect(within(personRegion).getByRole('link', { name: 'Capitaine 200' })).toHaveAttribute(
-      'href',
-      'https://bbtm668.sharepoint.com/sites/QHSE/Brevets%20et%20Visites%20Mdicales/Jean/capitaine-200.pdf',
-    );
-    expect(within(personRegion).getByRole('link', { name: 'Capitaine 200' })).toHaveAttribute('target', '_blank');
-    expect(within(personRegion).getByText('Visite medicale')).toBeInTheDocument();
-    expect(
-      within(personRegion).getByText(
-        "Remplit les conditions médicales requises pour toutes les fonctions à bord n'impliquant pas la veille à la passerelle",
-      ),
-    ).toBeInTheDocument();
-    expect(within(personRegion).getByText('Est apte avec les restrictions suivantes : 2ème Catégorie')).toBeInTheDocument();
+    expect(screen.queryByText('N° marin 2009574')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Actif' })).not.toBeInTheDocument();
+
+    const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    expect(within(profile).getByText('Informations personnelles')).toBeInTheDocument();
+    expect(within(profile).getByRole('button', { name: 'Pont 1' })).toBeInTheDocument();
+    expect(within(profile).getByRole('button', { name: 'Visite Médicale 1' })).toBeInTheDocument();
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).getByText('Visite medicale')).toBeInTheDocument();
   });
 
-  it('collapses collaborator and document category levels with tree chevrons', async () => {
+  it('shows the selected collaborator in the profile card and collapses document categories', async () => {
     const user = userEvent.setup();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    const personRegion = await screen.findByRole('region', { name: 'Documents de Jean MARTIN' });
-    const collaboratorToggle = within(personRegion).getByRole('button', { name: 'Jean MARTIN' });
-
-    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(personRegion).queryByText('Capitaine 200')).not.toBeInTheDocument();
-
-    await user.click(collaboratorToggle);
-
-    expect(collaboratorToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
-
-    const categoryToggle = within(personRegion).getByRole('button', { name: 'Pont 1' });
+    await user.click(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    const categoryToggle = within(profile).getByRole('button', { name: 'Pont 1' });
 
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
 
     await user.click(categoryToggle);
 
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(personRegion).queryByText('Capitaine 200')).not.toBeInTheDocument();
-
-    await user.click(categoryToggle);
-
-    expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(within(personRegion).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).queryByText('Capitaine 200')).not.toBeInTheDocument();
   });
 
   it('lets administrators configure visibility by function, document type and section', async () => {
@@ -279,20 +255,25 @@ describe('HumanResourcesPage', () => {
       <HumanResourcesPage client={createClient([activePerson, yardManagerPerson], [...documents, leaDocument]) as never} roles={['admin']} />,
     );
 
-    expect(await screen.findByText('Jean MARTIN')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.getByText('Lea BUREAU')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'S\u00e9dentaire, 1 collaborateur(s)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Yard Manager - Le Havre, niveau 2, 1 collaborateur(s)' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Lea BUREAU' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Collaborateur'), '1');
     await user.selectOptions(screen.getByLabelText('Categories'), 'medical_visit');
     await user.selectOptions(screen.getByLabelText('Statut'), 'renew_due');
     await user.selectOptions(screen.getByLabelText('Echeances'), 'renewal_due');
 
-    expect(screen.getByText('Jean MARTIN')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
-    await user.click(screen.getByRole('button', { name: 'Jean MARTIN' }));
+    await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
     expect(screen.getByText('Visite medicale')).toBeInTheDocument();
-    expect(screen.queryByText('Capitaine 200')).not.toBeInTheDocument();
+    expect(screen.getByText('Capitaine 200')).toBeInTheDocument();
   });
 
   it('filters the RH dashboard by search and can show inactive collaborators', async () => {
@@ -300,7 +281,7 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    await screen.findByText('Jean MARTIN');
+    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
     fireEvent.change(screen.getByLabelText('Recherche RH'), { target: { value: 'durand' } });
 
     expect(screen.queryByText('Jean MARTIN')).not.toBeInTheDocument();
@@ -505,11 +486,6 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient([activePerson], documentsWithLibraryPath) as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Jean MARTIN' }));
-    expect(screen.getByText('Visite medicale')).toBeInTheDocument();
-    expect(screen.queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Note terrain conservee')).toBeInTheDocument();
-
     await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
@@ -636,7 +612,7 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={client as never} roles={['armement']} />);
 
-    await screen.findByText('Jean MARTIN');
+    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
     await user.click(screen.getByRole('button', { name: 'Nouveau Collaborateur' }));
     const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
     fireEvent.change(within(dialog).getByLabelText('Prenom'), { target: { value: 'Marie' } });
@@ -660,14 +636,14 @@ describe('HumanResourcesPage', () => {
         m365_account: null,
       }),
     );
-    expect(await screen.findByText('Marie LEGRAND')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Afficher la fiche de Marie LEGRAND' })).toBeInTheDocument();
     expect(screen.getByText('Collaborateur ajoute.')).toBeInTheDocument();
   });
 
   it('keeps marins in read-only mode', async () => {
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['marin']} />);
 
-    expect(await screen.findByText('Jean MARTIN')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
     expect(screen.getByText('Lecture seule')).toBeInTheDocument();
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
