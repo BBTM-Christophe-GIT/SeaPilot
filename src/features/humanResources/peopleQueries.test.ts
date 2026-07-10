@@ -7,6 +7,8 @@ import {
   fetchPeople,
   mapHrDocumentRows,
   mapPersonRows,
+  renewHrDocument,
+  updateHrDocumentMedicalDetails,
   updatePersonDetails,
   updatePersonActive,
 } from './peopleQueries';
@@ -226,9 +228,16 @@ describe('mapHrDocumentRows', () => {
         issuedOn: '2025-01-15',
         expiresOn: '2026-08-15',
         requiresCaptainValidation: true,
+        medicalRestriction: '',
+        medicalBridgeWatch: null,
+        medicalUnfit: false,
         sourceLabel: 'SharePoint',
         notes: 'Validation capitaine requise',
         fileUrl: 'https://sharepoint.test/visite-medicale.pdf',
+        storageBucket: '',
+        storagePath: '',
+        fileSizeBytes: null,
+        mimeType: '',
       },
     ]);
   });
@@ -241,6 +250,140 @@ describe('mapHrDocumentRows', () => {
         personSharePointItemId: '42',
       }),
     ]);
+  });
+});
+
+describe('renewHrDocument', () => {
+  it('normalizes accented storage keys, updates metadata and removes the previous Supabase object', async () => {
+    const person = mapPersonRows([{ ...personRow, id: 31, first_name: 'Boris', last_name: 'BROT' }])[0];
+    const document = mapHrDocumentRows([
+      {
+        ...documentRow,
+        person_id: 31,
+        person_name: 'Boris BROT',
+        title: 'Visite Médicale',
+        storage_bucket: 'hr-documents',
+        storage_path: 'people/31/old-medical.pdf',
+        medical_restriction: null,
+        medical_bridge_watch: true,
+        medical_unfit: false,
+      },
+    ])[0];
+    const file = new File(['medical'], 'certificat.pdf', { type: 'application/pdf' });
+    const expectedStoragePath = 'people/31/Boris BROT - Visite Medicale - 2029.pdf';
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const single = vi.fn().mockResolvedValue({
+      data: {
+        ...documentRow,
+        person_id: 31,
+        person_name: 'Boris BROT',
+        title: 'Boris BROT - Visite Médicale - 2029',
+        status: 'valid',
+        expires_on: '2029-07-05',
+        source_label: 'supabase',
+        file_url: null,
+        storage_bucket: 'hr-documents',
+        storage_path: expectedStoragePath,
+        file_size_bytes: file.size,
+        mime_type: 'application/pdf',
+        medical_restriction: '2eme Categorie',
+        medical_bridge_watch: false,
+        medical_unfit: false,
+      },
+      error: null,
+    });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const storageFrom = vi.fn().mockReturnValue({ upload, remove });
+    const from = vi.fn().mockReturnValue({ update });
+
+    await expect(
+      renewHrDocument(
+        {
+          from,
+          storage: {
+            from: storageFrom,
+          },
+        } as never,
+        {
+          document,
+          dueDate: '2029-07-05',
+          file,
+          medicalBridgeWatch: false,
+          medicalRestriction: '2eme Categorie',
+          medicalUnfit: false,
+          person,
+        },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        expiresOn: '2029-07-05',
+        fileSizeBytes: file.size,
+        medicalBridgeWatch: false,
+        medicalRestriction: '2eme Categorie',
+        sourceLabel: 'supabase',
+        storagePath: expectedStoragePath,
+      }),
+    );
+
+    expect(upload).toHaveBeenCalledWith(expectedStoragePath, file, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expires_on: '2029-07-05',
+        file_size_bytes: file.size,
+        file_url: null,
+        medical_bridge_watch: false,
+        medical_restriction: '2eme Categorie',
+        medical_unfit: false,
+        mime_type: 'application/pdf',
+        source_label: 'supabase',
+        storage_bucket: 'hr-documents',
+        storage_path: expectedStoragePath,
+      }),
+    );
+    expect(remove).toHaveBeenCalledWith(['people/31/old-medical.pdf']);
+  });
+});
+
+describe('updateHrDocumentMedicalDetails', () => {
+  it('updates the medical statement independently from document renewal', async () => {
+    const updatedRow = {
+      ...documentRow,
+      medical_restriction: null,
+      medical_bridge_watch: true,
+      medical_unfit: false,
+    };
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ update });
+
+    await expect(
+      updateHrDocumentMedicalDetails({ from } as never, documentRow.id, {
+        medicalBridgeWatch: true,
+        medicalRestriction: '',
+        medicalUnfit: false,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        medicalBridgeWatch: true,
+        medicalRestriction: '',
+        medicalUnfit: false,
+      }),
+    );
+
+    expect(update).toHaveBeenCalledWith({
+      medical_bridge_watch: true,
+      medical_restriction: null,
+      medical_unfit: false,
+    });
+    expect(eq).toHaveBeenCalledWith('id', documentRow.id);
   });
 });
 

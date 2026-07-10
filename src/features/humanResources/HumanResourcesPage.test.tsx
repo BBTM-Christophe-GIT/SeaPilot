@@ -86,9 +86,16 @@ interface HrDocumentFixture {
   issued_on: string;
   expires_on: string;
   requires_captain_validation: boolean;
+  medical_restriction?: string | null;
+  medical_bridge_watch?: boolean | null;
+  medical_unfit?: boolean | null;
   source_label: string;
   notes: string | null;
   file_url: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  file_size_bytes?: number | null;
+  mime_type?: string | null;
 }
 
 const documents: HrDocumentFixture[] = [
@@ -102,9 +109,12 @@ const documents: HrDocumentFixture[] = [
     status: 'renew_due',
     issued_on: '2025-01-15',
     expires_on: '2026-08-15',
-    requires_captain_validation: true,
+    requires_captain_validation: false,
+    medical_restriction: '2ème Catégorie',
+    medical_bridge_watch: false,
+    medical_unfit: false,
     source_label: 'SharePoint',
-    notes: 'Validation capitaine requise',
+    notes: null,
     file_url: 'https://sharepoint.test/visite-medicale.pdf',
   },
   {
@@ -196,6 +206,12 @@ describe('HumanResourcesPage', () => {
     );
     expect(within(personRegion).getByRole('link', { name: 'Capitaine 200' })).toHaveAttribute('target', '_blank');
     expect(within(personRegion).getByText('Visite medicale')).toBeInTheDocument();
+    expect(
+      within(personRegion).getByText(
+        "Remplit les conditions médicales requises pour toutes les fonctions à bord n'impliquant pas la veille à la passerelle",
+      ),
+    ).toBeInTheDocument();
+    expect(within(personRegion).getByText('Est apte avec les restrictions suivantes : 2ème Catégorie')).toBeInTheDocument();
   });
 
   it('collapses collaborator and document category levels with tree chevrons', async () => {
@@ -369,11 +385,82 @@ describe('HumanResourcesPage', () => {
     expect(within(documentItem).getByText('Delivre le 15/01/2025')).toBeInTheDocument();
     expect(within(documentItem).getByText('Expire le 15/08/2026')).toBeInTheDocument();
     expect(within(documentItem).getByText('Source SharePoint')).toBeInTheDocument();
-    expect(within(documentItem).getByText('Validation capitaine requise')).toBeInTheDocument();
+    expect(within(documentItem).queryByText('Validation capitaine requise')).not.toBeInTheDocument();
+    expect(within(documentItem).getByText('Est apte avec les restrictions suivantes : 2ème Catégorie')).toBeInTheDocument();
     expect(within(documentItem).getByRole('link', { name: 'Ouvrir le fichier' })).toHaveAttribute(
       'href',
       'https://sharepoint.test/visite-medicale.pdf',
     );
+  });
+
+  it('edits the medical visit statement directly from Sante et habilitations', async () => {
+    const user = userEvent.setup();
+    const updatedMedicalDocument = {
+      ...documents[0],
+      medical_restriction: null,
+      medical_bridge_watch: true,
+      medical_unfit: false,
+    };
+    const personSingle = vi.fn().mockResolvedValue({ data: activePerson, error: null });
+    const personSelect = vi.fn().mockReturnValue({ single: personSingle });
+    const personEq = vi.fn().mockReturnValue({ select: personSelect });
+    const personUpdate = vi.fn().mockReturnValue({ eq: personEq });
+    const documentSingle = vi.fn().mockResolvedValue({ data: updatedMedicalDocument, error: null });
+    const documentUpdateSelect = vi.fn().mockReturnValue({ single: documentSingle });
+    const documentEq = vi.fn().mockReturnValue({ select: documentUpdateSelect });
+    const documentUpdate = vi.fn().mockReturnValue({ eq: documentEq });
+    const client = createClient([activePerson], documents) as ReturnType<typeof createClient> & {
+      from: ReturnType<typeof vi.fn>;
+    };
+
+    client.from.mockImplementation((table: string) => {
+      if (table === 'people') {
+        return {
+          ...createOrderedSelect([activePerson]),
+          update: personUpdate,
+        };
+      }
+
+      if (table === 'hr_documents') {
+        return {
+          ...createDocumentsSelect(documents),
+          update: documentUpdate,
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
+    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
+
+    const withoutBridgeWatch = within(dialog).getByRole('checkbox', { name: /n'impliquant pas la veille/i });
+    const withBridgeWatch = within(dialog).getByRole('checkbox', { name: /y compris la veille/i });
+    expect(withoutBridgeWatch).toBeChecked();
+
+    await user.click(withBridgeWatch);
+    await user.clear(within(dialog).getByLabelText('Est apte avec les restrictions suivantes'));
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la fiche' }));
+
+    await waitFor(() =>
+      expect(documentUpdate).toHaveBeenCalledWith({
+        medical_bridge_watch: true,
+        medical_restriction: null,
+        medical_unfit: false,
+      }),
+    );
+    expect(documentEq).toHaveBeenCalledWith('id', documents[0].id);
+    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
+    expect(
+      within(dialog).getByText(
+        'Remplit les conditions médicales requises pour toutes les fonctions à bord y compris la veille à la passerelle',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('hides SharePoint Brevets library paths from RH document notes', async () => {

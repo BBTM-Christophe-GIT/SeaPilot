@@ -286,6 +286,16 @@ function booleanValue(item: SharePointListItem, aliases: string[], fallback: boo
   return fallback;
 }
 
+function nullableBooleanValue(item: SharePointListItem, aliases: string[]): boolean | null {
+  const rawValue = fieldValue(item, aliases);
+
+  if (rawValue === null || rawValue === undefined) {
+    return null;
+  }
+
+  return booleanValue(item, aliases, false);
+}
+
 function dateOnly(item: SharePointListItem, aliases: string[]): string | null {
   const value = stringifyValue(fieldValue(item, aliases));
 
@@ -681,11 +691,26 @@ function mapHrDocumentPayload(item: SharePointListItem, source: SharePointMigrat
     status: inferHrDocumentStatus(text(item, ['Status', 'Statut']), expiresOn),
     issued_on: dateOnly(item, ['DateDelivrance', 'Date_x0020_delivrance', 'IssuedOn']),
     expires_on: expiresOn,
-    requires_captain_validation:
-      booleanValue(item, ['RequiresCaptainValidation', 'ValidationCapitaine'], false) || categoryKey === 'medical_visit',
+    requires_captain_validation: booleanValue(item, ['RequiresCaptainValidation', 'ValidationCapitaine'], false),
+    medical_restriction: text(item, [
+      'RestrictionM_x00e9_dicale',
+      'Restriction Medicale',
+      'MedicalRestriction',
+    ]),
+    medical_bridge_watch: nullableBooleanValue(item, [
+      'VeillePasserelle',
+      'Veille Passerelle',
+      'MedicalBridgeWatch',
+    ]),
+    medical_unfit: nullableBooleanValue(item, [
+      'InapteNavigation',
+      'Inapte Navigation',
+      'MedicalUnfit',
+    ]),
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: fileUrl,
+    file_size_bytes: numeric(item, ['File_x0020_Size', 'FileSizeDisplay', 'File Size', 'Taille fichier']),
     notes: text(item, ['FileRef', 'ServerRelativeUrl', "Chemin d'accès"]) || fileName,
   });
 }

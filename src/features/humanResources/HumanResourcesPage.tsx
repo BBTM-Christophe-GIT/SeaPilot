@@ -6,11 +6,14 @@ import {
   ClipboardCheck,
   FileText,
   HeartPulse,
+  Download,
+  Upload,
   Search,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -20,16 +23,23 @@ import type { RoleKey } from '../permissions/roles';
 import {
   buildStaffEvolution,
   buildHumanResourcesDashboard,
+  buildGeneratedHrDocumentFileName,
   createPerson,
+  createHrDocumentSignedUrl,
+  downloadHrDocumentBlob,
   fetchHumanResourcesData,
   formatPersonName,
   getHrDocumentCategoryLabel,
   isHrDocumentRenewalDue,
+  renewHrDocument,
+  stripFileExtension,
+  updateHrDocumentMedicalDetails,
   updatePersonDetails,
   updatePersonActive,
   type HrDocumentRecord,
   type PersonDashboardRecord,
   type PersonRecord,
+  type UpdateHrDocumentMedicalInput,
   type UpdatePersonDetailsInput,
 } from './peopleQueries';
 
@@ -313,6 +323,142 @@ function buildDocumentExpiryText(document: HrDocumentRecord): string {
   return `arrive a echeance le ${formatDateForDisplay(document.expiresOn)}`;
 }
 
+interface MedicalFitnessNote {
+  lines: string[];
+  tone: 'danger' | 'neutral';
+}
+
+type MedicalCondition = 'bridgeWatch' | 'withoutBridgeWatch' | '';
+
+interface MedicalDetailsForm {
+  condition: MedicalCondition;
+  restriction: string;
+  unfit: boolean;
+}
+
+interface MedicalDocumentUpdate extends UpdateHrDocumentMedicalInput {
+  documentId: number;
+}
+
+function buildMedicalDetailsForm(document: HrDocumentRecord): MedicalDetailsForm {
+  let condition: MedicalCondition = '';
+
+  if (!document.medicalUnfit) {
+    condition = document.medicalBridgeWatch === true ? 'bridgeWatch' : document.medicalBridgeWatch === false ? 'withoutBridgeWatch' : '';
+  }
+
+  return {
+    condition,
+    restriction: document.medicalRestriction,
+    unfit: document.medicalUnfit,
+  };
+}
+
+function buildMedicalDetailsForms(documents: HrDocumentRecord[]): Record<number, MedicalDetailsForm> {
+  return Object.fromEntries(
+    documents
+      .filter((document) => document.categoryKey === 'medical_visit')
+      .map((document) => [document.id, buildMedicalDetailsForm(document)]),
+  );
+}
+
+function medicalDetailsInput(form: MedicalDetailsForm): UpdateHrDocumentMedicalInput {
+  return {
+    medicalBridgeWatch: form.unfit ? null : form.condition ? form.condition === 'bridgeWatch' : null,
+    medicalRestriction: form.restriction,
+    medicalUnfit: form.unfit,
+  };
+}
+
+function medicalDetailsHaveChanged(document: HrDocumentRecord, form: MedicalDetailsForm): boolean {
+  const input = medicalDetailsInput(form);
+
+  return (
+    input.medicalBridgeWatch !== document.medicalBridgeWatch ||
+    input.medicalRestriction.trim() !== document.medicalRestriction.trim() ||
+    input.medicalUnfit !== document.medicalUnfit
+  );
+}
+
+function buildMedicalFitnessNote(document: HrDocumentRecord): MedicalFitnessNote | null {
+  if (document.categoryKey !== 'medical_visit') {
+    return null;
+  }
+
+  const restriction = document.medicalRestriction.trim();
+  const hasRestriction = restriction.length > 0;
+  const allFunctionsWithBridgeWatch =
+    'Remplit les conditions médicales requises pour toutes les fonctions à bord y compris la veille à la passerelle';
+  const allFunctionsWithoutBridgeWatch =
+    "Remplit les conditions médicales requises pour toutes les fonctions à bord n'impliquant pas la veille à la passerelle";
+  const restrictionLine = `Est apte avec les restrictions suivantes : ${restriction}`;
+
+  if (document.medicalUnfit) {
+    return {
+      lines: ['Inapte à la navigation'],
+      tone: 'danger',
+    };
+  }
+
+  if (document.medicalBridgeWatch === true && !hasRestriction) {
+    return {
+      lines: [allFunctionsWithBridgeWatch],
+      tone: 'neutral',
+    };
+  }
+
+  if (document.medicalBridgeWatch === true && hasRestriction) {
+    return {
+      lines: [restrictionLine],
+      tone: 'danger',
+    };
+  }
+
+  if (hasRestriction) {
+    return {
+      lines: [allFunctionsWithoutBridgeWatch, restrictionLine],
+      tone: 'danger',
+    };
+  }
+
+  return {
+    lines: [allFunctionsWithoutBridgeWatch],
+    tone: 'danger',
+  };
+}
+
+function documentDownloadFileName(document: HrDocumentRecord): string {
+  const extension = document.mimeType === 'application/pdf' && !/\.[a-z0-9]+$/i.test(document.title) ? '.pdf' : '';
+  return `${document.title}${extension}`;
+}
+
+function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function uniqueFileName(fileName: string, usedNames: Map<string, number>): string {
+  const count = usedNames.get(fileName) || 0;
+  usedNames.set(fileName, count + 1);
+
+  if (count === 0) {
+    return fileName;
+  }
+
+  const extensionMatch = fileName.match(/(\.[^./\\]+)$/);
+  const extension = extensionMatch?.[1] || '';
+  const baseName = extension ? fileName.slice(0, -extension.length) : fileName;
+
+  return `${baseName} (${count + 1})${extension}`;
+}
+
 function FieldValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="hr-field-value">
@@ -411,8 +557,11 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
+  const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -540,6 +689,18 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     () => (selectedPerson ? documents.filter((document) => document.personId === selectedPerson.id) : []),
     [documents, selectedPerson],
   );
+  const selectedDocuments = useMemo(
+    () => documents.filter((document) => selectedDocumentIds.has(document.id)),
+    [documents, selectedDocumentIds],
+  );
+  const renewalDocument = useMemo(
+    () => documents.find((document) => document.id === renewalDocumentId) || null,
+    [documents, renewalDocumentId],
+  );
+  const renewalPerson = useMemo(
+    () => (renewalDocument?.personId ? people.find((person) => person.id === renewalDocument.personId) || null : null),
+    [people, renewalDocument],
+  );
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -592,16 +753,127 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     }
   }
 
-  async function handleSavePersonDetails(personId: number, input: UpdatePersonDetailsInput) {
+  function toggleDocumentSelection(documentId: number) {
+    setSelectedDocumentIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(documentId)) {
+        nextIds.delete(documentId);
+      } else {
+        nextIds.add(documentId);
+      }
+
+      return nextIds;
+    });
+  }
+
+  async function handleOpenDocument(document: HrDocumentRecord) {
+    setErrorMessage(null);
+
+    try {
+      const url = await createHrDocumentSignedUrl(effectiveClient, document);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      setErrorMessage("Impossible d'ouvrir ce document.");
+    }
+  }
+
+  async function handleDownloadSelectedDocuments() {
+    if (selectedDocuments.length === 0) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsDownloading(true);
+
+    try {
+      if (selectedDocuments.length === 1) {
+        const documentToDownload = selectedDocuments[0];
+        const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
+        saveBlob(blob, documentDownloadFileName(documentToDownload));
+      } else {
+        const zip = new JSZip();
+        const usedNames = new Map<string, number>();
+
+        await Promise.all(
+          selectedDocuments.map(async (documentToDownload) => {
+            const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
+            zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
+          }),
+        );
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        saveBlob(zipBlob, `Documents RH - ${new Date().toISOString().slice(0, 10)}.zip`);
+      }
+
+      setSelectedDocumentIds(new Set());
+    } catch {
+      setErrorMessage('Impossible de telecharger les fichiers selectionnes.');
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  async function handleRenewDocument(input: {
+    document: HrDocumentRecord;
+    dueDate: string;
+    file: File;
+    medicalBridgeWatch: boolean | null;
+    medicalRestriction: string;
+    medicalUnfit: boolean;
+    person: PersonRecord;
+  }) {
     setStatusMessage(null);
     setErrorMessage(null);
     setIsSaving(true);
 
     try {
-      const updatedPerson = await updatePersonDetails(effectiveClient, personId, input);
+      const updatedDocument = await renewHrDocument(effectiveClient, input);
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((currentDocument) => (currentDocument.id === updatedDocument.id ? updatedDocument : currentDocument)),
+      );
+      setRenewalDocumentId(null);
+      setSelectedDocumentIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(updatedDocument.id);
+        return nextIds;
+      });
+      setStatusMessage('Document renouvele.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de renouveler le document.');
+      throw new Error('hr-document-renewal-failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSavePersonDetails(
+    personId: number,
+    input: UpdatePersonDetailsInput,
+    medicalUpdates: MedicalDocumentUpdate[],
+  ) {
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setIsSaving(true);
+
+    try {
+      const [updatedPerson, updatedMedicalDocuments] = await Promise.all([
+        updatePersonDetails(effectiveClient, personId, input),
+        Promise.all(
+          medicalUpdates.map(({ documentId, ...medicalInput }) =>
+            updateHrDocumentMedicalDetails(effectiveClient, documentId, medicalInput),
+          ),
+        ),
+      ]);
       setPeople((currentPeople) =>
         sortPeople(currentPeople.map((currentPerson) => (currentPerson.id === personId ? updatedPerson : currentPerson))),
       );
+      if (updatedMedicalDocuments.length > 0) {
+        const documentsById = new Map(updatedMedicalDocuments.map((document) => [document.id, document]));
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((document) => documentsById.get(document.id) || document),
+        );
+      }
       setStatusMessage('Fiche collaborateur mise a jour.');
     } catch {
       setErrorMessage('Impossible de mettre a jour la fiche collaborateur.');
@@ -753,6 +1025,21 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
       </div>
 
+      {selectedDocuments.length > 0 ? (
+        <section aria-label="Selection documentaire RH" className="hr-selection-bar">
+          <span>{selectedDocuments.length} document(s) selectionne(s)</span>
+          <div className="hr-selection-actions">
+            <button disabled={isDownloading} onClick={() => setSelectedDocumentIds(new Set())} type="button">
+              Annuler la selection
+            </button>
+            <button disabled={isDownloading} onClick={handleDownloadSelectedDocuments} type="button">
+              <Download aria-hidden="true" size={16} />
+              {isDownloading ? 'Telechargement...' : 'Telecharger'}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {dashboard.groups.length === 0 ? (
         <div className="admin-state">Aucun collaborateur a afficher.</div>
       ) : (
@@ -770,8 +1057,12 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
                     isSaving={isSaving}
                     key={person.id}
                     onActiveChange={handleActiveChange}
+                    onDocumentOpen={handleOpenDocument}
+                    onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
+                    onDocumentSelect={toggleDocumentSelection}
                     onOpen={() => setSelectedPersonId(person.id)}
                     person={person}
+                    selectedDocumentIds={selectedDocumentIds}
                   />
                 ))}
               </div>
@@ -798,6 +1089,16 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onClose={() => setSelectedPersonId(null)}
           onSave={handleSavePersonDetails}
           person={selectedPerson}
+        />
+      ) : null}
+
+      {renewalDocument && renewalPerson ? (
+        <DocumentRenewalDialog
+          document={renewalDocument}
+          isSaving={isSaving}
+          onClose={() => setRenewalDocumentId(null)}
+          onSubmit={handleRenewDocument}
+          person={renewalPerson}
         />
       ) : null}
     </section>
@@ -877,14 +1178,22 @@ function PersonRow({
   isManager,
   isSaving,
   onActiveChange,
+  onDocumentOpen,
+  onDocumentRenew,
+  onDocumentSelect,
   onOpen,
   person,
+  selectedDocumentIds,
 }: {
   isManager: boolean;
   isSaving: boolean;
   onActiveChange: (person: PersonRecord, active: boolean) => void;
+  onDocumentOpen: (document: HrDocumentRecord) => void;
+  onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentSelect: (documentId: number) => void;
   onOpen: () => void;
   person: PersonDashboardRecord;
+  selectedDocumentIds: Set<number>;
 }) {
   const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
   const [isPersonExpanded, setIsPersonExpanded] = useState(true);
@@ -985,10 +1294,17 @@ function PersonRow({
                     {group.documents.map((document) => {
                       const notesForDisplay = getDocumentNotesForDisplay(document.notes);
                       const documentHref = getDocumentFileHref(document.fileUrl);
+                      const medicalFitnessNote = buildMedicalFitnessNote(document);
+                      const canRenewDocument = isManager && isHrDocumentRenewalDue(document);
 
                       return (
                         <li className={`hr-document-tree-row hr-document-tree-${document.status}`} key={document.id}>
-                          <input aria-label={`Selectionner ${document.title}`} type="checkbox" />
+                          <input
+                            aria-label={`Selectionner ${document.title}`}
+                            checked={selectedDocumentIds.has(document.id)}
+                            onChange={() => onDocumentSelect(document.id)}
+                            type="checkbox"
+                          />
                           <FileText aria-hidden="true" size={16} />
                           <span className="hr-document-tree-main">
                             <strong>
@@ -997,15 +1313,32 @@ function PersonRow({
                                   {document.title}
                                 </a>
                               ) : (
-                                document.title
+                                <button className="hr-document-title-button" onClick={() => onDocumentOpen(document)} type="button">
+                                  {document.title}
+                                </button>
                               )}
                             </strong>
                             {buildDocumentExpiryText(document) ? <small>{buildDocumentExpiryText(document)}</small> : null}
+                            {medicalFitnessNote ? (
+                              <span className={`hr-medical-note hr-medical-note-${medicalFitnessNote.tone}`}>
+                                {medicalFitnessNote.lines.map((line) => (
+                                  <small key={line}>{line}</small>
+                                ))}
+                              </span>
+                            ) : null}
                             {notesForDisplay ? <small className="hr-document-note">{notesForDisplay}</small> : null}
                             {document.requiresCaptainValidation ? <small>Validation capitaine requise</small> : null}
                           </span>
-                          <span className={`hr-document-status hr-document-${document.status}`}>
-                            {DOCUMENT_STATUS_LABELS[document.status]}
+                          <span className="hr-document-row-actions">
+                            {canRenewDocument ? (
+                              <button disabled={isSaving} onClick={() => onDocumentRenew(document)} type="button">
+                                <Upload aria-hidden="true" size={14} />
+                                Renouveler
+                              </button>
+                            ) : null}
+                            <span className={`hr-document-status hr-document-${document.status}`}>
+                              {DOCUMENT_STATUS_LABELS[document.status]}
+                            </span>
                           </span>
                         </li>
                       );
@@ -1022,6 +1355,195 @@ function PersonRow({
         <p className="hr-category-empty">Aucun document associe</p>
       ) : null}
     </article>
+  );
+}
+
+function MedicalOptionsFields({
+  disabled,
+  idPrefix,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  idPrefix: string;
+  onChange: (value: MedicalDetailsForm) => void;
+  value: MedicalDetailsForm;
+}) {
+  return (
+    <fieldset className="hr-medical-options">
+      <legend>Informations médicales</legend>
+      <label>
+        <input
+          checked={value.condition === 'bridgeWatch'}
+          disabled={disabled || value.unfit}
+          id={`${idPrefix}-bridge-watch`}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              condition: event.currentTarget.checked ? 'bridgeWatch' : '',
+              unfit: false,
+            })
+          }
+          type="checkbox"
+        />
+        Remplit les conditions médicales requises pour toutes les fonctions à bord y compris la veille à la passerelle
+      </label>
+      <label>
+        <input
+          checked={value.condition === 'withoutBridgeWatch'}
+          disabled={disabled || value.unfit}
+          id={`${idPrefix}-without-bridge-watch`}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              condition: event.currentTarget.checked ? 'withoutBridgeWatch' : '',
+              unfit: false,
+            })
+          }
+          type="checkbox"
+        />
+        Remplit les conditions médicales requises pour toutes les fonctions à bord n'impliquant pas la veille à la passerelle
+      </label>
+      <label className="hr-edit-field">
+        Est apte avec les restrictions suivantes
+        <textarea
+          disabled={disabled}
+          id={`${idPrefix}-restriction`}
+          onChange={(event) => onChange({ ...value, restriction: event.target.value })}
+          rows={2}
+          value={value.restriction}
+        />
+      </label>
+      <label>
+        <input
+          checked={value.unfit}
+          disabled={disabled}
+          id={`${idPrefix}-unfit`}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              condition: event.currentTarget.checked ? '' : value.condition,
+              unfit: event.currentTarget.checked,
+            })
+          }
+          type="checkbox"
+        />
+        Inapte à la navigation
+      </label>
+    </fieldset>
+  );
+}
+
+function DocumentRenewalDialog({
+  document,
+  isSaving,
+  onClose,
+  onSubmit,
+  person,
+}: {
+  document: HrDocumentRecord;
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (input: {
+    document: HrDocumentRecord;
+    dueDate: string;
+    file: File;
+    medicalBridgeWatch: boolean | null;
+    medicalRestriction: string;
+    medicalUnfit: boolean;
+    person: PersonRecord;
+  }) => Promise<void>;
+  person: PersonRecord;
+}) {
+  const [dueDate, setDueDate] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [formError, setFormError] = useState('');
+  const [medicalForm, setMedicalForm] = useState<MedicalDetailsForm>(() => buildMedicalDetailsForm(document));
+  const generatedFileName = file ? buildGeneratedHrDocumentFileName(person, document, dueDate, file.name) : '';
+  const isMedicalVisit = document.categoryKey === 'medical_visit';
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError('');
+
+    if (!file || !dueDate || !generatedFileName) {
+      setFormError('Depose le nouveau document et renseigne la nouvelle date d echeance.');
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      setFormError('Le fichier depasse la limite de 50 Mo du stockage gratuit Supabase.');
+      return;
+    }
+
+    try {
+      await onSubmit({
+        document,
+        dueDate,
+        file,
+        ...medicalDetailsInput(medicalForm),
+        person,
+      });
+    } catch {
+      setFormError('Impossible de renouveler le document.');
+    }
+  }
+
+  return (
+    <div aria-label={`Renouveler ${document.title}`} aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <form className="hr-dialog hr-renewal-dialog" onSubmit={handleSubmit}>
+        <div className="hr-dialog-header">
+          <div>
+            <p>Renouvellement documentaire</p>
+            <h2>Renouveler le document</h2>
+            <span>{`${formatPersonName(person)} - ${stripFileExtension(document.title)}`}</span>
+          </div>
+          <button aria-label="Fermer" className="hr-icon-button" disabled={isSaving} onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+
+        <div className="hr-renewal-body">
+          <label className="hr-edit-field">
+            Nouveau document
+            <input
+              disabled={isSaving}
+              onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
+              type="file"
+            />
+          </label>
+          <label className="hr-edit-field">
+            Nouvelle date d'echeance
+            <input disabled={isSaving} onChange={(event) => setDueDate(event.target.value)} type="date" value={dueDate} />
+          </label>
+          <label className="hr-edit-field">
+            Nom genere
+            <input readOnly value={generatedFileName} />
+          </label>
+
+          {isMedicalVisit ? (
+            <MedicalOptionsFields
+              disabled={isSaving}
+              idPrefix={`renew-medical-${document.id}`}
+              onChange={setMedicalForm}
+              value={medicalForm}
+            />
+          ) : null}
+        </div>
+
+        {formError ? <p className="form-error">{formError}</p> : null}
+
+        <footer className="hr-dialog-footer">
+          <button disabled={isSaving} onClick={onClose} type="button">
+            Annuler
+          </button>
+          <button disabled={isSaving} type="submit">
+            <Upload aria-hidden="true" size={16} />
+            {isSaving ? 'Chargement...' : 'Renouveler'}
+          </button>
+        </footer>
+      </form>
+    </div>
   );
 }
 
@@ -1117,17 +1639,28 @@ function PersonDetailsDialog({
   isManager: boolean;
   isSaving: boolean;
   onClose: () => void;
-  onSave: (personId: number, input: UpdatePersonDetailsInput) => Promise<void>;
+  onSave: (
+    personId: number,
+    input: UpdatePersonDetailsInput,
+    medicalUpdates: MedicalDocumentUpdate[],
+  ) => Promise<void>;
   person: PersonRecord;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<UpdatePersonDetailsInput>(() => buildPersonDetailsForm(person));
+  const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
+    buildMedicalDetailsForms(documents),
+  );
   const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>('identity');
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
     setActiveSectionKey('identity');
   }, [person]);
+
+  useEffect(() => {
+    setMedicalForms(buildMedicalDetailsForms(documents));
+  }, [documents]);
 
   function updateFormValue(key: keyof UpdatePersonDetailsInput, value: string) {
     setForm((currentForm) => ({
@@ -1136,11 +1669,28 @@ function PersonDetailsDialog({
     }));
   }
 
+  function updateMedicalForm(documentId: number, value: MedicalDetailsForm) {
+    setMedicalForms((currentForms) => ({
+      ...currentForms,
+      [documentId]: value,
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    const medicalUpdates = documents.flatMap((document) => {
+      const medicalForm = medicalForms[document.id];
+
+      if (!medicalForm || !medicalDetailsHaveChanged(document, medicalForm)) {
+        return [];
+      }
+
+      return [{ documentId: document.id, ...medicalDetailsInput(medicalForm) }];
+    });
+
     try {
-      await onSave(person.id, form);
+      await onSave(person.id, form, medicalUpdates);
       setIsEditing(false);
     } catch {
       // The page-level notice already tells the user why the save failed.
@@ -1338,7 +1888,12 @@ function PersonDetailsDialog({
                 </>
               )}
             </DetailsGrid>
-            <DocumentList documents={documents.filter((document) => document.categoryKey !== 'administrative')} />
+            <DocumentList
+              documents={documents.filter((document) => document.categoryKey !== 'administrative')}
+              isEditing={isEditing}
+              medicalForms={medicalForms}
+              onMedicalFormUpdate={updateMedicalForm}
+            />
           </section>
         );
       case 'clothing':
@@ -1432,6 +1987,7 @@ function PersonDetailsDialog({
                 className="hr-secondary-button"
                 onClick={() => {
                   setForm(buildPersonDetailsForm(person));
+                  setMedicalForms(buildMedicalDetailsForms(documents));
                   setIsEditing(false);
                 }}
                 type="button"
@@ -1449,7 +2005,17 @@ function PersonDetailsDialog({
   );
 }
 
-function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
+function DocumentList({
+  documents,
+  isEditing = false,
+  medicalForms = {},
+  onMedicalFormUpdate,
+}: {
+  documents: HrDocumentRecord[];
+  isEditing?: boolean;
+  medicalForms?: Record<number, MedicalDetailsForm>;
+  onMedicalFormUpdate?: (documentId: number, value: MedicalDetailsForm) => void;
+}) {
   if (documents.length === 0) {
     return <p className="hr-muted">Aucun document renseigne.</p>;
   }
@@ -1459,6 +2025,8 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
       {documents.map((document) => {
         const notesForDisplay = getDocumentNotesForDisplay(document.notes);
         const documentHref = getDocumentFileHref(document.fileUrl);
+        const medicalFitnessNote = buildMedicalFitnessNote(document);
+        const medicalForm = medicalForms[document.id];
 
         return (
           <li key={document.id}>
@@ -1470,6 +2038,20 @@ function DocumentList({ documents }: { documents: HrDocumentRecord[] }) {
                 {document.expiresOn ? <small>Expire le {formatDateForDisplay(document.expiresOn)}</small> : null}
                 {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
               </span>
+              {isEditing && medicalForm && onMedicalFormUpdate ? (
+                <MedicalOptionsFields
+                  disabled={false}
+                  idPrefix={`profile-medical-${document.id}`}
+                  onChange={(value) => onMedicalFormUpdate(document.id, value)}
+                  value={medicalForm}
+                />
+              ) : medicalFitnessNote ? (
+                <span className={`hr-medical-note hr-medical-note-${medicalFitnessNote.tone}`}>
+                  {medicalFitnessNote.lines.map((line) => (
+                    <small key={line}>{line}</small>
+                  ))}
+                </span>
+              ) : null}
               {notesForDisplay ? <em>{notesForDisplay}</em> : null}
             </span>
             <span className="hr-document-actions">

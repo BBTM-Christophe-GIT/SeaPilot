@@ -849,6 +849,44 @@ button:disabled {
   background: #e8edf3;
 }
 
+.hr-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #bcd2ea;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #173457;
+  background: #f4f9ff;
+  font-weight: 850;
+}
+
+.hr-selection-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hr-selection-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #c4d3e4;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #0c3f78;
+  background: #ffffff;
+  font-weight: 850;
+}
+
+.hr-selection-actions button:last-child {
+  border-color: #286fbb;
+  color: #ffffff;
+  background: #286fbb;
+}
+
 .hr-group-list {
   display: grid;
   gap: 10px;
@@ -1143,6 +1181,21 @@ button:disabled {
   text-decoration: underline;
 }
 
+.hr-document-title-button {
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+}
+
+.hr-document-title-button:hover {
+  color: #0c5598;
+  text-decoration: underline;
+}
+
 .hr-document-tree-main small {
   color: #6b7b91;
   font-size: 0.78rem;
@@ -1150,10 +1203,50 @@ button:disabled {
   font-weight: 650;
 }
 
+.hr-medical-note {
+  display: grid;
+  flex-basis: 100%;
+  gap: 2px;
+}
+
+.hr-medical-note small {
+  font-style: normal;
+  font-weight: 850;
+}
+
+.hr-medical-note-danger small {
+  color: #c6283a;
+}
+
+.hr-medical-note-neutral small {
+  color: #1d7a48;
+}
+
 .hr-document-tree-main .hr-document-note {
   flex-basis: 100%;
   color: #253044;
   font-style: normal;
+}
+
+.hr-document-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hr-document-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid #bfd0e3;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #0c3f78;
+  background: #f2f7fd;
+  font-size: 0.72rem;
+  font-weight: 850;
 }
 
 .hr-dialog-backdrop {
@@ -1179,6 +1272,10 @@ button:disabled {
 
 .hr-create-dialog {
   width: min(100%, 840px);
+}
+
+.hr-renewal-dialog {
+  width: min(100%, 720px);
 }
 
 .hr-dialog-header,
@@ -1231,6 +1328,46 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   padding: 18px 20px;
+}
+
+.hr-renewal-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.hr-medical-options {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.hr-medical-options legend {
+  padding: 0 6px;
+  color: #173457;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hr-medical-options label:not(.hr-edit-field) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #253044;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.hr-medical-options input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 
 .hr-form-grid label {
@@ -1421,6 +1558,15 @@ button:disabled {
 .hr-document-actions {
   display: grid;
   gap: 6px;
+}
+
+.hr-document-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.hr-document-main .hr-medical-options {
+  margin-top: 4px;
 }
 
 .hr-document-list small {

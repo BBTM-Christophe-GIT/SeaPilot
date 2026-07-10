@@ -55,9 +55,16 @@ const HR_DOCUMENT_SELECT = [
   'issued_on',
   'expires_on',
   'requires_captain_validation',
+  'medical_restriction',
+  'medical_bridge_watch',
+  'medical_unfit',
   'source_label',
   'notes',
   'file_url',
+  'storage_bucket',
+  'storage_path',
+  'file_size_bytes',
+  'mime_type',
 ].join(', ');
 
 export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
@@ -128,9 +135,16 @@ interface HrDocumentRow {
   issued_on: string | null;
   expires_on: string | null;
   requires_captain_validation: boolean | null;
+  medical_restriction?: string | null;
+  medical_bridge_watch?: boolean | null;
+  medical_unfit?: boolean | null;
   source_label: string | null;
   notes: string | null;
   file_url: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  file_size_bytes?: number | string | null;
+  mime_type?: string | null;
 }
 
 export interface PersonRecord {
@@ -188,9 +202,16 @@ export interface HrDocumentRecord {
   issuedOn: string;
   expiresOn: string;
   requiresCaptainValidation: boolean;
+  medicalRestriction: string;
+  medicalBridgeWatch: boolean | null;
+  medicalUnfit: boolean;
   sourceLabel: string;
   notes: string;
   fileUrl: string;
+  storageBucket: string;
+  storagePath: string;
+  fileSizeBytes: number | null;
+  mimeType: string;
 }
 
 export interface PersonCategorySummary {
@@ -298,8 +319,35 @@ export interface UpdatePersonDetailsInput {
   craneInductionOn: string;
 }
 
+export interface RenewHrDocumentInput {
+  document: HrDocumentRecord;
+  dueDate: string;
+  file: File;
+  medicalBridgeWatch?: boolean | null;
+  medicalRestriction?: string;
+  medicalUnfit?: boolean;
+  person: PersonRecord;
+}
+
+export interface UpdateHrDocumentMedicalInput {
+  medicalBridgeWatch: boolean | null;
+  medicalRestriction: string;
+  medicalUnfit: boolean;
+}
+
+const HR_DOCUMENT_STORAGE_BUCKET = 'hr-documents';
+
 function nullableText(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
+}
+
+function nullableNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function optionalText(value: string | undefined): string | null {
@@ -333,6 +381,23 @@ function normalizeStatus(status: string | null): HrDocumentStatus {
   return 'valid';
 }
 
+function statusFromDueDate(value: string): HrDocumentStatus {
+  if (!value) {
+    return 'valid';
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDate = new Date(`${value}T00:00:00`);
+
+  if (expiryDate < today) {
+    return 'expired';
+  }
+
+  const renewalWindowMs = 90 * 24 * 60 * 60 * 1000;
+  return expiryDate.getTime() - today.getTime() <= renewalWindowMs ? 'renew_due' : 'valid';
+}
+
 function normalizeSearchValue(value: string): string {
   return value
     .normalize('NFD')
@@ -358,6 +423,55 @@ function isCertificateLikeDocument(document: HrDocumentRecord): boolean {
 
 export function formatPersonName(person: PersonRecord): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
+}
+
+export function getFileExtension(fileName: string): string {
+  const match = /(\.[^./\\]+)$/.exec(fileName || '');
+  return match ? match[1] : '';
+}
+
+export function stripFileExtension(fileName: string): string {
+  return (fileName || '').replace(/\.[^./\\]+$/, '');
+}
+
+function sanitizeFileNamePart(value: string): string {
+  return (value || '')
+    .replace(/[~"#%&*:<>?/\\{|}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\.+$/g, '')
+    .trim();
+}
+
+function yearFromInputDate(value: string): string {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+  return match ? match[1] : '';
+}
+
+export function buildGeneratedHrDocumentFileName(
+  person: PersonRecord,
+  document: HrDocumentRecord,
+  dueDate: string,
+  originalFileName: string,
+): string {
+  const parts = [
+    sanitizeFileNamePart(formatPersonName(person)),
+    sanitizeFileNamePart(stripFileExtension(document.title)),
+    sanitizeFileNamePart(yearFromInputDate(dueDate)),
+  ].filter(Boolean);
+  const extension = getFileExtension(originalFileName);
+
+  return parts.length >= 2 ? `${parts.join(' - ')}${extension}` : '';
+}
+
+function buildHrDocumentStoragePath(person: PersonRecord, fileName: string): string {
+  const storageFileName = fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 ._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return `people/${person.id}/${storageFileName}`;
 }
 
 export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
@@ -418,9 +532,17 @@ export function mapHrDocumentRows(rows: HrDocumentRow[]): HrDocumentRecord[] {
     issuedOn: nullableText(row.issued_on),
     expiresOn: nullableText(row.expires_on),
     requiresCaptainValidation: row.requires_captain_validation === true,
+    medicalRestriction: nullableText(row.medical_restriction),
+    medicalBridgeWatch:
+      row.medical_bridge_watch === null || row.medical_bridge_watch === undefined ? null : row.medical_bridge_watch === true,
+    medicalUnfit: row.medical_unfit === true,
     sourceLabel: nullableText(row.source_label),
     notes: nullableText(row.notes),
     fileUrl: nullableText(row.file_url),
+    storageBucket: nullableText(row.storage_bucket),
+    storagePath: nullableText(row.storage_path),
+    fileSizeBytes: nullableNumber(row.file_size_bytes),
+    mimeType: nullableText(row.mime_type),
   }));
 }
 
@@ -622,6 +744,123 @@ export async function updatePersonActive(
   }
 
   return mapPersonRows([data as unknown as PersonRow])[0];
+}
+
+export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocumentInput): Promise<HrDocumentRecord> {
+  const fileName = buildGeneratedHrDocumentFileName(input.person, input.document, input.dueDate, input.file.name);
+
+  if (!fileName) {
+    throw new Error('Le nom du document renouvele ne peut pas etre genere.');
+  }
+
+  const storagePath = buildHrDocumentStoragePath(input.person, fileName);
+  const { error: uploadError } = await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).upload(storagePath, input.file, {
+    contentType: input.file.type || undefined,
+    upsert: false,
+  });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const payload = {
+    title: stripFileExtension(fileName),
+    status: statusFromDueDate(input.dueDate),
+    expires_on: input.dueDate,
+    source_label: 'supabase',
+    file_url: null,
+    storage_bucket: HR_DOCUMENT_STORAGE_BUCKET,
+    storage_path: storagePath,
+    file_size_bytes: input.file.size,
+    mime_type: input.file.type || null,
+    renewed_at: new Date().toISOString(),
+    medical_restriction:
+      input.document.categoryKey === 'medical_visit' ? optionalText(input.medicalRestriction) : input.document.medicalRestriction || null,
+    medical_bridge_watch:
+      input.document.categoryKey === 'medical_visit'
+        ? input.medicalUnfit
+          ? null
+          : input.medicalBridgeWatch ?? null
+        : input.document.medicalBridgeWatch,
+    medical_unfit:
+      input.document.categoryKey === 'medical_visit' ? input.medicalUnfit === true : input.document.medicalUnfit,
+  };
+  const { data, error } = await client.from('hr_documents').update(payload).eq('id', input.document.id).select(HR_DOCUMENT_SELECT).single();
+
+  if (error) {
+    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([storagePath]);
+    throw error;
+  }
+
+  if (
+    input.document.storageBucket === HR_DOCUMENT_STORAGE_BUCKET &&
+    input.document.storagePath &&
+    input.document.storagePath !== storagePath
+  ) {
+    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([input.document.storagePath]);
+  }
+
+  return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
+}
+
+export async function updateHrDocumentMedicalDetails(
+  client: SupabaseClient,
+  documentId: number,
+  input: UpdateHrDocumentMedicalInput,
+): Promise<HrDocumentRecord> {
+  const payload = {
+    medical_restriction: optionalText(input.medicalRestriction),
+    medical_bridge_watch: input.medicalUnfit ? null : input.medicalBridgeWatch,
+    medical_unfit: input.medicalUnfit,
+  };
+  const { data, error } = await client.from('hr_documents').update(payload).eq('id', documentId).select(HR_DOCUMENT_SELECT).single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
+}
+
+export async function createHrDocumentSignedUrl(client: SupabaseClient, document: HrDocumentRecord): Promise<string> {
+  if (document.storageBucket && document.storagePath) {
+    const { data, error } = await client.storage.from(document.storageBucket).createSignedUrl(document.storagePath, 60);
+
+    if (error) {
+      throw error;
+    }
+
+    return data.signedUrl;
+  }
+
+  if (document.fileUrl) {
+    return document.fileUrl;
+  }
+
+  throw new Error(`Le document "${document.title}" n a pas de fichier associe.`);
+}
+
+export async function downloadHrDocumentBlob(client: SupabaseClient, document: HrDocumentRecord): Promise<Blob> {
+  if (document.storageBucket && document.storagePath) {
+    const { data, error } = await client.storage.from(document.storageBucket).download(document.storagePath);
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
+
+  const url = await createHrDocumentSignedUrl(client, document);
+  const response = await fetch(url, {
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Impossible de telecharger "${document.title}".`);
+  }
+
+  return response.blob();
 }
 
 export async function updatePersonDetails(
