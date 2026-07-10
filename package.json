@@ -1,0 +1,44 @@
+{
+  "name": "seapilot",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "export:sharepoint:list": "node --experimental-strip-types scripts/export-sharepoint-list.ts",
+    "export:sharepoint:rh": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --output .data/sharepoint-rh-personnel-bbtm.json",
+    "export:sharepoint:rh-documents": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-documents.json",
+    "export:sharepoint:rh-full": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-full.json",
+    "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
+    "import:sharepoint:linked": "node --experimental-strip-types scripts/import-sharepoint-linked.ts",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "clsx": "^2.1.1",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
+  }
+}
