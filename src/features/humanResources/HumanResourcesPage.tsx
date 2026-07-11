@@ -2,24 +2,23 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   BarChart3,
-  BookOpenCheck,
-  CalendarDays,
+  BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
+  ContactRound,
   FileText,
   Download,
-  GraduationCap,
   HeartPulse,
-  History,
-  Mail,
+  IdCard,
   MapPin,
-  Phone,
+  Ruler,
   Upload,
   Search,
   Settings2,
   ShieldCheck,
   TrendingUp,
   UserPlus,
+  UserRound,
   Users,
   X,
 } from 'lucide-react';
@@ -88,16 +87,6 @@ interface HrFilterState {
   dueState: string;
 }
 
-type HrProfileTabKey = 'documents' | 'competences' | 'training' | 'medical' | 'history';
-
-const HR_PROFILE_TABS: Array<{ key: HrProfileTabKey; label: string }> = [
-  { key: 'documents', label: 'Documents' },
-  { key: 'competences', label: 'Compétences' },
-  { key: 'training', label: 'Formations' },
-  { key: 'medical', label: 'Visites médicales' },
-  { key: 'history', label: 'Historique' },
-];
-
 const EMPTY_FORM: PersonFormState = {
   firstName: '',
   lastName: '',
@@ -163,6 +152,7 @@ const HR_DETAILS_SECTIONS = [
   { key: 'administrative', label: 'Documents administratifs' },
   { key: 'health', label: 'Sante et habilitations' },
   { key: 'clothing', label: 'Tenues et mensurations' },
+  { key: 'documents', label: 'Documents' },
 ] as const;
 
 type HrDetailsSectionKey = (typeof HR_DETAILS_SECTIONS)[number]['key'];
@@ -229,8 +219,6 @@ function buildVisibilityCatalog(
   });
 }
 
-const SHAREPOINT_SITE_ORIGIN = 'https://bbtm668.sharepoint.com';
-
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
@@ -247,45 +235,6 @@ function normalizeSearch(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-}
-
-function isHiddenSharePointLibraryNote(value: string): boolean {
-  const normalized = normalizeSearch(value)
-    .replace(/\\/g, '/')
-    .replace(/%20/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return (
-    normalized.includes('sites/qhse/brevets et visites medicales') ||
-    normalized.includes('sites/qhse/brevets et visites mdicales')
-  );
-}
-
-function getDocumentNotesForDisplay(notes: string): string {
-  return notes
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !isHiddenSharePointLibraryNote(line))
-    .join('\n');
-}
-
-function getDocumentFileHref(fileUrl: string): string {
-  const trimmed = fileUrl.trim().replace(/\\/g, '/');
-
-  if (!trimmed) {
-    return '';
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  if (/^\/?sites\//i.test(trimmed)) {
-    return encodeURI(`${SHAREPOINT_SITE_ORIGIN}/${trimmed.replace(/^\/+/, '')}`);
-  }
-
-  return trimmed;
 }
 
 function personMatchesSearch(person: PersonRecord, query: string): boolean {
@@ -408,33 +357,22 @@ function getPersonInitials(person: PersonRecord): string {
   return `${person.firstName.charAt(0)}${person.lastName.charAt(0)}`.toUpperCase() || 'RH';
 }
 
-function getProfileTabDocuments(documents: HrDocumentRecord[], tabKey: HrProfileTabKey): HrDocumentRecord[] {
+function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
   switch (tabKey) {
-    case 'competences':
-      return documents.filter((document) => ['certificate', 'deck', 'engine'].includes(document.categoryKey));
-    case 'training':
-      return documents.filter((document) =>
-        ['lifting', 'safety_training', 'safety_induction'].includes(document.categoryKey),
-      );
-    case 'medical':
-      return documents.filter((document) => document.categoryKey === 'medical_visit');
-    case 'history':
-      return [...documents].sort((left, right) => (right.expiresOn || right.issuedOn).localeCompare(left.expiresOn || left.issuedOn));
-    default:
-      return documents;
-  }
-}
-
-function ProfileTabIcon({ tabKey }: { tabKey: HrProfileTabKey }) {
-  switch (tabKey) {
-    case 'competences':
-      return <GraduationCap aria-hidden="true" size={18} />;
-    case 'training':
-      return <BookOpenCheck aria-hidden="true" size={18} />;
-    case 'medical':
+    case 'identity':
+      return <UserRound aria-hidden="true" size={18} />;
+    case 'contract':
+      return <BriefcaseBusiness aria-hidden="true" size={18} />;
+    case 'contact':
+      return <MapPin aria-hidden="true" size={18} />;
+    case 'emergency':
+      return <ContactRound aria-hidden="true" size={18} />;
+    case 'administrative':
+      return <IdCard aria-hidden="true" size={18} />;
+    case 'health':
       return <HeartPulse aria-hidden="true" size={18} />;
-    case 'history':
-      return <History aria-hidden="true" size={18} />;
+    case 'clothing':
+      return <Ruler aria-hidden="true" size={18} />;
     default:
       return <FileText aria-hidden="true" size={18} />;
   }
@@ -689,7 +627,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
-  const [detailsPersonId, setDetailsPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
   const [isVisibilityOpen, setIsVisibilityOpen] = useState(false);
@@ -863,14 +800,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const selectedPersonDocuments = useMemo(
     () => (selectedPerson ? roleVisibleDocuments.filter((document) => document.personId === selectedPerson.id) : []),
     [roleVisibleDocuments, selectedPerson],
-  );
-  const detailsPerson = useMemo(
-    () => roleVisiblePeople.find((person) => person.id === detailsPersonId) || null,
-    [detailsPersonId, roleVisiblePeople],
-  );
-  const detailsPersonDocuments = useMemo(
-    () => (detailsPerson ? roleVisibleDocuments.filter((document) => document.personId === detailsPerson.id) : []),
-    [detailsPerson, roleVisibleDocuments],
   );
   const selectedDocuments = useMemo(
     () => documents.filter((document) => selectedDocumentIds.has(document.id)),
@@ -1194,7 +1123,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             value={searchQuery}
           />
         </label>
-        <label className="hr-filter-field">
+        <label className="hr-filter-field hr-filter-collaborator">
           Collaborateur
           <select onChange={(event) => updateFilterValue('collaboratorId', event.target.value)} value={filters.collaboratorId}>
             <option value="">Tous</option>
@@ -1237,7 +1166,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             ))}
           </select>
         </label>
-        <label className="hr-filter-field">
+        <label className="hr-filter-field hr-filter-due">
           Echeances
           <select onChange={(event) => updateFilterValue('dueState', event.target.value)} value={filters.dueState}>
             {DOCUMENT_DUE_OPTIONS.map((option) => (
@@ -1292,9 +1221,10 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
           onDocumentSelect={toggleDocumentSelection}
-          onOpenDetails={() => selectedPerson && setDetailsPersonId(selectedPerson.id)}
+          onSave={handleSavePersonDetails}
           person={selectedPerson}
           selectedDocumentIds={selectedDocumentIds}
+          visibleSectionKeys={visibleSectionKeys}
         />
       </div>
 
@@ -1305,18 +1235,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreatePerson}
           onUpdate={updateFormValue}
-        />
-      ) : null}
-
-      {detailsPerson ? (
-        <PersonDetailsDialog
-          documents={detailsPersonDocuments}
-          isManager={isManager}
-          isSaving={isSaving}
-          onClose={() => setDetailsPersonId(null)}
-          onSave={handleSavePersonDetails}
-          person={detailsPerson}
-          visibleSectionKeys={visibleSectionKeys}
         />
       ) : null}
 
@@ -1585,7 +1503,6 @@ function PersonnelRows({
 
 function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSelect: () => void; person: PersonDashboardRecord }) {
   const renewalCount = person.documents.filter(isHrDocumentRenewalDue).length;
-  const urgentCount = person.documents.filter((document) => document.status === 'expired' || document.status === 'missing').length;
 
   return (
     <button
@@ -1608,10 +1525,6 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
         <strong>{renewalCount}</strong>
         <small>À renouveler</small>
       </span>
-      <span className={`hr-person-compact-metric is-urgent-column ${urgentCount > 0 ? 'is-danger' : ''}`} title="Urgent">
-        <strong>{urgentCount}</strong>
-        <small>Urgent</small>
-      </span>
       <ChevronRight aria-hidden="true" size={16} />
     </button>
   );
@@ -1626,9 +1539,10 @@ function PersonProfileCard({
   onDocumentOpen,
   onDocumentRenew,
   onDocumentSelect,
-  onOpenDetails,
+  onSave,
   person,
   selectedDocumentIds,
+  visibleSectionKeys,
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
@@ -1637,18 +1551,15 @@ function PersonProfileCard({
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
   onDocumentSelect: (documentId: number) => void;
-  onOpenDetails: () => void;
+  onSave: (
+    personId: number,
+    input: UpdatePersonDetailsInput,
+    medicalUpdates: MedicalDocumentUpdate[],
+  ) => Promise<void>;
   person: PersonRecord | null;
   selectedDocumentIds: Set<number>;
+  visibleSectionKeys: Set<HrDetailsSectionKey>;
 }) {
-  const [activeTab, setActiveTab] = useState<HrProfileTabKey>('documents');
-  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    setActiveTab('documents');
-    setCollapsedCategoryKeys(new Set());
-  }, [person?.id]);
-
   if (!person) {
     return (
       <aside aria-label="Fiche RH" className="hr-profile-card hr-profile-card-empty">
@@ -1664,31 +1575,6 @@ function PersonProfileCard({
   const renewalCount = documents.filter(isHrDocumentRenewalDue).length;
   const urgentCount = documents.filter((document) => document.status === 'expired').length;
   const missingCount = documents.filter((document) => document.status === 'missing').length;
-  const tabDocuments = getProfileTabDocuments(documents, activeTab);
-  const documentGroups = Array.from(
-    tabDocuments.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
-      result.set(document.categoryKey, (result.get(document.categoryKey) || []).concat(document));
-      return result;
-    }, new Map<string, HrDocumentRecord[]>()),
-  )
-    .map(([key, groupDocuments]) => ({
-      documents: sortDocumentsForTree(groupDocuments),
-      key,
-      label: getHrDocumentCategoryLabel(key),
-    }))
-    .sort((left, right) => compareHrCategories(left.key, right.key));
-
-  function toggleCategory(categoryKey: string) {
-    setCollapsedCategoryKeys((currentKeys) => {
-      const nextKeys = new Set(currentKeys);
-      if (nextKeys.has(categoryKey)) {
-        nextKeys.delete(categoryKey);
-      } else {
-        nextKeys.add(categoryKey);
-      }
-      return nextKeys;
-    });
-  }
 
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
@@ -1711,96 +1597,18 @@ function PersonProfileCard({
         <ProfileMetric label="Urgent" tone="danger" value={urgentCount} />
         <ProfileMetric label="Manquants" tone="danger" value={missingCount} />
       </div>
-
-      <section className="hr-profile-personal">
-        <h3>Informations personnelles</h3>
-        <div className="hr-profile-info-grid">
-          <ProfileInfo icon={<CalendarDays aria-hidden="true" size={17} />} label="Date de naissance" value={formatDateForDisplay(person.birthDate)} />
-          <ProfileInfo icon={<MapPin aria-hidden="true" size={17} />} label="Lieu de naissance" value={person.birthPlace} />
-          <ProfileInfo icon={<Mail aria-hidden="true" size={17} />} label="Email" value={person.email} />
-          <ProfileInfo icon={<Phone aria-hidden="true" size={17} />} label="Téléphone" value={person.phone} />
-        </div>
-      </section>
-
-      <nav aria-label="Contenu de la fiche RH" className="hr-profile-tabs">
-        {HR_PROFILE_TABS.map((tab) => (
-          <button
-            aria-current={activeTab === tab.key ? 'page' : undefined}
-            className={activeTab === tab.key ? 'is-active' : ''}
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            type="button"
-          >
-            <ProfileTabIcon tabKey={tab.key} />
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      <div className="hr-profile-documents">
-        <div className="hr-profile-section-title">
-          <h3>{HR_PROFILE_TABS.find((tab) => tab.key === activeTab)?.label}</h3>
-          <span>{tabDocuments.length}</span>
-        </div>
-        {documentGroups.length === 0 ? (
-          <p className="hr-profile-empty-state">Aucun élément dans cette rubrique.</p>
-        ) : (
-          documentGroups.map((group) => {
-            const isExpanded = !collapsedCategoryKeys.has(group.key);
-            return (
-              <section className="hr-profile-document-group" key={group.key}>
-                <button
-                  aria-label={`${group.label} ${group.documents.length}`}
-                  aria-expanded={isExpanded}
-                  className="hr-profile-document-group-heading"
-                  onClick={() => toggleCategory(group.key)}
-                  type="button"
-                >
-                  <span>
-                    {isExpanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
-                    {group.label}
-                  </span>
-                  <b>{group.documents.length}</b>
-                </button>
-                {isExpanded ? (
-                  <div className="hr-profile-document-list">
-                    {group.documents.map((document) => (
-                      <article className="hr-profile-document-row" key={document.id}>
-                        <label className="hr-profile-document-select">
-                          <input
-                            aria-label={`Sélectionner ${document.title}`}
-                            checked={selectedDocumentIds.has(document.id)}
-                            onChange={() => onDocumentSelect(document.id)}
-                            type="checkbox"
-                          />
-                        </label>
-                        <FileText aria-hidden="true" size={18} />
-                        <button className="hr-profile-document-main" onClick={() => onDocumentOpen(document)} type="button">
-                          <strong>{document.title}</strong>
-                          <small>{document.expiresOn ? `Expire le ${formatDateForDisplay(document.expiresOn)}` : 'Sans échéance'}</small>
-                        </button>
-                        <div className="hr-profile-document-state">
-                          <span className={`hr-document-status hr-document-${document.status}`}>
-                            {DOCUMENT_STATUS_LABELS[document.status]}
-                          </span>
-                          {isManager && isHrDocumentRenewalDue(document) ? (
-                            <button disabled={isSaving} onClick={() => onDocumentRenew(document)} type="button">
-                              Renouveler
-                            </button>
-                          ) : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-            );
-          })
-        )}
-        <button aria-label={`Ouvrir la fiche de ${formatPersonName(person)}`} className="hr-profile-open-details" onClick={onOpenDetails} type="button">
-          {isManager ? 'Ouvrir et modifier la fiche RH' : 'Voir la fiche RH complète'}
-        </button>
-      </div>
+      <PersonDetailsPanel
+        documents={documents}
+        isManager={isManager}
+        isSaving={isSaving}
+        onDocumentOpen={onDocumentOpen}
+        onDocumentRenew={onDocumentRenew}
+        onDocumentSelect={onDocumentSelect}
+        onSave={onSave}
+        person={person}
+        selectedDocumentIds={selectedDocumentIds}
+        visibleSectionKeys={visibleSectionKeys}
+      />
     </aside>
   );
 }
@@ -1810,18 +1618,6 @@ function ProfileMetric({ label, tone = 'neutral', value }: { label: string; tone
     <span className={`hr-profile-metric hr-profile-metric-${tone}`}>
       <strong>{value}</strong>
       <small>{label}</small>
-    </span>
-  );
-}
-
-function ProfileInfo({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <span className="hr-profile-info">
-      <i>{icon}</i>
-      <span>
-        <small>{label}</small>
-        <strong>{value || 'Non renseigné'}</strong>
-      </span>
     </span>
   );
 }
@@ -2240,25 +2036,31 @@ function VisibilitySettingsDialog({
   );
 }
 
-function PersonDetailsDialog({
+function PersonDetailsPanel({
   documents,
   isManager,
   isSaving,
-  onClose,
+  onDocumentOpen,
+  onDocumentRenew,
+  onDocumentSelect,
   onSave,
   person,
+  selectedDocumentIds,
   visibleSectionKeys,
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
   isSaving: boolean;
-  onClose: () => void;
+  onDocumentOpen: (document: HrDocumentRecord) => void;
+  onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentSelect: (documentId: number) => void;
   onSave: (
     personId: number,
     input: UpdatePersonDetailsInput,
     medicalUpdates: MedicalDocumentUpdate[],
   ) => Promise<void>;
   person: PersonRecord;
+  selectedDocumentIds: Set<number>;
   visibleSectionKeys: Set<HrDetailsSectionKey>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -2272,6 +2074,7 @@ function PersonDetailsDialog({
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
     setActiveSectionKey(availableSections[0]?.key || 'identity');
+    setIsEditing(false);
   }, [person]);
 
   useEffect(() => {
@@ -2505,7 +2308,6 @@ function PersonDetailsDialog({
                 </>
               )}
             </DetailsGrid>
-            <DocumentList documents={documents.filter((document) => document.categoryKey === 'administrative')} />
           </section>
         );
       case 'health':
@@ -2541,8 +2343,8 @@ function PersonDetailsDialog({
                 </>
               )}
             </DetailsGrid>
-            <DocumentList
-              documents={documents.filter((document) => document.categoryKey !== 'administrative')}
+            <MedicalDetailsList
+              documents={documents.filter((document) => document.categoryKey === 'medical_visit')}
               isEditing={isEditing}
               medicalForms={medicalForms}
               onMedicalFormUpdate={updateMedicalForm}
@@ -2584,58 +2386,50 @@ function PersonDetailsDialog({
             </DetailsGrid>
           </section>
         );
+      case 'documents':
+        return (
+          <ProfileDocumentsSection
+            documents={documents}
+            isManager={isManager}
+            isSaving={isSaving}
+            onDocumentOpen={onDocumentOpen}
+            onDocumentRenew={onDocumentRenew}
+            onDocumentSelect={onDocumentSelect}
+            selectedDocumentIds={selectedDocumentIds}
+          />
+        );
       default:
         return null;
     }
   }
 
   return (
-    <div aria-label={`Fiche RH ${formatPersonName(person)}`} aria-modal="true" className="hr-dialog-backdrop" role="dialog">
-      <div className="hr-dialog hr-details-dialog">
-        <div className="hr-dialog-header">
-          <div>
-            <p>Fiche RH</p>
-            <h2>{formatPersonName(person)}</h2>
-          </div>
-          <div className="hr-dialog-header-actions">
-            {isManager && !isEditing ? (
-              <button className="hr-secondary-button" onClick={() => setIsEditing(true)} type="button">
-                Modifier la fiche RH
-              </button>
-            ) : null}
-            <button aria-label="Fermer" className="hr-icon-button" onClick={onClose} type="button">
-              <X aria-hidden="true" size={18} />
+    <form className="hr-profile-editor" onSubmit={handleSubmit}>
+      <nav aria-label="Sections Fiche RH" className="hr-profile-tabs hr-profile-section-tabs">
+        {availableSections.map((section) => (
+          <button
+            aria-current={activeSectionKey === section.key ? 'page' : undefined}
+            aria-label={section.label}
+            className={activeSectionKey === section.key ? 'is-active' : ''}
+            key={section.key}
+            onClick={() => setActiveSectionKey(section.key)}
+            type="button"
+          >
+            <ProfileTabIcon tabKey={section.key} />
+            <span>{section.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="hr-profile-editor-toolbar">
+        <span>{isEditing ? 'Modification en cours' : isManager ? 'Informations à jour' : 'Lecture seule'}</span>
+        <div>
+          {isManager && !isEditing ? (
+            <button className="hr-secondary-button" onClick={() => setIsEditing(true)} type="button">
+              Modifier la fiche RH
             </button>
-          </div>
-        </div>
-        <form className="hr-details-form" onSubmit={handleSubmit}>
-          <div className="hr-details-layout">
-            <nav className="hr-section-nav" aria-label="Sections Fiche RH">
-              <div className="hr-section-nav-header">
-                <span>Sections</span>
-                <strong>Fiche RH</strong>
-              </div>
-              <ol>
-                {availableSections.map((section) => (
-                  <li key={section.key}>
-                    <button
-                      aria-current={activeSectionKey === section.key ? 'step' : undefined}
-                      aria-label={section.label}
-                      className={activeSectionKey === section.key ? 'is-active' : undefined}
-                      onClick={() => setActiveSectionKey(section.key)}
-                      type="button"
-                    >
-                      <b>{HR_DETAILS_SECTIONS.findIndex((candidate) => candidate.key === section.key) + 1}</b>
-                      <span>{section.label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            </nav>
-            <div className="hr-details-content">{renderActiveSection()}</div>
-          </div>
+          ) : null}
           {isEditing ? (
-            <div className="hr-dialog-footer">
+            <>
               <button
                 className="hr-secondary-button"
                 onClick={() => {
@@ -2648,17 +2442,126 @@ function PersonDetailsDialog({
                 Annuler
               </button>
               <button className="hr-primary-button" disabled={isSaving} type="submit">
-                Enregistrer la fiche
+                {isSaving ? 'Enregistrement...' : 'Enregistrer la fiche'}
               </button>
-            </div>
+            </>
           ) : null}
-        </form>
+        </div>
       </div>
-    </div>
+      <div className="hr-profile-editor-content">{renderActiveSection()}</div>
+    </form>
   );
 }
 
-function DocumentList({
+function ProfileDocumentsSection({
+  documents,
+  isManager,
+  isSaving,
+  onDocumentOpen,
+  onDocumentRenew,
+  onDocumentSelect,
+  selectedDocumentIds,
+}: {
+  documents: HrDocumentRecord[];
+  isManager: boolean;
+  isSaving: boolean;
+  onDocumentOpen: (document: HrDocumentRecord) => void;
+  onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentSelect: (documentId: number) => void;
+  selectedDocumentIds: Set<number>;
+}) {
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
+  const documentGroups = Array.from(
+    documents.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
+      result.set(document.categoryKey, (result.get(document.categoryKey) || []).concat(document));
+      return result;
+    }, new Map<string, HrDocumentRecord[]>()),
+  )
+    .map(([key, groupDocuments]) => ({
+      documents: sortDocumentsForTree(groupDocuments),
+      key,
+      label: getHrDocumentCategoryLabel(key),
+    }))
+    .sort((left, right) => compareHrCategories(left.key, right.key));
+
+  function toggleCategory(categoryKey: string) {
+    setCollapsedCategoryKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+      if (nextKeys.has(categoryKey)) {
+        nextKeys.delete(categoryKey);
+      } else {
+        nextKeys.add(categoryKey);
+      }
+      return nextKeys;
+    });
+  }
+
+  return (
+    <section>
+      <div className="hr-profile-section-title">
+        <h3>Documents</h3>
+        <span>{documents.length}</span>
+      </div>
+      {documentGroups.length === 0 ? (
+        <p className="hr-profile-empty-state">Aucun document lié à ce collaborateur.</p>
+      ) : (
+        documentGroups.map((group) => {
+          const isExpanded = !collapsedCategoryKeys.has(group.key);
+          return (
+            <section className="hr-profile-document-group" key={group.key}>
+              <button
+                aria-label={`${group.label} ${group.documents.length}`}
+                aria-expanded={isExpanded}
+                className="hr-profile-document-group-heading"
+                onClick={() => toggleCategory(group.key)}
+                type="button"
+              >
+                <span>
+                  {isExpanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
+                  {group.label}
+                </span>
+                <b>{group.documents.length}</b>
+              </button>
+              {isExpanded ? (
+                <div className="hr-profile-document-list">
+                  {group.documents.map((document) => (
+                    <article className="hr-profile-document-row" key={document.id}>
+                      <label className="hr-profile-document-select">
+                        <input
+                          aria-label={`Sélectionner ${document.title}`}
+                          checked={selectedDocumentIds.has(document.id)}
+                          onChange={() => onDocumentSelect(document.id)}
+                          type="checkbox"
+                        />
+                      </label>
+                      <FileText aria-hidden="true" size={18} />
+                      <button className="hr-profile-document-main" onClick={() => onDocumentOpen(document)} type="button">
+                        <strong>{document.title}</strong>
+                        <small>{document.expiresOn ? `Expire le ${formatDateForDisplay(document.expiresOn)}` : 'Sans échéance'}</small>
+                      </button>
+                      <div className="hr-profile-document-state">
+                        <span className={`hr-document-status hr-document-${document.status}`}>
+                          {DOCUMENT_STATUS_LABELS[document.status]}
+                        </span>
+                        {isManager && isHrDocumentRenewalDue(document) ? (
+                          <button disabled={isSaving} onClick={() => onDocumentRenew(document)} type="button">
+                            Renouveler
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          );
+        })
+      )}
+    </section>
+  );
+}
+
+function MedicalDetailsList({
   documents,
   isEditing = false,
   medicalForms = {},
@@ -2670,54 +2573,38 @@ function DocumentList({
   onMedicalFormUpdate?: (documentId: number, value: MedicalDetailsForm) => void;
 }) {
   if (documents.length === 0) {
-    return <p className="hr-muted">Aucun document renseigne.</p>;
+    return <p className="hr-muted">Aucune visite médicale liée.</p>;
   }
 
   return (
-    <ul className="hr-document-list">
+    <div className="hr-medical-visit-list">
       {documents.map((document) => {
-        const notesForDisplay = getDocumentNotesForDisplay(document.notes);
-        const documentHref = getDocumentFileHref(document.fileUrl);
         const medicalFitnessNote = buildMedicalFitnessNote(document);
         const medicalForm = medicalForms[document.id];
 
         return (
-          <li key={document.id}>
-            <span className="hr-document-main">
+          <section className="hr-medical-visit-card" key={document.id}>
+            <header>
               <strong>{document.title}</strong>
-              <small>{getHrDocumentCategoryLabel(document.categoryKey)}</small>
-              <span className="hr-document-meta">
-                {document.issuedOn ? <small>Delivre le {formatDateForDisplay(document.issuedOn)}</small> : null}
-                {document.expiresOn ? <small>Expire le {formatDateForDisplay(document.expiresOn)}</small> : null}
-                {document.sourceLabel ? <small>Source {document.sourceLabel}</small> : null}
+              <small>{document.expiresOn ? `Expire le ${formatDateForDisplay(document.expiresOn)}` : 'Sans échéance'}</small>
+            </header>
+            {isEditing && medicalForm && onMedicalFormUpdate ? (
+              <MedicalOptionsFields
+                disabled={false}
+                idPrefix={`profile-medical-${document.id}`}
+                onChange={(value) => onMedicalFormUpdate(document.id, value)}
+                value={medicalForm}
+              />
+            ) : medicalFitnessNote ? (
+              <span className={`hr-medical-note hr-medical-note-${medicalFitnessNote.tone}`}>
+                {medicalFitnessNote.lines.map((line) => (
+                  <small key={line}>{line}</small>
+                ))}
               </span>
-              {isEditing && medicalForm && onMedicalFormUpdate ? (
-                <MedicalOptionsFields
-                  disabled={false}
-                  idPrefix={`profile-medical-${document.id}`}
-                  onChange={(value) => onMedicalFormUpdate(document.id, value)}
-                  value={medicalForm}
-                />
-              ) : medicalFitnessNote ? (
-                <span className={`hr-medical-note hr-medical-note-${medicalFitnessNote.tone}`}>
-                  {medicalFitnessNote.lines.map((line) => (
-                    <small key={line}>{line}</small>
-                  ))}
-                </span>
-              ) : null}
-              {notesForDisplay ? <em>{notesForDisplay}</em> : null}
-            </span>
-            <span className="hr-document-actions">
-              <span className={`hr-document-status hr-document-${document.status}`}>{DOCUMENT_STATUS_LABELS[document.status]}</span>
-              {documentHref ? (
-                <a className="hr-document-link" href={documentHref} rel="noreferrer" target="_blank">
-                  Ouvrir le fichier
-                </a>
-              ) : null}
-            </span>
-          </li>
+            ) : null}
+          </section>
         );
       })}
-    </ul>
+    </div>
   );
 }

@@ -198,11 +198,10 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByRole('checkbox', { name: 'Actif' })).not.toBeInTheDocument();
 
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
-    expect(within(profile).getByText('Informations personnelles')).toBeInTheDocument();
-    expect(within(profile).getByRole('button', { name: 'Pont 1' })).toBeInTheDocument();
-    expect(within(profile).getByRole('button', { name: 'Visite Médicale 1' })).toBeInTheDocument();
-    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
-    expect(within(profile).getByText('Visite medicale')).toBeInTheDocument();
+    expect(within(profile).getByRole('button', { name: 'Identite et poste' })).toHaveAttribute('aria-current', 'page');
+    expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
+    expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
+    expect(within(profile).getByText('2009574')).toBeInTheDocument();
   });
 
   it('shows the selected collaborator in the profile card and collapses document categories', async () => {
@@ -212,6 +211,7 @@ describe('HumanResourcesPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
     const categoryToggle = within(profile).getByRole('button', { name: 'Pont 1' });
 
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
@@ -272,8 +272,10 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Effectif RH')).toHaveTextContent('1');
     await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
-    expect(screen.getByText('Visite medicale')).toBeInTheDocument();
-    expect(screen.getByText('Capitaine 200')).toBeInTheDocument();
+    const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    expect(within(profile).getByText('Visite medicale')).toBeInTheDocument();
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
   });
 
   it('filters the RH dashboard by search and can show inactive collaborators', async () => {
@@ -297,97 +299,78 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    const identitySection = within(profile).getByRole('button', { name: 'Identite et poste' });
+    const contractSection = within(profile).getByRole('button', { name: 'Contrat et dates' });
+    const contactSection = within(profile).getByRole('button', { name: 'Coordonnees' });
+    const emergencySection = within(profile).getByRole('button', { name: 'Contact urgence' });
+    const administrativeSection = within(profile).getByRole('button', { name: 'Documents administratifs' });
+    const healthSection = within(profile).getByRole('button', { name: 'Sante et habilitations' });
+    const clothingSection = within(profile).getByRole('button', { name: 'Tenues et mensurations' });
 
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    const identitySection = within(dialog).getByRole('button', { name: 'Identite et poste' });
-    const contractSection = within(dialog).getByRole('button', { name: 'Contrat et dates' });
-    const contactSection = within(dialog).getByRole('button', { name: 'Coordonnees' });
-    const emergencySection = within(dialog).getByRole('button', { name: 'Contact urgence' });
-    const administrativeSection = within(dialog).getByRole('button', { name: 'Documents administratifs' });
-    const healthSection = within(dialog).getByRole('button', { name: 'Sante et habilitations' });
-    const clothingSection = within(dialog).getByRole('button', { name: 'Tenues et mensurations' });
-
-    expect(identitySection).toHaveAttribute('aria-current', 'step');
-    expect(within(dialog).getByText('Numero de marin')).toBeInTheDocument();
-    expect(within(dialog).getByText('2009574')).toBeInTheDocument();
-    expect(within(dialog).getByText('Compte M365')).toBeInTheDocument();
-    expect(within(dialog).getByText('jean.martin@bbtm.fr')).toBeInTheDocument();
-    expect(within(dialog).queryByText('Date naissance')).not.toBeInTheDocument();
+    expect(identitySection).toHaveAttribute('aria-current', 'page');
+    expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
+    expect(within(profile).getByText('2009574')).toBeInTheDocument();
+    expect(within(profile).getByText('Compte M365')).toBeInTheDocument();
+    expect(within(profile).getByText('jean.martin@bbtm.fr')).toBeInTheDocument();
+    expect(within(profile).queryByText('Date naissance')).not.toBeInTheDocument();
 
     await user.click(contractSection);
 
-    expect(contractSection).toHaveAttribute('aria-current', 'step');
-    expect(within(dialog).getByText('Date naissance')).toBeInTheDocument();
-    expect(within(dialog).getByText('1985-04-12')).toBeInTheDocument();
-    expect(within(dialog).getByText('Lieu naissance')).toBeInTheDocument();
-    expect(within(dialog).getByText('Rouen')).toBeInTheDocument();
+    expect(contractSection).toHaveAttribute('aria-current', 'page');
+    expect(within(profile).getByText('Date naissance')).toBeInTheDocument();
+    expect(within(profile).getByText('1985-04-12')).toBeInTheDocument();
+    expect(within(profile).getByText('Lieu naissance')).toBeInTheDocument();
+    expect(within(profile).getByText('Rouen')).toBeInTheDocument();
 
     await user.click(contactSection);
 
-    expect(within(dialog).getByText('Adresse postale')).toBeInTheDocument();
-    expect(within(dialog).getByText('1 quai des pilotes, 76000 Rouen')).toBeInTheDocument();
+    expect(within(profile).getByText('Adresse postale')).toBeInTheDocument();
+    expect(within(profile).getByText('1 quai des pilotes, 76000 Rouen')).toBeInTheDocument();
 
     await user.click(emergencySection);
 
-    expect(within(dialog).getByText('Lien parente')).toBeInTheDocument();
-    expect(within(dialog).getByText('Conjointe')).toBeInTheDocument();
-    expect(within(dialog).getByText('Adresse urgence')).toBeInTheDocument();
-    expect(within(dialog).getByText('2 rue du Port, 76000 Rouen')).toBeInTheDocument();
+    expect(within(profile).getByText('Lien parente')).toBeInTheDocument();
+    expect(within(profile).getByText('Conjointe')).toBeInTheDocument();
+    expect(within(profile).getByText('Adresse urgence')).toBeInTheDocument();
+    expect(within(profile).getByText('2 rue du Port, 76000 Rouen')).toBeInTheDocument();
 
     await user.click(administrativeSection);
 
-    expect(within(dialog).getByText('Type document identite')).toBeInTheDocument();
-    expect(within(dialog).getByText('Passeport')).toBeInTheDocument();
-    expect(within(dialog).getByText('Numero document identite')).toBeInTheDocument();
-    expect(within(dialog).getByText('ID-12345')).toBeInTheDocument();
+    expect(within(profile).getByText('Type document identite')).toBeInTheDocument();
+    expect(within(profile).getByText('Passeport')).toBeInTheDocument();
+    expect(within(profile).getByText('Numero document identite')).toBeInTheDocument();
+    expect(within(profile).getByText('ID-12345')).toBeInTheDocument();
 
     await user.click(healthSection);
 
-    expect(within(dialog).getByText('Brevet Pont')).toBeInTheDocument();
-    expect(within(dialog).getByText('Brevet Machine')).toBeInTheDocument();
-    expect(within(dialog).getByText('Mecanicien 250 kW')).toBeInTheDocument();
-    expect(within(dialog).getByText('Formation grutage')).toBeInTheDocument();
-    expect(within(dialog).getByText('2025-03-10')).toBeInTheDocument();
+    expect(within(profile).getByText('Brevet Pont')).toBeInTheDocument();
+    expect(within(profile).getByText('Brevet Machine')).toBeInTheDocument();
+    expect(within(profile).getByText('Mecanicien 250 kW')).toBeInTheDocument();
+    expect(within(profile).getByText('Formation grutage')).toBeInTheDocument();
+    expect(within(profile).getByText('2025-03-10')).toBeInTheDocument();
 
     await user.click(clothingSection);
 
-    expect(within(dialog).getByText('Tour de taille')).toBeInTheDocument();
-    expect(within(dialog).getByText('84')).toBeInTheDocument();
-    expect(within(dialog).getByText('Pointure')).toBeInTheDocument();
-    expect(within(dialog).getByText('43')).toBeInTheDocument();
-    expect(within(dialog).getByText('Combinaison')).toBeInTheDocument();
-    expect(within(dialog).getByText('Veste')).toBeInTheDocument();
+    expect(within(profile).getByText('Tour de taille')).toBeInTheDocument();
+    expect(within(profile).getByText('84')).toBeInTheDocument();
+    expect(within(profile).getByText('Pointure')).toBeInTheDocument();
+    expect(within(profile).getByText('43')).toBeInTheDocument();
+    expect(within(profile).getByText('Combinaison')).toBeInTheDocument();
+    expect(within(profile).getByText('Veste')).toBeInTheDocument();
   });
 
-  it('shows HR document metadata and source file links in the personnel file', async () => {
+  it('shows linked HR documents in the Documents section', async () => {
     const user = userEvent.setup();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
-
-    const documentTitle = within(dialog).getByText('Visite medicale');
-    const documentItem = documentTitle.closest('li');
-
-    expect(documentItem).not.toBeNull();
-
-    if (!documentItem) {
-      return;
-    }
-
-    expect(within(documentItem).getByText('Delivre le 15/01/2025')).toBeInTheDocument();
-    expect(within(documentItem).getByText('Expire le 15/08/2026')).toBeInTheDocument();
-    expect(within(documentItem).getByText('Source SharePoint')).toBeInTheDocument();
-    expect(within(documentItem).queryByText('Validation capitaine requise')).not.toBeInTheDocument();
-    expect(within(documentItem).getByText('Est apte avec les restrictions suivantes : 2ème Catégorie')).toBeInTheDocument();
-    expect(within(documentItem).getByRole('link', { name: 'Ouvrir le fichier' })).toHaveAttribute(
-      'href',
-      'https://sharepoint.test/visite-medicale.pdf',
-    );
+    expect(within(profile).getByText('Visite medicale')).toBeInTheDocument();
+    expect(within(profile).getByText('Expire le 15/08/2026')).toBeInTheDocument();
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
   });
 
   it('uses controlled dropdowns for structured personnel fields', async () => {
@@ -395,13 +378,12 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Documents administratifs' }));
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Documents administratifs' }));
 
-    expect(within(dialog).getByLabelText('Type document identite')).toHaveRole('combobox');
-    expect(within(dialog).getByLabelText('Type document identite')).toHaveValue('Passeport');
+    expect(within(profile).getByLabelText('Type document identite')).toHaveRole('combobox');
+    expect(within(profile).getByLabelText('Type document identite')).toHaveValue('Passeport');
   });
 
   it('edits the medical visit statement directly from Sante et habilitations', async () => {
@@ -444,19 +426,17 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={client as never} roles={['armement']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Sante et habilitations' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
-
-    const withoutBridgeWatch = within(dialog).getByRole('checkbox', { name: /n'impliquant pas la veille/i });
-    const withBridgeWatch = within(dialog).getByRole('checkbox', { name: /y compris la veille/i });
+    const withoutBridgeWatch = within(profile).getByRole('checkbox', { name: /n'impliquant pas la veille/i });
+    const withBridgeWatch = within(profile).getByRole('checkbox', { name: /y compris la veille/i });
     expect(withoutBridgeWatch).toBeChecked();
 
     await user.click(withBridgeWatch);
-    await user.clear(within(dialog).getByLabelText('Est apte avec les restrictions suivantes'));
-    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await user.clear(within(profile).getByLabelText('Est apte avec les restrictions suivantes'));
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
 
     await waitFor(() =>
       expect(documentUpdate).toHaveBeenCalledWith({
@@ -466,9 +446,9 @@ describe('HumanResourcesPage', () => {
       }),
     );
     expect(documentEq).toHaveBeenCalledWith('id', documents[0].id);
-    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
+    await user.click(within(profile).getByRole('button', { name: 'Sante et habilitations' }));
     expect(
-      within(dialog).getByText(
+      within(profile).getByText(
         'Remplit les conditions médicales requises pour toutes les fonctions à bord y compris la veille à la passerelle',
       ),
     ).toBeInTheDocument();
@@ -486,13 +466,11 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={createClient([activePerson], documentsWithLibraryPath) as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    await user.click(within(dialog).getByRole('button', { name: 'Sante et habilitations' }));
-
-    expect(within(dialog).queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
-    expect(within(dialog).getByText('Note terrain conservee')).toBeInTheDocument();
+    expect(within(profile).queryByText(/sites\/QHSE\/Brevets et Visites Mdicales/i)).not.toBeInTheDocument();
+    expect(within(profile).getByText('Visite medicale')).toBeInTheDocument();
   });
 
   it('updates the structured personnel file for office roles', async () => {
@@ -529,20 +507,18 @@ describe('HumanResourcesPage', () => {
 
     render(<HumanResourcesPage client={client as never} roles={['armement']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Ouvrir la fiche de Jean MARTIN' }));
-
-    const dialog = screen.getByRole('dialog', { name: 'Fiche RH Jean MARTIN' });
-    await user.click(within(dialog).getByRole('button', { name: 'Modifier la fiche RH' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Coordonnees' }));
-    fireEvent.change(within(dialog).getByLabelText('Telephone'), { target: { value: '+33 6 11 22 33 44' } });
-    fireEvent.change(within(dialog).getByLabelText('Adresse postale'), {
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnees' }));
+    fireEvent.change(within(profile).getByLabelText('Telephone'), { target: { value: '+33 6 11 22 33 44' } });
+    fireEvent.change(within(profile).getByLabelText('Adresse postale'), {
       target: { value: '3 quai BBTM, 76600 Le Havre' },
     });
-    await user.click(within(dialog).getByRole('button', { name: 'Contrat et dates' }));
-    fireEvent.change(within(dialog).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
-    await user.click(within(dialog).getByRole('button', { name: 'Tenues et mensurations' }));
-    fireEvent.change(within(dialog).getByLabelText('Tour de taille'), { target: { value: '90' } });
-    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    fireEvent.change(within(profile).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
+    await user.click(within(profile).getByRole('button', { name: 'Tenues et mensurations' }));
+    fireEvent.change(within(profile).getByLabelText('Tour de taille'), { target: { value: '90' } });
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
 
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith(
@@ -556,10 +532,10 @@ describe('HumanResourcesPage', () => {
     );
     expect(eq).toHaveBeenCalledWith('id', 1);
     expect(await screen.findByText('Fiche collaborateur mise a jour.')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Coordonnees' }));
-    expect(within(dialog).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Contrat et dates' }));
-    expect(within(dialog).getByText('CDD')).toBeInTheDocument();
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnees' }));
+    expect(within(profile).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    expect(within(profile).getByText('CDD')).toBeInTheDocument();
   });
 
   it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {
@@ -645,7 +621,7 @@ describe('HumanResourcesPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
-    expect(screen.getByText('Lecture seule')).toBeInTheDocument();
+    expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
     expect(screen.queryByText('Brevet pont a rattacher')).not.toBeInTheDocument();
   });
