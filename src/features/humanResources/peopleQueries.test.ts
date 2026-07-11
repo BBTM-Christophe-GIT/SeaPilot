@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildHumanResourcesDashboard,
+  buildHumanResourcesRosterGroups,
   buildStaffEvolution,
   createPerson,
   fetchHumanResourcesData,
@@ -406,6 +407,29 @@ describe('HR function ordering', () => {
     );
 
     expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', '2nd Capitaine']);
+  });
+
+  it('groups the specified office functions under a two-level Sedentaire branch', () => {
+    const dashboard = buildHumanResourcesDashboard(
+      mapPersonRows([
+        { ...personRow, id: 1, function_label: '1-Capitaine' },
+        { ...personRow, id: 2, function_label: 'Fleet Technical Manager' },
+        { ...personRow, id: 3, function_label: 'Pr\u00e9sident' },
+        { ...personRow, id: 4, function_label: 'Directrice Administrative et Financi\u00e8re' },
+      ]),
+      [],
+    );
+
+    const rosterGroups = buildHumanResourcesRosterGroups(dashboard.groups);
+    const sedentaryGroup = rosterGroups.find((group) => group.label === 'S\u00e9dentaire');
+
+    expect(rosterGroups.map((group) => group.label)).toEqual(['Capitaine', 'S\u00e9dentaire']);
+    expect(sedentaryGroup?.children?.map((group) => group.label)).toEqual([
+      'Directrice Administrative et Financi\u00e8re',
+      'Fleet Technical Manager',
+      'Pr\u00e9sident',
+    ]);
+    expect(sedentaryGroup?.people).toHaveLength(3);
   });
 });
 
