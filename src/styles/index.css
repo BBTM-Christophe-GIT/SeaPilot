@@ -3009,7 +3009,7 @@ button:disabled {
 
 .hr-master-detail-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1.08fr) minmax(420px, 0.92fr);
+  grid-template-columns: minmax(290px, 1fr) minmax(0, 2fr);
   gap: 14px;
   align-items: start;
 }
@@ -3019,6 +3019,10 @@ button:disabled {
 }
 
 .hr-master-detail-layout .hr-roster-panel .hr-search-field {
+  grid-column: 1 / -1;
+}
+
+.hr-master-detail-layout .hr-roster-panel .hr-filter-collaborator {
   grid-column: 1 / -1;
 }
 
@@ -3070,7 +3074,7 @@ button:disabled {
   display: grid;
   width: 100%;
   min-height: 48px;
-  grid-template-columns: 30px minmax(140px, 1fr) 46px 62px 46px 16px;
+  grid-template-columns: 30px minmax(0, 1fr) 42px 56px 16px;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -3173,7 +3177,7 @@ button:disabled {
   display: grid;
   min-width: 0;
   max-height: calc(100vh - 86px);
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid #d7e0eb;
   border-radius: 12px;
@@ -3392,7 +3396,7 @@ button:disabled {
 
 .hr-profile-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   border-top: 1px solid #e1e7ef;
   border-bottom: 1px solid #e1e7ef;
 }
@@ -3424,7 +3428,7 @@ button:disabled {
 .hr-profile-tabs button span {
   overflow: hidden;
   max-width: 100%;
-  font-size: 0.56rem;
+  font-size: 0.53rem;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3436,6 +3440,91 @@ button:disabled {
 
 .hr-profile-tabs button.is-active::after {
   background: #1769e8;
+}
+
+.hr-profile-editor {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.hr-profile-editor-toolbar {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e7ecf2;
+  padding: 9px 18px;
+  background: #fbfcfe;
+}
+
+.hr-profile-editor-toolbar > span {
+  color: #718099;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.hr-profile-editor-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hr-profile-editor-toolbar button {
+  min-height: 34px;
+  padding: 7px 12px;
+  font-size: 0.72rem;
+}
+
+.hr-profile-editor-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 24px;
+}
+
+.hr-profile-editor-content > section {
+  display: grid;
+  gap: 14px;
+}
+
+.hr-profile-editor-content h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.hr-medical-visit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.hr-medical-visit-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbe3ed;
+  border-radius: 9px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.hr-medical-visit-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hr-medical-visit-card > header strong {
+  color: #213552;
+  font-size: 0.78rem;
+}
+
+.hr-medical-visit-card > header small {
+  color: #74839a;
+  font-size: 0.65rem;
 }
 
 .hr-profile-documents {
@@ -3832,7 +3921,24 @@ button:disabled {
 
   .hr-profile-tabs {
     overflow-x: auto;
-    grid-template-columns: repeat(5, minmax(82px, 1fr));
+    grid-template-columns: repeat(8, minmax(88px, 1fr));
+  }
+
+  .hr-profile-editor-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hr-profile-editor-toolbar > div {
+    justify-content: stretch;
+  }
+
+  .hr-profile-editor-toolbar button {
+    flex: 1 1 auto;
+  }
+
+  .hr-profile-editor-content {
+    padding: 16px;
   }
 
   .hr-profile-document-row {
