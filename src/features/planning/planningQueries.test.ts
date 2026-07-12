@@ -114,6 +114,11 @@ describe('planning mappers', () => {
         firstName: 'Paul',
         lastName: 'DURAND',
         functionLabel: 'Matelot',
+        gradeLabel: '',
+        roleLabel: '',
+        contractType: '',
+        hiredOn: '',
+        departedOn: '',
         active: true,
       },
     ]);
@@ -266,6 +271,9 @@ describe('fetchPlanningOverview', () => {
       assignments: mapPlanningAssignmentOverviewRows([assignmentOverviewRow]),
       days: mapPlanningDayRows([planningDayRow]),
       periods: mapPlanningPeriodRows([planningPeriodRow]),
+      projects: [],
+      certificates: [],
+      hrDocuments: [],
     });
 
     expect(from).toHaveBeenCalledWith('vessels');
@@ -340,6 +348,9 @@ describe('fetchPlanningOverview', () => {
       ],
       days: [],
       periods: [],
+      projects: [],
+      certificates: [],
+      hrDocuments: [],
     });
   });
 });

@@ -1,13 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const VESSEL_SELECT = 'id, name, acronym, active';
-const PLANNING_PERSON_SELECT = 'id, first_name, last_name, function_label, active';
+const PLANNING_PERSON_SELECT =
+  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, active';
 const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, source_label';
 const PLANNING_DAY_SELECT =
   'id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
 const PLANNING_PERIOD_SELECT =
   'id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
+const PLANNING_PROJECT_SELECT =
+  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, status, source_label';
+const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
+const PLANNING_HR_DOCUMENT_SELECT = 'id, person_id, person_name, title, status, expires_on, file_url';
 
 interface VesselRow {
   id: number;
@@ -21,6 +26,11 @@ interface PlanningPersonRow {
   first_name: string;
   last_name: string;
   function_label: string | null;
+  grade_label?: string | null;
+  role_label?: string | null;
+  contract_type?: string | null;
+  hired_on?: string | null;
+  departed_on?: string | null;
   active: boolean;
 }
 
@@ -84,6 +94,41 @@ interface PlanningPeriodRow {
   source_label: string;
 }
 
+interface PlanningProjectRow {
+  id: number;
+  title: string;
+  starts_on: string | null;
+  ends_on: string | null;
+  description: string | null;
+  client_name: string | null;
+  primary_vessel_id: number | null;
+  primary_vessel_name: string | null;
+  secondary_vessel_id: number | null;
+  secondary_vessel_name: string | null;
+  status: string | null;
+  source_label: string;
+}
+
+interface PlanningCertificateRow {
+  id: number;
+  vessel_id: number | null;
+  vessel_name: string | null;
+  title: string;
+  status: string | null;
+  expires_on: string | null;
+  file_url: string | null;
+}
+
+interface PlanningHrDocumentRow {
+  id: number;
+  person_id: number | null;
+  person_name: string | null;
+  title: string;
+  status: string | null;
+  expires_on: string | null;
+  file_url: string | null;
+}
+
 export interface PlanningVessel {
   id: number;
   name: string;
@@ -96,6 +141,11 @@ export interface PlanningPerson {
   firstName: string;
   lastName: string;
   functionLabel: string;
+  gradeLabel: string;
+  roleLabel: string;
+  contractType: string;
+  hiredOn: string;
+  departedOn: string;
   active: boolean;
 }
 
@@ -154,12 +204,50 @@ export interface PlanningPeriodRecord {
   sourceLabel: string;
 }
 
+export interface PlanningProjectRecord {
+  id: number;
+  title: string;
+  startsOn: string;
+  endsOn: string;
+  description: string;
+  clientName: string;
+  primaryVesselId: number | null;
+  primaryVesselName: string;
+  secondaryVesselId: number | null;
+  secondaryVesselName: string;
+  status: string;
+  sourceLabel: string;
+}
+
+export interface PlanningCertificateRecord {
+  id: number;
+  vesselId: number | null;
+  vesselName: string;
+  title: string;
+  status: string;
+  expiresOn: string;
+  fileUrl: string;
+}
+
+export interface PlanningHrDocumentRecord {
+  id: number;
+  personId: number | null;
+  personName: string;
+  title: string;
+  status: string;
+  expiresOn: string;
+  fileUrl: string;
+}
+
 export interface PlanningOverview {
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   assignments: PlanningAssignmentRecord[];
   days: PlanningDayRecord[];
   periods: PlanningPeriodRecord[];
+  projects: PlanningProjectRecord[];
+  certificates: PlanningCertificateRecord[];
+  hrDocuments: PlanningHrDocumentRecord[];
 }
 
 export interface CreateVesselInput {
@@ -211,6 +299,11 @@ export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson
     firstName: row.first_name,
     lastName: row.last_name,
     functionLabel: row.function_label || '',
+    gradeLabel: row.grade_label || '',
+    roleLabel: row.role_label || '',
+    contractType: row.contract_type || '',
+    hiredOn: row.hired_on || '',
+    departedOn: row.departed_on || '',
     active: row.active,
   }));
 }
@@ -309,6 +402,47 @@ export function mapPlanningPeriodRows(rows: PlanningPeriodRow[]): PlanningPeriod
   }));
 }
 
+export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProjectRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    startsOn: textOrEmpty(row.starts_on),
+    endsOn: textOrEmpty(row.ends_on || row.starts_on),
+    description: textOrEmpty(row.description),
+    clientName: textOrEmpty(row.client_name),
+    primaryVesselId: row.primary_vessel_id,
+    primaryVesselName: textOrEmpty(row.primary_vessel_name),
+    secondaryVesselId: row.secondary_vessel_id,
+    secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
+    status: textOrEmpty(row.status) || 'A planifier',
+    sourceLabel: row.source_label,
+  }));
+}
+
+export function mapPlanningCertificateRows(rows: PlanningCertificateRow[]): PlanningCertificateRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    vesselName: textOrEmpty(row.vessel_name) || 'Navire non renseigné',
+    title: row.title,
+    status: textOrEmpty(row.status),
+    expiresOn: textOrEmpty(row.expires_on),
+    fileUrl: textOrEmpty(row.file_url),
+  }));
+}
+
+export function mapPlanningHrDocumentRows(rows: PlanningHrDocumentRow[]): PlanningHrDocumentRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    personId: row.person_id,
+    personName: textOrEmpty(row.person_name),
+    title: row.title,
+    status: textOrEmpty(row.status),
+    expiresOn: textOrEmpty(row.expires_on),
+    fileUrl: textOrEmpty(row.file_url),
+  }));
+}
+
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
   const { data, error } = await client.from('vessels').select(VESSEL_SELECT).order('name', { ascending: true });
 
@@ -373,13 +507,44 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
   return mapPlanningPeriodRows((data || []) as PlanningPeriodRow[]);
 }
 
+export async function fetchPlanningProjects(client: SupabaseClient): Promise<PlanningProjectRecord[]> {
+  const { data, error } = await client
+    .from('planning_projects')
+    .select(PLANNING_PROJECT_SELECT)
+    .order('starts_on', { ascending: true, nullsFirst: false })
+    .order('title', { ascending: true });
+  if (error) throw error;
+  return mapPlanningProjectRows((data || []) as unknown as PlanningProjectRow[]);
+}
+
+export async function fetchPlanningCertificates(client: SupabaseClient): Promise<PlanningCertificateRecord[]> {
+  const { data, error } = await client
+    .from('fleet_certificates')
+    .select(PLANNING_CERTIFICATE_SELECT)
+    .order('expires_on', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return mapPlanningCertificateRows((data || []) as unknown as PlanningCertificateRow[]);
+}
+
+export async function fetchPlanningHrDocuments(client: SupabaseClient): Promise<PlanningHrDocumentRecord[]> {
+  const { data, error } = await client
+    .from('hr_documents')
+    .select(PLANNING_HR_DOCUMENT_SELECT)
+    .order('expires_on', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return mapPlanningHrDocumentRows((data || []) as unknown as PlanningHrDocumentRow[]);
+}
+
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
     fetchPlanningPeriods(client),
+    fetchPlanningProjects(client).catch(() => []),
+    fetchPlanningCertificates(client).catch(() => []),
+    fetchPlanningHrDocuments(client).catch(() => []),
   ]);
 
   return {
@@ -388,6 +553,9 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
     days,
     periods,
+    projects,
+    certificates,
+    hrDocuments,
   };
 }
 

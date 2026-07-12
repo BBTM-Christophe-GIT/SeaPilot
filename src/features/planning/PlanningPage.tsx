@@ -1,33 +1,69 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CalendarDays, Ship, UserRoundPlus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Copy,
+  Expand,
+  Minus,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings2,
+  Ship,
+  UserRoundPlus,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import plannedIcon from './assets/icone_a_planifier.svg';
+import billedIcon from './assets/icone_a_facturer.svg';
+import validIcon from './assets/icone_valide.svg';
+import {
+  addPlanningDays,
+  buildPlanningCertificateAlerts,
+  buildPlanningCrewRows,
+  buildPlanningHrAlerts,
+  buildPlanningMonthSegments,
+  buildPlanningTimeline,
+  dateGridPlacement,
+  formatPlanningDate,
+  formatPlanningPerson,
+  getUnassignedPlanningPeople,
+  getUnbilledPlanningProjects,
+  isoDate,
+  planningPeriodTitle,
+  planningStatusTone,
+  projectStatusTone,
+  shiftPlanningAnchor,
+  timelineRange,
+  type PlanningCrewEvent,
+  type PlanningCrewRow,
+  type PlanningFilters,
+  type PlanningViewMode,
+} from './planningModel';
 import {
   createPlanningAssignment,
-  createVessel,
   fetchPlanningOverview,
-  formatPlanningPersonName,
   mapPlanningAssignmentRows,
-  type PlanningAssignmentRecord,
-  type PlanningDayRecord,
   type PlanningOverview,
-  type PlanningPeriodRecord,
   type PlanningPerson,
+  type PlanningProjectRecord,
   type PlanningVessel,
 } from './planningQueries';
 
 interface PlanningPageProps {
   client?: SupabaseClient;
   roles?: RoleKey[];
-}
-
-interface VesselFormState {
-  name: string;
-  acronym: string;
 }
 
 interface AssignmentFormState {
@@ -39,13 +75,7 @@ interface AssignmentFormState {
   assignmentRole: string;
 }
 
-interface PlanningFilterState {
-  vesselName: string;
-  personName: string;
-  startsOn: string;
-  endsOn: string;
-  status: string;
-}
+type SideTab = 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
 const EMPTY_OVERVIEW: PlanningOverview = {
   vessels: [],
@@ -53,65 +83,36 @@ const EMPTY_OVERVIEW: PlanningOverview = {
   assignments: [],
   days: [],
   periods: [],
+  projects: [],
+  certificates: [],
+  hrDocuments: [],
 };
 
-const EMPTY_VESSEL_FORM: VesselFormState = {
-  name: '',
-  acronym: '',
-};
-
-const EMPTY_ASSIGNMENT_FORM: AssignmentFormState = {
+const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '' };
+const EMPTY_ASSIGNMENT: AssignmentFormState = {
   vesselId: '',
   captainPersonId: '',
   crewPersonId: '',
   startsOn: '',
   endsOn: '',
-  assignmentRole: 'crew',
+  assignmentRole: 'Équipage',
 };
 
-const EMPTY_PLANNING_FILTERS: PlanningFilterState = {
-  vesselName: '',
-  personName: '',
-  startsOn: '',
-  endsOn: '',
-  status: '',
-};
+const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
+  { key: 'certificates', label: 'Certificats' },
+  { key: 'unassigned', label: 'Marins non affectés' },
+  { key: 'billing', label: 'Facturation' },
+  { key: 'alerts', label: 'Alertes' },
+];
 
 function canManagePlanning(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
 
-function sortVessels(vessels: PlanningVessel[]): PlanningVessel[] {
-  return [...vessels].sort((left, right) => left.name.localeCompare(right.name, 'fr'));
-}
-
-function sortAssignments(assignments: PlanningAssignmentRecord[]): PlanningAssignmentRecord[] {
-  return [...assignments].sort(
-    (left, right) =>
-      left.startsOn.localeCompare(right.startsOn) ||
-      left.endsOn.localeCompare(right.endsOn) ||
-      left.vesselName.localeCompare(right.vesselName, 'fr') ||
-      left.crewName.localeCompare(right.crewName, 'fr'),
-  );
-}
-
-function sortPlanningDays(days: PlanningDayRecord[]): PlanningDayRecord[] {
-  return [...days].sort(
-    (left, right) =>
-      left.workDate.localeCompare(right.workDate) ||
-      left.vesselName.localeCompare(right.vesselName, 'fr') ||
-      left.crewName.localeCompare(right.crewName, 'fr'),
-  );
-}
-
-function sortPlanningPeriods(periods: PlanningPeriodRecord[]): PlanningPeriodRecord[] {
-  return [...periods].sort(
-    (left, right) =>
-      left.startsOn.localeCompare(right.startsOn) ||
-      left.endsOn.localeCompare(right.endsOn) ||
-      left.vesselName.localeCompare(right.vesselName, 'fr') ||
-      left.crewName.localeCompare(right.crewName, 'fr'),
-  );
+function projectStatusIcon(project: PlanningProjectRecord): string {
+  const tone = projectStatusTone(project.status);
+  return tone === 'valid' ? validIcon : tone === 'billed' ? billedIcon : plannedIcon;
 }
 
 function vesselOptionLabel(vessel: PlanningVessel): string {
@@ -119,76 +120,23 @@ function vesselOptionLabel(vessel: PlanningVessel): string {
 }
 
 function personOptionLabel(person: PlanningPerson): string {
-  const functionSuffix = person.functionLabel ? ` - ${person.functionLabel}` : '';
-  return `${formatPlanningPersonName(person)}${functionSuffix}`;
+  return `${formatPlanningPerson(person)}${person.functionLabel ? ` · ${person.functionLabel}` : ''}`;
 }
 
-function displayText(value: string): string {
-  return value || '-';
-}
-
-function displayHours(value: number | null): string {
-  return value === null ? '-' : `${value} h`;
+function todayIso(): string {
+  const now = new Date();
+  return isoDate(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())));
 }
 
 function uniqueSorted(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, 'fr'));
 }
 
-function isPeriodWithinFilter(startsOn: string, endsOn: string, filters: PlanningFilterState): boolean {
-  return (!filters.startsOn || endsOn >= filters.startsOn) && (!filters.endsOn || startsOn <= filters.endsOn);
-}
-
-function isDayWithinFilter(workDate: string, filters: PlanningFilterState): boolean {
-  return (!filters.startsOn || workDate >= filters.startsOn) && (!filters.endsOn || workDate <= filters.endsOn);
-}
-
-function assignmentMatchesFilters(assignment: PlanningAssignmentRecord, filters: PlanningFilterState): boolean {
-  if (filters.vesselName && assignment.vesselName !== filters.vesselName) {
-    return false;
-  }
-
-  if (filters.personName && assignment.crewName !== filters.personName && assignment.captainName !== filters.personName) {
-    return false;
-  }
-
-  if (!isPeriodWithinFilter(assignment.startsOn, assignment.endsOn, filters)) {
-    return false;
-  }
-
-  return !filters.status;
-}
-
-function dayMatchesFilters(day: PlanningDayRecord, filters: PlanningFilterState): boolean {
-  if (filters.vesselName && day.vesselName !== filters.vesselName) {
-    return false;
-  }
-
-  if (filters.personName && day.crewName !== filters.personName && day.captainName !== filters.personName) {
-    return false;
-  }
-
-  if (!isDayWithinFilter(day.workDate, filters)) {
-    return false;
-  }
-
-  return !filters.status || day.sailorStatus === filters.status || day.dayStatus === filters.status;
-}
-
-function periodMatchesFilters(period: PlanningPeriodRecord, filters: PlanningFilterState): boolean {
-  if (filters.vesselName && period.vesselName !== filters.vesselName) {
-    return false;
-  }
-
-  if (filters.personName && period.crewName !== filters.personName) {
-    return false;
-  }
-
-  if (!isPeriodWithinFilter(period.startsOn, period.endsOn, filters)) {
-    return false;
-  }
-
-  return !filters.status || period.sailorStatus === filters.status;
+function timelineStyle(dayWidth: number, dayCount: number) {
+  return {
+    '--planning-day-width': `${dayWidth}px`,
+    '--planning-day-count': dayCount,
+  } as React.CSSProperties;
 }
 
 export function PlanningPage({ client, roles }: PlanningPageProps) {
@@ -196,145 +144,127 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePlanning(effectiveRoles);
+  const workspaceRef = useRef<HTMLElement>(null);
   const [overview, setOverview] = useState<PlanningOverview>(EMPTY_OVERVIEW);
-  const [vesselForm, setVesselForm] = useState<VesselFormState>(EMPTY_VESSEL_FORM);
-  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(EMPTY_ASSIGNMENT_FORM);
-  const [filters, setFilters] = useState<PlanningFilterState>(EMPTY_PLANNING_FILTERS);
+  const [anchorDate, setAnchorDate] = useState(todayIso);
+  const [viewMode, setViewMode] = useState<PlanningViewMode>('month');
+  const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
+  const [dayWidth, setDayWidth] = useState(34);
+  const [sideTab, setSideTab] = useState<SideTab>('certificates');
+  const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set());
+  const [selectedEvent, setSelectedEvent] = useState<PlanningCrewEvent | null>(null);
+  const [selectedProject, setSelectedProject] = useState<PlanningProjectRecord | null>(null);
+  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(EMPTY_ASSIGNMENT);
+  const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showWeekends, setShowWeekends] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-
+  const loadPlanning = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
-
-    fetchPlanningOverview(effectiveClient)
-      .then((loadedOverview) => {
-        if (isMounted) {
-          setOverview({
-            vessels: sortVessels(loadedOverview.vessels),
-            people: loadedOverview.people,
-            assignments: sortAssignments(loadedOverview.assignments),
-            days: sortPlanningDays(loadedOverview.days),
-            periods: sortPlanningPeriods(loadedOverview.periods),
-          });
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setErrorMessage('Impossible de charger le planning.');
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    try {
+      setOverview(await fetchPlanningOverview(effectiveClient));
+    } catch {
+      setErrorMessage('Impossible de charger le planning.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [effectiveClient]);
 
+  useEffect(() => {
+    void loadPlanning();
+  }, [loadPlanning]);
+
+  useEffect(() => {
+    const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
+    document.addEventListener('fullscreenchange', handleFullscreen);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreen);
+  }, []);
+
+  const days = useMemo(() => {
+    const fullTimeline = buildPlanningTimeline(anchorDate, viewMode);
+    return showWeekends ? fullTimeline : fullTimeline.filter((day) => !day.isWeekend);
+  }, [anchorDate, showWeekends, viewMode]);
+  const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
+  const range = useMemo(() => timelineRange(days), [days]);
+  const rows = useMemo(() => buildPlanningCrewRows(overview, days, filters), [days, filters, overview]);
+  const visibleRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (row.type === 'vessel') return true;
+        if (collapsedRows.has(row.vesselKey)) return false;
+        return row.type !== 'person' || !collapsedRows.has(row.boardKey);
+      }),
+    [collapsedRows, rows],
+  );
+  const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(overview, todayIso()), [overview]);
+  const hrAlerts = useMemo(() => buildPlanningHrAlerts(overview, todayIso()), [overview]);
+  const unassignedPeople = useMemo(() => getUnassignedPlanningPeople(overview, range, filters), [filters, overview, range]);
+  const unbilledProjects = useMemo(
+    () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
+    [anchorDate, overview],
+  );
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
-  const vesselFilterOptions = useMemo(
+  const vesselOptions = useMemo(
     () =>
       uniqueSorted([
-        ...overview.assignments.map((assignment) => assignment.vesselName),
-        ...overview.days.map((day) => day.vesselName),
+        ...overview.vessels.map((vessel) => vessel.name),
         ...overview.periods.map((period) => period.vesselName),
+        ...overview.assignments.map((assignment) => assignment.vesselName),
       ]),
-    [overview.assignments, overview.days, overview.periods],
+    [overview],
   );
-  const personFilterOptions = useMemo(
-    () =>
-      uniqueSorted([
-        ...overview.assignments.flatMap((assignment) => [assignment.crewName, assignment.captainName === '-' ? '' : assignment.captainName]),
-        ...overview.days.flatMap((day) => [day.crewName, day.captainName]),
-        ...overview.periods.map((period) => period.crewName),
-      ]),
-    [overview.assignments, overview.days, overview.periods],
+  const personOptions = useMemo(
+    () => uniqueSorted(overview.people.map(formatPlanningPerson).concat(overview.periods.map((period) => period.crewName))),
+    [overview.people, overview.periods],
   );
-  const statusFilterOptions = useMemo(
-    () =>
-      uniqueSorted([
-        ...overview.days.flatMap((day) => [day.sailorStatus, day.dayStatus]),
-        ...overview.periods.map((period) => period.sailorStatus),
-      ]),
-    [overview.days, overview.periods],
-  );
-  const filteredAssignments = useMemo(
-    () => overview.assignments.filter((assignment) => assignmentMatchesFilters(assignment, filters)),
-    [filters, overview.assignments],
-  );
-  const filteredDays = useMemo(() => overview.days.filter((day) => dayMatchesFilters(day, filters)), [filters, overview.days]);
-  const filteredPeriods = useMemo(
-    () => overview.periods.filter((period) => periodMatchesFilters(period, filters)),
-    [filters, overview.periods],
-  );
-  const hasActiveFilters = Object.values(filters).some(Boolean);
 
-  function updateVesselFormValue(key: keyof VesselFormState, value: string) {
-    setVesselForm((currentForm) => ({
-      ...currentForm,
-      [key]: value,
-    }));
+  const tabCounts: Record<SideTab, number> = {
+    certificates: certificateAlerts.filter((alert) => alert.tone === 'danger').length || certificateAlerts.length,
+    unassigned: unassignedPeople.length,
+    billing: unbilledProjects.length,
+    alerts: hrAlerts.length,
+  };
+
+  function toggleCollapsed(key: string) {
+    setCollapsedRows((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
-  function updateAssignmentFormValue(key: keyof AssignmentFormState, value: string) {
-    setAssignmentForm((currentForm) => ({
-      ...currentForm,
-      [key]: value,
-    }));
+  function collapseAll() {
+    setCollapsedRows(new Set(rows.filter((row) => row.type === 'vessel').map((row) => row.key)));
   }
 
-  function updateFilterValue(key: keyof PlanningFilterState, value: string) {
-    setFilters((currentFilters) => ({
-      ...currentFilters,
-      [key]: value,
-    }));
+  function expandAll() {
+    setCollapsedRows(new Set());
   }
 
-  async function handleCreateVessel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatusMessage(null);
-    setErrorMessage(null);
-    setIsSaving(true);
-
-    try {
-      const vessel = await createVessel(effectiveClient, vesselForm);
-      setOverview((currentOverview) => ({
-        ...currentOverview,
-        vessels: sortVessels([...currentOverview.vessels, vessel]),
-      }));
-      setVesselForm(EMPTY_VESSEL_FORM);
-      setStatusMessage('Navire ajoute.');
-    } catch {
-      setErrorMessage("Impossible d'ajouter ce navire.");
-    } finally {
-      setIsSaving(false);
-    }
+  function openAssignment(prefill?: Partial<AssignmentFormState>) {
+    const defaultStart = range.start || anchorDate;
+    setAssignmentForm({ ...EMPTY_ASSIGNMENT, startsOn: defaultStart, endsOn: addPlanningDays(defaultStart, 6), ...prefill });
+    setIsAssignmentOpen(true);
   }
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatusMessage(null);
-    setErrorMessage(null);
     setIsSaving(true);
-
+    setErrorMessage(null);
     try {
-      const assignmentRow = await createPlanningAssignment(effectiveClient, assignmentForm);
-      const [assignment] = mapPlanningAssignmentRows([assignmentRow], overview.people, overview.vessels);
-      setOverview((currentOverview) => ({
-        ...currentOverview,
-        assignments: sortAssignments([...currentOverview.assignments, assignment]),
-      }));
-      setAssignmentForm(EMPTY_ASSIGNMENT_FORM);
-      setStatusMessage('Affectation ajoutee.');
+      const row = await createPlanningAssignment(effectiveClient, assignmentForm);
+      const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
+      setOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
+      setStatusMessage('Affectation ajoutée au planning.');
+      setIsAssignmentOpen(false);
     } catch {
       setErrorMessage("Impossible d'ajouter cette affectation.");
     } finally {
@@ -342,338 +272,262 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     }
   }
 
-  if (isLoading) {
-    return <div className="admin-state">Chargement du planning...</div>;
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await workspaceRef.current?.requestFullscreen();
+    } catch {
+      setErrorMessage("Le plein écran n'est pas disponible dans ce navigateur.");
+    }
   }
 
+  function duplicateSelectedEvent() {
+    if (!selectedEvent || selectedEvent.kind !== 'assignment') return;
+    const vessel = activeVessels.find((item) => item.name === selectedEvent.vessel);
+    const person = activePeople.find((item) => formatPlanningPerson(item) === selectedEvent.person);
+    openAssignment({
+      vesselId: vessel ? String(vessel.id) : '',
+      crewPersonId: person ? String(person.id) : '',
+      startsOn: selectedEvent.startsOn,
+      endsOn: selectedEvent.endsOn,
+      assignmentRole: selectedEvent.functionLabel || 'Équipage',
+    });
+  }
+
+  if (isLoading) return <div className="admin-state">Chargement du planning...</div>;
+
   return (
-    <section className="planning-page">
-      <div className="admin-header">
+    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}`} ref={workspaceRef}>
+      <header className="planning-command-header">
         <div>
           <p className="module-family">Planning</p>
-          <h1>Planning</h1>
+          <h1 aria-label="Planning">Planning BBTM</h1>
         </div>
-        <div className="planning-summary-grid">
-          <div className="planning-summary" aria-label="Affectations planning">
-            <CalendarDays aria-hidden="true" size={18} />
-            <strong>{filteredAssignments.length}</strong>
-            <span>{filteredAssignments.length > 1 ? 'affectations' : 'affectation'}</span>
-          </div>
-          <div className="planning-summary" aria-label="Journees SMTR">
-            <CalendarDays aria-hidden="true" size={18} />
-            <strong>{filteredDays.length}</strong>
-            <span>journees SMTR</span>
-          </div>
-          <div className="planning-summary" aria-label="Periodes SMTR">
-            <CalendarDays aria-hidden="true" size={18} />
-            <strong>{filteredPeriods.length}</strong>
-            <span>periodes SMTR</span>
-          </div>
+        <div className="planning-command-actions">
+          <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
+          <button aria-label="Actualiser le planning" className="planning-icon-button" onClick={() => void loadPlanning()} type="button">
+            <RefreshCw aria-hidden="true" size={18} />
+          </button>
+          <button aria-expanded={isSettingsOpen} aria-label="Réglages du planning" className="planning-icon-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button">
+            <Settings2 aria-hidden="true" size={18} />
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="admin-notices" aria-live="polite">
-        {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      </div>
-
-      <div className="planning-toolbar">
-        <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>
-          {isManager ? 'Modification' : 'Lecture seule'}
-        </span>
-      </div>
-
-      <div className="planning-filter-panel" aria-label="Filtres planning">
-        <label>
-          Filtre navire
-          <select onChange={(event) => updateFilterValue('vesselName', event.target.value)} value={filters.vesselName}>
-            <option value="">Tous les navires</option>
-            {vesselFilterOptions.map((vesselName) => (
-              <option key={vesselName} value={vesselName}>
-                {vesselName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre marin
-          <select onChange={(event) => updateFilterValue('personName', event.target.value)} value={filters.personName}>
-            <option value="">Tous les marins</option>
-            {personFilterOptions.map((personName) => (
-              <option key={personName} value={personName}>
-                {personName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Debut filtre
-          <input
-            onChange={(event) => updateFilterValue('startsOn', event.target.value)}
-            type="date"
-            value={filters.startsOn}
-          />
-        </label>
-        <label>
-          Fin filtre
-          <input onChange={(event) => updateFilterValue('endsOn', event.target.value)} type="date" value={filters.endsOn} />
-        </label>
-        <label>
-          Filtre statut
-          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
-            <option value="">Tous les statuts</option>
-            {statusFilterOptions.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button disabled={!hasActiveFilters} onClick={() => setFilters(EMPTY_PLANNING_FILTERS)} type="button">
-          Reinitialiser
-        </button>
-      </div>
-
-      {isManager ? (
-        <div className="planning-forms">
-          <form className="planning-form planning-vessel-form" onSubmit={handleCreateVessel}>
-            <div className="planning-form-title">
-              <Ship aria-hidden="true" size={18} />
-              <strong>Nouveau navire</strong>
-            </div>
-            <label>
-              Nom navire
-              <input
-                onChange={(event) => updateVesselFormValue('name', event.target.value)}
-                required
-                value={vesselForm.name}
-              />
-            </label>
-            <label>
-              Acronyme
-              <input onChange={(event) => updateVesselFormValue('acronym', event.target.value)} value={vesselForm.acronym} />
-            </label>
-            <button disabled={isSaving} type="submit">
-              Ajouter navire
-            </button>
-          </form>
-
-          <form className="planning-form planning-assignment-form" onSubmit={handleCreateAssignment}>
-            <div className="planning-form-title">
-              <UserRoundPlus aria-hidden="true" size={18} />
-              <strong>Nouvelle affectation</strong>
-            </div>
-            <label>
-              Navire
-              <select
-                onChange={(event) => updateAssignmentFormValue('vesselId', event.target.value)}
-                required
-                value={assignmentForm.vesselId}
-              >
-                <option value="">Choisir</option>
-                {activeVessels.map((vessel) => (
-                  <option key={vessel.id} value={vessel.id}>
-                    {vesselOptionLabel(vessel)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Marin
-              <select
-                onChange={(event) => updateAssignmentFormValue('crewPersonId', event.target.value)}
-                required
-                value={assignmentForm.crewPersonId}
-              >
-                <option value="">Choisir</option>
-                {activePeople.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {personOptionLabel(person)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Capitaine
-              <select
-                onChange={(event) => updateAssignmentFormValue('captainPersonId', event.target.value)}
-                value={assignmentForm.captainPersonId}
-              >
-                <option value="">Aucun</option>
-                {activePeople.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {personOptionLabel(person)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Debut
-              <input
-                onChange={(event) => updateAssignmentFormValue('startsOn', event.target.value)}
-                required
-                type="date"
-                value={assignmentForm.startsOn}
-              />
-            </label>
-            <label>
-              Fin
-              <input
-                onChange={(event) => updateAssignmentFormValue('endsOn', event.target.value)}
-                required
-                type="date"
-                value={assignmentForm.endsOn}
-              />
-            </label>
-            <label>
-              Fonction
-              <input
-                onChange={(event) => updateAssignmentFormValue('assignmentRole', event.target.value)}
-                value={assignmentForm.assignmentRole}
-              />
-            </label>
-            <button disabled={isSaving} type="submit">
-              Ajouter affectation
-            </button>
-          </form>
+      {statusMessage || errorMessage ? (
+        <div className="planning-notices" aria-live="polite">
+          {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
+          {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
         </div>
       ) : null}
 
-      {filteredAssignments.length === 0 ? (
-        <div className="admin-state">Aucune affectation a afficher.</div>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table planning-table">
-            <thead>
-              <tr>
-                <th scope="col">Navire</th>
-                <th scope="col">Marin</th>
-                <th scope="col">Capitaine</th>
-                <th scope="col">Periode</th>
-                <th scope="col">Fonction</th>
-                <th scope="col">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAssignments.map((assignment) => (
-                <tr key={assignment.id}>
-                  <th scope="row">{assignment.vesselName}</th>
-                  <td>{assignment.crewName}</td>
-                  <td>{assignment.captainName}</td>
-                  <td>{`${assignment.startsOn} au ${assignment.endsOn}`}</td>
-                  <td>{assignment.assignmentRole}</td>
-                  <td>{assignment.sourceLabel}</td>
-                </tr>
+      {isSettingsOpen ? (
+        <div className="planning-settings-popover">
+          <label>
+            <input checked={showWeekends} onChange={(event) => setShowWeekends(event.target.checked)} type="checkbox" />
+            Afficher les week-ends
+          </label>
+          <button onClick={collapsedRows.size ? expandAll : collapseAll} type="button">
+            {collapsedRows.size ? <ChevronsUpDown aria-hidden="true" size={16} /> : <ChevronsDownUp aria-hidden="true" size={16} />}
+            {collapsedRows.size ? 'Tout développer' : 'Réduire les navires'}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="planning-layout">
+        <section className="planning-board-card" aria-label="Calendrier des affectations">
+          <div className="planning-board-toolbar">
+            <div className="planning-view-switch" aria-label="Période affichée">
+              {(['week', 'month', 'year'] as PlanningViewMode[]).map((mode) => (
+                <button className={viewMode === mode ? 'is-active' : ''} key={mode} onClick={() => setViewMode(mode)} type="button">
+                  {mode === 'week' ? 'Semaine' : mode === 'month' ? 'Mois' : 'An'}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {filteredDays.length > 0 || filteredPeriods.length > 0 ? (
-        <section className="planning-import-panel" aria-label="Planning importe SharePoint">
-          <div className="planning-import-header">
-            <div>
-              <p className="module-family">Import SharePoint</p>
-              <h2>Planning importe SharePoint</h2>
+            </div>
+            <label className="planning-select-control">
+              <Ship aria-hidden="true" size={16} />
+              <span className="sr-only">Filtre navire</span>
+              <select aria-label="Filtre navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}>
+                <option value="">Tous les navires</option>
+                {vesselOptions.map((value) => <option key={value}>{value}</option>)}
+              </select>
+              <ChevronDown aria-hidden="true" size={14} />
+            </label>
+            <label className="planning-select-control">
+              <Search aria-hidden="true" size={16} />
+              <span className="sr-only">Filtre marin</span>
+              <select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}>
+                <option value="">Tous les marins</option>
+                {personOptions.map((value) => <option key={value}>{value}</option>)}
+              </select>
+              <ChevronDown aria-hidden="true" size={14} />
+            </label>
+            <div className="planning-zoom-controls" aria-label="Zoom du planning">
+              <button aria-label="Zoom avant" onClick={() => setDayWidth((value) => Math.min(58, value + 4))} type="button"><Plus aria-hidden="true" size={16} /></button>
+              <button aria-label="Zoom arrière" onClick={() => setDayWidth((value) => Math.max(viewMode === 'year' ? 12 : 24, value - 4))} type="button"><Minus aria-hidden="true" size={16} /></button>
+            </div>
+            <div className="planning-period-controls">
+              <button aria-label="Période précédente" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
+              <select aria-label="Année" onChange={(event) => setAnchorDate(`${event.target.value}-${anchorDate.slice(5)}`)} value={anchorDate.slice(0, 4)}>
+                {Array.from({ length: 7 }, (_, index) => Number(todayIso().slice(0, 4)) - 3 + index).map((year) => <option key={year}>{year}</option>)}
+              </select>
+              {viewMode !== 'year' ? (
+                <select aria-label="Mois" onChange={(event) => setAnchorDate(`${anchorDate.slice(0, 4)}-${event.target.value}-01`)} value={anchorDate.slice(5, 7)}>
+                  {['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((month, index) => <option key={month} value={String(index + 1).padStart(2, '0')}>{month}</option>)}
+                </select>
+              ) : null}
+              <button aria-label="Période suivante" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
+            </div>
+            <div className="planning-edit-controls">
+              {isManager ? <button aria-label="Nouvelle affectation" className="planning-icon-button is-primary" onClick={() => openAssignment()} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
+              <button aria-label="Dupliquer l’affectation" className="planning-icon-button" disabled={selectedEvent?.kind !== 'assignment'} onClick={duplicateSelectedEvent} type="button"><Copy aria-hidden="true" size={17} /></button>
+              <button aria-label={isFullscreen ? 'Quitter le plein écran' : 'Afficher en plein écran'} className="planning-icon-button" onClick={() => void toggleFullscreen()} type="button"><Expand aria-hidden="true" size={17} /></button>
+              <button aria-label="Plus d’options" className="planning-icon-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><MoreHorizontal aria-hidden="true" size={18} /></button>
             </div>
           </div>
 
-          {filteredPeriods.length > 0 ? (
-            <div className="planning-import-block">
-              <h3>Periodes SMTR</h3>
-              <div className="admin-table-wrap">
-                <table className="admin-table planning-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Marin</th>
-                      <th scope="col">Navire</th>
-                      <th scope="col">Periode</th>
-                      <th scope="col">Fonction</th>
-                      <th scope="col">Statut</th>
-                      <th scope="col">Bordee</th>
-                      <th scope="col">Annee</th>
-                      <th scope="col">Commentaires</th>
-                      <th scope="col">Slot365</th>
-                      <th scope="col">Slot source</th>
-                      <th scope="col">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPeriods.map((period) => (
-                      <tr key={period.id}>
-                        <th scope="row">{period.crewName}</th>
-                        <td>{period.vesselName}</td>
-                        <td>{`${period.startsOn} au ${period.endsOn}`}</td>
-                        <td>{displayText(period.functionLabel)}</td>
-                        <td>{displayText(period.sailorStatus)}</td>
-                        <td>{displayText(period.watchGroup)}</td>
-                        <td>{period.yearNumber ?? '-'}</td>
-                        <td>{displayText(period.comments)}</td>
-                        <td>{displayText(period.slot365SourceKey)}</td>
-                        <td>{period.slot365SourceId ? `Source #${period.slot365SourceId}` : '-'}</td>
-                        <td>{displayText(period.sourceLabel)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
+          <div className="planning-board-titlebar">
+            <strong>{planningPeriodTitle(days, viewMode)}</strong>
+            <span aria-label="Affectations planning">{overview.assignments.length} affectation(s)</span>
+            <span aria-label="Journees SMTR">{overview.days.length} journée(s) SMTR</span>
+            <span aria-label="Periodes SMTR">{overview.periods.length} période(s) SMTR</span>
+          </div>
 
-          {filteredDays.length > 0 ? (
-            <div className="planning-import-block">
-              <h3>Journees SMTR</h3>
-              <div className="admin-table-wrap">
-                <table className="admin-table planning-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Date</th>
-                      <th scope="col">Marin</th>
-                      <th scope="col">Navire</th>
-                      <th scope="col">Capitaine</th>
-                      <th scope="col">Debarque</th>
-                      <th scope="col">Depart</th>
-                      <th scope="col">Statut jour</th>
-                      <th scope="col">Fonction</th>
-                      <th scope="col">Rythme</th>
-                      <th scope="col">Bordee</th>
-                      <th scope="col">Heures</th>
-                      <th scope="col">Repos 24h</th>
-                      <th scope="col">Cumul 7j</th>
-                      <th scope="col">Commentaires</th>
-                      <th scope="col">Slot365</th>
-                      <th scope="col">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredDays.map((day) => (
-                      <tr key={day.id}>
-                        <th scope="row">{day.workDate}</th>
-                        <td>{day.crewName}</td>
-                        <td>{day.vesselName}</td>
-                        <td>{displayText(day.captainName)}</td>
-                        <td>{displayText(day.disembarkOn)}</td>
-                        <td>{displayText(day.departureOn)}</td>
-                        <td>{displayText(day.dayStatus)}</td>
-                        <td>{displayText(day.functionLabel)}</td>
-                        <td>{displayText(day.rhythmLabel)}</td>
-                        <td>{displayText(day.watchGroup)}</td>
-                        <td>{displayHours(day.workedHours)}</td>
-                        <td>{displayHours(day.rest24h)}</td>
-                        <td>{displayHours(day.cumulative7d)}</td>
-                        <td>{displayText(day.comments)}</td>
-                        <td>{displayText(day.slot365)}</td>
-                        <td>{displayText(day.sourceLabel)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="planning-calendar-scroll" style={timelineStyle(viewMode === 'year' ? Math.min(dayWidth, 18) : dayWidth, days.length)}>
+            <div className="planning-calendar-grid planning-calendar-months">
+              <div className="planning-calendar-corner" />
+              {monthSegments.map((segment) => (
+                <div className="planning-month-segment" key={segment.key} style={{ gridColumn: `${segment.startIndex + 2} / span ${segment.span}` }}>{segment.label}</div>
+              ))}
             </div>
-          ) : null}
+            <div className="planning-calendar-grid planning-calendar-weeks">
+              <div className="planning-calendar-corner" />
+              {days.map((day, index) => {
+                const previous = days[index - 1];
+                if (previous?.week === day.week && previous.year === day.year) return null;
+                const span = days.slice(index).findIndex((candidate) => candidate.week !== day.week || candidate.year !== day.year);
+                return <div className="planning-week-segment" key={`${day.year}-${day.week}`} style={{ gridColumn: `${index + 2} / span ${span === -1 ? days.length - index : span}` }}>S{day.week}</div>;
+              })}
+            </div>
+            <div className="planning-calendar-grid planning-calendar-days">
+              <div className="planning-calendar-corner planning-calendar-label-heading">Équipages</div>
+              {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayIso() ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
+            </div>
+
+            <div className="planning-calendar-body">
+              {visibleRows.length ? visibleRows.map((row) => (
+                <PlanningTimelineRow
+                  collapsed={collapsedRows.has(row.key)}
+                  days={days}
+                  key={row.key}
+                  onOpenEvent={setSelectedEvent}
+                  onOpenProject={setSelectedProject}
+                  onToggle={() => toggleCollapsed(row.key)}
+                  row={row}
+                  viewMode={viewMode}
+                />
+              )) : <div className="planning-calendar-empty">Aucune donnée sur cette période.</div>}
+            </div>
+          </div>
         </section>
+
+        <aside className="planning-side-card" aria-label="Alertes du planning">
+          <div className="planning-side-tabs" role="tablist">
+            {SIDE_TABS.map((tab) => (
+              <button aria-selected={sideTab === tab.key} className={sideTab === tab.key ? 'is-active' : ''} key={tab.key} onClick={() => setSideTab(tab.key)} role="tab" type="button">
+                {tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}
+              </button>
+            ))}
+          </div>
+          <PlanningSideContent
+            certificateAlerts={certificateAlerts}
+            hrAlerts={hrAlerts}
+            sideTab={sideTab}
+            unassignedPeople={unassignedPeople}
+            unbilledProjects={unbilledProjects}
+          />
+        </aside>
+      </div>
+
+      {isAssignmentOpen ? (
+        <div className="planning-dialog-backdrop" role="presentation">
+          <form className="planning-dialog" onSubmit={handleCreateAssignment}>
+            <header><div><UserRoundPlus aria-hidden="true" size={20} /><h2>Nouvelle affectation</h2></div><button aria-label="Fermer" onClick={() => setIsAssignmentOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
+            <div className="planning-dialog-grid">
+              <label>Navire<select aria-label="Navire" onChange={(event) => setAssignmentForm((current) => ({ ...current, vesselId: event.target.value }))} required value={assignmentForm.vesselId}><option value="">Choisir</option>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label>
+              <label>Marin<select aria-label="Marin" onChange={(event) => setAssignmentForm((current) => ({ ...current, crewPersonId: event.target.value }))} required value={assignmentForm.crewPersonId}><option value="">Choisir</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label>
+              <label>Capitaine<select aria-label="Capitaine" onChange={(event) => setAssignmentForm((current) => ({ ...current, captainPersonId: event.target.value }))} value={assignmentForm.captainPersonId}><option value="">Aucun</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label>
+              <label>Début<input aria-label="Debut" onChange={(event) => setAssignmentForm((current) => ({ ...current, startsOn: event.target.value }))} required type="date" value={assignmentForm.startsOn} /></label>
+              <label>Fin<input aria-label="Fin" onChange={(event) => setAssignmentForm((current) => ({ ...current, endsOn: event.target.value }))} required type="date" value={assignmentForm.endsOn} /></label>
+              <label>Fonction<input aria-label="Fonction" onChange={(event) => setAssignmentForm((current) => ({ ...current, assignmentRole: event.target.value }))} value={assignmentForm.assignmentRole} /></label>
+            </div>
+            <footer><button className="is-secondary" onClick={() => setIsAssignmentOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter affectation</button></footer>
+          </form>
+        </div>
       ) : null}
+
+      {selectedEvent ? <PlanningEventDialog event={selectedEvent} onClose={() => setSelectedEvent(null)} /> : null}
+      {selectedProject ? <PlanningProjectDialog onClose={() => setSelectedProject(null)} project={selectedProject} /> : null}
     </section>
   );
+}
+
+function PlanningTimelineRow({ row, days, onToggle, onOpenEvent, onOpenProject, viewMode, collapsed }: {
+  row: PlanningCrewRow;
+  days: ReturnType<typeof buildPlanningTimeline>;
+  collapsed: boolean;
+  onToggle: () => void;
+  onOpenEvent: (event: PlanningCrewEvent) => void;
+  onOpenProject: (project: PlanningProjectRecord) => void;
+  viewMode: PlanningViewMode;
+}) {
+  const isGroup = row.type !== 'person';
+  return (
+    <div className={`planning-calendar-grid planning-timeline-row is-${row.type}`}>
+      <div className="planning-row-label">
+        {isGroup ? <button aria-label={`${row.label} · ${row.type === 'vessel' ? 'réduire ou développer' : 'réduire ou développer la bordée'}`} onClick={onToggle} type="button">{collapsed ? <Plus aria-hidden="true" size={13} /> : <Minus aria-hidden="true" size={13} />}</button> : <span className="planning-person-indent" />}
+        <span><strong>{row.label}</strong>{row.type === 'person' && row.functionLabel ? <small>{row.functionLabel}</small> : null}</span>
+      </div>
+      {days.map((day) => <span aria-hidden="true" className={`planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === todayIso() ? ' is-today' : ''}`} key={day.date} />)}
+      {row.projects.map((project) => {
+        const placement = dateGridPlacement(project.startsOn, project.endsOn, days);
+        if (!placement) return null;
+        return <button aria-label={`${project.title}, ${project.status}`} className={`planning-project-bar is-${projectStatusTone(project.status)}`} key={project.id} onClick={() => onOpenProject(project)} style={{ gridColumn: `${placement.start + 1} / span ${placement.span}` }} title={`${project.title} · ${project.status}`} type="button"><span>{project.title}</span><span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span></button>;
+      })}
+      {row.events.map((event) => {
+        const placement = dateGridPlacement(event.startsOn, event.endsOn, days);
+        if (!placement) return null;
+        return <button aria-label={`${event.person}, ${event.status}, du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}`} className={`planning-crew-bar is-${planningStatusTone(event.status)}`} key={event.id} onClick={() => onOpenEvent(event)} style={{ gridColumn: `${placement.start + 1} / span ${placement.span}` }} title={`${event.person}\n${event.status}\n${formatPlanningDate(event.startsOn)} → ${formatPlanningDate(event.endsOn)}`} type="button">{viewMode !== 'year' && placement.span >= 2 ? <span>{event.status === 'En Mer' ? '' : event.status}</span> : null}</button>;
+      })}
+    </div>
+  );
+}
+
+function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, unassignedPeople, unbilledProjects }: {
+  sideTab: SideTab;
+  certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
+  hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
+  unassignedPeople: PlanningPerson[];
+  unbilledProjects: PlanningProjectRecord[];
+}) {
+  if (sideTab === 'unassigned') {
+    return <div className="planning-side-list">{unassignedPeople.length ? unassignedPeople.map((person) => <article className="planning-side-item" key={person.id}><div><strong>{formatPlanningPerson(person)}</strong><span className="planning-side-badge is-muted">{person.functionLabel || person.gradeLabel || 'Marin'}</span></div><p>{[person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Contrat actif'}</p></article>) : <PlanningEmptySide text="Tous les marins sont affectés." />}</div>;
+  }
+  if (sideTab === 'billing') {
+    return <div className="planning-side-list">{unbilledProjects.length ? unbilledProjects.map((project) => <article className="planning-side-item" key={project.id}><div><strong>{project.title}</strong><span className="planning-side-badge is-warning">{project.status || 'À planifier'}</span></div><p>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</p><p>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ')}</p></article>) : <PlanningEmptySide text="Aucun projet non facturé." />}</div>;
+  }
+  const alerts = sideTab === 'alerts' ? hrAlerts : certificateAlerts;
+  return <div className="planning-side-list">{alerts.length ? alerts.map((alert) => <article className="planning-side-item" key={alert.id}><div><strong>{alert.title}</strong><span className={`planning-side-badge is-${alert.tone}`}>{alert.statusLabel}</span></div><p>{alert.subtitle} · {formatPlanningDate(alert.date)}</p>{alert.vesselName ? <p>Navire · {alert.vesselName}</p> : null}</article>) : <PlanningEmptySide text={sideTab === 'alerts' ? 'Aucune échéance RH proche.' : 'Aucune alarme certificat.'} />}</div>;
+}
+
+function PlanningEmptySide({ text }: { text: string }) {
+  return <div className="planning-side-empty"><CalendarDays aria-hidden="true" size={24} /><p>{text}</p></div>;
+}
+
+function PlanningEventDialog({ event, onClose }: { event: PlanningCrewEvent; onClose: () => void }) {
+  return <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog is-detail" role="dialog"><header><div><CalendarDays aria-hidden="true" size={20} /><h2>{event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Navire</dt><dd>{event.vessel}</dd></div><div><dt>Bordée</dt><dd>{event.board || 'Non renseignée'}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(event.startsOn)} au {formatPlanningDate(event.endsOn)}</dd></div><div><dt>Statut</dt><dd>{event.status}</dd></div><div><dt>Fonction</dt><dd>{event.functionLabel || 'Équipage'}</dd></div><div><dt>Rythme</dt><dd>{event.rhythm || 'Sans rythme'}</dd></div><div><dt>Commentaires</dt><dd>{event.comments || 'Aucun commentaire'}</dd></div><div><dt>Source</dt><dd>{event.sourceLabel}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
+}
+
+function PlanningProjectDialog({ project, onClose }: { project: PlanningProjectRecord; onClose: () => void }) {
+  return <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog is-detail" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>{project.title}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ') || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
 }
