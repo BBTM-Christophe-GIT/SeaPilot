@@ -180,6 +180,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Fiche RH editable par les roles bureau avec sauvegarde des champs importes collaborateur.
 - Rapport Plan de Formation migre depuis le Dashboard SPFx : ouverture directe d'un PDF A4, coûts cumulés trimestriels, récapitulatif financier, détail par collaborateur, certificats médicaux, historiques annuels du turnover et de l'ancienneté moyenne depuis la première embauche, et formules de calcul sur la dernière page.
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
+- Cockpit Planning SPFx migre dans SeaPilot : calendrier Semaine/Mois/An, groupes navire/bordee/marin, projets et statuts, zoom, plein ecran, filtres, creation/duplication d'affectations, panneaux certificats, marins non affectes, facturation et alertes RH. L'inventaire et les regles sont conserves dans `docs/migration/planning-spfx-inventory.md`.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.
 - Module Daily Progress Report raccorde a `dpr_items`, `dpr_archives` et `mgo_prices` avec KPIs, filtres projet/navire/date/recherche, archives PDF, dernier prix MGO et creation de rapport pour les roles bureau.

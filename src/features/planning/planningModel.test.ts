@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildPlanningCertificateAlerts,
+  buildPlanningCrewRows,
+  buildPlanningHrAlerts,
+  buildPlanningTimeline,
+  getUnassignedPlanningPeople,
+  getUnbilledPlanningProjects,
+  normalizePlanningStatus,
+  planningStatusTone,
+  projectStatusTone,
+  timelineRange,
+} from './planningModel';
+import type { PlanningOverview } from './planningQueries';
+
+const overview: PlanningOverview = {
+  vessels: [{ id: 1, name: 'GOURY', acronym: 'GRY', active: true }],
+  people: [
+    { id: 1, firstName: 'Anne', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '2020-01-01', departedOn: '', active: true },
+    { id: 2, firstName: 'Marc', lastName: 'LIBRE', functionLabel: 'Matelot', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '2024-01-01', departedOn: '', active: true },
+  ],
+  assignments: [],
+  days: [],
+  periods: [{ id: 10, crewName: 'Anne CAPITAINE', vesselName: 'GOURY', watchGroup: 'Bordée 1', functionLabel: 'Capitaine', sailorStatus: 'Embarqué', startsOn: '2026-07-01', endsOn: '2026-07-20', yearNumber: 2026, comments: '', slot365SourceId: '1', slot365SourceKey: 'slot', sourceLabel: 'sharepoint' }],
+  projects: [
+    { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Validé', sourceLabel: 'sharepoint' },
+    { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
+  ],
+  certificates: [{ id: 30, vesselId: 1, vesselName: 'GOURY', title: 'Franc-bord', status: 'expired', expiresOn: '2026-07-01', fileUrl: '' }],
+  hrDocuments: [{ id: 40, personId: 1, personName: 'Anne CAPITAINE', title: 'Visite médicale', status: 'renew_due', expiresOn: '2026-08-01', fileUrl: '' }],
+};
+
+describe('planning timeline rules', () => {
+  it('keeps the SPFx 14-day week and builds month/year ranges', () => {
+    expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(14);
+    expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);
+    expect(buildPlanningTimeline('2026-07-12', 'year')).toHaveLength(365);
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'week'))).toEqual({ start: '2026-07-06', end: '2026-07-19' });
+  });
+
+  it('normalizes imported crew and project statuses', () => {
+    expect(normalizePlanningStatus('Embarqué')).toBe('En Mer');
+    expect(planningStatusTone('Formation')).toBe('training');
+    expect(projectStatusTone('À facturer')).toBe('billed');
+    expect(projectStatusTone('Validé')).toBe('valid');
+  });
+});
+
+describe('planning hierarchy and side panels', () => {
+  it('groups visible crew by vessel, watch and role', () => {
+    const rows = buildPlanningCrewRows(overview, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
+    expect(rows.map((row) => [row.type, row.label])).toEqual([
+      ['vessel', 'GOURY'],
+      ['board', 'Bordée 1'],
+      ['person', 'Anne CAPITAINE'],
+    ]);
+    expect(rows[0].projects).toHaveLength(2);
+  });
+
+  it('finds active unassigned marins for the visible range', () => {
+    expect(getUnassignedPlanningPeople(overview, { start: '2026-07-01', end: '2026-07-31' }, { vesselName: '', personName: '' }).map((person) => person.id)).toEqual([2]);
+  });
+
+  it('builds the 90-day certificate/RH alarms and excludes billed projects', () => {
+    expect(buildPlanningCertificateAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Franc-bord', tone: 'danger' });
+    expect(buildPlanningHrAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Anne CAPITAINE', tone: 'warning' });
+    expect(getUnbilledPlanningProjects(overview, 2026).map((project) => project.title)).toEqual(['Mission A']);
+  });
+});
