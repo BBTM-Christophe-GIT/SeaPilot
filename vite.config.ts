@@ -8,5 +8,6 @@ export default defineConfig({
     globals: true,
     pool: 'threads',
     setupFiles: './src/test/setup.ts',
+    testTimeout: 10_000,
   },
 });

@@ -185,11 +185,11 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Afficher en plein écran' })).toBeInTheDocument();
   });
 
-  it('creates and duplicates a native SeaPilot assignment for office roles', async () => {
+  it('creates a native SeaPilot assignment for administrators', async () => {
     const user = userEvent.setup();
     const createdAssignment = { ...assignmentRow, id: 101, starts_on: '2026-07-20', ends_on: '2026-07-26' };
     const { client, insertAssignment } = createClient({ assignments: [], createdAssignment });
-    render(<PlanningPage client={client as never} roles={['direction']} />);
+    render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Nouvelle affectation' }));
@@ -208,6 +208,9 @@ describe('PlanningPage cockpit', () => {
       starts_on: '2026-07-20',
       ends_on: '2026-07-26',
       assignment_role: 'Quart',
+      status_label: 'En Mer',
+      watch_group: 'Affectation',
+      comments: null,
       source_label: 'seapilot',
     }));
     expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
@@ -220,5 +223,23 @@ describe('PlanningPage cockpit', () => {
     expect((await screen.findAllByText('Paul DURAND')).length).toBeGreaterThan(0);
     expect(screen.getByText('Lecture seule')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+  });
+
+  it('keeps planning edition strictly reserved to administrators', async () => {
+    const { client } = createClient({ periods: [planningPeriodRow] });
+    render(<PlanningPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.getByText('Lecture seule')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+  });
+
+  it('pins every weekend background cell to its calendar column', async () => {
+    const { client } = createClient({ periods: [planningPeriodRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const cells = [...container.querySelectorAll<HTMLElement>('.planning-timeline-row .planning-day-cell.is-weekend')];
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((cell) => Boolean(cell.style.gridColumn))).toBe(true);
+    expect(cells.every((cell) => cell.style.gridRow === '1')).toBe(true);
   });
 });

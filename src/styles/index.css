@@ -3052,8 +3052,19 @@ button:disabled {
   background: #fff8e6;
 }
 
+.planning-day-cell.is-drop-target {
+  transition: background 120ms ease;
+}
+
+.planning-day-cell.is-drop-target:hover {
+  outline: 2px solid #2c6bea;
+  outline-offset: -2px;
+  background: #eaf2ff;
+}
+
 .planning-project-bar,
 .planning-crew-bar {
+  position: relative;
   z-index: 4;
   align-self: center;
   min-width: 0;
@@ -3062,6 +3073,38 @@ button:disabled {
   padding: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.planning-crew-bar.is-editable {
+  cursor: grab;
+}
+
+.planning-crew-bar.is-editable:active {
+  cursor: grabbing;
+}
+
+.planning-resize-handle {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.planning-resize-handle.is-start { left: 0; }
+.planning-resize-handle.is-end { right: 0; }
+
+.planning-annotation-dot {
+  position: absolute;
+  top: 3px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 999px;
+  background: #fff;
 }
 
 .planning-project-bar {
@@ -3224,6 +3267,22 @@ button:disabled {
   background: #ffffff;
 }
 
+.planning-side-item.is-draggable {
+  cursor: grab;
+  border-color: #cbdcf5;
+}
+
+.planning-side-item.is-draggable:hover {
+  border-color: #2c6bea;
+  box-shadow: 0 5px 16px rgba(44, 107, 234, 0.12);
+}
+
+.planning-side-item > small {
+  color: #2c6bea;
+  font-size: 0.58rem;
+  font-weight: 760;
+}
+
 .planning-side-item > div {
   display: flex;
   align-items: flex-start;
@@ -3313,6 +3372,58 @@ button:disabled {
 .planning-dialog.is-detail {
   width: min(620px, 100%);
 }
+
+.planning-dialog-grid label.is-wide {
+  grid-column: 1 / -1;
+}
+
+.planning-dialog textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.planning-dialog-footer-split > span {
+  display: flex;
+  gap: 8px;
+}
+
+.planning-dialog button.is-danger {
+  color: #b4232f;
+  background: #fff0f1;
+}
+
+.planning-inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .6fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.planning-inline-form label {
+  display: grid;
+  gap: 6px;
+  color: #526177;
+  font-size: .68rem;
+  font-weight: 780;
+}
+
+.planning-vessel-list {
+  display: grid;
+  gap: 7px;
+}
+
+.planning-vessel-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #e5eaf0;
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.planning-vessel-list span,
+.planning-vessel-list small { display: block; }
+.planning-vessel-list small { margin-top: 2px; color: #7a8799; }
 
 .planning-dialog header,
 .planning-dialog footer {
