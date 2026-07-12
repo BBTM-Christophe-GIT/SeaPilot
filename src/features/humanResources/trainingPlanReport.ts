@@ -1,5 +1,8 @@
 import { formatPersonName, type HrDocumentRecord, type PersonRecord } from './peopleQueries';
 
+type PdfDocument = import('jspdf').jsPDF;
+type Rgb = [number, number, number];
+
 interface TrainingCostRule {
   label: string;
   matches: (normalizedTitle: string) => boolean;
@@ -7,7 +10,6 @@ interface TrainingCostRule {
 }
 
 interface TrainingPlanAction {
-  document: HrDocumentRecord;
   expiresOn: string;
   personName: string;
   unitCost: number;
@@ -20,23 +22,50 @@ interface TrainingPlanGroup {
   unitCost: number;
 }
 
-export interface TrainingPlanReportInput {
+interface MedicalCertificateAction {
+  expiresOn: string;
+  personName: string;
+}
+
+export interface AnnualHrIndicator {
+  averageHeadcount: number;
   averageTenureYears: number;
+  departures: number;
+  headcountEnd: number;
+  headcountStart: number;
+  peopleWithTenure: number;
+  turnoverRate: number;
+  year: number;
+}
+
+export interface TrainingPlanReportInput {
   documents: HrDocumentRecord[];
   generatedOn?: Date;
   people: PersonRecord[];
   targetYear?: number;
-  turnoverRate: number;
 }
 
 export interface TrainingPlanReport {
+  annualIndicators: AnnualHrIndicator[];
   fileName: string;
-  html: string;
+  generatedOn: Date;
   medicalCertificateCount: number;
+  medicalCertificates: MedicalCertificateAction[];
   targetYear: number;
   totalActions: number;
   totalCost: number;
+  trainingGroups: TrainingPlanGroup[];
 }
+
+const NAVY: Rgb = [23, 32, 51];
+const BLUE: Rgb = [21, 96, 130];
+const BLUE_ALT: Rgb = [49, 112, 143];
+const SLATE: Rgb = [75, 93, 114];
+const GRID: Rgb = [216, 226, 239];
+const LIGHT: Rgb = [238, 244, 250];
+const PALE: Rgb = [248, 250, 252];
+const REPORT_FOOTER =
+  "REP 07-A - Vérifiez la liste de diffusion pour vous assurer d'avoir toujours la dernière version de ce formulaire.";
 
 const TRAINING_COST_RULES: TrainingCostRule[] = [
   {
@@ -67,10 +96,6 @@ const TRAINING_COST_RULES: TrainingCostRule[] = [
   },
 ];
 
-const MONTH_LABELS = ['Jan.', 'Fév.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
-const REPORT_FOOTER =
-  "REP 07-A - Vérifiez la liste de diffusion pour vous assurer d'avoir toujours la dernière version de ce formulaire.";
-
 function normalizeTitle(value: string): string {
   return value
     .normalize('NFD')
@@ -81,18 +106,17 @@ function normalizeTitle(value: string): string {
     .trim();
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function parseDate(value: string): Date | null {
   const date = value ? new Date(`${value.slice(0, 10)}T00:00:00`) : null;
   return date && Number.isFinite(date.getTime()) ? date : null;
+}
+
+function endOfYear(year: number): Date {
+  return new Date(year, 11, 31, 23, 59, 59, 999);
+}
+
+function roundMetric(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function formatDate(value: Date | string): string {
@@ -101,14 +125,64 @@ function formatDate(value: Date | string): string {
 }
 
 function formatMoney(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value);
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
+    .format(value)
+    .replace(/[\u00a0\u202f]/g, ' ');
 }
 
 function formatMetric(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
 }
 
-function buildReportData(input: TrainingPlanReportInput) {
+function isEmployedAt(person: PersonRecord, referenceDate: Date): boolean {
+  const hiredOn = parseDate(person.hiredOn);
+  const departedOn = parseDate(person.departedOn);
+  return Boolean(hiredOn && hiredOn <= referenceDate && (!departedOn || departedOn > referenceDate));
+}
+
+export function buildAnnualHrIndicators(people: PersonRecord[], generatedOn: Date): AnnualHrIndicator[] {
+  const reportYear = generatedOn.getFullYear();
+  const hires = people.flatMap((person) => {
+    const hiredOn = parseDate(person.hiredOn);
+    return hiredOn ? [hiredOn] : [];
+  });
+  const firstHireYear = hires.length > 0 ? Math.min(...hires.map((date) => date.getFullYear())) : reportYear;
+
+  return Array.from({ length: reportYear - firstHireYear + 1 }, (_, index) => {
+    const year = firstHireYear + index;
+    const periodStart = new Date(year, 0, 1);
+    const referenceDate = year === reportYear ? generatedOn : endOfYear(year);
+    const headcountStart = people.filter((person) => isEmployedAt(person, periodStart)).length;
+    const headcountEnd = people.filter((person) => isEmployedAt(person, referenceDate)).length;
+    const departures = people.filter((person) => {
+      const departedOn = parseDate(person.departedOn);
+      return Boolean(departedOn && departedOn >= periodStart && departedOn <= referenceDate);
+    }).length;
+    const averageHeadcount = (headcountStart + headcountEnd) / 2;
+    const tenureValues = people.flatMap((person) => {
+      const hiredOn = parseDate(person.hiredOn);
+      return hiredOn && isEmployedAt(person, referenceDate)
+        ? [(referenceDate.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)]
+        : [];
+    });
+
+    return {
+      averageHeadcount,
+      averageTenureYears:
+        tenureValues.length > 0
+          ? roundMetric(tenureValues.reduce((total, value) => total + value, 0) / tenureValues.length)
+          : 0,
+      departures,
+      headcountEnd,
+      headcountStart,
+      peopleWithTenure: tenureValues.length,
+      turnoverRate: averageHeadcount > 0 ? roundMetric((departures / averageHeadcount) * 100) : 0,
+      year,
+    };
+  });
+}
+
+export function buildTrainingPlanReport(input: TrainingPlanReportInput): TrainingPlanReport {
   const generatedOn = input.generatedOn || new Date();
   const targetYear = input.targetYear || generatedOn.getFullYear() + 1;
   const activePeople = new Map(input.people.filter((person) => person.active).map((person) => [person.id, person]));
@@ -116,12 +190,10 @@ function buildReportData(input: TrainingPlanReportInput) {
     const expiresOn = parseDate(document.expiresOn);
     return document.personId !== null && activePeople.has(document.personId) && expiresOn?.getFullYear() === targetYear;
   });
-
   const trainingGroups = TRAINING_COST_RULES.flatMap<TrainingPlanGroup>((rule) => {
     const actions = expiringDocuments
       .filter((document) => TRAINING_COST_RULES.find((candidate) => candidate.matches(normalizeTitle(document.title))) === rule)
       .map<TrainingPlanAction>((document) => ({
-        document,
         expiresOn: document.expiresOn,
         personName: formatPersonName(activePeople.get(document.personId!)!),
         unitCost: rule.unitCost,
@@ -134,14 +206,17 @@ function buildReportData(input: TrainingPlanReportInput) {
   });
   const medicalCertificates = expiringDocuments
     .filter((document) => document.categoryKey === 'medical_visit')
-    .map((document) => ({
+    .map<MedicalCertificateAction>((document) => ({
       expiresOn: document.expiresOn,
       personName: formatPersonName(activePeople.get(document.personId!)!),
     }))
     .sort((left, right) => left.personName.localeCompare(right.personName, 'fr'));
 
   return {
+    annualIndicators: buildAnnualHrIndicators(input.people, generatedOn),
+    fileName: `Plan-de-Formation-${targetYear}.pdf`,
     generatedOn,
+    medicalCertificateCount: medicalCertificates.length,
     medicalCertificates,
     targetYear,
     totalActions: trainingGroups.reduce((total, group) => total + group.actions.length, 0),
@@ -150,192 +225,467 @@ function buildReportData(input: TrainingPlanReportInput) {
   };
 }
 
+function drawSectionTitle(doc: PdfDocument, number: string, title: string, y: number): void {
+  doc.setFillColor(...BLUE);
+  doc.circle(13, y - 1.2, 2.7, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.text(number, 13, y - 0.3, { align: 'center' });
+  doc.setTextColor(...NAVY);
+  doc.setFontSize(12);
+  doc.text(title, 18, y);
+}
+
+async function loadLogoDataUrl(): Promise<string | null> {
+  try {
+    const response = await fetch('/bbtm-logo.png');
+    const blob = await response.blob();
+    const imageUrl = URL.createObjectURL(blob);
+    const image = new Image();
+    image.src = imageUrl;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      URL.revokeObjectURL(imageUrl);
+      return null;
+    }
+    context.filter = 'invert(1)';
+    context.drawImage(image, 0, 0);
+    URL.revokeObjectURL(imageUrl);
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+function drawHeader(doc: PdfDocument, title: string, logo: string | null): void {
+  doc.setDrawColor(...NAVY);
+  doc.setLineWidth(0.25);
+  doc.rect(10, 10, 190, 20);
+  doc.line(32, 10, 32, 30);
+  if (logo) {
+    doc.addImage(logo, 'PNG', 16, 13, 14, 14);
+  } else {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...NAVY);
+    doc.text('BBTM', 21, 22, { align: 'center' });
+  }
+  doc.setTextColor(...BLUE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.text(title.toLocaleUpperCase('fr-FR'), 116, 22.5, { align: 'center' });
+}
+
+function drawMetricCard(doc: PdfDocument, x: number, y: number, width: number, label: string, value: string): void {
+  doc.setDrawColor(...GRID);
+  doc.setFillColor(...PALE);
+  doc.roundedRect(x, y, width, 15, 1.5, 1.5, 'FD');
+  doc.setTextColor(...SLATE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.text(label.toLocaleUpperCase('fr-FR'), x + 4, y + 5);
+  doc.setTextColor(...BLUE);
+  doc.setFontSize(12);
+  doc.text(value, x + 4, y + 11.5);
+}
+
+function drawLineChart(
+  doc: PdfDocument,
+  options: {
+    color: Rgb;
+    points: Array<{ value: number; year: number }>;
+    suffix: string;
+    title: string;
+    width: number;
+    x: number;
+    y: number;
+  },
+): void {
+  const height = 43;
+  const { color, points, suffix, title, width, x, y } = options;
+  doc.setDrawColor(...GRID);
+  doc.setFillColor(...PALE);
+  doc.roundedRect(x, y, width, height, 1.5, 1.5, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...NAVY);
+  doc.text(title, x + 4, y + 6);
+  const latest = points[points.length - 1]?.value || 0;
+  doc.setTextColor(...color);
+  doc.setFontSize(9);
+  doc.text(`${formatMetric(latest)}${suffix}`, x + width - 4, y + 6, { align: 'right' });
+
+  const plotLeft = x + 10;
+  const plotRight = x + width - 4;
+  const plotTop = y + 11;
+  const plotBottom = y + height - 8;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
+  const maxValue = Math.max(1, ...points.map((point) => point.value));
+  const axisMax = Math.ceil(maxValue * 1.15 * 10) / 10;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.5);
+  doc.setTextColor(...SLATE);
+  doc.setDrawColor(...GRID);
+  [0, 0.5, 1].forEach((ratio) => {
+    const gridY = plotBottom - ratio * plotHeight;
+    doc.line(plotLeft, gridY, plotRight, gridY);
+    doc.text(`${formatMetric(axisMax * ratio)}${suffix}`, plotLeft - 1, gridY + 1.5, { align: 'right' });
+  });
+
+  if (points.length === 0) {
+    return;
+  }
+
+  const coordinates = points.map((point, index) => ({
+    x: plotLeft + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth),
+    y: plotBottom - (point.value / axisMax) * plotHeight,
+    year: point.year,
+  }));
+  doc.setDrawColor(...color);
+  doc.setFillColor(...color);
+  doc.setLineWidth(0.7);
+  coordinates.forEach((point, index) => {
+    if (index > 0) {
+      doc.line(coordinates[index - 1].x, coordinates[index - 1].y, point.x, point.y);
+    }
+    doc.circle(point.x, point.y, 0.8, 'F');
+  });
+  const labelStep = Math.max(1, Math.ceil(points.length / 6));
+  doc.setTextColor(...SLATE);
+  doc.setFontSize(5.5);
+  coordinates.forEach((point, index) => {
+    if (index % labelStep === 0 || index === coordinates.length - 1) {
+      doc.text(String(point.year), point.x, plotBottom + 4, { align: 'center' });
+    }
+  });
+}
+
 function datePosition(date: Date, year: number): number {
-  const start = new Date(`${year}-01-01T00:00:00`).getTime();
-  const end = new Date(`${year}-12-31T00:00:00`).getTime();
+  const start = new Date(year, 0, 1).getTime();
+  const end = endOfYear(year).getTime();
   return (date.getTime() - start) / Math.max(1, end - start);
 }
 
-function buildCostChart(groups: TrainingPlanGroup[], targetYear: number, totalCost: number): string {
-  const chartLeft = 76;
-  const chartRight = 658;
-  const chartTop = 26;
-  const chartBottom = 206;
-  const chartWidth = chartRight - chartLeft;
-  const chartHeight = chartBottom - chartTop;
+function drawCostChart(doc: PdfDocument, report: TrainingPlanReport, y: number): void {
+  const x = 10;
+  const width = 190;
+  const height = 55;
+  const plotLeft = x + 18;
+  const plotRight = x + width - 6;
+  const plotTop = y + 10;
+  const plotBottom = y + height - 9;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
   const axisStep = 2000;
-  const axisMax = Math.max(axisStep, Math.ceil(totalCost / axisStep) * axisStep);
-  const scheduledActions = groups
+  const axisMax = Math.max(axisStep, Math.ceil(report.totalCost / axisStep) * axisStep);
+  const actions = report.trainingGroups
     .flatMap((group) => group.actions)
     .sort((left, right) => left.expiresOn.localeCompare(right.expiresOn) || left.personName.localeCompare(right.personName, 'fr'));
+  doc.setDrawColor(...GRID);
+  doc.setFillColor(...PALE);
+  doc.roundedRect(x, y, width, height, 1.5, 1.5, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...NAVY);
+  doc.text('Coût cumulé des formations', x + 4, y + 6);
+  doc.setTextColor(...BLUE);
+  doc.text(formatMoney(report.totalCost), x + width - 4, y + 6, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.5);
+  doc.setTextColor(...SLATE);
+  doc.setDrawColor(...GRID);
+  for (let value = 0; value <= axisMax; value += axisStep) {
+    const gridY = plotBottom - (value / axisMax) * plotHeight;
+    doc.line(plotLeft, gridY, plotRight, gridY);
+    doc.text(formatMoney(value), plotLeft - 1.5, gridY + 1.5, { align: 'right' });
+  }
+  for (let month = 0; month < 12; month += 1) {
+    const monthX = plotLeft + (month / 11) * plotWidth;
+    doc.text(String(month + 1).padStart(2, '0'), monthX, plotBottom + 4, { align: 'center' });
+  }
+
   let cumulative = 0;
-  const chartPoints = [`${chartLeft},${chartBottom}`];
-
-  scheduledActions.forEach((action) => {
+  let previousX = plotLeft;
+  let previousY = plotBottom;
+  doc.setDrawColor(...BLUE);
+  doc.setLineWidth(0.8);
+  actions.forEach((action) => {
     const date = parseDate(action.expiresOn)!;
-    const x = chartLeft + datePosition(date, targetYear) * chartWidth;
-    const previousY = chartBottom - (cumulative / axisMax) * chartHeight;
-    cumulative += action.unitCost;
-    const nextY = chartBottom - (cumulative / axisMax) * chartHeight;
-    chartPoints.push(`${x.toFixed(1)},${previousY.toFixed(1)}`, `${x.toFixed(1)},${nextY.toFixed(1)}`);
+    const actionX = plotLeft + datePosition(date, report.targetYear) * plotWidth;
+    const nextCumulative = cumulative + action.unitCost;
+    const nextY = plotBottom - (nextCumulative / axisMax) * plotHeight;
+    doc.line(previousX, previousY, actionX, previousY);
+    doc.line(actionX, previousY, actionX, nextY);
+    previousX = actionX;
+    previousY = nextY;
+    cumulative = nextCumulative;
   });
-  chartPoints.push(`${chartRight},${(chartBottom - (totalCost / axisMax) * chartHeight).toFixed(1)}`);
+  doc.line(previousX, previousY, plotRight, previousY);
 
-  const yGrid = Array.from({ length: axisMax / axisStep + 1 }, (_, index) => {
-    const value = index * axisStep;
-    const y = chartBottom - (value / axisMax) * chartHeight;
-    return `<line class="chart-grid" x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}"></line><text class="chart-tick" x="68" y="${y + 3}" text-anchor="end">${escapeHtml(formatMoney(value))}</text>`;
-  }).join('');
-  const quarterEnds = [2, 5, 8, 11].map((month, index) => {
-    const endDate = new Date(targetYear, month + 1, 0);
-    const quarterTotal = scheduledActions
-      .filter((action) => parseDate(action.expiresOn)! <= endDate)
+  const quarterMonths = [2, 5, 8, 11];
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  quarterMonths.forEach((month, index) => {
+    const quarterEnd = endOfYear(report.targetYear);
+    quarterEnd.setMonth(month + 1, 0);
+    const quarterTotal = actions
+      .filter((action) => parseDate(action.expiresOn)! <= quarterEnd)
       .reduce((total, action) => total + action.unitCost, 0);
-    const x = chartLeft + datePosition(endDate, targetYear) * chartWidth;
-    const y = Math.max(chartTop + 4, chartBottom - (quarterTotal / axisMax) * chartHeight - 24);
-    const labelX = index === 3 ? chartRight - 44 : x;
-    return `<line class="quarter-guide" x1="${x.toFixed(1)}" y1="${chartTop}" x2="${x.toFixed(1)}" y2="${chartBottom}"></line><rect class="quarter-label-box" x="${(labelX - 44).toFixed(1)}" y="${y.toFixed(1)}" width="88" height="16" rx="5" ry="5"></rect><text class="quarter-label" x="${labelX.toFixed(1)}" y="${(y + 11.5).toFixed(1)}" text-anchor="middle">T${index + 1}: ${escapeHtml(formatMoney(quarterTotal))}</text>`;
-  }).join('');
-  const months = MONTH_LABELS.map((label, month) => {
-    const x = chartLeft + (month / 11) * chartWidth;
-    return `<line class="chart-month-tick" x1="${x.toFixed(1)}" y1="${chartBottom}" x2="${x.toFixed(1)}" y2="${chartBottom + 4}"></line><text class="chart-month-label" x="${x.toFixed(1)}" y="224" text-anchor="middle">${label}</text>`;
-  }).join('');
-
-  return `<section class="cost-chart-section" aria-label="Coût cumulé annuel des formations"><h3>Coût cumulé des formations</h3><svg class="cost-chart" viewBox="0 0 680 260" role="img" aria-label="Coût cumulé des formations pour l'année ${targetYear}"><line class="chart-axis" x1="${chartLeft}" y1="${chartTop}" x2="${chartLeft}" y2="${chartBottom}"></line><line class="chart-axis" x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}"></line>${yGrid}<text class="chart-axis-label chart-axis-label-y" transform="translate(18 152) rotate(-90)">Coût</text><text class="chart-axis-label" x="367" y="250" text-anchor="middle">Année ${targetYear}</text><polyline class="chart-line" points="${chartPoints.join(' ')}"></polyline>${quarterEnds}${months}</svg></section>`;
+    const quarterX = plotLeft + datePosition(quarterEnd, report.targetYear) * plotWidth;
+    const quarterY = Math.max(plotTop + 3, plotBottom - (quarterTotal / axisMax) * plotHeight - 3);
+    doc.setTextColor(...NAVY);
+    doc.text(`T${index + 1}: ${formatMoney(quarterTotal)}`, Math.min(quarterX, plotRight - 13), quarterY, { align: 'right' });
+  });
 }
 
-function buildFinancialSummary(groups: TrainingPlanGroup[], totalActions: number, totalCost: number): string {
-  const rows = groups
-    .map(
-      (group) => `<tr><td>${escapeHtml(group.label)}</td><td class="amount">${group.actions.length}</td><td class="amount">${escapeHtml(formatMoney(group.subtotal))}</td></tr>`,
-    )
-    .join('');
-  return `<section class="financial-summary"><h2>Récapitulatif financier</h2><table><thead><tr><th>Formation</th><th class="amount">Actions</th><th class="amount">Sous-total</th></tr></thead><tbody>${rows}<tr class="total-row"><td>Total général</td><td class="amount">${totalActions}</td><td class="amount">${escapeHtml(formatMoney(totalCost))}</td></tr></tbody></table></section>`;
-}
-
-function buildPlanRows(groups: TrainingPlanGroup[], totalCost: number): string {
-  if (groups.length === 0) {
-    return '<tr><td class="empty-state" colspan="4">Aucune formation payante n’arrive à échéance sur cette année.</td></tr>';
-  }
-
-  const rows = groups
-    .map((group) => {
-      const actionRows = group.actions
-        .map(
-          (action, index) => `<tr>${index === 0 ? `<td class="training-cell" rowspan="${group.actions.length + 1}">${escapeHtml(group.label)}</td>` : ''}<td>${escapeHtml(action.personName)}</td><td>${formatDate(action.expiresOn)}</td><td class="amount">${escapeHtml(formatMoney(group.unitCost))}</td></tr>`,
-        )
-        .join('');
-      return `${actionRows}<tr class="training-subtotal-row"><td colspan="2" class="training-subtotal-label">Sous-total ${escapeHtml(group.label)}</td><td class="amount">${escapeHtml(formatMoney(group.subtotal))}</td></tr>`;
-    })
-    .join('');
-  return `${rows}<tr class="total-row report-total-row"><td colspan="3">Total général</td><td class="amount">${escapeHtml(formatMoney(totalCost))}</td></tr>`;
-}
-
-function buildMedicalRows(medicalCertificates: Array<{ expiresOn: string; personName: string }>): string {
-  if (medicalCertificates.length === 0) {
-    return '<tr><td class="empty-state" colspan="3">Aucun certificat médical n’arrive à échéance sur cette année.</td></tr>';
-  }
-
-  return medicalCertificates
-    .map(
-      (certificate, index) => `<tr>${index === 0 ? `<td class="training-cell" rowspan="${medicalCertificates.length}">Certificat Médical d’Aptitude à la Navigation Maritime</td>` : ''}<td>${escapeHtml(certificate.personName)}</td><td>${formatDate(certificate.expiresOn)}</td></tr>`,
-    )
-    .join('');
-}
-
-function reportStyles(): string {
-  return `
-    :root { color: #172033; font-family: "Segoe UI", Arial, sans-serif; }
-    body { margin: 0; background: #eef3f8; }
-    .training-report { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm 10mm 8mm; background: #fff; box-sizing: border-box; }
-    .model-header { display: grid; grid-template-columns: 22mm 1fr; border: 1px solid #122033; min-height: 20mm; }
-    .model-logo { display: flex; align-items: center; justify-content: center; border-right: 1px solid #122033; }
-    .model-logo img { display: block; width: 14mm; height: 14mm; object-fit: contain; filter: invert(1); }
-    .model-title { display: flex; flex-direction: column; justify-content: center; padding: 0 8mm; text-align: center; }
-    h1 { margin: 0; color: #156082; font-size: 23px; text-transform: uppercase; }
-    .intro, .plan-section { margin-top: 6mm; }
-    .intro > div, .plan-section > div { display: flex; align-items: center; gap: 8px; margin-bottom: 3mm; }
-    .section-number { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; background: #156082; color: #fff; font-size: 10px; font-weight: 900; }
-    h2 { margin: 0; color: #172033; font-size: 15px; }
-    .intro p { margin: 0; color: #4b5d72; font-size: 9.5px; line-height: 1.45; }
-    .report-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3mm; margin-top: 4mm; }
-    .report-metric { padding: 3mm 4mm; border: 1px solid #d8e2ef; border-radius: 5px; background: #fbfdff; }
-    .report-metric small { display: block; color: #64748b; font-size: 8px; font-weight: 700; text-transform: uppercase; }
-    .report-metric strong { display: block; margin-top: 1mm; color: #156082; font-size: 17px; }
-    .cost-chart-section { margin-top: 4mm; break-inside: avoid; }
-    .cost-chart-section h3 { margin: 0 0 2mm; color: #172033; font-size: 12px; }
-    .cost-chart { display: block; width: 100%; height: auto; border: 1px solid #d8e2ef; border-radius: 5px; background: #fbfdff; }
-    .chart-axis { stroke: #334155; stroke-width: 1.2; }
-    .chart-grid, .quarter-guide { stroke: #d8e2ef; stroke-width: .8; }
-    .quarter-guide { stroke-dasharray: 4 4; }
-    .chart-line { fill: none; stroke: #156082; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-    .quarter-label-box { fill: #fff; }
-    .chart-month-tick { stroke: #334155; stroke-width: .8; }
-    .quarter-label, .chart-tick, .chart-month-label, .chart-axis-label { fill: #334155; font-size: 10px; }
-    .quarter-label { font-weight: 900; }
-    .chart-month-label { font-size: 8.5px; }
-    .chart-axis-label { font-size: 11px; font-weight: 900; }
-    .financial-summary { margin-top: 5mm; break-inside: avoid; }
-    .financial-summary h2 { margin-bottom: 2.5mm; }
-    table { width: 100%; border-collapse: collapse; font-size: 8.7px; }
-    th { padding: 1.4mm 1.6mm; background: #eef4fa; color: #334155; text-align: left; text-transform: uppercase; font-size: 7.2px; }
-    td { padding: 1.25mm 1.6mm; border-bottom: 1px solid #e7edf5; color: #172033; vertical-align: top; }
-    tr { break-inside: avoid; }
-    .amount { text-align: right; white-space: nowrap; }
-    .training-plan-table { margin-top: 1mm; table-layout: fixed; }
-    .training-plan-table th:nth-child(1) { width: 42%; }
-    .training-plan-table th:nth-child(2) { width: 28%; }
-    .training-plan-table th:nth-child(3) { width: 15%; }
-    .training-plan-table th:nth-child(4) { width: 15%; }
-    .training-cell { background: #f8fafc; color: #0f3354; font-weight: 900; }
-    .training-subtotal-row td, .subtotal-row td, .total-row td { background: #f8fafc; font-weight: 900; }
-    .training-subtotal-label { text-align: right; }
-    .total-row td { border-top: 2px solid #cbd5e1; }
-    .medical-certificate-section { margin-top: 6mm; }
-    .medical-certificate-section h3 { margin: 0 0 4mm; color: #172033; font-size: 17px; }
-    .medical-certificate-table { table-layout: fixed; }
-    .medical-certificate-table th:nth-child(1) { width: 55%; }
-    .medical-certificate-table th:nth-child(2) { width: 30%; }
-    .medical-certificate-table th:nth-child(3) { width: 15%; }
-    .empty-state { padding: 8mm; border: 1px dashed #cdd8e6; border-radius: 5px; color: #64748b; font-size: 12px; text-align: center; }
-    footer { margin-top: 5mm; padding-top: 2mm; border-top: 1px solid #d8e2ef; color: #64748b; font-size: 7px; }
-    @page { size: A4; margin: 10mm; }
-    @media print { body { background: #fff; } .training-report { width: auto; min-height: auto; margin: 0; padding: 0; } }
-  `;
-}
-
-export function buildTrainingPlanReport(input: TrainingPlanReportInput): TrainingPlanReport {
-  const data = buildReportData(input);
-  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Plan de Formation ${data.targetYear}</title><style>${reportStyles()}</style></head><body><main class="training-report"><header class="model-header"><div class="model-logo"><img src="/bbtm-logo.png" alt="Logo BBTM"></div><div class="model-title"><h1>Plan de Formation ${data.targetYear}</h1></div></header><section class="intro"><div><span class="section-number">1</span><h2>Indicateurs</h2></div><p>Rapport généré le ${formatDate(data.generatedOn)}. Les actions ci-dessous recensent les formations et certificats arrivant à échéance sur l’année ${data.targetYear}.</p><div class="report-metrics"><article class="report-metric"><small>Turnover annuel ${data.generatedOn.getFullYear()}</small><strong>${formatMetric(input.turnoverRate)} %</strong></article><article class="report-metric"><small>Ancienneté moyenne</small><strong>${formatMetric(input.averageTenureYears)} ans</strong></article></div></section>${buildCostChart(data.trainingGroups, data.targetYear, data.totalCost)}${buildFinancialSummary(data.trainingGroups, data.totalActions, data.totalCost)}<section class="plan-section"><div><span class="section-number">2</span><h2>Plan de Formation ${data.targetYear}</h2></div><table class="training-plan-table"><thead><tr><th>Formation</th><th>Prénom et NOM du collaborateur</th><th>Échéance</th><th class="amount">Coût</th></tr></thead><tbody>${buildPlanRows(data.trainingGroups, data.totalCost)}</tbody></table><section class="medical-certificate-section"><h3>Certificats médicaux d’aptitude à la navigation maritime</h3><table class="medical-certificate-table"><thead><tr><th>Formation</th><th>Prénom et NOM du collaborateur</th><th>Échéance</th></tr></thead><tbody>${buildMedicalRows(data.medicalCertificates)}</tbody></table></section></section><footer>${escapeHtml(REPORT_FOOTER)}</footer></main></body></html>`;
-
-  return {
-    fileName: `Plan-de-Formation-${data.targetYear}.pdf`,
-    html,
-    medicalCertificateCount: data.medicalCertificates.length,
-    targetYear: data.targetYear,
-    totalActions: data.totalActions,
-    totalCost: data.totalCost,
+function drawFormulaSection(doc: PdfDocument, y: number, report: TrainingPlanReport): void {
+  const lastIndicator = report.annualIndicators[report.annualIndicators.length - 1];
+  drawSectionTitle(doc, '3', 'Méthodes de calcul des indicateurs', y);
+  const boxY = y + 5;
+  const boxHeight = 42;
+  const boxWidth = 92;
+  const formulaTextWidth = boxWidth - 8;
+  const drawFormulaBox = (x: number, title: string, formula: string, details: string[]) => {
+    doc.setDrawColor(...GRID);
+    doc.setFillColor(...PALE);
+    doc.roundedRect(x, boxY, boxWidth, boxHeight, 1.5, 1.5, 'FD');
+    doc.setTextColor(...BLUE);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(title, x + 4, boxY + 6);
+    doc.setTextColor(...NAVY);
+    doc.setFontSize(7);
+    const formulaLines = doc.splitTextToSize(formula, formulaTextWidth);
+    doc.text(formulaLines, x + 4, boxY + 12);
+    let detailY = boxY + 12 + formulaLines.length * 3.2 + 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.4);
+    doc.setTextColor(...SLATE);
+    details.forEach((detail) => {
+      const detailLines = doc.splitTextToSize(`- ${detail}`, formulaTextWidth);
+      doc.text(detailLines, x + 4, detailY);
+      detailY += detailLines.length * 2.9 + 1;
+    });
   };
+
+  drawFormulaBox(
+    10,
+    'Turnover annuel',
+    'Turnover N (%) = Départs pendant N / ((Effectif au 1er janvier N + effectif à la date de référence) / 2) x 100',
+    [
+      `Pour ${lastIndicator.year}: ${lastIndicator.departures} départ(s), effectifs ${lastIndicator.headcountStart} et ${lastIndicator.headcountEnd}.`,
+      `Effectif moyen retenu: ${formatMetric(lastIndicator.averageHeadcount)} salarié(s).`,
+      "Pour l'année d'édition, la date de référence est la date du rapport; sinon le 31 décembre.",
+    ],
+  );
+  drawFormulaBox(
+    108,
+    'Ancienneté moyenne',
+    "Ancienneté moyenne N = Somme des anciennetés individuelles à la date de référence / salariés présents avec date d'embauche",
+    [
+      "Ancienneté individuelle = jours depuis la date d'embauche / 365,25.",
+      `Pour ${lastIndicator.year}: ${lastIndicator.peopleWithTenure} salarié(s) inclus dans le calcul.`,
+      "Les salariés sans date d'embauche sont exclus; les salariés sortis restent pris en compte dans les années où ils étaient présents.",
+    ],
+  );
 }
 
-export function openTrainingPlanReport(report: TrainingPlanReport): boolean {
+function drawFooters(doc: PdfDocument): void {
+  const pages = doc.getNumberOfPages();
+  for (let page = 1; page <= pages; page += 1) {
+    doc.setPage(page);
+    doc.setDrawColor(...GRID);
+    doc.line(10, 282, 200, 282);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.5);
+    doc.setTextColor(...SLATE);
+    doc.text(REPORT_FOOTER, 10, 286);
+    doc.text(`Page ${page} / ${pages}`, 200, 286, { align: 'right' });
+  }
+}
+
+function tableFinalY(doc: PdfDocument, fallback: number): number {
+  return ((doc as PdfDocument & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || fallback) as number;
+}
+
+export async function generateTrainingPlanPdf(report: TrainingPlanReport): Promise<Blob> {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const doc = new jsPDF({ compress: true, format: 'a4', orientation: 'portrait', unit: 'mm' });
+  const logo = await loadLogoDataUrl();
+  const title = `Plan de Formation ${report.targetYear}`;
+  const currentIndicator = report.annualIndicators[report.annualIndicators.length - 1];
+  doc.setProperties({
+    author: 'SeaPilot - BBTM',
+    creator: 'SeaPilot',
+    subject: `Plan de formation et indicateurs RH ${report.targetYear}`,
+    title,
+  });
+  drawHeader(doc, title, logo);
+  drawSectionTitle(doc, '1', 'Indicateurs', 39);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.2);
+  doc.setTextColor(...SLATE);
+  doc.text(
+    `Rapport généré le ${formatDate(report.generatedOn)}. Formations et certificats arrivant à échéance en ${report.targetYear}.`,
+    10,
+    46,
+  );
+  drawMetricCard(
+    doc,
+    10,
+    50,
+    92,
+    `Turnover annuel ${currentIndicator.year}`,
+    `${formatMetric(currentIndicator.turnoverRate)} %`,
+  );
+  drawMetricCard(
+    doc,
+    108,
+    50,
+    92,
+    `Ancienneté moyenne ${currentIndicator.year}`,
+    `${formatMetric(currentIndicator.averageTenureYears)} ans`,
+  );
+  drawLineChart(doc, {
+    color: BLUE,
+    points: report.annualIndicators.map((indicator) => ({ value: indicator.turnoverRate, year: indicator.year })),
+    suffix: ' %',
+    title: 'Évolution annuelle du turnover',
+    width: 92,
+    x: 10,
+    y: 68,
+  });
+  drawLineChart(doc, {
+    color: BLUE_ALT,
+    points: report.annualIndicators.map((indicator) => ({ value: indicator.averageTenureYears, year: indicator.year })),
+    suffix: ' ans',
+    title: "Évolution de l'ancienneté moyenne",
+    width: 92,
+    x: 108,
+    y: 68,
+  });
+  drawCostChart(doc, report, 115);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...NAVY);
+  doc.text('Récapitulatif financier', 10, 177);
+  autoTable(doc, {
+    body: [
+      ...report.trainingGroups.map((group) => [group.label, String(group.actions.length), formatMoney(group.subtotal)]),
+      ['Total général', String(report.totalActions), formatMoney(report.totalCost)],
+    ],
+    columnStyles: { 0: { cellWidth: 130 }, 1: { cellWidth: 24, halign: 'right' }, 2: { cellWidth: 36, halign: 'right' } },
+    didParseCell: (data) => {
+      if (data.row.index === report.trainingGroups.length) {
+        data.cell.styles.fillColor = PALE;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+    head: [['Formation', 'Actions', 'Sous-total']],
+    headStyles: { fillColor: LIGHT, fontStyle: 'bold', textColor: NAVY },
+    margin: { left: 10, right: 10 },
+    pageBreak: 'avoid',
+    startY: 180,
+    styles: { cellPadding: 1.5, font: 'helvetica', fontSize: 7, lineColor: GRID, lineWidth: { bottom: 0.15 }, textColor: NAVY },
+    theme: 'plain',
+  });
+
+  doc.addPage();
+  drawHeader(doc, title, logo);
+  drawSectionTitle(doc, '2', `Plan de Formation ${report.targetYear}`, 39);
+  const trainingRows: string[][] = [];
+  report.trainingGroups.forEach((group) => {
+    group.actions.forEach((action, index) => {
+      trainingRows.push([index === 0 ? group.label : '', action.personName, formatDate(action.expiresOn), formatMoney(group.unitCost)]);
+    });
+    trainingRows.push(['', `Sous-total ${group.label}`, '', formatMoney(group.subtotal)]);
+  });
+  trainingRows.push(['Total général', '', '', formatMoney(report.totalCost)]);
+  autoTable(doc, {
+    body: trainingRows.length > 1 ? trainingRows : [['Aucune formation payante', '', '', formatMoney(0)]],
+    columnStyles: {
+      0: { cellWidth: 72, fontStyle: 'bold' },
+      1: { cellWidth: 58 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 32, halign: 'right' },
+    },
+    didParseCell: (data) => {
+      const row = data.row.raw as string[];
+      if (String(row[1] || '').startsWith('Sous-total') || row[0] === 'Total général') {
+        data.cell.styles.fillColor = PALE;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+    head: [['Formation', 'Prénom et NOM du collaborateur', 'Échéance', 'Coût']],
+    headStyles: { fillColor: LIGHT, fontStyle: 'bold', textColor: NAVY },
+    margin: { bottom: 16, left: 10, right: 10, top: 12 },
+    rowPageBreak: 'avoid',
+    startY: 43,
+    styles: { cellPadding: 1.25, font: 'helvetica', fontSize: 6.6, lineColor: GRID, lineWidth: { bottom: 0.15 }, textColor: NAVY },
+    theme: 'plain',
+  });
+  let nextY = tableFinalY(doc, 80) + 7;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(...NAVY);
+  doc.text("Certificats médicaux d'aptitude à la navigation maritime", 10, nextY);
+  autoTable(doc, {
+    body:
+      report.medicalCertificates.length > 0
+        ? report.medicalCertificates.map((certificate, index) => [
+            index === 0 ? "Certificat Médical d'Aptitude à la Navigation Maritime" : '',
+            certificate.personName,
+            formatDate(certificate.expiresOn),
+          ])
+        : [['Aucun certificat médical', '', '']],
+    columnStyles: { 0: { cellWidth: 90, fontStyle: 'bold' }, 1: { cellWidth: 65 }, 2: { cellWidth: 35 } },
+    head: [['Formation', 'Prénom et NOM du collaborateur', 'Échéance']],
+    headStyles: { fillColor: LIGHT, fontStyle: 'bold', textColor: NAVY },
+    margin: { bottom: 16, left: 10, right: 10, top: 12 },
+    rowPageBreak: 'avoid',
+    startY: nextY + 3,
+    styles: { cellPadding: 1.15, font: 'helvetica', fontSize: 6.4, lineColor: GRID, lineWidth: { bottom: 0.15 }, textColor: NAVY },
+    theme: 'plain',
+  });
+  nextY = tableFinalY(doc, nextY + 30) + 7;
+  if (nextY > 228) {
+    doc.addPage();
+    nextY = 18;
+  }
+  drawFormulaSection(doc, nextY, report);
+  drawFooters(doc);
+  return doc.output('blob');
+}
+
+export async function openTrainingPlanReport(report: TrainingPlanReport): Promise<boolean> {
   const reportWindow = window.open('', '_blank');
 
   if (!reportWindow) {
     return false;
   }
 
-  reportWindow.addEventListener(
-    'load',
-    () => {
-      reportWindow.document.title = report.fileName.replace(/\.pdf$/i, '');
-      reportWindow.focus();
-      reportWindow.print();
-    },
-    { once: true },
-  );
   reportWindow.document.open();
-  reportWindow.document.write(report.html);
+  reportWindow.document.write(
+    '<!doctype html><html lang="fr"><head><title>Génération du PDF...</title></head><body style="font:16px Segoe UI,Arial,sans-serif;padding:32px;color:#172033">Génération du rapport PDF en cours...</body></html>',
+  );
   reportWindow.document.close();
-  return true;
+
+  try {
+    const blob = await generateTrainingPlanPdf(report);
+    const file = new File([blob], report.fileName, { type: 'application/pdf' });
+    const pdfUrl = URL.createObjectURL(file);
+    reportWindow.location.replace(pdfUrl);
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 5 * 60 * 1000);
+    return true;
+  } catch (error) {
+    reportWindow.close();
+    throw error;
+  }
 }

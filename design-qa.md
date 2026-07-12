@@ -71,3 +71,10 @@ final result: passed
 - Coûts unitaires migrés : CFBS 1 400 €, CGO 800 €, CRO 600 €, enseignement médical I 200 € et III 2 000 €.
 - Ajout du turnover annuel et de l'ancienneté moyenne dans les indicateurs du rapport.
 - Livraison : version applicative `1.1.3`.
+
+## Mise à jour — PDF direct et historiques RH (2026-07-12)
+
+- Le bouton « Plan de Formation » ouvre désormais un véritable fichier `application/pdf` dans un nouvel onglet.
+- Le rapport est composé sur deux pages avec graphiques annuels du turnover et de l'ancienneté moyenne depuis la première embauche jusqu'à l'année d'édition.
+- La dernière page détaille les populations, dates de référence et formules utilisées pour calculer les deux indicateurs.
+- Livraison : version applicative `1.1.4`.

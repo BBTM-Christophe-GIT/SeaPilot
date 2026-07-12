@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HrDocumentRecord, PersonRecord } from './peopleQueries';
-import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
+import { buildAnnualHrIndicators, buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 
-function person(id: number, firstName: string, lastName: string, active = true): PersonRecord {
-  return { active, firstName, id, lastName } as PersonRecord;
+function person(
+  id: number,
+  firstName: string,
+  lastName: string,
+  active = true,
+  hiredOn = '2024-01-01',
+  departedOn = '',
+): PersonRecord {
+  return { active, departedOn, firstName, hiredOn, id, lastName } as PersonRecord;
 }
 
 function document(
@@ -29,7 +36,7 @@ describe('buildTrainingPlanReport', () => {
       person(4, 'Arnaud', 'HAUTEMANIERE'),
       person(5, 'David', 'FIDELIN'),
       person(6, 'Alexandre', 'ROUPSARD'),
-      person(7, 'Ancien', 'INACTIF', false),
+      person(7, 'Ancien', 'INACTIF', false, '2023-01-01', '2025-06-30'),
     ];
     const documents = [
       document(1, 1, 'CFBS', '2027-09-20'),
@@ -43,11 +50,9 @@ describe('buildTrainingPlanReport', () => {
     ];
 
     const report = buildTrainingPlanReport({
-      averageTenureYears: 2.4,
       documents,
       generatedOn: new Date('2026-07-12T12:00:00'),
       people,
-      turnoverRate: 13.3,
     });
 
     expect(report.targetYear).toBe(2027);
@@ -55,27 +60,41 @@ describe('buildTrainingPlanReport', () => {
     expect(report.totalCost).toBe(5000);
     expect(report.medicalCertificateCount).toBe(1);
     expect(report.fileName).toBe('Plan-de-Formation-2027.pdf');
-    expect(report.html).toContain('Plan de Formation 2027');
-    expect(report.html).toContain('Turnover annuel 2026');
-    expect(report.html).toContain('13,3 %');
-    expect(report.html).toContain('Ancienneté moyenne');
-    expect(report.html).toContain('2,4 ans');
-    expect(report.html).toContain('Adrien BOIS');
-    expect(report.html).toContain('Alexandre ROUPSARD');
-    expect(report.html).not.toContain('Ancien INACTIF');
-    expect(report.html).not.toContain('CFBS hors année');
+    expect(report.trainingGroups[0].actions[0].personName).toBe('Adrien BOIS');
+    expect(report.medicalCertificates[0].personName).toBe('Alexandre ROUPSARD');
+    expect(report.annualIndicators[0].year).toBe(2023);
+    expect(report.annualIndicators.at(-1)?.year).toBe(2026);
   });
 
-  it('reports a blocked popup without attempting to write', () => {
+  it('calculates annual turnover and average tenure from the first hire year', () => {
+    const indicators = buildAnnualHrIndicators(
+      [
+        person(1, 'Alice', 'ACTIVE', true, '2020-01-01'),
+        person(2, 'Bob', 'DEPARTED', false, '2021-01-01', '2022-06-30'),
+      ],
+      new Date('2023-07-01T12:00:00'),
+    );
+
+    expect(indicators.map((indicator) => indicator.year)).toEqual([2020, 2021, 2022, 2023]);
+    expect(indicators[2]).toMatchObject({
+      averageHeadcount: 1.5,
+      departures: 1,
+      headcountEnd: 1,
+      headcountStart: 2,
+      turnoverRate: 66.7,
+    });
+    expect(indicators[3].peopleWithTenure).toBe(1);
+    expect(indicators[3].averageTenureYears).toBe(3.5);
+  });
+
+  it('reports a blocked popup without attempting to generate the PDF', async () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
     const report = buildTrainingPlanReport({
-      averageTenureYears: 0,
       documents: [],
       generatedOn: new Date('2026-07-12T12:00:00'),
       people: [],
-      turnoverRate: 0,
     });
 
-    expect(openTrainingPlanReport(report)).toBe(false);
+    await expect(openTrainingPlanReport(report)).resolves.toBe(false);
   });
 });
