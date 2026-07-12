@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   ContactRound,
+  FileDown,
   FileText,
   Download,
   HeartPulse,
@@ -61,6 +62,7 @@ import {
   type UpdateHrDocumentMedicalInput,
   type UpdatePersonDetailsInput,
 } from './peopleQueries';
+import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 
 interface HumanResourcesPageProps {
   client?: SupabaseClient;
@@ -792,6 +794,10 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
     [visibleDocuments, visiblePeople],
   );
+  const trainingPlanDashboard = useMemo(
+    () => buildHumanResourcesDashboard(roleVisiblePeople.filter((person) => person.active), roleVisibleDocuments),
+    [roleVisibleDocuments, roleVisiblePeople],
+  );
   const rosterGroups = useMemo(() => buildHumanResourcesRosterGroups(dashboard.groups), [dashboard.groups]);
   const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
   const selectedPerson = useMemo(
@@ -1016,6 +1022,23 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     }
   }
 
+  function handleTrainingPlanReport() {
+    const report = buildTrainingPlanReport({
+      averageTenureYears: trainingPlanDashboard.metrics.averageTenureYears,
+      documents: roleVisibleDocuments,
+      people: roleVisiblePeople,
+      turnoverRate: trainingPlanDashboard.metrics.turnoverRate,
+    });
+
+    setErrorMessage(null);
+    if (openTrainingPlanReport(report)) {
+      setStatusMessage(`Plan de Formation ${report.targetYear} prêt à être enregistré en PDF.`);
+    } else {
+      setStatusMessage(null);
+      setErrorMessage("Le navigateur a bloqué l'ouverture du rapport. Autorisez les fenêtres contextuelles puis réessayez.");
+    }
+  }
+
   if (isLoading) {
     return <div className="admin-state">Chargement du personnel RH...</div>;
   }
@@ -1032,6 +1055,12 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             <button aria-label="Nouveau Collaborateur" className="hr-primary-button" onClick={() => setIsCreateOpen(true)} type="button">
               <UserPlus aria-hidden="true" size={17} />
               Ajouter un collaborateur
+            </button>
+          ) : null}
+          {isManager ? (
+            <button className="hr-secondary-button" onClick={handleTrainingPlanReport} type="button">
+              <FileDown aria-hidden="true" size={17} />
+              Plan de Formation
             </button>
           ) : null}
           {isAdmin ? (

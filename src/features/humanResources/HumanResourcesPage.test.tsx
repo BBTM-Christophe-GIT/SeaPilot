@@ -191,6 +191,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByLabelText('Urgent')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents echus')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Plan de Formation' })).toBeInTheDocument();
     expect(screen.getAllByText('Capitaine').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();

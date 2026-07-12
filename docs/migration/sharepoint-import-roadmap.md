@@ -178,6 +178,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Fiche RH enrichie avec champs collaborateur importes: identite, contrat, coordonnees, urgence, habilitations et mensurations.
 - Module RH enrichi avec filtres fonction/grade/registre/role, KPIs contrat/urgence/habilitations et badges de synthese collaborateur.
 - Fiche RH editable par les roles bureau avec sauvegarde des champs importes collaborateur.
+- Rapport Plan de Formation migre depuis le Dashboard SPFx : génération A4 pour l'année suivante, coûts cumulés trimestriels, récapitulatif financier, détail par collaborateur, certificats médicaux, turnover annuel et ancienneté moyenne.
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.
