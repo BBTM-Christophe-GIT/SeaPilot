@@ -44,6 +44,7 @@ import {
   getHrFunctionVisibilityKey,
   HR_DOCUMENT_CATEGORY_LABELS,
   HR_PRIMARY_FUNCTIONS,
+  HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
   normalizeHrFunctionLabel,
   renewHrDocument,
@@ -1339,7 +1340,21 @@ function StrategicMetric({
 }
 
 function FunctionDistribution({ groups }: { groups: Array<{ label: string; people: PersonDashboardRecord[] }> }) {
-  const maxCount = Math.max(1, ...groups.map((group) => group.people.length));
+  const sedentaryFunctionLabels = new Set<string>(HR_SEDENTARY_FUNCTIONS);
+  const sedentaryPeople = groups.flatMap((group) =>
+    sedentaryFunctionLabels.has(group.label) ? group.people : [],
+  );
+  const firstSedentaryIndex = groups.findIndex((group) => sedentaryFunctionLabels.has(group.label));
+  const distributionGroups = groups.filter((group) => !sedentaryFunctionLabels.has(group.label));
+
+  if (sedentaryPeople.length > 0) {
+    distributionGroups.splice(firstSedentaryIndex, 0, {
+      label: 'Sédentaires',
+      people: sedentaryPeople,
+    });
+  }
+
+  const maxCount = Math.max(1, ...distributionGroups.map((group) => group.people.length));
 
   return (
     <section aria-label="Effectifs par fonction" className="hr-function-distribution">
@@ -1351,7 +1366,7 @@ function FunctionDistribution({ groups }: { groups: Array<{ label: string; peopl
         <small>{groups.reduce((total, group) => total + group.people.length, 0)} personnes</small>
       </div>
       <div className="hr-function-bars">
-        {groups.map((group) => (
+        {distributionGroups.map((group) => (
           <div className="hr-function-bar-row" key={group.label}>
             <span>{group.label}</span>
             <div aria-hidden="true" className="hr-function-bar-track">

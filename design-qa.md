@@ -56,3 +56,10 @@ final result: passed
 - Portée : mode lecture seule de la Fiche RH uniquement ; les champs du mode modification restent clairement identifiables comme contrôles de formulaire.
 - Intention visuelle : affichage plus léger, simple et moderne, avec une hiérarchie renforcée entre libellé secondaire et valeur principale.
 - Livraison : version applicative `1.1.1`, incluant cette refonte sur la production Vercel.
+
+## Mise à jour — regroupement des effectifs sédentaires (2026-07-12)
+
+- La carte « Effectifs par fonction » remplace les cinq fonctions sédentaires détaillées par une ligne unique « Sédentaires ».
+- Cette ligne additionne Directeur QHSE / Chef de Projet, Directrice Administrative et Financière, Fleet Technical Manager, Président et Yard Manager - Le Havre.
+- Les fonctions détaillées restent inchangées dans les filtres et la liste RH.
+- Livraison : version applicative `1.1.2`.
