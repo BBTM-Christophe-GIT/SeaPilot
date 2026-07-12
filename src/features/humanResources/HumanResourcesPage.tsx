@@ -636,6 +636,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -793,10 +794,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const dashboard = useMemo(
     () => buildHumanResourcesDashboard(visiblePeople, visibleDocuments),
     [visibleDocuments, visiblePeople],
-  );
-  const trainingPlanDashboard = useMemo(
-    () => buildHumanResourcesDashboard(roleVisiblePeople.filter((person) => person.active), roleVisibleDocuments),
-    [roleVisibleDocuments, roleVisiblePeople],
   );
   const rosterGroups = useMemo(() => buildHumanResourcesRosterGroups(dashboard.groups), [dashboard.groups]);
   const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
@@ -1022,20 +1019,26 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     }
   }
 
-  function handleTrainingPlanReport() {
+  async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
-      averageTenureYears: trainingPlanDashboard.metrics.averageTenureYears,
       documents: roleVisibleDocuments,
       people: roleVisiblePeople,
-      turnoverRate: trainingPlanDashboard.metrics.turnoverRate,
     });
 
     setErrorMessage(null);
-    if (openTrainingPlanReport(report)) {
-      setStatusMessage(`Plan de Formation ${report.targetYear} prêt à être enregistré en PDF.`);
-    } else {
+    setIsGeneratingTrainingPlan(true);
+    try {
+      if (await openTrainingPlanReport(report)) {
+        setStatusMessage(`Plan de Formation ${report.targetYear} ouvert au format PDF.`);
+      } else {
+        setStatusMessage(null);
+        setErrorMessage("Le navigateur a bloqué l'ouverture du PDF. Autorisez les fenêtres contextuelles puis réessayez.");
+      }
+    } catch {
       setStatusMessage(null);
-      setErrorMessage("Le navigateur a bloqué l'ouverture du rapport. Autorisez les fenêtres contextuelles puis réessayez.");
+      setErrorMessage('Impossible de générer le rapport PDF. Réessayez dans quelques instants.');
+    } finally {
+      setIsGeneratingTrainingPlan(false);
     }
   }
 
@@ -1058,9 +1061,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             </button>
           ) : null}
           {isManager ? (
-            <button className="hr-secondary-button" onClick={handleTrainingPlanReport} type="button">
+            <button className="hr-secondary-button" disabled={isGeneratingTrainingPlan} onClick={handleTrainingPlanReport} type="button">
               <FileDown aria-hidden="true" size={17} />
-              Plan de Formation
+              {isGeneratingTrainingPlan ? 'Génération du PDF...' : 'Plan de Formation'}
             </button>
           ) : null}
           {isAdmin ? (
