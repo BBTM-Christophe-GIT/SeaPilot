@@ -4,11 +4,11 @@ const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, active';
 const PLANNING_ASSIGNMENT_SELECT =
-  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, source_label';
+  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, status_label, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
-  'id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
+  'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
 const PLANNING_PERIOD_SELECT =
-  'id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
+  'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
   'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, status, source_label';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
@@ -42,6 +42,9 @@ export interface PlanningAssignmentRow {
   starts_on: string;
   ends_on: string;
   assignment_role: string;
+  status_label?: string | null;
+  watch_group?: string | null;
+  comments?: string | null;
   source_label: string;
 }
 
@@ -53,6 +56,8 @@ export interface PlanningAssignmentOverviewRow extends PlanningAssignmentRow {
 
 interface PlanningDayRow {
   id: number;
+  person_id?: number | null;
+  vessel_id?: number | null;
   crew_name: string | null;
   captain_name: string | null;
   vessel_name: string | null;
@@ -79,6 +84,8 @@ interface PlanningDayRow {
 
 interface PlanningPeriodRow {
   id: number;
+  person_id?: number | null;
+  vessel_id?: number | null;
   crew_name: string | null;
   vessel_name: string | null;
   manual_vessel_name: string | null;
@@ -160,11 +167,16 @@ export interface PlanningAssignmentRecord {
   startsOn: string;
   endsOn: string;
   assignmentRole: string;
+  statusLabel: string;
+  watchGroup: string;
+  comments: string;
   sourceLabel: string;
 }
 
 export interface PlanningDayRecord {
   id: number;
+  personId: number | null;
+  vesselId: number | null;
   crewName: string;
   captainName: string;
   vesselName: string;
@@ -190,6 +202,8 @@ export interface PlanningDayRecord {
 
 export interface PlanningPeriodRecord {
   id: number;
+  personId: number | null;
+  vesselId: number | null;
   crewName: string;
   vesselName: string;
   watchGroup: string;
@@ -262,6 +276,34 @@ export interface CreatePlanningAssignmentInput {
   startsOn: string;
   endsOn: string;
   assignmentRole: string;
+  statusLabel?: string;
+  watchGroup?: string;
+  comments?: string;
+}
+
+export interface UpdatePlanningEventInput {
+  id: number;
+  kind: 'assignment' | 'day' | 'period';
+  vesselId: number;
+  vesselName: string;
+  startsOn: string;
+  endsOn: string;
+  statusLabel: string;
+  functionLabel: string;
+  watchGroup: string;
+  comments: string;
+}
+
+export interface UpdatePlanningProjectInput {
+  id: number;
+  title: string;
+  startsOn: string;
+  endsOn: string;
+  status: string;
+  vesselId: number;
+  vesselName: string;
+  clientName: string;
+  description: string;
 }
 
 export function formatPlanningPersonName(person: PlanningPerson): string {
@@ -336,6 +378,9 @@ export function mapPlanningAssignmentRows(
       startsOn: row.starts_on,
       endsOn: row.ends_on,
       assignmentRole: row.assignment_role,
+      statusLabel: row.status_label || 'En Mer',
+      watchGroup: row.watch_group || 'Affectation',
+      comments: row.comments || '',
       sourceLabel: row.source_label,
     };
   });
@@ -353,6 +398,9 @@ export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOvervi
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     assignmentRole: row.assignment_role,
+    statusLabel: row.status_label || 'En Mer',
+    watchGroup: row.watch_group || 'Affectation',
+    comments: row.comments || '',
     sourceLabel: row.source_label,
   }));
 }
@@ -360,6 +408,8 @@ export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOvervi
 export function mapPlanningDayRows(rows: PlanningDayRow[]): PlanningDayRecord[] {
   return rows.map((row) => ({
     id: row.id,
+    personId: row.person_id ?? null,
+    vesselId: row.vessel_id ?? null,
     crewName: row.crew_name || 'Marin non renseigne',
     captainName: textOrEmpty(row.captain_name),
     vesselName: mapImportedVesselName(row.vessel_name, row.manual_vessel_name),
@@ -387,6 +437,8 @@ export function mapPlanningDayRows(rows: PlanningDayRow[]): PlanningDayRecord[] 
 export function mapPlanningPeriodRows(rows: PlanningPeriodRow[]): PlanningPeriodRecord[] {
   return rows.map((row) => ({
     id: row.id,
+    personId: row.person_id ?? null,
+    vesselId: row.vessel_id ?? null,
     crewName: row.crew_name || 'Marin non renseigne',
     vesselName: mapImportedVesselName(row.vessel_name, row.manual_vessel_name),
     watchGroup: textOrEmpty(row.watch_group),
@@ -576,7 +628,9 @@ export async function createVessel(client: SupabaseClient, input: CreateVesselIn
     throw error;
   }
 
-  return mapVesselRows([data as VesselRow])[0];
+  const vessel = mapVesselRows([data as VesselRow])[0];
+  await writePlanningChangeLog(client, 'vessel', vessel.id, 'create', { name: vessel.name, acronym: vessel.acronym });
+  return vessel;
 }
 
 export async function createPlanningAssignment(
@@ -590,6 +644,9 @@ export async function createPlanningAssignment(
     starts_on: input.startsOn,
     ends_on: input.endsOn,
     assignment_role: input.assignmentRole.trim() || 'crew',
+    status_label: input.statusLabel || 'En Mer',
+    watch_group: input.watchGroup || 'Affectation',
+    comments: input.comments?.trim() || null,
     source_label: 'seapilot',
   };
   const { data, error } = await client
@@ -602,5 +659,129 @@ export async function createPlanningAssignment(
     throw error;
   }
 
-  return data as PlanningAssignmentRow;
+  const assignment = data as PlanningAssignmentRow;
+  await writePlanningChangeLog(client, 'assignment', assignment.id, 'create', payload);
+  return assignment;
+}
+
+async function writePlanningChangeLog(
+  client: SupabaseClient,
+  entityKind: 'assignment' | 'day' | 'period' | 'project' | 'vessel',
+  entityId: number,
+  action: 'create' | 'update' | 'archive' | 'delete',
+  payload: Record<string, unknown>,
+) {
+  try {
+    await client.from('planning_change_log').insert({
+      entity_kind: entityKind,
+      entity_id: entityId,
+      action,
+      payload,
+    });
+  } catch {
+    // The business write is authoritative; audit logging must not hide a successful planning update.
+  }
+}
+
+export async function updatePlanningEvent(client: SupabaseClient, input: UpdatePlanningEventInput): Promise<void> {
+  if (!input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
+    throw new Error('La période de planning est invalide.');
+  }
+
+  let error: unknown = null;
+  if (input.kind === 'assignment') {
+    ({ error } = await client
+      .from('planning_assignments')
+      .update({
+        vessel_id: input.vesselId,
+        starts_on: input.startsOn,
+        ends_on: input.endsOn,
+        assignment_role: input.functionLabel.trim() || 'Équipage',
+        status_label: input.statusLabel,
+        watch_group: input.watchGroup.trim() || 'Affectation',
+        comments: input.comments.trim() || null,
+        source_label: 'seapilot-admin',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.id));
+  } else if (input.kind === 'period') {
+    ({ error } = await client
+      .from('planning_periods')
+      .update({
+        vessel_id: input.vesselId,
+        vessel_name: input.vesselName,
+        manual_vessel_name: null,
+        starts_on: input.startsOn,
+        ends_on: input.endsOn,
+        year_number: Number(input.startsOn.slice(0, 4)),
+        sailor_status: input.statusLabel,
+        function_label: input.functionLabel.trim() || null,
+        watch_group: input.watchGroup.trim() || null,
+        comments: input.comments.trim() || null,
+        source_label: 'seapilot-admin',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.id));
+  } else {
+    if (input.startsOn !== input.endsOn) {
+      throw new Error('Une journée isolée ne peut pas être étendue. Créez une affectation pour une période.');
+    }
+    ({ error } = await client
+      .from('planning_days')
+      .update({
+        vessel_id: input.vesselId,
+        vessel_name: input.vesselName,
+        manual_vessel_name: null,
+        work_date: input.startsOn,
+        sailor_status: input.statusLabel,
+        function_label: input.functionLabel.trim() || null,
+        watch_group: input.watchGroup.trim() || null,
+        comments: input.comments.trim() || null,
+        source_label: 'seapilot-admin',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.id));
+  }
+
+  if (error) throw error;
+  await writePlanningChangeLog(client, input.kind, input.id, 'update', { ...input });
+}
+
+export async function deletePlanningEvent(
+  client: SupabaseClient,
+  event: { id: number; kind: 'assignment' | 'day' | 'period' },
+): Promise<void> {
+  const table = event.kind === 'assignment' ? 'planning_assignments' : event.kind === 'period' ? 'planning_periods' : 'planning_days';
+  const { error } = await client.from(table).delete().eq('id', event.id);
+  if (error) throw error;
+  await writePlanningChangeLog(client, event.kind, event.id, 'delete', {});
+}
+
+export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<void> {
+  if (!input.title.trim() || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
+    throw new Error('Les informations du projet sont invalides.');
+  }
+  const { error } = await client
+    .from('planning_projects')
+    .update({
+      title: input.title.trim(),
+      starts_on: input.startsOn,
+      ends_on: input.endsOn,
+      status: input.status,
+      primary_vessel_id: input.vesselId,
+      primary_vessel_name: input.vesselName,
+      client_name: input.clientName.trim() || null,
+      description: input.description.trim() || null,
+      source_label: 'seapilot-admin',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', input.id);
+  if (error) throw error;
+  await writePlanningChangeLog(client, 'project', input.id, 'update', { ...input });
+}
+
+export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {
+  const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', vesselId);
+  if (error) throw error;
+  await writePlanningChangeLog(client, 'vessel', vesselId, 'archive', {});
 }

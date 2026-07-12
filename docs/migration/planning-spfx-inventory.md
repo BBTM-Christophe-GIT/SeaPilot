@@ -83,13 +83,17 @@ L’import est rejouable sans doublon grâce au couple `sharepoint_list_id,share
 ### Droits et actions SeaPilot
 
 - Lecture : Admin, Direction, Armement, Capitaine et Marin, selon les politiques RLS existantes.
-- Modification : Admin, Direction et Armement.
-- La création d’une affectation écrit dans `planning_assignments` avec la source `seapilot`.
-- Le clic sur une affectation ou un projet ouvre une fiche détaillée ; une affectation native sélectionnée peut être dupliquée.
+- Modification : exclusivement Admin, à la fois dans l’interface et dans les politiques RLS Supabase.
+- Une affectation peut être créée, déplacée vers un autre navire, redimensionnée par ses poignées, supprimée ou enrichie d’un statut, d’une bordée et d’une annotation.
+- Les périodes importées restent identifiables par leur source mais peuvent être corrigées par un administrateur ; chaque écriture est tracée dans `planning_change_log`.
+- Avant une création, un déplacement ou un redimensionnement, SeaPilot bloque toute période où le même marin serait présent sur deux navires différents le même jour.
+- Les marins non affectés peuvent être glissés sur un jour d’un navire pour préremplir une nouvelle affectation.
+- Les projets peuvent être déplacés ou modifiés ; les navires peuvent être ajoutés ou archivés.
+- L’export CSV par marin détaille chaque journée de la période choisie : jour travaillé, statut, fonction, navire, bordée, annotation et source.
 
 ## Écarts assumés avec le SPFx
 
 - Le module SeaPilot utilise Supabase comme source d’exécution : il ne contacte pas SharePoint depuis le navigateur.
-- Les gestes complexes de déplacement/redimensionnement Slot365 restent une étape ultérieure tant qu’un service d’écriture transactionnelle n’est pas défini côté Supabase. La lecture, les règles de reconstruction, les filtres, la création native et les panneaux d’analyse sont migrés.
-- La suppression d’une période importée n’est pas exposée dans le cockpit pour ne pas casser la traçabilité SharePoint.
+- Les corrections réalisées dans SeaPilot ne sont pas réécrites dans SharePoint : Supabase devient la source d’exécution, et `planning_change_log` conserve l’historique des changements administrateur.
+- Une journée SMTR isolée reste limitée à un jour ; pour l’étendre, l’administrateur crée une affectation ou modifie une période.
 

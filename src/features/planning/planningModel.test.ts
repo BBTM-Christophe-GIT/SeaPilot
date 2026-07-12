@@ -4,6 +4,9 @@ import {
   buildPlanningCrewRows,
   buildPlanningHrAlerts,
   buildPlanningTimeline,
+  buildPlanningExportRows,
+  getPlanningConflicts,
+  getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
   normalizePlanningStatus,
@@ -21,7 +24,7 @@ const overview: PlanningOverview = {
   ],
   assignments: [],
   days: [],
-  periods: [{ id: 10, crewName: 'Anne CAPITAINE', vesselName: 'GOURY', watchGroup: 'Bordée 1', functionLabel: 'Capitaine', sailorStatus: 'Embarqué', startsOn: '2026-07-01', endsOn: '2026-07-20', yearNumber: 2026, comments: '', slot365SourceId: '1', slot365SourceKey: 'slot', sourceLabel: 'sharepoint' }],
+  periods: [{ id: 10, personId: 1, vesselId: 1, crewName: 'Anne CAPITAINE', vesselName: 'GOURY', watchGroup: 'Bordée 1', functionLabel: 'Capitaine', sailorStatus: 'Embarqué', startsOn: '2026-07-01', endsOn: '2026-07-20', yearNumber: 2026, comments: '', slot365SourceId: '1', slot365SourceKey: 'slot', sourceLabel: 'sharepoint' }],
   projects: [
     { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Validé', sourceLabel: 'sharepoint' },
     { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
@@ -43,6 +46,19 @@ describe('planning timeline rules', () => {
     expect(planningStatusTone('Formation')).toBe('training');
     expect(projectStatusTone('À facturer')).toBe('billed');
     expect(projectStatusTone('Validé')).toBe('valid');
+  });
+
+  it('detects a sailor assigned to two different vessels on overlapping dates', () => {
+    const event = getAllPlanningCrewEvents(overview)[0];
+    const conflicts = getPlanningConflicts(overview, { ...event, id: 'new', vessel: 'SUROIT', startsOn: '2026-07-10', endsOn: '2026-07-12' });
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].date).toBe('2026-07-10');
+  });
+
+  it('exports one auditable row per sailor and calendar day', () => {
+    const rows = buildPlanningExportRows(overview, 'Anne CAPITAINE', { start: '2026-07-10', end: '2026-07-12' });
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ date: '2026-07-10', worked: 'Oui', functionLabel: 'Capitaine', vessel: 'GOURY' });
   });
 });
 

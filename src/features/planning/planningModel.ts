@@ -29,6 +29,8 @@ export interface PlanningMonthSegment {
 export interface PlanningCrewEvent {
   id: string;
   kind: 'assignment' | 'day' | 'period';
+  personId: number | null;
+  vesselId: number | null;
   person: string;
   vessel: string;
   board: string;
@@ -261,6 +263,8 @@ function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
   return {
     id: `period-${period.id}`,
     kind: 'period',
+    personId: period.personId,
+    vesselId: period.vesselId,
     person: period.crewName,
     vessel: period.vesselName,
     board: period.watchGroup,
@@ -278,15 +282,17 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
   return {
     id: `assignment-${assignment.id}`,
     kind: 'assignment',
+    personId: assignment.crewPersonId,
+    vesselId: assignment.vesselId,
     person: assignment.crewName,
     vessel: assignment.vesselName,
-    board: 'Affectation',
+    board: assignment.watchGroup || 'Affectation',
     functionLabel: assignment.assignmentRole,
-    status: 'En Mer',
+    status: normalizePlanningStatus(assignment.statusLabel),
     rhythm: '',
     startsOn: assignment.startsOn,
     endsOn: assignment.endsOn,
-    comments: '',
+    comments: assignment.comments,
     sourceLabel: assignment.sourceLabel,
   };
 }
@@ -295,6 +301,8 @@ function crewEventFromDay(day: PlanningDayRecord): PlanningCrewEvent {
   return {
     id: `day-${day.id}`,
     kind: 'day',
+    personId: day.personId,
+    vesselId: day.vesselId,
     person: day.crewName,
     vessel: day.vesselName,
     board: day.watchGroup,
@@ -312,7 +320,7 @@ function eventKey(event: PlanningCrewEvent): string {
   return [normalizePlanningText(event.person), normalizePlanningText(event.vessel), normalizePlanningText(event.board), event.startsOn, event.endsOn].join('|');
 }
 
-function allCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
+export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
   const events = overview.periods.map(crewEventFromPeriod);
   const occupied = new Set(events.map(eventKey));
   overview.assignments.map(crewEventFromAssignment).forEach((event) => {
@@ -341,7 +349,7 @@ export function buildPlanningCrewRows(
   filters: PlanningFilters,
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
-  const events = allCrewEvents(overview).filter(
+  const events = getAllPlanningCrewEvents(overview).filter(
     (event) =>
       rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
       (!filters.vesselName || event.vessel === filters.vesselName) &&
@@ -443,7 +451,7 @@ export function getUnassignedPlanningPeople(
   filters: PlanningFilters,
 ): PlanningPerson[] {
   const assigned = new Set(
-    allCrewEvents(overview)
+    getAllPlanningCrewEvents(overview)
       .filter(
         (event) =>
           rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
@@ -463,8 +471,70 @@ export function getUnassignedPlanningPeople(
   });
 }
 
-function daysBetween(start: string, end: string): number {
+export function daysBetween(start: string, end: string): number {
   return Math.round((parseIsoDate(end).getTime() - parseIsoDate(start).getTime()) / 86400000);
+}
+
+export interface PlanningConflict {
+  event: PlanningCrewEvent;
+  date: string;
+}
+
+export function getPlanningConflicts(
+  overview: PlanningOverview,
+  candidate: Pick<PlanningCrewEvent, 'id' | 'person' | 'personId' | 'vessel'> & { startsOn: string; endsOn: string },
+): PlanningConflict[] {
+  const personKey = normalizePlanningText(candidate.person);
+  return getAllPlanningCrewEvents(overview)
+    .filter((event) => {
+      const samePerson = candidate.personId !== null && event.personId !== null
+        ? candidate.personId === event.personId
+        : normalizePlanningText(event.person) === personKey;
+      return event.id !== candidate.id && samePerson && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
+        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn);
+    })
+    .map((event) => ({ event, date: event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn }));
+}
+
+export interface PlanningExportRow {
+  date: string;
+  person: string;
+  worked: string;
+  status: string;
+  functionLabel: string;
+  vessel: string;
+  watchGroup: string;
+  comments: string;
+  source: string;
+}
+
+export function buildPlanningExportRows(
+  overview: PlanningOverview,
+  personName: string,
+  range: PlanningDateRange,
+): PlanningExportRow[] {
+  const personKey = normalizePlanningText(personName);
+  const rows: PlanningExportRow[] = [];
+  getAllPlanningCrewEvents(overview)
+    .filter((event) => normalizePlanningText(event.person) === personKey && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end))
+    .forEach((event) => {
+      const start = event.startsOn < range.start ? range.start : event.startsOn;
+      const end = event.endsOn > range.end ? range.end : event.endsOn;
+      for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
+        rows.push({
+          date,
+          person: event.person,
+          worked: normalizePlanningStatus(event.status) === 'En Mer' ? 'Oui' : 'Non',
+          status: normalizePlanningStatus(event.status),
+          functionLabel: event.functionLabel,
+          vessel: event.vessel,
+          watchGroup: event.board,
+          comments: event.comments,
+          source: event.sourceLabel,
+        });
+      }
+    });
+  return rows.sort((left, right) => left.date.localeCompare(right.date) || left.vessel.localeCompare(right.vessel, 'fr'));
 }
 
 export function formatPlanningDate(value: string): string {

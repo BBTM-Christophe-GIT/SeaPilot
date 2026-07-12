@@ -140,6 +140,9 @@ describe('planning mappers', () => {
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
         assignmentRole: 'Pont',
+        statusLabel: 'En Mer',
+        watchGroup: 'Affectation',
+        comments: '',
         sourceLabel: 'seapilot',
       },
     ]);
@@ -168,6 +171,9 @@ describe('planning mappers', () => {
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
         assignmentRole: 'Pont',
+        statusLabel: 'En Mer',
+        watchGroup: 'Affectation',
+        comments: '',
         sourceLabel: 'seapilot',
       },
     ]);
@@ -177,6 +183,8 @@ describe('planning mappers', () => {
     expect(mapPlanningDayRows([planningDayRow])).toEqual([
       {
         id: 200,
+        personId: null,
+        vesselId: null,
         crewName: 'Paul DURAND',
         captainName: 'Jean MARTIN',
         vesselName: 'COTENTIN',
@@ -206,6 +214,8 @@ describe('planning mappers', () => {
     expect(mapPlanningPeriodRows([planningPeriodRow])).toEqual([
       {
         id: 300,
+        personId: null,
+        vesselId: null,
         crewName: 'Paul DURAND',
         vesselName: 'COTENTIN',
         watchGroup: 'A',
@@ -386,6 +396,9 @@ describe('planning writes', () => {
       ...assignmentRow,
       captain_person_id: null,
       assignment_role: 'crew',
+      status_label: 'En Mer',
+      watch_group: 'Affectation',
+      comments: null,
     };
     const single = vi.fn().mockResolvedValue({ data: createdRow, error: null });
     const select = vi.fn().mockReturnValue({ single });
@@ -409,6 +422,9 @@ describe('planning writes', () => {
       starts_on: '2026-07-01',
       ends_on: '2026-07-14',
       assignment_role: 'crew',
+      status_label: 'En Mer',
+      watch_group: 'Affectation',
+      comments: null,
       source_label: 'seapilot',
     });
   });
