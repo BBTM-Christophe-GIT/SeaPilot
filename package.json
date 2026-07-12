@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
@@ -13,8 +13,10 @@
     "export:sharepoint:rh": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --output .data/sharepoint-rh-personnel-bbtm.json",
     "export:sharepoint:rh-documents": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-documents.json",
     "export:sharepoint:rh-full": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-full.json",
+    "export:sharepoint:planning": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-bbtm-flotte --source-key list-kpi-projets-planning --source-key list-smtr-journees-planning --source-key list-smtr-planning-periodes --output .data/sharepoint-planning-historical.json",
     "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
     "import:sharepoint:linked": "node --experimental-strip-types scripts/import-sharepoint-linked.ts",
+    "import:sharepoint:planning": "node --experimental-strip-types scripts/import-sharepoint-linked.ts --file .data/sharepoint-planning-historical.json",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
