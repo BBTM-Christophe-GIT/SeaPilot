@@ -55,3 +55,4 @@ final result: passed
 - Décision : conserver la grille responsive, mais présenter les libellés et valeurs sur fond blanc, sans bordure ni rayon, avec un séparateur horizontal discret.
 - Portée : mode lecture seule de la Fiche RH uniquement ; les champs du mode modification restent clairement identifiables comme contrôles de formulaire.
 - Intention visuelle : affichage plus léger, simple et moderne, avec une hiérarchie renforcée entre libellé secondaire et valeur principale.
+- Livraison : version applicative `1.1.1`, incluant cette refonte sur la production Vercel.
