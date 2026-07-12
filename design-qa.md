@@ -48,3 +48,11 @@
 - [x] Vérification desktop, responsive, tests et console.
 
 final result: passed
+
+## Mise à jour — affichage des informations de la Fiche RH (2026-07-12)
+
+- Demande : supprimer l'apparence de boutons/cartes autour de chaque information dans toutes les sections de la Fiche RH.
+- Décision : conserver la grille responsive, mais présenter les libellés et valeurs sur fond blanc, sans bordure ni rayon, avec un séparateur horizontal discret.
+- Portée : mode lecture seule de la Fiche RH uniquement ; les champs du mode modification restent clairement identifiables comme contrôles de formulaire.
+- Intention visuelle : affichage plus léger, simple et moderne, avec une hiérarchie renforcée entre libellé secondaire et valeur principale.
+- Livraison : version applicative `1.1.1`, incluant cette refonte sur la production Vercel.
