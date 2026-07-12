@@ -1,40 +1,42 @@
 # Design QA — Planning SeaPilot 1.2.0
 
-- Source visual truth: `C:\Users\chris\AppData\Local\Temp\codex-clipboard-f177a116-cec1-4428-a082-e9b9f4d843a7.png`
-- Implementation: `http://127.0.0.1:4173/modules/planning`
-- Target viewport: desktop 2048 × 1073, planning mensuel, juillet 2026
-- State: cockpit chargé avec projets, navires, bordées, équipages et panneau Certificats
+- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-f177a116-cec1-4428-a082-e9b9f4d843a7.png`
+- Implémentation contrôlée : `https://sea-pilot-ten.vercel.app/modules/planning`
+- Capture d'implémentation : `C:\Users\chris\.codex\visualizations\2026\07\12\019f5779-262c-7352-a5b5-4eb4dad56818\planning-production-2048x1073.png`
+- Comparaison côte à côte : `C:\Users\chris\.codex\visualizations\2026\07\12\019f5779-262c-7352-a5b5-4eb4dad56818\planning-comparison.png`
+- État contrôlé : production authentifiée, vue mensuelle, juillet 2026, version 1.2.0.
+- Viewport de comparaison : capture physique 2048 × 1073 (viewport CSS 2560 × 1341 sur un affichage Windows à 125 %).
 
-## Full-view comparison evidence
+## Comparaison pleine page
 
-La capture source a été ouverte et analysée. L’implémentation locale est compilée et ses interactions sont couvertes par les tests, mais la capture navigateur du rendu réel est temporairement bloquée : la session Supabase disponible sur l’origine locale ne peut pas charger les droits d’accès.
+La référence SPFx et SeaPilot ont été placés dans la même image de comparaison. Le cockpit SeaPilot conserve la densité et la structure de la source : barre de période et de filtres, grille temporelle mensuelle, jours et week-ends différenciés, zone hiérarchique navire/bordée/marin, panneau latéral à quatre onglets et actions compactes. Le shell SeaPilot reste volontairement visible pour préserver la navigation globale du produit.
 
-## Focused region comparison evidence
+## Comparaisons ciblées
 
-La comparaison ciblée de la barre d’outils, de la grille temporelle et du panneau latéral est différée jusqu’au déploiement Vercel authentifié. Aucun jugement de fidélité final n’est posé depuis le code seul.
+- Barre d'outils : les trois vues, les filtres, le zoom, la navigation temporelle, les actions d'édition, la duplication, le plein écran et le menu secondaire sont alignés sur la hiérarchie visuelle de la référence.
+- Grille : les mois, semaines, jours, week-ends et date courante sont lisibles et alignés ; le défilement horizontal reste disponible pour les périodes denses.
+- Panneau latéral : les onglets Certificats, Marins non affectés, Facturation et Alertes reprennent la structure et les badges de la source.
+- États vides : l'absence actuelle de navires, projets et affectations dans les tables SeaPilot est affichée proprement sans casser le cadrage. Les alertes RH et les marins non affectés utilisent les données présentes.
 
-## Findings
+## Interactions vérifiées en production
 
-- [P0] Capture d’implémentation authentifiée manquante.
-  - Location: module Planning local.
-  - Evidence: le navigateur affiche `Impossible de charger vos droits d'accès` avant le rendu du cockpit.
-  - Impact: impossible de valider visuellement la densité, le cadrage, les alignements et les états interactifs.
-  - Fix: contrôler le déploiement Vercel avec la session SeaPilot existante, capturer le cockpit mensuel, comparer avec la source puis corriger les écarts P0/P1/P2.
+- Semaine, Mois et An : changement de période confirmé.
+- Filtre marin : sélection de `Arthur MAREST`, puis retour à `Tous les marins`.
+- Onglets : Certificats, Marins non affectés, Facturation et Alertes.
+- Réglages : ouverture et fermeture du panneau.
+- Plein écran : entrée et sortie natives confirmées.
+- Nouvelle affectation : ouverture du formulaire, présence des champs et fermeture sans écriture.
+- Console : aucune erreur ni alerte navigateur.
+- Version affichée : `v1.2.0`.
 
-## Comparison history
+## Constats
 
-- Itération 0 : source ouverte ; rendu local bloqué par l’authentification. Aucun correctif visuel spéculatif appliqué.
+- Aucun écart P0, P1 ou P2 relevé sur le rendu et les interactions du module.
+- [P3] Les tables de planning de production ne contiennent pas encore les navires, projets et affectations historiques SharePoint. Ce manque de données n'altère pas le module ; il est documenté dans `docs/migration/planning-spfx-inventory.md` pour la phase d'import.
 
-## Implementation checklist
+## Historique de comparaison
 
-- Capturer la version Vercel authentifiée à un viewport desktop comparable.
-- Tester Mois/Semaine/An, filtres, zoom, panneau latéral, ouverture d’une fiche et plein écran.
-- Vérifier les erreurs console.
-- Effectuer une comparaison pleine page et des régions barre d’outils/grille/panneau.
-- Mettre ce rapport à jour avec `final result: passed` uniquement après correction des écarts bloquants.
+- Itération 0 : rendu local bloqué par les droits Supabase.
+- Itération 1 : déploiement Vercel authentifié, comparaison complète et contrôles fonctionnels effectués ; aucun correctif visuel bloquant requis.
 
-## Follow-up polish
-
-- Aucun P3 classé avant la première comparaison visuelle réelle.
-
-final result: blocked
+final result: passed
