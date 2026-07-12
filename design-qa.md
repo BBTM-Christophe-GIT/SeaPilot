@@ -63,3 +63,11 @@ final result: passed
 - Cette ligne additionne Directeur QHSE / Chef de Projet, Directrice Administrative et Financière, Fleet Technical Manager, Président et Yard Manager - Le Havre.
 - Les fonctions détaillées restent inchangées dans les filtres et la liste RH.
 - Livraison : version applicative `1.1.2`.
+
+## Mise à jour — rapport Plan de Formation (2026-07-12)
+
+- Reproduction du rapport A4 « Plan de Formation » du Dashboard SPFx depuis le module RH.
+- Année cible suivante, graphique des coûts cumulés et trimestriels, récapitulatif financier, détail des actions et certificats médicaux.
+- Coûts unitaires migrés : CFBS 1 400 €, CGO 800 €, CRO 600 €, enseignement médical I 200 € et III 2 000 €.
+- Ajout du turnover annuel et de l'ancienneté moyenne dans les indicateurs du rapport.
+- Livraison : version applicative `1.1.3`.
