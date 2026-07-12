@@ -336,10 +336,10 @@ const CRITICAL_APPLICATION_SOURCES: SharePointMigrationSource[] = [
     moduleKey: 'fleet',
     relatedModuleKeys: ['planning', 'certificates', 'actionPlan', 'projects'],
     siteUrl: SHAREPOINT_SITE_URL,
+    listId: '543b9f00-aed2-489a-808a-7b64cc835a83',
     serverRelativeUrl: '/sites/QHSE/Lists/BBTM%20%20Flotte',
     targetTable: 'vessels',
     importPriority: 10,
-    notes: 'List ID and choice values must be exported live.',
   },
   {
     key: 'list-kpi-projets-planning',

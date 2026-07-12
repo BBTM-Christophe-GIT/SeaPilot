@@ -326,6 +326,80 @@ describe('SharePoint import mapping', () => {
     });
   });
 
+  it('maps the live BBTM fleet internal field names without losing vessel metadata', () => {
+    const batch = buildSharePointUpsertBatch('list-bbtm-flotte', [
+      {
+        fields: {
+          ID: 12,
+          Title: 'GOURY',
+          TypedeNavire: 'Navire de charge',
+          Typedunit_x00e9_: 'Navire',
+          Datesortiedeflotte: '2030-04-12T00:00:00Z',
+          NavireActif: 'Oui',
+          Immatriculation: '934968',
+          Num_x00e9_roOMI: '9213870',
+          Portdimmatriculation: 'MARSEILLE',
+          Signedistinctif: 'FLBU',
+          MMSI: '361001000',
+          JaugeBruteenUMS: '293',
+          Nombremaximaldepersonnes_x00e0_b: 8,
+          Membresdel_x00e9_quipage_x002f_S: '4',
+          DotationM_x00e9_dicale: 'Dotation B',
+        },
+      },
+    ]);
+
+    expect(batch.rows[0]).toEqual(
+      expect.objectContaining({
+        name: 'GOURY',
+        type_label: 'Navire de charge',
+        unit_type_label: 'Navire',
+        fleet_exit_on: '2030-04-12',
+        active: true,
+        registration_number: '934968',
+        imo_number: '9213870',
+        registration_port: 'MARSEILLE',
+        call_sign: 'FLBU',
+        mmsi: '361001000',
+        gross_tonnage: '293',
+        max_people: 8,
+        crew_members: '4',
+        medical_dotation: 'Dotation B',
+        sharepoint_list_id: '543b9f00-aed2-489a-808a-7b64cc835a83',
+        sharepoint_item_id: '12',
+      }),
+    );
+  });
+
+  it('skips empty SharePoint planning records that cannot form valid target rows', () => {
+    const vessels = buildSharePointUpsertBatch('list-bbtm-flotte', [
+      { fields: { ID: 17, Title: null } },
+      { fields: { ID: 18, Title: 'SUROIT' } },
+    ]);
+    const days = buildSharePointUpsertBatch('list-smtr-journees-planning', [
+      { fields: { ID: 1, NomMarin: '', DateTravail: '2026-07-01' } },
+      { fields: { ID: 2, NomMarin: 'Arthur MAREST', DateTravail: '2026-07-02' } },
+    ]);
+
+    expect(vessels.rows).toHaveLength(1);
+    expect(vessels.rows[0].name).toBe('SUROIT');
+    expect(days.rows).toHaveLength(1);
+    expect(days.rows[0].crew_name).toBe('Arthur MAREST');
+  });
+
+  it('keeps the historic YARD label resolvable against the live fleet name', () => {
+    const batch = buildSharePointUpsertBatch('list-bbtm-flotte', [
+      { fields: { ID: 8, Title: 'YARD - Le Havre', Acronyme: null } },
+    ]);
+
+    expect(batch.rows[0]).toEqual(
+      expect.objectContaining({
+        name: 'YARD - Le Havre',
+        acronym: 'YARD',
+      }),
+    );
+  });
+
   it('maps KPI planning project items with lookup/text field fallbacks', () => {
     const batch = buildSharePointUpsertBatch('list-kpi-projets-planning', [
       {

@@ -57,6 +57,17 @@ npm run export:sharepoint:rh-full -- --iqy "list-rh-personnel-bbtm=C:\Users\chri
 
 L'export complet est ecrit dans `.data/sharepoint-rh-full.json`.
 
+Exporter puis importer le lot Planning complet (flotte, projets, journees Slot365 et periodes historiques):
+
+```powershell
+npm run export:sharepoint:planning
+npm run import:sharepoint -- --file .data/sharepoint-planning-historical.json --dry-run
+npm run import:sharepoint:planning
+supabase db query "select * from public.resolve_sharepoint_planning_links();" --linked
+```
+
+Le lot est idempotent : les quatre tables utilisent le couple `sharepoint_list_id,sharepoint_item_id` comme cle de reconciliation.
+
 Verifier un export sans ecrire en base:
 
 ```powershell
@@ -152,10 +163,6 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 
 - Exporter le bundle SharePoint reel avec Microsoft Graph ou PnP, en priorite:
   - `RH - Personnel BBTM`
-  - `BBTM - Flotte`
-  - `SMTR - Journees - Planning`
-  - `SMTR - Planning Periodes`
-  - `KPI - Projets-Planning`
   - `Demande d'Achat`
   - `Audit`
   - bibliotheques documentaires techniques et operationnelles
@@ -181,6 +188,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Rapport Plan de Formation migre depuis le Dashboard SPFx : ouverture directe d'un PDF A4, coûts cumulés trimestriels, récapitulatif financier, détail par collaborateur, certificats médicaux, historiques annuels du turnover et de l'ancienneté moyenne depuis la première embauche, et formules de calcul sur la dernière page.
 - Module Planning enrichi avec details SMTR importes: debarquement, depart, rythme, bordee, repos, cumul, commentaires et source.
 - Cockpit Planning SPFx migre dans SeaPilot : calendrier Semaine/Mois/An, groupes navire/bordee/marin, projets et statuts, zoom, plein ecran, filtres, creation/duplication d'affectations, panneaux certificats, marins non affectes, facturation et alertes RH. L'inventaire et les regles sont conserves dans `docs/migration/planning-spfx-inventory.md`.
+- Donnees Planning SharePoint importees dans Supabase : 14 navires valides, 18 projets, 171 journees Slot365 et 70 periodes historiques. Tous les liens navire sont resolus ; 7 lignes historiques de Nicolas BOUVILLE restent conservees par nom faute de fiche `people` correspondante.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.
 - Module Daily Progress Report raccorde a `dpr_items`, `dpr_archives` et `mgo_prices` avec KPIs, filtres projet/navire/date/recherche, archives PDF, dernier prix MGO et creation de rapport pour les roles bureau.
@@ -203,7 +211,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Preview.
 - Supabase CLI installee et mise a jour en version `2.109.0`.
 - Projet Supabase Cloud `SeaPilot` (`szlvyrrmvdvhzixilymh`) lie au depot local.
-- 16 migrations appliquees sur Supabase Cloud.
+- 22 migrations appliquees sur Supabase Cloud.
 - Base distante verifiee avec `supabase db push --dry-run` et `supabase db lint --linked`.
 - Supabase Auth configure sur `https://sea-pilot-ten.vercel.app` avec inscriptions publiques desactivees.
 - Premier compte admin `christophe@bbtm.fr` cree dans Supabase Auth avec profil applicatif et role `admin`.

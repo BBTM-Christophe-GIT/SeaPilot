@@ -19,6 +19,17 @@ Cette fiche est la mémoire de migration du module Planning. Elle consolide l’
 
 SeaPilot ajoute `planning_assignments` comme source native pour les affectations créées directement dans l’application. Cette table ne remplace pas les deux listes SMTR importées : les trois sources sont fusionnées à l’affichage, avec priorité aux périodes SMTR afin d’éviter les doublons exacts.
 
+## Import de production du 12 juillet 2026
+
+| Source | Extraits | Importés | Rattachement |
+| --- | ---: | ---: | --- |
+| `BBTM - Flotte` | 15 | 14 | 14 navires ; 1 élément SharePoint vide ignoré |
+| `KPI - Projets-Planning` | 18 | 18 | 18 liens navire résolus |
+| `SMTR - Journees - Planning` | 171 | 171 | 171 liens navire et 166 liens collaborateur résolus |
+| `SMTR - Planning Periodes` | 70 | 70 | 70 liens navire et 68 liens collaborateur résolus |
+
+L’import est rejouable sans doublon grâce au couple `sharepoint_list_id,sharepoint_item_id`. Les 5 journées et 2 périodes non rattachées à `people` concernent `Nicolas BOUVILLE`, absent de la table du personnel ; son nom et toutes les données historiques restent conservés. L’alias historique `YARD` est rattaché au navire `YARD - Le Havre`.
+
 ## Liens Power Query / IQY
 
 - Journées SMTR : `https://bbtm668.sharepoint.com/sites/QHSE/_vti_bin/owssvr.dll?XMLDATA=1&List=e711a664-6c52-4e4e-95cc-0843ac7c5253&View=A724B2E7-B821-41FF-9C91-0519FB7360C1&RowLimit=0&RootFolder=`

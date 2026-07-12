@@ -50,6 +50,12 @@ describe('SharePoint migration inventory', () => {
         targetTable: 'planning_days',
       }),
     );
+    expect(getSharePointSourceByKey('list-bbtm-flotte')).toEqual(
+      expect.objectContaining({
+        listId: '543b9f00-aed2-489a-808a-7b64cc835a83',
+        targetTable: 'vessels',
+      }),
+    );
     expect(getSharePointSourceByKey('list-smtr-planning-periodes')).toEqual(
       expect.objectContaining({
         listId: 'c03eb1f4-1d24-4d86-b91e-9afaaa45870b',

@@ -164,6 +164,7 @@ export interface SharePointDocumentLinkResolution {
 }
 
 type SourcePayloadMapper = (item: SharePointListItem, source: SharePointMigrationSource) => SharePointImportRow;
+type SourceRowValidator = (row: SharePointImportRow) => boolean;
 
 const CONFLICT_COLUMNS = ['sharepoint_list_id', 'sharepoint_item_id'] as const;
 
@@ -198,6 +199,13 @@ const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'list-smtr-journees-planning': mapPlanningDayPayload,
   'list-smtr-planning-periodes': mapPlanningPeriodPayload,
   'list-kpi-projets-planning': mapPlanningProjectPayload,
+};
+
+const SOURCE_ROW_VALIDATORS: Partial<Record<string, SourceRowValidator>> = {
+  'list-bbtm-flotte': (row) => Boolean(row.name),
+  'list-kpi-projets-planning': (row) => Boolean(row.title),
+  'list-smtr-journees-planning': (row) => Boolean(row.crew_name && row.work_date),
+  'list-smtr-planning-periodes': (row) => Boolean(row.crew_name && row.starts_on && row.ends_on),
 };
 
 function fieldsFor(item: SharePointListItem): SharePointFields {
@@ -777,22 +785,25 @@ function mapPublishedProcedurePayload(item: SharePointListItem, source: SharePoi
 }
 
 function mapVesselPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
+  const name = requiredText(item, ['Title', 'NomNavire', 'Nom_x0020_navire'], '');
+  const acronym = text(item, ['Acronyme']) || (name.toUpperCase().startsWith('YARD -') ? 'YARD' : null);
+
   return withReconciliation(item, source, {
-    name: requiredText(item, ['Title', 'NomNavire', 'Nom_x0020_navire'], ''),
-    acronym: text(item, ['Acronyme']),
+    name,
+    acronym,
     active: booleanValue(item, ['NavireActif', 'Actif', 'Active'], true),
-    type_label: text(item, ['Type', 'TypeLabel']),
-    unit_type_label: text(item, ['TypeUnite', 'TypeUnit_x00e9']),
-    fleet_exit_on: dateOnly(item, ['DateSortieFlotte', 'SortieFlotte']),
+    type_label: text(item, ['TypedeNavire', 'Type', 'TypeLabel']),
+    unit_type_label: text(item, ['Typedunit_x00e9_', 'TypeUnite', 'TypeUnit_x00e9']),
+    fleet_exit_on: dateOnly(item, ['Datesortiedeflotte', 'DateSortieFlotte', 'SortieFlotte']),
     registration_number: text(item, ['NumeroImmatriculation', 'Immatriculation']),
-    imo_number: text(item, ['IMO', 'NumeroIMO']),
-    registration_port: text(item, ['PortImmatriculation']),
-    call_sign: text(item, ['IndicatifAppel', 'CallSign']),
+    imo_number: text(item, ['Num_x00e9_roOMI', 'IMO', 'NumeroIMO']),
+    registration_port: text(item, ['Portdimmatriculation', 'PortImmatriculation']),
+    call_sign: text(item, ['Signedistinctif', 'IndicatifAppel', 'CallSign']),
     mmsi: text(item, ['MMSI']),
-    gross_tonnage: text(item, ['JaugeBrute', 'GrossTonnage']),
-    max_people: numeric(item, ['NombrePersonnesMax', 'MaxPeople']),
-    crew_members: text(item, ['Equipage', 'CrewMembers']),
-    medical_dotation: text(item, ['DotationMedicale']),
+    gross_tonnage: text(item, ['JaugeBruteenUMS', 'JaugeBrute', 'GrossTonnage']),
+    max_people: numeric(item, ['Nombremaximaldepersonnes_x00e0_b', 'NombrePersonnesMax', 'MaxPeople']),
+    crew_members: text(item, ['Membresdel_x00e9_quipage_x002f_S', 'Equipage', 'CrewMembers']),
+    medical_dotation: text(item, ['DotationM_x00e9_dicale', 'DotationMedicale']),
     length_overall: text(item, ['LongueurHorsTout', 'Longueur']),
   });
 }
@@ -1110,11 +1121,14 @@ export function buildSharePointUpsertBatch(sourceKey: string, items: SharePointL
     throw new Error(`SharePoint source ${sourceKey} is not mapped to an import payload yet.`);
   }
 
+  const validator = SOURCE_ROW_VALIDATORS[sourceKey];
+  const rows = items.map((item) => SOURCE_MAPPERS[sourceKey](item, source));
+
   return {
     sourceKey,
     targetTable: source.targetTable,
     conflictColumns: CONFLICT_COLUMNS,
-    rows: items.map((item) => SOURCE_MAPPERS[sourceKey](item, source)),
+    rows: validator ? rows.filter(validator) : rows,
   };
 }
 
