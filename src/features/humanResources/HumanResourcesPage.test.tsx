@@ -204,6 +204,33 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('2009574')).toBeInTheDocument();
   });
 
+  it('groups sedentary functions into one distribution row', async () => {
+    const sedentaryFunctions = [
+      'Directeur QHSE / Chef de Projet',
+      'Directrice Administrative et Financière',
+      'Fleet Technical Manager',
+      'Président',
+      'Yard Manager - Le Havre',
+    ];
+    const sedentaryPeople = sedentaryFunctions.map((functionLabel, index) => ({
+      ...activePerson,
+      id: index + 10,
+      first_name: `Sedentaire${index + 1}`,
+      function_label: functionLabel,
+      role_label: 'Sedentaire',
+      user_id: null,
+    }));
+
+    render(<HumanResourcesPage client={createClient([activePerson, ...sedentaryPeople], []) as never} roles={['admin']} />);
+
+    const distribution = await screen.findByRole('region', { name: 'Effectifs par fonction' });
+    expect(within(distribution).getByText('Sédentaires')).toBeInTheDocument();
+    expect(within(distribution).getByText('5')).toBeInTheDocument();
+    sedentaryFunctions.forEach((functionLabel) => {
+      expect(within(distribution).queryByText(functionLabel)).not.toBeInTheDocument();
+    });
+  });
+
   it('shows the selected collaborator in the profile card and collapses document categories', async () => {
     const user = userEvent.setup();
 
