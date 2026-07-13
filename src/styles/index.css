@@ -2648,7 +2648,9 @@ button:disabled {
 .planning-command-header,
 .planning-command-actions,
 .planning-board-toolbar,
+.planning-perspective-switch,
 .planning-view-switch,
+.planning-grouping-switch,
 .planning-zoom-controls,
 .planning-period-controls,
 .planning-edit-controls,
@@ -2950,6 +2952,37 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.planning-perspective-switch,
+.planning-grouping-switch {
+  gap: 2px;
+  border: 1px solid #d7e1ed;
+  border-radius: 11px;
+  padding: 2px;
+  background: #f7f9fc;
+}
+
+.planning-perspective-switch button,
+.planning-grouping-switch button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: transparent;
+  font-size: 0.74rem;
+  font-weight: 820;
+}
+
+.planning-perspective-switch button.is-active {
+  color: #ffffff;
+  background: #125fbf;
+  box-shadow: 0 3px 8px rgba(18, 95, 191, 0.2);
+}
+
+.planning-grouping-switch button.is-active {
+  color: #075e5b;
+  background: #ddf4f2;
+}
+
 .planning-view-switch {
   gap: 2px;
   border: 1px solid #e3e9f0;
@@ -2959,7 +2992,7 @@ button:disabled {
 }
 
 .planning-view-switch button {
-  min-width: 64px;
+  min-width: 56px;
   min-height: 34px;
   border: 0;
   border-radius: 8px;
@@ -3017,10 +3050,45 @@ button:disabled {
   margin-left: auto;
 }
 
-.planning-period-controls select {
-  min-width: 84px;
-  padding: 0 28px 0 10px;
+.planning-period-controls input {
+  min-height: 38px;
+  border: 1px solid #dce4ed;
+  border-radius: 10px;
+  padding: 0 9px;
+  color: #1d2b40;
+  background: #fff;
   font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.planning-today-button {
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.planning-filter-strip {
+  display: flex;
+  min-width: 0;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.planning-filter-strip .planning-select-control {
+  min-width: 145px;
+  flex: 1 1 165px;
+}
+
+.planning-filter-reset {
+  display: inline-flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  font-size: 0.69rem;
   font-weight: 800;
 }
 
@@ -3069,6 +3137,14 @@ button:disabled {
 
 .planning-board-guide i.is-conflict {
   background: #e43e4d;
+}
+
+.planning-board-guide i.is-operation { background: #1769dc; }
+.planning-board-guide i.is-maintenance { background: #e08325; }
+.planning-board-guide i.is-unavailability { background: #c83b4c; }
+.planning-board-guide i.is-provisional {
+  border: 1px dashed #557086;
+  background: repeating-linear-gradient(135deg, #a9bcc9 0 2px, transparent 2px 4px);
 }
 
 .planning-board-guide small {
@@ -3203,6 +3279,40 @@ button:disabled {
   position: relative;
   min-height: 38px;
   border-bottom: 1px solid #e7ecf2;
+}
+
+.planning-timeline-row.is-fleet {
+  min-height: 58px;
+}
+
+.planning-timeline-row.is-crew {
+  min-height: 44px;
+}
+
+.planning-timeline-row.is-fleet .planning-row-label {
+  border-left: 4px solid #1769dc;
+}
+
+.planning-timeline-row.is-crew .planning-row-label {
+  border-left: 4px solid #159581;
+}
+
+.planning-row-icon {
+  display: inline-grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border-radius: 8px;
+  color: #125fbf;
+  background: #e7f0fc;
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+
+.planning-timeline-row.is-crew .planning-row-icon {
+  color: #08726d;
+  background: #dff4f1;
 }
 
 .planning-timeline-row.is-vessel {
@@ -3354,6 +3464,17 @@ button:disabled {
   white-space: nowrap;
 }
 
+.planning-project-bar.is-pending,
+.planning-crew-bar.is-pending {
+  cursor: wait;
+  opacity: 0.72;
+  animation: planning-pending 900ms ease-in-out infinite alternate;
+}
+
+@keyframes planning-pending {
+  to { filter: saturate(0.55) brightness(1.12); }
+}
+
 .planning-crew-bar.is-editable {
   cursor: grab;
 }
@@ -3418,6 +3539,20 @@ button:disabled {
   box-shadow: 0 3px 8px rgba(35, 90, 200, 0.22);
   font-size: 0.66rem;
   font-weight: 850;
+}
+
+.planning-project-bar.is-operation { background: #1769dc; }
+.planning-project-bar.is-transit { background: #058f9b; }
+.planning-project-bar.is-maintenance { background: #d6781d; }
+.planning-project-bar.is-unavailability { background: #c83b4c; }
+
+.planning-project-bar > small {
+  overflow: hidden;
+  margin-left: auto;
+  padding: 0 24px 4px 4px;
+  opacity: 0.86;
+  font-size: 0.52rem;
+  text-overflow: ellipsis;
 }
 
 .planning-project-bar > span:first-child {
@@ -3495,6 +3630,31 @@ button:disabled {
   background: #276be8;
 }
 
+.planning-crew-bar.is-provisional {
+  border: 1px dashed rgba(255, 255, 255, 0.9);
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0 4px, transparent 4px 8px);
+}
+
+.planning-crew-bar.is-cancelled {
+  opacity: 0.52;
+  text-decoration: line-through;
+}
+
+.planning-provisional-mark {
+  display: inline-grid;
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border-radius: 4px;
+  color: #294257;
+  background: rgba(255, 255, 255, 0.88);
+  font-size: 0.5rem;
+  font-weight: 950;
+}
+
 .planning-crew-bar.has-conflict {
   color: #ffffff;
   background: #e43e4d;
@@ -3515,6 +3675,23 @@ button:disabled {
   color: #738196;
   font-size: 0.82rem;
   font-weight: 720;
+}
+
+.planning-calendar-empty p {
+  margin: 0;
+}
+
+.planning-calendar-empty button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 13px;
+  color: #fff;
+  background: #1769dc;
+  font-weight: 800;
 }
 
 .planning-side-card {
@@ -3672,6 +3849,12 @@ button:disabled {
   background: rgba(9, 20, 37, 0.48);
 }
 
+.planning-dialog-backdrop.is-side-panel {
+  place-items: stretch end;
+  padding: 0;
+  background: rgba(9, 20, 37, 0.34);
+}
+
 .planning-dialog {
   display: grid;
   width: min(760px, 100%);
@@ -3683,6 +3866,21 @@ button:disabled {
   padding: 20px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgba(7, 20, 40, 0.25);
+}
+
+.planning-dialog.is-side-panel {
+  width: min(520px, 100vw);
+  max-height: 100vh;
+  height: 100vh;
+  align-content: start;
+  border-width: 0 0 0 1px;
+  border-radius: 16px 0 0 16px;
+  padding: 22px;
+  animation: planning-drawer-enter 180ms ease-out;
+}
+
+@keyframes planning-drawer-enter {
+  from { opacity: 0.5; transform: translateX(28px); }
 }
 
 .planning-dialog.is-detail {
@@ -3842,6 +4040,19 @@ button:disabled {
   color: #1769dc;
 }
 
+.planning-dialog header > div > span {
+  display: grid;
+  gap: 2px;
+}
+
+.planning-dialog header > div small {
+  color: #6c7b90;
+  font-size: 0.62rem;
+  font-weight: 820;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .planning-dialog h2 {
   margin: 0;
   color: #152137;
@@ -3901,6 +4112,11 @@ button:disabled {
 .planning-dialog footer button.is-secondary {
   color: #35455c;
   background: #edf1f5;
+}
+
+.planning-dialog footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .planning-dialog dl {
@@ -3973,6 +4189,50 @@ button:disabled {
   }
 }
 
+@media (max-width: 1500px) {
+  .planning-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planning-side-card {
+    position: static;
+  }
+
+  .planning-side-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 360px;
+  }
+
+  .planning-calendar-scroll {
+    max-height: calc(100vh - 330px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .planning-board-toolbar {
+    align-items: stretch;
+  }
+
+  .planning-period-controls {
+    margin-left: 0;
+  }
+
+  .planning-filter-strip {
+    overflow-x: auto;
+    padding-bottom: 3px;
+  }
+
+  .planning-filter-strip .planning-select-control {
+    min-width: 150px;
+    flex: 0 0 170px;
+  }
+
+  .planning-board-guide small,
+  .planning-board-stats span:last-child {
+    display: none;
+  }
+}
+
 @media (max-width: 760px) {
   .planning-publication-panel {
     grid-template-columns: 1fr;
@@ -4009,6 +4269,8 @@ button:disabled {
   }
 
   .planning-view-switch,
+  .planning-perspective-switch,
+  .planning-grouping-switch,
   .planning-select-control,
   .planning-period-controls {
     width: 100%;
@@ -4021,9 +4283,11 @@ button:disabled {
 
   .planning-period-controls {
     margin-left: 0;
+    flex-wrap: wrap;
   }
 
-  .planning-period-controls select {
+  .planning-period-controls label,
+  .planning-period-controls input {
     flex: 1;
   }
 
@@ -4039,6 +4303,13 @@ button:disabled {
     --planning-label-width: 172px;
   }
 
+  .planning-dialog.is-side-panel {
+    width: 100vw;
+    border-left: 0;
+    border-radius: 0;
+    padding: 18px;
+  }
+
   .planning-side-list,
   .planning-dialog-grid,
   .planning-dialog dl {
@@ -4047,6 +4318,42 @@ button:disabled {
 
   .planning-control-summary li {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) {
+  .planning-icon-button,
+  .planning-board-toolbar button,
+  .planning-board-toolbar select,
+  .planning-board-toolbar input,
+  .planning-dialog input,
+  .planning-dialog select,
+  .planning-dialog footer button {
+    min-height: 44px;
+  }
+
+  .planning-icon-button {
+    width: 44px;
+  }
+
+  .planning-resize-handle {
+    width: 14px;
+    touch-action: none;
+  }
+
+  .planning-day-cell.is-quick-create svg {
+    opacity: 0.72;
+  }
+
+  .planning-crew-bar { height: 28px; }
+  .planning-project-bar { height: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planning-dialog.is-side-panel,
+  .planning-project-bar.is-pending,
+  .planning-crew-bar.is-pending {
+    animation: none;
   }
 }
 

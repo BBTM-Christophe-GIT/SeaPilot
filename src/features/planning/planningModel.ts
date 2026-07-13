@@ -21,7 +21,7 @@ import {
 
 export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
-export type PlanningViewMode = 'week' | 'month' | 'year';
+export type PlanningViewMode = 'day' | 'week' | 'fortnight' | 'month' | 'year';
 
 export interface PlanningTimelineDay {
   date: string;
@@ -50,6 +50,8 @@ export interface PlanningCrewEvent {
   board: string;
   functionLabel: string;
   status: string;
+  confirmationStatus: 'provisional' | 'confirmed' | 'cancelled';
+  responsible: string;
   rhythm: string;
   startsOn: string;
   endsOn: string;
@@ -75,6 +77,9 @@ export interface PlanningCrewRow {
 export interface PlanningFilters {
   vesselName: string;
   personName: string;
+  eventType?: string;
+  status?: string;
+  responsible?: string;
 }
 
 export interface PlanningDateRange {
@@ -139,9 +144,9 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
     const end = `${year}-12-31`;
     return buildDays(start, daysBetween(start, end) + 1);
   }
-  if (mode === 'week') {
-    return buildDays(startOfPlanningWeek(anchorDate), 14);
-  }
+  if (mode === 'day') return buildDays(anchorDate, 1);
+  if (mode === 'week') return buildDays(startOfPlanningWeek(anchorDate), 7);
+  if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
   const monthStart = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}-01`;
   return buildDays(startOfPlanningWeek(monthStart), 49);
@@ -168,7 +173,8 @@ export function timelineRange(days: PlanningTimelineDay[]): PlanningDateRange {
 export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningViewMode): string {
   if (!days.length) return '';
   if (mode === 'year') return String(days[0].year);
-  if (mode === 'week') {
+  if (mode === 'day') return formatPlanningDate(days[0].date);
+  if (mode === 'week' || mode === 'fortnight') {
     return `${formatPlanningDate(days[0].date)} – ${formatPlanningDate(days[days.length - 1].date)}`;
   }
   const anchor = days[Math.min(14, days.length - 1)];
@@ -176,9 +182,9 @@ export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningV
 }
 
 export function shiftPlanningAnchor(anchorDate: string, mode: PlanningViewMode, amount: number): string {
-  if (mode === 'week') {
-    return addPlanningDays(anchorDate, amount * 14);
-  }
+  if (mode === 'day') return addPlanningDays(anchorDate, amount);
+  if (mode === 'week') return addPlanningDays(anchorDate, amount * 7);
+  if (mode === 'fortnight') return addPlanningDays(anchorDate, amount * 14);
   return mode === 'year' ? shiftPlanningYears(anchorDate, amount) : shiftPlanningMonths(anchorDate, amount);
 }
 
@@ -260,6 +266,8 @@ function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
     board: period.watchGroup,
     functionLabel: period.functionLabel,
     status: normalizePlanningStatus(period.sailorStatus),
+    confirmationStatus: 'confirmed',
+    responsible: '',
     rhythm: '',
     startsOn: period.startsOn,
     endsOn: period.endsOn,
@@ -279,6 +287,8 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
     board: assignment.watchGroup || 'Affectation',
     functionLabel: assignment.assignmentRole,
     status: normalizePlanningStatus(assignment.statusLabel),
+    confirmationStatus: assignment.confirmationStatus,
+    responsible: assignment.captainName === '-' ? '' : assignment.captainName,
     rhythm: '',
     startsOn: assignment.startsOn,
     endsOn: assignment.endsOn,
@@ -298,6 +308,8 @@ function crewEventFromDay(day: PlanningDayRecord): PlanningCrewEvent {
     board: day.watchGroup,
     functionLabel: day.functionLabel,
     status: normalizePlanningStatus(day.sailorStatus || day.dayStatus),
+    confirmationStatus: 'confirmed',
+    responsible: day.captainName,
     rhythm: day.rhythmLabel,
     startsOn: day.workDate,
     endsOn: day.workDate,

@@ -26,6 +26,11 @@ day/date invariant, adds the missing foreign-key indexes, and optimizes Planning
 its role scopes. It is data-preserving and idempotent; its rollback procedure is documented in the migration and
 in `docs/PLANNING_ARCHITECTURE.md`.
 
+Apply `supabase/migrations/202607130005_planning_p02_event_views.sql` before deploying version `1.7.0`.
+The Planning P0.2 client selects typed fleet events and assignment confirmation states during its initial load. The
+migration extends the existing project and assignment tables without creating a competing event table, preserves
+historical rows with safe defaults, adds filter indexes, and recreates the authenticated assignment overview RPC.
+
 ## Current Production Target
 
 The active public URL is:
@@ -64,7 +69,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The 27 local migrations, through `202607130004_planning_p01_foundations.sql`, have been pushed to Supabase Cloud.
+- The 28 local migrations, through `202607130005_planning_p02_event_views.sql`, have been pushed to Supabase Cloud.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

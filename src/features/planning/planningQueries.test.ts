@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
+  createPlanningProject,
   createVessel,
   fetchPlanningPeople,
   fetchPlanningOverview,
@@ -14,6 +15,7 @@ import {
   mapVesselRows,
   transitionPlanningPublication,
   updatePlanningEvent,
+  updatePlanningProject,
 } from './planningQueries';
 
 const vesselRow = {
@@ -47,6 +49,7 @@ const assignmentRow = {
   starts_on: '2026-07-01',
   ends_on: '2026-07-14',
   assignment_role: 'Pont',
+  confirmation_status: 'confirmed',
   source_label: 'seapilot',
 };
 
@@ -98,6 +101,23 @@ const planningPeriodRow = {
   slot365_source_id: '200',
   slot365_source_key: 'SLOT-123',
   source_label: 'sharepoint',
+};
+
+const planningProjectRow = {
+  id: 600,
+  title: 'Transit Cherbourg',
+  starts_on: '2026-07-08',
+  ends_on: '2026-07-10',
+  description: null,
+  client_name: 'BBTM',
+  primary_vessel_id: 1,
+  primary_vessel_name: 'COTENTIN',
+  secondary_vessel_id: null,
+  secondary_vessel_name: null,
+  event_type: 'transit',
+  responsible_name: 'Jean MARTIN',
+  status: 'Confirmé',
+  source_label: 'seapilot',
 };
 
 const planningPublicationRow = {
@@ -162,6 +182,7 @@ describe('planning mappers', () => {
         endsOn: '2026-07-14',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
+        confirmationStatus: 'confirmed',
         watchGroup: 'Affectation',
         comments: '',
         sourceLabel: 'seapilot',
@@ -193,6 +214,7 @@ describe('planning mappers', () => {
         endsOn: '2026-07-14',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
+        confirmationStatus: 'confirmed',
         watchGroup: 'Affectation',
         comments: '',
         sourceLabel: 'seapilot',
@@ -500,6 +522,7 @@ describe('planning writes', () => {
       captain_person_id: null,
       assignment_role: 'crew',
       status_label: 'En Mer',
+      confirmation_status: 'confirmed',
       watch_group: 'Affectation',
       comments: null,
     };
@@ -526,6 +549,7 @@ describe('planning writes', () => {
       ends_on: '2026-07-14',
       assignment_role: 'crew',
       status_label: 'En Mer',
+      confirmation_status: 'confirmed',
       watch_group: 'Affectation',
       comments: null,
       source_label: 'seapilot',
@@ -595,6 +619,57 @@ describe('planning writes', () => {
       departure_on: '2026-07-07',
       disembark_on: '2026-07-07',
     }));
+  });
+
+  it('creates a typed fleet event and returns the normalized Supabase row', async () => {
+    const single = vi.fn().mockResolvedValue({ data: planningProjectRow, error: null });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await expect(createPlanningProject({ from } as never, {
+      title: ' Transit Cherbourg ',
+      startsOn: '2026-07-08',
+      endsOn: '2026-07-10',
+      status: 'Confirmé',
+      eventType: 'transit',
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      responsibleName: ' Jean MARTIN ',
+      clientName: 'BBTM',
+      description: '',
+    })).resolves.toEqual(expect.objectContaining({ id: 600, eventType: 'transit', responsibleName: 'Jean MARTIN' }));
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Transit Cherbourg',
+      event_type: 'transit',
+      responsible_name: 'Jean MARTIN',
+      primary_vessel_id: 1,
+      primary_vessel_name: 'COTENTIN',
+    }));
+  });
+
+  it('updates a fleet event and rejects an incoherent range before Supabase', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { ...planningProjectRow, title: 'Transit Barfleur' }, error: null });
+    const eq = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const update = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ update });
+    const input = {
+      id: 600,
+      title: 'Transit Barfleur',
+      startsOn: '2026-07-09',
+      endsOn: '2026-07-11',
+      status: 'Confirmé',
+      eventType: 'transit' as const,
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      responsibleName: 'Jean MARTIN',
+      clientName: 'BBTM',
+      description: 'Mise en place',
+    };
+    await expect(updatePlanningProject({ from } as never, input)).resolves.toEqual(expect.objectContaining({ title: 'Transit Barfleur' }));
+    expect(eq).toHaveBeenCalledWith('id', 600);
+
+    await expect(updatePlanningProject({ from: vi.fn() } as never, { ...input, startsOn: '2026-07-12', endsOn: '2026-07-11' })).rejects.toThrow('La date de fin doit être postérieure');
   });
 
   it('transitions a displayed period through the publication RPC', async () => {
