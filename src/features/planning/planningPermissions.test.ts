@@ -22,6 +22,12 @@ describe('planning permissions', () => {
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
+      canManageWorkRestPolicies: false,
+      canViewWorkRest: true,
+      canViewNotifications: true,
+      canRefreshNotifications: true,
+      canViewDashboard: true,
+      canManageDependencies: true,
     });
   });
 
@@ -41,6 +47,12 @@ describe('planning permissions', () => {
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
+      canManageWorkRestPolicies: false,
+      canViewWorkRest: true,
+      canViewNotifications: true,
+      canRefreshNotifications: true,
+      canViewDashboard: true,
+      canManageDependencies: true,
     });
   });
 
@@ -58,6 +70,12 @@ describe('planning permissions', () => {
       canManageConflictCases: true,
       canPrepareReplacements: false,
       canViewHistory: true,
+      canManageWorkRestPolicies: false,
+      canViewWorkRest: true,
+      canViewNotifications: true,
+      canRefreshNotifications: false,
+      canViewDashboard: true,
+      canManageDependencies: true,
     });
   });
 
@@ -75,6 +93,12 @@ describe('planning permissions', () => {
       canReviewAbsences: false,
       canManageConflictCases: false,
       canPrepareReplacements: false,
+      canManageWorkRestPolicies: false,
+      canViewWorkRest: true,
+      canViewNotifications: true,
+      canRefreshNotifications: false,
+      canViewDashboard: false,
+      canManageDependencies: false,
     });
   });
 
@@ -98,6 +122,12 @@ describe('planning permissions', () => {
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
+      canManageWorkRestPolicies: true,
+      canViewWorkRest: true,
+      canViewNotifications: true,
+      canRefreshNotifications: true,
+      canViewDashboard: true,
+      canManageDependencies: true,
     });
   });
 
@@ -110,6 +140,8 @@ describe('planning permissions', () => {
     expect(permissions.canManageTemplates).toBe(false);
     expect(permissions.canManageManning).toBe(false);
     expect(permissions.canPrepareReplacements).toBe(false);
+    expect(permissions.canManageDependencies).toBe(false);
+    expect(permissions.canManageWorkRestPolicies).toBe(true);
     expect(permissions.canRequestAbsences).toBe(true);
     expect(permissions.canReviewAbsences).toBe(true);
     expect(permissions.canManageConflictCases).toBe(true);

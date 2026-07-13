@@ -16,7 +16,7 @@ const PLANNING_PERSON_SELECT =
 const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
-  'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
+  'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, consecutive_rest_hours, rest_period_count, night_work_hours, comments, source_label';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
@@ -109,6 +109,9 @@ interface PlanningDayRow {
   worked_hours: number | string | null;
   rest_24h: number | string | null;
   cumulative_7d: number | string | null;
+  consecutive_rest_hours?: number | string | null;
+  rest_period_count?: number | string | null;
+  night_work_hours?: number | string | null;
   comments: string | null;
   source_label: string;
 }
@@ -356,6 +359,9 @@ export interface PlanningDayRecord {
   workedHours: number | null;
   rest24h: number | null;
   cumulative7d: number | null;
+  consecutiveRestHours?: number | null;
+  restPeriodCount?: number | null;
+  nightWorkHours?: number | null;
   comments: string;
   sourceLabel: string;
 }
@@ -804,6 +810,9 @@ export function mapPlanningDayRows(rows: PlanningDayRow[]): PlanningDayRecord[] 
     workedHours: numberOrNull(row.worked_hours),
     rest24h: numberOrNull(row.rest_24h),
     cumulative7d: numberOrNull(row.cumulative_7d),
+    consecutiveRestHours: numberOrNull(row.consecutive_rest_hours),
+    restPeriodCount: numberOrNull(row.rest_period_count),
+    nightWorkHours: numberOrNull(row.night_work_hours),
     comments: textOrEmpty(row.comments),
     sourceLabel: row.source_label,
   }));

@@ -23,6 +23,12 @@ export interface PlanningPermissions {
   canReviewAbsences: boolean;
   canManageConflictCases: boolean;
   canPrepareReplacements: boolean;
+  canManageWorkRestPolicies: boolean;
+  canViewWorkRest: boolean;
+  canViewNotifications: boolean;
+  canRefreshNotifications: boolean;
+  canViewDashboard: boolean;
+  canManageDependencies: boolean;
 }
 
 export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean): PlanningPermissions {
@@ -56,5 +62,11 @@ export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean
     canReviewAbsences: isAdmin || isDirection || isArmement,
     canManageConflictCases: isAdmin || isDirection || isArmement || isCaptain,
     canPrepareReplacements: canEdit && !isPeriodLocked,
+    canManageWorkRestPolicies: isAdmin,
+    canViewWorkRest: roles.some((role) => PLANNING_READ_ROLES.has(role)),
+    canViewNotifications: roles.some((role) => PLANNING_READ_ROLES.has(role)),
+    canRefreshNotifications: isAdmin || isDirection || isArmement,
+    canViewDashboard: isAdmin || isDirection || isArmement || isCaptain,
+    canManageDependencies: (isAdmin || isDirection || isArmement || isCaptain) && !isPeriodLocked,
   };
 }

@@ -55,6 +55,14 @@ P1.2 ajoute un workflow d’absence typé (`leave`, `illness`, `training`, `medi
 
 La recherche de remplacement écarte ou avertit selon les autres affectations, absences approuvées, certificats, documents médicaux, fonction et exigences de matrice. Elle explique chaque incompatibilité et ne choisit jamais un marin : l’action finale ouvre le formulaire d’affectation P0 prérempli, en statut provisoire. Les règles complètes de repos, les suggestions automatiques et les notifications restent hors P1.2.
 
+### Phase P1.3 — repos, notifications, indicateurs, exports et dépendances
+
+P1.3 finalise le périmètre métier P1 sans modifier les sources opérationnelles P0. `planning_work_rest_policies` porte des seuils versionnés par entreprise ou navire et par période. La migration ne fournit aucune valeur réglementaire implicite : tant qu’un administrateur n’a pas saisi de politique, chaque contrôle est explicitement « non évaluable ». Le moteur pur `planningP13.ts` contrôle travail/repos sur 24 heures et 7 jours, repos consécutif, fractionnement, travail de nuit et temps de passation. Il consomme les métriques `planning_days`; les trois métriques détaillées absentes des imports historiques restent nullable et ne sont jamais devinées. Les dérogations P0.3 sont appliquées uniquement lorsqu’elles ciblent la règle, le marin, le navire et la date du contrôle.
+
+`planning_notifications` contient une ligne par destinataire et une empreinte anti-doublon. Les triggers couvrent affectation, modification, publication, relève, absence, conflit critique et poste vacant. Une RPC idempotente actualise les échéances documentaires à 30 jours. Les utilisateurs ne voient et ne marquent comme lues que leurs propres notifications ; les insertions restent exclusivement serveur. `planning_dependencies` décrit des liens fin-début entre projet, affectation, absence/formation et relève. Les RPC contrôlent l’entreprise, les permissions, les références et les cycles avant écriture ; le client explique les écarts de délai.
+
+`PlanningP13Panel.tsx` est chargé dynamiquement et regroupe tableau de bord, contrôles de repos, notifications, dépendances et exports. Les indicateurs sont calculés depuis les données déjà chargées avec index `Map`/`Set`. Les exports Excel OOXML, PDF et ICS sont générés côté client à la demande pour le Planning, les listes d’équipage, feuilles de relève, anomalies et contrôles travail/repos ; les bibliothèques lourdes restent hors du bundle initial.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -77,12 +85,14 @@ La recherche de remplacement écarte ou avertit selon les autres affectations, a
 | Remplacements | Absent | Opérationnel P1.2 | Recherche filtrée, compatibilité expliquée et préparation manuelle d’une affectation provisoire | Maintenir la décision humaine |
 | Relèves d’équipage | Absent | Opérationnel P0.3 | Saisie complète, comparaison des bordées et sauvegarde transactionnelle | Maintenir |
 | Rotations récurrentes | Absent | Absent | Aucun modèle 7/7, 10/10, 14/14 ni édition de série | P1 |
-| Temps de travail et repos | Partiel | Partiel | Données SMTR `worked_hours`, `rest_24h`, `cumulative_7d` importées mais pas de moteur de conformité | P1 |
+| Temps de travail et repos | Partiel | Opérationnel P1.3 | Seuils administrables, 24 h/7 j, repos consécutif/fractionné, nuit, passation et dérogations ; données détaillées historiques parfois non évaluables | Maintenir la qualité des saisies |
 | Validation, publication, verrouillage | Absent | Opérationnel P0.4 | Cycle complet, multi-acteurs, verrou serveur et réouverture motivée par période/flotte/navire | Maintenir |
 | Historique | Partiel | Opérationnel P0.4 | Journal sémantique, auteurs figés, versions complètes immuables et consultation dans le panneau latéral | P1 : comparaison visuelle de versions |
 | Permissions | Partiel | Opérationnel P0.4 | Matrice d’actions, périmètre entreprise/navire/période/personne et contrôle identique UI/RPC/RLS | Maintenir |
-| Export | Partiel | Partiel | CSV journalier par marin ; PDF/Excel/ICS et export flotte absents | P1 |
-| Notifications et collaboration | Absent | Absent | Pas de workflow de confirmation ou notification Planning | P1 |
+| Export | Partiel | Opérationnel P1.3 | Excel OOXML, PDF et ICS : Planning, équipage, relève, anomalies et travail/repos | Maintenir |
+| Notifications et collaboration | Absent | Opérationnel P1.3 | Huit familles, destinataire individuel, lecture et anti-doublon serveur ; pas d’envoi e-mail/push | Extension éventuelle |
+| Tableau de bord métier | Absent | Opérationnel P1.3 | Opérations, embarqués/disponibles, relèves, vacances, conflits, couverture, conformité et échéances 7/14/30 j | Maintenir |
+| Dépendances | Absent | Opérationnel P1.3 | Opérations, maintenance/remise en service, formation/affectation et livraison/opération ; cycles refusés | Maintenir |
 | Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
 | Temps réel et cache | Absent | Absent | Aucun abonnement Supabase Realtime ni cache de requêtes | P1 |
 | Virtualisation / chargement par période | Absent | Absent | Toutes les sources sont chargées avant filtrage client | P0 performance |
@@ -126,6 +136,8 @@ La recherche de remplacement écarte ou avertit selon les autres affectations, a
 - `planningP11.ts` contient les calculs purs de série et de comparaison d’armement ; `planningP11Queries.ts` centralise les lectures et RPC P1.1.
 - `PlanningP12Panel.tsx` porte les absences, le centre de conflits et la recherche manuelle de remplaçants ; il est chargé dynamiquement à l’ouverture.
 - `planningP12.ts` contient la détection et l’explication des compatibilités ; `planningP12Queries.ts` centralise les lectures et RPC P1.2.
+- `PlanningP13Panel.tsx` porte le cockpit final P1 ; `planningP13.ts` contient les calculs purs et `planningP13Queries.ts` centralise les lectures/RPC.
+- `planningP13Exports.ts` construit Excel/PDF/ICS à la demande et reste séparé du rendu et des règles métier.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
@@ -173,6 +185,9 @@ Sources fusionnées :
 - `planning_rotation_series` et `planning_rotation_occurrences` : définition et exceptions des séries, reliées aux affectations P0.
 - `planning_templates` : modèles réutilisables appliqués aux projets ou relèves P0.
 - `planning_manning_matrices` et `planning_manning_requirements` : armement requis et versionné par navire.
+- `planning_work_rest_policies` : seuils administrés, bornés dans le temps et éventuellement par navire.
+- `planning_notifications` : notifications applicatives individualisées et état de lecture.
+- `planning_dependencies` : liens métier fin-début contrôlés et audités.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
@@ -408,6 +423,12 @@ Tests Planning couverts :
 - recherche de remplaçants par fonction/qualification avec raisons d’incompatibilité ;
 - traitement manuel, source, priorité, responsable, commentaire, résolution/dérogation et historique ;
 - permissions UI/RPC/RLS et garde serveur contre une affectation chevauchant une absence approuvée.
+- seuils de travail/repos exclusivement administrés, passation incluse, fenêtres 24 h/7 j et dérogations ciblées ;
+- absence de conclusion lorsque les métriques de repos consécutif, fractionnement ou nuit sont manquantes ;
+- notifications individualisées, lecture serveur, huit familles et actualisation documentaire idempotente ;
+- indicateurs métier et performance sur plusieurs milliers de journées sans balayage quadratique ;
+- dépendances fin-début, référence entreprise et refus des cycles côté RPC ;
+- exports Excel OOXML, PDF et ICS pour les cinq livrables métier P1.3.
 
 Commandes de validation :
 
@@ -433,10 +454,10 @@ La procédure de migration, les contrôles pré/post-déploiement et le retour a
 ### P1
 
 1. P1.1 livré : rotations 7/7, 10/10, 14/14 et personnalisées, modèles et matrices d’armement.
-2. Moteur configurable de travail/repos à partir des données SMTR.
+2. P1.3 livré : moteur configurable de travail/repos à partir des données SMTR.
 3. P1.2 livré : absences, impacts, remplacements manuels explicables et centre de conflits.
-4. Notifications, dépendances et comparaison de versions.
-5. Exports PDF/Excel/ICS et impression par navire, marin et relève.
+4. P1.3 livré : notifications individualisées, dépendances et tableau de bord métier.
+5. P1.3 livré : exports PDF/Excel/ICS pour Planning, équipage, relève, anomalies et travail/repos.
 6. Cache client, chargement progressif et abonnements temps réel ciblés.
 
 ### P2

@@ -59,6 +59,12 @@ The replacement search remains advisory and prepares the existing provisional as
 choice. The detailed migration, RLS checks, smoke recipe and export-first rollback are in
 `docs/deployment/planning-p1-2.md`.
 
+Apply `supabase/migrations/202607140002_planning_p13_work_rest_notifications_exports.sql` before deploying
+version `2.2.0`. P1.3 adds nullable detailed rest metrics, administrator-owned work/rest policies, recipient-specific
+notifications and audited operational dependencies. It does not seed regulatory thresholds or rewrite existing
+Planning rows. The client also adds the dashboard and lazy Excel/PDF/ICS exports. The complete V2 sequence,
+permission checks, smoke tests and export-first rollback are in `docs/deployment/planning-p1-3-v2.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -97,7 +103,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning P1.2 target contains 34 local and remote migrations through `202607140001_planning_p12_absences_conflict_center.sql`; verify `supabase migration list` before each deployment.
+- The Planning P1.3 target contains 35 local and remote migrations through `202607140002_planning_p13_work_rest_notifications_exports.sql`; verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
