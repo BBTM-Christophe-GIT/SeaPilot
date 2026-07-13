@@ -143,6 +143,10 @@ function createClient(options: {
   hrDocuments?: unknown[];
   rules?: unknown[];
   publications?: unknown[];
+  handovers?: unknown[];
+  handoverPositions?: unknown[];
+  derogations?: unknown[];
+  derogationHistory?: unknown[];
   createdAssignment?: unknown;
   createdProject?: unknown;
   updatedProject?: unknown;
@@ -199,6 +203,22 @@ function createClient(options: {
     }
     if (table === 'planning_publications') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.publications ?? [], error: null }) }) };
+    }
+    if (table === 'planning_handovers') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.handovers ?? [], error: null }) }) };
+    }
+    if (table === 'planning_handover_positions') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.handoverPositions ?? [], error: null }) }) };
+    }
+    if (table === 'planning_derogations') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.derogations ?? [], error: null }) }) };
+    }
+    if (table === 'planning_change_log') {
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.derogationHistory ?? [], error: null }) }),
+        }),
+      };
     }
     if (table === 'planning_assignments') return { insert: insertAssignment, update: updateAssignment };
     throw new Error(`Unexpected table ${table}`);
@@ -305,6 +325,13 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Marins' })).toHaveClass('is-active');
     await user.click(screen.getByRole('button', { name: 'Équipes' }));
     expect(screen.getByRole('button', { name: 'Équipes' })).toHaveClass('is-active');
+    await user.click(screen.getByRole('tab', { name: 'Navire' }));
+    expect(screen.getByText('Vue navire')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ouvrir l’affectation de Paul DURAND/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Marin' }));
+    expect(screen.getByText('Vue marin')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Filtre marin'), 'Paul DURAND');
+    expect(screen.getByRole('button', { name: /Ouvrir l’affectation de Paul DURAND/ })).toBeInTheDocument();
   });
 
   it('creates a fleet event from the complete side panel', async () => {
@@ -380,8 +407,8 @@ describe('PlanningPage cockpit', () => {
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
-    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20' } });
-    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26' } });
+    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
     fireEvent.change(screen.getByLabelText('Fonction'), { target: { value: 'Quart' } });
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
 
@@ -391,6 +418,8 @@ describe('PlanningPage cockpit', () => {
       crew_person_id: 11,
       starts_on: '2026-07-20',
       ends_on: '2026-07-26',
+      starts_at: '2026-07-20T06:00:00.000Z',
+      ends_at: '2026-07-26T18:00:00.000Z',
       assignment_role: 'Quart',
       status_label: 'En Mer',
       confirmation_status: 'confirmed',
@@ -443,8 +472,8 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'Nouvelle affectation' }));
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
-    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20' } });
-    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26' } });
+    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
 
     expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Aptitude médicale non valide');
     expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Blocage');

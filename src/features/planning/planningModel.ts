@@ -12,6 +12,8 @@ import {
   formatPlanningDate,
   isoDate,
   parsePlanningDate,
+  isPlanningLocalDateTime,
+  planningLocalDateTimeToUtc,
   planningWeekNumber,
   rangesOverlap,
   shiftPlanningMonths,
@@ -55,6 +57,8 @@ export interface PlanningCrewEvent {
   rhythm: string;
   startsOn: string;
   endsOn: string;
+  startsAt: string;
+  endsAt: string;
   comments: string;
   sourceLabel: string;
 }
@@ -271,6 +275,8 @@ function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
     rhythm: '',
     startsOn: period.startsOn,
     endsOn: period.endsOn,
+    startsAt: '',
+    endsAt: '',
     comments: period.comments,
     sourceLabel: period.sourceLabel,
   };
@@ -292,6 +298,8 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
     rhythm: '',
     startsOn: assignment.startsOn,
     endsOn: assignment.endsOn,
+    startsAt: assignment.startsAt || '',
+    endsAt: assignment.endsAt || '',
     comments: assignment.comments,
     sourceLabel: assignment.sourceLabel,
   };
@@ -313,6 +321,8 @@ function crewEventFromDay(day: PlanningDayRecord): PlanningCrewEvent {
     rhythm: day.rhythmLabel,
     startsOn: day.workDate,
     endsOn: day.workDate,
+    startsAt: '',
+    endsAt: '',
     comments: day.comments,
     sourceLabel: day.sourceLabel,
   };
@@ -485,10 +495,13 @@ export type PlanningControlCode =
   | 'invalid_period'
   | 'inactive_person'
   | 'crew_unavailability'
+  | 'crew_absence'
   | 'assignment_overlap'
   | 'function_mismatch'
   | 'expired_medical'
   | 'expired_credential'
+  | 'credential_expires_during_assignment'
+  | 'missing_qualification'
   | 'medical_unfit'
   | 'medical_restriction'
   | 'pending_validation';
@@ -502,6 +515,8 @@ export interface PlanningAssignmentCandidate {
   status: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
 }
 
 export interface PlanningControlResult {
@@ -519,17 +534,23 @@ const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningContr
   invalid_period: 'blocking',
   inactive_person: 'blocking',
   crew_unavailability: 'blocking',
+  crew_absence: 'blocking',
   assignment_overlap: 'warning',
   function_mismatch: 'information',
   expired_medical: 'blocking',
   expired_credential: 'warning',
+  credential_expires_during_assignment: 'warning',
+  missing_qualification: 'warning',
   medical_unfit: 'blocking',
   medical_restriction: 'warning',
   pending_validation: 'warning',
 };
 
-const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'vacation', 'sick', 'training']);
+const ABSENCE_STATUS_TONES = new Set(['vacation', 'sick']);
+const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'training']);
 const CREDENTIAL_TOKENS = ['BREVET', 'CERTIFICAT', 'QUALIFICATION', 'HABILITATION', 'FORMATION', 'TRAINING'];
+const DECK_FUNCTION_TOKENS = ['CAPITAINE', 'PONT', 'MATELOT', 'BOSCO', 'OFFICIER'];
+const ENGINE_FUNCTION_TOKENS = ['MACHINE', 'MECANICIEN', 'CHEFMECANICIEN'];
 
 function planningRuleLevel(
   overview: PlanningOverview,
@@ -568,6 +589,23 @@ function controlResult(
 ): PlanningControlResult | null {
   const level = planningRuleLevel(overview, code, candidate.startsOn || '9999-12-31');
   if (!level) return null;
+  const rule = overview.rules.find((item) => item.code === code);
+  const vessel = overview.vessels.find((item) => normalizePlanningText(item.name) === normalizePlanningText(candidate.vessel));
+  const candidateStart = candidate.startsAt
+    ? new Date(isPlanningLocalDateTime(candidate.startsAt) ? planningLocalDateTimeToUtc(candidate.startsAt) : candidate.startsAt).getTime()
+    : new Date(planningLocalDateTimeToUtc(`${candidate.startsOn}T00:00`)).getTime();
+  const candidateEnd = candidate.endsAt
+    ? new Date(isPlanningLocalDateTime(candidate.endsAt) ? planningLocalDateTimeToUtc(candidate.endsAt) : candidate.endsAt).getTime()
+    : new Date(planningLocalDateTimeToUtc(`${candidate.endsOn}T23:59`)).getTime();
+  const coveredByDerogation = Boolean(rule && vessel && candidate.personId !== null && (overview.derogations || []).some((derogation) => (
+    derogation.status === 'active'
+    && derogation.ruleId === rule.id
+    && derogation.personId === candidate.personId
+    && derogation.vesselId === vessel.id
+    && new Date(derogation.startsAt).getTime() <= candidateStart
+    && new Date(derogation.endsAt).getTime() >= candidateEnd
+  )));
+  if (coveredByDerogation) return null;
   return { ...input, code, level, eventId: candidate.id, personId: candidate.personId };
 }
 
@@ -608,7 +646,13 @@ export function evaluatePlanningAssignment(
     if (!rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)) return;
 
     const overlapDate = event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn;
-    if (normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)) {
+    const candidateTone = planningStatusTone(candidate.status);
+    const eventTone = planningStatusTone(event.status);
+    if (
+      ['sea', 'shore'].includes(candidateTone)
+      && ['sea', 'shore'].includes(eventTone)
+      && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
+    ) {
       const pair = [candidate.id, event.id].sort().join('-');
       add(controlResult(overview, candidate, 'assignment_overlap', {
         id: `assignment-overlap-${pair}`,
@@ -618,7 +662,14 @@ export function evaluatePlanningAssignment(
       }));
     }
 
-    if (['sea', 'shore'].includes(planningStatusTone(candidate.status)) && UNAVAILABLE_STATUS_TONES.has(planningStatusTone(event.status))) {
+    if (['sea', 'shore'].includes(candidateTone) && ABSENCE_STATUS_TONES.has(eventTone)) {
+      add(controlResult(overview, candidate, 'crew_absence', {
+        id: `crew-absence-${candidate.id}-${event.id}`,
+        title: 'Absence sur la période',
+        detail: `${candidate.person} est déclaré « ${event.status} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
+        date: overlapDate,
+      }));
+    } else if (['sea', 'shore'].includes(candidateTone) && UNAVAILABLE_STATUS_TONES.has(eventTone)) {
       add(controlResult(overview, candidate, 'crew_unavailability', {
         id: `crew-unavailability-${candidate.id}-${event.id}`,
         title: 'Indisponibilité sur la période',
@@ -641,12 +692,32 @@ export function evaluatePlanningAssignment(
     }
   }
 
+  if (person && candidate.functionLabel) {
+    const assignedFunction = normalizePlanningText(candidate.functionLabel);
+    const needsDeckQualification = DECK_FUNCTION_TOKENS.some((token) => assignedFunction.includes(token));
+    const needsEngineQualification = ENGINE_FUNCTION_TOKENS.some((token) => assignedFunction.includes(token));
+    if ((needsDeckQualification && !person.deckCertificateLabel) || (needsEngineQualification && !person.engineCertificateLabel)) {
+      add(controlResult(overview, candidate, 'missing_qualification', {
+        id: `missing-qualification-${candidate.id}-${person.id}`,
+        title: 'Qualification manquante',
+        detail: `${candidate.functionLabel} requiert une qualification ${needsEngineQualification ? 'machine' : 'pont'} renseignée dans le dossier RH.`,
+        date: candidate.startsOn,
+      }));
+    }
+  }
+
   overview.hrDocuments.filter((document) => document.personId === candidate.personId).forEach((document) => {
     const documentKey = normalizePlanningText(document.status);
     const medical = isMedicalDocument(document.categoryKey, document.title);
-    const invalidDuringAssignment = documentKey.includes('EXPIRED')
+    const invalidAtStart = documentKey.includes('EXPIRED')
       || documentKey.includes('MISSING')
-      || Boolean(document.expiresOn && document.expiresOn < candidate.endsOn);
+      || Boolean(document.expiresOn && document.expiresOn < candidate.startsOn);
+    const expiresDuringAssignment = Boolean(
+      document.expiresOn
+      && document.expiresOn >= candidate.startsOn
+      && document.expiresOn <= candidate.endsOn,
+    );
+    const invalidDuringAssignment = invalidAtStart || expiresDuringAssignment;
 
     if (document.medicalUnfit) {
       add(controlResult(overview, candidate, 'medical_unfit', {
@@ -673,7 +744,7 @@ export function evaluatePlanningAssignment(
           : `${document.title} est indiqué comme manquant ou expiré.`,
         date: document.expiresOn || candidate.startsOn,
       }));
-    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidDuringAssignment) {
+    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidAtStart) {
       add(controlResult(overview, candidate, 'expired_credential', {
         id: `expired-credential-${candidate.id}-${document.id}`,
         title: 'Titre ou qualification à renouveler',
@@ -681,6 +752,13 @@ export function evaluatePlanningAssignment(
           ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
           : `${document.title} est indiqué comme manquant ou expiré.`,
         date: document.expiresOn || candidate.startsOn,
+      }));
+    } else if (isCredentialDocument(document.categoryKey, document.title) && expiresDuringAssignment) {
+      add(controlResult(overview, candidate, 'credential_expires_during_assignment', {
+        id: `credential-expires-during-${candidate.id}-${document.id}`,
+        title: 'Titre expirant pendant l’embarquement',
+        detail: `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant le débarquement.`,
+        date: document.expiresOn,
       }));
     }
     if (document.requiresCaptainValidation && documentKey.includes('PENDING')) {
@@ -717,6 +795,8 @@ export function buildPlanningControlCenter(
       status: event.status,
       startsOn: event.startsOn,
       endsOn: event.endsOn,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
     }, eventsByPerson.get(normalizePlanningText(event.person)) || []).forEach((result) => unique.set(result.id, result));
   });
   const levelRank: Record<PlanningControlLevel, number> = { blocking: 0, warning: 1, information: 2 };

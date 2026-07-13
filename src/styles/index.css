@@ -4357,6 +4357,240 @@ button:disabled {
   }
 }
 
+/* Planning P0.3: timed assignments, handovers and audited derogations. */
+.planning-timeline-row.is-fleet {
+  min-height: calc(54px + (var(--planning-fleet-assignment-rows, 1) * 26px));
+  grid-auto-rows: 26px;
+}
+
+.planning-fleet-assignment-bar {
+  align-items: center;
+  align-self: stretch;
+  background: color-mix(in srgb, var(--color-info, #2563eb) 12%, white);
+  border: 1px solid color-mix(in srgb, var(--color-info, #2563eb) 35%, white);
+  border-radius: 6px;
+  color: var(--color-text, #172033);
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  margin: 1px 2px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 7px;
+  position: relative;
+  text-align: left;
+  z-index: 3;
+}
+
+.planning-fleet-assignment-bar strong,
+.planning-fleet-assignment-bar small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planning-fleet-assignment-bar.is-provisional {
+  border-style: dashed;
+}
+
+.planning-entity-view {
+  min-height: 430px;
+  padding: 20px;
+}
+
+.planning-entity-view > header,
+.planning-handover-editor > header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.planning-entity-view h2,
+.planning-entity-view h3,
+.planning-handover-editor h3,
+.planning-handover-comparison h3 {
+  margin: 0;
+}
+
+.planning-entity-view header small,
+.planning-entity-view header p,
+.planning-handover-editor header p,
+.planning-muted-copy {
+  color: var(--color-text-muted, #67738a);
+  margin: 4px 0 0;
+}
+
+.planning-assignment-table-wrap {
+  overflow: auto;
+}
+
+.planning-assignment-table {
+  border-collapse: collapse;
+  font-size: .86rem;
+  min-width: 720px;
+  width: 100%;
+}
+
+.planning-assignment-table th,
+.planning-assignment-table td {
+  border-bottom: 1px solid var(--color-border-subtle, #e3e8f0);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.planning-assignment-table th {
+  color: var(--color-text-muted, #67738a);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.planning-confirmation-pill,
+.planning-comparison-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.planning-confirmation-pill.is-confirmed,
+.planning-comparison-pill.is-unchanged {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.planning-confirmation-pill.is-provisional,
+.planning-comparison-pill.is-replaced {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.planning-confirmation-pill.is-cancelled,
+.planning-comparison-pill.is-vacant,
+.planning-comparison-pill.is-noncompliant {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.planning-handover-cards {
+  border-top: 1px solid var(--color-border-subtle, #e3e8f0);
+  margin-top: 24px;
+  padding-top: 18px;
+}
+
+.planning-handover-card {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--color-border-subtle, #e3e8f0);
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.planning-handover-card span,
+.planning-handover-card small {
+  display: block;
+}
+
+.planning-dialog.is-handover {
+  max-width: min(960px, 94vw);
+  width: min(960px, 94vw);
+}
+
+.planning-handover-editor,
+.planning-handover-comparison {
+  border-top: 1px solid var(--color-border-subtle, #e3e8f0);
+  padding: 18px 22px;
+}
+
+.planning-handover-position {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, .8fr) minmax(160px, 1fr) auto minmax(160px, 1fr) auto;
+  margin-bottom: 10px;
+}
+
+.planning-handover-position label {
+  display: grid;
+  gap: 6px;
+}
+
+.planning-add-position,
+.planning-derogation-action {
+  align-items: center;
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 7px;
+  margin: 0 22px 16px;
+}
+
+.planning-comparison-issue {
+  color: #b45309;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.planning-side-button {
+  background: transparent;
+  border: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.planning-text-danger {
+  color: #b91c1c;
+  margin-top: 8px;
+}
+
+.planning-dialog-note {
+  color: var(--color-text-muted, #67738a);
+  font-size: .8rem;
+  margin: 0 22px 16px;
+}
+
+@media (max-width: 1100px) {
+  .planning-handover-position {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .planning-handover-position > svg {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .planning-entity-view {
+    padding: 14px;
+  }
+
+  .planning-entity-view > header,
+  .planning-handover-editor > header,
+  .planning-handover-position {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) {
+  .planning-fleet-assignment-bar,
+  .planning-handover-card,
+  .planning-add-position,
+  .planning-derogation-action {
+    min-height: 44px;
+  }
+}
+
 /* RH analytical cockpit */
 .hr-command-header {
   display: flex;
@@ -5807,4 +6041,14 @@ button:disabled {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+.planning-handover-fieldset {
+  border: 0;
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.planning-handover-fieldset:disabled {
+  opacity: 0.86;
 }

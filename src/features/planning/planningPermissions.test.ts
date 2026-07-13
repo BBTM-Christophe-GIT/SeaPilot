@@ -9,6 +9,8 @@ describe('planning permissions', () => {
       canExport: false,
       canManagePublication: false,
       canManageVessels: false,
+      canManageHandovers: false,
+      canManageDerogations: false,
     });
   });
 
@@ -19,12 +21,16 @@ describe('planning permissions', () => {
       canExport: true,
       canManagePublication: true,
       canManageVessels: true,
+      canManageHandovers: true,
+      canManageDerogations: true,
     });
   });
 
   it('keeps publication management available while a period is locked', () => {
     const permissions = getPlanningPermissions(['admin'], true);
     expect(permissions.canEditEvents).toBe(false);
+    expect(permissions.canManageHandovers).toBe(false);
+    expect(permissions.canManageDerogations).toBe(true);
     expect(permissions.canManagePublication).toBe(true);
   });
 

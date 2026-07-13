@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertPlanningDateRange,
+  assertPlanningDateTimeRange,
   assertSinglePlanningDay,
   optionalPlanningEntityId,
   planningEntityId,
@@ -16,6 +17,13 @@ describe('planning validation', () => {
   it('rejects an event whose end precedes its start', () => {
     expect(() => assertPlanningDateRange('2026-07-14', '2026-07-01')).toThrow(
       'La date de fin doit être postérieure ou égale à la date de début.',
+    );
+  });
+
+  it('accepts an assignment passing midnight and rejects an incoherent instant range', () => {
+    expect(() => assertPlanningDateTimeRange('2026-07-20T22:00', '2026-07-21T06:00')).not.toThrow();
+    expect(() => assertPlanningDateTimeRange('2026-07-21T06:00', '2026-07-20T22:00')).toThrow(
+      'La fin doit être strictement postérieure au début.',
     );
   });
 

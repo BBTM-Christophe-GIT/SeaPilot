@@ -26,6 +26,9 @@ const overview: PlanningOverview = {
   hrDocuments: [],
   rules: [],
   publications: [],
+  handovers: [],
+  derogations: [],
+  derogationHistory: [],
 };
 
 const range = { start: '2026-07-06', end: '2026-07-19' };
