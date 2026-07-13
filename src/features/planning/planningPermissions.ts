@@ -16,6 +16,9 @@ export interface PlanningPermissions {
   canManageVessels: boolean;
   canManageHandovers: boolean;
   canManageDerogations: boolean;
+  canManageRotations: boolean;
+  canManageTemplates: boolean;
+  canManageManning: boolean;
 }
 
 export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean): PlanningPermissions {
@@ -42,5 +45,8 @@ export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean
     canManageVessels: isAdmin,
     canManageHandovers: (isAdmin || isArmement) && !isPeriodLocked,
     canManageDerogations: (isAdmin || isDirection) && !isPeriodLocked,
+    canManageRotations: canEdit && !isPeriodLocked,
+    canManageTemplates: canEdit && !isPeriodLocked,
+    canManageManning: canEdit && !isPeriodLocked,
   };
 }

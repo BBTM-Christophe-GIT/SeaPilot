@@ -61,10 +61,13 @@ import {
   createPlanningProject,
   createVessel,
   deletePlanningEvent,
+  fetchPlanningAssignmentOverviewRows,
   fetchPlanningDerogations,
   fetchPlanningHandovers,
   fetchPlanningHistory,
+  fetchPlanningProjects,
   fetchPlanningVersions,
+  mapPlanningAssignmentOverviewRows,
   mapPlanningAssignmentRows,
   revokePlanningDerogation,
   savePlanningHandover,
@@ -91,6 +94,7 @@ import {
   PlanningHandoverDialog,
 } from './PlanningP03Panels';
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
+import { PlanningP11Panel } from './PlanningP11Panel';
 import { PlanningCrewTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
 import {
   buildPlanningCrewLanes,
@@ -278,6 +282,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const [pendingMutationId, setPendingMutationId] = useState<string | null>(null);
   const [isHandoverOpen, setIsHandoverOpen] = useState(false);
   const [derogationPrefill, setDerogationPrefill] = useState<Partial<CreatePlanningDerogationInput> | null>(null);
+  const [isP11Open, setIsP11Open] = useState(false);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -858,6 +863,21 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     }
   }
 
+  async function handleP11OperationalChange(kind: 'assignments' | 'projects' | 'handovers') {
+    if (kind === 'assignments') {
+      const rows = await fetchPlanningAssignmentOverviewRows(effectiveClient);
+      updateOverview((current) => ({ ...current, assignments: mapPlanningAssignmentOverviewRows(rows) }));
+      return;
+    }
+    if (kind === 'projects') {
+      const projects = await fetchPlanningProjects(effectiveClient);
+      updateOverview((current) => ({ ...current, projects }));
+      return;
+    }
+    const handovers = await fetchPlanningHandovers(effectiveClient);
+    updateOverview((current) => ({ ...current, handovers }));
+  }
+
   function openDerogation(controls: PlanningControlResult[], assignmentId?: number) {
     if (!permissions.canManageDerogations) {
       setErrorMessage('Seuls les utilisateurs autorisés peuvent enregistrer une dérogation.');
@@ -985,6 +1005,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             Afficher les week-ends
           </label>
           {permissions.canManageVessels ? <button onClick={() => setIsVesselsOpen(true)} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
+          <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et armement</button>
           {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
         </div>
       ) : null}
@@ -1176,6 +1197,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
 
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDerogation={permissions.canManageDerogations ? () => openDerogation(selectedEventControls, selectedEvent.kind === 'assignment' ? Number(selectedEvent.id.split('-').pop()) : undefined) : undefined} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
+      {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
       {derogationPrefill ? <PlanningDerogationDialog isSaving={isSaving} onClose={() => setDerogationPrefill(null)} onSave={(input) => void handleCreateDerogation(input)} overview={overview} prefill={derogationPrefill} /> : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}

@@ -45,6 +45,13 @@ rollback strategy are in `docs/deployment/planning-p0-v1.md`.
 Apply `supabase/migrations/202607130008_planning_p04_audit_backfill_cleanup.sql` immediately afterwards. It removes
 only anonymous audit entries whose snapshots differ solely by the technical `company_id` backfill.
 
+Apply `supabase/migrations/202607130009_planning_p11_rotations_templates_manning.sql`, then
+`202607130010_planning_p11_rotation_lint_cleanup.sql`, before deploying version `2.0.0`. The P1.1 panel reads five
+new company-scoped tables and calls transactional RPCs for rotations, templates
+and manning matrices. The migration preserves P0 rows, generates operational rotation periods in the existing
+`planning_assignments` table, is safe to replay, and documents its export-first rollback. The detailed sequence is
+in `docs/deployment/planning-p1-1.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -83,7 +90,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning P0.4 target contains 31 local migrations through `202607130008_planning_p04_audit_backfill_cleanup.sql`; verify `supabase migration list` before each deployment.
+- The Planning P1.1 target contains 33 local migrations through `202607130010_planning_p11_rotation_lint_cleanup.sql`; verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

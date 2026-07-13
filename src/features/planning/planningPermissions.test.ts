@@ -14,6 +14,9 @@ describe('planning permissions', () => {
       canManageVessels: false,
       canManageHandovers: false,
       canManageDerogations: true,
+      canManageRotations: true,
+      canManageTemplates: true,
+      canManageManning: true,
       canViewHistory: true,
     });
   });
@@ -26,6 +29,9 @@ describe('planning permissions', () => {
       canPublishPublication: false,
       canManageHandovers: true,
       canManageDerogations: false,
+      canManageRotations: true,
+      canManageTemplates: true,
+      canManageManning: true,
       canViewHistory: true,
     });
   });
@@ -36,6 +42,9 @@ describe('planning permissions', () => {
       canEditEvents: false,
       canValidatePublication: true,
       canPublishPublication: false,
+      canManageRotations: false,
+      canManageTemplates: false,
+      canManageManning: false,
       canViewHistory: true,
     });
   });
@@ -47,6 +56,9 @@ describe('planning permissions', () => {
       canManagePublication: false,
       canViewHistory: false,
       canExport: false,
+      canManageRotations: false,
+      canManageTemplates: false,
+      canManageManning: false,
     });
   });
 
@@ -62,6 +74,9 @@ describe('planning permissions', () => {
       canManageVessels: true,
       canManageHandovers: true,
       canManageDerogations: true,
+      canManageRotations: true,
+      canManageTemplates: true,
+      canManageManning: true,
       canViewHistory: true,
     });
   });
@@ -71,6 +86,9 @@ describe('planning permissions', () => {
     expect(permissions.canEditEvents).toBe(false);
     expect(permissions.canManageHandovers).toBe(false);
     expect(permissions.canManageDerogations).toBe(false);
+    expect(permissions.canManageRotations).toBe(false);
+    expect(permissions.canManageTemplates).toBe(false);
+    expect(permissions.canManageManning).toBe(false);
     expect(permissions.canManagePublication).toBe(true);
     expect(permissions.canReopenPublication).toBe(true);
   });
