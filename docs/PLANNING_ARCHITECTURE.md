@@ -39,6 +39,14 @@ La migration `202607130007_planning_p04_governance_v1.sql` corrige aussi la cont
 
 L’isolation entreprise est matérialisée par `companies`, `company_memberships`, `profiles.active_company_id` et des `company_id` obligatoires sur les données Planning, RH et flotte consommées par le module. Toutes les lignes existantes sont rattachées à BBTM avant activation des contraintes. Les rôles sont désormais attribués dans une entreprise, et les politiques RLS recoupent entreprise, action, navire, période et personne. Les autorisations exceptionnelles par navire sont bornées, motivées et révocables dans `planning_vessel_permissions`.
 
+### Phase P1.1 — rotations, modèles et matrices d’armement
+
+P1.1 étend le socle P0 sans le remplacer. Une rotation 7/7, 10/10, 14/14 ou personnalisée est décrite dans `planning_rotation_series`, puis chaque période embarquée est créée dans `planning_assignments` et reliée par `planning_rotation_occurrences`. Les vues Flotte, Équipages, Navire et Marin continuent donc à lire une seule source opérationnelle. La génération est transactionnelle, sérialisée par marin et refuse toute affectation existante qui chevauche une occurrence. Les portées de modification sont explicites : occurrence seule, occurrence et suivantes, ou série entière.
+
+Les modèles restent dans `planning_templates`. Leur application crée soit un `planning_project`, soit une relève brouillon dans `planning_handovers`; aucune table d’événements concurrente n’est introduite. Les matrices `planning_manning_matrices` et `planning_manning_requirements` définissent les fonctions, minima, cibles, brevets, qualifications, habilitations, formations et restrictions par navire. La comparaison côté client indexe marins et documents, détecte postes vacants, fonctions au-delà de la cible et documents manquants ou expirant avant la fin d’affectation. Les restrictions textuelles sont affichées à l’opérateur, mais ne deviennent pas des règles bloquantes tant qu’elles ne sont pas structurées dans les données existantes.
+
+Le panneau `PlanningP11Panel.tsx` est chargé uniquement à son ouverture. Après une mutation, il recharge uniquement les affectations, projets ou relèves concernés, sans réinitialiser la période, les filtres ou la perspective du Planning P0. Les rôles `admin`, `direction` et `armement` reçoivent les actions serveur `manage_rotation`, `manage_template` et `manage_manning`; les autres rôles conservent une lecture bornée par la RLS P0.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -105,6 +113,8 @@ L’isolation entreprise est matérialisée par `companies`, `company_membership
 - `PlanningControlSummary.tsx` présente les contrôles sans dépendre uniquement de la couleur : libellé du niveau, titre et explication.
 - `PlanningPublicationPanel.tsx` présente le statut, la version, le périmètre, le verrou et les actions de workflow sans disperser cette logique dans la timeline.
 - `PlanningP03Panels.tsx` porte les vues Navire/Marin, l’éditeur de relève, la comparaison des bordées et les dérogations.
+- `PlanningP11Panel.tsx` porte les rotations, modèles et matrices sans augmenter la responsabilité de `PlanningPage.tsx`.
+- `planningP11.ts` contient les calculs purs de série et de comparaison d’armement ; `planningP11Queries.ts` centralise les lectures et RPC P1.1.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
@@ -149,6 +159,9 @@ Sources fusionnées :
 - `planning_handovers` et `planning_handover_positions` : relèves transactionnelles et bordées entrantes/sortantes.
 - `planning_derogations` : exceptions bornées, attribuées et rattachées à une règle, un marin et un navire.
 - `companies`, `company_memberships`, `planning_action_permissions` et `planning_vessel_permissions` : isolation et autorisation serveur P0.4.
+- `planning_rotation_series` et `planning_rotation_occurrences` : définition et exceptions des séries, reliées aux affectations P0.
+- `planning_templates` : modèles réutilisables appliqués aux projets ou relèves P0.
+- `planning_manning_matrices` et `planning_manning_requirements` : armement requis et versionné par navire.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
@@ -374,6 +387,11 @@ Tests Planning couverts :
 - conservation et immutabilité de la version publiée ;
 - absence de fuite de navire entre deux entreprises et lecture propre du marin ;
 - rejeu complet et double rejeu de la migration P0.4 sur PostgreSQL isolé.
+- génération 14/14 sans doublon, rythme personnalisé et bornes calendaires ;
+- payload RPC et portée de modification occurrence/suivantes/série ;
+- création/réutilisation de modèles et conservation de leur configuration ;
+- matrice versionnée, postes vacants, fonctions en excès et documents manquants ;
+- rejeu idempotent et scénario SQL transactionnel P1.1 sur le schéma P0.4.
 
 Commandes de validation :
 
@@ -398,10 +416,10 @@ La procédure de migration, les contrôles pré/post-déploiement et le retour a
 
 ### P1
 
-1. Rotations 7/7, 10/10, 14/14 et séries modifiables.
+1. P1.1 livré : rotations 7/7, 10/10, 14/14 et personnalisées, modèles et matrices d’armement.
 2. Moteur configurable de travail/repos à partir des données SMTR.
 3. Workflow absence/remplacement et suggestions explicables.
-4. Modèles Planning, notifications, dépendances et comparaison de versions.
+4. Notifications, dépendances et comparaison de versions.
 5. Exports PDF/Excel/ICS et impression par navire, marin et relève.
 6. Cache client, chargement progressif et abonnements temps réel ciblés.
 

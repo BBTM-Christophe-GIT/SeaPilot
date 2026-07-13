@@ -6071,3 +6071,432 @@ button:disabled {
 .planning-handover-fieldset:disabled {
   opacity: 0.86;
 }
+
+.planning-dialog.is-side-panel.planning-p11-panel {
+  width: min(880px, calc(100vw - 28px));
+  max-width: 880px;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  border-radius: 0;
+}
+
+.planning-p11-panel > header > div,
+.planning-p11-panel > header > div > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.planning-p11-panel > header small,
+.planning-p11-card small,
+.planning-p11-inline-editor small,
+.planning-p11-comparison small {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.planning-p11-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #dce5ee;
+  background: #f7f9fc;
+}
+
+.planning-p11-tabs button {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-weight: 700;
+}
+
+.planning-p11-tabs button.is-active {
+  border-color: #9fd3df;
+  background: #e8f6f8;
+  color: #075d6b;
+}
+
+.planning-p11-feedback {
+  margin: 10px 18px 0;
+}
+
+.planning-p11-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.planning-p11-section,
+.planning-p11-card-list,
+.planning-p11-section-heading > div,
+.planning-p11-card > header > div,
+.planning-p11-inline-editor > div > span,
+.planning-p11-comparison > header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.planning-p11-section {
+  gap: 16px;
+}
+
+.planning-p11-section-heading,
+.planning-p11-section-heading > div,
+.planning-p11-card > header,
+.planning-p11-comparison > header,
+.planning-p11-requirements > header,
+.planning-p11-inline-editor > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.planning-p11-section-heading h3,
+.planning-p11-section-heading p,
+.planning-p11-card h4,
+.planning-p11-card p,
+.planning-p11-comparison h4 {
+  margin: 0;
+}
+
+.planning-p11-section-heading p,
+.planning-p11-card p {
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.planning-p11-section button,
+.planning-p11-form button,
+.planning-p11-inline-editor button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.planning-p11-form,
+.planning-p11-inline-editor,
+.planning-p11-card,
+.planning-p11-comparison {
+  border: 1px solid #dce5ee;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 48, 66, 0.06);
+}
+
+.planning-p11-form {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.planning-p11-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.planning-p11-form label,
+.planning-p11-inline-editor label,
+.planning-p11-requirements label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: #425466;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.planning-p11-form label.is-wide {
+  grid-column: 1 / -1;
+}
+
+.planning-p11-form input,
+.planning-p11-form select,
+.planning-p11-form textarea,
+.planning-p11-inline-editor input,
+.planning-p11-inline-editor select,
+.planning-p11-requirements input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cbd7e3;
+  border-radius: 7px;
+  background: #fff;
+  color: #142c3a;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.planning-p11-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.planning-p11-form footer,
+.planning-p11-inline-editor footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.planning-p11-preview,
+.planning-p11-occurrences {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.planning-p11-preview span,
+.planning-p11-occurrences button {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #d7e3ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  padding: 9px;
+  text-align: left;
+}
+
+.planning-p11-preview small {
+  color: #64748b;
+}
+
+.planning-p11-card-list,
+.planning-p11-template-grid {
+  gap: 12px;
+}
+
+.planning-p11-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.planning-p11-card {
+  gap: 12px;
+  padding: 15px;
+}
+
+.planning-p11-card > header {
+  align-items: flex-start;
+}
+
+.planning-p11-card dl {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+
+.planning-p11-card dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.planning-p11-card dt {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.planning-p11-card dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.planning-p11-count {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #dff3f5;
+  color: #075d6b;
+  font-weight: 800;
+}
+
+.planning-p11-inline-editor {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-color: #76bdc9;
+}
+
+.planning-p11-inline-editor footer {
+  grid-column: 1 / -1;
+}
+
+.planning-p11-requirements {
+  display: grid;
+  gap: 10px;
+}
+
+.planning-p11-requirements h4 {
+  margin: 0;
+}
+
+.planning-p11-requirements fieldset {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.3fr 80px 80px repeat(2, minmax(130px, 1fr));
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #d8e4eb;
+  border-radius: 9px;
+  padding: 12px;
+}
+
+.planning-p11-requirements fieldset > button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.planning-p11-matrix-picker {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.planning-p11-matrix-picker button {
+  flex: 0 0 220px;
+  justify-content: space-between;
+  border: 1px solid #d8e4eb;
+  border-radius: 9px;
+  background: #fff;
+  padding: 10px;
+  color: #334155;
+  text-align: left;
+}
+
+.planning-p11-matrix-picker button span {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-p11-matrix-picker button small {
+  color: #64748b;
+}
+
+.planning-p11-matrix-picker button em {
+  color: #087383;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.planning-p11-matrix-picker button.is-active {
+  border-color: #49a9b8;
+  background: #effafb;
+}
+
+.planning-p11-comparison {
+  overflow: hidden;
+}
+
+.planning-p11-comparison > header {
+  padding: 14px;
+  border-bottom: 1px solid #dce5ee;
+}
+
+.planning-p11-comparison > header > button,
+.planning-p11-requirements > header > button {
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.planning-p11-comparison-table {
+  overflow-x: auto;
+}
+
+.planning-p11-comparison table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.planning-p11-comparison th,
+.planning-p11-comparison td {
+  border-bottom: 1px solid #e7edf2;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.planning-p11-comparison td span,
+.planning-p11-comparison td small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.planning-p11-comparison tr.has-alert td {
+  background: #fff8ed;
+}
+
+.planning-p11-comparison .is-ok {
+  color: #16825d;
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .planning-dialog.is-side-panel.planning-p11-panel {
+    width: min(820px, 100vw);
+  }
+
+  .planning-p11-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-p11-requirements fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-p11-inline-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .planning-p11-body {
+    padding: 12px;
+  }
+
+  .planning-p11-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .planning-p11-form-grid,
+  .planning-p11-template-grid,
+  .planning-p11-inline-editor,
+  .planning-p11-requirements fieldset {
+    grid-template-columns: 1fr;
+  }
+}
