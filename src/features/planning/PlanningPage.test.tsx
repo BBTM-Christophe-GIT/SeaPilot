@@ -122,19 +122,26 @@ function createClient(options: {
   assignments?: unknown[];
   days?: unknown[];
   periods?: unknown[];
+  projects?: unknown[];
+  certificates?: unknown[];
   hrDocuments?: unknown[];
+  rules?: unknown[];
   publications?: unknown[];
   createdAssignment?: unknown;
   transitionedPublication?: unknown;
+  vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
       single: vi.fn().mockResolvedValue({ data: options.createdAssignment || assignmentRow, error: null }),
     }),
   });
+  const vesselOrder = vi.fn();
+  options.vesselResponses?.forEach((response) => vesselOrder.mockResolvedValueOnce(response));
+  vesselOrder.mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null });
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === 'vessels') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null }) }) };
+      return { select: vi.fn().mockReturnValue({ order: vesselOrder }) };
     }
     if (table === 'people') {
       return {
@@ -149,14 +156,23 @@ function createClient(options: {
     if (table === 'planning_periods') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }) }) }) };
     }
+    if (table === 'planning_projects') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.projects ?? [], error: null }) }) }) };
+    }
+    if (table === 'fleet_certificates') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.certificates ?? [], error: null }) }) };
+    }
     if (table === 'hr_documents') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.hrDocuments ?? [], error: null }) }) };
+    }
+    if (table === 'planning_rules') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.rules ?? [], error: null }) }) };
     }
     if (table === 'planning_publications') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.publications ?? [], error: null }) }) };
     }
     if (table === 'planning_assignments') return { insert: insertAssignment };
-    throw new Error(`Optional table unavailable: ${table}`);
+    throw new Error(`Unexpected table ${table}`);
   });
   const rpc = vi.fn().mockImplementation((functionName: string) => {
     if (functionName === 'planning_assignment_overview') {
@@ -170,7 +186,7 @@ function createClient(options: {
     }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
-  return { client: { from, rpc }, insertAssignment };
+  return { client: { from, rpc }, from, insertAssignment };
 }
 
 describe('PlanningPage cockpit', () => {
@@ -184,6 +200,32 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByText('Bordée 1')).toBeInTheDocument();
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Affectations planning')).toHaveTextContent('1');
+  });
+
+  it('keeps the current planning visible when a refresh fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { client } = createClient({
+      periods: [planningPeriodRow],
+      vesselResponses: [
+        { data: [vesselRow], error: null },
+        { data: null, error: { code: 'PGRST001', message: 'timeout' } },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actualiser le planning' }));
+    expect(await screen.findByText('Impossible de charger les navires.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Planning' })).toBeInTheDocument();
+    consoleError.mockRestore();
+  });
+
+  it('does not load Supabase data without a Planning read role', () => {
+    const { client, from } = createClient();
+    render(<PlanningPage client={client as never} roles={[]} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Vous n’avez pas accès au module Planning.');
+    expect(from).not.toHaveBeenCalled();
   });
 
   it('opens a detailed imported SMTR period', async () => {

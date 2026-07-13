@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
   createVessel,
+  fetchPlanningPeople,
   fetchPlanningOverview,
+  fetchVessels,
   mapPlanningDayRows,
   mapPlanningAssignmentRows,
   mapPlanningAssignmentOverviewRows,
@@ -11,6 +13,7 @@ import {
   mapPlanningPublicationRows,
   mapVesselRows,
   transitionPlanningPublication,
+  updatePlanningEvent,
 } from './planningQueries';
 
 const vesselRow = {
@@ -269,6 +272,34 @@ describe('planning mappers', () => {
   });
 });
 
+describe('planning reference loading', () => {
+  it('loads vessels with the centralized select and ordering', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [vesselRow], error: null });
+    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order }) });
+    await expect(fetchVessels({ from } as never)).resolves.toEqual(mapVesselRows([vesselRow]));
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('vessels');
+  });
+
+  it('loads marins without filtering inactive historical relations', async () => {
+    const orderByFirstName = vi.fn().mockResolvedValue({ data: [captainRow, crewRow], error: null });
+    const orderByLastName = vi.fn().mockReturnValue({ order: orderByFirstName });
+    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order: orderByLastName }) });
+    await expect(fetchPlanningPeople({ from } as never)).resolves.toEqual(mapPlanningPeopleRows([captainRow, crewRow]));
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('people');
+  });
+
+  it('reports a contextual vessel loading error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const from = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST001', message: 'timeout' } }) }),
+    });
+    await expect(fetchVessels({ from } as never)).rejects.toThrow('Impossible de charger les navires.');
+    consoleError.mockRestore();
+  });
+});
+
 describe('fetchPlanningOverview', () => {
   it('loads vessels, planning people and assignments', async () => {
     const vesselOrder = vi.fn().mockResolvedValue({ data: [vesselRow], error: null });
@@ -306,6 +337,14 @@ describe('fetchPlanningOverview', () => {
         return {
           select: vi.fn().mockReturnValue({ order: periodsOrderByStart }),
         };
+      }
+
+      if (table === 'planning_projects') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
+      if (table === 'fleet_certificates' || table === 'planning_rules') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'hr_documents') {
@@ -388,6 +427,14 @@ describe('fetchPlanningOverview', () => {
         return {
           select: vi.fn().mockReturnValue({ order: periodsOrderByStart }),
         };
+      }
+
+      if (table === 'planning_projects') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
+      if (table === 'fleet_certificates' || table === 'planning_rules') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'hr_documents') {
@@ -483,6 +530,71 @@ describe('planning writes', () => {
       comments: null,
       source_label: 'seapilot',
     });
+  });
+
+  it('accepts an assignment spanning midnight as two civil dates', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: { ...assignmentRow, starts_on: '2026-10-24', ends_on: '2026-10-25' },
+      error: null,
+    });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await createPlanningAssignment({ from } as never, {
+      vesselId: '1',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-10-24',
+      endsOn: '2026-10-25',
+      assignmentRole: 'Pont',
+    });
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ starts_on: '2026-10-24', ends_on: '2026-10-25' }));
+  });
+
+  it('rejects incoherent dates and invalid relation identifiers before Supabase', async () => {
+    const from = vi.fn();
+    await expect(createPlanningAssignment({ from } as never, {
+      vesselId: '1',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-07-14',
+      endsOn: '2026-07-01',
+      assignmentRole: 'Pont',
+    })).rejects.toThrow('La date de fin doit être postérieure');
+    await expect(createPlanningAssignment({ from } as never, {
+      vesselId: 'inconnu',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-07-01',
+      endsOn: '2026-07-14',
+      assignmentRole: 'Pont',
+    })).rejects.toThrow('Le navire est obligatoire');
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('keeps edited isolated-day embarkation dates coherent', async () => {
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    const from = vi.fn().mockReturnValue({ update });
+
+    await updatePlanningEvent({ from } as never, {
+      id: 200,
+      kind: 'day',
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      startsOn: '2026-07-07',
+      endsOn: '2026-07-07',
+      statusLabel: 'En Mer',
+      functionLabel: 'Pont',
+      watchGroup: 'Bordée 1',
+      comments: '',
+    });
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      work_date: '2026-07-07',
+      departure_on: '2026-07-07',
+      disembark_on: '2026-07-07',
+    }));
   });
 
   it('transitions a displayed period through the publication RPC', async () => {

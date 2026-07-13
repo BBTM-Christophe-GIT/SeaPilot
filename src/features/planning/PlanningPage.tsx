@@ -22,7 +22,7 @@ import {
   UserRoundPlus,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -32,7 +32,6 @@ import plannedIcon from './assets/icone_a_planifier.svg';
 import billedIcon from './assets/icone_a_facturer.svg';
 import validIcon from './assets/icone_valide.svg';
 import {
-  addPlanningDays,
   buildPlanningCertificateAlerts,
   buildPlanningControlCenter,
   buildPlanningCrewRows,
@@ -41,17 +40,13 @@ import {
   buildPlanningTimeline,
   buildPlanningExportRows,
   dateGridPlacement,
-  formatPlanningDate,
   formatPlanningPerson,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
-  getPlanningConflictEventIds,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   isSedentaryPlanningFunction,
-  daysBetween,
-  isoDate,
   planningPeriodTitle,
   planningStatusTone,
   projectStatusTone,
@@ -63,18 +58,20 @@ import {
   type PlanningFilters,
   type PlanningViewMode,
 } from './planningModel';
+import { addPlanningDays, daysBetween, formatPlanningDate, todayPlanningDate } from './planningDates';
+import { planningErrorMessage } from './planningErrors';
+import { getPlanningConflictEventIds } from './planningOverlap';
+import { getPlanningPermissions } from './planningPermissions';
 import { findPlanningPublication, isPlanningPublicationLocked } from './planningPublication';
 import {
   archivePlanningVessel,
   createPlanningAssignment,
   createVessel,
   deletePlanningEvent,
-  fetchPlanningOverview,
   mapPlanningAssignmentRows,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
-  type PlanningOverview,
   type PlanningPerson,
   type PlanningPublicationAction,
   type PlanningProjectRecord,
@@ -82,6 +79,7 @@ import {
 } from './planningQueries';
 import { PlanningControlSummary } from './PlanningControlSummary';
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
+import { usePlanningOverview } from './usePlanningOverview';
 
 interface PlanningPageProps {
   client?: SupabaseClient;
@@ -114,19 +112,6 @@ interface ExportFormState { personName: string; startsOn: string; endsOn: string
 
 type SideTab = 'conflicts' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
-const EMPTY_OVERVIEW: PlanningOverview = {
-  vessels: [],
-  people: [],
-  assignments: [],
-  days: [],
-  periods: [],
-  projects: [],
-  certificates: [],
-  hrDocuments: [],
-  rules: [],
-  publications: [],
-};
-
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '' };
 const EMPTY_ASSIGNMENT: AssignmentFormState = {
   vesselId: '',
@@ -151,10 +136,6 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
   { key: 'alerts', label: 'Alertes' },
 ];
 
-function canManagePlanning(roles: RoleKey[]): boolean {
-  return roles.includes('admin');
-}
-
 function projectStatusIcon(project: PlanningProjectRecord): string {
   const tone = projectStatusTone(project.status);
   return tone === 'valid' ? validIcon : tone === 'billed' ? billedIcon : plannedIcon;
@@ -166,11 +147,6 @@ function vesselOptionLabel(vessel: PlanningVessel): string {
 
 function personOptionLabel(person: PlanningPerson): string {
   return `${formatPlanningPerson(person)}${person.functionLabel ? ` · ${person.functionLabel}` : ''}`;
-}
-
-function todayIso(): string {
-  const now = new Date();
-  return isoDate(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())));
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -198,10 +174,18 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
-  const isManager = canManagePlanning(effectiveRoles);
+  const readPermissions = getPlanningPermissions(effectiveRoles, false);
   const workspaceRef = useRef<HTMLElement>(null);
-  const [overview, setOverview] = useState<PlanningOverview>(EMPTY_OVERVIEW);
-  const [anchorDate, setAnchorDate] = useState(todayIso);
+  const {
+    overview,
+    updateOverview,
+    reload: loadPlanning,
+    hasLoaded,
+    isInitialLoading,
+    isRefreshing,
+    loadErrorMessage,
+  } = usePlanningOverview(effectiveClient, readPermissions.canRead);
+  const [anchorDate, setAnchorDate] = useState(todayPlanningDate);
   const [viewMode, setViewMode] = useState<PlanningViewMode>('month');
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [dayWidth, setDayWidth] = useState(34);
@@ -218,28 +202,11 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const [exportForm, setExportForm] = useState<ExportFormState>({ personName: '', startsOn: '', endsOn: '' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showWeekends, setShowWeekends] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [quickCreateKey, setQuickCreateKey] = useState<string | null>(null);
-
-  const loadPlanning = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      setOverview(await fetchPlanningOverview(effectiveClient));
-    } catch {
-      setErrorMessage('Impossible de charger le planning.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [effectiveClient]);
-
-  useEffect(() => {
-    void loadPlanning();
-  }, [loadPlanning]);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -263,8 +230,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     [overview.publications, publicationVesselId, range],
   );
   const isPeriodLocked = isPlanningPublicationLocked(activePublication);
-  const canEditPlanning = isManager && !isPeriodLocked;
-  const canManagePublication = isManager && (!filters.vesselName || publicationVessel !== null);
+  const permissions = getPlanningPermissions(effectiveRoles, isPeriodLocked);
+  const canEditPlanning = permissions.canEditEvents;
+  const canManagePublication = permissions.canManagePublication && (!filters.vesselName || publicationVessel !== null);
+  const todayDate = todayPlanningDate();
   const rows = useMemo(() => buildPlanningCrewRows(overview, days, filters), [days, filters, overview]);
   const visibleRows = useMemo(
     () =>
@@ -275,8 +244,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       }),
     [collapsedRows, rows],
   );
-  const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(overview, todayIso()), [overview]);
-  const hrAlerts = useMemo(() => buildPlanningHrAlerts(overview, todayIso()), [overview]);
+  const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(overview, todayDate), [overview, todayDate]);
+  const hrAlerts = useMemo(() => buildPlanningHrAlerts(overview, todayDate), [overview, todayDate]);
   const unassignedPeople = useMemo(() => getUnassignedPlanningPeople(overview, range, filters), [filters, overview, range]);
   const unbilledProjects = useMemo(
     () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
@@ -363,7 +332,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         vesselId: publicationVesselId,
         comment,
       });
-      setOverview((current) => ({
+      updateOverview((current) => ({
         ...current,
         publications: current.publications.some((item) => item.id === publication.id)
           ? current.publications.map((item) => item.id === publication.id ? publication : item)
@@ -379,7 +348,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       setStatusMessage(messages[action]);
       return true;
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Impossible de mettre à jour la publication du planning.');
+      setErrorMessage(planningErrorMessage(error, 'Impossible de mettre à jour la publication du planning.'));
       return false;
     } finally {
       setIsSaving(false);
@@ -428,11 +397,11 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     try {
       const row = await createPlanningAssignment(effectiveClient, assignmentForm);
       const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
-      setOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
+      updateOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
       setStatusMessage(planningControlSaveMessage(assignmentControls, 'Affectation ajoutée au planning.'));
       setIsAssignmentOpen(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette affectation.");
+      setErrorMessage(planningErrorMessage(error, "Impossible d'ajouter cette affectation."));
     } finally {
       setIsSaving(false);
     }
@@ -476,10 +445,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       if (hasBlockingPlanningControls(controls)) throw new Error(blockingControlMessage(controls));
       const created = await createPlanningAssignment(effectiveClient, input);
       const [assignment] = mapPlanningAssignmentRows([created], overview.people, overview.vessels);
-      setOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
+      updateOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
       setStatusMessage(planningControlSaveMessage(controls, `${formatPlanningPerson(person)} · ${statusLabel} ajouté le ${formatPlanningDate(date)}.`));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette journée au planning.");
+      setErrorMessage(planningErrorMessage(error, "Impossible d'ajouter cette journée au planning."));
     } finally {
       setQuickCreateKey(null);
     }
@@ -542,7 +511,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         functionLabel: form.functionLabel, watchGroup: form.watchGroup, comments: form.comments,
       });
       await loadPlanning(); setStatusMessage(planningControlSaveMessage(controls, 'Planning mis à jour.')); setSelectedEvent(null); setEventForm(null);
-    } catch (error) { setErrorMessage(error instanceof Error ? error.message : 'Impossible de modifier cette période.'); }
+    } catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de modifier cette période.')); }
     finally { setIsSaving(false); }
   }
 
@@ -553,7 +522,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     try {
       await deletePlanningEvent(effectiveClient, { id: Number(event.id.split('-').pop()), kind: event.kind });
       await loadPlanning(); setSelectedEvent(null); setEventForm(null); setStatusMessage('Période supprimée.');
-    } catch { setErrorMessage('Impossible de supprimer cette période.'); }
+    } catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de supprimer cette période.')); }
     finally { setIsSaving(false); }
   }
 
@@ -597,20 +566,20 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       if (project && vessel) void updatePlanningProject(effectiveClient, {
         id: project.id, title: project.title, startsOn: date, endsOn: addPlanningDays(date, daysBetween(project.startsOn, project.endsOn)),
         status: project.status, vesselId: vessel.id, vesselName: vessel.name, clientName: project.clientName, description: project.description,
-      }).then(loadPlanning).catch(() => setErrorMessage('Impossible de déplacer ce projet.'));
+      }).then(loadPlanning).catch((error: unknown) => setErrorMessage(planningErrorMessage(error, 'Impossible de déplacer ce projet.')));
     }
   }
 
   async function addVessel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setIsSaving(true);
     try { await createVessel(effectiveClient, newVessel); await loadPlanning(); setNewVessel({ name: '', acronym: '' }); setStatusMessage('Navire ajouté.'); }
-    catch { setErrorMessage("Impossible d'ajouter ce navire."); } finally { setIsSaving(false); }
+    catch (error) { setErrorMessage(planningErrorMessage(error, "Impossible d'ajouter ce navire.")); } finally { setIsSaving(false); }
   }
 
   async function archiveVessel(vessel: PlanningVessel) {
     if (!window.confirm(`Retirer ${vessel.name} du planning ?`)) return;
     try { await archivePlanningVessel(effectiveClient, vessel.id); await loadPlanning(); setStatusMessage('Navire retiré du planning.'); }
-    catch { setErrorMessage('Impossible de retirer ce navire.'); }
+    catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de retirer ce navire.')); }
   }
 
   async function saveProject(project: PlanningProjectRecord, form: { title: string; startsOn: string; endsOn: string; status: string; vesselId: string; clientName: string; description: string }) {
@@ -621,7 +590,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     try {
       await updatePlanningProject(effectiveClient, { id: project.id, title: form.title, startsOn: form.startsOn, endsOn: form.endsOn, status: form.status, vesselId: vessel.id, vesselName: vessel.name, clientName: form.clientName, description: form.description });
       await loadPlanning(); setSelectedProject(null); setStatusMessage('Projet mis à jour.');
-    } catch { setErrorMessage('Impossible de modifier ce projet.'); } finally { setIsSaving(false); }
+    } catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de modifier ce projet.')); } finally { setIsSaving(false); }
   }
 
   function exportPlanning(event: FormEvent<HTMLFormElement>) {
@@ -636,7 +605,18 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     setStatusMessage(`${rowsToExport.length} journée(s) exportée(s).`); setIsExportOpen(false);
   }
 
-  if (isLoading) return <div className="admin-state">Chargement du planning...</div>;
+  if (!permissions.canRead) {
+    return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
+  }
+  if (isInitialLoading) return <div className="admin-state" role="status">Chargement du planning...</div>;
+  if (!hasLoaded && loadErrorMessage) {
+    return (
+      <div className="admin-state" role="alert">
+        <p>{loadErrorMessage}</p>
+        <button onClick={() => void loadPlanning()} type="button">Réessayer</button>
+      </div>
+    );
+  }
 
   return (
     <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}`} ref={workspaceRef}>
@@ -649,7 +629,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           <span className={canEditPlanning ? 'planning-mode-write' : isPeriodLocked ? 'planning-mode-locked' : 'planning-mode-read'}>
             {canEditPlanning ? 'Modification' : isPeriodLocked ? 'Verrouillé' : 'Lecture seule'}
           </span>
-          <button aria-label="Actualiser le planning" className="planning-icon-button" onClick={() => void loadPlanning()} type="button">
+          <button aria-busy={isRefreshing} aria-label="Actualiser le planning" className="planning-icon-button" disabled={isRefreshing} onClick={() => void loadPlanning()} type="button">
             <RefreshCw aria-hidden="true" size={18} />
           </button>
           <button aria-expanded={isSettingsOpen} aria-label="Réglages du planning" className="planning-icon-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button">
@@ -658,10 +638,12 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         </div>
       </header>
 
-      {statusMessage || errorMessage ? (
+      {statusMessage || errorMessage || loadErrorMessage || isRefreshing ? (
         <div className="planning-notices" aria-live="polite">
+          {isRefreshing ? <p className="admin-state">Actualisation du planning...</p> : null}
           {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-          {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
+          {loadErrorMessage ? <p className="form-error" role="alert">{loadErrorMessage}</p> : null}
         </div>
       ) : null}
 
@@ -684,8 +666,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             {collapsedRows.size ? <ChevronsUpDown aria-hidden="true" size={16} /> : <ChevronsDownUp aria-hidden="true" size={16} />}
             {collapsedRows.size ? 'Tout développer' : 'Réduire les navires'}
           </button>
-          {isManager ? <button onClick={() => setIsVesselsOpen(true)} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
-          {isManager ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
+          {permissions.canManageVessels ? <button onClick={() => setIsVesselsOpen(true)} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
+          {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
         </div>
       ) : null}
 
@@ -724,7 +706,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             <div className="planning-period-controls">
               <button aria-label="Période précédente" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
               <select aria-label="Année" onChange={(event) => setAnchorDate(`${event.target.value}-${anchorDate.slice(5)}`)} value={anchorDate.slice(0, 4)}>
-                {Array.from({ length: 7 }, (_, index) => Number(todayIso().slice(0, 4)) - 3 + index).map((year) => <option key={year}>{year}</option>)}
+                {Array.from({ length: 7 }, (_, index) => Number(todayDate.slice(0, 4)) - 3 + index).map((year) => <option key={year}>{year}</option>)}
               </select>
               {viewMode !== 'year' ? (
                 <select aria-label="Mois" onChange={(event) => setAnchorDate(`${anchorDate.slice(0, 4)}-${event.target.value}-01`)} value={anchorDate.slice(5, 7)}>
@@ -736,7 +718,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             <div className="planning-edit-controls">
               {canEditPlanning ? <button aria-label="Nouvelle affectation" className="planning-icon-button is-primary" onClick={() => openAssignment()} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
               {canEditPlanning ? <button aria-label="Dupliquer l’affectation" className="planning-icon-button" disabled={selectedEvent?.kind !== 'assignment'} onClick={duplicateSelectedEvent} type="button"><Copy aria-hidden="true" size={17} /></button> : null}
-              {isManager ? <button aria-label="Exporter les données d'un marin" className="planning-icon-button" onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={17} /></button> : null}
+              {permissions.canExport ? <button aria-label="Exporter les données d'un marin" className="planning-icon-button" onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={17} /></button> : null}
               <button aria-label={isFullscreen ? 'Quitter le plein écran' : 'Afficher en plein écran'} className="planning-icon-button" onClick={() => void toggleFullscreen()} type="button"><Expand aria-hidden="true" size={17} /></button>
               <button aria-label="Plus d’options" className="planning-icon-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><MoreHorizontal aria-hidden="true" size={18} /></button>
             </div>
@@ -776,7 +758,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             </div>
             <div className="planning-calendar-grid planning-calendar-days">
               <div className="planning-calendar-corner planning-calendar-label-heading">Équipages</div>
-              {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayIso() ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
+              {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayDate ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
             </div>
 
             <div className="planning-calendar-body">
@@ -869,6 +851,7 @@ function PlanningTimelineRow({ row, days, onToggle, onOpenEvent, onOpenProject, 
   viewMode: PlanningViewMode;
 }) {
   const isGroup = row.type !== 'person';
+  const currentDate = todayPlanningDate();
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -911,7 +894,7 @@ function PlanningTimelineRow({ row, days, onToggle, onOpenEvent, onOpenProject, 
     const occupied = row.events.some((item) => item.startsOn <= day.date && item.endsOn >= day.date);
     const canQuickCreate = editable && viewMode !== 'year' && row.type === 'person' && row.personId !== null && !occupied;
     const isBusy = quickCreateKey === `${row.key}-${day.date}`;
-    const className = `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === todayIso() ? ' is-today' : ''}${canReceiveDrop ? ' is-drop-target' : ''}${canQuickCreate ? ' is-quick-create' : ''}${dragOverDate === day.date ? ' is-drag-over' : ''}${isBusy ? ' is-saving' : ''}`;
+    const className = `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === currentDate ? ' is-today' : ''}${canReceiveDrop ? ' is-drop-target' : ''}${canQuickCreate ? ' is-quick-create' : ''}${dragOverDate === day.date ? ' is-drag-over' : ''}${isBusy ? ' is-saving' : ''}`;
     const sharedProps = {
       className,
       'data-date': day.date,

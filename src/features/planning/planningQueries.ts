@@ -1,4 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
+import {
+  assertPlanningDateRange,
+  assertSinglePlanningDay,
+  optionalPlanningEntityId,
+  planningEntityId,
+  requiredPlanningText,
+} from './planningValidation';
 
 const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT =
@@ -408,12 +416,10 @@ function textOrEmpty(value: string | null | undefined): string {
   return value || '';
 }
 
-function numberOrNull(value: number | string | null): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return Number(value);
+function numberOrNull(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function mapImportedVesselName(vesselName: string | null, manualVesselName: string | null): string {
@@ -645,9 +651,7 @@ export function mapPlanningPublicationRows(rows: PlanningPublicationRow[]): Plan
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
   const { data, error } = await client.from('vessels').select(VESSEL_SELECT).order('name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-vessels', 'Impossible de charger les navires.', error);
 
   return mapVesselRows((data || []) as VesselRow[]);
 }
@@ -659,9 +663,7 @@ export async function fetchPlanningPeople(client: SupabaseClient): Promise<Plann
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-people', 'Impossible de charger les marins.', error);
 
   return mapPlanningPeopleRows((data || []) as PlanningPersonRow[]);
 }
@@ -671,9 +673,7 @@ export async function fetchPlanningAssignmentOverviewRows(
 ): Promise<PlanningAssignmentOverviewRow[]> {
   const { data, error } = await client.rpc('planning_assignment_overview');
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-assignments', 'Impossible de charger les affectations.', error);
 
   return (data || []) as PlanningAssignmentOverviewRow[];
 }
@@ -685,9 +685,7 @@ export async function fetchPlanningDays(client: SupabaseClient): Promise<Plannin
     .order('work_date', { ascending: true })
     .order('crew_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
 
   return mapPlanningDayRows((data || []) as PlanningDayRow[]);
 }
@@ -699,9 +697,7 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
     .order('starts_on', { ascending: true })
     .order('crew_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
 
   return mapPlanningPeriodRows((data || []) as PlanningPeriodRow[]);
 }
@@ -712,7 +708,7 @@ export async function fetchPlanningProjects(client: SupabaseClient): Promise<Pla
     .select(PLANNING_PROJECT_SELECT)
     .order('starts_on', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-projects', 'Impossible de charger les projets du planning.', error);
   return mapPlanningProjectRows((data || []) as unknown as PlanningProjectRow[]);
 }
 
@@ -721,7 +717,7 @@ export async function fetchPlanningCertificates(client: SupabaseClient): Promise
     .from('fleet_certificates')
     .select(PLANNING_CERTIFICATE_SELECT)
     .order('expires_on', { ascending: true, nullsFirst: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-certificates', 'Impossible de charger les certificats de la flotte.', error);
   return mapPlanningCertificateRows((data || []) as unknown as PlanningCertificateRow[]);
 }
 
@@ -730,7 +726,7 @@ export async function fetchPlanningHrDocuments(client: SupabaseClient): Promise<
     .from('hr_documents')
     .select(PLANNING_HR_DOCUMENT_SELECT)
     .order('expires_on', { ascending: true, nullsFirst: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-hr-documents', 'Impossible de charger les documents des marins.', error);
   return mapPlanningHrDocumentRows((data || []) as unknown as PlanningHrDocumentRow[]);
 }
 
@@ -739,7 +735,7 @@ export async function fetchPlanningRules(client: SupabaseClient): Promise<Planni
     .from('planning_rules')
     .select(PLANNING_RULE_SELECT)
     .order('code', { ascending: true });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-rules', 'Impossible de charger les règles du planning.', error);
   return mapPlanningRuleRows((data || []) as unknown as PlanningRuleRow[]);
 }
 
@@ -748,7 +744,7 @@ export async function fetchPlanningPublications(client: SupabaseClient): Promise
     .from('planning_publications')
     .select(PLANNING_PUBLICATION_SELECT)
     .order('updated_at', { ascending: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-publications', 'Impossible de charger les états de publication.', error);
   return mapPlanningPublicationRows((data || []) as unknown as PlanningPublicationRow[]);
 }
 
@@ -759,10 +755,10 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
     fetchPlanningPeriods(client),
-    fetchPlanningProjects(client).catch(() => []),
-    fetchPlanningCertificates(client).catch(() => []),
+    fetchPlanningProjects(client),
+    fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
-    fetchPlanningRules(client).catch(() => []),
+    fetchPlanningRules(client),
     fetchPlanningPublications(client),
   ]);
 
@@ -780,22 +776,17 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
   };
 }
 
-function throwPlanningMutationError(error: unknown): never {
-  const message = typeof error === 'object' && error !== null && 'message' in error
-    ? String(error.message)
-    : 'La mise à jour du planning a échoué.';
-
-  if (message.includes('PLANNING_LOCKED')) {
-    throw new Error('Cette période est verrouillée. Réouvrez-la avec un motif avant de modifier le planning.');
-  }
-
-  throw new Error(message);
-}
-
 export async function transitionPlanningPublication(
   client: SupabaseClient,
   input: TransitionPlanningPublicationInput,
 ): Promise<PlanningPublicationRecord> {
+  if (input.action === 'submit') {
+    assertPlanningDateRange(input.startsOn || '', input.endsOn || '');
+    optionalPlanningEntityId(input.vesselId, 'Le navire');
+  } else {
+    planningEntityId(input.publicationId, 'La publication');
+  }
+
   const { data, error } = await client.rpc('transition_planning_publication', {
     p_action: input.action,
     p_publication_id: input.publicationId ?? null,
@@ -805,7 +796,7 @@ export async function transitionPlanningPublication(
     p_comment: input.comment?.trim() || null,
   });
 
-  if (error) throwPlanningMutationError(error);
+  if (error) throwPlanningDataError('transition-publication', 'Impossible de mettre à jour la publication du planning.', error);
   const row = (Array.isArray(data) ? data[0] : data) as PlanningPublicationRow | null;
   const publication = row ? mapPlanningPublicationRows([row])[0] : undefined;
   if (!publication) throw new Error('La publication du planning n’a pas renvoyé de résultat valide.');
@@ -813,11 +804,7 @@ export async function transitionPlanningPublication(
 }
 
 export async function createVessel(client: SupabaseClient, input: CreateVesselInput): Promise<PlanningVessel> {
-  const vesselName = input.name.trim();
-
-  if (!vesselName) {
-    throw new Error('Le nom du navire est obligatoire.');
-  }
+  const vesselName = requiredPlanningText(input.name, 'Le nom du navire');
 
   const payload = {
     name: vesselName,
@@ -825,9 +812,7 @@ export async function createVessel(client: SupabaseClient, input: CreateVesselIn
   };
   const { data, error } = await client.from('vessels').insert(payload).select(VESSEL_SELECT).single();
 
-  if (error) {
-    throwPlanningMutationError(error);
-  }
+  if (error) throwPlanningDataError('create-vessel', "Impossible d'ajouter ce navire.", error);
 
   const vessel = mapVesselRows([data as VesselRow])[0];
   await writeVesselChangeLog(client, vessel.id, 'create', { name: vessel.name, acronym: vessel.acronym });
@@ -838,19 +823,20 @@ export async function createPlanningAssignment(
   client: SupabaseClient,
   input: CreatePlanningAssignmentInput,
 ): Promise<PlanningAssignmentRow> {
-  if (!input.vesselId || !input.crewPersonId || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error("Les informations de l'affectation sont invalides.");
-  }
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const captainPersonId = optionalPlanningEntityId(input.captainPersonId, 'Le capitaine');
+  const crewPersonId = planningEntityId(input.crewPersonId, 'Le marin');
+  assertPlanningDateRange(input.startsOn, input.endsOn);
 
   const payload = {
-    vessel_id: Number(input.vesselId),
-    captain_person_id: input.captainPersonId ? Number(input.captainPersonId) : null,
-    crew_person_id: Number(input.crewPersonId),
+    vessel_id: vesselId,
+    captain_person_id: captainPersonId,
+    crew_person_id: crewPersonId,
     starts_on: input.startsOn,
     ends_on: input.endsOn,
     assignment_role: input.assignmentRole.trim() || 'crew',
-    status_label: input.statusLabel || 'En Mer',
-    watch_group: input.watchGroup || 'Affectation',
+    status_label: requiredPlanningText(input.statusLabel || 'En Mer', 'Le statut'),
+    watch_group: input.watchGroup?.trim() || 'Affectation',
     comments: input.comments?.trim() || null,
     source_label: 'seapilot',
   };
@@ -860,9 +846,7 @@ export async function createPlanningAssignment(
     .select(PLANNING_ASSIGNMENT_SELECT)
     .single();
 
-  if (error) {
-    throwPlanningMutationError(error);
-  }
+  if (error) throwPlanningDataError('create-assignment', "Impossible d'ajouter cette affectation.", error);
 
   return data as PlanningAssignmentRow;
 }
@@ -874,113 +858,121 @@ async function writeVesselChangeLog(
   payload: Record<string, unknown>,
 ) {
   try {
-    await client.from('planning_change_log').insert({
+    const { error } = await client.from('planning_change_log').insert({
       entity_kind: 'vessel',
       entity_id: vesselId,
       action,
       payload,
     });
-  } catch {
+    if (error) reportPlanningTechnicalError('audit-vessel', error, 'warning');
+  } catch (error) {
     // Vessel writes predate the transactional event triggers; keep the successful business write visible.
+    reportPlanningTechnicalError('audit-vessel', error, 'warning');
   }
 }
 
 export async function updatePlanningEvent(client: SupabaseClient, input: UpdatePlanningEventInput): Promise<void> {
-  if (!input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error('La période de planning est invalide.');
-  }
+  const eventId = planningEntityId(input.id, "L'événement");
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const vesselName = input.kind === 'assignment' ? input.vesselName.trim() : requiredPlanningText(input.vesselName, 'Le nom du navire');
+  const statusLabel = requiredPlanningText(input.statusLabel, 'Le statut');
+  if (input.kind === 'day') assertSinglePlanningDay(input.startsOn, input.endsOn);
+  else assertPlanningDateRange(input.startsOn, input.endsOn);
 
-  let error: unknown = null;
+  let error: unknown;
   if (input.kind === 'assignment') {
     ({ error } = await client
       .from('planning_assignments')
       .update({
-        vessel_id: input.vesselId,
+        vessel_id: vesselId,
         starts_on: input.startsOn,
         ends_on: input.endsOn,
         assignment_role: input.functionLabel.trim() || 'Équipage',
-        status_label: input.statusLabel,
+        status_label: statusLabel,
         watch_group: input.watchGroup.trim() || 'Affectation',
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   } else if (input.kind === 'period') {
     ({ error } = await client
       .from('planning_periods')
       .update({
-        vessel_id: input.vesselId,
-        vessel_name: input.vesselName,
+        vessel_id: vesselId,
+        vessel_name: vesselName,
         manual_vessel_name: null,
         starts_on: input.startsOn,
         ends_on: input.endsOn,
         year_number: Number(input.startsOn.slice(0, 4)),
-        sailor_status: input.statusLabel,
+        sailor_status: statusLabel,
         function_label: input.functionLabel.trim() || null,
         watch_group: input.watchGroup.trim() || null,
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   } else {
-    if (input.startsOn !== input.endsOn) {
-      throw new Error('Une journée isolée ne peut pas être étendue. Créez une affectation pour une période.');
-    }
     ({ error } = await client
       .from('planning_days')
       .update({
-        vessel_id: input.vesselId,
-        vessel_name: input.vesselName,
+        vessel_id: vesselId,
+        vessel_name: vesselName,
         manual_vessel_name: null,
         work_date: input.startsOn,
-        sailor_status: input.statusLabel,
+        departure_on: input.startsOn,
+        disembark_on: input.endsOn,
+        sailor_status: statusLabel,
         function_label: input.functionLabel.trim() || null,
         watch_group: input.watchGroup.trim() || null,
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   }
 
-  if (error) throwPlanningMutationError(error);
+  if (error) throwPlanningDataError('update-event', 'Impossible de modifier cet événement du planning.', error);
 }
 
 export async function deletePlanningEvent(
   client: SupabaseClient,
   event: { id: number; kind: 'assignment' | 'day' | 'period' },
 ): Promise<void> {
+  const eventId = planningEntityId(event.id, "L'événement");
   const table = event.kind === 'assignment' ? 'planning_assignments' : event.kind === 'period' ? 'planning_periods' : 'planning_days';
-  const { error } = await client.from(table).delete().eq('id', event.id);
-  if (error) throwPlanningMutationError(error);
+  const { error } = await client.from(table).delete().eq('id', eventId);
+  if (error) throwPlanningDataError('delete-event', 'Impossible de supprimer cet événement du planning.', error);
 }
 
 export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<void> {
-  if (!input.title.trim() || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error('Les informations du projet sont invalides.');
-  }
+  const projectId = planningEntityId(input.id, 'Le projet');
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const title = requiredPlanningText(input.title, 'Le titre du projet');
+  const vesselName = requiredPlanningText(input.vesselName, 'Le nom du navire');
+  assertPlanningDateRange(input.startsOn, input.endsOn);
   const { error } = await client
     .from('planning_projects')
     .update({
-      title: input.title.trim(),
+      title,
       starts_on: input.startsOn,
       ends_on: input.endsOn,
-      status: input.status,
-      primary_vessel_id: input.vesselId,
-      primary_vessel_name: input.vesselName,
+      status: input.status.trim() || 'A planifier',
+      primary_vessel_id: vesselId,
+      primary_vessel_name: vesselName,
       client_name: input.clientName.trim() || null,
       description: input.description.trim() || null,
       source_label: 'seapilot-admin',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', input.id);
-  if (error) throwPlanningMutationError(error);
+    .eq('id', projectId);
+  if (error) throwPlanningDataError('update-project', 'Impossible de modifier ce projet.', error);
 }
 
 export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {
-  const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', vesselId);
-  if (error) throwPlanningMutationError(error);
-  await writeVesselChangeLog(client, vesselId, 'archive', {});
+  const validVesselId = planningEntityId(vesselId, 'Le navire');
+  const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', validVesselId);
+  if (error) throwPlanningDataError('archive-vessel', 'Impossible de retirer ce navire du planning.', error);
+  await writeVesselChangeLog(client, validVesselId, 'archive', {});
 }
