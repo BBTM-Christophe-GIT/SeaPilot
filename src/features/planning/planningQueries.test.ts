@@ -8,7 +8,9 @@ import {
   mapPlanningAssignmentOverviewRows,
   mapPlanningPeriodRows,
   mapPlanningPeopleRows,
+  mapPlanningPublicationRows,
   mapVesselRows,
+  transitionPlanningPublication,
 } from './planningQueries';
 
 const vesselRow = {
@@ -93,6 +95,22 @@ const planningPeriodRow = {
   slot365_source_id: '200',
   slot365_source_key: 'SLOT-123',
   source_label: 'sharepoint',
+};
+
+const planningPublicationRow = {
+  id: 500,
+  vessel_id: null,
+  scope_key: 'fleet',
+  starts_on: '2026-07-01',
+  ends_on: '2026-07-31',
+  status: 'published',
+  current_version: 1,
+  comment: 'Version opérationnelle',
+  submitted_at: '2026-07-01T08:00:00Z',
+  validated_at: '2026-07-01T09:00:00Z',
+  published_at: '2026-07-01T10:00:00Z',
+  locked_at: '2026-07-01T08:00:00Z',
+  updated_at: '2026-07-01T10:00:00Z',
 };
 
 describe('planning mappers', () => {
@@ -231,6 +249,24 @@ describe('planning mappers', () => {
       },
     ]);
   });
+
+  it('maps the publication state and server lock', () => {
+    expect(mapPlanningPublicationRows([planningPublicationRow])).toEqual([{
+      id: 500,
+      vesselId: null,
+      scopeKey: 'fleet',
+      startsOn: '2026-07-01',
+      endsOn: '2026-07-31',
+      status: 'published',
+      currentVersion: 1,
+      comment: 'Version opérationnelle',
+      submittedAt: '2026-07-01T08:00:00Z',
+      validatedAt: '2026-07-01T09:00:00Z',
+      publishedAt: '2026-07-01T10:00:00Z',
+      lockedAt: '2026-07-01T08:00:00Z',
+      updatedAt: '2026-07-01T10:00:00Z',
+    }]);
+  });
 });
 
 describe('fetchPlanningOverview', () => {
@@ -276,6 +312,10 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
+      if (table === 'planning_publications') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [planningPublicationRow], error: null }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -289,6 +329,7 @@ describe('fetchPlanningOverview', () => {
       certificates: [],
       hrDocuments: [],
       rules: [],
+      publications: mapPlanningPublicationRows([planningPublicationRow]),
     });
 
     expect(from).toHaveBeenCalledWith('vessels');
@@ -353,6 +394,10 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
+      if (table === 'planning_publications') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -371,6 +416,7 @@ describe('fetchPlanningOverview', () => {
       certificates: [],
       hrDocuments: [],
       rules: [],
+      publications: [],
     });
   });
 });
@@ -436,6 +482,33 @@ describe('planning writes', () => {
       watch_group: 'Affectation',
       comments: null,
       source_label: 'seapilot',
+    });
+  });
+
+  it('transitions a displayed period through the publication RPC', async () => {
+    const pendingRow = {
+      ...planningPublicationRow,
+      status: 'pending_validation',
+      current_version: 0,
+      published_at: null,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: pendingRow, error: null });
+
+    await expect(transitionPlanningPublication({ rpc } as never, {
+      action: 'submit',
+      startsOn: '2026-07-01',
+      endsOn: '2026-07-31',
+      vesselId: null,
+      comment: 'Préparation juillet',
+    })).resolves.toEqual(expect.objectContaining({ status: 'pending_validation', currentVersion: 0 }));
+
+    expect(rpc).toHaveBeenCalledWith('transition_planning_publication', {
+      p_action: 'submit',
+      p_publication_id: null,
+      p_starts_on: '2026-07-01',
+      p_ends_on: '2026-07-31',
+      p_vessel_id: null,
+      p_comment: 'Préparation juillet',
     });
   });
 });

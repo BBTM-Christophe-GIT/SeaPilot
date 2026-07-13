@@ -49,6 +49,7 @@ const overview: PlanningOverview = {
     fileUrl: '',
   }],
   rules: [],
+  publications: [],
 };
 
 describe('planning timeline rules', () => {
