@@ -12,7 +12,10 @@ const PLANNING_PERIOD_SELECT =
 const PLANNING_PROJECT_SELECT =
   'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, status, source_label';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
-const PLANNING_HR_DOCUMENT_SELECT = 'id, person_id, person_name, title, status, expires_on, file_url';
+const PLANNING_HR_DOCUMENT_SELECT =
+  'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
+const PLANNING_RULE_SELECT =
+  'id, code, name, description, scope, control_level, active, effective_from, configuration, source_reference, version';
 
 interface VesselRow {
   id: number;
@@ -130,10 +133,28 @@ interface PlanningHrDocumentRow {
   id: number;
   person_id: number | null;
   person_name: string | null;
+  category_key: string | null;
   title: string;
   status: string | null;
   expires_on: string | null;
+  requires_captain_validation: boolean | null;
+  medical_restriction: string | null;
+  medical_unfit: boolean | null;
   file_url: string | null;
+}
+
+interface PlanningRuleRow {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  scope: string;
+  control_level: string;
+  active: boolean;
+  effective_from: string;
+  configuration: Record<string, unknown> | null;
+  source_reference: string | null;
+  version: number;
 }
 
 export interface PlanningVessel {
@@ -247,10 +268,28 @@ export interface PlanningHrDocumentRecord {
   id: number;
   personId: number | null;
   personName: string;
+  categoryKey: string;
   title: string;
   status: string;
   expiresOn: string;
+  requiresCaptainValidation: boolean;
+  medicalRestriction: string;
+  medicalUnfit: boolean;
   fileUrl: string;
+}
+
+export interface PlanningRuleRecord {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  scope: string;
+  controlLevel: 'information' | 'warning' | 'blocking';
+  active: boolean;
+  effectiveFrom: string;
+  configuration: Record<string, unknown>;
+  sourceReference: string;
+  version: number;
 }
 
 export interface PlanningOverview {
@@ -262,6 +301,7 @@ export interface PlanningOverview {
   projects: PlanningProjectRecord[];
   certificates: PlanningCertificateRecord[];
   hrDocuments: PlanningHrDocumentRecord[];
+  rules: PlanningRuleRecord[];
 }
 
 export interface CreateVesselInput {
@@ -488,11 +528,34 @@ export function mapPlanningHrDocumentRows(rows: PlanningHrDocumentRow[]): Planni
     id: row.id,
     personId: row.person_id,
     personName: textOrEmpty(row.person_name),
+    categoryKey: textOrEmpty(row.category_key) || 'administrative',
     title: row.title,
     status: textOrEmpty(row.status),
     expiresOn: textOrEmpty(row.expires_on),
+    requiresCaptainValidation: Boolean(row.requires_captain_validation),
+    medicalRestriction: textOrEmpty(row.medical_restriction),
+    medicalUnfit: Boolean(row.medical_unfit),
     fileUrl: textOrEmpty(row.file_url),
   }));
+}
+
+export function mapPlanningRuleRows(rows: PlanningRuleRow[]): PlanningRuleRecord[] {
+  return rows.flatMap((row) => {
+    if (!['information', 'warning', 'blocking'].includes(row.control_level)) return [];
+    return [{
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      description: textOrEmpty(row.description),
+      scope: row.scope,
+      controlLevel: row.control_level as PlanningRuleRecord['controlLevel'],
+      active: row.active,
+      effectiveFrom: row.effective_from,
+      configuration: row.configuration || {},
+      sourceReference: textOrEmpty(row.source_reference),
+      version: row.version,
+    }];
+  });
 }
 
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
@@ -587,8 +650,17 @@ export async function fetchPlanningHrDocuments(client: SupabaseClient): Promise<
   return mapPlanningHrDocumentRows((data || []) as unknown as PlanningHrDocumentRow[]);
 }
 
+export async function fetchPlanningRules(client: SupabaseClient): Promise<PlanningRuleRecord[]> {
+  const { data, error } = await client
+    .from('planning_rules')
+    .select(PLANNING_RULE_SELECT)
+    .order('code', { ascending: true });
+  if (error) throw error;
+  return mapPlanningRuleRows((data || []) as unknown as PlanningRuleRow[]);
+}
+
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
@@ -596,7 +668,8 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     fetchPlanningPeriods(client),
     fetchPlanningProjects(client).catch(() => []),
     fetchPlanningCertificates(client).catch(() => []),
-    fetchPlanningHrDocuments(client).catch(() => []),
+    fetchPlanningHrDocuments(client),
+    fetchPlanningRules(client).catch(() => []),
   ]);
 
   return {
@@ -608,6 +681,7 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     projects,
     certificates,
     hrDocuments,
+    rules,
   };
 }
 
@@ -637,6 +711,10 @@ export async function createPlanningAssignment(
   client: SupabaseClient,
   input: CreatePlanningAssignmentInput,
 ): Promise<PlanningAssignmentRow> {
+  if (!input.vesselId || !input.crewPersonId || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
+    throw new Error("Les informations de l'affectation sont invalides.");
+  }
+
   const payload = {
     vessel_id: Number(input.vesselId),
     captain_person_id: input.captainPersonId ? Number(input.captainPersonId) : null,

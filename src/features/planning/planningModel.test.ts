@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPlanningCertificateAlerts,
+  buildPlanningControlCenter,
   buildPlanningCrewRows,
   buildPlanningHrAlerts,
   buildPlanningTimeline,
   buildPlanningExportRows,
   getPlanningConflicts,
   getPlanningConflictEventIds,
+  evaluatePlanningAssignment,
+  hasBlockingPlanningControls,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
@@ -32,7 +35,20 @@ const overview: PlanningOverview = {
     { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
   ],
   certificates: [{ id: 30, vesselId: 1, vesselName: 'GOURY', title: 'Franc-bord', status: 'expired', expiresOn: '2026-07-01', fileUrl: '' }],
-  hrDocuments: [{ id: 40, personId: 1, personName: 'Anne CAPITAINE', title: 'Visite médicale', status: 'renew_due', expiresOn: '2026-08-01', fileUrl: '' }],
+  hrDocuments: [{
+    id: 40,
+    personId: 1,
+    personName: 'Anne CAPITAINE',
+    categoryKey: 'medical',
+    title: 'Visite médicale',
+    status: 'renew_due',
+    expiresOn: '2026-08-01',
+    requiresCaptainValidation: false,
+    medicalRestriction: '',
+    medicalUnfit: false,
+    fileUrl: '',
+  }],
+  rules: [],
 };
 
 describe('planning timeline rules', () => {
@@ -67,6 +83,91 @@ describe('planning timeline rules', () => {
       ],
     };
     expect([...getPlanningConflictEventIds(conflictingOverview)].sort()).toEqual(['period-10', 'period-11']);
+    expect(buildPlanningControlCenter(conflictingOverview)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'assignment_overlap', level: 'warning' }),
+    ]));
+  });
+
+  it('blocks work planned over an unavailability period', () => {
+    const unavailableOverview: PlanningOverview = {
+      ...overview,
+      periods: [{ ...overview.periods[0], sailorStatus: 'Repos' }],
+    };
+    const controls = evaluatePlanningAssignment(unavailableOverview, {
+      id: 'new',
+      personId: 1,
+      person: 'Anne CAPITAINE',
+      vessel: 'GOURY',
+      functionLabel: 'Capitaine',
+      status: 'En Mer',
+      startsOn: '2026-07-10',
+      endsOn: '2026-07-12',
+    });
+
+    expect(controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'crew_unavailability', level: 'blocking' }),
+    ]));
+    expect(hasBlockingPlanningControls(controls)).toBe(true);
+  });
+
+  it('checks medical validity through the end of an assignment', () => {
+    const controls = evaluatePlanningAssignment(overview, {
+      id: 'new',
+      personId: 1,
+      person: 'Anne CAPITAINE',
+      vessel: 'GOURY',
+      functionLabel: 'Capitaine',
+      status: 'En Mer',
+      startsOn: '2026-08-01',
+      endsOn: '2026-08-15',
+    });
+
+    expect(controls[0]).toMatchObject({ code: 'expired_medical', level: 'blocking' });
+  });
+
+  it('uses the configurable control level delivered by Supabase', () => {
+    const configuredOverview: PlanningOverview = {
+      ...overview,
+      rules: [{
+        id: 1,
+        code: 'expired_medical',
+        name: 'Aptitude médicale',
+        description: '',
+        scope: 'medical',
+        controlLevel: 'warning',
+        active: true,
+        effectiveFrom: '2026-01-01',
+        configuration: {},
+        sourceReference: 'Règle interne',
+        version: 1,
+      }],
+    };
+    const controls = evaluatePlanningAssignment(configuredOverview, {
+      id: 'new',
+      personId: 1,
+      person: 'Anne CAPITAINE',
+      vessel: 'GOURY',
+      functionLabel: 'Capitaine',
+      status: 'En Mer',
+      startsOn: '2026-08-01',
+      endsOn: '2026-08-15',
+    });
+
+    expect(controls[0]).toMatchObject({ code: 'expired_medical', level: 'warning' });
+    expect(hasBlockingPlanningControls(controls)).toBe(false);
+    expect(evaluatePlanningAssignment({
+      ...configuredOverview,
+      rules: configuredOverview.rules.map((rule) => ({ ...rule, active: false })),
+    }, {
+      id: 'new',
+      personId: 1,
+      person: 'Anne CAPITAINE',
+      vessel: 'GOURY',
+      functionLabel: 'Capitaine',
+      status: 'En Mer',
+      startsOn: '2026-08-01',
+      endsOn: '2026-08-15',
+    })).toEqual([]);
   });
 
   it('uses the shore status for the sedentary functions defined by BBTM', () => {

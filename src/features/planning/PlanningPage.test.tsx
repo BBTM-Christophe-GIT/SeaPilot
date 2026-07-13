@@ -87,6 +87,19 @@ const planningPeriodRow = {
   slot365_source_key: 'SLOT-123',
   source_label: 'sharepoint',
 };
+const medicalDocumentRow = {
+  id: 400,
+  person_id: 11,
+  person_name: 'Paul DURAND',
+  category_key: 'medical',
+  title: 'Visite médicale',
+  status: 'expired',
+  expires_on: '2026-07-15',
+  requires_captain_validation: false,
+  medical_restriction: null,
+  medical_unfit: false,
+  file_url: null,
+};
 
 function createClient(options: {
   vessels?: unknown[];
@@ -94,6 +107,7 @@ function createClient(options: {
   assignments?: unknown[];
   days?: unknown[];
   periods?: unknown[];
+  hrDocuments?: unknown[];
   createdAssignment?: unknown;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
@@ -117,6 +131,9 @@ function createClient(options: {
     }
     if (table === 'planning_periods') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }) }) }) };
+    }
+    if (table === 'hr_documents') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.hrDocuments ?? [], error: null }) }) };
     }
     if (table === 'planning_assignments') return { insert: insertAssignment };
     throw new Error(`Optional table unavailable: ${table}`);
@@ -216,6 +233,25 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
   });
 
+  it('blocks an assignment when the medical validity ends before disembarkation', async () => {
+    const user = userEvent.setup();
+    const { client, insertAssignment } = createClient({ assignments: [], hrDocuments: [medicalDocumentRow] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Nouvelle affectation' }));
+    await user.selectOptions(screen.getByLabelText('Navire'), '1');
+    await user.selectOptions(screen.getByLabelText('Marin'), '11');
+    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20' } });
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26' } });
+
+    expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Aptitude médicale non valide');
+    expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Blocage');
+    await user.click(screen.getByRole('button', { name: 'Ajouter affectation' }));
+    expect(insertAssignment).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/Aptitude médicale non valide/).length).toBeGreaterThan(1);
+  });
+
   it('adds a one-day sea assignment by clicking an empty sailor cell', async () => {
     const user = userEvent.setup();
     const createdAssignment = { ...assignmentRow, id: 102, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'En Mer' };
@@ -256,6 +292,8 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     expect(container.querySelectorAll('.planning-crew-bar.has-conflict')).toHaveLength(2);
+    await user.click(screen.getByRole('tab', { name: /Conflits/ }));
+    expect(screen.getByText('Double affectation')).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: /Paul DURAND, Conflit/ })[0]);
     expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
     expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
