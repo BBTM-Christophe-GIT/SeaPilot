@@ -16,6 +16,8 @@ const PLANNING_HR_DOCUMENT_SELECT =
   'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
 const PLANNING_RULE_SELECT =
   'id, code, name, description, scope, control_level, active, effective_from, configuration, source_reference, version';
+const PLANNING_PUBLICATION_SELECT =
+  'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, validated_at, published_at, locked_at, updated_at';
 
 interface VesselRow {
   id: number;
@@ -157,6 +159,22 @@ interface PlanningRuleRow {
   version: number;
 }
 
+interface PlanningPublicationRow {
+  id: number;
+  vessel_id: number | null;
+  scope_key: string;
+  starts_on: string;
+  ends_on: string;
+  status: string;
+  current_version: number;
+  comment: string | null;
+  submitted_at: string | null;
+  validated_at: string | null;
+  published_at: string | null;
+  locked_at: string | null;
+  updated_at: string;
+}
+
 export interface PlanningVessel {
   id: number;
   name: string;
@@ -292,6 +310,32 @@ export interface PlanningRuleRecord {
   version: number;
 }
 
+export type PlanningPublicationStatus =
+  | 'preparation'
+  | 'pending_validation'
+  | 'validated'
+  | 'published'
+  | 'modified_after_publication'
+  | 'archived';
+
+export type PlanningPublicationAction = 'submit' | 'validate' | 'publish' | 'reopen' | 'archive';
+
+export interface PlanningPublicationRecord {
+  id: number;
+  vesselId: number | null;
+  scopeKey: string;
+  startsOn: string;
+  endsOn: string;
+  status: PlanningPublicationStatus;
+  currentVersion: number;
+  comment: string;
+  submittedAt: string;
+  validatedAt: string;
+  publishedAt: string;
+  lockedAt: string;
+  updatedAt: string;
+}
+
 export interface PlanningOverview {
   vessels: PlanningVessel[];
   people: PlanningPerson[];
@@ -302,6 +346,7 @@ export interface PlanningOverview {
   certificates: PlanningCertificateRecord[];
   hrDocuments: PlanningHrDocumentRecord[];
   rules: PlanningRuleRecord[];
+  publications: PlanningPublicationRecord[];
 }
 
 export interface CreateVesselInput {
@@ -344,6 +389,15 @@ export interface UpdatePlanningProjectInput {
   vesselName: string;
   clientName: string;
   description: string;
+}
+
+export interface TransitionPlanningPublicationInput {
+  action: PlanningPublicationAction;
+  publicationId?: number | null;
+  startsOn?: string;
+  endsOn?: string;
+  vesselId?: number | null;
+  comment?: string;
 }
 
 export function formatPlanningPersonName(person: PlanningPerson): string {
@@ -558,6 +612,36 @@ export function mapPlanningRuleRows(rows: PlanningRuleRow[]): PlanningRuleRecord
   });
 }
 
+export function mapPlanningPublicationRows(rows: PlanningPublicationRow[]): PlanningPublicationRecord[] {
+  const validStatuses: PlanningPublicationStatus[] = [
+    'preparation',
+    'pending_validation',
+    'validated',
+    'published',
+    'modified_after_publication',
+    'archived',
+  ];
+
+  return rows.flatMap((row) => {
+    if (!validStatuses.includes(row.status as PlanningPublicationStatus)) return [];
+    return [{
+      id: row.id,
+      vesselId: row.vessel_id,
+      scopeKey: row.scope_key,
+      startsOn: row.starts_on,
+      endsOn: row.ends_on,
+      status: row.status as PlanningPublicationStatus,
+      currentVersion: row.current_version,
+      comment: textOrEmpty(row.comment),
+      submittedAt: textOrEmpty(row.submitted_at),
+      validatedAt: textOrEmpty(row.validated_at),
+      publishedAt: textOrEmpty(row.published_at),
+      lockedAt: textOrEmpty(row.locked_at),
+      updatedAt: row.updated_at,
+    }];
+  });
+}
+
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
   const { data, error } = await client.from('vessels').select(VESSEL_SELECT).order('name', { ascending: true });
 
@@ -659,8 +743,17 @@ export async function fetchPlanningRules(client: SupabaseClient): Promise<Planni
   return mapPlanningRuleRows((data || []) as unknown as PlanningRuleRow[]);
 }
 
+export async function fetchPlanningPublications(client: SupabaseClient): Promise<PlanningPublicationRecord[]> {
+  const { data, error } = await client
+    .from('planning_publications')
+    .select(PLANNING_PUBLICATION_SELECT)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return mapPlanningPublicationRows((data || []) as unknown as PlanningPublicationRow[]);
+}
+
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
@@ -670,6 +763,7 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     fetchPlanningCertificates(client).catch(() => []),
     fetchPlanningHrDocuments(client),
     fetchPlanningRules(client).catch(() => []),
+    fetchPlanningPublications(client),
   ]);
 
   return {
@@ -682,7 +776,40 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     certificates,
     hrDocuments,
     rules,
+    publications,
   };
+}
+
+function throwPlanningMutationError(error: unknown): never {
+  const message = typeof error === 'object' && error !== null && 'message' in error
+    ? String(error.message)
+    : 'La mise à jour du planning a échoué.';
+
+  if (message.includes('PLANNING_LOCKED')) {
+    throw new Error('Cette période est verrouillée. Réouvrez-la avec un motif avant de modifier le planning.');
+  }
+
+  throw new Error(message);
+}
+
+export async function transitionPlanningPublication(
+  client: SupabaseClient,
+  input: TransitionPlanningPublicationInput,
+): Promise<PlanningPublicationRecord> {
+  const { data, error } = await client.rpc('transition_planning_publication', {
+    p_action: input.action,
+    p_publication_id: input.publicationId ?? null,
+    p_starts_on: input.startsOn || null,
+    p_ends_on: input.endsOn || null,
+    p_vessel_id: input.vesselId ?? null,
+    p_comment: input.comment?.trim() || null,
+  });
+
+  if (error) throwPlanningMutationError(error);
+  const row = (Array.isArray(data) ? data[0] : data) as PlanningPublicationRow | null;
+  const publication = row ? mapPlanningPublicationRows([row])[0] : undefined;
+  if (!publication) throw new Error('La publication du planning n’a pas renvoyé de résultat valide.');
+  return publication;
 }
 
 export async function createVessel(client: SupabaseClient, input: CreateVesselInput): Promise<PlanningVessel> {
@@ -699,11 +826,11 @@ export async function createVessel(client: SupabaseClient, input: CreateVesselIn
   const { data, error } = await client.from('vessels').insert(payload).select(VESSEL_SELECT).single();
 
   if (error) {
-    throw error;
+    throwPlanningMutationError(error);
   }
 
   const vessel = mapVesselRows([data as VesselRow])[0];
-  await writePlanningChangeLog(client, 'vessel', vessel.id, 'create', { name: vessel.name, acronym: vessel.acronym });
+  await writeVesselChangeLog(client, vessel.id, 'create', { name: vessel.name, acronym: vessel.acronym });
   return vessel;
 }
 
@@ -734,30 +861,27 @@ export async function createPlanningAssignment(
     .single();
 
   if (error) {
-    throw error;
+    throwPlanningMutationError(error);
   }
 
-  const assignment = data as PlanningAssignmentRow;
-  await writePlanningChangeLog(client, 'assignment', assignment.id, 'create', payload);
-  return assignment;
+  return data as PlanningAssignmentRow;
 }
 
-async function writePlanningChangeLog(
+async function writeVesselChangeLog(
   client: SupabaseClient,
-  entityKind: 'assignment' | 'day' | 'period' | 'project' | 'vessel',
-  entityId: number,
-  action: 'create' | 'update' | 'archive' | 'delete',
+  vesselId: number,
+  action: 'create' | 'archive',
   payload: Record<string, unknown>,
 ) {
   try {
     await client.from('planning_change_log').insert({
-      entity_kind: entityKind,
-      entity_id: entityId,
+      entity_kind: 'vessel',
+      entity_id: vesselId,
       action,
       payload,
     });
   } catch {
-    // The business write is authoritative; audit logging must not hide a successful planning update.
+    // Vessel writes predate the transactional event triggers; keep the successful business write visible.
   }
 }
 
@@ -821,8 +945,7 @@ export async function updatePlanningEvent(client: SupabaseClient, input: UpdateP
       .eq('id', input.id));
   }
 
-  if (error) throw error;
-  await writePlanningChangeLog(client, input.kind, input.id, 'update', { ...input });
+  if (error) throwPlanningMutationError(error);
 }
 
 export async function deletePlanningEvent(
@@ -831,8 +954,7 @@ export async function deletePlanningEvent(
 ): Promise<void> {
   const table = event.kind === 'assignment' ? 'planning_assignments' : event.kind === 'period' ? 'planning_periods' : 'planning_days';
   const { error } = await client.from(table).delete().eq('id', event.id);
-  if (error) throw error;
-  await writePlanningChangeLog(client, event.kind, event.id, 'delete', {});
+  if (error) throwPlanningMutationError(error);
 }
 
 export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<void> {
@@ -854,12 +976,11 @@ export async function updatePlanningProject(client: SupabaseClient, input: Updat
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.id);
-  if (error) throw error;
-  await writePlanningChangeLog(client, 'project', input.id, 'update', { ...input });
+  if (error) throwPlanningMutationError(error);
 }
 
 export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {
   const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', vesselId);
-  if (error) throw error;
-  await writePlanningChangeLog(client, 'vessel', vesselId, 'archive', {});
+  if (error) throwPlanningMutationError(error);
+  await writeVesselChangeLog(client, vesselId, 'archive', {});
 }

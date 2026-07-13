@@ -15,6 +15,11 @@ required by the approved navigation structure: QHSE, Operations, Purchasing, Pla
 Maintenance, and Lifting. The hierarchy and labels live in `src/features/permissions/moduleAccess.ts`; the
 administrator matrix continues to decide which of those items each role can see.
 
+Apply `supabase/migrations/202607130003_planning_publication_workflow.sql` before deploying version `1.6.0`.
+The Planning client requires `planning_publications` during its initial parallel load. The migration adds the
+publication/version tables, the authenticated transition RPC, server-side period locks and transactional audit
+triggers. Deploying the client first would make the Planning route fail to load until the migration is applied.
+
 ## Current Production Target
 
 The active public URL is:
@@ -42,7 +47,7 @@ The repository includes `vercel.json` so direct links like `/login` and `/module
 
 ## Current Environment State
 
-As of 2026-07-02:
+As of 2026-07-13:
 
 - `VITE_APP_BASE_URL=https://sea-pilot-ten.vercel.app` is configured in Vercel for Production and Preview.
 - `VITE_SUPABASE_URL` is configured in Vercel for Production.
@@ -53,7 +58,7 @@ As of 2026-07-02:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The 16 local migrations have been pushed to Supabase Cloud.
+- The 26 local migrations, through `202607130003_planning_publication_workflow.sql`, have been pushed to Supabase Cloud.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

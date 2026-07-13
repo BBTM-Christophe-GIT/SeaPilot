@@ -63,6 +63,7 @@ import {
   type PlanningFilters,
   type PlanningViewMode,
 } from './planningModel';
+import { findPlanningPublication, isPlanningPublicationLocked } from './planningPublication';
 import {
   archivePlanningVessel,
   createPlanningAssignment,
@@ -70,14 +71,17 @@ import {
   deletePlanningEvent,
   fetchPlanningOverview,
   mapPlanningAssignmentRows,
+  transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
   type PlanningOverview,
   type PlanningPerson,
+  type PlanningPublicationAction,
   type PlanningProjectRecord,
   type PlanningVessel,
 } from './planningQueries';
 import { PlanningControlSummary } from './PlanningControlSummary';
+import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 
 interface PlanningPageProps {
   client?: SupabaseClient;
@@ -120,6 +124,7 @@ const EMPTY_OVERVIEW: PlanningOverview = {
   certificates: [],
   hrDocuments: [],
   rules: [],
+  publications: [],
 };
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '' };
@@ -248,6 +253,18 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }, [anchorDate, showWeekends, viewMode]);
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(days), [days]);
+  const publicationVessel = useMemo(
+    () => overview.vessels.find((vessel) => vessel.name === filters.vesselName) || null,
+    [filters.vesselName, overview.vessels],
+  );
+  const publicationVesselId = filters.vesselName ? publicationVessel?.id ?? null : null;
+  const activePublication = useMemo(
+    () => findPlanningPublication(overview.publications, range, publicationVesselId),
+    [overview.publications, publicationVesselId, range],
+  );
+  const isPeriodLocked = isPlanningPublicationLocked(activePublication);
+  const canEditPlanning = isManager && !isPeriodLocked;
+  const canManagePublication = isManager && (!filters.vesselName || publicationVessel !== null);
   const rows = useMemo(() => buildPlanningCrewRows(overview, days, filters), [days, filters, overview]);
   const visibleRows = useMemo(
     () =>
@@ -334,6 +351,41 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     alerts: hrAlerts.length,
   };
 
+  async function handlePublicationAction(action: PlanningPublicationAction, comment: string): Promise<boolean> {
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const publication = await transitionPlanningPublication(effectiveClient, {
+        action,
+        publicationId: activePublication?.id ?? null,
+        startsOn: range.start,
+        endsOn: range.end,
+        vesselId: publicationVesselId,
+        comment,
+      });
+      setOverview((current) => ({
+        ...current,
+        publications: current.publications.some((item) => item.id === publication.id)
+          ? current.publications.map((item) => item.id === publication.id ? publication : item)
+          : [publication, ...current.publications],
+      }));
+      const messages: Record<PlanningPublicationAction, string> = {
+        submit: 'Période soumise et verrouillée pour validation.',
+        validate: 'Planning validé. Il peut maintenant être publié.',
+        publish: `Planning publié en version ${publication.currentVersion}.`,
+        reopen: 'Période réouverte. La justification a été historisée.',
+        archive: 'Période archivée.',
+      };
+      setStatusMessage(messages[action]);
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de mettre à jour la publication du planning.');
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function toggleCollapsed(key: string) {
     setCollapsedRows((current) => {
       const next = new Set(current);
@@ -352,6 +404,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   function openAssignment(prefill?: Partial<AssignmentFormState>) {
+    if (!canEditPlanning) {
+      setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de créer une affectation.');
+      return;
+    }
     const defaultStart = range.start || anchorDate;
     setAssignmentForm({ ...EMPTY_ASSIGNMENT, startsOn: defaultStart, endsOn: addPlanningDays(defaultStart, 6), ...prefill });
     setIsAssignmentOpen(true);
@@ -359,6 +415,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditPlanning) {
+      setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de créer une affectation.');
+      return;
+    }
     if (hasBlockingPlanningControls(assignmentControls)) {
       setErrorMessage(blockingControlMessage(assignmentControls));
       return;
@@ -379,7 +439,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   async function createQuickDay(row: PlanningCrewRow, date: string) {
-    if (!isManager || row.type !== 'person' || row.personId === null || row.vesselId === null) return;
+    if (!canEditPlanning || row.type !== 'person' || row.personId === null || row.vesselId === null) return;
     const person = activePeople.find((item) => item.id === row.personId);
     const vessel = activeVessels.find((item) => item.id === row.vesselId || item.name === row.vessel);
     if (!person || !vessel) {
@@ -457,6 +517,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   async function saveEvent(event: PlanningCrewEvent, form: EventFormState) {
+    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant toute modification.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
     const controls = evaluatePlanningAssignment(overview, {
@@ -486,6 +547,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   async function removeEvent(event: PlanningCrewEvent) {
+    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant toute suppression.');
     if (!window.confirm('Supprimer cette période du planning ?')) return;
     setIsSaving(true);
     try {
@@ -517,7 +579,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   function handleDrop(row: PlanningCrewRow, date: string, raw: string) {
-    if (!isManager || row.type === 'board') return;
+    if (!canEditPlanning || row.type === 'board') return;
     let payload: { type?: string; id?: string | number } = {};
     try { payload = JSON.parse(raw || '{}') as typeof payload; } catch { return; }
     if (payload.type === 'event') {
@@ -552,6 +614,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   }
 
   async function saveProject(project: PlanningProjectRecord, form: { title: string; startsOn: string; endsOn: string; status: string; vesselId: string; clientName: string; description: string }) {
+    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de modifier un projet.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
     setIsSaving(true);
@@ -583,7 +646,9 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           <h1 aria-label="Planning">Planning BBTM</h1>
         </div>
         <div className="planning-command-actions">
-          <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
+          <span className={canEditPlanning ? 'planning-mode-write' : isPeriodLocked ? 'planning-mode-locked' : 'planning-mode-read'}>
+            {canEditPlanning ? 'Modification' : isPeriodLocked ? 'Verrouillé' : 'Lecture seule'}
+          </span>
           <button aria-label="Actualiser le planning" className="planning-icon-button" onClick={() => void loadPlanning()} type="button">
             <RefreshCw aria-hidden="true" size={18} />
           </button>
@@ -599,6 +664,15 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
         </div>
       ) : null}
+
+      <PlanningPublicationPanel
+        canManage={canManagePublication}
+        isSaving={isSaving}
+        onAction={handlePublicationAction}
+        publication={activePublication}
+        range={range}
+        scopeLabel={publicationVessel?.name || 'Flotte complète'}
+      />
 
       {isSettingsOpen ? (
         <div className="planning-settings-popover">
@@ -660,8 +734,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
               <button aria-label="Période suivante" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
             </div>
             <div className="planning-edit-controls">
-              {isManager ? <button aria-label="Nouvelle affectation" className="planning-icon-button is-primary" onClick={() => openAssignment()} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
-              {isManager ? <button aria-label="Dupliquer l’affectation" className="planning-icon-button" disabled={selectedEvent?.kind !== 'assignment'} onClick={duplicateSelectedEvent} type="button"><Copy aria-hidden="true" size={17} /></button> : null}
+              {canEditPlanning ? <button aria-label="Nouvelle affectation" className="planning-icon-button is-primary" onClick={() => openAssignment()} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
+              {canEditPlanning ? <button aria-label="Dupliquer l’affectation" className="planning-icon-button" disabled={selectedEvent?.kind !== 'assignment'} onClick={duplicateSelectedEvent} type="button"><Copy aria-hidden="true" size={17} /></button> : null}
               {isManager ? <button aria-label="Exporter les données d'un marin" className="planning-icon-button" onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={17} /></button> : null}
               <button aria-label={isFullscreen ? 'Quitter le plein écran' : 'Afficher en plein écran'} className="planning-icon-button" onClick={() => void toggleFullscreen()} type="button"><Expand aria-hidden="true" size={17} /></button>
               <button aria-label="Plus d’options" className="planning-icon-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><MoreHorizontal aria-hidden="true" size={18} /></button>
@@ -674,7 +748,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
               <span><i className="is-sea" />En mer</span>
               <span><i className="is-shore" />À terre</span>
               <span><i className="is-conflict" />Conflit</span>
-              {isManager ? <small>Clic = ajouter · Glisser = déplacer · Poignées = étendre</small> : null}
+              {canEditPlanning ? <small>Clic = ajouter · Glisser = déplacer · Poignées = étendre</small> : null}
             </div>
             <div className="planning-board-stats">
               {conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
@@ -715,7 +789,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
                   onToggle={() => toggleCollapsed(row.key)}
                   row={row}
                   viewMode={viewMode}
-                  editable={isManager}
+                  editable={canEditPlanning}
                   dayWidth={viewMode === 'year' ? Math.min(dayWidth, 18) : dayWidth}
                   onDrop={handleDrop}
                   onResize={resizeEvent}
@@ -744,7 +818,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             sideTab={sideTab}
             unassignedPeople={unassignedPeople}
             unbilledProjects={unbilledProjects}
-            editable={isManager}
+            editable={canEditPlanning}
           />
         </aside>
       </div>
@@ -770,8 +844,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         </div>
       ) : null}
 
-      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={isManager} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
-      {selectedProject ? <PlanningProjectDialog activeVessels={activeVessels} editable={isManager} isSaving={isSaving} onClose={() => setSelectedProject(null)} onSave={(form) => void saveProject(selectedProject, form)} project={selectedProject} /> : null}
+      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
+      {selectedProject ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} isSaving={isSaving} onClose={() => setSelectedProject(null)} onSave={(form) => void saveProject(selectedProject, form)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
       {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
     </section>

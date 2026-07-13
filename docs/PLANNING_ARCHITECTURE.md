@@ -9,7 +9,7 @@ Le Planning SeaPilot est un cockpit React/Vite connecté aux données réelles S
 
 Le socle existant est fonctionnel pour consulter et corriger le planning : vues Semaine/Mois/An, filtres, zoom, plein écran, création, modification, duplication, glisser-déposer, redimensionnement, création rapide, export CSV, alertes documentaires et audit des écritures. Les droits d’écriture restent volontairement réservés aux administrateurs dans l’interface et dans les politiques RLS actuelles.
 
-Le lot P0 du 13 juillet 2026 ajoute la fondation qui manquait le plus : un moteur central de contrôle des affectations, des niveaux configurables Information/Avertissement/Blocage, un aperçu avant enregistrement et un centre de conflits. Les règles utilisent les données Planning et RH existantes ; aucune donnée fictive et aucune table d’événements concurrente n’ont été créées.
+Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle des affectations, ses niveaux configurables et le centre de conflits. Le lot de publication qui suit ajoute un workflow administrateur Soumettre → Valider → Publier, un verrou PostgreSQL couvrant les quatre sources d’événements existantes et un instantané immuable à chaque version publiée. Les règles utilisent les données Planning et RH existantes ; aucune donnée fictive et aucune table d’événements concurrente n’ont été créées.
 
 ## 2. Matrice fonctionnelle
 
@@ -33,8 +33,8 @@ Le lot P0 du 13 juillet 2026 ajoute la fondation qui manquait le plus : un moteu
 | Relèves d’équipage | Absent | Absent | Aucun workflow bordée entrante/sortante dédié | P0 |
 | Rotations récurrentes | Absent | Absent | Aucun modèle 7/7, 10/10, 14/14 ni édition de série | P1 |
 | Temps de travail et repos | Partiel | Partiel | Données SMTR `worked_hours`, `rest_24h`, `cumulative_7d` importées mais pas de moteur de conformité | P1 |
-| Validation, publication, verrouillage | Absent | Absent | Pas de version publiée ni de verrou de période | P0 |
-| Historique | Partiel | Partiel | `planning_change_log` trace les écritures admin ; journal non transactionnel et sans comparaison de versions | P0/P1 |
+| Validation, publication, verrouillage | Absent | Opérationnel (socle) | Soumission, validation, publication, réouverture motivée et verrou serveur par période/flotte/navire ; validation multi-acteurs absente | P0 : validation fonctionnelle |
+| Historique | Partiel | Amélioré | Triggers transactionnels pour événements, transitions auditées et instantanés publiés ; écran de comparaison absent | P1 |
 | Permissions | Partiel | Partiel | Lecture RLS par rôle/périmètre ; écriture admin uniquement ; permissions granulaires d’action absentes | P0 |
 | Export | Partiel | Partiel | CSV journalier par marin ; PDF/Excel/ICS et export flotte absents | P1 |
 | Notifications et collaboration | Absent | Absent | Pas de workflow de confirmation ou notification Planning | P1 |
@@ -50,8 +50,8 @@ Le lot P0 du 13 juillet 2026 ajoute la fondation qui manquait le plus : un moteu
 | La fin pouvait précéder le début avant d’atteindre la contrainte SQL lors d’une création | Message générique et mauvaise expérience | Validation TypeScript explicite et Blocage avant écriture | Corrigé |
 | Les données RH pouvaient être ignorées si leur requête échouait | Contrôles documentaires faussement rassurants | Le chargement RH est désormais requis pour rendre le Planning | Corrigé |
 | `PlanningPage.tsx` reste volumineux | Maintenabilité et tests d’interaction plus difficiles | Premier composant extrait : `PlanningControlSummary` | P0 refactorisation progressive |
-| Les écritures et `planning_change_log` ne sont pas dans une même transaction | Journal incomplet si l’écriture d’audit échoue | Conserver la disponibilité actuelle, puis déplacer les mutations critiques dans des RPC transactionnelles | P0 |
-| Suppressions physiques des événements | Perte de traçabilité métier | Introduire archivage logique/versionnement avant publication | P0 |
+| Les écritures et `planning_change_log` n’étaient pas dans une même transaction | Journal incomplet si l’écriture d’audit échouait | Triggers `after` transactionnels sur affectations, journées, périodes et projets ; les navires conservent leur journal applicatif | Faible, périmètre navires uniquement |
+| Suppressions physiques des événements | Perte de traçabilité métier hors période publiée | Les périodes soumises/publiées sont protégées et les suppressions autorisées sont instantanément auditées ; archivage logique encore absent | P0 |
 | Chargement intégral des événements | Temps de chargement et mémoire sur plusieurs milliers d’éléments | Événements mémorisés côté React pour les contrôles ; requêtes par période encore nécessaires | P0 performance |
 | Détection historique de conflits en O(n²) | Dégradation avec plusieurs milliers d’événements | Le nouveau centre groupe d’abord par marin ; l’ancien marquage visuel reste à indexer | P0 performance |
 | Aucun script ESLint dans `package.json` | Pas de contrôle de style automatisé | TypeScript strict couvre les erreurs de type ; ajouter ESLint sans perturber les conventions existantes | P0 outillage |
@@ -73,6 +73,7 @@ Le lot P0 du 13 juillet 2026 ajoute la fondation qui manquait le plus : un moteu
 - `PlanningProjectDialog` édite les projets Planning existants.
 - `PlanningSideContent` affiche conflits, échéances, marins non affectés et facturation.
 - `PlanningControlSummary.tsx` présente les contrôles sans dépendre uniquement de la couleur : libellé du niveau, titre et explication.
+- `PlanningPublicationPanel.tsx` présente le statut, la version, le périmètre, le verrou et les actions de workflow sans disperser cette logique dans la timeline.
 
 Les prochains refactors doivent extraire la toolbar, la timeline, les dialogues et le panneau latéral par étapes, sans reconstruire le module.
 
@@ -94,7 +95,7 @@ Les règles actives peuvent remplacer le niveau par défaut. Un avertissement n�
 
 ### Accès aux données
 
-`planningQueries.ts` centralise les sélections et mutations Supabase. `fetchPlanningOverview` lance en parallèle les requêtes indépendantes afin d’éviter les cascades de chargement.
+`planningQueries.ts` centralise les sélections et mutations Supabase. `fetchPlanningOverview` lance en parallèle les requêtes indépendantes afin d’éviter les cascades de chargement. `transitionPlanningPublication` est l’unique point d’entrée client du workflow de publication.
 
 Sources fusionnées :
 
@@ -105,6 +106,7 @@ Sources fusionnées :
 - `people` et `hr_documents` : identité, fonction, activité, titres et aptitude ;
 - `vessels` et `fleet_certificates` : flotte et échéances navire ;
 - `planning_rules` : niveaux de contrôle configurables.
+- `planning_publications` : état, périmètre, verrou et numéro de version courant.
 
 Les erreurs sur projets, certificats flotte et règles peuvent encore utiliser les comportements de repli historiques. Les documents RH sont requis : si cette donnée sensible au contrôle ne charge pas, le Planning n’autorise pas silencieusement une affectation.
 
@@ -121,11 +123,13 @@ vessels ─< planning_projects (primary_vessel_id / secondary_vessel_id)
 
 planning_change_log ── référence logique entity_kind + entity_id
 planning_rules ──────── configuration globale des contrôles Planning
+planning_publications ─┬─< planning_versions
+                       └── vessels (périmètre optionnel)
 ```
 
 Les historiques SharePoint conservent leurs identifiants et libellés source. Les relations `person_id`/`vessel_id` sont utilisées lorsqu’elles sont résolues ; le moteur conserve le rapprochement par nom pour les lignes historiques non liées.
 
-### Migration du lot
+### Migrations des lots
 
 `202607130001_planning_control_rules.sql` :
 
@@ -138,6 +142,16 @@ Les historiques SharePoint conservent leurs identifiants et libellés source. Le
 - réserve les écritures aux administrateurs.
 
 `202607130002_planning_rpc_permissions.sql` retire l’exécution anonyme explicite de `planning_assignment_overview()` et conserve uniquement l’exécution authentifiée. La fonction continue ensuite d’appliquer son filtre par rôle, capitaine et marin.
+
+`202607130003_planning_publication_workflow.sql` :
+
+- crée `planning_publications` et `planning_versions` avec contraintes, index de périmètre/date et RLS ;
+- réserve les transitions à l’administrateur dans `transition_planning_publication` ;
+- verrouille en base les affectations, journées, périodes et projets qui chevauchent une période soumise, validée, publiée ou archivée ;
+- exige un motif de dix caractères minimum avant réouverture ;
+- capture un instantané JSON des quatre sources lors de chaque publication ;
+- remplace l’audit applicatif non transactionnel des événements par des triggers PostgreSQL ;
+- révoque l’exécution publique/anonyme des fonctions internes et n’expose que la transition authentifiée.
 
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
@@ -158,7 +172,19 @@ Les références réglementaires ou internes sont descriptives. Elles ne sont pa
 
 Les contrôles sont appliqués à la création, à la création rapide, à l’édition, au déplacement et au redimensionnement.
 
-## 7. Rôles et sécurité
+## 7. Validation, publication et verrouillage
+
+Le workflow de période est limité aux administrateurs, comme les autres écritures Planning actuelles :
+
+1. une période modifiable est soumise ; elle passe à `pending_validation` et est immédiatement verrouillée ;
+2. la période figée est validée ;
+3. la période validée est publiée et son numéro de version est incrémenté ;
+4. un instantané immuable des affectations, journées, périodes et projets concernés est enregistré ;
+5. toute modification ultérieure exige une réouverture motivée, puis une nouvelle soumission et une nouvelle publication.
+
+Le périmètre peut couvrir toute la flotte ou un navire existant. Le trigger vérifie l’ancienne et la nouvelle période d’un événement : il empêche donc aussi de déplacer un événement hors d’une zone verrouillée ou vers une zone verrouillée. L’interface retire les contrôles d’édition, mais le trigger PostgreSQL reste l’autorité de sécurité.
+
+## 8. Rôles et sécurité
 
 Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 
@@ -168,17 +194,19 @@ Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 - L’écriture des tables Planning éditables est actuellement réservée à `admin`, côté interface et RLS.
 - Les documents RH conservent leurs politiques RLS propres ; aucune donnée médicale supplémentaire n’est copiée dans `planning_rules` ou dans les événements.
 - Les règles sont lisibles par les rôles Planning et modifiables uniquement par `admin`.
+- Les états de publication sont lisibles par les rôles Planning ; les instantanés/version et les transitions restent réservés à `admin`.
+- Les fonctions de verrou et d’audit ne sont pas exécutables directement par les rôles API.
 - Aucun secret ni identifiant de connexion n’est ajouté au dépôt.
 
 À terme, les droits de création, validation, publication, dérogation et export devront être séparés dans une matrice d’actions, puis appliqués dans des RPC et politiques RLS dédiées.
 
-## 8. Dates et fuseaux horaires
+## 9. Dates et fuseaux horaires
 
 Le modèle actuel stocke les événements Planning en dates civiles PostgreSQL (`date`) et les manipule en `YYYY-MM-DD`. Les calculs utilisent `Date.UTC`, les getters UTC et un formatage `fr-FR` avec `timeZone: 'UTC'`, ce qui évite le glissement d’un jour lié au navigateur.
 
 Cette architecture gère les périodes multi-jours et les années bissextiles, mais pas encore les heures de prise/fin de service, les événements passant minuit ni plusieurs fuseaux portuaires. Une future migration devra conserver les dates existantes et ajouter des timestamps avec fuseau uniquement aux événements qui exigent une précision horaire.
 
-## 9. Tests et validation
+## 10. Tests et validation
 
 Outils existants conservés : TypeScript strict, Vitest, Testing Library et build Vite.
 
@@ -197,6 +225,11 @@ Tests Planning couverts :
 - remplacement du niveau par une règle Supabase ;
 - affichage du centre de conflits ;
 - refus d’écriture en présence d’un blocage.
+- sélection du verrou pertinent pour une période et un navire ;
+- ordre des transitions de publication ;
+- soumission et verrouillage de la période visible ;
+- retrait des actions d’édition sur un planning publié ;
+- appel RPC et mapping de l’état/version de publication.
 
 Commandes de validation :
 
@@ -210,17 +243,16 @@ supabase db lint --linked
 
 Le dépôt ne fournit pas encore de script `lint` JavaScript/TypeScript dédié ; cette lacune est suivie en P0 outillage.
 
-## 10. Feuille de route recommandée
+## 11. Feuille de route recommandée
 
 ### P0
 
-1. Ajouter validation/publication/verrouillage, versions et dérogations auditables.
-2. Créer le workflow de relève et la comparaison bordée sortante/entrante.
-3. Relier fonctions requises, effectif minimum et qualifications aux navires.
-4. Charger les événements par période et indexer la détection visuelle des conflits.
-5. Déplacer les mutations critiques et l’audit dans des RPC transactionnelles.
-6. Extraire progressivement toolbar, timeline, dialogues et panneau latéral.
-7. Ajouter ESLint et un test de parcours navigateur authentifié stable.
+1. Créer le workflow de relève et la comparaison bordée sortante/entrante.
+2. Relier fonctions requises, effectif minimum et qualifications aux navires.
+3. Charger les événements par période et indexer la détection visuelle des conflits.
+4. Ajouter l’archivage logique des événements hors périodes publiées.
+5. Extraire progressivement toolbar, timeline, dialogues et panneau latéral.
+6. Ajouter ESLint et un test de parcours navigateur authentifié stable.
 
 ### P1
 

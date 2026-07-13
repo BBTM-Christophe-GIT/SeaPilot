@@ -100,6 +100,21 @@ const medicalDocumentRow = {
   medical_unfit: false,
   file_url: null,
 };
+const publicationRow = {
+  id: 500,
+  vessel_id: null,
+  scope_key: 'fleet',
+  starts_on: '2026-06-29',
+  ends_on: '2026-08-16',
+  status: 'published',
+  current_version: 1,
+  comment: 'Version opérationnelle',
+  submitted_at: '2026-07-13T08:00:00Z',
+  validated_at: '2026-07-13T09:00:00Z',
+  published_at: '2026-07-13T10:00:00Z',
+  locked_at: '2026-07-13T08:00:00Z',
+  updated_at: '2026-07-13T10:00:00Z',
+};
 
 function createClient(options: {
   vessels?: unknown[];
@@ -108,7 +123,9 @@ function createClient(options: {
   days?: unknown[];
   periods?: unknown[];
   hrDocuments?: unknown[];
+  publications?: unknown[];
   createdAssignment?: unknown;
+  transitionedPublication?: unknown;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
@@ -135,10 +152,24 @@ function createClient(options: {
     if (table === 'hr_documents') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.hrDocuments ?? [], error: null }) }) };
     }
+    if (table === 'planning_publications') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.publications ?? [], error: null }) }) };
+    }
     if (table === 'planning_assignments') return { insert: insertAssignment };
     throw new Error(`Optional table unavailable: ${table}`);
   });
-  const rpc = vi.fn().mockResolvedValue({ data: options.assignments ?? [assignmentOverviewRow], error: null });
+  const rpc = vi.fn().mockImplementation((functionName: string) => {
+    if (functionName === 'planning_assignment_overview') {
+      return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
+    }
+    if (functionName === 'transition_planning_publication') {
+      return Promise.resolve({
+        data: options.transitionedPublication ?? { ...publicationRow, status: 'pending_validation', current_version: 0, published_at: null },
+        error: null,
+      });
+    }
+    throw new Error(`Unexpected RPC ${functionName}`);
+  });
   return { client: { from, rpc }, insertAssignment };
 }
 
@@ -231,6 +262,39 @@ describe('PlanningPage cockpit', () => {
       source_label: 'seapilot',
     }));
     expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
+  });
+
+  it('submits and locks the visible period for validation', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.getByRole('region', { name: 'Pilotage de publication' })).toHaveTextContent('En préparation');
+    await user.type(screen.getByLabelText('Commentaire de publication'), 'Préparation planning été');
+    await user.click(screen.getByRole('button', { name: 'Soumettre à validation' }));
+
+    expect(await screen.findByText('Période soumise et verrouillée pour validation.')).toBeInTheDocument();
+    expect(client.rpc).toHaveBeenCalledWith('transition_planning_publication', expect.objectContaining({
+      p_action: 'submit',
+      p_starts_on: '2026-06-29',
+      p_ends_on: '2026-08-16',
+      p_comment: 'Préparation planning été',
+    }));
+    expect(screen.getByText('Verrouillé')).toBeInTheDocument();
+  });
+
+  it('removes editing controls when the displayed planning is published', async () => {
+    const { client } = createClient({ publications: [publicationRow] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    const publicationPanel = screen.getByRole('region', { name: 'Pilotage de publication' });
+    expect(publicationPanel).toHaveTextContent('Publié');
+    expect(publicationPanel).toHaveTextContent('Version 1');
+    expect(screen.getByText('Verrouillé')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réouvrir pour modification' })).toBeInTheDocument();
   });
 
   it('blocks an assignment when the medical validity ends before disembarkation', async () => {
