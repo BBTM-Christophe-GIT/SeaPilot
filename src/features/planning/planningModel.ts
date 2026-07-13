@@ -6,6 +6,20 @@ import type {
   PlanningPerson,
   PlanningProjectRecord,
 } from './planningQueries';
+import {
+  addPlanningDays,
+  daysBetween,
+  formatPlanningDate,
+  isoDate,
+  parsePlanningDate,
+  planningWeekNumber,
+  rangesOverlap,
+  shiftPlanningMonths,
+  shiftPlanningYears,
+  startOfPlanningWeek,
+} from './planningDates';
+
+export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
 export type PlanningViewMode = 'week' | 'month' | 'year';
 
@@ -101,39 +115,9 @@ const ROLE_RANKS = [
   ['BOSCO', 'MAITREDEQUIPAGE'],
 ];
 
-function parseIsoDate(value: string): Date {
-  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-export function isoDate(date: Date): string {
-  return [date.getUTCFullYear(), String(date.getUTCMonth() + 1).padStart(2, '0'), String(date.getUTCDate()).padStart(2, '0')].join('-');
-}
-
-export function addPlanningDays(value: string, amount: number): string {
-  const date = parseIsoDate(value);
-  date.setUTCDate(date.getUTCDate() + amount);
-  return isoDate(date);
-}
-
-function startOfWeek(value: string): string {
-  const date = parseIsoDate(value);
-  const mondayOffset = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - mondayOffset);
-  return isoDate(date);
-}
-
-function isoWeek(date: Date): number {
-  const cursor = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = cursor.getUTCDay() || 7;
-  cursor.setUTCDate(cursor.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(cursor.getUTCFullYear(), 0, 1));
-  return Math.ceil(((cursor.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
-
 function buildDays(start: string, count: number): PlanningTimelineDay[] {
   return Array.from({ length: count }, (_, index) => {
-    const date = parseIsoDate(addPlanningDays(start, index));
+    const date = parsePlanningDate(addPlanningDays(start, index));
     const weekday = (date.getUTCDay() + 6) % 7;
     return {
       date: isoDate(date),
@@ -141,14 +125,14 @@ function buildDays(start: string, count: number): PlanningTimelineDay[] {
       month: date.getUTCMonth() + 1,
       year: date.getUTCFullYear(),
       weekday,
-      week: isoWeek(date),
+      week: planningWeekNumber(isoDate(date)),
       isWeekend: weekday >= 5,
     };
   });
 }
 
 export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode): PlanningTimelineDay[] {
-  const anchor = parseIsoDate(anchorDate);
+  const anchor = parsePlanningDate(anchorDate);
   if (mode === 'year') {
     const year = anchor.getUTCFullYear();
     const start = `${year}-01-01`;
@@ -156,11 +140,11 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
     return buildDays(start, daysBetween(start, end) + 1);
   }
   if (mode === 'week') {
-    return buildDays(startOfWeek(anchorDate), 14);
+    return buildDays(startOfPlanningWeek(anchorDate), 14);
   }
 
   const monthStart = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}-01`;
-  return buildDays(startOfWeek(monthStart), 49);
+  return buildDays(startOfPlanningWeek(monthStart), 49);
 }
 
 export function buildPlanningMonthSegments(days: PlanningTimelineDay[]): PlanningMonthSegment[] {
@@ -192,15 +176,10 @@ export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningV
 }
 
 export function shiftPlanningAnchor(anchorDate: string, mode: PlanningViewMode, amount: number): string {
-  const anchor = parseIsoDate(anchorDate);
   if (mode === 'week') {
-    anchor.setUTCDate(anchor.getUTCDate() + amount * 14);
-  } else if (mode === 'year') {
-    anchor.setUTCFullYear(anchor.getUTCFullYear() + amount);
-  } else {
-    anchor.setUTCMonth(anchor.getUTCMonth() + amount);
+    return addPlanningDays(anchorDate, amount * 14);
   }
-  return isoDate(anchor);
+  return mode === 'year' ? shiftPlanningYears(anchorDate, amount) : shiftPlanningMonths(anchorDate, amount);
 }
 
 export function dateGridPlacement(startsOn: string, endsOn: string, days: PlanningTimelineDay[]) {
@@ -210,10 +189,6 @@ export function dateGridPlacement(startsOn: string, endsOn: string, days: Planni
   const clippedStart = startsOn < range.start ? range.start : startsOn;
   const clippedEnd = (endsOn || startsOn) > range.end ? range.end : endsOn || startsOn;
   return { start: daysBetween(range.start, clippedStart) + 1, span: daysBetween(clippedStart, clippedEnd) + 1 };
-}
-
-export function rangesOverlap(start: string, end: string, rangeStart: string, rangeEnd: string): boolean {
-  return Boolean(start && end && rangeStart && rangeEnd && start <= rangeEnd && end >= rangeStart);
 }
 
 export function normalizePlanningText(value: string): string {
@@ -492,10 +467,6 @@ export function getUnassignedPlanningPeople(
   });
 }
 
-export function daysBetween(start: string, end: string): number {
-  return Math.round((parseIsoDate(end).getTime() - parseIsoDate(start).getTime()) / 86400000);
-}
-
 export type PlanningControlLevel = 'information' | 'warning' | 'blocking';
 
 export type PlanningControlCode =
@@ -746,48 +717,6 @@ export function hasBlockingPlanningControls(results: PlanningControlResult[]): b
   return results.some((result) => result.level === 'blocking');
 }
 
-export interface PlanningConflict {
-  event: PlanningCrewEvent;
-  date: string;
-}
-
-export function getPlanningConflicts(
-  overview: PlanningOverview,
-  candidate: Pick<PlanningCrewEvent, 'id' | 'person' | 'personId' | 'vessel'> & { startsOn: string; endsOn: string },
-): PlanningConflict[] {
-  const personKey = normalizePlanningText(candidate.person);
-  return getAllPlanningCrewEvents(overview)
-    .filter((event) => {
-      const samePerson = candidate.personId !== null && event.personId !== null
-        ? candidate.personId === event.personId
-        : normalizePlanningText(event.person) === personKey;
-      return event.id !== candidate.id && samePerson && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
-        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn);
-    })
-    .map((event) => ({ event, date: event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn }));
-}
-
-export function getPlanningConflictEventIds(overview: PlanningOverview): Set<string> {
-  const events = getAllPlanningCrewEvents(overview);
-  const conflicted = new Set<string>();
-  events.forEach((event, index) => {
-    events.slice(index + 1).forEach((candidate) => {
-      const samePerson = event.personId !== null && candidate.personId !== null
-        ? event.personId === candidate.personId
-        : normalizePlanningText(event.person) === normalizePlanningText(candidate.person);
-      if (
-        samePerson
-        && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
-        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)
-      ) {
-        conflicted.add(event.id);
-        conflicted.add(candidate.id);
-      }
-    });
-  });
-  return conflicted;
-}
-
 export interface PlanningExportRow {
   date: string;
   person: string;
@@ -827,11 +756,6 @@ export function buildPlanningExportRows(
       }
     });
   return rows.sort((left, right) => left.date.localeCompare(right.date) || left.vessel.localeCompare(right.vessel, 'fr'));
-}
-
-export function formatPlanningDate(value: string): string {
-  if (!value) return 'Non renseignée';
-  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(parseIsoDate(value));
 }
 
 function durationLabel(days: number): string {

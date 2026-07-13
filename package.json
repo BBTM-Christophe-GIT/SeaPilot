@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.6.1",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "lint": "eslint src vite.config.ts",
     "export:sharepoint:list": "node --experimental-strip-types scripts/export-sharepoint-list.ts",
     "export:sharepoint:rh": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --output .data/sharepoint-rh-personnel-bbtm.json",
     "export:sharepoint:rh-documents": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-documents.json",
@@ -33,6 +34,7 @@
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -40,8 +42,12 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
   }

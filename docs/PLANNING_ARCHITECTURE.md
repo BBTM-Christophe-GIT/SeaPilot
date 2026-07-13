@@ -11,6 +11,12 @@ Le socle existant est fonctionnel pour consulter et corriger le planning : vues 
 
 Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle des affectations, ses niveaux configurables et le centre de conflits. Le lot de publication qui suit ajoute un workflow administrateur Soumettre → Valider → Publier, un verrou PostgreSQL couvrant les quatre sources d’événements existantes et un instantané immuable à chaque version publiée. Les règles utilisent les données Planning et RH existantes ; aucune donnée fictive et aucune table d’événements concurrente n’ont été créées.
 
+### Phase P0.1 — stabilisation des fondations
+
+La phase P0.1 conserve les tables et les parcours métier existants. Elle isole les dates civiles, la validation, les permissions, les erreurs Supabase, le chargement React et la détection des chevauchements dans des modules dédiés. Toutes les sources nécessaires sont désormais chargées en parallèle sans masquer une erreur derrière un tableau vide. Un rafraîchissement conserve les données déjà affichées et présente l’erreur de la source concernée.
+
+Le contrôle distant réalisé avant migration comptait 11 affectations, 171 journées, 70 périodes et 18 projets. Aucune relation navire obligatoire n’était absente. Une journée éditée dans SeaPilot avait toutefois `disembark_on` au 6 juillet 2026 et `work_date` au 7 juillet 2026 ; la migration P0.1 la normalise de manière auditée avant d’ajouter une contrainte.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -48,14 +54,15 @@ Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle de
 | --- | --- | --- | --- |
 | Les contrôles étaient dispersés dans `PlanningPage.tsx` et limités à la double affectation | Écritures incohérentes et règles impossibles à faire évoluer | Moteur pur `evaluatePlanningAssignment` et règles Supabase configurables | Faible pour le lot livré |
 | La fin pouvait précéder le début avant d’atteindre la contrainte SQL lors d’une création | Message générique et mauvaise expérience | Validation TypeScript explicite et Blocage avant écriture | Corrigé |
-| Les données RH pouvaient être ignorées si leur requête échouait | Contrôles documentaires faussement rassurants | Le chargement RH est désormais requis pour rendre le Planning | Corrigé |
+| Une erreur sur projets, certificats ou règles était remplacée silencieusement par un tableau vide | Planning incomplet présenté comme fiable | Toutes les sources sont requises, contextualisées et journalisées techniquement | Corrigé |
 | `PlanningPage.tsx` reste volumineux | Maintenabilité et tests d’interaction plus difficiles | Premier composant extrait : `PlanningControlSummary` | P0 refactorisation progressive |
 | Les écritures et `planning_change_log` n’étaient pas dans une même transaction | Journal incomplet si l’écriture d’audit échouait | Triggers `after` transactionnels sur affectations, journées, périodes et projets ; les navires conservent leur journal applicatif | Faible, périmètre navires uniquement |
 | Suppressions physiques des événements | Perte de traçabilité métier hors période publiée | Les périodes soumises/publiées sont protégées et les suppressions autorisées sont instantanément auditées ; archivage logique encore absent | P0 |
 | Chargement intégral des événements | Temps de chargement et mémoire sur plusieurs milliers d’éléments | Événements mémorisés côté React pour les contrôles ; requêtes par période encore nécessaires | P0 performance |
 | Détection historique de conflits en O(n²) | Dégradation avec plusieurs milliers d’événements | Le nouveau centre groupe d’abord par marin ; l’ancien marquage visuel reste à indexer | P0 performance |
-| Aucun script ESLint dans `package.json` | Pas de contrôle de style automatisé | TypeScript strict couvre les erreurs de type ; ajouter ESLint sans perturber les conventions existantes | P0 outillage |
-| Aucune gestion des heures/fuseaux par événement | Limites pour opérations 24 h/24 et changements de port | Dates civiles ISO `YYYY-MM-DD` traitées en UTC ; modèle horaire à ajouter avec migration compatible | P1 |
+| Aucun script ESLint dans `package.json` | Pas de contrôle de style automatisé | ESLint couvre désormais TypeScript sur `src` et les règles React Hooks sur le module Planning | Corrigé en P0.1 |
+| Une journée pouvait conserver un débarquement antérieur après déplacement | Donnée historique incohérente | Édition d’une journée synchronisée, donnée existante réparée et contrainte SQL ajoutée | Corrigé en P0.1 |
+| Aucune gestion des heures/fuseaux par événement | Limites pour les heures de prise/fin de service et changements de port | Les passages de minuit sont représentés par deux dates civiles inclusives ; la précision horaire reste hors du modèle actuel | P1 |
 
 ## 4. Architecture applicative
 
@@ -74,17 +81,22 @@ Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle de
 - `PlanningSideContent` affiche conflits, échéances, marins non affectés et facturation.
 - `PlanningControlSummary.tsx` présente les contrôles sans dépendre uniquement de la couleur : libellé du niveau, titre et explication.
 - `PlanningPublicationPanel.tsx` présente le statut, la version, le périmètre, le verrou et les actions de workflow sans disperser cette logique dans la timeline.
+- `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors doivent extraire la toolbar, la timeline, les dialogues et le panneau latéral par étapes, sans reconstruire le module.
 
 ### Modèle métier
 
-`planningModel.ts` contient les fonctions pures :
+La logique pure est répartie sans modifier le modèle métier :
 
-- calcul UTC des jours et des plages ;
+- `planningDates.ts` valide et calcule les dates civiles en UTC ;
+- `planningValidation.ts` protège les champs obligatoires, identifiants et plages avant Supabase ;
+- `planningPermissions.ts` traduit les rôles existants en capacités de lecture, écriture, export et publication ;
+- `planningOverlap.ts` isole les chevauchements inter-navires et groupe les comparaisons par marin ;
+- `planningErrors.ts` convertit les codes Supabase en messages utilisateur et journalise opération/code/message sans données métier ;
+- `planningModel.ts` conserve les fonctions métier suivantes :
 - fusion/déduplication des trois sources équipage ;
 - groupement navire/bordée/marin ;
-- détection des chevauchements ;
 - alertes documents et certificats ;
 - export journalier ;
 - contrôles d’affectation et centre de conflits.
@@ -95,7 +107,7 @@ Les règles actives peuvent remplacer le niveau par défaut. Un avertissement n�
 
 ### Accès aux données
 
-`planningQueries.ts` centralise les sélections et mutations Supabase. `fetchPlanningOverview` lance en parallèle les requêtes indépendantes afin d’éviter les cascades de chargement. `transitionPlanningPublication` est l’unique point d’entrée client du workflow de publication.
+`planningQueries.ts` centralise les sélections, mutations et erreurs Supabase. `fetchPlanningOverview` lance en parallèle les requêtes indépendantes afin d’éviter les cascades de chargement. `transitionPlanningPublication` reste l’unique point d’entrée client du workflow de publication.
 
 Sources fusionnées :
 
@@ -108,7 +120,7 @@ Sources fusionnées :
 - `planning_rules` : niveaux de contrôle configurables.
 - `planning_publications` : état, périmètre, verrou et numéro de version courant.
 
-Les erreurs sur projets, certificats flotte et règles peuvent encore utiliser les comportements de repli historiques. Les documents RH sont requis : si cette donnée sensible au contrôle ne charge pas, le Planning n’autorise pas silencieusement une affectation.
+Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
 ## 5. Données et relations
 
@@ -128,6 +140,8 @@ planning_publications ─┬─< planning_versions
 ```
 
 Les historiques SharePoint conservent leurs identifiants et libellés source. Les relations `person_id`/`vessel_id` sont utilisées lorsqu’elles sont résolues ; le moteur conserve le rapprochement par nom pour les lignes historiques non liées.
+
+L’audit P0.1 confirme que toutes les références navire obligatoires sont résolues. Cinq journées et deux périodes historiques n’ont pas de `person_id` ; elles restent lisibles grâce à leur identité source et ne sont pas supprimées ni inventées. Les tables Planning ne portent actuellement aucun `company_id`, `tenant_id` ou `organization_id` : le déploiement audité est donc mono-entreprise. Une ouverture multi-entreprise exigera une migration dédiée, des clés étrangères de rattachement et une isolation RLS explicite avant toute mutualisation.
 
 ### Migrations des lots
 
@@ -152,6 +166,16 @@ Les historiques SharePoint conservent leurs identifiants et libellés source. Le
 - capture un instantané JSON des quatre sources lors de chaque publication ;
 - remplace l’audit applicatif non transactionnel des événements par des triggers PostgreSQL ;
 - révoque l’exécution publique/anonyme des fonctions internes et n’expose que la transition authentifiée.
+
+`202607130004_planning_p01_foundations.sql` :
+
+- corrige de manière auditée les journées dont `disembark_on` précède `work_date`, sans supprimer de ligne ;
+- ajoute puis valide la contrainte `planning_days_disembark_after_work_date` ;
+- indexe les clés étrangères d’audit, de règles, de publication et de versions qui ne l’étaient pas ;
+- réécrit, à périmètre fonctionnel constant, les politiques RLS Planning les plus sollicitées afin d’évaluer les fonctions de rôle et d’identité une seule fois par requête ;
+- peut être rejouée sans danger grâce aux gardes sur la contrainte, aux index `if not exists` et aux recréations déterministes des politiques.
+
+Retour arrière : supprimer la contrainte, les dix index nommés et recréer les politiques depuis la migration précédente. La correction de donnée n’est volontairement pas inversée automatiquement : l’ancienne valeur reste disponible dans `planning_change_log` et sa restauration doit être une décision métier explicite.
 
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
@@ -197,14 +221,23 @@ Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 - Les états de publication sont lisibles par les rôles Planning ; les instantanés/version et les transitions restent réservés à `admin`.
 - Les fonctions de verrou et d’audit ne sont pas exécutables directement par les rôles API.
 - Aucun secret ni identifiant de connexion n’est ajouté au dépôt.
+- Les appels de rôle et d’identité dans les politiques P0.1 utilisent une sous-requête stable afin d’éviter leur réévaluation pour chaque ligne ; le périmètre d’autorisation reste inchangé.
+- L’absence de colonne d’entreprise dans les tables Planning rend ces politiques adaptées uniquement au projet Supabase mono-entreprise actuel.
 
 À terme, les droits de création, validation, publication, dérogation et export devront être séparés dans une matrice d’actions, puis appliqués dans des RPC et politiques RLS dédiées.
 
 ## 9. Dates et fuseaux horaires
 
-Le modèle actuel stocke les événements Planning en dates civiles PostgreSQL (`date`) et les manipule en `YYYY-MM-DD`. Les calculs utilisent `Date.UTC`, les getters UTC et un formatage `fr-FR` avec `timeZone: 'UTC'`, ce qui évite le glissement d’un jour lié au navigateur.
+Le modèle stocke les événements Planning sous forme de dates civiles PostgreSQL (`date`) et les échange au format strict `YYYY-MM-DD`. Une date civile ne représente pas un instant : aucune conversion de fuseau n’est appliquée à l’enregistrement.
 
-Cette architecture gère les périodes multi-jours et les années bissextiles, mais pas encore les heures de prise/fin de service, les événements passant minuit ni plusieurs fuseaux portuaires. Une future migration devra conserver les dates existantes et ajouter des timestamps avec fuseau uniquement aux événements qui exigent une précision horaire.
+- Les calculs calendaires utilisent minuit UTC, `Date.UTC` et les getters UTC pour éviter les glissements causés par le navigateur ou les changements d’heure.
+- L’ancre « aujourd’hui » est calculée depuis les composantes locales de l’utilisateur, puis convertie en date civile ; l’affichage reste en calendrier local sans transformer la valeur enregistrée.
+- Les bornes sont inclusives. Un événement commençant avant minuit et finissant après minuit est représenté par deux dates civiles consécutives ; il occupe donc les deux journées.
+- Un événement multi-jours conserve une date de début et une date de fin inclusives, avec `end_date >= start_date` obligatoire.
+- Les changements d’heure d’été/hiver n’ajoutent ni ne retirent une journée, car les durées calendaires ne sont jamais calculées en millisecondes locales.
+- Une valeur absente ou invalide est refusée avant écriture ; les rares valeurs historiques absentes reçoivent un libellé sûr à l’affichage.
+
+Le modèle ne stocke pas encore l’heure exacte de prise/fin de service ni un fuseau portuaire. Ajouter cette précision relèvera d’un besoin métier distinct et devra préserver les dates civiles existantes.
 
 ## 10. Tests et validation
 
@@ -212,9 +245,14 @@ Outils existants conservés : TypeScript strict, Vitest, Testing Library et buil
 
 Tests Planning couverts :
 
-- plages semaine/mois/année et UTC ;
+- validation stricte `YYYY-MM-DD`, plages semaine/mois/année et calculs UTC ;
+- création d’un événement valide et refus d’une plage incohérente ;
+- passage de minuit, événement multi-jours et changements d’heure ;
 - fusion et hiérarchie des sources ;
-- filtres et permissions lecture/écriture ;
+- chargement explicite des navires et des marins, avec erreur de source contextualisée ;
+- filtres et permissions de lecture/modification ;
+- absence de chargement Supabase sans permission de lecture ;
+- conservation du dernier Planning valide si un rafraîchissement échoue ;
 - création classique et rapide ;
 - redimensionnement ;
 - double affectation et marquage visuel ;
@@ -236,12 +274,11 @@ Commandes de validation :
 ```powershell
 npm ci
 npx tsc -b --pretty false
+npm run lint
 npm test -- --reporter=dot
 npm run build
 supabase db lint --linked
 ```
-
-Le dépôt ne fournit pas encore de script `lint` JavaScript/TypeScript dédié ; cette lacune est suivie en P0 outillage.
 
 ## 11. Feuille de route recommandée
 
@@ -252,7 +289,7 @@ Le dépôt ne fournit pas encore de script `lint` JavaScript/TypeScript dédié 
 3. Charger les événements par période et indexer la détection visuelle des conflits.
 4. Ajouter l’archivage logique des événements hors périodes publiées.
 5. Extraire progressivement toolbar, timeline, dialogues et panneau latéral.
-6. Ajouter ESLint et un test de parcours navigateur authentifié stable.
+6. Ajouter un test de parcours navigateur authentifié stable.
 
 ### P1
 

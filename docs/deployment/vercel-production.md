@@ -20,6 +20,12 @@ The Planning client requires `planning_publications` during its initial parallel
 publication/version tables, the authenticated transition RPC, server-side period locks and transactional audit
 triggers. Deploying the client first would make the Planning route fail to load until the migration is applied.
 
+Apply `supabase/migrations/202607130004_planning_p01_foundations.sql` before deploying version `1.6.1`.
+The migration repairs the existing inconsistent Planning day with a transactional audit entry, validates the
+day/date invariant, adds the missing foreign-key indexes, and optimizes Planning RLS evaluation without changing
+its role scopes. It is data-preserving and idempotent; its rollback procedure is documented in the migration and
+in `docs/PLANNING_ARCHITECTURE.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -58,7 +64,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The 26 local migrations, through `202607130003_planning_publication_workflow.sql`, have been pushed to Supabase Cloud.
+- The 27 local migrations, through `202607130004_planning_p01_foundations.sql`, have been pushed to Supabase Cloud.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

@@ -6,8 +6,6 @@ import {
   buildPlanningHrAlerts,
   buildPlanningTimeline,
   buildPlanningExportRows,
-  getPlanningConflicts,
-  getPlanningConflictEventIds,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   getAllPlanningCrewEvents,
@@ -19,6 +17,7 @@ import {
   projectStatusTone,
   timelineRange,
 } from './planningModel';
+import { getPlanningConflicts, getPlanningConflictEventIds } from './planningOverlap';
 import type { PlanningOverview } from './planningQueries';
 
 const overview: PlanningOverview = {
