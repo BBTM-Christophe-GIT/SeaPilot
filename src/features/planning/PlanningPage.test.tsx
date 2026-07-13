@@ -216,6 +216,51 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
   });
 
+  it('adds a one-day sea assignment by clicking an empty sailor cell', async () => {
+    const user = userEvent.setup();
+    const createdAssignment = { ...assignmentRow, id: 102, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'En Mer' };
+    const { client, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow], createdAssignment });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Ajouter En Mer pour Paul DURAND le 20/07/2026' }));
+
+    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
+      crew_person_id: 11,
+      vessel_id: 1,
+      starts_on: '2026-07-20',
+      ends_on: '2026-07-20',
+      status_label: 'En Mer',
+      watch_group: 'Bordée 1',
+    })));
+  });
+
+  it('defaults sedentary collaborators to the yellow shore status', async () => {
+    const user = userEvent.setup();
+    const sedentaryPerson = { ...crewRow, function_label: 'Directeur QHSE / Chef de Projet' };
+    const sedentaryPeriod = { ...planningPeriodRow, function_label: 'Directeur QHSE / Chef de Projet' };
+    const createdAssignment = { ...assignmentRow, id: 103, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'A Terre' };
+    const { client, insertAssignment } = createClient({ people: [captainRow, sedentaryPerson], assignments: [], periods: [sedentaryPeriod], createdAssignment });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Ajouter À Terre pour Paul DURAND le 20/07/2026' }));
+    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({ status_label: 'A Terre' })));
+  });
+
+  it('renders cross-vessel conflicts in red and exposes watch groups as a select', async () => {
+    const user = userEvent.setup();
+    const conflictPeriod = { ...planningPeriodRow, id: 301, vessel_id: 2, vessel_name: 'SUROIT', starts_on: '2026-07-10', ends_on: '2026-07-12' };
+    const { client } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [], periods: [planningPeriodRow, conflictPeriod] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(container.querySelectorAll('.planning-crew-bar.has-conflict')).toHaveLength(2);
+    await user.click(screen.getAllByRole('button', { name: /Paul DURAND, Conflit/ })[0]);
+    expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
+    expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
+  });
+
   it('keeps marins in read-only mode', async () => {
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['marin']} />);
@@ -241,5 +286,21 @@ describe('PlanningPage cockpit', () => {
     expect(cells.length).toBeGreaterThan(0);
     expect(cells.every((cell) => Boolean(cell.style.gridColumn))).toBe(true);
     expect(cells.every((cell) => cell.style.gridRow === '1')).toBe(true);
+  });
+
+  it('previews the colored period continuously while an administrator resizes it', async () => {
+    const { client } = createClient({ assignments: [], periods: [planningPeriodRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const bar = container.querySelector<HTMLElement>('.planning-crew-bar')!;
+    const endHandle = bar.querySelector<HTMLElement>('.planning-resize-handle.is-end')!;
+    const initialPlacement = bar.style.gridColumn;
+
+    fireEvent.pointerDown(endHandle, { clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 168 });
+
+    await waitFor(() => expect(bar).toHaveClass('is-resize-preview'));
+    expect(bar.style.gridColumn).not.toBe(initialPlacement);
+    fireEvent.pointerCancel(window);
   });
 });

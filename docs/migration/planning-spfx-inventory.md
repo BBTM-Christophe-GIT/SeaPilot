@@ -1,6 +1,6 @@
 # SeaPilot — inventaire et règles du Planning SPFx
 
-Dernière vérification : 12 juillet 2026.
+Dernière vérification : 13 juillet 2026.
 
 Cette fiche est la mémoire de migration du module Planning. Elle consolide l’inventaire SharePoint du Dashboard SPFx, les liens Power Query/IQY connus, les tables Supabase SeaPilot et les règles métier effectivement utilisées par l’ancien module.
 
@@ -85,8 +85,11 @@ L’import est rejouable sans doublon grâce au couple `sharepoint_list_id,share
 - Lecture : Admin, Direction, Armement, Capitaine et Marin, selon les politiques RLS existantes.
 - Modification : exclusivement Admin, à la fois dans l’interface et dans les politiques RLS Supabase.
 - Une affectation peut être créée, déplacée vers un autre navire, redimensionnée par ses poignées, supprimée ou enrichie d’un statut, d’une bordée et d’une annotation.
+- Sur une ligne collaborateur, un clic sur une journée vide crée directement une affectation d’un jour : `En Mer` (vert) pour un marin et `À Terre` (jaune) pour les fonctions sédentaires. Les fonctions sédentaires de référence sont Directeur QHSE / Chef de Projet, Directrice Administrative et Financière, Fleet Technical Manager, Président et Yard Manager - Le Havre.
+- Pendant un redimensionnement, la barre colorée couvre en direct toutes les journées sélectionnées. Pendant un déplacement, une copie visuelle de la barre suit le curseur et la cellule de destination est surlignée.
+- `Bordée / groupe` est une liste contrôlée issue des groupes réellement présents, complétée par `Armement`, `Bordée 1`, `Bordée 2` et `Affectation`.
 - Les périodes importées restent identifiables par leur source mais peuvent être corrigées par un administrateur ; chaque écriture est tracée dans `planning_change_log`.
-- Avant une création, un déplacement ou un redimensionnement, SeaPilot bloque toute période où le même marin serait présent sur deux navires différents le même jour.
+- Si le même collaborateur est présent sur deux navires différents le même jour, SeaPilot conserve l’affectation afin qu’elle puisse être corrigée mais colore en rouge les deux périodes en conflit et affiche un compteur d’alerte.
 - Les marins non affectés peuvent être glissés sur un jour d’un navire pour préremplir une nouvelle affectation.
 - Les projets peuvent être déplacés ou modifiés ; les navires peuvent être ajoutés ou archivés.
 - L’export CSV par marin détaille chaque journée de la période choisie : jour travaillé, statut, fonction, navire, bordée, annotation et source.

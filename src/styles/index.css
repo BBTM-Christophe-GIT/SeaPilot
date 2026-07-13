@@ -2851,6 +2851,51 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.planning-board-guide,
+.planning-board-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.planning-board-guide > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.planning-board-guide i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: #15ab73;
+}
+
+.planning-board-guide i.is-shore {
+  background: #f4c847;
+}
+
+.planning-board-guide i.is-conflict {
+  background: #e43e4d;
+}
+
+.planning-board-guide small {
+  border-left: 1px solid #dce4ed;
+  padding-left: 10px;
+  color: #2c6bea;
+  font-size: 0.62rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.planning-board-stats .is-conflict {
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #b42332;
+  background: #fff0f1;
+}
+
 .planning-calendar-scroll {
   --planning-label-width: 218px;
   max-height: calc(100vh - 278px);
@@ -3043,8 +3088,15 @@ button:disabled {
 }
 
 .planning-day-cell {
+  display: grid;
   min-width: 0;
+  min-height: 100%;
+  place-items: center;
+  border-width: 0 1px 0 0;
+  border-style: solid;
   border-right: 1px solid #edf1f5;
+  padding: 0;
+  color: #2c6bea;
   background: #ffffff;
 }
 
@@ -3060,6 +3112,42 @@ button:disabled {
   outline: 2px solid #2c6bea;
   outline-offset: -2px;
   background: #eaf2ff;
+}
+
+.planning-day-cell.is-drag-over {
+  z-index: 3;
+  outline: 2px solid #2c6bea;
+  outline-offset: -2px;
+  background: #dce9ff;
+}
+
+.planning-day-cell.is-quick-create {
+  cursor: cell;
+}
+
+.planning-day-cell.is-quick-create svg {
+  opacity: 0;
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+
+.planning-day-cell.is-quick-create:hover svg,
+.planning-day-cell.is-quick-create:focus-visible svg,
+.planning-day-cell.is-saving svg {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.planning-day-cell.is-quick-create:hover,
+.planning-day-cell.is-quick-create:focus-visible {
+  z-index: 2;
+  outline: 2px solid rgba(44, 107, 234, 0.62);
+  outline-offset: -2px;
+  background: #eef5ff;
+}
+
+.planning-day-cell.is-saving {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .planning-project-bar,
@@ -3081,6 +3169,27 @@ button:disabled {
 
 .planning-crew-bar.is-editable:active {
   cursor: grabbing;
+}
+
+.planning-crew-bar.is-dragging {
+  opacity: 0.38;
+}
+
+.planning-drag-ghost {
+  position: fixed !important;
+  z-index: 99999;
+  top: -1000px;
+  left: -1000px;
+  opacity: 0.96;
+  pointer-events: none;
+  transform: rotate(-1deg);
+  box-shadow: 0 12px 28px rgba(19, 42, 75, 0.28) !important;
+}
+
+.planning-drag-grip {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  opacity: 0.72;
 }
 
 .planning-resize-handle {
@@ -3193,6 +3302,18 @@ button:disabled {
 
 .planning-crew-bar.is-training {
   background: #276be8;
+}
+
+.planning-crew-bar.has-conflict {
+  color: #ffffff;
+  background: #e43e4d;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(228, 62, 77, 0.38), 0 4px 11px rgba(180, 35, 50, 0.24);
+}
+
+.planning-crew-bar.is-resize-preview {
+  z-index: 8;
+  opacity: 0.9;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92), 0 0 0 4px rgba(44, 107, 234, 0.42), 0 8px 18px rgba(35, 90, 200, 0.2);
 }
 
 .planning-calendar-empty {
