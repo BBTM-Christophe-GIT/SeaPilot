@@ -27,7 +27,11 @@ const PLANNING_HR_DOCUMENT_SELECT =
 const PLANNING_RULE_SELECT =
   'id, code, name, description, scope, control_level, active, effective_from, configuration, source_reference, version';
 const PLANNING_PUBLICATION_SELECT =
-  'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, validated_at, published_at, locked_at, updated_at';
+  'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, submitted_by, submitted_by_name, validated_at, validated_by, validated_by_name, published_at, published_by, published_by_name, locked_at, locked_by, locked_by_name, updated_at, updated_by, updated_by_name';
+const PLANNING_VERSION_SELECT =
+  'id, publication_id, version_number, comment, created_at, created_by, created_by_name';
+const PLANNING_HISTORY_SELECT =
+  'id, entity_kind, entity_id, action, payload, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
 const PLANNING_HANDOVER_SELECT =
   'id, vessel_id, handover_at, location, handover_duration_minutes, responsible_person_id, comments, status, created_by, updated_by, created_at, updated_at';
 const PLANNING_HANDOVER_POSITION_SELECT =
@@ -193,10 +197,45 @@ interface PlanningPublicationRow {
   current_version: number;
   comment: string | null;
   submitted_at: string | null;
+  submitted_by: string | null;
+  submitted_by_name: string | null;
   validated_at: string | null;
+  validated_by: string | null;
+  validated_by_name: string | null;
   published_at: string | null;
+  published_by: string | null;
+  published_by_name: string | null;
   locked_at: string | null;
+  locked_by: string | null;
+  locked_by_name: string | null;
   updated_at: string;
+  updated_by: string | null;
+  updated_by_name: string | null;
+}
+
+interface PlanningVersionRow {
+  id: number;
+  publication_id: number;
+  version_number: number;
+  comment: string | null;
+  created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
+}
+
+interface PlanningHistoryRow {
+  id: number;
+  entity_kind: string;
+  entity_id: number;
+  action: string;
+  payload: Record<string, unknown> | null;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  changed_at: string;
+  vessel_id: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  summary: string | null;
 }
 
 interface PlanningHandoverRow {
@@ -414,10 +453,45 @@ export interface PlanningPublicationRecord {
   currentVersion: number;
   comment: string;
   submittedAt: string;
+  submittedBy: string;
+  submittedByName: string;
   validatedAt: string;
+  validatedBy: string;
+  validatedByName: string;
   publishedAt: string;
+  publishedBy: string;
+  publishedByName: string;
   lockedAt: string;
+  lockedBy: string;
+  lockedByName: string;
   updatedAt: string;
+  updatedBy: string;
+  updatedByName: string;
+}
+
+export interface PlanningVersionRecord {
+  id: number;
+  publicationId: number;
+  versionNumber: number;
+  comment: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+}
+
+export interface PlanningHistoryRecord {
+  id: number;
+  entityKind: string;
+  entityId: number;
+  action: string;
+  payload: Record<string, unknown>;
+  changedBy: string;
+  changedByName: string;
+  changedAt: string;
+  vesselId: number | null;
+  startsOn: string;
+  endsOn: string;
+  summary: string;
 }
 
 export type PlanningHandoverStatus = 'draft' | 'planned' | 'confirmed' | 'completed' | 'cancelled';
@@ -489,6 +563,8 @@ export interface PlanningOverview {
   hrDocuments: PlanningHrDocumentRecord[];
   rules: PlanningRuleRecord[];
   publications: PlanningPublicationRecord[];
+  versions: PlanningVersionRecord[];
+  history: PlanningHistoryRecord[];
   handovers: PlanningHandoverRecord[];
   derogations: PlanningDerogationRecord[];
   derogationHistory: PlanningDerogationHistoryRecord[];
@@ -841,12 +917,51 @@ export function mapPlanningPublicationRows(rows: PlanningPublicationRow[]): Plan
       currentVersion: row.current_version,
       comment: textOrEmpty(row.comment),
       submittedAt: textOrEmpty(row.submitted_at),
+      submittedBy: textOrEmpty(row.submitted_by),
+      submittedByName: textOrEmpty(row.submitted_by_name),
       validatedAt: textOrEmpty(row.validated_at),
+      validatedBy: textOrEmpty(row.validated_by),
+      validatedByName: textOrEmpty(row.validated_by_name),
       publishedAt: textOrEmpty(row.published_at),
+      publishedBy: textOrEmpty(row.published_by),
+      publishedByName: textOrEmpty(row.published_by_name),
       lockedAt: textOrEmpty(row.locked_at),
+      lockedBy: textOrEmpty(row.locked_by),
+      lockedByName: textOrEmpty(row.locked_by_name),
       updatedAt: row.updated_at,
+      updatedBy: textOrEmpty(row.updated_by),
+      updatedByName: textOrEmpty(row.updated_by_name),
     }];
   });
+}
+
+export function mapPlanningVersionRows(rows: PlanningVersionRow[]): PlanningVersionRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    publicationId: row.publication_id,
+    versionNumber: row.version_number,
+    comment: textOrEmpty(row.comment),
+    createdAt: row.created_at,
+    createdBy: textOrEmpty(row.created_by),
+    createdByName: textOrEmpty(row.created_by_name),
+  }));
+}
+
+export function mapPlanningHistoryRows(rows: PlanningHistoryRow[]): PlanningHistoryRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    entityKind: row.entity_kind,
+    entityId: row.entity_id,
+    action: row.action,
+    payload: row.payload || {},
+    changedBy: textOrEmpty(row.changed_by),
+    changedByName: textOrEmpty(row.changed_by_name),
+    changedAt: row.changed_at,
+    vesselId: row.vessel_id,
+    startsOn: textOrEmpty(row.starts_on),
+    endsOn: textOrEmpty(row.ends_on),
+    summary: textOrEmpty(row.summary),
+  }));
 }
 
 export function mapPlanningHandoverRows(
@@ -1024,6 +1139,25 @@ export async function fetchPlanningPublications(client: SupabaseClient): Promise
   return mapPlanningPublicationRows((data || []) as unknown as PlanningPublicationRow[]);
 }
 
+export async function fetchPlanningVersions(client: SupabaseClient): Promise<PlanningVersionRecord[]> {
+  const { data, error } = await client
+    .from('planning_versions')
+    .select(PLANNING_VERSION_SELECT)
+    .order('created_at', { ascending: false });
+  if (error) throwPlanningDataError('load-versions', 'Impossible de charger les versions publiées.', error);
+  return mapPlanningVersionRows((data || []) as unknown as PlanningVersionRow[]);
+}
+
+export async function fetchPlanningHistory(client: SupabaseClient): Promise<PlanningHistoryRecord[]> {
+  const { data, error } = await client
+    .from('planning_change_log')
+    .select(PLANNING_HISTORY_SELECT)
+    .order('changed_at', { ascending: false })
+    .limit(250);
+  if (error) throwPlanningDataError('load-history', 'Impossible de charger l’historique du Planning.', error);
+  return mapPlanningHistoryRows((data || []) as unknown as PlanningHistoryRow[]);
+}
+
 export async function fetchPlanningHandovers(client: SupabaseClient): Promise<PlanningHandoverRecord[]> {
   const [handoverResult, positionResult] = await Promise.all([
     client.from('planning_handovers').select(PLANNING_HANDOVER_SELECT).order('handover_at', { ascending: false }),
@@ -1058,7 +1192,7 @@ export async function fetchPlanningDerogations(client: SupabaseClient): Promise<
 }
 
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications, handovers, derogationData] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications, versions, history, handovers, derogationData] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
@@ -1069,6 +1203,8 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     fetchPlanningHrDocuments(client),
     fetchPlanningRules(client),
     fetchPlanningPublications(client),
+    fetchPlanningVersions(client),
+    fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
     fetchPlanningDerogations(client),
   ]);
@@ -1084,6 +1220,8 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     hrDocuments,
     rules,
     publications,
+    versions,
+    history,
     handovers,
     derogations: derogationData.derogations,
     derogationHistory: derogationData.history,
@@ -1183,6 +1321,7 @@ async function writeVesselChangeLog(
     const { error } = await client.from('planning_change_log').insert({
       entity_kind: 'vessel',
       entity_id: vesselId,
+      vessel_id: vesselId,
       action,
       payload,
     });

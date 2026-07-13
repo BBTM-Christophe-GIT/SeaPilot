@@ -1,6 +1,7 @@
-import { CheckCircle2, LockKeyhole, Send, ShieldCheck, UnlockKeyhole } from 'lucide-react';
+import { Archive, CheckCircle2, LockKeyhole, Send, ShieldCheck, UnlockKeyhole } from 'lucide-react';
 import { useState } from 'react';
 import { formatPlanningDate, type PlanningDateRange } from './planningModel';
+import { formatPlanningDateTime } from './planningDates';
 import {
   isPlanningPublicationLocked,
   planningPublicationActions,
@@ -21,6 +22,7 @@ interface PlanningPublicationPanelProps {
   range: PlanningDateRange;
   scopeLabel: string;
   canManage: boolean;
+  allowedActions: PlanningPublicationAction[];
   isSaving: boolean;
   onAction: (action: PlanningPublicationAction, comment: string) => Promise<boolean>;
 }
@@ -29,6 +31,7 @@ function PublicationActionIcon({ action }: { action: PlanningPublicationAction }
   if (action === 'submit') return <Send aria-hidden="true" size={16} />;
   if (action === 'validate') return <CheckCircle2 aria-hidden="true" size={16} />;
   if (action === 'publish') return <ShieldCheck aria-hidden="true" size={16} />;
+  if (action === 'archive') return <Archive aria-hidden="true" size={16} />;
   return <UnlockKeyhole aria-hidden="true" size={16} />;
 }
 
@@ -37,19 +40,20 @@ export function PlanningPublicationPanel({
   range,
   scopeLabel,
   canManage,
+  allowedActions,
   isSaving,
   onAction,
 }: PlanningPublicationPanelProps) {
   const [comment, setComment] = useState('');
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
-  const actions = planningPublicationActions(publication);
+  const actions = planningPublicationActions(publication, allowedActions);
   const locked = isPlanningPublicationLocked(publication);
   const startsOn = publication?.startsOn || range.start;
   const endsOn = publication?.endsOn || range.end;
 
   async function runAction(action: PlanningPublicationAction) {
-    if (action === 'reopen' && comment.trim().length < 10) {
-      setValidationMessage('Indiquez un motif d’au moins 10 caractères pour réouvrir la période.');
+    if ((action === 'reopen' || action === 'archive') && comment.trim().length < 10) {
+      setValidationMessage(`Indiquez un motif d’au moins 10 caractères pour ${action === 'archive' ? 'archiver' : 'réouvrir'} la période.`);
       return;
     }
     setValidationMessage(null);
@@ -74,6 +78,13 @@ export function PlanningPublicationPanel({
       <div className="planning-publication-scope">
         <span>{publication?.vesselId === null ? 'Flotte complète' : scopeLabel}</span>
         <strong>{formatPlanningDate(startsOn)} — {formatPlanningDate(endsOn)}</strong>
+        {publication?.publishedAt ? (
+          <small>{`Publié par ${publication.publishedByName || 'utilisateur autorisé'} · ${formatPlanningDateTime(publication.publishedAt)}`}</small>
+        ) : publication?.validatedAt ? (
+          <small>{`Validé par ${publication.validatedByName || 'utilisateur autorisé'} · ${formatPlanningDateTime(publication.validatedAt)}`}</small>
+        ) : publication?.submittedAt ? (
+          <small>{`Soumis par ${publication.submittedByName || 'utilisateur autorisé'} · ${formatPlanningDateTime(publication.submittedAt)}`}</small>
+        ) : null}
         {publication?.comment ? <small title={publication.comment}>{publication.comment}</small> : null}
       </div>
 
@@ -84,14 +95,14 @@ export function PlanningPublicationPanel({
             <input
               aria-label="Commentaire de publication"
               onChange={(event) => setComment(event.target.value)}
-              placeholder={actions.includes('reopen') ? 'Motif obligatoire pour réouvrir…' : 'Commentaire de workflow…'}
+              placeholder={actions.includes('reopen') || actions.includes('archive') ? 'Motif obligatoire pour réouvrir ou archiver…' : 'Commentaire de workflow…'}
               value={comment}
             />
           </label>
           <div>
             {actions.map((action) => (
               <button
-                className={action === 'reopen' ? 'is-secondary' : 'is-primary'}
+                className={action === 'reopen' || action === 'archive' ? 'is-secondary' : 'is-primary'}
                 disabled={isSaving}
                 key={action}
                 onClick={() => void runAction(action)}

@@ -37,6 +37,14 @@ handover RPC and the extended assignment overview. The migration backfills exist
 adds indexed foreign keys and RLS, and documents the rollback sequence. It was applied and linted before the client
 deployment.
 
+Apply `supabase/migrations/202607130007_planning_p04_governance_v1.sql` before deploying version `1.9.0`.
+The P0.4 client loads workflow authors, immutable version metadata and semantic history. The migration backfills all
+existing data into BBTM before enforcing company scope, adds action/vessel permissions, fixes the P0.3 publication
+audit constraint, and recreates publication/handover RPCs with company-aware authorization. The full procedure and
+rollback strategy are in `docs/deployment/planning-p0-v1.md`.
+Apply `supabase/migrations/202607130008_planning_p04_audit_backfill_cleanup.sql` immediately afterwards. It removes
+only anonymous audit entries whose snapshots differ solely by the technical `company_id` backfill.
+
 ## Current Production Target
 
 The active public URL is:
@@ -75,7 +83,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The 29 local migrations, through `202607130006_planning_p03_assignments_handovers.sql`, have been pushed to Supabase Cloud.
+- The Planning P0.4 target contains 31 local migrations through `202607130008_planning_p04_audit_backfill_cleanup.sql`; verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

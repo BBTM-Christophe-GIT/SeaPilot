@@ -7,7 +7,7 @@ Périmètre audité : route `/modules/planning`, composants React, accès Supaba
 
 Le Planning SeaPilot est un cockpit React/Vite connecté aux données réelles Supabase et aux historiques SharePoint/SMTR importés. Il fusionne les affectations natives SeaPilot, les journées SMTR et les périodes SMTR sans remplacer les données historiques. P0.2 sépare explicitement la vue Flotte, organisée par navire, de la vue Équipages, organisée par marin ou équipe.
 
-Le socle existant est fonctionnel pour consulter et corriger le planning : vues Jour/Semaine/Deux semaines/Mois/An, filtres métier, zoom, plein écran, création, modification, duplication, glisser-déposer, changement de navire, redimensionnement, formulaires rapide/complet, export CSV, alertes documentaires et audit des écritures. Les mutations simples mettent à jour l’instantané React sans recharger l’ensemble du Planning et restaurent la valeur précédente si Supabase refuse l’écriture. Les droits d’écriture restent volontairement réservés aux administrateurs dans l’interface et dans les politiques RLS actuelles.
+Le socle existant est fonctionnel pour consulter et corriger le planning : vues Jour/Semaine/Deux semaines/Mois/An, filtres métier, zoom, plein écran, création, modification, duplication, glisser-déposer, changement de navire, redimensionnement, formulaires rapide/complet, export CSV, alertes documentaires et audit des écritures. Les mutations simples mettent à jour l’instantané React sans recharger l’ensemble du Planning et restaurent la valeur précédente si Supabase refuse l’écriture. P0.4 sépare désormais préparation, validation, publication, administration et lecture dans une matrice d’actions appliquée à la fois par React, les RPC et les politiques RLS.
 
 Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle des affectations, ses niveaux configurables et le centre de conflits. Le lot de publication qui suit ajoute un workflow administrateur Soumettre → Valider → Publier, un verrou PostgreSQL couvrant les quatre sources d’événements existantes et un instantané immuable à chaque version publiée. Les règles utilisent les données Planning et RH existantes ; aucune donnée fictive et aucune table d’événements concurrente n’ont été créées.
 
@@ -31,6 +31,14 @@ Les contrôles distinguent Information, Avertissement et Blocage pour les double
 
 Une relève regroupe navire, instant, lieu, durée de passation, responsable, commentaires, statut et postes entrants/sortants. Sa sauvegarde complète passe par une RPC transactionnelle. La comparaison classe les postes inchangés, remplacés, vacants ou non conformes et expose les documents/qualifications manquants. Les dérogations sont limitées aux administrateurs, bornées dans le temps, rattachées à une règle et immuablement attribuées côté serveur ; chaque écriture est historisée.
 
+### Phase P0.4 — gouvernance et préparation V1
+
+P0.4 finalise le cycle `preparation` → `pending_validation` → `validated` → `published`, puis `modified_after_publication` après une réouverture motivée, et `archived` en fin de vie. La publication reste définie par période et par flotte ou navire. Chaque transition conserve son auteur, son horodatage, son commentaire et le numéro de version ; chaque publication crée un instantané JSON immuable incluant affectations, journées, périodes, opérations, relèves, bordées et dérogations.
+
+La migration `202607130007_planning_p04_governance_v1.sql` corrige aussi la contrainte P0.3 qui avait omis le type d’historique `publication`. Le journal transactionnel distingue désormais création, modification, déplacement/redimensionnement, affectation, désaffectation, validation, publication, annulation, dérogation, changement de statut, archivage et réouverture.
+
+L’isolation entreprise est matérialisée par `companies`, `company_memberships`, `profiles.active_company_id` et des `company_id` obligatoires sur les données Planning, RH et flotte consommées par le module. Toutes les lignes existantes sont rattachées à BBTM avant activation des contraintes. Les rôles sont désormais attribués dans une entreprise, et les politiques RLS recoupent entreprise, action, navire, période et personne. Les autorisations exceptionnelles par navire sont bornées, motivées et révocables dans `planning_vessel_permissions`.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -53,9 +61,9 @@ Une relève regroupe navire, instant, lieu, durée de passation, responsable, co
 | Relèves d’équipage | Absent | Opérationnel P0.3 | Saisie complète, comparaison des bordées et sauvegarde transactionnelle | Maintenir |
 | Rotations récurrentes | Absent | Absent | Aucun modèle 7/7, 10/10, 14/14 ni édition de série | P1 |
 | Temps de travail et repos | Partiel | Partiel | Données SMTR `worked_hours`, `rest_24h`, `cumulative_7d` importées mais pas de moteur de conformité | P1 |
-| Validation, publication, verrouillage | Absent | Opérationnel (socle) | Soumission, validation, publication, réouverture motivée et verrou serveur par période/flotte/navire ; validation multi-acteurs absente | P0 : validation fonctionnelle |
-| Historique | Partiel | Amélioré P0.3 | Relèves, postes et dérogations audités ; auteur de dérogation protégé côté serveur | P1 : comparaison de versions |
-| Permissions | Partiel | Fiabilisé P0.3 | Lecture RLS par rôle/périmètre ; écritures et dérogations admin ; RPC de relève revérifie le rôle | P0 : matrice d’actions granulaires |
+| Validation, publication, verrouillage | Absent | Opérationnel P0.4 | Cycle complet, multi-acteurs, verrou serveur et réouverture motivée par période/flotte/navire | Maintenir |
+| Historique | Partiel | Opérationnel P0.4 | Journal sémantique, auteurs figés, versions complètes immuables et consultation dans le panneau latéral | P1 : comparaison visuelle de versions |
+| Permissions | Partiel | Opérationnel P0.4 | Matrice d’actions, périmètre entreprise/navire/période/personne et contrôle identique UI/RPC/RLS | Maintenir |
 | Export | Partiel | Partiel | CSV journalier par marin ; PDF/Excel/ICS et export flotte absents | P1 |
 | Notifications et collaboration | Absent | Absent | Pas de workflow de confirmation ou notification Planning | P1 |
 | Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
@@ -137,8 +145,10 @@ Sources fusionnées :
 - `vessels` et `fleet_certificates` : flotte et échéances navire ;
 - `planning_rules` : niveaux de contrôle configurables.
 - `planning_publications` : état, périmètre, verrou et numéro de version courant.
+- `planning_versions` et `planning_change_log` : versions immuables et journal sémantique attribué.
 - `planning_handovers` et `planning_handover_positions` : relèves transactionnelles et bordées entrantes/sortantes.
 - `planning_derogations` : exceptions bornées, attribuées et rattachées à une règle, un marin et un navire.
+- `companies`, `company_memberships`, `planning_action_permissions` et `planning_vessel_permissions` : isolation et autorisation serveur P0.4.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
@@ -155,8 +165,12 @@ people ─┬─< planning_assignments >─ vessels
 vessels ─< fleet_certificates
 vessels ─< planning_projects (primary_vessel_id / secondary_vessel_id)
 
-planning_change_log ── référence logique entity_kind + entity_id
-planning_rules ──────── configuration globale des contrôles Planning
+companies ─┬─< company_memberships >─ profiles
+           ├─< people / vessels / événements Planning
+           └─< user_roles
+
+planning_change_log ── entreprise + référence logique entity_kind + entity_id
+planning_rules ──────── configuration des contrôles par entreprise
 planning_publications ─┬─< planning_versions
                        └── vessels (périmètre optionnel)
 
@@ -171,7 +185,7 @@ planning_rules ─< planning_derogations >─ planning_assignments
 
 Les historiques SharePoint conservent leurs identifiants et libellés source. Les relations `person_id`/`vessel_id` sont utilisées lorsqu’elles sont résolues ; le moteur conserve le rapprochement par nom pour les lignes historiques non liées.
 
-L’audit P0.1 confirme que toutes les références navire obligatoires sont résolues. Cinq journées et deux périodes historiques n’ont pas de `person_id` ; elles restent lisibles grâce à leur identité source et ne sont pas supprimées ni inventées. Les tables Planning ne portent actuellement aucun `company_id`, `tenant_id` ou `organization_id` : le déploiement audité est donc mono-entreprise. Une ouverture multi-entreprise exigera une migration dédiée, des clés étrangères de rattachement et une isolation RLS explicite avant toute mutualisation.
+L’audit P0.1 confirme que toutes les références navire obligatoires sont résolues. Cinq journées et deux périodes historiques n’ont pas de `person_id` ; elles restent lisibles grâce à leur identité source et ne sont pas supprimées ni inventées. P0.4 rattache ces lignes historiques directement à leur entreprise, même lorsque la relation marin ou navire est absente. Le périmètre courant vient de `profiles.active_company_id`, validé contre `company_memberships`; les rôles et les politiques Planning ne peuvent pas traverser ce périmètre.
 
 ### Migrations des lots
 
@@ -229,6 +243,21 @@ Retour arrière : restaurer la fonction depuis la migration précédente, suppri
 
 Retour arrière : exporter relèves/dérogations, supprimer les triggers/fonctions et tables P0.3, restaurer la RPC et la contrainte d’audit depuis P0.2, puis ne supprimer les instants qu’après décision métier. La migration préserve les données et ses créations/recréations sont idempotentes.
 
+`202607130007_planning_p04_governance_v1.sql` :
+
+- crée l’entreprise BBTM et rattache sans suppression profils, rôles, personnes, navires, événements, règles, publications, versions, relèves, dérogations et historique ;
+- rend le périmètre entreprise obligatoire après rétro-remplissage et ajoute les index utilisés par les RLS et les vues temporelles ;
+- remplace les rôles globaux par des rôles rattachés à une entreprise et introduit la matrice d’actions ainsi que les autorisations motivées par navire ;
+- applique l’isolation entreprise/navire/personne aux lectures et aux écritures, y compris dans les fonctions `security definer` ;
+- attribue soumission, validation, publication, verrouillage et mise à jour avec un libellé d’auteur conservé ;
+- enrichit l’instantané publié avec les relèves et dérogations, rend les versions non modifiables et corrige la contrainte d’audit P0.3 ;
+- classe les mutations en actions métier et expose les 250 dernières entrées autorisées au client ;
+- recrée la RPC de relève, le verrou de période, les contrôles de règles et la vue des affectations avec les mêmes contrôles d’entreprise et d’action.
+
+Retour arrière : suivre `docs/deployment/planning-p0-v1.md`. Les colonnes d’entreprise ne doivent pas être supprimées tant qu’une donnée P0.4 ou une deuxième entreprise existe. La migration a été rejouée deux fois sur une chaîne PostgreSQL vierge ; elle est idempotente et conserve les lignes existantes.
+
+`202607130008_planning_p04_audit_backfill_cleanup.sql` retire du journal les seules mises à jour anonymes dont les instantanés avant/après diffèrent exclusivement par l’ajout de `company_id`. Ce nettoyage rejouable conserve toutes les actions utilisateur et empêche le backfill multi-entreprise d’apparaître comme une modification métier.
+
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
 ## 6. Contrôles livrés
@@ -253,35 +282,36 @@ Les contrôles sont appliqués à la création, à la création rapide, à l’�
 
 ## 7. Validation, publication et verrouillage
 
-Le workflow de période est limité aux administrateurs, comme les autres écritures Planning actuelles :
+Le workflow est contrôlé par action et périmètre :
 
 1. une période modifiable est soumise ; elle passe à `pending_validation` et est immédiatement verrouillée ;
 2. la période figée est validée ;
 3. la période validée est publiée et son numéro de version est incrémenté ;
-4. un instantané immuable des affectations, journées, périodes et projets concernés est enregistré ;
+4. un instantané immuable des affectations, journées, périodes, projets, relèves, postes et dérogations concernés est enregistré ;
 5. toute modification ultérieure exige une réouverture motivée, puis une nouvelle soumission et une nouvelle publication.
 
-Le périmètre peut couvrir toute la flotte ou un navire existant. Le trigger vérifie l’ancienne et la nouvelle période d’un événement : il empêche donc aussi de déplacer un événement hors d’une zone verrouillée ou vers une zone verrouillée. L’interface retire les contrôles d’édition, mais le trigger PostgreSQL reste l’autorité de sécurité.
+Le périmètre peut couvrir toute la flotte ou un navire existant. Le trigger vérifie l’ancienne et la nouvelle période d’un événement : il empêche donc aussi de déplacer un événement hors d’une zone verrouillée ou vers une zone verrouillée. Relèves, postes et dérogations sont soumis au même verrou. L’interface retire les contrôles d’édition, mais le trigger PostgreSQL reste l’autorité de sécurité.
 
 ## 8. Rôles et sécurité
 
 Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 
-- Tous les accès passent par une session Supabase authentifiée.
-- La lecture de `planning_assignments` est limitée par RLS : bureau, capitaine de l’affectation ou marin concerné.
-- La fonction `planning_assignment_overview()` reproduit le même périmètre côté serveur.
-- L’écriture des tables Planning éditables est actuellement réservée à `admin`, côté interface et RLS.
-- Les documents RH conservent leurs politiques RLS propres ; aucune donnée médicale supplémentaire n’est copiée dans `planning_rules` ou dans les événements.
-- Les règles sont lisibles par les rôles Planning et modifiables uniquement par `admin`.
-- Les états de publication sont lisibles par les rôles Planning ; les instantanés/version et les transitions restent réservés à `admin`.
-- Les fonctions de verrou et d’audit ne sont pas exécutables directement par les rôles API.
-- Les relèves sont lisibles par le bureau et par le capitaine affecté au navire à l’instant concerné ; la RPC vérifie de nouveau le rôle administrateur avant toute sauvegarde.
-- Les dérogations et leur historique sont réservés aux administrateurs. Le trigger remplace toute attribution client par `auth.uid()` et protège l’auteur lors des mises à jour.
-- Aucun secret ni identifiant de connexion n’est ajouté au dépôt.
-- Les appels de rôle et d’identité dans les politiques P0.1 utilisent une sous-requête stable afin d’éviter leur réévaluation pour chaque ligne ; le périmètre d’autorisation reste inchangé.
-- L’absence de colonne d’entreprise dans les tables Planning rend ces politiques adaptées uniquement au projet Supabase mono-entreprise actuel.
+| Rôle | Entreprise | Événements | Workflow | Autres actions |
+| --- | --- | --- | --- | --- |
+| `admin` | entreprise active | lecture/écriture | soumettre, valider, publier, réouvrir, archiver | navires, relèves, dérogations, permissions, historique, export |
+| `direction` | entreprise active | lecture/écriture | soumettre, valider, publier, réouvrir | dérogations, historique, export |
+| `armement` | entreprise active | lecture/écriture | soumettre | relèves, historique, export |
+| `capitaine` | navire affecté ou autorisation explicite | lecture du navire | validation du navire affecté | historique du navire |
+| `marin` | personne et navires affectés | lecture propre | aucune transition | aucun historique de gouvernance |
 
-À terme, les droits de création, validation, publication, dérogation et export devront être séparés dans une matrice d’actions, puis appliqués dans des RPC et politiques RLS dédiées.
+- Tous les accès passent par une session Supabase authentifiée et une adhésion active à `profiles.active_company_id`.
+- `planning_action_permissions` définit les capacités de rôle ; `planning_vessel_permissions` complète exceptionnellement une action sur un navire, pour une période et avec un motif d’au moins dix caractères.
+- Les RPC `transition_planning_publication` et `save_planning_handover` revérifient l’entreprise, l’action, le navire et la période malgré leur exécution `security definer`.
+- La fonction `planning_assignment_overview()` reproduit le périmètre RLS bureau/capitaine/marin.
+- Les relations d’une affectation, relève ou dérogation ne peuvent pas référencer une autre entreprise ; des triggers rejettent tout décalage.
+- Les documents RH et certificats flotte restent dans leurs tables sources, désormais filtrées par la même entreprise.
+- Les versions publiées et les fonctions internes de verrou/audit ne sont pas directement modifiables ou exécutables par les rôles API.
+- Aucun secret ni identifiant de connexion n’est ajouté au dépôt.
 
 ## 9. Dates et fuseaux horaires
 
@@ -338,6 +368,12 @@ Tests Planning couverts :
 - formulaire complet et lecture seule d’une relève, payload RPC transactionnel ;
 - payload, attribution serveur et historique des dérogations ;
 - vues Flotte, Équipages, Navire et Marin avec ouverture d’une même affectation.
+- séparation des capacités administrateur, direction, armement, capitaine et marin ;
+- auteurs et horodatages du workflow, archivage motivé et historique visible ;
+- parcours SQL soumission → validation capitaine → publication → blocage → réouverture → modification ;
+- conservation et immutabilité de la version publiée ;
+- absence de fuite de navire entre deux entreprises et lecture propre du marin ;
+- rejeu complet et double rejeu de la migration P0.4 sur PostgreSQL isolé.
 
 Commandes de validation :
 
@@ -345,20 +381,20 @@ Commandes de validation :
 npm ci
 npx tsc -b --pretty false
 npm run lint
-npm test -- --reporter=dot
+npm test -- --maxWorkers=2 --reporter=dot
 npm run build
 supabase db lint --linked
 ```
 
+La procédure de migration, les contrôles pré/post-déploiement et le retour arrière V1 sont détaillés dans `docs/deployment/planning-p0-v1.md`.
+
 ## 11. Feuille de route recommandée
 
-### P0
+### Après P0
 
-1. Relier fonctions requises, effectif minimum et qualifications aux navires.
-2. Charger les événements par période et indexer la détection visuelle des conflits.
-3. Ajouter l’archivage logique des événements hors périodes publiées.
-4. Extraire progressivement toolbar, dialogues et panneau latéral.
-5. Ajouter un test de parcours navigateur authentifié stable.
+1. Surveiller la taille des événements et charger par période avant plusieurs milliers de lignes.
+2. Extraire progressivement toolbar, dialogues et panneau latéral sans modifier le modèle P0.
+3. Conserver un parcours navigateur authentifié ordinateur/iPad dans la recette de chaque déploiement.
 
 ### P1
 

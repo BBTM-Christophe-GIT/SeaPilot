@@ -18,6 +18,8 @@ const overview: PlanningOverview = {
   hrDocuments: [],
   rules: [{ id: 4, code: 'expired_credential', name: 'Certificat expiré', description: '', scope: 'credential', controlLevel: 'warning', active: true, effectiveFrom: '2026-01-01', configuration: {}, sourceReference: '', version: 1 }],
   publications: [],
+  versions: [],
+  history: [],
   handovers: [],
   derogations: [],
   derogationHistory: [],

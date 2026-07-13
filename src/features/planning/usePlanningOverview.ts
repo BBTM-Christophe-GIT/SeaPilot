@@ -14,6 +14,8 @@ export const EMPTY_PLANNING_OVERVIEW: PlanningOverview = {
   hrDocuments: [],
   rules: [],
   publications: [],
+  versions: [],
+  history: [],
   handovers: [],
   derogations: [],
   derogationHistory: [],
