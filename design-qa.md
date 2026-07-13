@@ -1,36 +1,52 @@
-# Design QA — Planning SeaPilot 1.3.0
+# Design QA — Planning SeaPilot 1.4.0
 
-- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-210621fd-f241-4ed1-abef-835fda3a2aea.png`
+- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-6bd8309b-8891-47c5-be97-460bb1c28778.png`
 - Implémentation contrôlée : `https://sea-pilot-ten.vercel.app/modules/planning`
-- État contrôlé : production authentifiée en administrateur, vue mensuelle, juillet 2026, version 1.3.0.
-- Viewport de comparaison : 2048 × 1073, identique à la capture de référence.
+- Capture d’implémentation : `docs/design/planning-dialog-production.png`
+- Comparaison normalisée : `docs/design/planning-dialog-comparison.png`
+- Viewport de production : 2560 × 1249.
+- Comparaison focalisée : fenêtre `Modifier · Benjamin BON`, normalisée à 1128 × 841 comme la référence.
+- État : production authentifiée en Administrateur, vue mensuelle juillet 2026, éditeur d’une affectation ouvert, version 1.4.0.
 
 ## Comparaison visuelle
 
-La référence utilisateur et la production ont été placées côte à côte. La hiérarchie, la densité, la grille temporelle, les groupes navire/bordée/marin et le panneau latéral restent conformes au cockpit migré. Le shell SeaPilot demeure visible pour conserver la navigation globale du produit.
+La référence et l’implémentation ont été réunies dans la même image de comparaison. La fenêtre conserve la hiérarchie, les dimensions relatives, les espacements, les champs, les actions et les couleurs SeaPilot de la référence. L’implémentation reste un dialogue centré au-dessus du planning afin de conserver le contexte de travail.
 
-Les colonnes grises de week-end sont désormais ancrées explicitement à leur colonne de date. Le contrôle géométrique sur 14 dates de week-end et 38 lignes visibles retourne un écart horizontal de `0 px` pour chaque date : aucune cellule n'est décalée par une barre projet ou marin.
+Le contrôle focalisé confirme que `Bordée / groupe` est maintenant un sélecteur cohérent avec les autres champs. Les options visibles en production sont `Affectation`, `Armement`, `Bordée 1`, `Bordée 2` et `Flying Crew`.
 
-## Interactions vérifiées en production
+## Surfaces de fidélité obligatoires
 
-- Version `v1.3.0` et mode `Modification` affichés pour le compte Admin.
-- Ouverture d'une période importée dans l'éditeur : navire, dates, statut, fonction, bordée et annotation modifiables ; suppression disponible.
-- 43 périodes visibles déclarées déplaçables, 66 poignées de redimensionnement et 294 cellules de dépôt navire actives.
-- Réglages : affichage des week-ends, réduction des navires, accès à la gestion des navires et à l'export marin.
-- Gestion des navires : formulaire d'ajout et action de retrait présentes pour les 14 navires actifs.
-- Export marin : choix du collaborateur et de la période, action CSV disponible.
-- Aucun défaut applicatif visible ; les seuls messages de console observés proviennent du canal de l'extension Chrome et non de SeaPilot.
+- Typographie : famille, graisse, hiérarchie des libellés et lisibilité des valeurs conformes au système SeaPilot ; aucune troncature dans le dialogue.
+- Espacement et rythme : grille Navire / dates / statut, fonction, bordée, annotation et actions alignée ; marges, rayons et hauteur des champs homogènes.
+- Couleurs et tokens : bleu primaire, fonds de champs, danger Supprimer et voile modal cohérents ; vert `En Mer`, jaune `À Terre` et rouge conflit visibles dans le planning derrière la fenêtre.
+- Images et icônes : icônes Lucide du produit conservées ; aucun actif de référence n’a été remplacé par un dessin CSS ou un glyphe improvisé.
+- Copie et contenu : libellés métier français conservés ; `Bordée / groupe` devient un choix contrôlé sans modifier les autres contenus.
+
+## Interactions vérifiées
+
+- La version `v1.4.0` et le build `2026-07-13.0737` sont visibles en production.
+- Une période de Benjamin BON ouvre bien la fenêtre de modification.
+- Le champ `Bordée / groupe` est exposé comme `combobox` avec cinq options issues du planning.
+- La légende `En mer · À terre · Conflit` et l’aide `Clic = ajouter · Glisser = déplacer · Poignées = étendre` sont visibles.
+- Les actions Supprimer, Annuler et Enregistrer sont présentes et accessibles.
+- Les écritures réelles de clic, déplacement et redimensionnement n’ont pas été déclenchées pendant le contrôle visuel de production afin de ne pas modifier les données ; elles sont couvertes par les tests automatisés.
+- Aucun message d’erreur applicatif SeaPilot observé. Les messages de console restants proviennent du canal de l’extension Chrome.
 
 ## Vérifications automatisées
 
-- 191 tests Vitest réussis.
-- Build Vite/TypeScript de production réussi.
-- Supabase DB lint sans erreur ; migration `202607120003_planning_admin_editor.sql` appliquée.
-- GitHub Actions et déploiement Vercel réussis.
+- 197 tests Vitest réussis avec `npm test -- --maxWorkers=2`.
+- Build TypeScript/Vite de production réussi.
+- GitHub Actions, pull request #13 et déploiement Vercel de `df48510fcbce3234e5b9bc69edd4f05585ce7f38` réussis.
+
+## Historique de comparaison
+
+- Passage 1 : source et production comparées dans le même visuel ; aucun écart P0, P1 ou P2 relevé.
+- Aucun correctif visuel supplémentaire requis après la comparaison focalisée. La valeur `Affectation` diffère de la valeur `Armement` de la référence car elle correspond à la donnée réellement enregistrée pour Benjamin BON, pas à un écart de composant.
 
 ## Constats
 
-- Aucun écart P0, P1 ou P2 relevé.
-- L'alignement des week-ends et les principaux parcours administrateur demandés sont validés sur les données historiques de production.
+- Aucun écart P0, P1 ou P2 restant.
+- Aucun cadrage focalisé supplémentaire requis : tous les champs, la liste de bordée, l’annotation et les actions sont lisibles dans la comparaison principale.
+- P3 possible : enrichir ultérieurement l’aide gestuelle par une aide contextuelle au premier usage.
 
 final result: passed
