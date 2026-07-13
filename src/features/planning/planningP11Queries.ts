@@ -236,22 +236,31 @@ export function mapPlanningMatrixRows(rows: MatrixRow[], requirements: PlanningM
   }));
 }
 
-export async function fetchPlanningP11Data(client: SupabaseClient): Promise<PlanningP11Data> {
-  const [rotationsResult, occurrencesResult, templatesResult, matricesResult, requirementsResult] = await Promise.all([
-    client.from('planning_rotation_series').select(ROTATION_SELECT).eq('active', true).order('starts_on'),
-    client.from('planning_rotation_occurrences').select(OCCURRENCE_SELECT).order('occurrence_number'),
-    client.from('planning_templates').select(TEMPLATE_SELECT).eq('active', true).order('name'),
+export async function fetchPlanningManningMatrices(client: SupabaseClient): Promise<PlanningManningMatrix[]> {
+  const [matricesResult, requirementsResult] = await Promise.all([
     client.from('planning_manning_matrices').select(MATRIX_SELECT).order('effective_from', { ascending: false }),
     client.from('planning_manning_requirements').select(REQUIREMENT_SELECT).order('display_order'),
   ]);
-  const failed = [rotationsResult, occurrencesResult, templatesResult, matricesResult, requirementsResult].find((result) => result.error);
+  const failed = [matricesResult, requirementsResult].find((result) => result.error);
+  if (failed?.error) throwPlanningDataError('load-planning-manning', 'Impossible de charger les matrices d’armement.', failed.error);
+  const requirements = mapPlanningRequirementRows((requirementsResult.data || []) as RequirementRow[]);
+  return mapPlanningMatrixRows((matricesResult.data || []) as MatrixRow[], requirements);
+}
+
+export async function fetchPlanningP11Data(client: SupabaseClient): Promise<PlanningP11Data> {
+  const [rotationsResult, occurrencesResult, templatesResult, matrices] = await Promise.all([
+    client.from('planning_rotation_series').select(ROTATION_SELECT).eq('active', true).order('starts_on'),
+    client.from('planning_rotation_occurrences').select(OCCURRENCE_SELECT).order('occurrence_number'),
+    client.from('planning_templates').select(TEMPLATE_SELECT).eq('active', true).order('name'),
+    fetchPlanningManningMatrices(client),
+  ]);
+  const failed = [rotationsResult, occurrencesResult, templatesResult].find((result) => result.error);
   if (failed?.error) throwPlanningDataError('load-planning-p11', 'Impossible de charger la planification structurée.', failed.error);
   const occurrences = mapPlanningOccurrenceRows((occurrencesResult.data || []) as OccurrenceRow[]);
-  const requirements = mapPlanningRequirementRows((requirementsResult.data || []) as RequirementRow[]);
   return {
     rotations: mapPlanningRotationRows((rotationsResult.data || []) as RotationRow[], occurrences),
     templates: mapPlanningTemplateRows((templatesResult.data || []) as TemplateRow[]),
-    matrices: mapPlanningMatrixRows((matricesResult.data || []) as MatrixRow[], requirements),
+    matrices,
   };
 }
 

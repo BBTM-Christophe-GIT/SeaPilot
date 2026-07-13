@@ -1,6 +1,6 @@
 # SeaPilot — architecture et audit du module Planning
 
-Dernière mise à jour : 13 juillet 2026
+Dernière mise à jour : 14 juillet 2026
 Périmètre audité : route `/modules/planning`, composants React, accès Supabase, migrations SQL, RLS, rôles, tests et rendu responsive.
 
 ## 1. Synthèse
@@ -47,6 +47,14 @@ Les modèles restent dans `planning_templates`. Leur application crée soit un `
 
 Le panneau `PlanningP11Panel.tsx` est chargé uniquement à son ouverture. Après une mutation, il recharge uniquement les affectations, projets ou relèves concernés, sans réinitialiser la période, les filtres ou la perspective du Planning P0. Les rôles `admin`, `direction` et `armement` reçoivent les actions serveur `manage_rotation`, `manage_template` et `manage_manning`; les autres rôles conservent une lecture bornée par la RLS P0.
 
+### Phase P1.2 — absences, remplacements et centre de conflits
+
+P1.2 ajoute un workflow d’absence typé (`leave`, `illness`, `training`, `medical_visit`, `unavailability`, `recovery`) avec demande, modification tant qu’elle est en attente, validation, refus et annulation. Les instants sont stockés en UTC ; la validation locale réutilise les protections P0 sur les heures inexistantes et les intervalles incohérents. Une approbation conserve les affectations existantes pour rendre leur impact visible, mais un trigger serveur bloque les nouvelles affectations chevauchantes selon les règles et dérogations P0.
+
+`planningP12.ts` détecte neuf familles de conflit à partir des affectations, absences, périodes historiques, documents RH, maintenances, relèves et matrices P1.1 déjà chargés. Il groupe les affectations par marin, indexe les documents et produit une clé stable par conflit. `planningP12Queries.ts` centralise les trois lectures P1.2 et les quatre RPC. Le panneau `PlanningP12Panel.tsx`, chargé à la demande, sépare demandes, traitement et recherche de remplaçants. Les dossiers persistants conservent responsable, priorité, statut, commentaire, liens source, résolution/dérogation et historique sans dupliquer les événements opérationnels.
+
+La recherche de remplacement écarte ou avertit selon les autres affectations, absences approuvées, certificats, documents médicaux, fonction et exigences de matrice. Elle explique chaque incompatibilité et ne choisit jamais un marin : l’action finale ouvre le formulaire d’affectation P0 prérempli, en statut provisoire. Les règles complètes de repos, les suggestions automatiques et les notifications restent hors P1.2.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -61,11 +69,12 @@ Le panneau `PlanningP11Panel.tsx` est chargé uniquement à son ouverture. Aprè
 | Modification directe | Opérationnel | Opérationnel P0.2 | Édition, déplacement, changement de navire et redimensionnement optimistes avec retour arrière | Maintenir |
 | Affectations | Partiel | Opérationnel P0.3 | Fonction, instants, statut provisoire/confirmé, modification/retrait et quatre vues ; matrice d’armement hors périmètre | Maintenir |
 | Détection de double affectation | Partiel | Opérationnel P0.3 | Détecte les affectations natives et historiques sur deux navires ; niveau configurable | Maintenir |
-| Disponibilités et absences | Partiel | Amélioré | Repos, congé, arrêt et formation déjà présents dans les statuts ; workflow de demande/validation absent | P1 |
+| Disponibilités et absences | Partiel | Opérationnel P1.2 | Demande, validation, refus, annulation, impacts et historique UTC ; les statuts historiques restent lus | Maintenir |
 | Qualifications et certificats marins | Partiel | Amélioré P0.3 | Expiré/expirant et qualification pont/machine signalés ; pas de matrice d’armement par navire | P0 ultérieur |
 | Aptitude et restrictions médicales | Partiel | Amélioré | Inaptitude, restriction et validité jusqu’au débarquement prises en compte | P0 : dérogation autorisée |
 | Certificats navires | Partiel | Partiel | Alertes à 90 jours ; pas encore de blocage selon opération | P1 |
-| Centre de conflits | Absent | Opérationnel (socle) | Liste Blocage/Avertissement/Information ; résolution guidée et affectation d’un responsable absentes | P1 |
+| Centre de conflits | Absent | Opérationnel P1.2 | Neuf familles, responsable, priorité, statut, commentaire, source, historique, résolution ou dérogation | Maintenir |
+| Remplacements | Absent | Opérationnel P1.2 | Recherche filtrée, compatibilité expliquée et préparation manuelle d’une affectation provisoire | Maintenir la décision humaine |
 | Relèves d’équipage | Absent | Opérationnel P0.3 | Saisie complète, comparaison des bordées et sauvegarde transactionnelle | Maintenir |
 | Rotations récurrentes | Absent | Absent | Aucun modèle 7/7, 10/10, 14/14 ni édition de série | P1 |
 | Temps de travail et repos | Partiel | Partiel | Données SMTR `worked_hours`, `rest_24h`, `cumulative_7d` importées mais pas de moteur de conformité | P1 |
@@ -115,6 +124,8 @@ Le panneau `PlanningP11Panel.tsx` est chargé uniquement à son ouverture. Aprè
 - `PlanningP03Panels.tsx` porte les vues Navire/Marin, l’éditeur de relève, la comparaison des bordées et les dérogations.
 - `PlanningP11Panel.tsx` porte les rotations, modèles et matrices sans augmenter la responsabilité de `PlanningPage.tsx`.
 - `planningP11.ts` contient les calculs purs de série et de comparaison d’armement ; `planningP11Queries.ts` centralise les lectures et RPC P1.1.
+- `PlanningP12Panel.tsx` porte les absences, le centre de conflits et la recherche manuelle de remplaçants ; il est chargé dynamiquement à l’ouverture.
+- `planningP12.ts` contient la détection et l’explication des compatibilités ; `planningP12Queries.ts` centralise les lectures et RPC P1.2.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
@@ -392,6 +403,11 @@ Tests Planning couverts :
 - création/réutilisation de modèles et conservation de leur configuration ;
 - matrice versionnée, postes vacants, fonctions en excès et documents manquants ;
 - rejeu idempotent et scénario SQL transactionnel P1.1 sur le schéma P0.4.
+- détection des neuf familles de conflit et stabilité de leurs clés P1.2 ;
+- création, validation, refus et dates UTC des absences ;
+- recherche de remplaçants par fonction/qualification avec raisons d’incompatibilité ;
+- traitement manuel, source, priorité, responsable, commentaire, résolution/dérogation et historique ;
+- permissions UI/RPC/RLS et garde serveur contre une affectation chevauchant une absence approuvée.
 
 Commandes de validation :
 
@@ -418,7 +434,7 @@ La procédure de migration, les contrôles pré/post-déploiement et le retour a
 
 1. P1.1 livré : rotations 7/7, 10/10, 14/14 et personnalisées, modèles et matrices d’armement.
 2. Moteur configurable de travail/repos à partir des données SMTR.
-3. Workflow absence/remplacement et suggestions explicables.
+3. P1.2 livré : absences, impacts, remplacements manuels explicables et centre de conflits.
 4. Notifications, dépendances et comparaison de versions.
 5. Exports PDF/Excel/ICS et impression par navire, marin et relève.
 6. Cache client, chargement progressif et abonnements temps réel ciblés.
