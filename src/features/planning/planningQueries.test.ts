@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
+  createPlanningDerogation,
   createPlanningProject,
   createVessel,
   fetchPlanningPeople,
@@ -13,6 +14,7 @@ import {
   mapPlanningPeopleRows,
   mapPlanningPublicationRows,
   mapVesselRows,
+  savePlanningHandover,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
@@ -160,6 +162,8 @@ describe('planning mappers', () => {
         contractType: '',
         hiredOn: '',
         departedOn: '',
+        deckCertificateLabel: '',
+        engineCertificateLabel: '',
         active: true,
       },
     ]);
@@ -180,6 +184,8 @@ describe('planning mappers', () => {
         crewName: 'Paul DURAND',
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
+        startsAt: '2026-06-30T22:00:00.000Z',
+        endsAt: '2026-07-14T21:59:00.000Z',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
         confirmationStatus: 'confirmed',
@@ -212,6 +218,8 @@ describe('planning mappers', () => {
         crewName: 'Paul DURAND',
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
+        startsAt: '2026-06-30T22:00:00.000Z',
+        endsAt: '2026-07-14T21:59:00.000Z',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
         confirmationStatus: 'confirmed',
@@ -377,6 +385,14 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [planningPublicationRow], error: null }) }) };
       }
 
+      if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_change_log') {
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -391,6 +407,9 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: mapPlanningPublicationRows([planningPublicationRow]),
+      handovers: [],
+      derogations: [],
+      derogationHistory: [],
     });
 
     expect(from).toHaveBeenCalledWith('vessels');
@@ -467,6 +486,14 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
+      if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_change_log') {
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -486,6 +513,9 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: [],
+      handovers: [],
+      derogations: [],
+      derogationHistory: [],
     });
   });
 });
@@ -556,7 +586,7 @@ describe('planning writes', () => {
     });
   });
 
-  it('accepts an assignment spanning midnight as two civil dates', async () => {
+  it('stores an assignment spanning midnight as UTC instants and two civil dates', async () => {
     const single = vi.fn().mockResolvedValue({
       data: { ...assignmentRow, starts_on: '2026-10-24', ends_on: '2026-10-25' },
       error: null,
@@ -570,10 +600,17 @@ describe('planning writes', () => {
       crewPersonId: '11',
       startsOn: '2026-10-24',
       endsOn: '2026-10-25',
+      startsAt: '2026-10-24T22:00',
+      endsAt: '2026-10-25T06:00',
       assignmentRole: 'Pont',
     });
 
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ starts_on: '2026-10-24', ends_on: '2026-10-25' }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      starts_on: '2026-10-24',
+      ends_on: '2026-10-25',
+      starts_at: '2026-10-24T20:00:00.000Z',
+      ends_at: '2026-10-25T05:00:00.000Z',
+    }));
   });
 
   it('rejects incoherent dates and invalid relation identifiers before Supabase', async () => {
@@ -697,5 +734,87 @@ describe('planning writes', () => {
       p_vessel_id: null,
       p_comment: 'Préparation juillet',
     });
+  });
+
+  it('saves a complete handover transaction through the protected RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 77, error: null });
+
+    await expect(savePlanningHandover({ rpc } as never, {
+      vesselId: '1',
+      handoverAt: '2026-07-15T12:00',
+      location: 'Cherbourg',
+      durationMinutes: 90,
+      responsiblePersonId: '10',
+      comments: 'Passation à quai',
+      status: 'confirmed',
+      positions: [{
+        functionLabel: 'Capitaine',
+        outgoingPersonId: '10',
+        incomingPersonId: '11',
+        outgoingAssignmentId: '100',
+        incomingAssignmentId: '101',
+        comments: 'Dossiers transmis',
+      }],
+    })).resolves.toBe(77);
+
+    expect(rpc).toHaveBeenCalledWith('save_planning_handover', expect.objectContaining({
+      p_vessel_id: 1,
+      p_handover_at: '2026-07-15T10:00:00.000Z',
+      p_location: 'Cherbourg',
+      p_duration_minutes: 90,
+      p_responsible_person_id: 10,
+      p_status: 'confirmed',
+      p_positions: [{
+        function_label: 'Capitaine',
+        outgoing_person_id: 10,
+        incoming_person_id: 11,
+        outgoing_assignment_id: 100,
+        incoming_assignment_id: 101,
+        comments: 'Dossiers transmis',
+      }],
+    }));
+  });
+
+  it('creates an attributed and bounded derogation payload', async () => {
+    const row = {
+      id: 88,
+      rule_id: 4,
+      assignment_id: 100,
+      person_id: 11,
+      vessel_id: 1,
+      reason: 'Dérogation validée par la direction maritime',
+      starts_at: '2026-07-20T06:00:00.000Z',
+      ends_at: '2026-07-26T18:00:00.000Z',
+      evidence_url: null,
+      status: 'active',
+      author_id: '00000000-0000-0000-0000-000000000001',
+      author_name: 'Admin SeaPilot',
+      created_at: '2026-07-13T20:00:00.000Z',
+      updated_at: '2026-07-13T20:00:00.000Z',
+    };
+    const single = vi.fn().mockResolvedValue({ data: row, error: null });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await expect(createPlanningDerogation({ from } as never, {
+      ruleId: '4',
+      assignmentId: 100,
+      personId: '11',
+      vesselId: '1',
+      reason: ' Dérogation validée par la direction maritime ',
+      startsAt: '2026-07-20T08:00',
+      endsAt: '2026-07-26T20:00',
+    })).resolves.toEqual(expect.objectContaining({ id: 88, authorName: 'Admin SeaPilot', status: 'active' }));
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      rule_id: 4,
+      assignment_id: 100,
+      person_id: 11,
+      vessel_id: 1,
+      reason: 'Dérogation validée par la direction maritime',
+      starts_at: '2026-07-20T06:00:00.000Z',
+      ends_at: '2026-07-26T18:00:00.000Z',
+      status: 'active',
+    }));
   });
 });

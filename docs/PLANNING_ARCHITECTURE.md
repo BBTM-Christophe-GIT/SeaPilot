@@ -23,6 +23,14 @@ P0.2 conserve l’architecture P0.1 et extrait seulement le rendu des lignes dan
 
 Les formulaires rapide et complet utilisent un panneau latéral commun. Les interactions souris et clavier reposent sur des contrôles natifs ; les poignées utilisent Pointer Events avec cibles tactiles élargies. Sur iPad, une modification reste également réalisable par le formulaire lorsque le glisser-déposer HTML natif n’est pas proposé par le navigateur.
 
+### Phase P0.3 — affectations maritimes, relèves et contrôles essentiels
+
+P0.3 ajoute une précision horaire aux affectations existantes sans supprimer leurs dates civiles : `starts_at` et `ends_at` conservent les instants UTC, tandis que `starts_on` et `ends_on` restent synchronisés en calendrier `Europe/Paris` pour la timeline et les données historiques. Les vues Flotte, Équipages, Navire et Marin présentent désormais les affectations provisoires ou confirmées et ouvrent le même panneau d’édition.
+
+Les contrôles distinguent Information, Avertissement et Blocage pour les doubles affectations, absences, indisponibilités, fonctions incompatibles, titres expirés ou expirant pendant l’embarquement, aptitude médicale et qualifications pont/machine manquantes. Les blocages essentiels (activité, absence/indisponibilité et aptitude médicale) sont aussi contrôlés par trigger PostgreSQL. Les niveaux restent configurables dans `planning_rules`.
+
+Une relève regroupe navire, instant, lieu, durée de passation, responsable, commentaires, statut et postes entrants/sortants. Sa sauvegarde complète passe par une RPC transactionnelle. La comparaison classe les postes inchangés, remplacés, vacants ou non conformes et expose les documents/qualifications manquants. Les dérogations sont limitées aux administrateurs, bornées dans le temps, rattachées à une règle et immuablement attribuées côté serveur ; chaque écriture est historisée.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -35,19 +43,19 @@ Les formulaires rapide et complet utilisent un panneau latéral commun. Les inte
 | Filtres et navigation temporelle | Opérationnel | Opérationnel P0.2 | Période, navire, marin, type, statut, responsable, zoom et week-ends | Maintenir |
 | Création rapide et complète | Opérationnel | Opérationnel P0.2 | Panneau latéral commun ; contrôles avant enregistrement ; pièces jointes hors P0.2 | Maintenir |
 | Modification directe | Opérationnel | Opérationnel P0.2 | Édition, déplacement, changement de navire et redimensionnement optimistes avec retour arrière | Maintenir |
-| Affectations | Partiel | Amélioré P0.2 | Statuts provisoire/confirmé/annulé ajoutés ; matrice d’armement explicitement hors périmètre | P0 ultérieur |
-| Détection de double affectation | Partiel | Amélioré | Centre dédié et niveau configurable ; les avertissements restent dérogeables | P0 : dérogation auditée |
+| Affectations | Partiel | Opérationnel P0.3 | Fonction, instants, statut provisoire/confirmé, modification/retrait et quatre vues ; matrice d’armement hors périmètre | Maintenir |
+| Détection de double affectation | Partiel | Opérationnel P0.3 | Détecte les affectations natives et historiques sur deux navires ; niveau configurable | Maintenir |
 | Disponibilités et absences | Partiel | Amélioré | Repos, congé, arrêt et formation déjà présents dans les statuts ; workflow de demande/validation absent | P1 |
-| Qualifications et certificats marins | Partiel | Amélioré | Échéances et statuts des documents RH contrôlés ; exigences par navire/fonction absentes | P0/P1 |
+| Qualifications et certificats marins | Partiel | Amélioré P0.3 | Expiré/expirant et qualification pont/machine signalés ; pas de matrice d’armement par navire | P0 ultérieur |
 | Aptitude et restrictions médicales | Partiel | Amélioré | Inaptitude, restriction et validité jusqu’au débarquement prises en compte | P0 : dérogation autorisée |
 | Certificats navires | Partiel | Partiel | Alertes à 90 jours ; pas encore de blocage selon opération | P1 |
 | Centre de conflits | Absent | Opérationnel (socle) | Liste Blocage/Avertissement/Information ; résolution guidée et affectation d’un responsable absentes | P1 |
-| Relèves d’équipage | Absent | Absent | Aucun workflow bordée entrante/sortante dédié | P0 |
+| Relèves d’équipage | Absent | Opérationnel P0.3 | Saisie complète, comparaison des bordées et sauvegarde transactionnelle | Maintenir |
 | Rotations récurrentes | Absent | Absent | Aucun modèle 7/7, 10/10, 14/14 ni édition de série | P1 |
 | Temps de travail et repos | Partiel | Partiel | Données SMTR `worked_hours`, `rest_24h`, `cumulative_7d` importées mais pas de moteur de conformité | P1 |
 | Validation, publication, verrouillage | Absent | Opérationnel (socle) | Soumission, validation, publication, réouverture motivée et verrou serveur par période/flotte/navire ; validation multi-acteurs absente | P0 : validation fonctionnelle |
-| Historique | Partiel | Amélioré | Triggers transactionnels pour événements, transitions auditées et instantanés publiés ; écran de comparaison absent | P1 |
-| Permissions | Partiel | Partiel | Lecture RLS par rôle/périmètre ; écriture admin uniquement ; permissions granulaires d’action absentes | P0 |
+| Historique | Partiel | Amélioré P0.3 | Relèves, postes et dérogations audités ; auteur de dérogation protégé côté serveur | P1 : comparaison de versions |
+| Permissions | Partiel | Fiabilisé P0.3 | Lecture RLS par rôle/périmètre ; écritures et dérogations admin ; RPC de relève revérifie le rôle | P0 : matrice d’actions granulaires |
 | Export | Partiel | Partiel | CSV journalier par marin ; PDF/Excel/ICS et export flotte absents | P1 |
 | Notifications et collaboration | Absent | Absent | Pas de workflow de confirmation ou notification Planning | P1 |
 | Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
@@ -68,7 +76,7 @@ Les formulaires rapide et complet utilisent un panneau latéral commun. Les inte
 | Détection historique de conflits en O(n²) | Dégradation avec plusieurs milliers d’événements | Le nouveau centre groupe d’abord par marin ; l’ancien marquage visuel reste à indexer | P0 performance |
 | Aucun script ESLint dans `package.json` | Pas de contrôle de style automatisé | ESLint couvre désormais TypeScript sur `src` et les règles React Hooks sur le module Planning | Corrigé en P0.1 |
 | Une journée pouvait conserver un débarquement antérieur après déplacement | Donnée historique incohérente | Édition d’une journée synchronisée, donnée existante réparée et contrainte SQL ajoutée | Corrigé en P0.1 |
-| Aucune gestion des heures/fuseaux par événement | Limites pour les heures de prise/fin de service et changements de port | Les passages de minuit sont représentés par deux dates civiles inclusives ; la précision horaire reste hors du modèle actuel | P1 |
+| Aucune gestion des heures/fuseaux par affectation | Limites pour les prises/fin de service et changements d’heure | P0.3 stocke les instants UTC, affiche en `Europe/Paris`, refuse les heures locales inexistantes et conserve les dates civiles | Corrigé pour les affectations |
 
 ## 4. Architecture applicative
 
@@ -88,6 +96,7 @@ Les formulaires rapide et complet utilisent un panneau latéral commun. Les inte
 - `PlanningSideContent` affiche conflits, échéances, marins non affectés et facturation.
 - `PlanningControlSummary.tsx` présente les contrôles sans dépendre uniquement de la couleur : libellé du niveau, titre et explication.
 - `PlanningPublicationPanel.tsx` présente le statut, la version, le périmètre, le verrou et les actions de workflow sans disperser cette logique dans la timeline.
+- `PlanningP03Panels.tsx` porte les vues Navire/Marin, l’éditeur de relève, la comparaison des bordées et les dérogations.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
@@ -100,6 +109,7 @@ La logique pure est répartie sans modifier le modèle métier :
 - `planningValidation.ts` protège les champs obligatoires, identifiants et plages avant Supabase ;
 - `planningPermissions.ts` traduit les rôles existants en capacités de lecture, écriture, export et publication ;
 - `planningOverlap.ts` isole les chevauchements inter-navires et groupe les comparaisons par marin ;
+- `planningHandovers.ts` construit les bordées autour d’un instant de relève et compare chaque poste ;
 - `planningViews.ts` isole les perspectives, regroupements, filtres et mises à jour optimistes ;
 - `planningErrors.ts` convertit les codes Supabase en messages utilisateur et journalise opération/code/message sans données métier ;
 - `planningModel.ts` conserve les fonctions métier suivantes :
@@ -127,6 +137,8 @@ Sources fusionnées :
 - `vessels` et `fleet_certificates` : flotte et échéances navire ;
 - `planning_rules` : niveaux de contrôle configurables.
 - `planning_publications` : état, périmètre, verrou et numéro de version courant.
+- `planning_handovers` et `planning_handover_positions` : relèves transactionnelles et bordées entrantes/sortantes.
+- `planning_derogations` : exceptions bornées, attribuées et rattachées à une règle, un marin et un navire.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
@@ -147,6 +159,14 @@ planning_change_log ── référence logique entity_kind + entity_id
 planning_rules ──────── configuration globale des contrôles Planning
 planning_publications ─┬─< planning_versions
                        └── vessels (périmètre optionnel)
+
+planning_handovers ─┬─< planning_handover_positions >─ people
+                    ├── vessels
+                    └── people (responsable)
+
+planning_rules ─< planning_derogations >─ planning_assignments
+                         ├── people
+                         └── vessels
 ```
 
 Les historiques SharePoint conservent leurs identifiants et libellés source. Les relations `person_id`/`vessel_id` sont utilisées lorsqu’elles sont résolues ; le moteur conserve le rapprochement par nom pour les lignes historiques non liées.
@@ -198,6 +218,17 @@ Retour arrière : supprimer la contrainte, les dix index nommés et recréer les
 
 Retour arrière : restaurer la fonction depuis la migration précédente, supprimer les index et contraintes P0.2, puis n’abandonner les trois colonnes qu’après export des valeurs nouvelles. Le retrait des colonnes est volontairement une opération manuelle car il serait destructif.
 
+`202607130006_planning_p03_assignments_handovers.sql` :
+
+- ajoute et rétroalimente `starts_at`/`ends_at` en UTC sur `planning_assignments`, puis synchronise les dates civiles en `Europe/Paris` ;
+- crée `planning_handovers`, `planning_handover_positions` et `planning_derogations` avec clés étrangères, contraintes et index de filtrage ;
+- expose `save_planning_handover` comme unique écriture transactionnelle de l’entête et de ses postes ;
+- protège auteur et historique des dérogations, ajoute les contrôles bloquants essentiels côté serveur et respecte le verrou de publication ;
+- applique RLS : lecture bureau/capitaine selon périmètre pour les relèves, dérogations réservées aux administrateurs, écritures administrateur uniquement ;
+- étend l’audit transactionnel et recrée `planning_assignment_overview()` avec les instants UTC.
+
+Retour arrière : exporter relèves/dérogations, supprimer les triggers/fonctions et tables P0.3, restaurer la RPC et la contrainte d’audit depuis P0.2, puis ne supprimer les instants qu’après décision métier. La migration préserve les données et ses créations/recréations sont idempotentes.
+
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
 ## 6. Contrôles livrés
@@ -207,10 +238,13 @@ Les références réglementaires ou internes sont descriptives. Elles ne sont pa
 | `invalid_period` | Blocage | Début/fin |
 | `inactive_person` | Blocage | `people.active`, `hired_on`, `departed_on` |
 | `crew_unavailability` | Blocage | Repos, congé, arrêt, formation sur événements fusionnés |
+| `crew_absence` | Blocage | Congé, arrêt, maladie ou absence chevauchant l’affectation |
 | `assignment_overlap` | Avertissement | Chevauchement du même marin sur deux navires |
 | `function_mismatch` | Information | Fonction RH vs fonction planifiée |
 | `expired_medical` | Blocage | Catégorie/titre/statut/échéance du document RH |
 | `expired_credential` | Avertissement | Brevet, certificat, qualification, habilitation ou formation |
+| `credential_expires_during_assignment` | Avertissement | Titre valide au départ, expirant avant le débarquement |
+| `missing_qualification` | Avertissement | Qualification pont/machine connue dans le dossier RH |
 | `medical_unfit` | Blocage | `medical_unfit` |
 | `medical_restriction` | Avertissement | `medical_restriction` |
 | `pending_validation` | Avertissement | Validation capitaine requise et statut en attente |
@@ -241,6 +275,8 @@ Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 - Les règles sont lisibles par les rôles Planning et modifiables uniquement par `admin`.
 - Les états de publication sont lisibles par les rôles Planning ; les instantanés/version et les transitions restent réservés à `admin`.
 - Les fonctions de verrou et d’audit ne sont pas exécutables directement par les rôles API.
+- Les relèves sont lisibles par le bureau et par le capitaine affecté au navire à l’instant concerné ; la RPC vérifie de nouveau le rôle administrateur avant toute sauvegarde.
+- Les dérogations et leur historique sont réservés aux administrateurs. Le trigger remplace toute attribution client par `auth.uid()` et protège l’auteur lors des mises à jour.
 - Aucun secret ni identifiant de connexion n’est ajouté au dépôt.
 - Les appels de rôle et d’identité dans les politiques P0.1 utilisent une sous-requête stable afin d’éviter leur réévaluation pour chaque ligne ; le périmètre d’autorisation reste inchangé.
 - L’absence de colonne d’entreprise dans les tables Planning rend ces politiques adaptées uniquement au projet Supabase mono-entreprise actuel.
@@ -249,16 +285,18 @@ Rôles existants : `admin`, `direction`, `armement`, `capitaine`, `marin`.
 
 ## 9. Dates et fuseaux horaires
 
-Le modèle stocke les événements Planning sous forme de dates civiles PostgreSQL (`date`) et les échange au format strict `YYYY-MM-DD`. Une date civile ne représente pas un instant : aucune conversion de fuseau n’est appliquée à l’enregistrement.
+Le modèle historique conserve les événements Planning sous forme de dates civiles PostgreSQL (`date`) au format strict `YYYY-MM-DD`. Depuis P0.3, les affectations portent en plus `starts_at` et `ends_at` en `timestamptz` : l’instant canonique est UTC et les dates civiles restent synchronisées pour la timeline existante.
 
 - Les calculs calendaires utilisent minuit UTC, `Date.UTC` et les getters UTC pour éviter les glissements causés par le navigateur ou les changements d’heure.
 - L’ancre « aujourd’hui » est calculée depuis les composantes locales de l’utilisateur, puis convertie en date civile ; l’affichage reste en calendrier local sans transformer la valeur enregistrée.
 - Les bornes sont inclusives. Un événement commençant avant minuit et finissant après minuit est représenté par deux dates civiles consécutives ; il occupe donc les deux journées.
 - Un événement multi-jours conserve une date de début et une date de fin inclusives, avec `end_date >= start_date` obligatoire.
 - Les changements d’heure d’été/hiver n’ajoutent ni ne retirent une journée, car les durées calendaires ne sont jamais calculées en millisecondes locales.
+- Les formulaires d’affectation saisissent l’heure en `Europe/Paris`, la convertissent en ISO-8601 UTC avant écriture et restaurent l’heure locale à l’affichage. Une heure locale inexistante au passage à l’heure d’été est refusée.
+- Les événements passant minuit et les affectations multi-jours conservent leurs instants exacts et occupent chaque date civile traversée. La contrainte exige `ends_at > starts_at`.
 - Une valeur absente ou invalide est refusée avant écriture ; les rares valeurs historiques absentes reçoivent un libellé sûr à l’affichage.
 
-Le modèle ne stocke pas encore l’heure exacte de prise/fin de service ni un fuseau portuaire. Ajouter cette précision relèvera d’un besoin métier distinct et devra préserver les dates civiles existantes.
+Le fuseau portuaire par événement n’est pas encore modélisé : P0.3 utilise volontairement `Europe/Paris`, cohérent avec l’exploitation actuelle. Une extension multi-fuseaux devra ajouter un identifiant IANA explicite sans réinterpréter les instants UTC existants.
 
 ## 10. Tests et validation
 
@@ -294,6 +332,12 @@ Tests Planning couverts :
 - soumission et verrouillage de la période visible ;
 - retrait des actions d’édition sur un planning publié ;
 - appel RPC et mapping de l’état/version de publication.
+- conversion affectation locale/UTC, passage de minuit et refus d’une heure inexistante au changement d’heure ;
+- contrôles absence, titre expirant, qualification manquante et dérogation active ;
+- préremplissage et comparaison des bordées (inchangé, remplacé, vacant, non conforme) ;
+- formulaire complet et lecture seule d’une relève, payload RPC transactionnel ;
+- payload, attribution serveur et historique des dérogations ;
+- vues Flotte, Équipages, Navire et Marin avec ouverture d’une même affectation.
 
 Commandes de validation :
 
@@ -310,12 +354,11 @@ supabase db lint --linked
 
 ### P0
 
-1. Créer le workflow de relève et la comparaison bordée sortante/entrante.
-2. Relier fonctions requises, effectif minimum et qualifications aux navires.
-3. Charger les événements par période et indexer la détection visuelle des conflits.
-4. Ajouter l’archivage logique des événements hors périodes publiées.
-5. Extraire progressivement toolbar, dialogues et panneau latéral.
-6. Ajouter un test de parcours navigateur authentifié stable.
+1. Relier fonctions requises, effectif minimum et qualifications aux navires.
+2. Charger les événements par période et indexer la détection visuelle des conflits.
+3. Ajouter l’archivage logique des événements hors périodes publiées.
+4. Extraire progressivement toolbar, dialogues et panneau latéral.
+5. Ajouter un test de parcours navigateur authentifié stable.
 
 ### P1
 

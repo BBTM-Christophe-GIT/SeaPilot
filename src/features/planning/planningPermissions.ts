@@ -8,6 +8,8 @@ export interface PlanningPermissions {
   canExport: boolean;
   canManagePublication: boolean;
   canManageVessels: boolean;
+  canManageHandovers: boolean;
+  canManageDerogations: boolean;
 }
 
 export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean): PlanningPermissions {
@@ -18,5 +20,7 @@ export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean
     canExport: canAdminister,
     canManagePublication: canAdminister,
     canManageVessels: canAdminister,
+    canManageHandovers: canAdminister && !isPeriodLocked,
+    canManageDerogations: canAdminister,
   };
 }

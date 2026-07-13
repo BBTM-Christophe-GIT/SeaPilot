@@ -1,7 +1,10 @@
 const PLANNING_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const PLANNING_LOCAL_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const DAY_IN_MILLISECONDS = 86_400_000;
+const PLANNING_TIME_ZONE = 'Europe/Paris';
 
 export const PLANNING_DATE_STORAGE_FORMAT = 'YYYY-MM-DD';
+export const PLANNING_DATE_TIME_STORAGE_FORMAT = 'UTC ISO-8601';
 
 export class PlanningDateError extends Error {
   readonly value: string;
@@ -121,4 +124,72 @@ export function formatPlanningDate(value: string): string {
     year: 'numeric',
     timeZone: 'UTC',
   }).format(parsePlanningDate(value));
+}
+
+function planningZonedParts(date: Date): Record<string, number> {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PLANNING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
+}
+
+function planningTimeZoneOffset(date: Date): number {
+  const parts = planningZonedParts(date);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - date.getTime();
+}
+
+export function isPlanningLocalDateTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = PLANNING_LOCAL_DATE_TIME_PATTERN.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  return isPlanningDate(`${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`)
+    && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
+export function planningLocalDateTimeToUtc(value: string): string {
+  const match = PLANNING_LOCAL_DATE_TIME_PATTERN.exec(value);
+  if (!match || !isPlanningLocalDateTime(value)) throw new PlanningDateError(value);
+  const [, year, month, day, hour, minute] = match.map(Number);
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const firstGuess = new Date(localAsUtc);
+  const firstOffset = planningTimeZoneOffset(firstGuess);
+  let instant = new Date(localAsUtc - firstOffset);
+  const correctedOffset = planningTimeZoneOffset(instant);
+  if (correctedOffset !== firstOffset) instant = new Date(localAsUtc - correctedOffset);
+  if (utcToPlanningLocalDateTime(instant.toISOString()) !== value) {
+    throw new PlanningDateError(`${value} (heure locale inexistante lors du changement d’heure)`);
+  }
+  return instant.toISOString();
+}
+
+export function utcToPlanningLocalDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new PlanningDateError(value);
+  const parts = planningZonedParts(date);
+  return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}T${parts.hour.toString().padStart(2, '0')}:${parts.minute.toString().padStart(2, '0')}`;
+}
+
+export function planningDateFromTimestamp(value: string): string {
+  return utcToPlanningLocalDateTime(value).slice(0, 10);
+}
+
+export function formatPlanningDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date et heure non renseignées';
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: PLANNING_TIME_ZONE,
+  }).format(date);
 }

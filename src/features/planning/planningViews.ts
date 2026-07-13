@@ -10,13 +10,14 @@ import {
 } from './planningModel';
 import type {
   PlanningConfirmationStatus,
+  PlanningAssignmentRecord,
   PlanningFleetEventType,
   PlanningOverview,
   PlanningProjectRecord,
   PlanningVessel,
 } from './planningQueries';
 
-export type PlanningPerspective = 'fleet' | 'crew';
+export type PlanningPerspective = 'fleet' | 'crew' | 'vessel' | 'sailor';
 export type PlanningCrewGrouping = 'people' | 'teams';
 
 export interface PlanningFleetLane {
@@ -26,6 +27,7 @@ export interface PlanningFleetLane {
   detail: string;
   vessel: string;
   projects: PlanningProjectRecord[];
+  assignments: PlanningAssignmentRecord[];
 }
 
 export interface PlanningCrewLane {
@@ -42,6 +44,8 @@ export interface PlanningEventMutation {
   vesselName: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
   statusLabel: string;
   confirmationStatus: PlanningConfirmationStatus;
   functionLabel: string;
@@ -127,6 +131,15 @@ export function buildPlanningFleetLanes(
     && rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end)
     && projectMatchesFilters(project, filters)
   ));
+  const assignments = overview.assignments.filter((assignment) => (
+    assignment.confirmationStatus !== 'cancelled'
+    && rangesOverlap(assignment.startsOn, assignment.endsOn, range.start, range.end)
+    && (!filters.vesselName || assignment.vesselName === filters.vesselName)
+    && (!filters.personName || assignment.crewName === filters.personName)
+    && (!filters.eventType || filters.eventType === 'assignment')
+    && (!filters.status || normalizedEquals(assignment.statusLabel, filters.status) || assignment.confirmationStatus === filters.status)
+    && (!filters.responsible || assignment.captainName === filters.responsible)
+  ));
   const vesselNames = new Set(
     overview.vessels
       .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
@@ -136,6 +149,7 @@ export function buildPlanningFleetLanes(
     if (project.primaryVesselName) vesselNames.add(project.primaryVesselName);
     if (project.secondaryVesselName) vesselNames.add(project.secondaryVesselName);
   });
+  assignments.forEach((assignment) => vesselNames.add(assignment.vesselName));
 
   return [...vesselNames]
     .sort((left, right) => left.localeCompare(right, 'fr'))
@@ -148,6 +162,7 @@ export function buildPlanningFleetLanes(
         detail: vesselDetail(vessel),
         vessel: vesselName,
         projects: projects.filter((project) => project.primaryVesselName === vesselName || project.secondaryVesselName === vesselName),
+        assignments: assignments.filter((assignment) => assignment.vesselName === vesselName),
       };
     });
 }
@@ -206,6 +221,8 @@ export function patchPlanningEvent(
         vesselName: mutation.vesselName,
         startsOn: mutation.startsOn,
         endsOn: mutation.endsOn,
+        startsAt: mutation.startsAt || assignment.startsAt,
+        endsAt: mutation.endsAt || assignment.endsAt,
         assignmentRole: mutation.functionLabel,
         statusLabel: mutation.statusLabel,
         confirmationStatus: mutation.confirmationStatus,

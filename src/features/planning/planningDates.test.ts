@@ -5,9 +5,12 @@ import {
   formatPlanningDate,
   inclusivePlanningDayCount,
   isPlanningDate,
+  isPlanningLocalDateTime,
+  planningLocalDateTimeToUtc,
   rangesOverlap,
   shiftPlanningMonths,
   shiftPlanningYears,
+  utcToPlanningLocalDateTime,
 } from './planningDates';
 
 describe('planning civil dates', () => {
@@ -27,6 +30,16 @@ describe('planning civil dates', () => {
     expect(daysBetween('2026-03-28', '2026-03-30')).toBe(2);
     expect(inclusivePlanningDayCount('2026-03-28', '2026-03-30')).toBe(3);
     expect(addPlanningDays('2026-03-28', 2)).toBe('2026-03-30');
+  });
+
+  it('stores maritime assignment instants in UTC and restores Europe/Paris local time', () => {
+    expect(isPlanningLocalDateTime('2026-07-20T08:15')).toBe(true);
+    expect(planningLocalDateTimeToUtc('2026-07-20T08:15')).toBe('2026-07-20T06:15:00.000Z');
+    expect(utcToPlanningLocalDateTime('2026-07-20T06:15:00.000Z')).toBe('2026-07-20T08:15');
+  });
+
+  it('rejects a nonexistent local time during the spring daylight-saving change', () => {
+    expect(() => planningLocalDateTimeToUtc('2026-03-29T02:30')).toThrow('heure locale inexistante');
   });
 
   it('clamps month and year navigation instead of skipping a month', () => {

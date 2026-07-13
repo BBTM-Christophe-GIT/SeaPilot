@@ -1,4 +1,4 @@
-import { isPlanningDate } from './planningDates';
+import { isPlanningDate, isPlanningLocalDateTime, planningLocalDateTimeToUtc } from './planningDates';
 
 export function planningEntityId(value: string | number | null | undefined, label: string): number {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -32,4 +32,14 @@ export function assertSinglePlanningDay(startsOn: string, endsOn: string): void 
   if (startsOn !== endsOn) {
     throw new Error('Une journée isolée ne peut pas être étendue. Créez une affectation pour une période.');
   }
+}
+
+export function assertPlanningDateTimeRange(startsAt: string, endsAt: string): void {
+  if (!startsAt || !endsAt) throw new Error('Les dates et heures de début et de fin sont obligatoires.');
+  if (!isPlanningLocalDateTime(startsAt) || !isPlanningLocalDateTime(endsAt)) {
+    throw new Error('Les dates et heures doivent utiliser le format YYYY-MM-DDTHH:mm.');
+  }
+  const start = planningLocalDateTimeToUtc(startsAt);
+  const end = planningLocalDateTimeToUtc(endsAt);
+  if (end <= start) throw new Error('La fin doit être strictement postérieure au début.');
 }

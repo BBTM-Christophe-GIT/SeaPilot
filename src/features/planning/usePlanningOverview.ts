@@ -14,6 +14,9 @@ export const EMPTY_PLANNING_OVERVIEW: PlanningOverview = {
   hrDocuments: [],
   rules: [],
   publications: [],
+  handovers: [],
+  derogations: [],
+  derogationHistory: [],
 };
 
 type PlanningLoadPhase = 'idle' | 'loading' | 'ready' | 'refreshing' | 'error';

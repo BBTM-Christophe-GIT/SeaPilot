@@ -46,6 +46,7 @@ export function PlanningFleetTimelineRow({
   onCreate,
   onMove,
   onOpen,
+  onOpenAssignment,
   onResize,
 }: TimelineBaseProps & {
   lane: PlanningFleetLane;
@@ -53,6 +54,7 @@ export function PlanningFleetTimelineRow({
   onCreate: (lane: PlanningFleetLane, date: string) => void;
   onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
+  onOpenAssignment: (assignmentId: number) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
@@ -97,8 +99,8 @@ export function PlanningFleetTimelineRow({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
   return (
-    <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel}>
-      <div className="planning-row-label">
+    <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel} style={{ '--planning-fleet-assignment-rows': Math.max(1, lane.assignments.length) } as React.CSSProperties}>
+      <div className="planning-row-label" style={{ gridRow: `1 / span ${Math.max(2, lane.assignments.length + 1)}` }}>
         <span className="planning-row-icon" aria-hidden="true">N</span>
         <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
       </div>
@@ -156,6 +158,19 @@ export function PlanningFleetTimelineRow({
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
           </button>
         );
+      })}
+      {lane.assignments.map((assignment, index) => {
+        const placement = dateGridPlacement(assignment.startsOn, assignment.endsOn, days);
+        if (!placement) return null;
+        return <button
+          aria-label={`Affectation de ${assignment.crewName} comme ${assignment.assignmentRole}, du ${formatPlanningDate(assignment.startsOn)} au ${formatPlanningDate(assignment.endsOn)}`}
+          className={`planning-fleet-assignment-bar is-${assignment.confirmationStatus}`}
+          key={assignment.id}
+          onClick={() => onOpenAssignment(assignment.id)}
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: index + 2 }}
+          title={`${assignment.crewName} · ${assignment.assignmentRole} · ${planningConfirmationLabel(assignment.confirmationStatus)}`}
+          type="button"
+        ><strong>{assignment.crewName}</strong><small>{assignment.assignmentRole}</small></button>;
       })}
     </div>
   );
