@@ -30,8 +30,8 @@ const overview: PlanningOverview = {
   days: [],
   periods: [{ id: 10, personId: 1, vesselId: 1, crewName: 'Anne CAPITAINE', vesselName: 'GOURY', watchGroup: 'Bordée 1', functionLabel: 'Capitaine', sailorStatus: 'Embarqué', startsOn: '2026-07-01', endsOn: '2026-07-20', yearNumber: 2026, comments: '', slot365SourceId: '1', slot365SourceKey: 'slot', sourceLabel: 'sharepoint' }],
   projects: [
-    { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Validé', sourceLabel: 'sharepoint' },
-    { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
+    { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', eventType: 'operation', responsibleName: '', status: 'Validé', sourceLabel: 'sharepoint' },
+    { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', eventType: 'operation', responsibleName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
   ],
   certificates: [{ id: 30, vesselId: 1, vesselName: 'GOURY', title: 'Franc-bord', status: 'expired', expiresOn: '2026-07-01', fileUrl: '' }],
   hrDocuments: [{
@@ -52,11 +52,14 @@ const overview: PlanningOverview = {
 };
 
 describe('planning timeline rules', () => {
-  it('keeps the SPFx 14-day week and builds month/year ranges', () => {
-    expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(14);
+  it('builds day, week, fortnight, month and year ranges', () => {
+    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(1);
+    expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
+    expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
     expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);
     expect(buildPlanningTimeline('2026-07-12', 'year')).toHaveLength(365);
-    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'week'))).toEqual({ start: '2026-07-06', end: '2026-07-19' });
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'week'))).toEqual({ start: '2026-07-06', end: '2026-07-12' });
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'fortnight'))).toEqual({ start: '2026-07-06', end: '2026-07-19' });
   });
 
   it('normalizes imported crew and project statuses', () => {

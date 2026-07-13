@@ -12,13 +12,13 @@ const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, active';
 const PLANNING_ASSIGNMENT_SELECT =
-  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, status_label, watch_group, comments, source_label';
+  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
   'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
-  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, status, source_label';
+  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
 const PLANNING_HR_DOCUMENT_SELECT =
   'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
@@ -56,6 +56,7 @@ export interface PlanningAssignmentRow {
   ends_on: string;
   assignment_role: string;
   status_label?: string | null;
+  confirmation_status?: string | null;
   watch_group?: string | null;
   comments?: string | null;
   source_label: string;
@@ -125,6 +126,8 @@ interface PlanningProjectRow {
   primary_vessel_name: string | null;
   secondary_vessel_id: number | null;
   secondary_vessel_name: string | null;
+  event_type?: string | null;
+  responsible_name?: string | null;
   status: string | null;
   source_label: string;
 }
@@ -215,6 +218,7 @@ export interface PlanningAssignmentRecord {
   endsOn: string;
   assignmentRole: string;
   statusLabel: string;
+  confirmationStatus: PlanningConfirmationStatus;
   watchGroup: string;
   comments: string;
   sourceLabel: string;
@@ -276,6 +280,8 @@ export interface PlanningProjectRecord {
   primaryVesselName: string;
   secondaryVesselId: number | null;
   secondaryVesselName: string;
+  eventType: PlanningFleetEventType;
+  responsibleName: string;
   status: string;
   sourceLabel: string;
 }
@@ -357,6 +363,9 @@ export interface PlanningOverview {
   publications: PlanningPublicationRecord[];
 }
 
+export type PlanningConfirmationStatus = 'provisional' | 'confirmed' | 'cancelled';
+export type PlanningFleetEventType = 'operation' | 'transit' | 'maintenance' | 'unavailability';
+
 export interface CreateVesselInput {
   name: string;
   acronym: string;
@@ -370,6 +379,7 @@ export interface CreatePlanningAssignmentInput {
   endsOn: string;
   assignmentRole: string;
   statusLabel?: string;
+  confirmationStatus?: PlanningConfirmationStatus;
   watchGroup?: string;
   comments?: string;
 }
@@ -382,6 +392,7 @@ export interface UpdatePlanningEventInput {
   startsOn: string;
   endsOn: string;
   statusLabel: string;
+  confirmationStatus?: PlanningConfirmationStatus;
   functionLabel: string;
   watchGroup: string;
   comments: string;
@@ -395,9 +406,13 @@ export interface UpdatePlanningProjectInput {
   status: string;
   vesselId: number;
   vesselName: string;
+  eventType: PlanningFleetEventType;
+  responsibleName: string;
   clientName: string;
   description: string;
 }
+
+export type CreatePlanningProjectInput = Omit<UpdatePlanningProjectInput, 'id'>;
 
 export interface TransitionPlanningPublicationInput {
   action: PlanningPublicationAction;
@@ -420,6 +435,15 @@ function numberOrNull(value: number | string | null | undefined): number | null 
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function planningConfirmationStatus(value: string | null | undefined): PlanningConfirmationStatus {
+  return value === 'provisional' || value === 'cancelled' ? value : 'confirmed';
+}
+
+function planningFleetEventType(value: string | null | undefined): PlanningFleetEventType {
+  if (value === 'transit' || value === 'maintenance' || value === 'unavailability') return value;
+  return 'operation';
 }
 
 function mapImportedVesselName(vesselName: string | null, manualVesselName: string | null): string {
@@ -479,6 +503,7 @@ export function mapPlanningAssignmentRows(
       endsOn: row.ends_on,
       assignmentRole: row.assignment_role,
       statusLabel: row.status_label || 'En Mer',
+      confirmationStatus: planningConfirmationStatus(row.confirmation_status),
       watchGroup: row.watch_group || 'Affectation',
       comments: row.comments || '',
       sourceLabel: row.source_label,
@@ -499,6 +524,7 @@ export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOvervi
     endsOn: row.ends_on,
     assignmentRole: row.assignment_role,
     statusLabel: row.status_label || 'En Mer',
+    confirmationStatus: planningConfirmationStatus(row.confirmation_status),
     watchGroup: row.watch_group || 'Affectation',
     comments: row.comments || '',
     sourceLabel: row.source_label,
@@ -566,6 +592,8 @@ export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProj
     primaryVesselName: textOrEmpty(row.primary_vessel_name),
     secondaryVesselId: row.secondary_vessel_id,
     secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
+    eventType: planningFleetEventType(row.event_type),
+    responsibleName: textOrEmpty(row.responsible_name),
     status: textOrEmpty(row.status) || 'A planifier',
     sourceLabel: row.source_label,
   }));
@@ -836,6 +864,7 @@ export async function createPlanningAssignment(
     ends_on: input.endsOn,
     assignment_role: input.assignmentRole.trim() || 'crew',
     status_label: requiredPlanningText(input.statusLabel || 'En Mer', 'Le statut'),
+    confirmation_status: input.confirmationStatus || 'confirmed',
     watch_group: input.watchGroup?.trim() || 'Affectation',
     comments: input.comments?.trim() || null,
     source_label: 'seapilot',
@@ -889,6 +918,7 @@ export async function updatePlanningEvent(client: SupabaseClient, input: UpdateP
         ends_on: input.endsOn,
         assignment_role: input.functionLabel.trim() || 'Équipage',
         status_label: statusLabel,
+        confirmation_status: input.confirmationStatus || 'confirmed',
         watch_group: input.watchGroup.trim() || 'Affectation',
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
@@ -946,28 +976,56 @@ export async function deletePlanningEvent(
   if (error) throwPlanningDataError('delete-event', 'Impossible de supprimer cet événement du planning.', error);
 }
 
-export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<void> {
-  const projectId = planningEntityId(input.id, 'Le projet');
+function planningProjectPayload(input: CreatePlanningProjectInput) {
   const vesselId = planningEntityId(input.vesselId, 'Le navire');
-  const title = requiredPlanningText(input.title, 'Le titre du projet');
+  const title = requiredPlanningText(input.title, 'Le titre de l’événement');
   const vesselName = requiredPlanningText(input.vesselName, 'Le nom du navire');
   assertPlanningDateRange(input.startsOn, input.endsOn);
-  const { error } = await client
+  return {
+    title,
+    starts_on: input.startsOn,
+    ends_on: input.endsOn,
+    status: input.status.trim() || 'A planifier',
+    event_type: input.eventType,
+    responsible_name: input.responsibleName.trim() || null,
+    primary_vessel_id: vesselId,
+    primary_vessel_name: vesselName,
+    client_name: input.clientName.trim() || null,
+    description: input.description.trim() || null,
+    source_label: 'seapilot-admin',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function createPlanningProject(
+  client: SupabaseClient,
+  input: CreatePlanningProjectInput,
+): Promise<PlanningProjectRecord> {
+  const payload = planningProjectPayload(input);
+  const { data, error } = await client
     .from('planning_projects')
-    .update({
-      title,
-      starts_on: input.startsOn,
-      ends_on: input.endsOn,
-      status: input.status.trim() || 'A planifier',
-      primary_vessel_id: vesselId,
-      primary_vessel_name: vesselName,
-      client_name: input.clientName.trim() || null,
-      description: input.description.trim() || null,
-      source_label: 'seapilot-admin',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', projectId);
+    .insert({ ...payload, created_at: new Date().toISOString() })
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
+  if (error) throwPlanningDataError('create-project', 'Impossible de créer cet événement flotte.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('L’événement flotte créé n’a pas pu être relu.');
+  return project;
+}
+
+export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<PlanningProjectRecord> {
+  const projectId = planningEntityId(input.id, 'Le projet');
+  const payload = planningProjectPayload(input);
+  const { data, error } = await client
+    .from('planning_projects')
+    .update(payload)
+    .eq('id', projectId)
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
   if (error) throwPlanningDataError('update-project', 'Impossible de modifier ce projet.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('L’événement flotte modifié n’a pas pu être relu.');
+  return project;
 }
 
 export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {

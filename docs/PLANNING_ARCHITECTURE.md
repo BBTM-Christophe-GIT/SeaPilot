@@ -5,9 +5,9 @@ Périmètre audité : route `/modules/planning`, composants React, accès Supaba
 
 ## 1. Synthèse
 
-Le Planning SeaPilot est un cockpit React/Vite connecté aux données réelles Supabase et aux historiques SharePoint/SMTR importés. Il fusionne les affectations natives SeaPilot, les journées SMTR et les périodes SMTR sans remplacer les données historiques. La timeline hiérarchise navires, bordées et marins, puis superpose projets et affectations.
+Le Planning SeaPilot est un cockpit React/Vite connecté aux données réelles Supabase et aux historiques SharePoint/SMTR importés. Il fusionne les affectations natives SeaPilot, les journées SMTR et les périodes SMTR sans remplacer les données historiques. P0.2 sépare explicitement la vue Flotte, organisée par navire, de la vue Équipages, organisée par marin ou équipe.
 
-Le socle existant est fonctionnel pour consulter et corriger le planning : vues Semaine/Mois/An, filtres, zoom, plein écran, création, modification, duplication, glisser-déposer, redimensionnement, création rapide, export CSV, alertes documentaires et audit des écritures. Les droits d’écriture restent volontairement réservés aux administrateurs dans l’interface et dans les politiques RLS actuelles.
+Le socle existant est fonctionnel pour consulter et corriger le planning : vues Jour/Semaine/Deux semaines/Mois/An, filtres métier, zoom, plein écran, création, modification, duplication, glisser-déposer, changement de navire, redimensionnement, formulaires rapide/complet, export CSV, alertes documentaires et audit des écritures. Les mutations simples mettent à jour l’instantané React sans recharger l’ensemble du Planning et restaurent la valeur précédente si Supabase refuse l’écriture. Les droits d’écriture restent volontairement réservés aux administrateurs dans l’interface et dans les politiques RLS actuelles.
 
 Le premier lot P0 du 13 juillet 2026 a ajouté le moteur central de contrôle des affectations, ses niveaux configurables et le centre de conflits. Le lot de publication qui suit ajoute un workflow administrateur Soumettre → Valider → Publier, un verrou PostgreSQL couvrant les quatre sources d’événements existantes et un instantané immuable à chaque version publiée. Les règles utilisent les données Planning et RH existantes ; aucune donnée fictive et aucune table d’événements concurrente n’ont été créées.
 
@@ -17,19 +17,25 @@ La phase P0.1 conserve les tables et les parcours métier existants. Elle isole 
 
 Le contrôle distant réalisé avant migration comptait 11 affectations, 171 journées, 70 périodes et 18 projets. Aucune relation navire obligatoire n’était absente. Une journée éditée dans SeaPilot avait toutefois `disembark_on` au 6 juillet 2026 et `work_date` au 7 juillet 2026 ; la migration P0.1 la normalise de manière auditée avant d’ajouter une contrainte.
 
+### Phase P0.2 — vues et événements
+
+P0.2 conserve l’architecture P0.1 et extrait seulement le rendu des lignes dans `PlanningTimeline.tsx` et la construction des perspectives dans `planningViews.ts`. La vue Flotte affiche opérations, transits, maintenances et indisponibilités ; la vue Équipages affiche embarquements, repos, congés, formations et indisponibilités avec un état provisoire, confirmé ou annulé. Les filtres navire, marin, type, statut et responsable restent actifs après une mutation.
+
+Les formulaires rapide et complet utilisent un panneau latéral commun. Les interactions souris et clavier reposent sur des contrôles natifs ; les poignées utilisent Pointer Events avec cibles tactiles élargies. Sur iPad, une modification reste également réalisable par le formulaire lorsque le glisser-déposer HTML natif n’est pas proposé par le navigateur.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
 | --- | --- | --- | --- | --- |
 | Route et intégration SeaPilot | Opérationnel | Opérationnel | Route protégée sous `/modules/planning`, navigation et authentification conservées | Maintenir |
 | Données navires, marins et projets | Opérationnel | Opérationnel | Données réelles Supabase et historiques SharePoint | Maintenir |
-| Vue équipages | Opérationnel | Opérationnel | Hiérarchie navire → bordée → marin, première colonne et dates fixes | Maintenir |
-| Vue flotte | Partiel | Partiel | Les projets sont visibles par navire, mais les indisponibilités/maintenances ne disposent pas encore d’un modèle unifié | P0 |
-| Échelles temporelles | Partiel | Partiel | Semaine sur 14 jours, mois sur 49 jours et année ; liste, trimestre et Gantt absents | P1 |
-| Filtres et navigation temporelle | Opérationnel | Opérationnel | Navire, marin, mois, année, zoom et week-ends | P1 : statut, fonction, alertes |
-| Création rapide et complète | Opérationnel | Amélioré | Contrôles affichés avant enregistrement ; pièces jointes et participants absents | P0/P1 |
-| Modification directe | Opérationnel | Amélioré | Édition, déplacement et redimensionnement passent par le même moteur de contrôle | Maintenir |
-| Affectations | Partiel | Amélioré | Dates, activité RH, fonction, documents, aptitude et disponibilité contrôlés ; matrice d’armement absente | P0 |
+| Vue équipages | Opérationnel | Opérationnel P0.2 | Marins ou équipes en lignes ; première colonne et dates fixes ; affectations provisoires/confirmées | Maintenir |
+| Vue flotte | Partiel | Opérationnel P0.2 | Navires en lignes ; opérations, transits, maintenance et indisponibilités typés | Maintenir |
+| Échelles temporelles | Partiel | Opérationnel P0.2 | Jour, semaine de 7 jours, deux semaines, mois glissant de 49 jours et année | Maintenir |
+| Filtres et navigation temporelle | Opérationnel | Opérationnel P0.2 | Période, navire, marin, type, statut, responsable, zoom et week-ends | Maintenir |
+| Création rapide et complète | Opérationnel | Opérationnel P0.2 | Panneau latéral commun ; contrôles avant enregistrement ; pièces jointes hors P0.2 | Maintenir |
+| Modification directe | Opérationnel | Opérationnel P0.2 | Édition, déplacement, changement de navire et redimensionnement optimistes avec retour arrière | Maintenir |
+| Affectations | Partiel | Amélioré P0.2 | Statuts provisoire/confirmé/annulé ajoutés ; matrice d’armement explicitement hors périmètre | P0 ultérieur |
 | Détection de double affectation | Partiel | Amélioré | Centre dédié et niveau configurable ; les avertissements restent dérogeables | P0 : dérogation auditée |
 | Disponibilités et absences | Partiel | Amélioré | Repos, congé, arrêt et formation déjà présents dans les statuts ; workflow de demande/validation absent | P1 |
 | Qualifications et certificats marins | Partiel | Amélioré | Échéances et statuts des documents RH contrôlés ; exigences par navire/fonction absentes | P0/P1 |
@@ -44,7 +50,7 @@ Le contrôle distant réalisé avant migration comptait 11 affectations, 171 jou
 | Permissions | Partiel | Partiel | Lecture RLS par rôle/périmètre ; écriture admin uniquement ; permissions granulaires d’action absentes | P0 |
 | Export | Partiel | Partiel | CSV journalier par marin ; PDF/Excel/ICS et export flotte absents | P1 |
 | Notifications et collaboration | Absent | Absent | Pas de workflow de confirmation ou notification Planning | P1 |
-| Responsive ordinateur/iPad | Opérationnel | Amélioré | Layout à une colonne sous 1240 px, contrôles tactiles, résumés de contrôle adaptatifs | Maintenir |
+| Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
 | Temps réel et cache | Absent | Absent | Aucun abonnement Supabase Realtime ni cache de requêtes | P1 |
 | Virtualisation / chargement par période | Absent | Absent | Toutes les sources sont chargées avant filtrage client | P0 performance |
 
@@ -74,8 +80,9 @@ Le contrôle distant réalisé avant migration comptait 11 affectations, 171 jou
 
 ### Composants
 
-- `PlanningPage.tsx` orchestre chargement, filtres, timeline, formulaires, glisser-déposer et actions.
-- `PlanningTimelineRow` rend une ligne navire, bordée ou marin et les barres projets/équipages.
+- `PlanningPage.tsx` orchestre chargement, perspectives, filtres, formulaires, mutations optimistes et actions.
+- `PlanningTimeline.tsx` rend séparément une ligne Flotte ou Équipages, les zones de création, les barres, le glisser-déposer et le redimensionnement Pointer Events.
+- `planningViews.ts` construit les lignes par navire, marin ou équipe, applique les filtres P0.2 et porte les transformations immuables utilisées pour le retour arrière.
 - `PlanningEventDialog` édite une journée, période ou affectation.
 - `PlanningProjectDialog` édite les projets Planning existants.
 - `PlanningSideContent` affiche conflits, échéances, marins non affectés et facturation.
@@ -83,7 +90,7 @@ Le contrôle distant réalisé avant migration comptait 11 affectations, 171 jou
 - `PlanningPublicationPanel.tsx` présente le statut, la version, le périmètre, le verrou et les actions de workflow sans disperser cette logique dans la timeline.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
-Les prochains refactors doivent extraire la toolbar, la timeline, les dialogues et le panneau latéral par étapes, sans reconstruire le module.
+Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
 
 ### Modèle métier
 
@@ -93,6 +100,7 @@ La logique pure est répartie sans modifier le modèle métier :
 - `planningValidation.ts` protège les champs obligatoires, identifiants et plages avant Supabase ;
 - `planningPermissions.ts` traduit les rôles existants en capacités de lecture, écriture, export et publication ;
 - `planningOverlap.ts` isole les chevauchements inter-navires et groupe les comparaisons par marin ;
+- `planningViews.ts` isole les perspectives, regroupements, filtres et mises à jour optimistes ;
 - `planningErrors.ts` convertit les codes Supabase en messages utilisateur et journalise opération/code/message sans données métier ;
 - `planningModel.ts` conserve les fonctions métier suivantes :
 - fusion/déduplication des trois sources équipage ;
@@ -121,6 +129,8 @@ Sources fusionnées :
 - `planning_publications` : état, périmètre, verrou et numéro de version courant.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
+
+P0.2 réutilise `planning_projects` comme source des événements Flotte avec `event_type` et `responsible_name`, et `planning_assignments` avec `confirmation_status`. Les valeurs historiques reçoivent respectivement les défauts sûrs `operation` et `confirmed`. Aucune table concurrente n’est créée.
 
 ## 5. Données et relations
 
@@ -176,6 +186,17 @@ L’audit P0.1 confirme que toutes les références navire obligatoires sont ré
 - peut être rejouée sans danger grâce aux gardes sur la contrainte, aux index `if not exists` et aux recréations déterministes des politiques.
 
 Retour arrière : supprimer la contrainte, les dix index nommés et recréer les politiques depuis la migration précédente. La correction de donnée n’est volontairement pas inversée automatiquement : l’ancienne valeur reste disponible dans `planning_change_log` et sa restauration doit être une décision métier explicite.
+
+`202607130005_planning_p02_event_views.sql` :
+
+- ajoute `planning_projects.event_type` et `responsible_name`, ainsi que `planning_assignments.confirmation_status` ;
+- préserve les lignes existantes avec les valeurs par défaut `operation` et `confirmed` ;
+- ajoute puis valide les contraintes de domaine sans verrou de validation prolongé ;
+- indexe les filtres type/date, responsable et confirmation/date ;
+- recrée `planning_assignment_overview()` avec le statut de confirmation, le même périmètre de lecture et une exécution réservée à `authenticated` ;
+- reste rejouable grâce aux colonnes/index conditionnels, aux gardes de contraintes et à la recréation déterministe de la fonction.
+
+Retour arrière : restaurer la fonction depuis la migration précédente, supprimer les index et contraintes P0.2, puis n’abandonner les trois colonnes qu’après export des valeurs nouvelles. Le retrait des colonnes est volontairement une opération manuelle car il serait destructif.
 
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
@@ -245,7 +266,7 @@ Outils existants conservés : TypeScript strict, Vitest, Testing Library et buil
 
 Tests Planning couverts :
 
-- validation stricte `YYYY-MM-DD`, plages semaine/mois/année et calculs UTC ;
+- validation stricte `YYYY-MM-DD`, plages jour/semaine/deux semaines/mois/année et calculs UTC ;
 - création d’un événement valide et refus d’une plage incohérente ;
 - passage de minuit, événement multi-jours et changements d’heure ;
 - fusion et hiérarchie des sources ;
@@ -254,7 +275,12 @@ Tests Planning couverts :
 - absence de chargement Supabase sans permission de lecture ;
 - conservation du dernier Planning valide si un rafraîchissement échoue ;
 - création classique et rapide ;
-- redimensionnement ;
+- perspectives Flotte/Équipages et regroupement marin/équipe ;
+- filtres type/statut/responsable ;
+- création et modification d’événements Flotte typés ;
+- redimensionnement équipage et flotte ;
+- conservation des filtres et absence de rechargement intégral après mutation simple ;
+- transformations optimistes et restauration de l’instantané précédent ;
 - double affectation et marquage visuel ;
 - export journalier ;
 - alertes documents/certificats ;
@@ -288,7 +314,7 @@ supabase db lint --linked
 2. Relier fonctions requises, effectif minimum et qualifications aux navires.
 3. Charger les événements par période et indexer la détection visuelle des conflits.
 4. Ajouter l’archivage logique des événements hors périodes publiées.
-5. Extraire progressivement toolbar, timeline, dialogues et panneau latéral.
+5. Extraire progressivement toolbar, dialogues et panneau latéral.
 6. Ajouter un test de parcours navigateur authentifié stable.
 
 ### P1
