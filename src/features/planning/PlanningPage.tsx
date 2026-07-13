@@ -63,6 +63,8 @@ import {
   deletePlanningEvent,
   fetchPlanningDerogations,
   fetchPlanningHandovers,
+  fetchPlanningHistory,
+  fetchPlanningVersions,
   mapPlanningAssignmentRows,
   revokePlanningDerogation,
   savePlanningHandover,
@@ -75,6 +77,7 @@ import {
   type CreatePlanningDerogationInput,
   type PlanningDerogationRecord,
   type PlanningHandoverRecord,
+  type PlanningHistoryRecord,
   type PlanningPublicationAction,
   type PlanningProjectRecord,
   type PlanningVessel,
@@ -151,7 +154,7 @@ interface ProjectFormState {
 
 interface ExportFormState { personName: string; startsOn: string; endsOn: string }
 
-type SideTab = 'conflicts' | 'handovers' | 'derogations' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
+type SideTab = 'conflicts' | 'handovers' | 'derogations' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 const EMPTY_ASSIGNMENT: AssignmentFormState = {
@@ -190,6 +193,7 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
   { key: 'conflicts', label: 'Conflits' },
   { key: 'handovers', label: 'Relèves' },
   { key: 'derogations', label: 'Dérogations' },
+  { key: 'history', label: 'Historique' },
   { key: 'certificates', label: 'Certificats' },
   { key: 'unassigned', label: 'Marins non affectés' },
   { key: 'billing', label: 'Facturation' },
@@ -300,7 +304,26 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const isPeriodLocked = isPlanningPublicationLocked(activePublication);
   const permissions = getPlanningPermissions(effectiveRoles, isPeriodLocked);
   const canEditPlanning = permissions.canEditEvents;
-  const canManagePublication = permissions.canManagePublication && (!filters.vesselName || publicationVessel !== null);
+  const publicationTargetVesselId = activePublication ? activePublication.vesselId : publicationVesselId;
+  const captainHasVesselScope = !effectiveRoles.includes('capitaine')
+    || effectiveRoles.some((role) => role === 'admin' || role === 'direction')
+    || publicationTargetVesselId !== null;
+  const allowedPublicationActions = useMemo(() => {
+    const actions: PlanningPublicationAction[] = [];
+    if (permissions.canSubmitPublication) actions.push('submit');
+    if (permissions.canValidatePublication && captainHasVesselScope) actions.push('validate');
+    if (permissions.canPublishPublication) actions.push('publish');
+    if (permissions.canReopenPublication) actions.push('reopen');
+    if (permissions.canArchivePublication) actions.push('archive');
+    return actions;
+  }, [captainHasVesselScope, permissions.canArchivePublication, permissions.canPublishPublication, permissions.canReopenPublication, permissions.canSubmitPublication, permissions.canValidatePublication]);
+  const canManagePublication = permissions.canManagePublication
+    && allowedPublicationActions.length > 0
+    && (!filters.vesselName || publicationVessel !== null);
+  const visibleSideTabs = useMemo(
+    () => SIDE_TABS.filter((tab) => tab.key !== 'history' || permissions.canViewHistory),
+    [permissions.canViewHistory],
+  );
   const todayDate = todayPlanningDate();
   const fleetLanes = useMemo(() => buildPlanningFleetLanes(overview, range, filters), [filters, overview, range]);
   const crewLanes = useMemo(
@@ -396,6 +419,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     conflicts: planningControls.filter((control) => control.level !== 'information').length,
     handovers: overview.handovers.filter((handover) => handover.status !== 'cancelled').length,
     derogations: overview.derogations.filter((derogation) => derogation.status === 'active').length,
+    history: overview.history.length,
     certificates: certificateAlerts.filter((alert) => alert.tone === 'danger').length || certificateAlerts.length,
     unassigned: unassignedPeople.length,
     billing: unbilledProjects.length,
@@ -414,11 +438,17 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         vesselId: publicationVesselId,
         comment,
       });
+      const [versions, history] = await Promise.all([
+        fetchPlanningVersions(effectiveClient),
+        fetchPlanningHistory(effectiveClient),
+      ]);
       updateOverview((current) => ({
         ...current,
         publications: current.publications.some((item) => item.id === publication.id)
           ? current.publications.map((item) => item.id === publication.id ? publication : item)
           : [publication, ...current.publications],
+        versions,
+        history,
       }));
       const messages: Record<PlanningPublicationAction, string> = {
         submit: 'Période soumise et verrouillée pour validation.',
@@ -939,6 +969,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       ) : null}
 
       <PlanningPublicationPanel
+        allowedActions={allowedPublicationActions}
         canManage={canManagePublication}
         isSaving={isSaving}
         onAction={handlePublicationAction}
@@ -1101,7 +1132,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
 
         <aside className="planning-side-card" aria-label="Alertes du planning">
           <div className="planning-side-tabs" role="tablist">
-            {SIDE_TABS.map((tab) => (
+            {visibleSideTabs.map((tab) => (
               <button aria-selected={sideTab === tab.key} className={sideTab === tab.key ? 'is-active' : ''} key={tab.key} onClick={() => setSideTab(tab.key)} role="tab" type="button">
                 {tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}
               </button>
@@ -1184,6 +1215,9 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
   if (sideTab === 'derogations') {
     return <PlanningDerogationList editable={canManageDerogations} onRevoke={onRevokeDerogation} overview={overview} />;
   }
+  if (sideTab === 'history') {
+    return <PlanningHistoryList overview={overview} />;
+  }
   const alerts = sideTab === 'alerts' ? hrAlerts : certificateAlerts;
   return <div className="planning-side-list">{alerts.length ? alerts.map((alert) => <article className="planning-side-item" key={alert.id}><div><strong>{alert.title}</strong><span className={`planning-side-badge is-${alert.tone}`}>{alert.statusLabel}</span></div><p>{alert.subtitle} · {formatPlanningDate(alert.date)}</p>{alert.vesselName ? <p>Navire · {alert.vesselName}</p> : null}</article>) : <PlanningEmptySide text={sideTab === 'alerts' ? 'Aucune échéance RH proche.' : 'Aucune alarme certificat.'} />}</div>;
 }
@@ -1210,10 +1244,68 @@ function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, co
           <label className="is-wide">Bordée / groupe<select value={form.watchGroup} onChange={(changeEvent) => onChange({ ...form, watchGroup: changeEvent.target.value })}>{uniqueSorted([...watchGroupOptions, form.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label>
           <label className="is-wide">Annotation<textarea rows={4} value={form.comments} onChange={(changeEvent) => onChange({ ...form, comments: changeEvent.target.value })} /></label>
         </div>
+        <p className="planning-dialog-source">Source · {event.sourceLabel}</p>
         <PlanningControlSummary results={controls} />
         {onDerogation && controls.some((control) => control.level !== 'information') ? <button className="planning-derogation-action" onClick={onDerogation} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation encadrée</button> : null}
         <footer className="planning-dialog-footer-split"><span><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={16} />{event.kind === 'assignment' ? 'Annuler l’affectation' : 'Supprimer'}</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span><span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span></footer>
       </form>
+    </div>
+  );
+}
+
+const PLANNING_HISTORY_ACTION_LABELS: Record<string, string> = {
+  create: 'Création',
+  update: 'Modification',
+  move: 'Déplacement',
+  assign: 'Affectation',
+  unassign: 'Désaffectation',
+  submit: 'Soumission',
+  validate: 'Validation',
+  publish: 'Publication',
+  reopen: 'Réouverture',
+  archive: 'Archivage',
+  cancel: 'Annulation',
+  derogate: 'Dérogation',
+  status_change: 'Changement de statut',
+  delete: 'Suppression',
+};
+
+function planningHistoryScope(history: PlanningHistoryRecord, overview: ReturnType<typeof usePlanningOverview>['overview']): string {
+  const vessel = history.vesselId === null ? null : overview.vessels.find((item) => item.id === history.vesselId);
+  const dates = history.startsOn
+    ? history.endsOn && history.endsOn !== history.startsOn
+      ? `${formatPlanningDate(history.startsOn)} — ${formatPlanningDate(history.endsOn)}`
+      : formatPlanningDate(history.startsOn)
+    : '';
+  return [vessel?.name, dates].filter(Boolean).join(' · ');
+}
+
+function PlanningHistoryList({ overview }: { overview: ReturnType<typeof usePlanningOverview>['overview'] }) {
+  if (!overview.versions.length && !overview.history.length) {
+    return <PlanningEmptySide text="Aucune version ou modification historisée." />;
+  }
+  return (
+    <div className="planning-side-list planning-history-list">
+      {overview.versions.slice(0, 10).map((version) => (
+        <article className="planning-side-item planning-history-version" key={`version-${version.id}`}>
+          <div>
+            <strong>{`Version publiée ${version.versionNumber}`}</strong>
+            <span className="planning-side-badge is-success">Immuable</span>
+          </div>
+          <p>{`${version.createdByName || 'Utilisateur autorisé'} · ${formatPlanningDateTime(version.createdAt)}`}</p>
+          {version.comment ? <small>{version.comment}</small> : null}
+        </article>
+      ))}
+      {overview.history.slice(0, 80).map((history) => (
+        <article className="planning-side-item" key={`history-${history.id}`}>
+          <div>
+            <strong>{history.summary || PLANNING_HISTORY_ACTION_LABELS[history.action] || history.action}</strong>
+            <span className="planning-side-badge is-muted">{PLANNING_HISTORY_ACTION_LABELS[history.action] || history.action}</span>
+          </div>
+          <p>{`${history.changedByName || 'Système'} · ${formatPlanningDateTime(history.changedAt)}`}</p>
+          {planningHistoryScope(history, overview) ? <small>{planningHistoryScope(history, overview)}</small> : null}
+        </article>
+      ))}
     </div>
   );
 }

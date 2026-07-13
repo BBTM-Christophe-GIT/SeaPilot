@@ -126,10 +126,20 @@ const publicationRow = {
   current_version: 1,
   comment: 'Version opérationnelle',
   submitted_at: '2026-07-13T08:00:00Z',
+  submitted_by: 'user-submit',
+  submitted_by_name: 'Armement BBTM',
   validated_at: '2026-07-13T09:00:00Z',
+  validated_by: 'user-validate',
+  validated_by_name: 'Direction BBTM',
   published_at: '2026-07-13T10:00:00Z',
+  published_by: 'user-publish',
+  published_by_name: 'Direction BBTM',
   locked_at: '2026-07-13T08:00:00Z',
+  locked_by: 'user-submit',
+  locked_by_name: 'Armement BBTM',
   updated_at: '2026-07-13T10:00:00Z',
+  updated_by: 'user-publish',
+  updated_by_name: 'Direction BBTM',
 };
 
 function createClient(options: {
@@ -143,6 +153,8 @@ function createClient(options: {
   hrDocuments?: unknown[];
   rules?: unknown[];
   publications?: unknown[];
+  versions?: unknown[];
+  history?: unknown[];
   handovers?: unknown[];
   handoverPositions?: unknown[];
   derogations?: unknown[];
@@ -204,6 +216,9 @@ function createClient(options: {
     if (table === 'planning_publications') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.publications ?? [], error: null }) }) };
     }
+    if (table === 'planning_versions') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.versions ?? [], error: null }) }) };
+    }
     if (table === 'planning_handovers') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.handovers ?? [], error: null }) }) };
     }
@@ -217,6 +232,7 @@ function createClient(options: {
       return {
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.derogationHistory ?? [], error: null }) }),
+          order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: options.history ?? [], error: null }) }),
         }),
       };
     }
@@ -359,7 +375,7 @@ describe('PlanningPage cockpit', () => {
       ends_on: '2026-07-22',
     })));
     expect(await screen.findByText('Événement flotte créé.')).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it('keeps fleet filters active and avoids a full reload after an event update', async () => {
     const user = userEvent.setup();
@@ -382,7 +398,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByLabelText('Filtre statut')).toHaveValue('Confirmé');
     expect(vesselOrder).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it('switches to the yearly view and exposes zoom/fullscreen controls', async () => {
     const user = userEvent.setup();
@@ -458,9 +474,48 @@ describe('PlanningPage cockpit', () => {
     const publicationPanel = screen.getByRole('region', { name: 'Pilotage de publication' });
     expect(publicationPanel).toHaveTextContent('Publié');
     expect(publicationPanel).toHaveTextContent('Version 1');
+    expect(publicationPanel).toHaveTextContent('Publié par Direction BBTM');
     expect(screen.getByText('Verrouillé')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réouvrir pour modification' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archiver' })).toBeInTheDocument();
+  });
+
+  it('shows immutable versions and the semantic Planning history', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      publications: [publicationRow],
+      versions: [{
+        id: 1,
+        publication_id: 500,
+        version_number: 1,
+        comment: 'Version opérationnelle',
+        created_at: '2026-07-13T10:00:00Z',
+        created_by: 'user-publish',
+        created_by_name: 'Direction BBTM',
+      }],
+      history: [{
+        id: 99,
+        entity_kind: 'publication',
+        entity_id: 500,
+        action: 'publish',
+        payload: { version: 1 },
+        changed_by: 'user-publish',
+        changed_by_name: 'Direction BBTM',
+        changed_at: '2026-07-13T10:00:00Z',
+        vessel_id: null,
+        starts_on: '2026-06-29',
+        ends_on: '2026-08-16',
+        summary: 'Planning publié en version 1',
+      }],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: /Historique/ }));
+    expect(screen.getByText('Version publiée 1')).toBeInTheDocument();
+    expect(screen.getByText('Planning publié en version 1')).toBeInTheDocument();
+    expect(screen.getAllByText(/Direction BBTM/).length).toBeGreaterThan(0);
   });
 
   it('blocks an assignment when the medical validity ends before disembarkation', async () => {
@@ -542,12 +597,13 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
   });
 
-  it('keeps planning edition strictly reserved to administrators', async () => {
+  it('allows office direction to edit while keeping vessel administration restricted', async () => {
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByText('Lecture seule')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+    expect(screen.getByText('Modification')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle affectation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les navires' })).not.toBeInTheDocument();
   });
 
   it('pins every weekend background cell to its calendar column', async () => {

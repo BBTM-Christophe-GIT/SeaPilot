@@ -2857,6 +2857,8 @@ button:disabled {
 
 .planning-publication-actions > div {
   gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .planning-publication-actions button {
@@ -2882,6 +2884,16 @@ button:disabled {
   color: #6a481c;
   border-color: #d6aa67;
   background: #fff8ec;
+}
+
+.planning-history-version {
+  border-color: #b9dfca;
+  background: #f4fbf7;
+}
+
+.planning-side-badge.is-success {
+  color: #17603a;
+  background: #dcf4e7;
 }
 
 .planning-publication-actions > small {
@@ -4504,6 +4516,13 @@ button:disabled {
 .planning-dialog.is-handover {
   max-width: min(960px, 94vw);
   width: min(960px, 94vw);
+}
+
+.planning-dialog-source {
+  margin: 0;
+  padding: 0 22px;
+  color: var(--color-text-muted, #67738a);
+  font-size: .75rem;
 }
 
 .planning-handover-editor,

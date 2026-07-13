@@ -7,20 +7,40 @@ export interface PlanningPermissions {
   canEditEvents: boolean;
   canExport: boolean;
   canManagePublication: boolean;
+  canSubmitPublication: boolean;
+  canValidatePublication: boolean;
+  canPublishPublication: boolean;
+  canReopenPublication: boolean;
+  canArchivePublication: boolean;
+  canViewHistory: boolean;
   canManageVessels: boolean;
   canManageHandovers: boolean;
   canManageDerogations: boolean;
 }
 
 export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean): PlanningPermissions {
-  const canAdminister = roles.includes('admin');
+  const isAdmin = roles.includes('admin');
+  const isDirection = roles.includes('direction');
+  const isArmement = roles.includes('armement');
+  const isCaptain = roles.includes('capitaine');
+  const canEdit = isAdmin || isDirection || isArmement;
+  const canSubmit = canEdit;
+  const canValidate = isAdmin || isDirection || isCaptain;
+  const canPublish = isAdmin || isDirection;
+  const canReopen = isAdmin || isDirection;
   return {
     canRead: roles.some((role) => PLANNING_READ_ROLES.has(role)),
-    canEditEvents: canAdminister && !isPeriodLocked,
-    canExport: canAdminister,
-    canManagePublication: canAdminister,
-    canManageVessels: canAdminister,
-    canManageHandovers: canAdminister && !isPeriodLocked,
-    canManageDerogations: canAdminister,
+    canEditEvents: canEdit && !isPeriodLocked,
+    canExport: isAdmin || isDirection || isArmement,
+    canManagePublication: canSubmit || canValidate || canPublish || canReopen || isAdmin,
+    canSubmitPublication: canSubmit,
+    canValidatePublication: canValidate,
+    canPublishPublication: canPublish,
+    canReopenPublication: canReopen,
+    canArchivePublication: isAdmin,
+    canViewHistory: isAdmin || isDirection || isArmement || isCaptain,
+    canManageVessels: isAdmin,
+    canManageHandovers: (isAdmin || isArmement) && !isPeriodLocked,
+    canManageDerogations: (isAdmin || isDirection) && !isPeriodLocked,
   };
 }

@@ -24,14 +24,16 @@ export function isPlanningPublicationLocked(publication: PlanningPublicationReco
 
 export function planningPublicationActions(
   publication: PlanningPublicationRecord | null,
+  allowedActions?: PlanningPublicationAction[],
 ): PlanningPublicationAction[] {
-  if (!publication || publication.status === 'preparation' || publication.status === 'modified_after_publication') {
-    return ['submit'];
-  }
-  if (publication.status === 'pending_validation') return ['validate', 'reopen'];
-  if (publication.status === 'validated') return ['publish', 'reopen'];
-  if (publication.status === 'published') return ['reopen'];
-  return [];
+  let actions: PlanningPublicationAction[];
+  if (!publication) actions = ['submit'];
+  else if (publication.status === 'preparation' || publication.status === 'modified_after_publication') actions = ['submit', 'archive'];
+  else if (publication.status === 'pending_validation') actions = ['validate', 'reopen', 'archive'];
+  else if (publication.status === 'validated') actions = ['publish', 'reopen', 'archive'];
+  else if (publication.status === 'published') actions = ['reopen', 'archive'];
+  else actions = [];
+  return allowedActions ? actions.filter((action) => allowedActions.includes(action)) : actions;
 }
 
 export function findPlanningPublication(

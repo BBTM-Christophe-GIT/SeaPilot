@@ -12,7 +12,9 @@ import {
   mapPlanningAssignmentOverviewRows,
   mapPlanningPeriodRows,
   mapPlanningPeopleRows,
+  mapPlanningHistoryRows,
   mapPlanningPublicationRows,
+  mapPlanningVersionRows,
   mapVesselRows,
   savePlanningHandover,
   transitionPlanningPublication,
@@ -132,10 +134,20 @@ const planningPublicationRow = {
   current_version: 1,
   comment: 'Version opérationnelle',
   submitted_at: '2026-07-01T08:00:00Z',
+  submitted_by: 'user-submit',
+  submitted_by_name: 'Armement',
   validated_at: '2026-07-01T09:00:00Z',
+  validated_by: 'user-validate',
+  validated_by_name: 'Direction',
   published_at: '2026-07-01T10:00:00Z',
+  published_by: 'user-publish',
+  published_by_name: 'Direction',
   locked_at: '2026-07-01T08:00:00Z',
+  locked_by: 'user-submit',
+  locked_by_name: 'Armement',
   updated_at: '2026-07-01T10:00:00Z',
+  updated_by: 'user-publish',
+  updated_by_name: 'Direction',
 };
 
 describe('planning mappers', () => {
@@ -294,11 +306,56 @@ describe('planning mappers', () => {
       currentVersion: 1,
       comment: 'Version opérationnelle',
       submittedAt: '2026-07-01T08:00:00Z',
+      submittedBy: 'user-submit',
+      submittedByName: 'Armement',
       validatedAt: '2026-07-01T09:00:00Z',
+      validatedBy: 'user-validate',
+      validatedByName: 'Direction',
       publishedAt: '2026-07-01T10:00:00Z',
+      publishedBy: 'user-publish',
+      publishedByName: 'Direction',
       lockedAt: '2026-07-01T08:00:00Z',
+      lockedBy: 'user-submit',
+      lockedByName: 'Armement',
       updatedAt: '2026-07-01T10:00:00Z',
+      updatedBy: 'user-publish',
+      updatedByName: 'Direction',
     }]);
+  });
+
+  it('maps immutable versions and semantic history metadata', () => {
+    expect(mapPlanningVersionRows([{
+      id: 9,
+      publication_id: 500,
+      version_number: 2,
+      comment: 'Relève intégrée',
+      created_at: '2026-07-14T10:00:00Z',
+      created_by: 'user-id',
+      created_by_name: 'Direction BBTM',
+    }])).toEqual([expect.objectContaining({
+      publicationId: 500,
+      versionNumber: 2,
+      createdByName: 'Direction BBTM',
+    })]);
+
+    expect(mapPlanningHistoryRows([{
+      id: 12,
+      entity_kind: 'assignment',
+      entity_id: 100,
+      action: 'move',
+      payload: { before: {}, after: {} },
+      changed_by: 'user-id',
+      changed_by_name: 'Armement BBTM',
+      changed_at: '2026-07-14T09:00:00Z',
+      vessel_id: 1,
+      starts_on: '2026-07-15',
+      ends_on: '2026-07-21',
+      summary: 'Événement déplacé ou redimensionné',
+    }])).toEqual([expect.objectContaining({
+      action: 'move',
+      vesselId: 1,
+      changedByName: 'Armement BBTM',
+    })]);
   });
 });
 
@@ -385,12 +442,19 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [planningPublicationRow], error: null }) }) };
       }
 
+      if (table === 'planning_versions') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'planning_change_log') {
-        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+        return { select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+          order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+        }) };
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -407,6 +471,8 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: mapPlanningPublicationRows([planningPublicationRow]),
+      versions: [],
+      history: [],
       handovers: [],
       derogations: [],
       derogationHistory: [],
@@ -486,12 +552,19 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
+      if (table === 'planning_versions') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'planning_change_log') {
-        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+        return { select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+          order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+        }) };
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -513,6 +586,8 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: [],
+      versions: [],
+      history: [],
       handovers: [],
       derogations: [],
       derogationHistory: [],

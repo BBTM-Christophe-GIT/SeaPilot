@@ -49,6 +49,8 @@ const overview: PlanningOverview = {
   }],
   rules: [],
   publications: [],
+  versions: [],
+  history: [],
   handovers: [],
   derogations: [],
   derogationHistory: [],
