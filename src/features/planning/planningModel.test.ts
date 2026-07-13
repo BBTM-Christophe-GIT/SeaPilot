@@ -6,9 +6,11 @@ import {
   buildPlanningTimeline,
   buildPlanningExportRows,
   getPlanningConflicts,
+  getPlanningConflictEventIds,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
+  isSedentaryPlanningFunction,
   normalizePlanningStatus,
   planningStatusTone,
   projectStatusTone,
@@ -53,6 +55,24 @@ describe('planning timeline rules', () => {
     const conflicts = getPlanningConflicts(overview, { ...event, id: 'new', vessel: 'SUROIT', startsOn: '2026-07-10', endsOn: '2026-07-12' });
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].date).toBe('2026-07-10');
+  });
+
+  it('identifies every event involved in a cross-vessel conflict', () => {
+    const conflictingOverview = {
+      ...overview,
+      vessels: [...overview.vessels, { id: 2, name: 'SUROIT', acronym: 'SRT', active: true }],
+      periods: [
+        ...overview.periods,
+        { ...overview.periods[0], id: 11, vesselId: 2, vesselName: 'SUROIT', startsOn: '2026-07-10', endsOn: '2026-07-12' },
+      ],
+    };
+    expect([...getPlanningConflictEventIds(conflictingOverview)].sort()).toEqual(['period-10', 'period-11']);
+  });
+
+  it('uses the shore status for the sedentary functions defined by BBTM', () => {
+    expect(isSedentaryPlanningFunction('Directeur QHSE / Chef de Projet')).toBe(true);
+    expect(isSedentaryPlanningFunction('Directrice Administrative et Financière')).toBe(true);
+    expect(isSedentaryPlanningFunction('Capitaine')).toBe(false);
   });
 
   it('exports one auditable row per sailor and calendar day', () => {

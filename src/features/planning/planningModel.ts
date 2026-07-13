@@ -46,6 +46,8 @@ export interface PlanningCrewEvent {
 export interface PlanningCrewRow {
   key: string;
   type: 'vessel' | 'board' | 'person';
+  personId: number | null;
+  vesselId: number | null;
   label: string;
   vessel: string;
   board: string;
@@ -244,6 +246,19 @@ export function planningStatusTone(value: string): string {
   return 'neutral';
 }
 
+const SEDENTARY_FUNCTIONS = [
+  'DIRECTEURQHSECHEFDEPROJET',
+  'DIRECTRICEADMINISTRATIVEETFINANCIERE',
+  'FLEETTECHNICALMANAGER',
+  'PRESIDENT',
+  'YARDMANAGERLEHAVRE',
+];
+
+export function isSedentaryPlanningFunction(value: string): boolean {
+  const key = normalizePlanningText(value);
+  return SEDENTARY_FUNCTIONS.some((functionKey) => key.includes(functionKey));
+}
+
 export function projectStatusTone(value: string): string {
   const key = normalizePlanningText(value);
   if (key.includes('FACTUR')) return 'billed';
@@ -382,6 +397,8 @@ export function buildPlanningCrewRows(
       rows.push({
         key: vesselKey,
         type: 'vessel',
+        personId: null,
+        vesselId: overview.vessels.find((item) => item.name === vessel)?.id || vesselEvents[0]?.vesselId || null,
         label: vessel,
         vessel,
         board: '',
@@ -405,6 +422,8 @@ export function buildPlanningCrewRows(
           rows.push({
             key: boardKey,
             type: 'board',
+            personId: null,
+            vesselId: boardEvents[0]?.vesselId || overview.vessels.find((item) => item.name === vessel)?.id || null,
             label: board,
             vessel,
             board,
@@ -426,6 +445,8 @@ export function buildPlanningCrewRows(
               rows.push({
                 key: `${boardKey}-person-${safeKey(person)}`,
                 type: 'person',
+                personId: personEvents[0]?.personId || overview.people.find((item) => formatPlanningPerson(item) === person)?.id || null,
+                vesselId: personEvents[0]?.vesselId || overview.vessels.find((item) => item.name === vessel)?.id || null,
                 label: person,
                 vessel,
                 board,
@@ -494,6 +515,27 @@ export function getPlanningConflicts(
         && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn);
     })
     .map((event) => ({ event, date: event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn }));
+}
+
+export function getPlanningConflictEventIds(overview: PlanningOverview): Set<string> {
+  const events = getAllPlanningCrewEvents(overview);
+  const conflicted = new Set<string>();
+  events.forEach((event, index) => {
+    events.slice(index + 1).forEach((candidate) => {
+      const samePerson = event.personId !== null && candidate.personId !== null
+        ? event.personId === candidate.personId
+        : normalizePlanningText(event.person) === normalizePlanningText(candidate.person);
+      if (
+        samePerson
+        && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
+        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)
+      ) {
+        conflicted.add(event.id);
+        conflicted.add(candidate.id);
+      }
+    });
+  });
+  return conflicted;
 }
 
 export interface PlanningExportRow {
