@@ -6500,3 +6500,529 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.planning-side-conflict-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid #82c4ce;
+  border-radius: 10px;
+  background: #eef9fa;
+  color: #075d6b;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.planning-side-conflict-center span {
+  display: grid;
+  gap: 2px;
+}
+
+.planning-side-conflict-center small {
+  color: #54717a;
+  font-size: 0.72rem;
+}
+
+.planning-dialog.is-side-panel.planning-p12-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, calc(100vw - 24px));
+  max-width: 1040px;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
+.planning-p12-panel > header > div,
+.planning-p12-panel > header > div > span,
+.planning-p12-tabs button,
+.planning-p12-section button,
+.planning-p12-card > header,
+.planning-p12-conflict-detail > header,
+.planning-p12-candidate > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.planning-p12-panel > header > div:last-child {
+  margin-left: auto;
+}
+
+.planning-p12-panel > header small,
+.planning-p12-card small,
+.planning-p12-conflict-card small,
+.planning-p12-candidate small {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.planning-p12-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #dce5ee;
+  background: #f8fafc;
+}
+
+.planning-p12-kpis span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid #dbe4eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #526371;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+}
+
+.planning-p12-kpis strong {
+  color: #173647;
+  font-size: 1.05rem;
+}
+
+.planning-p12-kpis .is-danger strong {
+  color: #b42318;
+}
+
+.planning-p12-kpis .is-warning strong {
+  color: #a15c00;
+}
+
+.planning-p12-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 9px 18px;
+  border-bottom: 1px solid #dce5ee;
+  background: #fff;
+}
+
+.planning-p12-tabs button {
+  justify-content: center;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-weight: 750;
+}
+
+.planning-p12-tabs button.is-active {
+  border-color: #9fd3df;
+  background: #e8f6f8;
+  color: #075d6b;
+}
+
+.planning-p12-feedback {
+  margin: 9px 18px 0;
+}
+
+.planning-p12-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+}
+
+.planning-p12-section {
+  display: grid;
+  gap: 14px;
+}
+
+.planning-p12-section-heading,
+.planning-p12-section-heading > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planning-p12-section-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-p12-section-heading h3,
+.planning-p12-section-heading p,
+.planning-p12-card p,
+.planning-p12-conflict-card p,
+.planning-p12-conflict-detail h3,
+.planning-p12-conflict-detail p {
+  margin: 0;
+}
+
+.planning-p12-section-heading p,
+.planning-p12-card p,
+.planning-p12-conflict-detail > p {
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.planning-p12-form,
+.planning-p12-treatment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid #d5e2e9;
+  border-radius: 11px;
+  background: #f8fafc;
+  padding: 15px;
+}
+
+.planning-p12-form label,
+.planning-p12-treatment label,
+.planning-p12-filters label,
+.planning-p12-review label {
+  display: grid;
+  gap: 5px;
+  color: #425466;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.planning-p12-form label.is-wide,
+.planning-p12-treatment label.is-wide,
+.planning-p12-form footer,
+.planning-p12-treatment footer {
+  grid-column: 1 / -1;
+}
+
+.planning-p12-form input,
+.planning-p12-form select,
+.planning-p12-form textarea,
+.planning-p12-treatment input,
+.planning-p12-treatment select,
+.planning-p12-treatment textarea,
+.planning-p12-filters input,
+.planning-p12-filters select,
+.planning-p12-review input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cbd7e3;
+  border-radius: 7px;
+  background: #fff;
+  color: #142c3a;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.planning-p12-form textarea,
+.planning-p12-treatment textarea {
+  resize: vertical;
+}
+
+.planning-p12-form footer,
+.planning-p12-treatment footer,
+.planning-p12-review > div,
+.planning-p12-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.planning-p12-absence-list,
+.planning-p12-candidate-list {
+  display: grid;
+  gap: 10px;
+}
+
+.planning-p12-card,
+.planning-p12-candidate,
+.planning-p12-conflict-detail {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dce5ee;
+  border-radius: 11px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 7px 22px rgba(15, 48, 66, 0.05);
+}
+
+.planning-p12-card > header,
+.planning-p12-candidate > header,
+.planning-p12-conflict-detail > header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.planning-p12-card > header > div,
+.planning-p12-candidate > header > div,
+.planning-p12-conflict-detail > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-p12-status,
+.planning-p12-severity,
+.planning-p12-candidate > header > span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.planning-p12-status.is-requested,
+.planning-p12-severity.is-warning,
+.planning-p12-candidate > header > span.is-warning {
+  background: #fff0d5;
+  color: #8a4c00;
+}
+
+.planning-p12-status.is-approved,
+.planning-p12-candidate > header > span.is-compatible {
+  background: #e2f6ec;
+  color: #11734d;
+}
+
+.planning-p12-status.is-rejected,
+.planning-p12-status.is-cancelled,
+.planning-p12-severity.is-blocking,
+.planning-p12-candidate > header > span.is-incompatible {
+  background: #fee9e7;
+  color: #a51d15;
+}
+
+.planning-p12-severity.is-information {
+  background: #e8eef5;
+  color: #53677a;
+}
+
+.planning-p12-impact,
+.planning-p12-replacement-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: #eef7fa;
+  color: #38606b;
+  padding: 9px 11px;
+  font-size: 0.78rem;
+}
+
+.planning-p12-impact strong {
+  color: #075d6b;
+  font-size: 1rem;
+}
+
+.planning-p12-review {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e5ecf1;
+  padding-top: 10px;
+}
+
+.planning-p12-review button.is-success {
+  background: #16825d;
+}
+
+.planning-p12-review button.is-danger {
+  background: #b42318;
+}
+
+.planning-p12-conflict-layout {
+  grid-template-columns: minmax(300px, 0.85fr) minmax(380px, 1.15fr);
+  align-items: start;
+}
+
+.planning-p12-conflict-list {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-p12-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+button.planning-p12-conflict-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid #dce5ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #263d4b;
+  padding: 12px;
+  text-align: left;
+}
+
+.planning-p12-conflict-detail > header > button {
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.planning-p12-conflict-card:hover,
+.planning-p12-conflict-card.is-active {
+  border-color: #52adba;
+  background: #f1fafb;
+}
+
+.planning-p12-conflict-card p {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.planning-p12-conflict-detail {
+  position: sticky;
+  top: 0;
+}
+
+.planning-p12-conflict-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.planning-p12-conflict-detail dl div {
+  display: grid;
+  gap: 2px;
+  border-radius: 8px;
+  background: #f7f9fb;
+  padding: 8px;
+}
+
+.planning-p12-conflict-detail dt {
+  color: #6b7c89;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.planning-p12-conflict-detail dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.planning-p12-treatment > label:first-child {
+  display: flex;
+  align-items: center;
+  grid-column: 1 / -1;
+}
+
+.planning-p12-treatment > label:first-child input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.planning-p12-conflict-detail details {
+  border-top: 1px solid #e1e9ef;
+  padding-top: 10px;
+}
+
+.planning-p12-conflict-detail summary {
+  color: #335565;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.planning-p12-conflict-detail ol {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.planning-p12-conflict-detail li span {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.planning-p12-replacement-target {
+  justify-content: space-between;
+}
+
+.planning-p12-candidate-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.planning-p12-candidate ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: #596b78;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.planning-p12-candidate > button {
+  justify-self: end;
+}
+
+@media (max-width: 1100px) {
+  .planning-dialog.is-side-panel.planning-p12-panel {
+    width: min(940px, 100vw);
+  }
+
+  .planning-p12-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-p12-conflict-layout {
+    grid-template-columns: minmax(270px, 0.8fr) minmax(360px, 1.2fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .planning-p12-body {
+    padding: 12px;
+  }
+
+  .planning-p12-kpis,
+  .planning-p12-tabs {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .planning-p12-tabs button {
+    gap: 5px;
+    font-size: 0.74rem;
+  }
+
+  .planning-p12-conflict-layout,
+  .planning-p12-form,
+  .planning-p12-treatment,
+  .planning-p12-candidate-list,
+  .planning-p12-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-p12-conflict-detail {
+    position: static;
+  }
+
+  .planning-p12-section-heading,
+  .planning-p12-replacement-target {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (pointer: coarse) {
+  .planning-p12-panel button,
+  .planning-p12-panel input,
+  .planning-p12-panel select {
+    min-height: 44px;
+  }
+}

@@ -17,6 +17,10 @@ describe('planning permissions', () => {
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
+      canRequestAbsences: true,
+      canReviewAbsences: true,
+      canManageConflictCases: true,
+      canPrepareReplacements: true,
       canViewHistory: true,
     });
   });
@@ -32,6 +36,10 @@ describe('planning permissions', () => {
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
+      canRequestAbsences: true,
+      canReviewAbsences: true,
+      canManageConflictCases: true,
+      canPrepareReplacements: true,
       canViewHistory: true,
     });
   });
@@ -45,6 +53,10 @@ describe('planning permissions', () => {
       canManageRotations: false,
       canManageTemplates: false,
       canManageManning: false,
+      canRequestAbsences: true,
+      canReviewAbsences: false,
+      canManageConflictCases: true,
+      canPrepareReplacements: false,
       canViewHistory: true,
     });
   });
@@ -59,6 +71,10 @@ describe('planning permissions', () => {
       canManageRotations: false,
       canManageTemplates: false,
       canManageManning: false,
+      canRequestAbsences: true,
+      canReviewAbsences: false,
+      canManageConflictCases: false,
+      canPrepareReplacements: false,
     });
   });
 
@@ -77,6 +93,10 @@ describe('planning permissions', () => {
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
+      canRequestAbsences: true,
+      canReviewAbsences: true,
+      canManageConflictCases: true,
+      canPrepareReplacements: true,
       canViewHistory: true,
     });
   });
@@ -89,6 +109,10 @@ describe('planning permissions', () => {
     expect(permissions.canManageRotations).toBe(false);
     expect(permissions.canManageTemplates).toBe(false);
     expect(permissions.canManageManning).toBe(false);
+    expect(permissions.canPrepareReplacements).toBe(false);
+    expect(permissions.canRequestAbsences).toBe(true);
+    expect(permissions.canReviewAbsences).toBe(true);
+    expect(permissions.canManageConflictCases).toBe(true);
     expect(permissions.canManagePublication).toBe(true);
     expect(permissions.canReopenPublication).toBe(true);
   });

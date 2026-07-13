@@ -21,7 +21,7 @@ import {
   UserRoundPlus,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -95,6 +95,7 @@ import {
 } from './PlanningP03Panels';
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
+import type { PlanningDetectedConflict } from './planningP12';
 import { PlanningCrewTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
 import {
   buildPlanningCrewLanes,
@@ -204,6 +205,8 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
   { key: 'alerts', label: 'Alertes' },
 ];
 
+const PlanningP12Panel = lazy(() => import('./PlanningP12Panel').then((module) => ({ default: module.PlanningP12Panel })));
+
 function localDateTime(date: string, time: string): string {
   return date ? `${date}T${time}` : '';
 }
@@ -283,6 +286,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const [isHandoverOpen, setIsHandoverOpen] = useState(false);
   const [derogationPrefill, setDerogationPrefill] = useState<Partial<CreatePlanningDerogationInput> | null>(null);
   const [isP11Open, setIsP11Open] = useState(false);
+  const [isP12Open, setIsP12Open] = useState(false);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -878,6 +882,81 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     updateOverview((current) => ({ ...current, handovers }));
   }
 
+  async function handleP12AuditChange() {
+    const history = await fetchPlanningHistory(effectiveClient);
+    updateOverview((current) => ({ ...current, history }));
+  }
+
+  function prepareManualReplacement(person: PlanningPerson, conflict: PlanningDetectedConflict) {
+    const sourceAssignment = conflict.assignmentId
+      ? overview.assignments.find((assignment) => assignment.id === conflict.assignmentId)
+      : null;
+    setIsP12Open(false);
+    openAssignment({
+      vesselId: conflict.vesselId ? String(conflict.vesselId) : '',
+      crewPersonId: String(person.id),
+      startsOn: conflict.startsOn,
+      endsOn: conflict.endsOn,
+      startsAt: sourceAssignment?.startsAt
+        ? utcToPlanningLocalDateTime(sourceAssignment.startsAt)
+        : localDateTime(conflict.startsOn, '08:00'),
+      endsAt: sourceAssignment?.endsAt
+        ? utcToPlanningLocalDateTime(sourceAssignment.endsAt)
+        : localDateTime(conflict.endsOn, '20:00'),
+      assignmentRole: conflict.functionLabel || person.functionLabel || 'Équipage',
+      confirmationStatus: 'provisional',
+      comments: `Remplacement manuel préparé depuis le conflit « ${conflict.title} »`,
+    });
+  }
+
+  function openP12Source(conflict: PlanningDetectedConflict) {
+    setIsP12Open(false);
+    if (conflict.assignmentId) {
+      openAssignmentById(conflict.assignmentId);
+      return;
+    }
+    if (conflict.handoverId) {
+      const handover = overview.handovers.find((item) => item.id === conflict.handoverId);
+      if (handover) openHandover(handover);
+      return;
+    }
+    if (conflict.projectId) {
+      const project = overview.projects.find((item) => item.id === conflict.projectId);
+      if (project) openProjectEditor(project);
+      return;
+    }
+    setStatusMessage('Ce conflit est lié à une exigence globale de la matrice d’armement.');
+  }
+
+  function openP12Derogation(conflict: PlanningDetectedConflict) {
+    if (!permissions.canManageDerogations || !conflict.personId || !conflict.vesselId) return;
+    const ruleCodeByConflict: Partial<Record<PlanningDetectedConflict['type'], string>> = {
+      double_assignment: 'assignment_overlap',
+      absence: 'crew_absence',
+      unavailability: 'crew_unavailability',
+      invalid_certificate: 'expired_credential',
+      missing_qualification: 'missing_qualification',
+    };
+    const rule = overview.rules.find((item) => item.code === ruleCodeByConflict[conflict.type])
+      || overview.rules.find((item) => item.active);
+    const assignment = conflict.assignmentId
+      ? overview.assignments.find((item) => item.id === conflict.assignmentId)
+      : null;
+    setIsP12Open(false);
+    setDerogationPrefill({
+      ruleId: rule ? String(rule.id) : '',
+      assignmentId: conflict.assignmentId,
+      personId: String(conflict.personId),
+      vesselId: String(conflict.vesselId),
+      startsAt: assignment?.startsAt
+        ? utcToPlanningLocalDateTime(assignment.startsAt)
+        : localDateTime(conflict.startsOn, '08:00'),
+      endsAt: assignment?.endsAt
+        ? utcToPlanningLocalDateTime(assignment.endsAt)
+        : localDateTime(conflict.endsOn, '20:00'),
+    });
+  }
+
   function openDerogation(controls: PlanningControlResult[], assignmentId?: number) {
     if (!permissions.canManageDerogations) {
       setErrorMessage('Seuls les utilisateurs autorisés peuvent enregistrer une dérogation.');
@@ -1006,6 +1085,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           </label>
           {permissions.canManageVessels ? <button onClick={() => setIsVesselsOpen(true)} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
           <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et armement</button>
+          <button onClick={() => { setIsP12Open(true); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
           {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
         </div>
       ) : null}
@@ -1163,6 +1243,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
             certificateAlerts={certificateAlerts}
             hrAlerts={hrAlerts}
             onOpenHandover={(handover) => openHandover(handover)}
+            onOpenConflictCenter={() => setIsP12Open(true)}
             onRevokeDerogation={(derogation) => void handleRevokeDerogation(derogation)}
             overview={overview}
             planningControls={planningControls}
@@ -1198,6 +1279,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDerogation={permissions.canManageDerogations ? () => openDerogation(selectedEventControls, selectedEvent.kind === 'assignment' ? Number(selectedEvent.id.split('-').pop()) : undefined) : undefined} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
+      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} range={range} /></Suspense> : null}
       {derogationPrefill ? <PlanningDerogationDialog isSaving={isSaving} onClose={() => setDerogationPrefill(null)} onSave={(input) => void handleCreateDerogation(input)} overview={overview} prefill={derogationPrefill} /> : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
@@ -1206,7 +1288,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   );
 }
 
-function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, unbilledProjects, editable, canManageDerogations, onOpenHandover, onRevokeDerogation }: {
+function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, unbilledProjects, editable, canManageDerogations, onOpenHandover, onOpenConflictCenter, onRevokeDerogation }: {
   sideTab: SideTab;
   certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
   hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
@@ -1217,10 +1299,11 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
   editable: boolean;
   canManageDerogations: boolean;
   onOpenHandover: (handover: PlanningHandoverRecord) => void;
+  onOpenConflictCenter: () => void;
   onRevokeDerogation: (derogation: PlanningDerogationRecord) => void;
 }) {
   if (sideTab === 'conflicts') {
-    return <div className="planning-side-list">{planningControls.length ? planningControls.map((control) => <article className="planning-side-item" key={control.id}><div><strong>{control.title}</strong><span className={`planning-side-badge is-${control.level === 'blocking' ? 'danger' : control.level === 'warning' ? 'warning' : 'muted'}`}>{control.level === 'blocking' ? 'Blocage' : control.level === 'warning' ? 'Avertissement' : 'Information'}</span></div><p>{control.detail}</p>{control.date ? <small>{formatPlanningDate(control.date)}</small> : null}</article>) : <PlanningEmptySide text="Aucun conflit ou contrôle en attente." />}</div>;
+    return <div className="planning-side-list"><button className="planning-side-conflict-center" onClick={onOpenConflictCenter} type="button"><ShieldAlert aria-hidden="true" size={17} /><span><strong>Centre de conflits P1.2</strong><small>Absences, impacts, remplacements et traitement</small></span></button>{planningControls.length ? planningControls.map((control) => <article className="planning-side-item" key={control.id}><div><strong>{control.title}</strong><span className={`planning-side-badge is-${control.level === 'blocking' ? 'danger' : control.level === 'warning' ? 'warning' : 'muted'}`}>{control.level === 'blocking' ? 'Blocage' : control.level === 'warning' ? 'Avertissement' : 'Information'}</span></div><p>{control.detail}</p>{control.date ? <small>{formatPlanningDate(control.date)}</small> : null}</article>) : <PlanningEmptySide text="Aucun contrôle P0 en attente. Ouvrez le centre pour les contrôles P1.2." />}</div>;
   }
   if (sideTab === 'unassigned') {
     return <div className="planning-side-list">{unassignedPeople.length ? unassignedPeople.map((person) => <article className={`planning-side-item${editable ? ' is-draggable' : ''}`} draggable={editable} key={person.id} onDragStart={(event) => event.dataTransfer.setData('application/x-seapilot-planning', JSON.stringify({ type: 'person', id: person.id }))}><div><strong>{formatPlanningPerson(person)}</strong><span className="planning-side-badge is-muted">{person.functionLabel || person.gradeLabel || 'Marin'}</span></div><p>{[person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Contrat actif'}</p>{editable ? <small>Glisser sur un navire pour affecter</small> : null}</article>) : <PlanningEmptySide text="Tous les marins sont affectés." />}</div>;

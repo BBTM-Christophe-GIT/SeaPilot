@@ -52,6 +52,13 @@ and manning matrices. The migration preserves P0 rows, generates operational rot
 `planning_assignments` table, is safe to replay, and documents its export-first rollback. The detailed sequence is
 in `docs/deployment/planning-p1-1.md`.
 
+Apply `supabase/migrations/202607140001_planning_p12_absences_conflict_center.sql` before deploying version `2.1.0`.
+P1.2 adds company-scoped absence requests, persistent conflict treatment and its audit trail without changing P0
+assignments or P1.1 matrices. All writes use authorized RPCs; authenticated clients retain select-only table access.
+The replacement search remains advisory and prepares the existing provisional assignment form only after a manual
+choice. The detailed migration, RLS checks, smoke recipe and export-first rollback are in
+`docs/deployment/planning-p1-2.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -90,7 +97,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning P1.1 target contains 33 local migrations through `202607130010_planning_p11_rotation_lint_cleanup.sql`; verify `supabase migration list` before each deployment.
+- The Planning P1.2 target contains 34 local and remote migrations through `202607140001_planning_p12_absences_conflict_center.sql`; verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
