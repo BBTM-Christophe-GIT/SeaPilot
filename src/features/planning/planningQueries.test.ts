@@ -272,6 +272,10 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'hr_documents') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -284,6 +288,7 @@ describe('fetchPlanningOverview', () => {
       projects: [],
       certificates: [],
       hrDocuments: [],
+      rules: [],
     });
 
     expect(from).toHaveBeenCalledWith('vessels');
@@ -344,6 +349,10 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'hr_documents') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -361,6 +370,7 @@ describe('fetchPlanningOverview', () => {
       projects: [],
       certificates: [],
       hrDocuments: [],
+      rules: [],
     });
   });
 });

@@ -3359,6 +3359,10 @@ button:disabled {
   box-shadow: 0 3px 10px rgba(28, 43, 65, 0.09);
 }
 
+.planning-side-tabs button:first-child {
+  grid-column: 1 / -1;
+}
+
 .planning-side-tabs button span {
   display: inline-grid;
   min-width: 19px;
@@ -3501,6 +3505,94 @@ button:disabled {
 .planning-dialog textarea {
   min-height: 86px;
   resize: vertical;
+}
+
+.planning-control-summary {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #dce4ed;
+  border-radius: 11px;
+  padding: 11px;
+  background: #f8fafc;
+}
+
+.planning-control-summary > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planning-control-summary > header strong {
+  color: #263a58;
+  font-size: 0.76rem;
+}
+
+.planning-control-summary > header span {
+  color: #708096;
+  font-size: 0.62rem;
+  font-weight: 760;
+}
+
+.planning-control-summary ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-control-summary li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border-left: 3px solid #6282ab;
+  border-radius: 7px;
+  padding: 8px 9px;
+  background: #ffffff;
+}
+
+.planning-control-summary li.is-warning {
+  border-left-color: #d17a13;
+  background: #fffaf1;
+}
+
+.planning-control-summary li.is-blocking {
+  border-left-color: #cf3047;
+  background: #fff5f6;
+}
+
+.planning-control-level {
+  color: #526c91;
+  font-size: 0.62rem;
+  font-weight: 880;
+  text-transform: uppercase;
+}
+
+.planning-control-summary li.is-warning .planning-control-level {
+  color: #a75b08;
+}
+
+.planning-control-summary li.is-blocking .planning-control-level {
+  color: #b5233a;
+}
+
+.planning-control-summary li > span:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-control-summary li strong {
+  color: #253752;
+  font-size: 0.7rem;
+}
+
+.planning-control-summary li small {
+  color: #607189;
+  font-size: 0.64rem;
+  font-weight: 650;
+  line-height: 1.42;
 }
 
 .planning-dialog-footer-split > span {
@@ -3729,6 +3821,10 @@ button:disabled {
   .planning-side-list,
   .planning-dialog-grid,
   .planning-dialog dl {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-control-summary li {
     grid-template-columns: 1fr;
   }
 }

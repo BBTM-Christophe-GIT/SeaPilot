@@ -496,6 +496,256 @@ export function daysBetween(start: string, end: string): number {
   return Math.round((parseIsoDate(end).getTime() - parseIsoDate(start).getTime()) / 86400000);
 }
 
+export type PlanningControlLevel = 'information' | 'warning' | 'blocking';
+
+export type PlanningControlCode =
+  | 'invalid_period'
+  | 'inactive_person'
+  | 'crew_unavailability'
+  | 'assignment_overlap'
+  | 'function_mismatch'
+  | 'expired_medical'
+  | 'expired_credential'
+  | 'medical_unfit'
+  | 'medical_restriction'
+  | 'pending_validation';
+
+export interface PlanningAssignmentCandidate {
+  id: string;
+  personId: number | null;
+  person: string;
+  vessel: string;
+  functionLabel: string;
+  status: string;
+  startsOn: string;
+  endsOn: string;
+}
+
+export interface PlanningControlResult {
+  id: string;
+  code: PlanningControlCode;
+  level: PlanningControlLevel;
+  title: string;
+  detail: string;
+  date: string;
+  eventId: string;
+  personId: number | null;
+}
+
+const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningControlLevel> = {
+  invalid_period: 'blocking',
+  inactive_person: 'blocking',
+  crew_unavailability: 'blocking',
+  assignment_overlap: 'warning',
+  function_mismatch: 'information',
+  expired_medical: 'blocking',
+  expired_credential: 'warning',
+  medical_unfit: 'blocking',
+  medical_restriction: 'warning',
+  pending_validation: 'warning',
+};
+
+const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'vacation', 'sick', 'training']);
+const CREDENTIAL_TOKENS = ['BREVET', 'CERTIFICAT', 'QUALIFICATION', 'HABILITATION', 'FORMATION', 'TRAINING'];
+
+function planningRuleLevel(
+  overview: PlanningOverview,
+  code: PlanningControlCode,
+  effectiveOn: string,
+): PlanningControlLevel | null {
+  const configured = overview.rules.find((rule) => rule.code === code);
+  if (!configured) return DEFAULT_PLANNING_CONTROL_LEVELS[code];
+  if (!configured.active || configured.effectiveFrom > effectiveOn) return null;
+  return configured.controlLevel;
+}
+
+function isSamePlanningPerson(
+  left: Pick<PlanningAssignmentCandidate, 'personId' | 'person'>,
+  right: Pick<PlanningCrewEvent, 'personId' | 'person'>,
+): boolean {
+  if (left.personId !== null && right.personId !== null) return left.personId === right.personId;
+  return normalizePlanningText(left.person) === normalizePlanningText(right.person);
+}
+
+function isMedicalDocument(categoryKey: string, title: string): boolean {
+  const key = normalizePlanningText(`${categoryKey} ${title}`);
+  return key.includes('MEDICAL') || key.includes('VISITEMEDICALE') || key.includes('APTITUDE');
+}
+
+function isCredentialDocument(categoryKey: string, title: string): boolean {
+  const key = normalizePlanningText(`${categoryKey} ${title}`);
+  return CREDENTIAL_TOKENS.some((token) => key.includes(token));
+}
+
+function controlResult(
+  overview: PlanningOverview,
+  candidate: PlanningAssignmentCandidate,
+  code: PlanningControlCode,
+  input: Omit<PlanningControlResult, 'code' | 'level' | 'eventId' | 'personId'>,
+): PlanningControlResult | null {
+  const level = planningRuleLevel(overview, code, candidate.startsOn || '9999-12-31');
+  if (!level) return null;
+  return { ...input, code, level, eventId: candidate.id, personId: candidate.personId };
+}
+
+export function evaluatePlanningAssignment(
+  overview: PlanningOverview,
+  candidate: PlanningAssignmentCandidate,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+): PlanningControlResult[] {
+  const results: PlanningControlResult[] = [];
+  const add = (result: PlanningControlResult | null) => {
+    if (result) results.push(result);
+  };
+
+  if (!candidate.startsOn || !candidate.endsOn || candidate.endsOn < candidate.startsOn) {
+    add(controlResult(overview, candidate, 'invalid_period', {
+      id: `invalid-period-${candidate.id}`,
+      title: 'Période incohérente',
+      detail: 'La date de fin doit être postérieure ou égale à la date de début.',
+      date: candidate.startsOn,
+    }));
+    return results;
+  }
+
+  const person = candidate.personId !== null
+    ? overview.people.find((item) => item.id === candidate.personId)
+    : overview.people.find((item) => normalizePlanningText(formatPlanningPerson(item)) === normalizePlanningText(candidate.person));
+  if (person && (!person.active || (person.hiredOn && person.hiredOn > candidate.endsOn) || (person.departedOn && person.departedOn < candidate.startsOn))) {
+    add(controlResult(overview, candidate, 'inactive_person', {
+      id: `inactive-person-${candidate.id}-${person.id}`,
+      title: 'Marin indisponible administrativement',
+      detail: `${formatPlanningPerson(person)} n'est pas actif pendant toute la période sélectionnée.`,
+      date: candidate.startsOn,
+    }));
+  }
+
+  eventPool.forEach((event) => {
+    if (event.id === candidate.id || !isSamePlanningPerson(candidate, event)) return;
+    if (!rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)) return;
+
+    const overlapDate = event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn;
+    if (normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)) {
+      const pair = [candidate.id, event.id].sort().join('-');
+      add(controlResult(overview, candidate, 'assignment_overlap', {
+        id: `assignment-overlap-${pair}`,
+        title: 'Double affectation',
+        detail: `${candidate.person} est également affecté au ${event.vessel} le ${formatPlanningDate(overlapDate)}.`,
+        date: overlapDate,
+      }));
+    }
+
+    if (['sea', 'shore'].includes(planningStatusTone(candidate.status)) && UNAVAILABLE_STATUS_TONES.has(planningStatusTone(event.status))) {
+      add(controlResult(overview, candidate, 'crew_unavailability', {
+        id: `crew-unavailability-${candidate.id}-${event.id}`,
+        title: 'Indisponibilité sur la période',
+        detail: `${candidate.person} est déclaré « ${event.status} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
+        date: overlapDate,
+      }));
+    }
+  });
+
+  if (person?.functionLabel && candidate.functionLabel) {
+    const expected = normalizePlanningText(person.functionLabel);
+    const assigned = normalizePlanningText(candidate.functionLabel);
+    if (expected && assigned && !expected.includes(assigned) && !assigned.includes(expected)) {
+      add(controlResult(overview, candidate, 'function_mismatch', {
+        id: `function-mismatch-${candidate.id}-${person.id}`,
+        title: 'Fonction à confirmer',
+        detail: `Fonction RH : ${person.functionLabel} · fonction planifiée : ${candidate.functionLabel}.`,
+        date: candidate.startsOn,
+      }));
+    }
+  }
+
+  overview.hrDocuments.filter((document) => document.personId === candidate.personId).forEach((document) => {
+    const documentKey = normalizePlanningText(document.status);
+    const medical = isMedicalDocument(document.categoryKey, document.title);
+    const invalidDuringAssignment = documentKey.includes('EXPIRED')
+      || documentKey.includes('MISSING')
+      || Boolean(document.expiresOn && document.expiresOn < candidate.endsOn);
+
+    if (document.medicalUnfit) {
+      add(controlResult(overview, candidate, 'medical_unfit', {
+        id: `medical-unfit-${candidate.id}-${document.id}`,
+        title: 'Inaptitude médicale active',
+        detail: `${document.title} signale une inaptitude médicale. L'affectation doit être revue.`,
+        date: candidate.startsOn,
+      }));
+    }
+    if (document.medicalRestriction) {
+      add(controlResult(overview, candidate, 'medical_restriction', {
+        id: `medical-restriction-${candidate.id}-${document.id}`,
+        title: 'Restriction médicale',
+        detail: document.medicalRestriction,
+        date: candidate.startsOn,
+      }));
+    }
+    if (medical && invalidDuringAssignment) {
+      add(controlResult(overview, candidate, 'expired_medical', {
+        id: `expired-medical-${candidate.id}-${document.id}`,
+        title: 'Aptitude médicale non valide',
+        detail: document.expiresOn
+          ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
+          : `${document.title} est indiqué comme manquant ou expiré.`,
+        date: document.expiresOn || candidate.startsOn,
+      }));
+    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidDuringAssignment) {
+      add(controlResult(overview, candidate, 'expired_credential', {
+        id: `expired-credential-${candidate.id}-${document.id}`,
+        title: 'Titre ou qualification à renouveler',
+        detail: document.expiresOn
+          ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
+          : `${document.title} est indiqué comme manquant ou expiré.`,
+        date: document.expiresOn || candidate.startsOn,
+      }));
+    }
+    if (document.requiresCaptainValidation && documentKey.includes('PENDING')) {
+      add(controlResult(overview, candidate, 'pending_validation', {
+        id: `pending-validation-${candidate.id}-${document.id}`,
+        title: 'Document en attente de validation',
+        detail: `${document.title} doit encore être validé par le capitaine.`,
+        date: candidate.startsOn,
+      }));
+    }
+  });
+
+  const levelRank: Record<PlanningControlLevel, number> = { blocking: 0, warning: 1, information: 2 };
+  return results.sort((left, right) => levelRank[left.level] - levelRank[right.level] || left.date.localeCompare(right.date));
+}
+
+export function buildPlanningControlCenter(
+  overview: PlanningOverview,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+): PlanningControlResult[] {
+  const unique = new Map<string, PlanningControlResult>();
+  const eventsByPerson = new Map<string, PlanningCrewEvent[]>();
+  eventPool.forEach((event) => {
+    const key = normalizePlanningText(event.person);
+    eventsByPerson.set(key, [...(eventsByPerson.get(key) || []), event]);
+  });
+  eventPool.forEach((event) => {
+    evaluatePlanningAssignment(overview, {
+      id: event.id,
+      personId: event.personId,
+      person: event.person,
+      vessel: event.vessel,
+      functionLabel: event.functionLabel,
+      status: event.status,
+      startsOn: event.startsOn,
+      endsOn: event.endsOn,
+    }, eventsByPerson.get(normalizePlanningText(event.person)) || []).forEach((result) => unique.set(result.id, result));
+  });
+  const levelRank: Record<PlanningControlLevel, number> = { blocking: 0, warning: 1, information: 2 };
+  return [...unique.values()].sort(
+    (left, right) => levelRank[left.level] - levelRank[right.level] || left.date.localeCompare(right.date) || left.title.localeCompare(right.title, 'fr'),
+  );
+}
+
+export function hasBlockingPlanningControls(results: PlanningControlResult[]): boolean {
+  return results.some((result) => result.level === 'blocking');
+}
+
 export interface PlanningConflict {
   event: PlanningCrewEvent;
   date: string;

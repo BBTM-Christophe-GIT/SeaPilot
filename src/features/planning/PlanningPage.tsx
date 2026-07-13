@@ -34,6 +34,7 @@ import validIcon from './assets/icone_valide.svg';
 import {
   addPlanningDays,
   buildPlanningCertificateAlerts,
+  buildPlanningControlCenter,
   buildPlanningCrewRows,
   buildPlanningHrAlerts,
   buildPlanningMonthSegments,
@@ -42,10 +43,12 @@ import {
   dateGridPlacement,
   formatPlanningDate,
   formatPlanningPerson,
+  getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
-  getPlanningConflicts,
   getPlanningConflictEventIds,
+  evaluatePlanningAssignment,
+  hasBlockingPlanningControls,
   isSedentaryPlanningFunction,
   daysBetween,
   isoDate,
@@ -56,6 +59,7 @@ import {
   timelineRange,
   type PlanningCrewEvent,
   type PlanningCrewRow,
+  type PlanningControlResult,
   type PlanningFilters,
   type PlanningViewMode,
 } from './planningModel';
@@ -73,6 +77,7 @@ import {
   type PlanningProjectRecord,
   type PlanningVessel,
 } from './planningQueries';
+import { PlanningControlSummary } from './PlanningControlSummary';
 
 interface PlanningPageProps {
   client?: SupabaseClient;
@@ -103,7 +108,7 @@ interface EventFormState {
 
 interface ExportFormState { personName: string; startsOn: string; endsOn: string }
 
-type SideTab = 'certificates' | 'unassigned' | 'billing' | 'alerts';
+type SideTab = 'conflicts' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
 const EMPTY_OVERVIEW: PlanningOverview = {
   vessels: [],
@@ -114,6 +119,7 @@ const EMPTY_OVERVIEW: PlanningOverview = {
   projects: [],
   certificates: [],
   hrDocuments: [],
+  rules: [],
 };
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '' };
@@ -133,6 +139,7 @@ const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Repos', 'Vacance', 'Arrêt de t
 
 const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
+  { key: 'conflicts', label: 'Conflits' },
   { key: 'certificates', label: 'Certificats' },
   { key: 'unassigned', label: 'Marins non affectés' },
   { key: 'billing', label: 'Facturation' },
@@ -163,6 +170,16 @@ function todayIso(): string {
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, 'fr'));
+}
+
+function blockingControlMessage(results: PlanningControlResult[]): string {
+  const blocking = results.find((result) => result.level === 'blocking');
+  return blocking ? `${blocking.title} : ${blocking.detail}` : '';
+}
+
+function planningControlSaveMessage(results: PlanningControlResult[], fallback: string): string {
+  const warnings = results.filter((result) => result.level === 'warning');
+  return warnings.length ? `${fallback} ${warnings.length} avertissement(s) à traiter.` : fallback;
 }
 
 function timelineStyle(dayWidth: number, dayCount: number) {
@@ -250,7 +267,39 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   );
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
   const conflictEventIds = useMemo(() => getPlanningConflictEventIds(overview), [overview]);
+  const planningControls = useMemo(() => buildPlanningControlCenter(overview, allPlanningCrewEvents), [allPlanningCrewEvents, overview]);
+  const assignmentControls = useMemo(() => {
+    const person = overview.people.find((item) => String(item.id) === assignmentForm.crewPersonId);
+    const vessel = overview.vessels.find((item) => String(item.id) === assignmentForm.vesselId);
+    if (!person || !vessel) return [];
+    return evaluatePlanningAssignment(overview, {
+      id: 'new-assignment',
+      personId: person.id,
+      person: formatPlanningPerson(person),
+      vessel: vessel.name,
+      functionLabel: assignmentForm.assignmentRole,
+      status: assignmentForm.statusLabel,
+      startsOn: assignmentForm.startsOn,
+      endsOn: assignmentForm.endsOn,
+    }, allPlanningCrewEvents);
+  }, [allPlanningCrewEvents, assignmentForm, overview]);
+  const selectedEventControls = useMemo(() => {
+    if (!selectedEvent || !eventForm) return [];
+    const vessel = overview.vessels.find((item) => String(item.id) === eventForm.vesselId);
+    if (!vessel) return [];
+    return evaluatePlanningAssignment(overview, {
+      id: selectedEvent.id,
+      personId: selectedEvent.personId,
+      person: selectedEvent.person,
+      vessel: vessel.name,
+      functionLabel: eventForm.functionLabel,
+      status: eventForm.statusLabel,
+      startsOn: eventForm.startsOn,
+      endsOn: eventForm.endsOn,
+    }, allPlanningCrewEvents);
+  }, [allPlanningCrewEvents, eventForm, overview, selectedEvent]);
   const watchGroupOptions = useMemo(
     () => uniqueSorted([
       'Affectation',
@@ -278,6 +327,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   );
 
   const tabCounts: Record<SideTab, number> = {
+    conflicts: planningControls.filter((control) => control.level !== 'information').length,
     certificates: certificateAlerts.filter((alert) => alert.tone === 'danger').length || certificateAlerts.length,
     unassigned: unassignedPeople.length,
     billing: unbilledProjects.length,
@@ -309,12 +359,9 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const person = activePeople.find((item) => String(item.id) === assignmentForm.crewPersonId);
-    const vessel = activeVessels.find((item) => String(item.id) === assignmentForm.vesselId);
-    let conflictWarning = '';
-    if (person && vessel) {
-      const conflicts = getPlanningConflicts(overview, { id: 'new', person: formatPlanningPerson(person), personId: person.id, vessel: vessel.name, startsOn: assignmentForm.startsOn, endsOn: assignmentForm.endsOn });
-      if (conflicts.length) conflictWarning = `${formatPlanningPerson(person)} est aussi affecté au ${conflicts[0].event.vessel} le ${formatPlanningDate(conflicts[0].date)}.`;
+    if (hasBlockingPlanningControls(assignmentControls)) {
+      setErrorMessage(blockingControlMessage(assignmentControls));
+      return;
     }
     setIsSaving(true);
     setErrorMessage(null);
@@ -322,10 +369,10 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       const row = await createPlanningAssignment(effectiveClient, assignmentForm);
       const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
       setOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
-      setStatusMessage(conflictWarning ? `Affectation ajoutée. Conflit signalé : ${conflictWarning}` : 'Affectation ajoutée au planning.');
+      setStatusMessage(planningControlSaveMessage(assignmentControls, 'Affectation ajoutée au planning.'));
       setIsAssignmentOpen(false);
-    } catch {
-      setErrorMessage("Impossible d'ajouter cette affectation.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette affectation.");
     } finally {
       setIsSaving(false);
     }
@@ -356,17 +403,23 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     setQuickCreateKey(quickKey);
     setErrorMessage(null);
     try {
-      const conflicts = getPlanningConflicts(overview, {
-        id: 'new', person: formatPlanningPerson(person), personId: person.id, vessel: vessel.name, startsOn: date, endsOn: date,
-      });
+      const controls = evaluatePlanningAssignment(overview, {
+        id: 'new-quick-assignment',
+        person: formatPlanningPerson(person),
+        personId: person.id,
+        vessel: vessel.name,
+        functionLabel: role,
+        status: statusLabel,
+        startsOn: date,
+        endsOn: date,
+      }, allPlanningCrewEvents);
+      if (hasBlockingPlanningControls(controls)) throw new Error(blockingControlMessage(controls));
       const created = await createPlanningAssignment(effectiveClient, input);
       const [assignment] = mapPlanningAssignmentRows([created], overview.people, overview.vessels);
       setOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
-      setStatusMessage(conflicts.length
-        ? `Affectation ajoutée. Conflit détecté avec ${conflicts[0].event.vessel} le ${formatPlanningDate(date)}.`
-        : `${formatPlanningPerson(person)} · ${statusLabel} ajouté le ${formatPlanningDate(date)}.`);
-    } catch {
-      setErrorMessage("Impossible d'ajouter cette journée au planning.");
+      setStatusMessage(planningControlSaveMessage(controls, `${formatPlanningPerson(person)} · ${statusLabel} ajouté le ${formatPlanningDate(date)}.`));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette journée au planning.");
     } finally {
       setQuickCreateKey(null);
     }
@@ -403,17 +456,23 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
     });
   }
 
-  function conflictMessage(event: PlanningCrewEvent, vessel: PlanningVessel, startsOn: string, endsOn: string) {
-    const conflicts = getPlanningConflicts(overview, { ...event, vessel: vessel.name, startsOn, endsOn });
-    return conflicts.length
-      ? `${event.person} est déjà affecté au ${conflicts[0].event.vessel} le ${formatPlanningDate(conflicts[0].date)}.`
-      : '';
-  }
-
   async function saveEvent(event: PlanningCrewEvent, form: EventFormState) {
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
-    const conflict = conflictMessage(event, vessel, form.startsOn, form.endsOn);
+    const controls = evaluatePlanningAssignment(overview, {
+      id: event.id,
+      personId: event.personId,
+      person: event.person,
+      vessel: vessel.name,
+      functionLabel: form.functionLabel,
+      status: form.statusLabel,
+      startsOn: form.startsOn,
+      endsOn: form.endsOn,
+    }, allPlanningCrewEvents);
+    if (hasBlockingPlanningControls(controls)) {
+      setErrorMessage(blockingControlMessage(controls));
+      return;
+    }
     setIsSaving(true); setErrorMessage(null);
     try {
       await updatePlanningEvent(effectiveClient, {
@@ -421,7 +480,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
         startsOn: form.startsOn, endsOn: form.endsOn, statusLabel: form.statusLabel,
         functionLabel: form.functionLabel, watchGroup: form.watchGroup, comments: form.comments,
       });
-      await loadPlanning(); setStatusMessage(conflict ? `Planning mis à jour. Conflit signalé : ${conflict}` : 'Planning mis à jour.'); setSelectedEvent(null); setEventForm(null);
+      await loadPlanning(); setStatusMessage(planningControlSaveMessage(controls, 'Planning mis à jour.')); setSelectedEvent(null); setEventForm(null);
     } catch (error) { setErrorMessage(error instanceof Error ? error.message : 'Impossible de modifier cette période.'); }
     finally { setIsSaving(false); }
   }
@@ -681,6 +740,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           <PlanningSideContent
             certificateAlerts={certificateAlerts}
             hrAlerts={hrAlerts}
+            planningControls={planningControls}
             sideTab={sideTab}
             unassignedPeople={unassignedPeople}
             unbilledProjects={unbilledProjects}
@@ -704,12 +764,13 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
               <label>Bordée / groupe<select aria-label="Bordée" onChange={(event) => setAssignmentForm((current) => ({ ...current, watchGroup: event.target.value }))} value={assignmentForm.watchGroup}>{uniqueSorted([...watchGroupOptions, assignmentForm.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label>
               <label className="is-wide">Annotation<textarea aria-label="Annotation" onChange={(event) => setAssignmentForm((current) => ({ ...current, comments: event.target.value }))} value={assignmentForm.comments} /></label>
             </div>
+            <PlanningControlSummary results={assignmentControls} />
             <footer><button className="is-secondary" onClick={() => setIsAssignmentOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter affectation</button></footer>
           </form>
         </div>
       ) : null}
 
-      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} editable={isManager} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
+      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={isManager} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {selectedProject ? <PlanningProjectDialog activeVessels={activeVessels} editable={isManager} isSaving={isSaving} onClose={() => setSelectedProject(null)} onSave={(form) => void saveProject(selectedProject, form)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
       {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
@@ -834,14 +895,18 @@ function PlanningTimelineRow({ row, days, onToggle, onOpenEvent, onOpenProject, 
   );
 }
 
-function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, unassignedPeople, unbilledProjects, editable }: {
+function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, planningControls, unassignedPeople, unbilledProjects, editable }: {
   sideTab: SideTab;
   certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
   hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
+  planningControls: PlanningControlResult[];
   unassignedPeople: PlanningPerson[];
   unbilledProjects: PlanningProjectRecord[];
   editable: boolean;
 }) {
+  if (sideTab === 'conflicts') {
+    return <div className="planning-side-list">{planningControls.length ? planningControls.map((control) => <article className="planning-side-item" key={control.id}><div><strong>{control.title}</strong><span className={`planning-side-badge is-${control.level === 'blocking' ? 'danger' : control.level === 'warning' ? 'warning' : 'muted'}`}>{control.level === 'blocking' ? 'Blocage' : control.level === 'warning' ? 'Avertissement' : 'Information'}</span></div><p>{control.detail}</p>{control.date ? <small>{formatPlanningDate(control.date)}</small> : null}</article>) : <PlanningEmptySide text="Aucun conflit ou contrôle en attente." />}</div>;
+  }
   if (sideTab === 'unassigned') {
     return <div className="planning-side-list">{unassignedPeople.length ? unassignedPeople.map((person) => <article className={`planning-side-item${editable ? ' is-draggable' : ''}`} draggable={editable} key={person.id} onDragStart={(event) => event.dataTransfer.setData('application/x-seapilot-planning', JSON.stringify({ type: 'person', id: person.id }))}><div><strong>{formatPlanningPerson(person)}</strong><span className="planning-side-badge is-muted">{person.functionLabel || person.gradeLabel || 'Marin'}</span></div><p>{[person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Contrat actif'}</p>{editable ? <small>Glisser sur un navire pour affecter</small> : null}</article>) : <PlanningEmptySide text="Tous les marins sont affectés." />}</div>;
   }
@@ -856,9 +921,9 @@ function PlanningEmptySide({ text }: { text: string }) {
   return <div className="planning-side-empty"><CalendarDays aria-hidden="true" size={24} /><p>{text}</p></div>;
 }
 
-function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, editable, isSaving, onChange, onClose, onSave, onDelete }: { event: PlanningCrewEvent; form: EventFormState; activeVessels: PlanningVessel[]; watchGroupOptions: string[]; editable: boolean; isSaving: boolean; onChange: (form: EventFormState) => void; onClose: () => void; onSave: () => void; onDelete: () => void }) {
+function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, controls, editable, isSaving, onChange, onClose, onSave, onDelete }: { event: PlanningCrewEvent; form: EventFormState; activeVessels: PlanningVessel[]; watchGroupOptions: string[]; controls: PlanningControlResult[]; editable: boolean; isSaving: boolean; onChange: (form: EventFormState) => void; onClose: () => void; onSave: () => void; onDelete: () => void }) {
   if (!editable) return <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog is-detail" role="dialog"><header><div><CalendarDays aria-hidden="true" size={20} /><h2>{event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Navire</dt><dd>{event.vessel}</dd></div><div><dt>Bordée</dt><dd>{event.board || 'Non renseignée'}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(event.startsOn)} au {formatPlanningDate(event.endsOn)}</dd></div><div><dt>Statut</dt><dd>{event.status}</dd></div><div><dt>Fonction</dt><dd>{event.functionLabel || 'Équipage'}</dd></div><div><dt>Annotation</dt><dd>{event.comments || 'Aucune annotation'}</dd></div><div><dt>Source</dt><dd>{event.sourceLabel}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
-  return <div className="planning-dialog-backdrop" role="presentation"><form aria-modal="true" className="planning-dialog" onSubmit={(submitEvent) => { submitEvent.preventDefault(); onSave(); }} role="dialog"><header><div><Pencil aria-hidden="true" size={20} /><h2>Modifier · {event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Navire<select required value={form.vesselId} onChange={(changeEvent) => onChange({ ...form, vesselId: changeEvent.target.value })}>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label><label>Début<input required type="date" value={form.startsOn} onChange={(changeEvent) => onChange({ ...form, startsOn: changeEvent.target.value })} /></label><label>Fin<input disabled={event.kind === 'day'} required type="date" value={form.endsOn} onChange={(changeEvent) => onChange({ ...form, endsOn: changeEvent.target.value })} /></label><label>Statut<select value={form.statusLabel} onChange={(changeEvent) => onChange({ ...form, statusLabel: changeEvent.target.value })}>{PLANNING_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label><label>Fonction<input value={form.functionLabel} onChange={(changeEvent) => onChange({ ...form, functionLabel: changeEvent.target.value })} /></label><label className="is-wide">Bordée / groupe<select value={form.watchGroup} onChange={(changeEvent) => onChange({ ...form, watchGroup: changeEvent.target.value })}>{uniqueSorted([...watchGroupOptions, form.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea rows={4} value={form.comments} onChange={(changeEvent) => onChange({ ...form, comments: changeEvent.target.value })} /></label></div><footer className="planning-dialog-footer-split"><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={16} />Supprimer</button><span><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer</button></span></footer></form></div>;
+  return <div className="planning-dialog-backdrop" role="presentation"><form aria-modal="true" className="planning-dialog" onSubmit={(submitEvent) => { submitEvent.preventDefault(); onSave(); }} role="dialog"><header><div><Pencil aria-hidden="true" size={20} /><h2>Modifier · {event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Navire<select required value={form.vesselId} onChange={(changeEvent) => onChange({ ...form, vesselId: changeEvent.target.value })}>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label><label>Début<input required type="date" value={form.startsOn} onChange={(changeEvent) => onChange({ ...form, startsOn: changeEvent.target.value })} /></label><label>Fin<input disabled={event.kind === 'day'} required type="date" value={form.endsOn} onChange={(changeEvent) => onChange({ ...form, endsOn: changeEvent.target.value })} /></label><label>Statut<select value={form.statusLabel} onChange={(changeEvent) => onChange({ ...form, statusLabel: changeEvent.target.value })}>{PLANNING_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label><label>Fonction<input value={form.functionLabel} onChange={(changeEvent) => onChange({ ...form, functionLabel: changeEvent.target.value })} /></label><label className="is-wide">Bordée / groupe<select value={form.watchGroup} onChange={(changeEvent) => onChange({ ...form, watchGroup: changeEvent.target.value })}>{uniqueSorted([...watchGroupOptions, form.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea rows={4} value={form.comments} onChange={(changeEvent) => onChange({ ...form, comments: changeEvent.target.value })} /></label></div><PlanningControlSummary results={controls} /><footer className="planning-dialog-footer-split"><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={16} />Supprimer</button><span><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer</button></span></footer></form></div>;
 }
 
 function PlanningProjectDialog({ project, activeVessels, editable, isSaving, onClose, onSave }: { project: PlanningProjectRecord; activeVessels: PlanningVessel[]; editable: boolean; isSaving: boolean; onClose: () => void; onSave: (form: { title: string; startsOn: string; endsOn: string; status: string; vesselId: string; clientName: string; description: string }) => void }) {

@@ -190,6 +190,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - Cockpit Planning SPFx migre dans SeaPilot : calendrier Semaine/Mois/An, groupes navire/bordee/marin, projets et statuts, zoom, plein ecran, filtres, creation/duplication d'affectations, panneaux certificats, marins non affectes, facturation et alertes RH. L'inventaire et les regles sont conserves dans `docs/migration/planning-spfx-inventory.md`.
 - Donnees Planning SharePoint importees dans Supabase : 14 navires valides, 18 projets, 171 journees Slot365 et 70 periodes historiques. Tous les liens navire sont resolus ; 7 lignes historiques de Nicolas BOUVILLE restent conservees par nom faute de fiche `people` correspondante.
 - Éditeur Planning administrateur livré : week-ends alignés, glisser-déposer et redimensionnement des périodes, statuts/couleurs, annotations, contrôle de double affectation, dépôt des marins non affectés, gestion des navires, édition des projets et export journalier CSV par marin. Les écritures sont protégées par RLS et auditées dans `planning_change_log`.
+- Contrôles P0 Planning livrés : moteur central dates/disponibilités/fonctions/documents/aptitude, niveaux Information-Avertissement-Blocage configurables dans `planning_rules`, aperçu avant écriture et centre de conflits. Architecture et matrice d’audit dans `docs/PLANNING_ARCHITECTURE.md`.
 - Module Certificats flotte raccorde a `fleet_certificates` avec KPIs, filtres par navire/statut/recherche, liens fichiers et creation pour les roles bureau.
 - Module Procedures QHSE raccorde a `procedures` et `published_procedures` avec KPIs, filtres, liens fichiers et creation de procedure pour les roles bureau.
 - Module Daily Progress Report raccorde a `dpr_items`, `dpr_archives` et `mgo_prices` avec KPIs, filtres projet/navire/date/recherche, archives PDF, dernier prix MGO et creation de rapport pour les roles bureau.
@@ -212,7 +213,7 @@ Les upserts se font sur `sharepoint_list_id,sharepoint_item_id` pour permettre d
 - `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` configures dans Vercel pour Preview.
 - Supabase CLI installee et mise a jour en version `2.109.0`.
 - Projet Supabase Cloud `SeaPilot` (`szlvyrrmvdvhzixilymh`) lie au depot local.
-- 23 migrations appliquees sur Supabase Cloud après déploiement de l’éditeur Planning.
+- 25 migrations appliquees sur Supabase Cloud après déploiement des contrôles P0 Planning.
 - Base distante verifiee avec `supabase db push --dry-run` et `supabase db lint --linked`.
 - Supabase Auth configure sur `https://sea-pilot-ten.vercel.app` avec inscriptions publiques desactivees.
 - Premier compte admin `christophe@bbtm.fr` cree dans Supabase Auth avec profil applicatif et role `admin`.
