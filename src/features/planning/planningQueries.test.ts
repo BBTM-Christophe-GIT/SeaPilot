@@ -1,16 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
+  createPlanningDerogation,
+  createPlanningProject,
   createVessel,
+  fetchPlanningPeople,
   fetchPlanningOverview,
+  fetchVessels,
   mapPlanningDayRows,
   mapPlanningAssignmentRows,
   mapPlanningAssignmentOverviewRows,
   mapPlanningPeriodRows,
   mapPlanningPeopleRows,
+  mapPlanningHistoryRows,
   mapPlanningPublicationRows,
+  mapPlanningVersionRows,
   mapVesselRows,
+  savePlanningHandover,
   transitionPlanningPublication,
+  updatePlanningEvent,
+  updatePlanningProject,
 } from './planningQueries';
 
 const vesselRow = {
@@ -44,6 +53,7 @@ const assignmentRow = {
   starts_on: '2026-07-01',
   ends_on: '2026-07-14',
   assignment_role: 'Pont',
+  confirmation_status: 'confirmed',
   source_label: 'seapilot',
 };
 
@@ -97,6 +107,23 @@ const planningPeriodRow = {
   source_label: 'sharepoint',
 };
 
+const planningProjectRow = {
+  id: 600,
+  title: 'Transit Cherbourg',
+  starts_on: '2026-07-08',
+  ends_on: '2026-07-10',
+  description: null,
+  client_name: 'BBTM',
+  primary_vessel_id: 1,
+  primary_vessel_name: 'COTENTIN',
+  secondary_vessel_id: null,
+  secondary_vessel_name: null,
+  event_type: 'transit',
+  responsible_name: 'Jean MARTIN',
+  status: 'Confirmé',
+  source_label: 'seapilot',
+};
+
 const planningPublicationRow = {
   id: 500,
   vessel_id: null,
@@ -107,10 +134,20 @@ const planningPublicationRow = {
   current_version: 1,
   comment: 'Version opérationnelle',
   submitted_at: '2026-07-01T08:00:00Z',
+  submitted_by: 'user-submit',
+  submitted_by_name: 'Armement',
   validated_at: '2026-07-01T09:00:00Z',
+  validated_by: 'user-validate',
+  validated_by_name: 'Direction',
   published_at: '2026-07-01T10:00:00Z',
+  published_by: 'user-publish',
+  published_by_name: 'Direction',
   locked_at: '2026-07-01T08:00:00Z',
+  locked_by: 'user-submit',
+  locked_by_name: 'Armement',
   updated_at: '2026-07-01T10:00:00Z',
+  updated_by: 'user-publish',
+  updated_by_name: 'Direction',
 };
 
 describe('planning mappers', () => {
@@ -137,6 +174,8 @@ describe('planning mappers', () => {
         contractType: '',
         hiredOn: '',
         departedOn: '',
+        deckCertificateLabel: '',
+        engineCertificateLabel: '',
         active: true,
       },
     ]);
@@ -157,8 +196,11 @@ describe('planning mappers', () => {
         crewName: 'Paul DURAND',
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
+        startsAt: '2026-06-30T22:00:00.000Z',
+        endsAt: '2026-07-14T21:59:00.000Z',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
+        confirmationStatus: 'confirmed',
         watchGroup: 'Affectation',
         comments: '',
         sourceLabel: 'seapilot',
@@ -188,8 +230,11 @@ describe('planning mappers', () => {
         crewName: 'Paul DURAND',
         startsOn: '2026-07-01',
         endsOn: '2026-07-14',
+        startsAt: '2026-06-30T22:00:00.000Z',
+        endsAt: '2026-07-14T21:59:00.000Z',
         assignmentRole: 'Pont',
         statusLabel: 'En Mer',
+        confirmationStatus: 'confirmed',
         watchGroup: 'Affectation',
         comments: '',
         sourceLabel: 'seapilot',
@@ -222,6 +267,9 @@ describe('planning mappers', () => {
         workedHours: 10.5,
         rest24h: 14,
         cumulative7d: 60,
+        consecutiveRestHours: null,
+        restPeriodCount: null,
+        nightWorkHours: null,
         comments: 'RAS',
         sourceLabel: 'sharepoint',
       },
@@ -261,11 +309,84 @@ describe('planning mappers', () => {
       currentVersion: 1,
       comment: 'Version opérationnelle',
       submittedAt: '2026-07-01T08:00:00Z',
+      submittedBy: 'user-submit',
+      submittedByName: 'Armement',
       validatedAt: '2026-07-01T09:00:00Z',
+      validatedBy: 'user-validate',
+      validatedByName: 'Direction',
       publishedAt: '2026-07-01T10:00:00Z',
+      publishedBy: 'user-publish',
+      publishedByName: 'Direction',
       lockedAt: '2026-07-01T08:00:00Z',
+      lockedBy: 'user-submit',
+      lockedByName: 'Armement',
       updatedAt: '2026-07-01T10:00:00Z',
+      updatedBy: 'user-publish',
+      updatedByName: 'Direction',
     }]);
+  });
+
+  it('maps immutable versions and semantic history metadata', () => {
+    expect(mapPlanningVersionRows([{
+      id: 9,
+      publication_id: 500,
+      version_number: 2,
+      comment: 'Relève intégrée',
+      created_at: '2026-07-14T10:00:00Z',
+      created_by: 'user-id',
+      created_by_name: 'Direction BBTM',
+    }])).toEqual([expect.objectContaining({
+      publicationId: 500,
+      versionNumber: 2,
+      createdByName: 'Direction BBTM',
+    })]);
+
+    expect(mapPlanningHistoryRows([{
+      id: 12,
+      entity_kind: 'assignment',
+      entity_id: 100,
+      action: 'move',
+      payload: { before: {}, after: {} },
+      changed_by: 'user-id',
+      changed_by_name: 'Armement BBTM',
+      changed_at: '2026-07-14T09:00:00Z',
+      vessel_id: 1,
+      starts_on: '2026-07-15',
+      ends_on: '2026-07-21',
+      summary: 'Événement déplacé ou redimensionné',
+    }])).toEqual([expect.objectContaining({
+      action: 'move',
+      vesselId: 1,
+      changedByName: 'Armement BBTM',
+    })]);
+  });
+});
+
+describe('planning reference loading', () => {
+  it('loads vessels with the centralized select and ordering', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [vesselRow], error: null });
+    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order }) });
+    await expect(fetchVessels({ from } as never)).resolves.toEqual(mapVesselRows([vesselRow]));
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('vessels');
+  });
+
+  it('loads marins without filtering inactive historical relations', async () => {
+    const orderByFirstName = vi.fn().mockResolvedValue({ data: [captainRow, crewRow], error: null });
+    const orderByLastName = vi.fn().mockReturnValue({ order: orderByFirstName });
+    const from = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order: orderByLastName }) });
+    await expect(fetchPlanningPeople({ from } as never)).resolves.toEqual(mapPlanningPeopleRows([captainRow, crewRow]));
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('people');
+  });
+
+  it('reports a contextual vessel loading error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const from = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST001', message: 'timeout' } }) }),
+    });
+    await expect(fetchVessels({ from } as never)).rejects.toThrow('Impossible de charger les navires.');
+    consoleError.mockRestore();
   });
 });
 
@@ -308,12 +429,35 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'planning_projects') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
+      if (table === 'fleet_certificates' || table === 'planning_rules') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'hr_documents') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'planning_publications') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [planningPublicationRow], error: null }) }) };
+      }
+
+      if (table === 'planning_versions') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_change_log') {
+        return { select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+          order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+        }) };
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -330,6 +474,11 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: mapPlanningPublicationRows([planningPublicationRow]),
+      versions: [],
+      history: [],
+      handovers: [],
+      derogations: [],
+      derogationHistory: [],
     });
 
     expect(from).toHaveBeenCalledWith('vessels');
@@ -390,12 +539,35 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'planning_projects') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+      }
+
+      if (table === 'fleet_certificates' || table === 'planning_rules') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'hr_documents') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
       if (table === 'planning_publications') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_versions') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_handovers' || table === 'planning_handover_positions' || table === 'planning_derogations') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
+      if (table === 'planning_change_log') {
+        return { select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+          order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+        }) };
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -417,6 +589,11 @@ describe('fetchPlanningOverview', () => {
       hrDocuments: [],
       rules: [],
       publications: [],
+      versions: [],
+      history: [],
+      handovers: [],
+      derogations: [],
+      derogationHistory: [],
     });
   });
 });
@@ -453,6 +630,7 @@ describe('planning writes', () => {
       captain_person_id: null,
       assignment_role: 'crew',
       status_label: 'En Mer',
+      confirmation_status: 'confirmed',
       watch_group: 'Affectation',
       comments: null,
     };
@@ -479,10 +657,134 @@ describe('planning writes', () => {
       ends_on: '2026-07-14',
       assignment_role: 'crew',
       status_label: 'En Mer',
+      confirmation_status: 'confirmed',
       watch_group: 'Affectation',
       comments: null,
       source_label: 'seapilot',
     });
+  });
+
+  it('stores an assignment spanning midnight as UTC instants and two civil dates', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: { ...assignmentRow, starts_on: '2026-10-24', ends_on: '2026-10-25' },
+      error: null,
+    });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await createPlanningAssignment({ from } as never, {
+      vesselId: '1',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-10-24',
+      endsOn: '2026-10-25',
+      startsAt: '2026-10-24T22:00',
+      endsAt: '2026-10-25T06:00',
+      assignmentRole: 'Pont',
+    });
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      starts_on: '2026-10-24',
+      ends_on: '2026-10-25',
+      starts_at: '2026-10-24T20:00:00.000Z',
+      ends_at: '2026-10-25T05:00:00.000Z',
+    }));
+  });
+
+  it('rejects incoherent dates and invalid relation identifiers before Supabase', async () => {
+    const from = vi.fn();
+    await expect(createPlanningAssignment({ from } as never, {
+      vesselId: '1',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-07-14',
+      endsOn: '2026-07-01',
+      assignmentRole: 'Pont',
+    })).rejects.toThrow('La date de fin doit être postérieure');
+    await expect(createPlanningAssignment({ from } as never, {
+      vesselId: 'inconnu',
+      captainPersonId: '',
+      crewPersonId: '11',
+      startsOn: '2026-07-01',
+      endsOn: '2026-07-14',
+      assignmentRole: 'Pont',
+    })).rejects.toThrow('Le navire est obligatoire');
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('keeps edited isolated-day embarkation dates coherent', async () => {
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    const from = vi.fn().mockReturnValue({ update });
+
+    await updatePlanningEvent({ from } as never, {
+      id: 200,
+      kind: 'day',
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      startsOn: '2026-07-07',
+      endsOn: '2026-07-07',
+      statusLabel: 'En Mer',
+      functionLabel: 'Pont',
+      watchGroup: 'Bordée 1',
+      comments: '',
+    });
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      work_date: '2026-07-07',
+      departure_on: '2026-07-07',
+      disembark_on: '2026-07-07',
+    }));
+  });
+
+  it('creates a typed fleet event and returns the normalized Supabase row', async () => {
+    const single = vi.fn().mockResolvedValue({ data: planningProjectRow, error: null });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await expect(createPlanningProject({ from } as never, {
+      title: ' Transit Cherbourg ',
+      startsOn: '2026-07-08',
+      endsOn: '2026-07-10',
+      status: 'Confirmé',
+      eventType: 'transit',
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      responsibleName: ' Jean MARTIN ',
+      clientName: 'BBTM',
+      description: '',
+    })).resolves.toEqual(expect.objectContaining({ id: 600, eventType: 'transit', responsibleName: 'Jean MARTIN' }));
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Transit Cherbourg',
+      event_type: 'transit',
+      responsible_name: 'Jean MARTIN',
+      primary_vessel_id: 1,
+      primary_vessel_name: 'COTENTIN',
+    }));
+  });
+
+  it('updates a fleet event and rejects an incoherent range before Supabase', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { ...planningProjectRow, title: 'Transit Barfleur' }, error: null });
+    const eq = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const update = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ update });
+    const input = {
+      id: 600,
+      title: 'Transit Barfleur',
+      startsOn: '2026-07-09',
+      endsOn: '2026-07-11',
+      status: 'Confirmé',
+      eventType: 'transit' as const,
+      vesselId: 1,
+      vesselName: 'COTENTIN',
+      responsibleName: 'Jean MARTIN',
+      clientName: 'BBTM',
+      description: 'Mise en place',
+    };
+    await expect(updatePlanningProject({ from } as never, input)).resolves.toEqual(expect.objectContaining({ title: 'Transit Barfleur' }));
+    expect(eq).toHaveBeenCalledWith('id', 600);
+
+    await expect(updatePlanningProject({ from: vi.fn() } as never, { ...input, startsOn: '2026-07-12', endsOn: '2026-07-11' })).rejects.toThrow('La date de fin doit être postérieure');
   });
 
   it('transitions a displayed period through the publication RPC', async () => {
@@ -510,5 +812,87 @@ describe('planning writes', () => {
       p_vessel_id: null,
       p_comment: 'Préparation juillet',
     });
+  });
+
+  it('saves a complete handover transaction through the protected RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 77, error: null });
+
+    await expect(savePlanningHandover({ rpc } as never, {
+      vesselId: '1',
+      handoverAt: '2026-07-15T12:00',
+      location: 'Cherbourg',
+      durationMinutes: 90,
+      responsiblePersonId: '10',
+      comments: 'Passation à quai',
+      status: 'confirmed',
+      positions: [{
+        functionLabel: 'Capitaine',
+        outgoingPersonId: '10',
+        incomingPersonId: '11',
+        outgoingAssignmentId: '100',
+        incomingAssignmentId: '101',
+        comments: 'Dossiers transmis',
+      }],
+    })).resolves.toBe(77);
+
+    expect(rpc).toHaveBeenCalledWith('save_planning_handover', expect.objectContaining({
+      p_vessel_id: 1,
+      p_handover_at: '2026-07-15T10:00:00.000Z',
+      p_location: 'Cherbourg',
+      p_duration_minutes: 90,
+      p_responsible_person_id: 10,
+      p_status: 'confirmed',
+      p_positions: [{
+        function_label: 'Capitaine',
+        outgoing_person_id: 10,
+        incoming_person_id: 11,
+        outgoing_assignment_id: 100,
+        incoming_assignment_id: 101,
+        comments: 'Dossiers transmis',
+      }],
+    }));
+  });
+
+  it('creates an attributed and bounded derogation payload', async () => {
+    const row = {
+      id: 88,
+      rule_id: 4,
+      assignment_id: 100,
+      person_id: 11,
+      vessel_id: 1,
+      reason: 'Dérogation validée par la direction maritime',
+      starts_at: '2026-07-20T06:00:00.000Z',
+      ends_at: '2026-07-26T18:00:00.000Z',
+      evidence_url: null,
+      status: 'active',
+      author_id: '00000000-0000-0000-0000-000000000001',
+      author_name: 'Admin SeaPilot',
+      created_at: '2026-07-13T20:00:00.000Z',
+      updated_at: '2026-07-13T20:00:00.000Z',
+    };
+    const single = vi.fn().mockResolvedValue({ data: row, error: null });
+    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await expect(createPlanningDerogation({ from } as never, {
+      ruleId: '4',
+      assignmentId: 100,
+      personId: '11',
+      vesselId: '1',
+      reason: ' Dérogation validée par la direction maritime ',
+      startsAt: '2026-07-20T08:00',
+      endsAt: '2026-07-26T20:00',
+    })).resolves.toEqual(expect.objectContaining({ id: 88, authorName: 'Admin SeaPilot', status: 'active' }));
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      rule_id: 4,
+      assignment_id: 100,
+      person_id: 11,
+      vessel_id: 1,
+      reason: 'Dérogation validée par la direction maritime',
+      starts_at: '2026-07-20T06:00:00.000Z',
+      ends_at: '2026-07-26T18:00:00.000Z',
+      status: 'active',
+    }));
   });
 });

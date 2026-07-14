@@ -1,23 +1,44 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
+import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
+import {
+  assertPlanningDateRange,
+  assertPlanningDateTimeRange,
+  assertSinglePlanningDay,
+  optionalPlanningEntityId,
+  planningEntityId,
+  requiredPlanningText,
+} from './planningValidation';
 
 const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT =
-  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, active';
+  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, deck_certificate_label, engine_certificate_label, active';
 const PLANNING_ASSIGNMENT_SELECT =
-  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, assignment_role, status_label, watch_group, comments, source_label';
+  'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
-  'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, comments, source_label';
+  'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, consecutive_rest_hours, rest_period_count, night_work_hours, comments, source_label';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
-  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, status, source_label';
+  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
 const PLANNING_HR_DOCUMENT_SELECT =
   'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
 const PLANNING_RULE_SELECT =
   'id, code, name, description, scope, control_level, active, effective_from, configuration, source_reference, version';
 const PLANNING_PUBLICATION_SELECT =
-  'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, validated_at, published_at, locked_at, updated_at';
+  'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, submitted_by, submitted_by_name, validated_at, validated_by, validated_by_name, published_at, published_by, published_by_name, locked_at, locked_by, locked_by_name, updated_at, updated_by, updated_by_name';
+const PLANNING_VERSION_SELECT =
+  'id, publication_id, version_number, comment, created_at, created_by, created_by_name';
+const PLANNING_HISTORY_SELECT =
+  'id, entity_kind, entity_id, action, payload, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
+const PLANNING_HANDOVER_SELECT =
+  'id, vessel_id, handover_at, location, handover_duration_minutes, responsible_person_id, comments, status, created_by, updated_by, created_at, updated_at';
+const PLANNING_HANDOVER_POSITION_SELECT =
+  'id, handover_id, position_order, function_label, outgoing_person_id, incoming_person_id, outgoing_assignment_id, incoming_assignment_id, comments';
+const PLANNING_DEROGATION_SELECT =
+  'id, rule_id, assignment_id, person_id, vessel_id, reason, starts_at, ends_at, evidence_url, status, author_id, author_name, created_at, updated_at';
+const PLANNING_DEROGATION_HISTORY_SELECT = 'id, entity_id, action, payload, changed_by, changed_at';
 
 interface VesselRow {
   id: number;
@@ -36,6 +57,8 @@ interface PlanningPersonRow {
   contract_type?: string | null;
   hired_on?: string | null;
   departed_on?: string | null;
+  deck_certificate_label?: string | null;
+  engine_certificate_label?: string | null;
   active: boolean;
 }
 
@@ -46,8 +69,11 @@ export interface PlanningAssignmentRow {
   crew_person_id: number;
   starts_on: string;
   ends_on: string;
+  starts_at?: string | null;
+  ends_at?: string | null;
   assignment_role: string;
   status_label?: string | null;
+  confirmation_status?: string | null;
   watch_group?: string | null;
   comments?: string | null;
   source_label: string;
@@ -83,6 +109,9 @@ interface PlanningDayRow {
   worked_hours: number | string | null;
   rest_24h: number | string | null;
   cumulative_7d: number | string | null;
+  consecutive_rest_hours?: number | string | null;
+  rest_period_count?: number | string | null;
+  night_work_hours?: number | string | null;
   comments: string | null;
   source_label: string;
 }
@@ -117,6 +146,8 @@ interface PlanningProjectRow {
   primary_vessel_name: string | null;
   secondary_vessel_id: number | null;
   secondary_vessel_name: string | null;
+  event_type?: string | null;
+  responsible_name?: string | null;
   status: string | null;
   source_label: string;
 }
@@ -169,10 +200,98 @@ interface PlanningPublicationRow {
   current_version: number;
   comment: string | null;
   submitted_at: string | null;
+  submitted_by: string | null;
+  submitted_by_name: string | null;
   validated_at: string | null;
+  validated_by: string | null;
+  validated_by_name: string | null;
   published_at: string | null;
+  published_by: string | null;
+  published_by_name: string | null;
   locked_at: string | null;
+  locked_by: string | null;
+  locked_by_name: string | null;
   updated_at: string;
+  updated_by: string | null;
+  updated_by_name: string | null;
+}
+
+interface PlanningVersionRow {
+  id: number;
+  publication_id: number;
+  version_number: number;
+  comment: string | null;
+  created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
+}
+
+interface PlanningHistoryRow {
+  id: number;
+  entity_kind: string;
+  entity_id: number;
+  action: string;
+  payload: Record<string, unknown> | null;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  changed_at: string;
+  vessel_id: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  summary: string | null;
+}
+
+interface PlanningHandoverRow {
+  id: number;
+  vessel_id: number;
+  handover_at: string;
+  location: string;
+  handover_duration_minutes: number;
+  responsible_person_id: number;
+  comments: string | null;
+  status: string;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PlanningHandoverPositionRow {
+  id: number;
+  handover_id: number;
+  position_order: number;
+  function_label: string;
+  outgoing_person_id: number | null;
+  incoming_person_id: number | null;
+  outgoing_assignment_id: number | null;
+  incoming_assignment_id: number | null;
+  comments: string | null;
+}
+
+interface PlanningDerogationRow {
+  id: number;
+  rule_id: number;
+  assignment_id: number | null;
+  person_id: number;
+  vessel_id: number;
+  reason: string;
+  starts_at: string;
+  ends_at: string;
+  evidence_url: string | null;
+  status: string;
+  author_id: string;
+  author_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PlanningDerogationHistoryRow {
+  id: number;
+  entity_id: number;
+  action: string;
+  payload: Record<string, unknown> | null;
+  changed_by: string | null;
+  changed_at: string;
 }
 
 export interface PlanningVessel {
@@ -192,6 +311,8 @@ export interface PlanningPerson {
   contractType: string;
   hiredOn: string;
   departedOn: string;
+  deckCertificateLabel?: string;
+  engineCertificateLabel?: string;
   active: boolean;
 }
 
@@ -205,8 +326,11 @@ export interface PlanningAssignmentRecord {
   crewName: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
   assignmentRole: string;
   statusLabel: string;
+  confirmationStatus: PlanningConfirmationStatus;
   watchGroup: string;
   comments: string;
   sourceLabel: string;
@@ -235,6 +359,9 @@ export interface PlanningDayRecord {
   workedHours: number | null;
   rest24h: number | null;
   cumulative7d: number | null;
+  consecutiveRestHours?: number | null;
+  restPeriodCount?: number | null;
+  nightWorkHours?: number | null;
   comments: string;
   sourceLabel: string;
 }
@@ -268,6 +395,8 @@ export interface PlanningProjectRecord {
   primaryVesselName: string;
   secondaryVesselId: number | null;
   secondaryVesselName: string;
+  eventType: PlanningFleetEventType;
+  responsibleName: string;
   status: string;
   sourceLabel: string;
 }
@@ -330,10 +459,103 @@ export interface PlanningPublicationRecord {
   currentVersion: number;
   comment: string;
   submittedAt: string;
+  submittedBy: string;
+  submittedByName: string;
   validatedAt: string;
+  validatedBy: string;
+  validatedByName: string;
   publishedAt: string;
+  publishedBy: string;
+  publishedByName: string;
   lockedAt: string;
+  lockedBy: string;
+  lockedByName: string;
   updatedAt: string;
+  updatedBy: string;
+  updatedByName: string;
+}
+
+export interface PlanningVersionRecord {
+  id: number;
+  publicationId: number;
+  versionNumber: number;
+  comment: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+}
+
+export interface PlanningHistoryRecord {
+  id: number;
+  entityKind: string;
+  entityId: number;
+  action: string;
+  payload: Record<string, unknown>;
+  changedBy: string;
+  changedByName: string;
+  changedAt: string;
+  vesselId: number | null;
+  startsOn: string;
+  endsOn: string;
+  summary: string;
+}
+
+export type PlanningHandoverStatus = 'draft' | 'planned' | 'confirmed' | 'completed' | 'cancelled';
+
+export interface PlanningHandoverPositionRecord {
+  id: number;
+  handoverId: number;
+  positionOrder: number;
+  functionLabel: string;
+  outgoingPersonId: number | null;
+  incomingPersonId: number | null;
+  outgoingAssignmentId: number | null;
+  incomingAssignmentId: number | null;
+  comments: string;
+}
+
+export interface PlanningHandoverRecord {
+  id: number;
+  vesselId: number;
+  handoverAt: string;
+  location: string;
+  durationMinutes: number;
+  responsiblePersonId: number;
+  comments: string;
+  status: PlanningHandoverStatus;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  positions: PlanningHandoverPositionRecord[];
+}
+
+export type PlanningDerogationStatus = 'active' | 'revoked' | 'expired';
+
+export interface PlanningDerogationRecord {
+  id: number;
+  ruleId: number;
+  assignmentId: number | null;
+  personId: number;
+  vesselId: number;
+  reason: string;
+  startsAt: string;
+  endsAt: string;
+  evidenceUrl: string;
+  status: PlanningDerogationStatus;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlanningDerogationHistoryRecord {
+  id: number;
+  derogationId: number;
+  action: string;
+  payload: Record<string, unknown>;
+  changedBy: string;
+  changedAt: string;
 }
 
 export interface PlanningOverview {
@@ -347,7 +569,15 @@ export interface PlanningOverview {
   hrDocuments: PlanningHrDocumentRecord[];
   rules: PlanningRuleRecord[];
   publications: PlanningPublicationRecord[];
+  versions: PlanningVersionRecord[];
+  history: PlanningHistoryRecord[];
+  handovers: PlanningHandoverRecord[];
+  derogations: PlanningDerogationRecord[];
+  derogationHistory: PlanningDerogationHistoryRecord[];
 }
+
+export type PlanningConfirmationStatus = 'provisional' | 'confirmed' | 'cancelled';
+export type PlanningFleetEventType = 'operation' | 'transit' | 'maintenance' | 'unavailability';
 
 export interface CreateVesselInput {
   name: string;
@@ -360,8 +590,11 @@ export interface CreatePlanningAssignmentInput {
   crewPersonId: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
   assignmentRole: string;
   statusLabel?: string;
+  confirmationStatus?: PlanningConfirmationStatus;
   watchGroup?: string;
   comments?: string;
 }
@@ -373,7 +606,10 @@ export interface UpdatePlanningEventInput {
   vesselName: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
   statusLabel: string;
+  confirmationStatus?: PlanningConfirmationStatus;
   functionLabel: string;
   watchGroup: string;
   comments: string;
@@ -387,9 +623,13 @@ export interface UpdatePlanningProjectInput {
   status: string;
   vesselId: number;
   vesselName: string;
+  eventType: PlanningFleetEventType;
+  responsibleName: string;
   clientName: string;
   description: string;
 }
+
+export type CreatePlanningProjectInput = Omit<UpdatePlanningProjectInput, 'id'>;
 
 export interface TransitionPlanningPublicationInput {
   action: PlanningPublicationAction;
@@ -400,6 +640,38 @@ export interface TransitionPlanningPublicationInput {
   comment?: string;
 }
 
+export interface SavePlanningHandoverPositionInput {
+  functionLabel: string;
+  outgoingPersonId: string;
+  incomingPersonId: string;
+  outgoingAssignmentId?: string;
+  incomingAssignmentId?: string;
+  comments?: string;
+}
+
+export interface SavePlanningHandoverInput {
+  id?: number | null;
+  vesselId: string;
+  handoverAt: string;
+  location: string;
+  durationMinutes: number;
+  responsiblePersonId: string;
+  comments?: string;
+  status: PlanningHandoverStatus;
+  positions: SavePlanningHandoverPositionInput[];
+}
+
+export interface CreatePlanningDerogationInput {
+  ruleId: string;
+  assignmentId?: number | null;
+  personId: string;
+  vesselId: string;
+  reason: string;
+  startsAt: string;
+  endsAt: string;
+  evidenceUrl?: string;
+}
+
 export function formatPlanningPersonName(person: PlanningPerson): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
 }
@@ -408,12 +680,19 @@ function textOrEmpty(value: string | null | undefined): string {
   return value || '';
 }
 
-function numberOrNull(value: number | string | null): number | null {
-  if (value === null) {
-    return null;
-  }
+function numberOrNull(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-  return Number(value);
+function planningConfirmationStatus(value: string | null | undefined): PlanningConfirmationStatus {
+  return value === 'provisional' || value === 'cancelled' ? value : 'confirmed';
+}
+
+function planningFleetEventType(value: string | null | undefined): PlanningFleetEventType {
+  if (value === 'transit' || value === 'maintenance' || value === 'unavailability') return value;
+  return 'operation';
 }
 
 function mapImportedVesselName(vesselName: string | null, manualVesselName: string | null): string {
@@ -440,6 +719,8 @@ export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson
     contractType: row.contract_type || '',
     hiredOn: row.hired_on || '',
     departedOn: row.departed_on || '',
+    deckCertificateLabel: row.deck_certificate_label || '',
+    engineCertificateLabel: row.engine_certificate_label || '',
     active: row.active,
   }));
 }
@@ -471,8 +752,11 @@ export function mapPlanningAssignmentRows(
       crewName: crew ? formatPlanningPersonName(crew) : `Marin #${row.crew_person_id}`,
       startsOn: row.starts_on,
       endsOn: row.ends_on,
+      startsAt: row.starts_at || planningLocalDateTimeToUtc(`${row.starts_on}T00:00`),
+      endsAt: row.ends_at || planningLocalDateTimeToUtc(`${row.ends_on}T23:59`),
       assignmentRole: row.assignment_role,
       statusLabel: row.status_label || 'En Mer',
+      confirmationStatus: planningConfirmationStatus(row.confirmation_status),
       watchGroup: row.watch_group || 'Affectation',
       comments: row.comments || '',
       sourceLabel: row.source_label,
@@ -491,8 +775,11 @@ export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOvervi
     crewName: row.crew_name || `Marin #${row.crew_person_id}`,
     startsOn: row.starts_on,
     endsOn: row.ends_on,
+    startsAt: row.starts_at || planningLocalDateTimeToUtc(`${row.starts_on}T00:00`),
+    endsAt: row.ends_at || planningLocalDateTimeToUtc(`${row.ends_on}T23:59`),
     assignmentRole: row.assignment_role,
     statusLabel: row.status_label || 'En Mer',
+    confirmationStatus: planningConfirmationStatus(row.confirmation_status),
     watchGroup: row.watch_group || 'Affectation',
     comments: row.comments || '',
     sourceLabel: row.source_label,
@@ -523,6 +810,9 @@ export function mapPlanningDayRows(rows: PlanningDayRow[]): PlanningDayRecord[] 
     workedHours: numberOrNull(row.worked_hours),
     rest24h: numberOrNull(row.rest_24h),
     cumulative7d: numberOrNull(row.cumulative_7d),
+    consecutiveRestHours: numberOrNull(row.consecutive_rest_hours),
+    restPeriodCount: numberOrNull(row.rest_period_count),
+    nightWorkHours: numberOrNull(row.night_work_hours),
     comments: textOrEmpty(row.comments),
     sourceLabel: row.source_label,
   }));
@@ -560,6 +850,8 @@ export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProj
     primaryVesselName: textOrEmpty(row.primary_vessel_name),
     secondaryVesselId: row.secondary_vessel_id,
     secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
+    eventType: planningFleetEventType(row.event_type),
+    responsibleName: textOrEmpty(row.responsible_name),
     status: textOrEmpty(row.status) || 'A planifier',
     sourceLabel: row.source_label,
   }));
@@ -634,20 +926,132 @@ export function mapPlanningPublicationRows(rows: PlanningPublicationRow[]): Plan
       currentVersion: row.current_version,
       comment: textOrEmpty(row.comment),
       submittedAt: textOrEmpty(row.submitted_at),
+      submittedBy: textOrEmpty(row.submitted_by),
+      submittedByName: textOrEmpty(row.submitted_by_name),
       validatedAt: textOrEmpty(row.validated_at),
+      validatedBy: textOrEmpty(row.validated_by),
+      validatedByName: textOrEmpty(row.validated_by_name),
       publishedAt: textOrEmpty(row.published_at),
+      publishedBy: textOrEmpty(row.published_by),
+      publishedByName: textOrEmpty(row.published_by_name),
       lockedAt: textOrEmpty(row.locked_at),
+      lockedBy: textOrEmpty(row.locked_by),
+      lockedByName: textOrEmpty(row.locked_by_name),
+      updatedAt: row.updated_at,
+      updatedBy: textOrEmpty(row.updated_by),
+      updatedByName: textOrEmpty(row.updated_by_name),
+    }];
+  });
+}
+
+export function mapPlanningVersionRows(rows: PlanningVersionRow[]): PlanningVersionRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    publicationId: row.publication_id,
+    versionNumber: row.version_number,
+    comment: textOrEmpty(row.comment),
+    createdAt: row.created_at,
+    createdBy: textOrEmpty(row.created_by),
+    createdByName: textOrEmpty(row.created_by_name),
+  }));
+}
+
+export function mapPlanningHistoryRows(rows: PlanningHistoryRow[]): PlanningHistoryRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    entityKind: row.entity_kind,
+    entityId: row.entity_id,
+    action: row.action,
+    payload: row.payload || {},
+    changedBy: textOrEmpty(row.changed_by),
+    changedByName: textOrEmpty(row.changed_by_name),
+    changedAt: row.changed_at,
+    vesselId: row.vessel_id,
+    startsOn: textOrEmpty(row.starts_on),
+    endsOn: textOrEmpty(row.ends_on),
+    summary: textOrEmpty(row.summary),
+  }));
+}
+
+export function mapPlanningHandoverRows(
+  rows: PlanningHandoverRow[],
+  positionRows: PlanningHandoverPositionRow[],
+): PlanningHandoverRecord[] {
+  const validStatuses: PlanningHandoverStatus[] = ['draft', 'planned', 'confirmed', 'completed', 'cancelled'];
+  const positionsByHandover = new Map<number, PlanningHandoverPositionRecord[]>();
+  positionRows.forEach((row) => {
+    const positions = positionsByHandover.get(row.handover_id) || [];
+    positions.push({
+      id: row.id,
+      handoverId: row.handover_id,
+      positionOrder: row.position_order,
+      functionLabel: row.function_label,
+      outgoingPersonId: row.outgoing_person_id,
+      incomingPersonId: row.incoming_person_id,
+      outgoingAssignmentId: row.outgoing_assignment_id,
+      incomingAssignmentId: row.incoming_assignment_id,
+      comments: textOrEmpty(row.comments),
+    });
+    positionsByHandover.set(row.handover_id, positions);
+  });
+  return rows.flatMap((row) => {
+    if (!validStatuses.includes(row.status as PlanningHandoverStatus)) return [];
+    return [{
+      id: row.id,
+      vesselId: row.vessel_id,
+      handoverAt: row.handover_at,
+      location: row.location,
+      durationMinutes: row.handover_duration_minutes,
+      responsiblePersonId: row.responsible_person_id,
+      comments: textOrEmpty(row.comments),
+      status: row.status as PlanningHandoverStatus,
+      createdBy: textOrEmpty(row.created_by),
+      updatedBy: textOrEmpty(row.updated_by),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      positions: (positionsByHandover.get(row.id) || []).sort((left, right) => left.positionOrder - right.positionOrder || left.id - right.id),
+    }];
+  });
+}
+
+export function mapPlanningDerogationRows(rows: PlanningDerogationRow[]): PlanningDerogationRecord[] {
+  const validStatuses: PlanningDerogationStatus[] = ['active', 'revoked', 'expired'];
+  return rows.flatMap((row) => {
+    if (!validStatuses.includes(row.status as PlanningDerogationStatus)) return [];
+    return [{
+      id: row.id,
+      ruleId: row.rule_id,
+      assignmentId: row.assignment_id,
+      personId: row.person_id,
+      vesselId: row.vessel_id,
+      reason: row.reason,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      evidenceUrl: textOrEmpty(row.evidence_url),
+      status: row.status as PlanningDerogationStatus,
+      authorId: row.author_id,
+      authorName: row.author_name,
+      createdAt: row.created_at,
       updatedAt: row.updated_at,
     }];
   });
 }
 
+export function mapPlanningDerogationHistoryRows(rows: PlanningDerogationHistoryRow[]): PlanningDerogationHistoryRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    derogationId: row.entity_id,
+    action: row.action,
+    payload: row.payload || {},
+    changedBy: textOrEmpty(row.changed_by),
+    changedAt: row.changed_at,
+  }));
+}
+
 export async function fetchVessels(client: SupabaseClient): Promise<PlanningVessel[]> {
   const { data, error } = await client.from('vessels').select(VESSEL_SELECT).order('name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-vessels', 'Impossible de charger les navires.', error);
 
   return mapVesselRows((data || []) as VesselRow[]);
 }
@@ -659,9 +1063,7 @@ export async function fetchPlanningPeople(client: SupabaseClient): Promise<Plann
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-people', 'Impossible de charger les marins.', error);
 
   return mapPlanningPeopleRows((data || []) as PlanningPersonRow[]);
 }
@@ -671,9 +1073,7 @@ export async function fetchPlanningAssignmentOverviewRows(
 ): Promise<PlanningAssignmentOverviewRow[]> {
   const { data, error } = await client.rpc('planning_assignment_overview');
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-assignments', 'Impossible de charger les affectations.', error);
 
   return (data || []) as PlanningAssignmentOverviewRow[];
 }
@@ -685,9 +1085,7 @@ export async function fetchPlanningDays(client: SupabaseClient): Promise<Plannin
     .order('work_date', { ascending: true })
     .order('crew_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
 
   return mapPlanningDayRows((data || []) as PlanningDayRow[]);
 }
@@ -699,9 +1097,7 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
     .order('starts_on', { ascending: true })
     .order('crew_name', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
 
   return mapPlanningPeriodRows((data || []) as PlanningPeriodRow[]);
 }
@@ -712,7 +1108,7 @@ export async function fetchPlanningProjects(client: SupabaseClient): Promise<Pla
     .select(PLANNING_PROJECT_SELECT)
     .order('starts_on', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-projects', 'Impossible de charger les projets du planning.', error);
   return mapPlanningProjectRows((data || []) as unknown as PlanningProjectRow[]);
 }
 
@@ -721,7 +1117,7 @@ export async function fetchPlanningCertificates(client: SupabaseClient): Promise
     .from('fleet_certificates')
     .select(PLANNING_CERTIFICATE_SELECT)
     .order('expires_on', { ascending: true, nullsFirst: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-certificates', 'Impossible de charger les certificats de la flotte.', error);
   return mapPlanningCertificateRows((data || []) as unknown as PlanningCertificateRow[]);
 }
 
@@ -730,7 +1126,7 @@ export async function fetchPlanningHrDocuments(client: SupabaseClient): Promise<
     .from('hr_documents')
     .select(PLANNING_HR_DOCUMENT_SELECT)
     .order('expires_on', { ascending: true, nullsFirst: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-hr-documents', 'Impossible de charger les documents des marins.', error);
   return mapPlanningHrDocumentRows((data || []) as unknown as PlanningHrDocumentRow[]);
 }
 
@@ -739,7 +1135,7 @@ export async function fetchPlanningRules(client: SupabaseClient): Promise<Planni
     .from('planning_rules')
     .select(PLANNING_RULE_SELECT)
     .order('code', { ascending: true });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-rules', 'Impossible de charger les règles du planning.', error);
   return mapPlanningRuleRows((data || []) as unknown as PlanningRuleRow[]);
 }
 
@@ -748,22 +1144,78 @@ export async function fetchPlanningPublications(client: SupabaseClient): Promise
     .from('planning_publications')
     .select(PLANNING_PUBLICATION_SELECT)
     .order('updated_at', { ascending: false });
-  if (error) throw error;
+  if (error) throwPlanningDataError('load-publications', 'Impossible de charger les états de publication.', error);
   return mapPlanningPublicationRows((data || []) as unknown as PlanningPublicationRow[]);
 }
 
+export async function fetchPlanningVersions(client: SupabaseClient): Promise<PlanningVersionRecord[]> {
+  const { data, error } = await client
+    .from('planning_versions')
+    .select(PLANNING_VERSION_SELECT)
+    .order('created_at', { ascending: false });
+  if (error) throwPlanningDataError('load-versions', 'Impossible de charger les versions publiées.', error);
+  return mapPlanningVersionRows((data || []) as unknown as PlanningVersionRow[]);
+}
+
+export async function fetchPlanningHistory(client: SupabaseClient): Promise<PlanningHistoryRecord[]> {
+  const { data, error } = await client
+    .from('planning_change_log')
+    .select(PLANNING_HISTORY_SELECT)
+    .order('changed_at', { ascending: false })
+    .limit(250);
+  if (error) throwPlanningDataError('load-history', 'Impossible de charger l’historique du Planning.', error);
+  return mapPlanningHistoryRows((data || []) as unknown as PlanningHistoryRow[]);
+}
+
+export async function fetchPlanningHandovers(client: SupabaseClient): Promise<PlanningHandoverRecord[]> {
+  const [handoverResult, positionResult] = await Promise.all([
+    client.from('planning_handovers').select(PLANNING_HANDOVER_SELECT).order('handover_at', { ascending: false }),
+    client.from('planning_handover_positions').select(PLANNING_HANDOVER_POSITION_SELECT).order('position_order', { ascending: true }),
+  ]);
+  if (handoverResult.error) throwPlanningDataError('load-handovers', 'Impossible de charger les relèves.', handoverResult.error);
+  if (positionResult.error) throwPlanningDataError('load-handover-positions', 'Impossible de charger les bordées des relèves.', positionResult.error);
+  return mapPlanningHandoverRows(
+    (handoverResult.data || []) as unknown as PlanningHandoverRow[],
+    (positionResult.data || []) as unknown as PlanningHandoverPositionRow[],
+  );
+}
+
+export async function fetchPlanningDerogations(client: SupabaseClient): Promise<{
+  derogations: PlanningDerogationRecord[];
+  history: PlanningDerogationHistoryRecord[];
+}> {
+  const [derogationResult, historyResult] = await Promise.all([
+    client.from('planning_derogations').select(PLANNING_DEROGATION_SELECT).order('created_at', { ascending: false }),
+    client
+      .from('planning_change_log')
+      .select(PLANNING_DEROGATION_HISTORY_SELECT)
+      .eq('entity_kind', 'derogation')
+      .order('changed_at', { ascending: false }),
+  ]);
+  if (derogationResult.error) throwPlanningDataError('load-derogations', 'Impossible de charger les dérogations.', derogationResult.error);
+  if (historyResult.error) throwPlanningDataError('load-derogation-history', 'Impossible de charger l’historique des dérogations.', historyResult.error);
+  return {
+    derogations: mapPlanningDerogationRows((derogationResult.data || []) as unknown as PlanningDerogationRow[]),
+    history: mapPlanningDerogationHistoryRows((historyResult.data || []) as unknown as PlanningDerogationHistoryRow[]),
+  };
+}
+
 export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications] = await Promise.all([
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications, versions, history, handovers, derogationData] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
     fetchPlanningPeriods(client),
-    fetchPlanningProjects(client).catch(() => []),
-    fetchPlanningCertificates(client).catch(() => []),
+    fetchPlanningProjects(client),
+    fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
-    fetchPlanningRules(client).catch(() => []),
+    fetchPlanningRules(client),
     fetchPlanningPublications(client),
+    fetchPlanningVersions(client),
+    fetchPlanningHistory(client),
+    fetchPlanningHandovers(client),
+    fetchPlanningDerogations(client),
   ]);
 
   return {
@@ -777,25 +1229,25 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     hrDocuments,
     rules,
     publications,
+    versions,
+    history,
+    handovers,
+    derogations: derogationData.derogations,
+    derogationHistory: derogationData.history,
   };
-}
-
-function throwPlanningMutationError(error: unknown): never {
-  const message = typeof error === 'object' && error !== null && 'message' in error
-    ? String(error.message)
-    : 'La mise à jour du planning a échoué.';
-
-  if (message.includes('PLANNING_LOCKED')) {
-    throw new Error('Cette période est verrouillée. Réouvrez-la avec un motif avant de modifier le planning.');
-  }
-
-  throw new Error(message);
 }
 
 export async function transitionPlanningPublication(
   client: SupabaseClient,
   input: TransitionPlanningPublicationInput,
 ): Promise<PlanningPublicationRecord> {
+  if (input.action === 'submit') {
+    assertPlanningDateRange(input.startsOn || '', input.endsOn || '');
+    optionalPlanningEntityId(input.vesselId, 'Le navire');
+  } else {
+    planningEntityId(input.publicationId, 'La publication');
+  }
+
   const { data, error } = await client.rpc('transition_planning_publication', {
     p_action: input.action,
     p_publication_id: input.publicationId ?? null,
@@ -805,7 +1257,7 @@ export async function transitionPlanningPublication(
     p_comment: input.comment?.trim() || null,
   });
 
-  if (error) throwPlanningMutationError(error);
+  if (error) throwPlanningDataError('transition-publication', 'Impossible de mettre à jour la publication du planning.', error);
   const row = (Array.isArray(data) ? data[0] : data) as PlanningPublicationRow | null;
   const publication = row ? mapPlanningPublicationRows([row])[0] : undefined;
   if (!publication) throw new Error('La publication du planning n’a pas renvoyé de résultat valide.');
@@ -813,11 +1265,7 @@ export async function transitionPlanningPublication(
 }
 
 export async function createVessel(client: SupabaseClient, input: CreateVesselInput): Promise<PlanningVessel> {
-  const vesselName = input.name.trim();
-
-  if (!vesselName) {
-    throw new Error('Le nom du navire est obligatoire.');
-  }
+  const vesselName = requiredPlanningText(input.name, 'Le nom du navire');
 
   const payload = {
     name: vesselName,
@@ -825,9 +1273,7 @@ export async function createVessel(client: SupabaseClient, input: CreateVesselIn
   };
   const { data, error } = await client.from('vessels').insert(payload).select(VESSEL_SELECT).single();
 
-  if (error) {
-    throwPlanningMutationError(error);
-  }
+  if (error) throwPlanningDataError('create-vessel', "Impossible d'ajouter ce navire.", error);
 
   const vessel = mapVesselRows([data as VesselRow])[0];
   await writeVesselChangeLog(client, vessel.id, 'create', { name: vessel.name, acronym: vessel.acronym });
@@ -838,19 +1284,28 @@ export async function createPlanningAssignment(
   client: SupabaseClient,
   input: CreatePlanningAssignmentInput,
 ): Promise<PlanningAssignmentRow> {
-  if (!input.vesselId || !input.crewPersonId || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error("Les informations de l'affectation sont invalides.");
-  }
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const captainPersonId = optionalPlanningEntityId(input.captainPersonId, 'Le capitaine');
+  const crewPersonId = planningEntityId(input.crewPersonId, 'Le marin');
+  const hasTimes = Boolean(input.startsAt || input.endsAt);
+  if (hasTimes) assertPlanningDateTimeRange(input.startsAt || '', input.endsAt || '');
+  else assertPlanningDateRange(input.startsOn, input.endsOn);
+  const startsAt = hasTimes ? planningLocalDateTimeToUtc(input.startsAt || '') : undefined;
+  const endsAt = hasTimes ? planningLocalDateTimeToUtc(input.endsAt || '') : undefined;
+  const startsOn = startsAt ? planningDateFromTimestamp(startsAt) : input.startsOn;
+  const endsOn = endsAt ? planningDateFromTimestamp(endsAt) : input.endsOn;
 
   const payload = {
-    vessel_id: Number(input.vesselId),
-    captain_person_id: input.captainPersonId ? Number(input.captainPersonId) : null,
-    crew_person_id: Number(input.crewPersonId),
-    starts_on: input.startsOn,
-    ends_on: input.endsOn,
+    vessel_id: vesselId,
+    captain_person_id: captainPersonId,
+    crew_person_id: crewPersonId,
+    starts_on: startsOn,
+    ends_on: endsOn,
+    ...(startsAt && endsAt ? { starts_at: startsAt, ends_at: endsAt } : {}),
     assignment_role: input.assignmentRole.trim() || 'crew',
-    status_label: input.statusLabel || 'En Mer',
-    watch_group: input.watchGroup || 'Affectation',
+    status_label: requiredPlanningText(input.statusLabel || 'En Mer', 'Le statut'),
+    confirmation_status: input.confirmationStatus || 'confirmed',
+    watch_group: input.watchGroup?.trim() || 'Affectation',
     comments: input.comments?.trim() || null,
     source_label: 'seapilot',
   };
@@ -860,9 +1315,7 @@ export async function createPlanningAssignment(
     .select(PLANNING_ASSIGNMENT_SELECT)
     .single();
 
-  if (error) {
-    throwPlanningMutationError(error);
-  }
+  if (error) throwPlanningDataError('create-assignment', "Impossible d'ajouter cette affectation.", error);
 
   return data as PlanningAssignmentRow;
 }
@@ -874,113 +1327,244 @@ async function writeVesselChangeLog(
   payload: Record<string, unknown>,
 ) {
   try {
-    await client.from('planning_change_log').insert({
+    const { error } = await client.from('planning_change_log').insert({
       entity_kind: 'vessel',
       entity_id: vesselId,
+      vessel_id: vesselId,
       action,
       payload,
     });
-  } catch {
+    if (error) reportPlanningTechnicalError('audit-vessel', error, 'warning');
+  } catch (error) {
     // Vessel writes predate the transactional event triggers; keep the successful business write visible.
+    reportPlanningTechnicalError('audit-vessel', error, 'warning');
   }
 }
 
 export async function updatePlanningEvent(client: SupabaseClient, input: UpdatePlanningEventInput): Promise<void> {
-  if (!input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error('La période de planning est invalide.');
-  }
+  const eventId = planningEntityId(input.id, "L'événement");
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const vesselName = input.kind === 'assignment' ? input.vesselName.trim() : requiredPlanningText(input.vesselName, 'Le nom du navire');
+  const statusLabel = requiredPlanningText(input.statusLabel, 'Le statut');
+  const hasTimes = input.kind === 'assignment' && Boolean(input.startsAt || input.endsAt);
+  if (hasTimes) assertPlanningDateTimeRange(input.startsAt || '', input.endsAt || '');
+  else if (input.kind === 'day') assertSinglePlanningDay(input.startsOn, input.endsOn);
+  else assertPlanningDateRange(input.startsOn, input.endsOn);
+  const startsAt = hasTimes ? planningLocalDateTimeToUtc(input.startsAt || '') : undefined;
+  const endsAt = hasTimes ? planningLocalDateTimeToUtc(input.endsAt || '') : undefined;
+  const startsOn = startsAt ? planningDateFromTimestamp(startsAt) : input.startsOn;
+  const endsOn = endsAt ? planningDateFromTimestamp(endsAt) : input.endsOn;
 
-  let error: unknown = null;
+  let error: unknown;
   if (input.kind === 'assignment') {
     ({ error } = await client
       .from('planning_assignments')
       .update({
-        vessel_id: input.vesselId,
-        starts_on: input.startsOn,
-        ends_on: input.endsOn,
+        vessel_id: vesselId,
+        starts_on: startsOn,
+        ends_on: endsOn,
+        starts_at: startsAt,
+        ends_at: endsAt,
         assignment_role: input.functionLabel.trim() || 'Équipage',
-        status_label: input.statusLabel,
+        status_label: statusLabel,
+        confirmation_status: input.confirmationStatus || 'confirmed',
         watch_group: input.watchGroup.trim() || 'Affectation',
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   } else if (input.kind === 'period') {
     ({ error } = await client
       .from('planning_periods')
       .update({
-        vessel_id: input.vesselId,
-        vessel_name: input.vesselName,
+        vessel_id: vesselId,
+        vessel_name: vesselName,
         manual_vessel_name: null,
         starts_on: input.startsOn,
         ends_on: input.endsOn,
         year_number: Number(input.startsOn.slice(0, 4)),
-        sailor_status: input.statusLabel,
+        sailor_status: statusLabel,
         function_label: input.functionLabel.trim() || null,
         watch_group: input.watchGroup.trim() || null,
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   } else {
-    if (input.startsOn !== input.endsOn) {
-      throw new Error('Une journée isolée ne peut pas être étendue. Créez une affectation pour une période.');
-    }
     ({ error } = await client
       .from('planning_days')
       .update({
-        vessel_id: input.vesselId,
-        vessel_name: input.vesselName,
+        vessel_id: vesselId,
+        vessel_name: vesselName,
         manual_vessel_name: null,
         work_date: input.startsOn,
-        sailor_status: input.statusLabel,
+        departure_on: input.startsOn,
+        disembark_on: input.endsOn,
+        sailor_status: statusLabel,
         function_label: input.functionLabel.trim() || null,
         watch_group: input.watchGroup.trim() || null,
         comments: input.comments.trim() || null,
         source_label: 'seapilot-admin',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', input.id));
+      .eq('id', eventId));
   }
 
-  if (error) throwPlanningMutationError(error);
+  if (error) throwPlanningDataError('update-event', 'Impossible de modifier cet événement du planning.', error);
 }
 
 export async function deletePlanningEvent(
   client: SupabaseClient,
   event: { id: number; kind: 'assignment' | 'day' | 'period' },
 ): Promise<void> {
+  const eventId = planningEntityId(event.id, "L'événement");
   const table = event.kind === 'assignment' ? 'planning_assignments' : event.kind === 'period' ? 'planning_periods' : 'planning_days';
-  const { error } = await client.from(table).delete().eq('id', event.id);
-  if (error) throwPlanningMutationError(error);
+  const { error } = await client.from(table).delete().eq('id', eventId);
+  if (error) throwPlanningDataError('delete-event', 'Impossible de supprimer cet événement du planning.', error);
 }
 
-export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<void> {
-  if (!input.title.trim() || !input.startsOn || !input.endsOn || input.endsOn < input.startsOn) {
-    throw new Error('Les informations du projet sont invalides.');
-  }
-  const { error } = await client
+function planningProjectPayload(input: CreatePlanningProjectInput) {
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const title = requiredPlanningText(input.title, 'Le titre de l’événement');
+  const vesselName = requiredPlanningText(input.vesselName, 'Le nom du navire');
+  assertPlanningDateRange(input.startsOn, input.endsOn);
+  return {
+    title,
+    starts_on: input.startsOn,
+    ends_on: input.endsOn,
+    status: input.status.trim() || 'A planifier',
+    event_type: input.eventType,
+    responsible_name: input.responsibleName.trim() || null,
+    primary_vessel_id: vesselId,
+    primary_vessel_name: vesselName,
+    client_name: input.clientName.trim() || null,
+    description: input.description.trim() || null,
+    source_label: 'seapilot-admin',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function createPlanningProject(
+  client: SupabaseClient,
+  input: CreatePlanningProjectInput,
+): Promise<PlanningProjectRecord> {
+  const payload = planningProjectPayload(input);
+  const { data, error } = await client
     .from('planning_projects')
-    .update({
-      title: input.title.trim(),
-      starts_on: input.startsOn,
-      ends_on: input.endsOn,
-      status: input.status,
-      primary_vessel_id: input.vesselId,
-      primary_vessel_name: input.vesselName,
-      client_name: input.clientName.trim() || null,
-      description: input.description.trim() || null,
-      source_label: 'seapilot-admin',
-      updated_at: new Date().toISOString(),
+    .insert({ ...payload, created_at: new Date().toISOString() })
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
+  if (error) throwPlanningDataError('create-project', 'Impossible de créer cet événement flotte.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('L’événement flotte créé n’a pas pu être relu.');
+  return project;
+}
+
+export async function updatePlanningProject(client: SupabaseClient, input: UpdatePlanningProjectInput): Promise<PlanningProjectRecord> {
+  const projectId = planningEntityId(input.id, 'Le projet');
+  const payload = planningProjectPayload(input);
+  const { data, error } = await client
+    .from('planning_projects')
+    .update(payload)
+    .eq('id', projectId)
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
+  if (error) throwPlanningDataError('update-project', 'Impossible de modifier ce projet.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('L’événement flotte modifié n’a pas pu être relu.');
+  return project;
+}
+
+export async function savePlanningHandover(client: SupabaseClient, input: SavePlanningHandoverInput): Promise<number> {
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const responsiblePersonId = planningEntityId(input.responsiblePersonId, 'Le responsable');
+  const location = requiredPlanningText(input.location, 'Le lieu de relève');
+  if (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 0 || input.durationMinutes > 1440) {
+    throw new Error('La durée de passation doit être comprise entre 0 et 1 440 minutes.');
+  }
+  const handoverEnd = new Date(planningLocalDateTimeToUtc(input.handoverAt));
+  handoverEnd.setMinutes(handoverEnd.getMinutes() + Math.max(1, input.durationMinutes));
+  assertPlanningDateTimeRange(input.handoverAt, utcToPlanningLocalDateTime(handoverEnd.toISOString()));
+  if (!input.positions.length) throw new Error('Au moins un poste de relève est obligatoire.');
+
+  const positions = input.positions.map((position, index) => {
+    const outgoingPersonId = optionalPlanningEntityId(position.outgoingPersonId, `Le marin sortant du poste ${index + 1}`);
+    const incomingPersonId = optionalPlanningEntityId(position.incomingPersonId, `Le marin entrant du poste ${index + 1}`);
+    if (outgoingPersonId === null && incomingPersonId === null) {
+      throw new Error(`Le poste ${index + 1} doit contenir un marin entrant ou sortant.`);
+    }
+    return {
+      function_label: requiredPlanningText(position.functionLabel, `La fonction du poste ${index + 1}`),
+      outgoing_person_id: outgoingPersonId,
+      incoming_person_id: incomingPersonId,
+      outgoing_assignment_id: optionalPlanningEntityId(position.outgoingAssignmentId, `L’affectation sortante du poste ${index + 1}`),
+      incoming_assignment_id: optionalPlanningEntityId(position.incomingAssignmentId, `L’affectation entrante du poste ${index + 1}`),
+      comments: position.comments?.trim() || null,
+    };
+  });
+
+  const { data, error } = await client.rpc('save_planning_handover', {
+    p_handover_id: input.id ?? null,
+    p_vessel_id: vesselId,
+    p_handover_at: planningLocalDateTimeToUtc(input.handoverAt),
+    p_location: location,
+    p_duration_minutes: input.durationMinutes,
+    p_responsible_person_id: responsiblePersonId,
+    p_comments: input.comments?.trim() || null,
+    p_status: input.status,
+    p_positions: positions,
+  });
+  if (error) throwPlanningDataError('save-handover', 'Impossible d’enregistrer cette relève.', error);
+  const id = Number(data);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('La relève enregistrée n’a pas renvoyé un identifiant valide.');
+  return id;
+}
+
+export async function createPlanningDerogation(
+  client: SupabaseClient,
+  input: CreatePlanningDerogationInput,
+): Promise<PlanningDerogationRecord> {
+  const ruleId = planningEntityId(input.ruleId, 'La règle');
+  const personId = planningEntityId(input.personId, 'Le marin');
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const reason = requiredPlanningText(input.reason, 'Le motif');
+  if (reason.length < 10) throw new Error('Le motif de dérogation doit contenir au moins 10 caractères.');
+  assertPlanningDateTimeRange(input.startsAt, input.endsAt);
+  const { data, error } = await client
+    .from('planning_derogations')
+    .insert({
+      rule_id: ruleId,
+      assignment_id: input.assignmentId ?? null,
+      person_id: personId,
+      vessel_id: vesselId,
+      reason,
+      starts_at: planningLocalDateTimeToUtc(input.startsAt),
+      ends_at: planningLocalDateTimeToUtc(input.endsAt),
+      evidence_url: input.evidenceUrl?.trim() || null,
+      status: 'active',
     })
-    .eq('id', input.id);
-  if (error) throwPlanningMutationError(error);
+    .select(PLANNING_DEROGATION_SELECT)
+    .single();
+  if (error) throwPlanningDataError('create-derogation', 'Impossible d’enregistrer cette dérogation.', error);
+  const derogation = mapPlanningDerogationRows([data as unknown as PlanningDerogationRow])[0];
+  if (!derogation) throw new Error('La dérogation enregistrée n’a pas pu être relue.');
+  return derogation;
+}
+
+export async function revokePlanningDerogation(client: SupabaseClient, derogationId: number): Promise<void> {
+  const id = planningEntityId(derogationId, 'La dérogation');
+  const { error } = await client
+    .from('planning_derogations')
+    .update({ status: 'revoked', updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throwPlanningDataError('revoke-derogation', 'Impossible de révoquer cette dérogation.', error);
 }
 
 export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {
-  const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', vesselId);
-  if (error) throwPlanningMutationError(error);
-  await writeVesselChangeLog(client, vesselId, 'archive', {});
+  const validVesselId = planningEntityId(vesselId, 'Le navire');
+  const { error } = await client.from('vessels').update({ active: false, updated_at: new Date().toISOString() }).eq('id', validVesselId);
+  if (error) throwPlanningDataError('archive-vessel', 'Impossible de retirer ce navire du planning.', error);
+  await writeVesselChangeLog(client, validVesselId, 'archive', {});
 }

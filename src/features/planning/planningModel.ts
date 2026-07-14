@@ -6,8 +6,24 @@ import type {
   PlanningPerson,
   PlanningProjectRecord,
 } from './planningQueries';
+import {
+  addPlanningDays,
+  daysBetween,
+  formatPlanningDate,
+  isoDate,
+  parsePlanningDate,
+  isPlanningLocalDateTime,
+  planningLocalDateTimeToUtc,
+  planningWeekNumber,
+  rangesOverlap,
+  shiftPlanningMonths,
+  shiftPlanningYears,
+  startOfPlanningWeek,
+} from './planningDates';
 
-export type PlanningViewMode = 'week' | 'month' | 'year';
+export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
+
+export type PlanningViewMode = 'day' | 'week' | 'fortnight' | 'month' | 'year';
 
 export interface PlanningTimelineDay {
   date: string;
@@ -36,9 +52,13 @@ export interface PlanningCrewEvent {
   board: string;
   functionLabel: string;
   status: string;
+  confirmationStatus: 'provisional' | 'confirmed' | 'cancelled';
+  responsible: string;
   rhythm: string;
   startsOn: string;
   endsOn: string;
+  startsAt: string;
+  endsAt: string;
   comments: string;
   sourceLabel: string;
 }
@@ -61,6 +81,9 @@ export interface PlanningCrewRow {
 export interface PlanningFilters {
   vesselName: string;
   personName: string;
+  eventType?: string;
+  status?: string;
+  responsible?: string;
 }
 
 export interface PlanningDateRange {
@@ -101,39 +124,9 @@ const ROLE_RANKS = [
   ['BOSCO', 'MAITREDEQUIPAGE'],
 ];
 
-function parseIsoDate(value: string): Date {
-  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-export function isoDate(date: Date): string {
-  return [date.getUTCFullYear(), String(date.getUTCMonth() + 1).padStart(2, '0'), String(date.getUTCDate()).padStart(2, '0')].join('-');
-}
-
-export function addPlanningDays(value: string, amount: number): string {
-  const date = parseIsoDate(value);
-  date.setUTCDate(date.getUTCDate() + amount);
-  return isoDate(date);
-}
-
-function startOfWeek(value: string): string {
-  const date = parseIsoDate(value);
-  const mondayOffset = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - mondayOffset);
-  return isoDate(date);
-}
-
-function isoWeek(date: Date): number {
-  const cursor = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = cursor.getUTCDay() || 7;
-  cursor.setUTCDate(cursor.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(cursor.getUTCFullYear(), 0, 1));
-  return Math.ceil(((cursor.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
-
 function buildDays(start: string, count: number): PlanningTimelineDay[] {
   return Array.from({ length: count }, (_, index) => {
-    const date = parseIsoDate(addPlanningDays(start, index));
+    const date = parsePlanningDate(addPlanningDays(start, index));
     const weekday = (date.getUTCDay() + 6) % 7;
     return {
       date: isoDate(date),
@@ -141,26 +134,26 @@ function buildDays(start: string, count: number): PlanningTimelineDay[] {
       month: date.getUTCMonth() + 1,
       year: date.getUTCFullYear(),
       weekday,
-      week: isoWeek(date),
+      week: planningWeekNumber(isoDate(date)),
       isWeekend: weekday >= 5,
     };
   });
 }
 
 export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode): PlanningTimelineDay[] {
-  const anchor = parseIsoDate(anchorDate);
+  const anchor = parsePlanningDate(anchorDate);
   if (mode === 'year') {
     const year = anchor.getUTCFullYear();
     const start = `${year}-01-01`;
     const end = `${year}-12-31`;
     return buildDays(start, daysBetween(start, end) + 1);
   }
-  if (mode === 'week') {
-    return buildDays(startOfWeek(anchorDate), 14);
-  }
+  if (mode === 'day') return buildDays(anchorDate, 1);
+  if (mode === 'week') return buildDays(startOfPlanningWeek(anchorDate), 7);
+  if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
   const monthStart = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}-01`;
-  return buildDays(startOfWeek(monthStart), 49);
+  return buildDays(startOfPlanningWeek(monthStart), 49);
 }
 
 export function buildPlanningMonthSegments(days: PlanningTimelineDay[]): PlanningMonthSegment[] {
@@ -184,7 +177,8 @@ export function timelineRange(days: PlanningTimelineDay[]): PlanningDateRange {
 export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningViewMode): string {
   if (!days.length) return '';
   if (mode === 'year') return String(days[0].year);
-  if (mode === 'week') {
+  if (mode === 'day') return formatPlanningDate(days[0].date);
+  if (mode === 'week' || mode === 'fortnight') {
     return `${formatPlanningDate(days[0].date)} – ${formatPlanningDate(days[days.length - 1].date)}`;
   }
   const anchor = days[Math.min(14, days.length - 1)];
@@ -192,15 +186,10 @@ export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningV
 }
 
 export function shiftPlanningAnchor(anchorDate: string, mode: PlanningViewMode, amount: number): string {
-  const anchor = parseIsoDate(anchorDate);
-  if (mode === 'week') {
-    anchor.setUTCDate(anchor.getUTCDate() + amount * 14);
-  } else if (mode === 'year') {
-    anchor.setUTCFullYear(anchor.getUTCFullYear() + amount);
-  } else {
-    anchor.setUTCMonth(anchor.getUTCMonth() + amount);
-  }
-  return isoDate(anchor);
+  if (mode === 'day') return addPlanningDays(anchorDate, amount);
+  if (mode === 'week') return addPlanningDays(anchorDate, amount * 7);
+  if (mode === 'fortnight') return addPlanningDays(anchorDate, amount * 14);
+  return mode === 'year' ? shiftPlanningYears(anchorDate, amount) : shiftPlanningMonths(anchorDate, amount);
 }
 
 export function dateGridPlacement(startsOn: string, endsOn: string, days: PlanningTimelineDay[]) {
@@ -210,10 +199,6 @@ export function dateGridPlacement(startsOn: string, endsOn: string, days: Planni
   const clippedStart = startsOn < range.start ? range.start : startsOn;
   const clippedEnd = (endsOn || startsOn) > range.end ? range.end : endsOn || startsOn;
   return { start: daysBetween(range.start, clippedStart) + 1, span: daysBetween(clippedStart, clippedEnd) + 1 };
-}
-
-export function rangesOverlap(start: string, end: string, rangeStart: string, rangeEnd: string): boolean {
-  return Boolean(start && end && rangeStart && rangeEnd && start <= rangeEnd && end >= rangeStart);
 }
 
 export function normalizePlanningText(value: string): string {
@@ -285,9 +270,13 @@ function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
     board: period.watchGroup,
     functionLabel: period.functionLabel,
     status: normalizePlanningStatus(period.sailorStatus),
+    confirmationStatus: 'confirmed',
+    responsible: '',
     rhythm: '',
     startsOn: period.startsOn,
     endsOn: period.endsOn,
+    startsAt: '',
+    endsAt: '',
     comments: period.comments,
     sourceLabel: period.sourceLabel,
   };
@@ -304,9 +293,13 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
     board: assignment.watchGroup || 'Affectation',
     functionLabel: assignment.assignmentRole,
     status: normalizePlanningStatus(assignment.statusLabel),
+    confirmationStatus: assignment.confirmationStatus,
+    responsible: assignment.captainName === '-' ? '' : assignment.captainName,
     rhythm: '',
     startsOn: assignment.startsOn,
     endsOn: assignment.endsOn,
+    startsAt: assignment.startsAt || '',
+    endsAt: assignment.endsAt || '',
     comments: assignment.comments,
     sourceLabel: assignment.sourceLabel,
   };
@@ -323,9 +316,13 @@ function crewEventFromDay(day: PlanningDayRecord): PlanningCrewEvent {
     board: day.watchGroup,
     functionLabel: day.functionLabel,
     status: normalizePlanningStatus(day.sailorStatus || day.dayStatus),
+    confirmationStatus: 'confirmed',
+    responsible: day.captainName,
     rhythm: day.rhythmLabel,
     startsOn: day.workDate,
     endsOn: day.workDate,
+    startsAt: '',
+    endsAt: '',
     comments: day.comments,
     sourceLabel: day.sourceLabel,
   };
@@ -492,20 +489,19 @@ export function getUnassignedPlanningPeople(
   });
 }
 
-export function daysBetween(start: string, end: string): number {
-  return Math.round((parseIsoDate(end).getTime() - parseIsoDate(start).getTime()) / 86400000);
-}
-
 export type PlanningControlLevel = 'information' | 'warning' | 'blocking';
 
 export type PlanningControlCode =
   | 'invalid_period'
   | 'inactive_person'
   | 'crew_unavailability'
+  | 'crew_absence'
   | 'assignment_overlap'
   | 'function_mismatch'
   | 'expired_medical'
   | 'expired_credential'
+  | 'credential_expires_during_assignment'
+  | 'missing_qualification'
   | 'medical_unfit'
   | 'medical_restriction'
   | 'pending_validation';
@@ -519,6 +515,8 @@ export interface PlanningAssignmentCandidate {
   status: string;
   startsOn: string;
   endsOn: string;
+  startsAt?: string;
+  endsAt?: string;
 }
 
 export interface PlanningControlResult {
@@ -536,17 +534,23 @@ const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningContr
   invalid_period: 'blocking',
   inactive_person: 'blocking',
   crew_unavailability: 'blocking',
+  crew_absence: 'blocking',
   assignment_overlap: 'warning',
   function_mismatch: 'information',
   expired_medical: 'blocking',
   expired_credential: 'warning',
+  credential_expires_during_assignment: 'warning',
+  missing_qualification: 'warning',
   medical_unfit: 'blocking',
   medical_restriction: 'warning',
   pending_validation: 'warning',
 };
 
-const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'vacation', 'sick', 'training']);
+const ABSENCE_STATUS_TONES = new Set(['vacation', 'sick']);
+const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'training']);
 const CREDENTIAL_TOKENS = ['BREVET', 'CERTIFICAT', 'QUALIFICATION', 'HABILITATION', 'FORMATION', 'TRAINING'];
+const DECK_FUNCTION_TOKENS = ['CAPITAINE', 'PONT', 'MATELOT', 'BOSCO', 'OFFICIER'];
+const ENGINE_FUNCTION_TOKENS = ['MACHINE', 'MECANICIEN', 'CHEFMECANICIEN'];
 
 function planningRuleLevel(
   overview: PlanningOverview,
@@ -585,6 +589,23 @@ function controlResult(
 ): PlanningControlResult | null {
   const level = planningRuleLevel(overview, code, candidate.startsOn || '9999-12-31');
   if (!level) return null;
+  const rule = overview.rules.find((item) => item.code === code);
+  const vessel = overview.vessels.find((item) => normalizePlanningText(item.name) === normalizePlanningText(candidate.vessel));
+  const candidateStart = candidate.startsAt
+    ? new Date(isPlanningLocalDateTime(candidate.startsAt) ? planningLocalDateTimeToUtc(candidate.startsAt) : candidate.startsAt).getTime()
+    : new Date(planningLocalDateTimeToUtc(`${candidate.startsOn}T00:00`)).getTime();
+  const candidateEnd = candidate.endsAt
+    ? new Date(isPlanningLocalDateTime(candidate.endsAt) ? planningLocalDateTimeToUtc(candidate.endsAt) : candidate.endsAt).getTime()
+    : new Date(planningLocalDateTimeToUtc(`${candidate.endsOn}T23:59`)).getTime();
+  const coveredByDerogation = Boolean(rule && vessel && candidate.personId !== null && (overview.derogations || []).some((derogation) => (
+    derogation.status === 'active'
+    && derogation.ruleId === rule.id
+    && derogation.personId === candidate.personId
+    && derogation.vesselId === vessel.id
+    && new Date(derogation.startsAt).getTime() <= candidateStart
+    && new Date(derogation.endsAt).getTime() >= candidateEnd
+  )));
+  if (coveredByDerogation) return null;
   return { ...input, code, level, eventId: candidate.id, personId: candidate.personId };
 }
 
@@ -625,7 +646,13 @@ export function evaluatePlanningAssignment(
     if (!rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)) return;
 
     const overlapDate = event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn;
-    if (normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)) {
+    const candidateTone = planningStatusTone(candidate.status);
+    const eventTone = planningStatusTone(event.status);
+    if (
+      ['sea', 'shore'].includes(candidateTone)
+      && ['sea', 'shore'].includes(eventTone)
+      && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
+    ) {
       const pair = [candidate.id, event.id].sort().join('-');
       add(controlResult(overview, candidate, 'assignment_overlap', {
         id: `assignment-overlap-${pair}`,
@@ -635,7 +662,14 @@ export function evaluatePlanningAssignment(
       }));
     }
 
-    if (['sea', 'shore'].includes(planningStatusTone(candidate.status)) && UNAVAILABLE_STATUS_TONES.has(planningStatusTone(event.status))) {
+    if (['sea', 'shore'].includes(candidateTone) && ABSENCE_STATUS_TONES.has(eventTone)) {
+      add(controlResult(overview, candidate, 'crew_absence', {
+        id: `crew-absence-${candidate.id}-${event.id}`,
+        title: 'Absence sur la période',
+        detail: `${candidate.person} est déclaré « ${event.status} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
+        date: overlapDate,
+      }));
+    } else if (['sea', 'shore'].includes(candidateTone) && UNAVAILABLE_STATUS_TONES.has(eventTone)) {
       add(controlResult(overview, candidate, 'crew_unavailability', {
         id: `crew-unavailability-${candidate.id}-${event.id}`,
         title: 'Indisponibilité sur la période',
@@ -658,12 +692,32 @@ export function evaluatePlanningAssignment(
     }
   }
 
+  if (person && candidate.functionLabel) {
+    const assignedFunction = normalizePlanningText(candidate.functionLabel);
+    const needsDeckQualification = DECK_FUNCTION_TOKENS.some((token) => assignedFunction.includes(token));
+    const needsEngineQualification = ENGINE_FUNCTION_TOKENS.some((token) => assignedFunction.includes(token));
+    if ((needsDeckQualification && !person.deckCertificateLabel) || (needsEngineQualification && !person.engineCertificateLabel)) {
+      add(controlResult(overview, candidate, 'missing_qualification', {
+        id: `missing-qualification-${candidate.id}-${person.id}`,
+        title: 'Qualification manquante',
+        detail: `${candidate.functionLabel} requiert une qualification ${needsEngineQualification ? 'machine' : 'pont'} renseignée dans le dossier RH.`,
+        date: candidate.startsOn,
+      }));
+    }
+  }
+
   overview.hrDocuments.filter((document) => document.personId === candidate.personId).forEach((document) => {
     const documentKey = normalizePlanningText(document.status);
     const medical = isMedicalDocument(document.categoryKey, document.title);
-    const invalidDuringAssignment = documentKey.includes('EXPIRED')
+    const invalidAtStart = documentKey.includes('EXPIRED')
       || documentKey.includes('MISSING')
-      || Boolean(document.expiresOn && document.expiresOn < candidate.endsOn);
+      || Boolean(document.expiresOn && document.expiresOn < candidate.startsOn);
+    const expiresDuringAssignment = Boolean(
+      document.expiresOn
+      && document.expiresOn >= candidate.startsOn
+      && document.expiresOn <= candidate.endsOn,
+    );
+    const invalidDuringAssignment = invalidAtStart || expiresDuringAssignment;
 
     if (document.medicalUnfit) {
       add(controlResult(overview, candidate, 'medical_unfit', {
@@ -690,7 +744,7 @@ export function evaluatePlanningAssignment(
           : `${document.title} est indiqué comme manquant ou expiré.`,
         date: document.expiresOn || candidate.startsOn,
       }));
-    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidDuringAssignment) {
+    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidAtStart) {
       add(controlResult(overview, candidate, 'expired_credential', {
         id: `expired-credential-${candidate.id}-${document.id}`,
         title: 'Titre ou qualification à renouveler',
@@ -698,6 +752,13 @@ export function evaluatePlanningAssignment(
           ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
           : `${document.title} est indiqué comme manquant ou expiré.`,
         date: document.expiresOn || candidate.startsOn,
+      }));
+    } else if (isCredentialDocument(document.categoryKey, document.title) && expiresDuringAssignment) {
+      add(controlResult(overview, candidate, 'credential_expires_during_assignment', {
+        id: `credential-expires-during-${candidate.id}-${document.id}`,
+        title: 'Titre expirant pendant l’embarquement',
+        detail: `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant le débarquement.`,
+        date: document.expiresOn,
       }));
     }
     if (document.requiresCaptainValidation && documentKey.includes('PENDING')) {
@@ -734,6 +795,8 @@ export function buildPlanningControlCenter(
       status: event.status,
       startsOn: event.startsOn,
       endsOn: event.endsOn,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
     }, eventsByPerson.get(normalizePlanningText(event.person)) || []).forEach((result) => unique.set(result.id, result));
   });
   const levelRank: Record<PlanningControlLevel, number> = { blocking: 0, warning: 1, information: 2 };
@@ -744,48 +807,6 @@ export function buildPlanningControlCenter(
 
 export function hasBlockingPlanningControls(results: PlanningControlResult[]): boolean {
   return results.some((result) => result.level === 'blocking');
-}
-
-export interface PlanningConflict {
-  event: PlanningCrewEvent;
-  date: string;
-}
-
-export function getPlanningConflicts(
-  overview: PlanningOverview,
-  candidate: Pick<PlanningCrewEvent, 'id' | 'person' | 'personId' | 'vessel'> & { startsOn: string; endsOn: string },
-): PlanningConflict[] {
-  const personKey = normalizePlanningText(candidate.person);
-  return getAllPlanningCrewEvents(overview)
-    .filter((event) => {
-      const samePerson = candidate.personId !== null && event.personId !== null
-        ? candidate.personId === event.personId
-        : normalizePlanningText(event.person) === personKey;
-      return event.id !== candidate.id && samePerson && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
-        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn);
-    })
-    .map((event) => ({ event, date: event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn }));
-}
-
-export function getPlanningConflictEventIds(overview: PlanningOverview): Set<string> {
-  const events = getAllPlanningCrewEvents(overview);
-  const conflicted = new Set<string>();
-  events.forEach((event, index) => {
-    events.slice(index + 1).forEach((candidate) => {
-      const samePerson = event.personId !== null && candidate.personId !== null
-        ? event.personId === candidate.personId
-        : normalizePlanningText(event.person) === normalizePlanningText(candidate.person);
-      if (
-        samePerson
-        && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
-        && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)
-      ) {
-        conflicted.add(event.id);
-        conflicted.add(candidate.id);
-      }
-    });
-  });
-  return conflicted;
 }
 
 export interface PlanningExportRow {
@@ -827,11 +848,6 @@ export function buildPlanningExportRows(
       }
     });
   return rows.sort((left, right) => left.date.localeCompare(right.date) || left.vessel.localeCompare(right.vessel, 'fr'));
-}
-
-export function formatPlanningDate(value: string): string {
-  if (!value) return 'Non renseignée';
-  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(parseIsoDate(value));
 }
 
 function durationLabel(days: number): string {

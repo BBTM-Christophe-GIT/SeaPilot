@@ -6,8 +6,6 @@ import {
   buildPlanningHrAlerts,
   buildPlanningTimeline,
   buildPlanningExportRows,
-  getPlanningConflicts,
-  getPlanningConflictEventIds,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   getAllPlanningCrewEvents,
@@ -19,6 +17,7 @@ import {
   projectStatusTone,
   timelineRange,
 } from './planningModel';
+import { getPlanningConflicts, getPlanningConflictEventIds } from './planningOverlap';
 import type { PlanningOverview } from './planningQueries';
 
 const overview: PlanningOverview = {
@@ -31,8 +30,8 @@ const overview: PlanningOverview = {
   days: [],
   periods: [{ id: 10, personId: 1, vesselId: 1, crewName: 'Anne CAPITAINE', vesselName: 'GOURY', watchGroup: 'Bordée 1', functionLabel: 'Capitaine', sailorStatus: 'Embarqué', startsOn: '2026-07-01', endsOn: '2026-07-20', yearNumber: 2026, comments: '', slot365SourceId: '1', slot365SourceKey: 'slot', sourceLabel: 'sharepoint' }],
   projects: [
-    { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Validé', sourceLabel: 'sharepoint' },
-    { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
+    { id: 20, title: 'Mission A', startsOn: '2026-07-02', endsOn: '2026-07-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', eventType: 'operation', responsibleName: '', status: 'Validé', sourceLabel: 'sharepoint' },
+    { id: 21, title: 'Mission B', startsOn: '2026-08-02', endsOn: '2026-08-15', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'GOURY', secondaryVesselId: null, secondaryVesselName: '', eventType: 'operation', responsibleName: '', status: 'Facturé', sourceLabel: 'sharepoint' },
   ],
   certificates: [{ id: 30, vesselId: 1, vesselName: 'GOURY', title: 'Franc-bord', status: 'expired', expiresOn: '2026-07-01', fileUrl: '' }],
   hrDocuments: [{
@@ -50,14 +49,22 @@ const overview: PlanningOverview = {
   }],
   rules: [],
   publications: [],
+  versions: [],
+  history: [],
+  handovers: [],
+  derogations: [],
+  derogationHistory: [],
 };
 
 describe('planning timeline rules', () => {
-  it('keeps the SPFx 14-day week and builds month/year ranges', () => {
-    expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(14);
+  it('builds day, week, fortnight, month and year ranges', () => {
+    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(1);
+    expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
+    expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
     expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);
     expect(buildPlanningTimeline('2026-07-12', 'year')).toHaveLength(365);
-    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'week'))).toEqual({ start: '2026-07-06', end: '2026-07-19' });
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'week'))).toEqual({ start: '2026-07-06', end: '2026-07-12' });
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'fortnight'))).toEqual({ start: '2026-07-06', end: '2026-07-19' });
   });
 
   it('normalizes imported crew and project statuses', () => {
@@ -129,6 +136,7 @@ describe('planning timeline rules', () => {
   it('uses the configurable control level delivered by Supabase', () => {
     const configuredOverview: PlanningOverview = {
       ...overview,
+      people: overview.people.map((person) => ({ ...person, deckCertificateLabel: 'Capitaine 500' })),
       rules: [{
         id: 1,
         code: 'expired_medical',
@@ -154,7 +162,9 @@ describe('planning timeline rules', () => {
       endsOn: '2026-08-15',
     });
 
-    expect(controls[0]).toMatchObject({ code: 'expired_medical', level: 'warning' });
+    expect(controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'expired_medical', level: 'warning' }),
+    ]));
     expect(hasBlockingPlanningControls(controls)).toBe(false);
     expect(evaluatePlanningAssignment({
       ...configuredOverview,
@@ -169,6 +179,19 @@ describe('planning timeline rules', () => {
       startsOn: '2026-08-01',
       endsOn: '2026-08-15',
     })).toEqual([]);
+  });
+
+  it('applies a derogation only when its exact UTC period covers the assignment', () => {
+    const rule = { id: 9, code: 'expired_medical', name: 'Aptitude médicale', description: '', scope: 'medical', controlLevel: 'blocking' as const, active: true, effectiveFrom: '2026-01-01', configuration: {}, sourceReference: '', version: 1 };
+    const candidate = { id: 'new', personId: 1, person: 'Anne CAPITAINE', vessel: 'GOURY', functionLabel: 'Capitaine', status: 'En Mer', startsOn: '2026-08-01', endsOn: '2026-08-15', startsAt: '2026-08-01T08:00', endsAt: '2026-08-15T20:00' };
+    const derogation = { id: 1, ruleId: 9, assignmentId: null, personId: 1, vesselId: 1, reason: 'Décision maritime documentée', startsAt: '2026-08-01T06:00:00.000Z', endsAt: '2026-08-15T18:00:00.000Z', evidenceUrl: '', status: 'active' as const, authorId: 'admin', authorName: 'Admin', createdAt: '2026-07-13T20:00:00.000Z', updatedAt: '2026-07-13T20:00:00.000Z' };
+
+    expect(evaluatePlanningAssignment({ ...overview, rules: [rule], derogations: [{ ...derogation, endsAt: '2026-08-15T10:00:00.000Z' }] }, candidate)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'expired_medical' }),
+    ]));
+    expect(evaluatePlanningAssignment({ ...overview, rules: [rule], derogations: [derogation] }, candidate)).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'expired_medical' }),
+    ]));
   });
 
   it('uses the shore status for the sedentary functions defined by BBTM', () => {

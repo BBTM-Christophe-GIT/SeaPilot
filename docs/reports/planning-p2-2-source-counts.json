@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-07-14T03:07:00+02:00",
+  "command": "npx supabase inspect db table-stats --linked --output-format json",
+  "scope": "Supabase SeaPilot lié, schéma public",
+  "measure": "PostgreSQL estimated rows",
+  "privacy": "Agrégats uniquement ; aucune ligne métier ou donnée personnelle exportée.",
+  "tables": {
+    "planning_change_log": 95,
+    "planning_days": 170,
+    "hr_documents": 150,
+    "planning_periods": 69,
+    "planning_projects": 18,
+    "planning_assignments": 8,
+    "people": 27,
+    "vessels": 14,
+    "planning_publications": 1,
+    "planning_versions": 1,
+    "planning_rules": 20,
+    "planning_notifications": 1,
+    "planning_absences": 0,
+    "planning_manning_matrices": 0,
+    "planning_manning_requirements": 0,
+    "planning_work_rest_policies": 0,
+    "planning_dependencies": 0,
+    "planning_assistant_reviews": 0,
+    "planning_handovers": 0,
+    "planning_rotation_series": 0
+  }
+}

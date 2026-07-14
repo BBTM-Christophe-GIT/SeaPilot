@@ -17,23 +17,33 @@ const publication: PlanningPublicationRecord = {
   currentVersion: 2,
   comment: 'Planning opérationnel',
   submittedAt: '2026-07-01T08:00:00Z',
+  submittedBy: 'user-submit',
+  submittedByName: 'Armement',
   validatedAt: '2026-07-01T09:00:00Z',
+  validatedBy: 'user-validate',
+  validatedByName: 'Direction',
   publishedAt: '2026-07-01T10:00:00Z',
+  publishedBy: 'user-publish',
+  publishedByName: 'Direction',
   lockedAt: '2026-07-01T08:00:00Z',
+  lockedBy: 'user-submit',
+  lockedByName: 'Armement',
   updatedAt: '2026-07-01T10:00:00Z',
+  updatedBy: 'user-publish',
+  updatedByName: 'Direction',
 };
 
 describe('planning publication workflow helpers', () => {
   it('marks submitted and published periods as locked and exposes the reopen action', () => {
     expect(isPlanningPublicationLocked(publication)).toBe(true);
-    expect(planningPublicationActions(publication)).toEqual(['reopen']);
+    expect(planningPublicationActions(publication)).toEqual(['reopen', 'archive']);
     expect(planningPublicationStatusLabel(publication.status)).toBe('Publié');
   });
 
   it('offers the ordered submit, validate and publish transitions', () => {
     expect(planningPublicationActions(null)).toEqual(['submit']);
-    expect(planningPublicationActions({ ...publication, status: 'pending_validation' })).toEqual(['validate', 'reopen']);
-    expect(planningPublicationActions({ ...publication, status: 'validated' })).toEqual(['publish', 'reopen']);
+    expect(planningPublicationActions({ ...publication, status: 'pending_validation' })).toEqual(['validate', 'reopen', 'archive']);
+    expect(planningPublicationActions({ ...publication, status: 'validated' })).toEqual(['publish', 'reopen', 'archive']);
   });
 
   it('prioritizes a fleet lock over an editable vessel draft for the visible period', () => {

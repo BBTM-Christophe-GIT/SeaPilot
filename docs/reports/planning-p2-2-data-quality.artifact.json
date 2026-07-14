@@ -1,0 +1,321 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "SeaPilot Planning P2.2 — Qualité des données et aptitude prédictive",
+    "description": "Évaluation technique des données réellement disponibles avant activation des projections et scénarios V3.",
+    "generatedAt": "2026-07-14T03:07:00+02:00",
+    "sources": [
+      {
+        "id": "supabase-table-stats",
+        "label": "Supabase lié — statistiques des tables Planning",
+        "type": "file",
+        "path": "docs/reports/planning-p2-2-source-counts.json",
+        "query": {
+          "engine": "Supabase CLI 2.109.0",
+          "description": "Instantané agrégé des volumes estimés du schéma public lié, sans export de données personnelles.",
+          "language": "PowerShell",
+          "query": "npx supabase inspect db table-stats --linked --output-format json",
+          "sql": "select relname as source, n_live_tup::bigint as estimated_rows from pg_stat_user_tables where schemaname = 'public' and relname in ('planning_change_log','planning_days','hr_documents','planning_periods','planning_projects','planning_assignments','people','vessels','planning_publications','planning_versions','planning_rules','planning_notifications','planning_absences','planning_manning_matrices','planning_manning_requirements','planning_work_rest_policies','planning_dependencies','planning_assistant_reviews','planning_handovers','planning_rotation_series') order by n_live_tup desc, relname;",
+          "tables_used": [
+            "planning_projects",
+            "planning_days",
+            "hr_documents",
+            "planning_periods",
+            "planning_assignments",
+            "people",
+            "vessels",
+            "planning_manning_matrices",
+            "planning_manning_requirements",
+            "planning_work_rest_policies",
+            "planning_absences",
+            "planning_dependencies"
+          ],
+          "filters": ["Schéma public", "Projet Supabase SeaPilot lié"],
+          "metric_definitions": {
+            "estimated_rows": "Estimation PostgreSQL retournée par les statistiques de table ; ce n’est pas un COUNT(*) exact."
+          }
+        },
+        "notes": "Commande CLI exécutée le 14 juillet 2026. Le SQL fourni est la requête PostgreSQL reproductible équivalente sur pg_stat_user_tables. Aucun contenu de ligne ou identifiant personnel n’a été exporté."
+      },
+      {
+        "id": "planning-p22-runtime",
+        "label": "Moteur de qualité et de scénarios P2.2",
+        "type": "source-code",
+        "path": "src/features/planning/planningP22.ts",
+        "query": {
+          "engine": "TypeScript",
+          "description": "Règles de complétude, seuils de disponibilité, charge, tension et scénarios appliqués au périmètre RLS visible à l’exécution.",
+          "tables_used": ["PlanningOverview", "PlanningP13Data"],
+          "filters": ["Données visibles par les RLS", "Période affichée", "Analyse bornée à 400 jours"],
+          "metric_definitions": {
+            "vessel_load": "Jours calendaires uniques avec projet / jours de la période.",
+            "sailor_load": "Jours calendaires uniques avec affectation / jours de la période.",
+            "tension": "opérations × 3 + indisponibilités × 3 + mouvements × 2 + conflits × 2."
+          }
+        }
+      },
+      {
+        "id": "p22-readiness-review",
+        "label": "Revue P2.2 — aptitude des fonctions",
+        "type": "technical-review",
+        "path": "docs/PLANNING_P22_MODELS.md",
+        "query": {
+          "engine": "Revue technique",
+          "description": "Décision de mise en œuvre fondée sur les volumes agrégés distants, le schéma migré et les portes de qualité du moteur P2.2.",
+          "sql": "select * from (values (1,'Charge par navire','Limité','18 projets, 14 navires','Calcul descriptif livré'),(2,'Charge par marin','Limité','8 affectations, 27 personnes','Calcul descriptif livré'),(3,'Périodes de tension','Limité','Programme connu, conflits P1.2','Score explicite livré'),(4,'Simulation d’absence','Limité','Affectations existantes ; 0 absence historique','What-if local livré, aucune probabilité'),(5,'Simulation immobilisation','Limité','Programme navire existant','What-if local livré, compatibilité inconnue'),(6,'Sous-effectif','Bloqué','0 matrice, 0 exigence','Non développé'),(7,'Fatigue future','Bloqué','0 politique administrée','Non développé'),(8,'Intégrations externes','Bloqué','Aucun contrat ou identifiant externe','Non développé'),(9,'Hors connexion persistant','Bloqué','Aucune politique de cache/chiffrement','Non développé')) as reviewed(priority, feature, status, evidence, decision) order by priority;",
+          "tables_used": ["supabase/migrations", "src/features/planning/planningP22.ts"],
+          "filters": ["Fonctions demandées en P2.2 uniquement"],
+          "metric_definitions": {
+            "ready": "Prérequis présents pour un calcul déterministe.",
+            "limited": "Calcul possible mais non prédictif ou dépendant d’une complétude partielle.",
+            "blocked": "Donnée ou contrat indispensable absent ; fonction non développée."
+          }
+        }
+      },
+      {
+        "id": "p22-quality-findings-review",
+        "label": "Revue P2.2 — risques de qualité",
+        "type": "technical-review",
+        "path": "docs/PLANNING_P22_MODELS.md",
+        "query": {
+          "engine": "Revue technique",
+          "description": "Registre des risques issu du rapprochement entre les volumes distants et les prérequis P2.2.",
+          "sql": "select * from (values ('Élevée','Besoins d’effectif inconnus','0 matrice et 0 exigence','Faux sous-effectif ou fausse conformité','Configurer et approuver les matrices'),('Élevée','Seuils repos absents','0 politique','Conclusion réglementaire inventée','Administrer les seuils et mesurer les champs'),('Élevée','Historique d’affectations très faible','8 affectations','Surapprentissage et tendance instable','Accumuler et valider un historique'),('Moyenne','Aucune absence historique','0 absence','Fréquence future impossible à estimer','Conserver le scénario manuel'),('Moyenne','Profil temporel incomplet','Pas de min/max, nullité ou distribution','Saisonnalité et dérive inconnues','Ajouter un profil agrégé authentifié'),('Élevée','Contrats d’intégration absents','Aucun identifiant externe ou règle de fusion','Doublons, écrasement ou fuite d’entreprise','Spécifier l’interface avant développement'),('Positive','Socle descriptif disponible','Navires, personnes, projets et journées présents','Portée limitée au plan saisi','Livrer seulement les calculs déterministes')) as reviewed(severity, issue, evidence, risk, remediation);",
+          "tables_used": ["docs/reports/planning-p2-2-source-counts.json", "src/features/planning/planningP22.ts"],
+          "filters": ["Risques matériels pour P2.2 uniquement"],
+          "metric_definitions": {
+            "severity": "Niveau de risque technique, sans portée réglementaire."
+          }
+        }
+      }
+    ],
+    "cards": [
+      {
+        "id": "projects-card",
+        "description": "Événements connus, tous types confondus.",
+        "dataset": "headline",
+        "sourceId": "supabase-table-stats",
+        "metrics": [{ "label": "Événements", "field": "projects", "format": "number" }]
+      },
+      {
+        "id": "days-card",
+        "description": "Base descriptive disponible pour les charges et métriques.",
+        "dataset": "headline",
+        "sourceId": "supabase-table-stats",
+        "metrics": [{ "label": "Journées", "field": "days", "format": "number" }]
+      },
+      {
+        "id": "assignments-card",
+        "description": "Volume insuffisant pour apprendre une tendance statistique.",
+        "dataset": "headline",
+        "sourceId": "supabase-table-stats",
+        "metrics": [{ "label": "Affectations", "field": "assignments", "format": "number" }]
+      },
+      {
+        "id": "matrices-card",
+        "description": "Aucun besoin cible démontrable dans l’instantané distant.",
+        "dataset": "headline",
+        "sourceId": "supabase-table-stats",
+        "metrics": [{ "label": "Matrices", "field": "matrices", "format": "number" }]
+      },
+      {
+        "id": "policies-card",
+        "description": "Aucun seuil administré disponible dans l’instantané distant.",
+        "dataset": "headline",
+        "sourceId": "supabase-table-stats",
+        "metrics": [{ "label": "Politiques", "field": "policies", "format": "number" }]
+      }
+    ],
+    "charts": [
+      {
+        "id": "input-volume-chart",
+        "title": "Volume des principales entrées P2.2",
+        "subtitle": "Lignes PostgreSQL estimées dans l’instantané distant du 14 juillet 2026.",
+        "showDescription": true,
+        "intent": "comparison",
+        "question": "Quelles sources disposent d’un volume descriptif et quels prérequis structurants sont vides ?",
+        "rationale": "Une barre horizontale compare directement les volumes très inégaux et rend visibles les sources à zéro sans suggérer une tendance temporelle.",
+        "type": "horizontalBar",
+        "dataset": "input_volumes",
+        "sourceId": "supabase-table-stats",
+        "encodings": {
+          "x": { "field": "source", "type": "nominal", "label": "Source" },
+          "y": { "field": "estimated_rows", "type": "quantitative", "format": "number", "label": "Lignes estimées" },
+          "tooltip": [
+            { "field": "role", "type": "text", "label": "Rôle" },
+            { "field": "category", "type": "nominal", "label": "Catégorie" },
+            { "field": "readiness", "type": "text", "label": "Effet sur P2.2" }
+          ]
+        },
+        "valueFormat": "number",
+        "layout": "full",
+        "labels": { "values": "all" },
+        "settings": { "orientation": "horizontal", "sort": "descending", "showValues": true }
+      }
+    ],
+    "tables": [
+      {
+        "id": "source-counts-table",
+        "title": "Volumes distants observés",
+        "description": "Estimations PostgreSQL ; utiliser l’analyse authentifiée P2.2 pour les comptes exacts du périmètre RLS.",
+        "dataset": "source_counts",
+        "sourceId": "supabase-table-stats",
+        "defaultSort": { "field": "estimated_rows", "direction": "desc" },
+        "columns": [
+          { "field": "source", "label": "Source" },
+          { "field": "estimated_rows", "label": "Lignes estimées", "format": "number" },
+          { "field": "role", "label": "Rôle P2.2" }
+        ]
+      },
+      {
+        "id": "feature-readiness-table",
+        "title": "Décision par fonction P2.2",
+        "description": "Une fonction bloquée n’est pas compensée par une hypothèse implicite.",
+        "dataset": "feature_readiness",
+        "sourceId": "p22-readiness-review",
+        "defaultSort": { "field": "priority", "direction": "asc" },
+        "columns": [
+          { "field": "priority", "label": "Ordre", "format": "number" },
+          { "field": "feature", "label": "Fonction" },
+          { "field": "status", "label": "Aptitude" },
+          { "field": "evidence", "label": "Évidence" },
+          { "field": "decision", "label": "Décision" }
+        ]
+      },
+      {
+        "id": "quality-findings-table",
+        "title": "Risques de qualité et mesures",
+        "description": "Constats utilisés pour borner la V3.",
+        "dataset": "quality_findings",
+        "sourceId": "p22-quality-findings-review",
+        "columns": [
+          { "field": "severity", "label": "Sévérité" },
+          { "field": "issue", "label": "Constat" },
+          { "field": "evidence", "label": "Évidence" },
+          { "field": "risk", "label": "Risque" },
+          { "field": "remediation", "label": "Mesure" }
+        ]
+      }
+    ],
+    "blocks": [
+      { "id": "title", "type": "markdown", "body": "# SeaPilot Planning P2.2 — Qualité des données et aptitude prédictive" },
+      {
+        "id": "technical-summary",
+        "type": "markdown",
+        "body": "## Synthèse technique\n\nLes données disponibles sont adaptées aux **projections déterministes du plan connu** et aux **simulations locales de type what-if**. Elles ne sont pas suffisamment étayées pour une prévision statistique des sous-effectifs, de la fatigue, des absences ou des immobilisations.\n\nLa V3 livre donc la charge descriptive par navire et marin, un score de tension explicite, puis les simulations d’absence et d’immobilisation. Les fonctions sans prérequis fiables restent bloquées. Chaque résultat sépare faits, règles et estimations et impose une validation humaine."
+      },
+      { "id": "headline-metrics", "type": "metric-strip", "cardIds": ["projects-card", "days-card", "assignments-card", "matrices-card", "policies-card"] },
+      {
+        "id": "quantitative-finding",
+        "type": "markdown",
+        "sourceId": "supabase-table-stats",
+        "body": "## Constat quantitatif\n\nL’instantané distant contient 18 événements navire, 170 journées Planning, 69 périodes et seulement 8 affectations. Il contient 14 navires et 27 personnes, mais aucune matrice d’armement, aucune politique travail/repos et aucune absence validée. Les 150 documents RH constituent une base de contrôle, sans démontrer à eux seuls la couverture exacte des marins actifs."
+      },
+      { "id": "source-counts", "type": "table", "tableId": "source-counts-table" },
+      { "id": "input-volume-visual", "type": "chart", "chartId": "input-volume-chart" },
+      {
+        "id": "decision", "type": "markdown",
+        "body": "## Décision de mise en œuvre\n\nLa faible profondeur historique et l’absence des données cibles interdisent une extrapolation défendable. P2.2 reste un moteur de comparaison transparent : il mesure le plan saisi, injecte un événement synthétique uniquement en mémoire, réexécute les contrôles P1.2 et affiche des alternatives que l’utilisateur doit valider."
+      },
+      { "id": "feature-readiness", "type": "table", "tableId": "feature-readiness-table" },
+      {
+        "id": "scope-definitions", "type": "markdown",
+        "body": "## Périmètre et définitions\n\n**Prêt** signifie que les données visibles permettent le calcul déterministe documenté. **Limité** signifie que le résultat reste descriptif, local ou dépendant d’une couverture partielle. **Bloqué** signifie qu’une donnée ou un contrat indispensable manque et que la fonction n’est pas développée.\n\nL’unité de charge est le jour calendaire unique, pas l’heure de travail. Une période de tension est un regroupement de jours dont le score explicite dépasse le seuil observé. Un scénario est une comparaison sans écriture entre le plan de référence et une hypothèse saisie par l’utilisateur."
+      },
+      {
+        "id": "methodology", "type": "markdown", "sourceId": "planning-p22-runtime",
+        "body": "## Méthodologie\n\nLe moteur analyse au plus 400 jours. La charge navire déduplique les jours comportant un projet ; la charge marin déduplique les jours d’affectation. Le score journalier est : opérations/transits × 3 + navires indisponibles × 3 + mouvements d’équipage × 2 + conflits connus × 2. Son seuil est le maximum entre 6 et le 75e percentile des scores non nuls.\n\nLes simulations ajoutent une absence approuvée ou une maintenance synthétique en mémoire, puis réutilisent le détecteur de conflits P1.2. Le seul graphique compare les volumes de sources ; aucun graphique temporel n’est présenté, car l’instantané agrégé ne fournit ni distribution par date, ni minimum/maximum et un tracé suggérerait une structure temporelle non observée."
+      },
+      { "id": "quality-findings", "type": "table", "tableId": "quality-findings-table" },
+      {
+        "id": "limitations", "type": "markdown",
+        "body": "## Limites et robustesse\n\nLes volumes distants sont des estimations PostgreSQL, pas des `COUNT(*)`. L’inspection agrégée ne donne pas les taux de nullité, les bornes de dates, la distribution par entreprise ou la complétude exacte sous RLS. Le panneau P2.2 recalcule donc les comptes et complétudes exacts dans le périmètre authentifié réellement visible.\n\nLes projets futurs non saisis, pannes imprévues, compatibilités techniques entre navires, équipements, contraintes contractuelles et interfaces externes sont absents. La confiance affichée est une porte de qualité explicite, pas une probabilité calibrée."
+      },
+      {
+        "id": "recommendations", "type": "markdown",
+        "body": "## Recommandations avant extension\n\n1. Configurer et valider une matrice d’armement active par navire avant d’activer tout calcul de sous-effectif.\n2. Administrer les politiques de repos et mesurer la complétude des métriques détaillées avant tout indicateur prospectif de fatigue.\n3. Accumuler des affectations, absences et maintenances horodatées avec une profondeur temporelle suffisante, puis définir un protocole de validation hors échantillon.\n4. Définir identifiants externes, propriété des données, fréquence, webhooks, reprise et résolution des conflits avant une intégration bidirectionnelle.\n5. Définir chiffrement local, durée de conservation et stratégie de fusion avant tout cache hors connexion persistant."
+      },
+      {
+        "id": "further-questions", "type": "markdown",
+        "body": "## Questions à résoudre\n\n- Quel taux de couverture des matrices et documents est exigé par l’armement avant un pilote de sous-effectif ?\n- Quelle profondeur historique et quel horizon de prévision apporteraient une valeur métier mesurable ?\n- Quelles sources RH et maintenance sont maîtres, et quels identifiants permettent un rapprochement stable ?\n- Quelles données personnelles peuvent être conservées hors connexion, pendant combien de temps et avec quel chiffrement ?"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-14T03:07:00+02:00",
+    "status": "partial",
+    "datasets": {
+      "headline": [
+        { "projects": 18, "days": 170, "assignments": 8, "matrices": 0, "policies": 0 }
+      ],
+      "source_counts": [
+        { "source": "planning_change_log", "estimated_rows": 95, "role": "Historique P0/P1" },
+        { "source": "planning_days", "estimated_rows": 170, "role": "Jours et métriques" },
+        { "source": "hr_documents", "estimated_rows": 150, "role": "Contrôles documentaires" },
+        { "source": "planning_periods", "estimated_rows": 69, "role": "Périodes historiques" },
+        { "source": "planning_projects", "estimated_rows": 18, "role": "Programme navires" },
+        { "source": "planning_assignments", "estimated_rows": 8, "role": "Affectations marins" },
+        { "source": "people", "estimated_rows": 27, "role": "Dimension marins" },
+        { "source": "vessels", "estimated_rows": 14, "role": "Dimension navires" },
+        { "source": "planning_publications", "estimated_rows": 1, "role": "Publication" },
+        { "source": "planning_versions", "estimated_rows": 1, "role": "Versions" },
+        { "source": "planning_rules", "estimated_rows": 20, "role": "Règles P0" },
+        { "source": "planning_notifications", "estimated_rows": 1, "role": "Notifications P1.3" },
+        { "source": "planning_absences", "estimated_rows": 0, "role": "Historique absences" },
+        { "source": "planning_manning_matrices", "estimated_rows": 0, "role": "Besoins cibles" },
+        { "source": "planning_manning_requirements", "estimated_rows": 0, "role": "Exigences d’armement" },
+        { "source": "planning_work_rest_policies", "estimated_rows": 0, "role": "Seuils repos" },
+        { "source": "planning_dependencies", "estimated_rows": 0, "role": "Dépendances" },
+        { "source": "planning_assistant_reviews", "estimated_rows": 0, "role": "Décisions pilote" },
+        { "source": "planning_handovers", "estimated_rows": 0, "role": "Relèves" },
+        { "source": "planning_rotation_series", "estimated_rows": 0, "role": "Rotations" }
+      ],
+      "input_volumes": [
+        { "source": "Journées", "estimated_rows": 170, "role": "Charge et métriques", "category": "Descriptif", "readiness": "Exploitable avec contrôle de complétude", "table": "planning_days" },
+        { "source": "Documents RH", "estimated_rows": 150, "role": "Compatibilité documentaire", "category": "Contrôle", "readiness": "Couverture exacte à vérifier sous RLS", "table": "hr_documents" },
+        { "source": "Projets navires", "estimated_rows": 18, "role": "Charge navire et tension", "category": "Descriptif", "readiness": "Exploitable sans extrapolation", "table": "planning_projects" },
+        { "source": "Affectations", "estimated_rows": 8, "role": "Charge marin et scénarios", "category": "Descriptif", "readiness": "Volume trop faible pour apprentissage", "table": "planning_assignments" },
+        { "source": "Matrices", "estimated_rows": 0, "role": "Besoin d’effectif cible", "category": "Prérequis", "readiness": "Sous-effectif bloqué", "table": "planning_manning_matrices" },
+        { "source": "Politiques repos", "estimated_rows": 0, "role": "Seuils administrés", "category": "Prérequis", "readiness": "Fatigue future bloquée", "table": "planning_work_rest_policies" },
+        { "source": "Absences", "estimated_rows": 0, "role": "Historique d’indisponibilité", "category": "Historique", "readiness": "Probabilité d’absence bloquée", "table": "planning_absences" }
+      ],
+      "feature_readiness": [
+        { "priority": 1, "feature": "Charge par navire", "status": "Limité", "evidence": "18 projets, 14 navires", "decision": "Calcul descriptif livré" },
+        { "priority": 2, "feature": "Charge par marin", "status": "Limité", "evidence": "8 affectations, 27 personnes", "decision": "Calcul descriptif livré" },
+        { "priority": 3, "feature": "Périodes de tension", "status": "Limité", "evidence": "Programme connu, conflits P1.2", "decision": "Score explicite livré" },
+        { "priority": 4, "feature": "Simulation d’absence", "status": "Limité", "evidence": "Affectations existantes ; 0 absence historique", "decision": "What-if local livré, aucune probabilité" },
+        { "priority": 5, "feature": "Simulation immobilisation", "status": "Limité", "evidence": "Programme navire existant", "decision": "What-if local livré, compatibilité inconnue" },
+        { "priority": 6, "feature": "Sous-effectif", "status": "Bloqué", "evidence": "0 matrice, 0 exigence", "decision": "Non développé" },
+        { "priority": 7, "feature": "Fatigue future", "status": "Bloqué", "evidence": "0 politique administrée", "decision": "Non développé" },
+        { "priority": 8, "feature": "Intégrations externes", "status": "Bloqué", "evidence": "Aucun contrat ou identifiant externe", "decision": "Non développé" },
+        { "priority": 9, "feature": "Hors connexion persistant", "status": "Bloqué", "evidence": "Aucune politique de cache/chiffrement", "decision": "Non développé" }
+      ],
+      "quality_findings": [
+        { "severity": "Élevée", "issue": "Besoins d’effectif inconnus", "evidence": "0 matrice et 0 exigence", "risk": "Faux sous-effectif ou fausse conformité", "remediation": "Configurer et approuver les matrices" },
+        { "severity": "Élevée", "issue": "Seuils repos absents", "evidence": "0 politique", "risk": "Conclusion réglementaire inventée", "remediation": "Administrer les seuils et mesurer les champs" },
+        { "severity": "Élevée", "issue": "Historique d’affectations très faible", "evidence": "8 affectations", "risk": "Surapprentissage et tendance instable", "remediation": "Accumuler et valider un historique" },
+        { "severity": "Moyenne", "issue": "Aucune absence historique", "evidence": "0 absence", "risk": "Fréquence future impossible à estimer", "remediation": "Conserver le scénario manuel" },
+        { "severity": "Moyenne", "issue": "Profil temporel incomplet", "evidence": "Pas de min/max, nullité ou distribution", "risk": "Saisonnalité et dérive inconnues", "remediation": "Ajouter un profil agrégé authentifié" },
+        { "severity": "Élevée", "issue": "Contrats d’intégration absents", "evidence": "Aucun identifiant externe ou règle de fusion", "risk": "Doublons, écrasement ou fuite d’entreprise", "remediation": "Spécifier l’interface avant développement" },
+        { "severity": "Positive", "issue": "Socle descriptif disponible", "evidence": "Navires, personnes, projets et journées présents", "risk": "Portée limitée au plan saisi", "remediation": "Livrer seulement les calculs déterministes" }
+      ]
+    },
+    "accessIssues": [
+      {
+        "id": "temporal-profile",
+        "scope": "Profil distant agrégé",
+        "sourceId": "supabase-table-stats",
+        "message": "L’instantané fournit des volumes PostgreSQL estimés uniquement ; les bornes de dates, taux de nullité et complétudes exactes sous RLS doivent être calculés dans une session authentifiée."
+      }
+    ]
+  },
+  "sources": [
+    { "id": "supabase-table-stats", "label": "Supabase lié — statistiques des tables Planning" },
+    { "id": "planning-p22-runtime", "label": "Moteur de qualité et de scénarios P2.2", "path": "src/features/planning/planningP22.ts" },
+    { "id": "p22-readiness-review", "label": "Revue P2.2 — aptitude des fonctions", "path": "docs/PLANNING_P22_MODELS.md" },
+    { "id": "p22-quality-findings-review", "label": "Revue P2.2 — risques de qualité", "path": "docs/PLANNING_P22_MODELS.md" }
+  ]
+}
