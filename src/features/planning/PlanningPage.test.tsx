@@ -87,6 +87,29 @@ const planningPeriodRow = {
   slot365_source_key: 'SLOT-123',
   source_label: 'sharepoint',
 };
+const planningLocationRow = {
+  ...planningDayRow,
+  id: 201,
+  person_id: null,
+  vessel_id: 1,
+  crew_name: '',
+  captain_name: '',
+  work_date: '2026-07-14',
+  disembark_on: null,
+  day_number: 14,
+  function_label: '',
+  sailor_status: '',
+  day_status: 'Lieu du personnel',
+  rhythm_label: '',
+  watch_group: '',
+  slot365: '',
+  departure_on: null,
+  worked_hours: null,
+  rest_24h: null,
+  cumulative_7d: null,
+  comments: 'Cherbourg',
+  source_label: 'seapilot-vessel-location',
+};
 const planningProjectRow = {
   id: 600,
   title: 'Transit Cherbourg',
@@ -253,6 +276,9 @@ function createClient(options: {
     if (functionName === 'get_planning_assistant_access') {
       return Promise.resolve({ data: options.assistantAccess ?? [{ has_access: true, access_mode: 'administrator', expires_on: null, can_manage_pilots: true }], error: null });
     }
+    if (functionName === 'save_planning_vessel_day_location') {
+      return Promise.resolve({ data: 201, error: null });
+    }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
   return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, updateAssignment, vesselOrder };
@@ -264,23 +290,25 @@ describe('PlanningPage cockpit', () => {
     const { client, rpc } = createClient({ projects: [planningProjectRow] });
     const { rerender } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: 'Réglages du planning' }));
+    await user.click(screen.getByRole('button', { name: 'Outils' }));
     expect(screen.queryByRole('button', { name: /Prévisions et scénarios/ })).not.toBeInTheDocument();
     expect(rpc).not.toHaveBeenCalledWith('get_planning_assistant_access');
 
     rerender(<PlanningPage client={client as never} predictionsFeatureEnabled roles={['admin']} />);
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('get_planning_assistant_access'));
-    if (screen.getByRole('button', { name: 'Réglages du planning' }).getAttribute('aria-expanded') !== 'true') {
-      await user.click(screen.getByRole('button', { name: 'Réglages du planning' }));
+    if (screen.getByRole('button', { name: 'Outils' }).getAttribute('aria-expanded') !== 'true') {
+      await user.click(screen.getByRole('button', { name: 'Outils' }));
     }
     expect(await screen.findByRole('button', { name: /Prévisions et scénarios/ })).toBeInTheDocument();
   });
 
   it('renders the monthly crew view and the imported assignment', async () => {
+    const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Mois' })).toHaveClass('is-active');
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
@@ -301,7 +329,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Actualiser le planning' }));
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
     expect(await screen.findByText('Impossible de charger les navires.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Planning' })).toBeInTheDocument();
     consoleError.mockRestore();
@@ -320,6 +348,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['direction']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     const periodButton = screen.getByRole('button', { name: /Paul DURAND, En Mer/ });
     await user.click(periodButton);
     expect(screen.getByRole('dialog')).toHaveTextContent('Rotation A');
@@ -337,7 +366,10 @@ describe('PlanningPage cockpit', () => {
     });
     render(<PlanningPage client={client as never} roles={['direction']} />);
 
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect((await screen.findAllByText('Luc MOREL')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre navire'), 'COTENTIN');
     await user.selectOptions(screen.getByLabelText('Filtre marin'), 'Paul DURAND');
     const calendar = screen.getByRole('region', { name: 'Calendrier des affectations' });
@@ -353,22 +385,21 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
     expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Navires')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Transit Transit Cherbourg/ })).toBeInTheDocument();
-    for (const label of ['Jour', 'Semaine', '2 sem.', 'Mois', 'An']) expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    for (const label of ['Jour', 'Semaine', '2 sem.', 'Mois', 'An']) {
+      const scaleButton = screen.getByRole('button', { name: label });
+      expect(scaleButton).toBeInTheDocument();
+      await user.click(scaleButton);
+      expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode');
+    }
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Marins' })).toHaveClass('is-active');
     await user.click(screen.getByRole('button', { name: 'Équipes' }));
     expect(screen.getByRole('button', { name: 'Équipes' })).toHaveClass('is-active');
-    await user.click(screen.getByRole('tab', { name: 'Navire' }));
-    expect(screen.getByText('Vue navire')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Ouvrir l’affectation de Paul DURAND/ })).toBeInTheDocument();
-    await user.click(screen.getByRole('tab', { name: 'Marin' }));
-    expect(screen.getByText('Vue marin')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Filtre marin'), 'Paul DURAND');
-    expect(screen.getByRole('button', { name: /Ouvrir l’affectation de Paul DURAND/ })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Navire' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
   });
 
   it('creates a fleet event from the complete side panel', async () => {
@@ -378,8 +409,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
-    await user.click(screen.getByRole('button', { name: 'Nouvel événement flotte' }));
+    await user.click(screen.getByRole('button', { name: 'Créer un événement' }));
     const dialog = screen.getByRole('dialog');
     await user.type(within(dialog).getByLabelText('Titre'), 'Maintenance annuelle');
     await user.selectOptions(within(dialog).getByLabelText('Navire'), '1');
@@ -405,7 +435,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre type d’événement'), 'transit');
     await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Confirmé');
     await user.click(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
@@ -430,7 +460,8 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'An' }));
     expect(screen.getByRole('button', { name: 'An' })).toHaveClass('is-active');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Afficher en plein écran' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Outils' }));
+    expect(screen.getByRole('button', { name: 'Plein écran' })).toBeInTheDocument();
   });
 
   it('creates a native SeaPilot assignment for administrators', async () => {
@@ -440,7 +471,8 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: 'Nouvelle affectation' }));
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(screen.getByRole('button', { name: 'Créer une affectation' }));
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
@@ -497,7 +529,7 @@ describe('PlanningPage cockpit', () => {
     expect(publicationPanel).toHaveTextContent('Version 1');
     expect(publicationPanel).toHaveTextContent('Publié par Direction BBTM');
     expect(screen.getByText('Verrouillé')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer un événement' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réouvrir pour modification' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Archiver' })).toBeInTheDocument();
   });
@@ -533,7 +565,8 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: /Historique/ }));
+    await user.click(screen.getByRole('button', { name: 'Outils' }));
+    await user.click(screen.getByRole('button', { name: /Historique/ }));
     expect(screen.getByText('Version publiée 1')).toBeInTheDocument();
     expect(screen.getByText('Planning publié en version 1')).toBeInTheDocument();
     expect(screen.getAllByText(/Direction BBTM/).length).toBeGreaterThan(0);
@@ -545,7 +578,8 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: 'Nouvelle affectation' }));
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(screen.getByRole('button', { name: 'Créer une affectation' }));
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
     fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
@@ -565,6 +599,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.click(screen.getByRole('button', { name: 'Créer une affectation pour Paul DURAND le 20/07/2026' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire rapide');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
@@ -588,6 +623,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.click(screen.getByRole('button', { name: 'Créer une affectation pour Paul DURAND le 20/07/2026' }));
     expect(screen.getByLabelText('Statut')).toHaveValue('A Terre');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
@@ -601,8 +637,10 @@ describe('PlanningPage cockpit', () => {
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(container.querySelectorAll('.planning-crew-bar.has-conflict')).toHaveLength(2);
-    await user.click(screen.getByRole('tab', { name: /Conflits/ }));
+    await user.click(screen.getByRole('button', { name: 'Outils' }));
+    await user.click(screen.getByRole('button', { name: /Conflits/ }));
     expect(screen.getByText('Double affectation')).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ })[0]);
     expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
@@ -610,21 +648,84 @@ describe('PlanningPage cockpit', () => {
   });
 
   it('keeps marins in read-only mode', async () => {
+    const user = userEvent.setup();
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['marin']} />);
 
-    expect((await screen.findAllByText('Paul DURAND')).length).toBeGreaterThan(0);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByText('Lecture seule')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouvelle affectation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
   });
 
   it('allows office direction to edit while keeping vessel administration restricted', async () => {
+    const user = userEvent.setup();
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.getByText('Modification')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nouvelle affectation' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.getByRole('button', { name: 'Créer une affectation' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Outils' }));
     expect(screen.queryByRole('button', { name: 'Gérer les navires' })).not.toBeInTheDocument();
+  });
+
+  it('assigns an unassigned sailor by dropping the card on a fleet day without reloading', async () => {
+    const { client, insertAssignment, vesselOrder } = createClient({ assignments: [], people: [captainRow, crewRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const sailor = screen.getByRole('article', { name: /Paul DURAND.*Glisser pour affecter/ });
+    const target = container.querySelector<HTMLElement>('[data-planning-person-drop-vessel-id="1"][data-planning-person-drop-date="2026-07-14"]')!;
+    const payloads = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: 'none',
+      effectAllowed: 'none',
+      types: [] as string[],
+      setData(type: string, value: string) { payloads.set(type, value); this.types = [...payloads.keys()]; },
+      getData(type: string) { return payloads.get(type) || ''; },
+    };
+
+    fireEvent.dragStart(sailor, { dataTransfer });
+    fireEvent.dragEnter(target, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+
+    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
+      vessel_id: 1,
+      crew_person_id: 11,
+      starts_on: '2026-07-14',
+      ends_on: '2026-07-14',
+      confirmation_status: 'provisional',
+    })));
+    expect(await screen.findByText(/Paul DURAND est affecté provisoirement à COTENTIN/)).toBeInTheDocument();
+    expect(vesselOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows fleet locations instead of sailor labels and saves a daily free-text place', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], days: [planningLocationRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const calendarBody = container.querySelector('.planning-calendar-body') as HTMLElement;
+    expect(within(calendarBody).queryByText('Paul DURAND')).not.toBeInTheDocument();
+    expect(within(calendarBody).queryByText('Pont')).not.toBeInTheDocument();
+    const locationButton = screen.getByRole('button', { name: 'Modifier le lieu du personnel pour COTENTIN le 14/07/2026' });
+    expect(locationButton).toHaveTextContent('Cherbourg');
+    await user.click(locationButton);
+    const locationInput = screen.getByLabelText('Lieu du personnel pour COTENTIN le 14/07/2026');
+    await user.clear(locationInput);
+    await user.type(locationInput, 'Le Havre');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le lieu' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_vessel_day_location', {
+      p_vessel_id: 1,
+      p_work_date: '2026-07-14',
+      p_location: 'Le Havre',
+    }));
+    expect(await screen.findByText(/Lieu enregistré pour COTENTIN/)).toBeInTheDocument();
   });
 
   it('pins every weekend background cell to its calendar column', async () => {
@@ -638,9 +739,11 @@ describe('PlanningPage cockpit', () => {
   });
 
   it('previews the colored period continuously while an administrator resizes it', async () => {
+    const user = userEvent.setup();
     const { client } = createClient({ assignments: [], periods: [planningPeriodRow] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     const bar = container.querySelector<HTMLElement>('.planning-crew-bar')!;
     const endHandle = bar.querySelector<HTMLElement>('.planning-resize-handle.is-end')!;
     const initialPlacement = bar.style.gridColumn;

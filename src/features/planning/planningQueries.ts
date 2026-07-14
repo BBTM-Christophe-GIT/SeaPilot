@@ -17,6 +17,7 @@ const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
   'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, consecutive_rest_hours, rest_period_count, night_work_hours, comments, source_label';
+export const PLANNING_VESSEL_LOCATION_SOURCE = 'seapilot-vessel-location';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
@@ -647,6 +648,12 @@ export interface SavePlanningHandoverPositionInput {
   outgoingAssignmentId?: string;
   incomingAssignmentId?: string;
   comments?: string;
+}
+
+export interface SavePlanningVesselDayLocationInput {
+  vesselId: number;
+  workDate: string;
+  location: string;
 }
 
 export interface SavePlanningHandoverInput {
@@ -1318,6 +1325,24 @@ export async function createPlanningAssignment(
   if (error) throwPlanningDataError('create-assignment', "Impossible d'ajouter cette affectation.", error);
 
   return data as PlanningAssignmentRow;
+}
+
+export async function savePlanningVesselDayLocation(
+  client: SupabaseClient,
+  input: SavePlanningVesselDayLocationInput,
+): Promise<number | null> {
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  assertSinglePlanningDay(input.workDate, input.workDate);
+  const location = input.location.trim();
+  if (location.length > 80) throw new Error('Le lieu quotidien ne peut pas dépasser 80 caractères.');
+
+  const { data, error } = await client.rpc('save_planning_vessel_day_location', {
+    p_vessel_id: vesselId,
+    p_work_date: input.workDate,
+    p_location: location,
+  });
+  if (error) throwPlanningDataError('save-vessel-day-location', 'Impossible d’enregistrer le lieu quotidien.', error);
+  return typeof data === 'number' ? data : null;
 }
 
 async function writeVesselChangeLog(

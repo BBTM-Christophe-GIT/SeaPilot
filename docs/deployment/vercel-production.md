@@ -82,6 +82,13 @@ now distinguished from a later display refresh failure, preventing duplicate ret
 inputs and essential assignment controls also receive actionable messages. Deploy it over `3.0.0` with the same
 36 aligned migrations and environment variables.
 
+Apply `supabase/migrations/202607140004_planning_fleet_daily_locations.sql` before deploying version `3.1.0`.
+The simplified Fleet cockpit reuses `planning_days` for one company-scoped daily vessel location, protected by the
+existing `edit_event` action, RLS and publication locks. The client then enables direct provisional assignment by
+dragging an unassigned sailor onto a vessel/day, removes the redundant Navire/Marin perspectives and keeps a
+horizontal scrollbar on every time scale. The rollout and export-first rollback are documented in
+`docs/deployment/planning-v3-1-ui.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -119,10 +126,10 @@ As of 2026-07-13:
 - `VITE_PLANNING_ASSISTANT_ENABLED` defaults to `false`; set it to `true` only for an approved pilot environment.
 - `VITE_PLANNING_PREDICTIONS_ENABLED` defaults to `false`; set it to `true` only after the V3 data-quality and access review.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
-- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
+- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.1`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning V3 target still contains 36 local and remote migrations through `202607140003_planning_p21_maritime_assistant.sql`; P2.2 creates no migration. Verify `supabase migration list` before each deployment.
+- The Planning V3 target contains 37 local and remote migrations through `202607140004_planning_fleet_daily_locations.sql`. Verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

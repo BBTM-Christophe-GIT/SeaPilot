@@ -17,6 +17,7 @@ import {
   mapPlanningVersionRows,
   mapVesselRows,
   savePlanningHandover,
+  savePlanningVesselDayLocation,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
@@ -734,6 +735,27 @@ describe('planning writes', () => {
       departure_on: '2026-07-07',
       disembark_on: '2026-07-07',
     }));
+  });
+
+  it('saves a trimmed fleet location through the protected daily RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 201, error: null });
+
+    await expect(savePlanningVesselDayLocation({ rpc } as never, {
+      vesselId: 1,
+      workDate: '2026-07-14',
+      location: '  Cherbourg  ',
+    })).resolves.toBe(201);
+    expect(rpc).toHaveBeenCalledWith('save_planning_vessel_day_location', {
+      p_vessel_id: 1,
+      p_work_date: '2026-07-14',
+      p_location: 'Cherbourg',
+    });
+
+    await expect(savePlanningVesselDayLocation({ rpc } as never, {
+      vesselId: 1,
+      workDate: '14/07/2026',
+      location: 'Cherbourg',
+    })).rejects.toThrow('Les dates doivent être valides et utiliser le format YYYY-MM-DD.');
   });
 
   it('creates a typed fleet event and returns the normalized Supabase row', async () => {

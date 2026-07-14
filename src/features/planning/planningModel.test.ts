@@ -58,7 +58,8 @@ const overview: PlanningOverview = {
 
 describe('planning timeline rules', () => {
   it('builds day, week, fortnight, month and year ranges', () => {
-    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(1);
+    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(7);
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'day'))).toEqual({ start: '2026-07-09', end: '2026-07-15' });
     expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
     expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
     expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);

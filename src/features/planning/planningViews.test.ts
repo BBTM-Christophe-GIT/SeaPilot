@@ -19,7 +19,7 @@ const overview: PlanningOverview = {
     { id: 10, firstName: 'Paul', lastName: 'DURAND', functionLabel: 'Matelot', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '', departedOn: '', active: true },
   ],
   assignments: [{ id: 100, vesselId: 1, vesselName: 'COTENTIN', captainPersonId: null, captainName: '-', crewPersonId: 10, crewName: 'Paul DURAND', startsOn: '2026-07-06', endsOn: '2026-07-12', assignmentRole: 'Pont', statusLabel: 'En Mer', confirmationStatus: 'provisional', watchGroup: 'Bordée 1', comments: '', sourceLabel: 'seapilot' }],
-  days: [],
+  days: [{ id: 400, personId: null, vesselId: 1, crewName: '', captainName: '', vesselName: 'COTENTIN', workDate: '2026-07-14', disembarkOn: '', yearNumber: 2026, monthNumber: 7, monthLabel: 'Juillet', dayNumber: 14, functionLabel: '', sailorStatus: '', dayStatus: 'Lieu du personnel', rhythmLabel: '', watchGroup: '', slot365: '', departureOn: '', workedHours: null, rest24h: null, cumulative7d: null, consecutiveRestHours: null, restPeriodCount: null, nightWorkHours: null, comments: 'Cherbourg', sourceLabel: 'seapilot-vessel-location' }],
   periods: [{ id: 200, personId: null, vesselId: 1, crewName: 'Paul DURAND', vesselName: 'COTENTIN', watchGroup: 'Bordée 1', functionLabel: 'Matelot', sailorStatus: 'Repos', startsOn: '2026-07-13', endsOn: '2026-07-14', yearNumber: 2026, comments: '', slot365SourceId: '', slot365SourceKey: '', sourceLabel: 'sharepoint' }],
   projects: [{ id: 300, title: 'Transit Cherbourg', startsOn: '2026-07-08', endsOn: '2026-07-09', description: '', clientName: '', primaryVesselId: 1, primaryVesselName: 'COTENTIN', secondaryVesselId: null, secondaryVesselName: '', eventType: 'transit', responsibleName: 'Jean MARTIN', status: 'Confirmé', sourceLabel: 'seapilot' }],
   certificates: [],
@@ -41,6 +41,7 @@ describe('planning P0.2 views', () => {
     const lanes = buildPlanningFleetLanes(overview, range, { ...emptyFilters, eventType: 'transit', responsible: 'Jean MARTIN' });
     expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
     expect(lanes.find((lane) => lane.label === 'COTENTIN')?.projects).toEqual([expect.objectContaining({ title: 'Transit Cherbourg' })]);
+    expect(lanes.find((lane) => lane.label === 'COTENTIN')?.locations).toEqual([expect.objectContaining({ workDate: '2026-07-14', comments: 'Cherbourg' })]);
     expect(buildPlanningFleetLanes(overview, range, { ...emptyFilters, status: 'Annulé' }).every((lane) => lane.projects.length === 0)).toBe(true);
   });
 
@@ -49,6 +50,7 @@ describe('planning P0.2 views', () => {
     const teams = buildPlanningCrewLanes(overview, range, emptyFilters, 'teams');
     expect(people).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, watchGroup: 'Bordée 1' })]);
     expect(teams).toEqual([expect.objectContaining({ label: 'Bordée 1' })]);
+    expect(getAllPlanningCrewEvents(overview).some((event) => event.id === 'day-400')).toBe(false);
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
   });
 

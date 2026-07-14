@@ -1,5 +1,5 @@
-import { GripVertical, Plus } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Check, GripVertical, Pencil, Plus, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -43,24 +43,42 @@ export function PlanningFleetTimelineRow({
   pendingId,
   viewMode,
   dayWidth,
-  onCreate,
+  touchDropTarget,
+  onAssignPerson,
   onMove,
   onOpen,
-  onOpenAssignment,
   onResize,
+  onSaveLocation,
 }: TimelineBaseProps & {
   lane: PlanningFleetLane;
   dayWidth: number;
-  onCreate: (lane: PlanningFleetLane, date: string) => void;
+  touchDropTarget: { vesselId: number; date: string } | null;
+  onAssignPerson: (personId: number, lane: PlanningFleetLane, date: string) => void;
   onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
-  onOpenAssignment: (assignmentId: number) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
+  onSaveLocation: (lane: PlanningFleetLane, date: string, location: string) => Promise<boolean>;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
-  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<{ date: string; kind: 'person' | 'project' } | null>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [editingLocation, setEditingLocation] = useState<{ date: string; value: string } | null>(null);
+  const [pendingLocationDate, setPendingLocationDate] = useState<string | null>(null);
   const suppressClickRef = useRef(false);
+  const locationsByDate = useMemo(
+    () => new Map(lane.locations.map((location) => [location.workDate, location.comments])),
+    [lane.locations],
+  );
+
+  async function submitLocation(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingLocation) return;
+    setPendingLocationDate(editingLocation.date);
+    const saved = await onSaveLocation(lane, editingLocation.date, editingLocation.value);
+    setPendingLocationDate(null);
+    if (saved) setEditingLocation(null);
+  }
+
   const beginResize = (pointerEvent: React.PointerEvent, project: PlanningProjectRecord, edge: 'start' | 'end') => {
     pointerEvent.preventDefault();
     pointerEvent.stopPropagation();
@@ -99,32 +117,80 @@ export function PlanningFleetTimelineRow({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
   return (
-    <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel} style={{ '--planning-fleet-assignment-rows': Math.max(1, lane.assignments.length) } as React.CSSProperties}>
-      <div className="planning-row-label" style={{ gridRow: `1 / span ${Math.max(2, lane.assignments.length + 1)}` }}>
+    <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel}>
+      <div className="planning-row-label">
         <span className="planning-row-icon" aria-hidden="true">N</span>
         <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
       </div>
       {days.map((day, index) => {
-        const occupied = lane.projects.some((project) => project.startsOn <= day.date && project.endsOn >= day.date);
-        const canCreate = editable && viewMode !== 'year' && lane.vesselId !== null && !occupied;
+        const touchPersonOver = touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.date === day.date;
+        const mouseDragOver = dragOver?.date === day.date;
+        const personDragOver = touchPersonOver || (mouseDragOver && dragOver.kind === 'person');
+        const location = locationsByDate.get(day.date) || '';
+        const isEditing = editingLocation?.date === day.date;
         const shared = {
-          className: cellClass(day, { create: canCreate, dragOver: dragOverDate === day.date, drop: editable }),
+          className: `${cellClass(day, { create: false, dragOver: mouseDragOver || touchPersonOver, drop: editable })}${personDragOver ? ' is-person-drag-over' : ''}`,
           'data-planning-drop-date': day.date,
           'data-planning-drop-vessel': lane.vessel,
-          onDragEnter: editable ? () => setDragOverDate(day.date) : undefined,
-          onDragLeave: editable ? () => setDragOverDate((current) => current === day.date ? null : current) : undefined,
-          onDragOver: editable ? (event: React.DragEvent) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } : undefined,
+          'data-planning-person-drop-date': day.date,
+          'data-planning-person-drop-vessel-id': lane.vesselId || undefined,
+          onDragEnter: editable ? (event: React.DragEvent) => setDragOver({
+            date: day.date,
+            kind: event.dataTransfer.types.includes('application/x-seapilot-planning') ? 'person' : 'project',
+          }) : undefined,
+          onDragLeave: editable ? () => setDragOver((current) => current?.date === day.date ? null : current) : undefined,
+          onDragOver: editable ? (event: React.DragEvent) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = event.dataTransfer.types.includes('application/x-seapilot-planning') ? 'copy' : 'move';
+          } : undefined,
           onDrop: editable ? (event: React.DragEvent) => {
             event.preventDefault();
-            setDragOverDate(null);
+            setDragOver(null);
+            const personPayload = event.dataTransfer.getData('application/x-seapilot-planning');
+            if (personPayload) {
+              try {
+                const parsed = JSON.parse(personPayload) as { type?: string; id?: number };
+                if (parsed.type === 'person' && Number.isSafeInteger(parsed.id) && Number(parsed.id) > 0) {
+                  onAssignPerson(Number(parsed.id), lane, day.date);
+                  return;
+                }
+              } catch {
+                // Ignore malformed foreign drag payloads and keep project DnD available.
+              }
+            }
             const id = Number(event.dataTransfer.getData('application/x-seapilot-project'));
             if (Number.isSafeInteger(id) && id > 0) onMove(id, lane, day.date);
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
         };
-        return canCreate
-          ? <button {...shared} aria-label={`Créer un événement pour ${lane.label} le ${formatPlanningDate(day.date)}`} key={day.date} onClick={() => onCreate(lane, day.date)} type="button"><Plus aria-hidden="true" size={13} /></button>
-          : <span {...shared} aria-hidden="true" key={day.date} />;
+        return <div {...shared} key={day.date} title={location || undefined}>
+          {personDragOver ? <span className="planning-person-drop-label">Déposer pour affecter</span> : viewMode === 'year' ? (
+            location ? <span className="planning-location-year">{location}</span> : null
+          ) : isEditing ? (
+            <form className="planning-location-editor" onSubmit={submitLocation}>
+              <input
+                aria-label={`Lieu du personnel pour ${lane.label} le ${formatPlanningDate(day.date)}`}
+                autoFocus
+                maxLength={80}
+                onChange={(event) => setEditingLocation({ date: day.date, value: event.target.value })}
+                placeholder="Lieu…"
+                value={editingLocation.value}
+              />
+              <button aria-label="Enregistrer le lieu" disabled={pendingLocationDate === day.date} type="submit"><Check aria-hidden="true" size={13} /></button>
+              <button aria-label="Annuler la modification du lieu" onClick={() => setEditingLocation(null)} type="button"><X aria-hidden="true" size={13} /></button>
+            </form>
+          ) : (
+            <button
+              aria-label={`${location ? 'Modifier' : 'Ajouter'} le lieu du personnel pour ${lane.label} le ${formatPlanningDate(day.date)}`}
+              className={`planning-location-button${location ? ' has-value' : ''}`}
+              disabled={!editable || lane.vesselId === null}
+              onClick={() => setEditingLocation({ date: day.date, value: location })}
+              type="button"
+            >
+              <span>{location || 'Lieu…'}</span><Pencil aria-hidden="true" size={11} />
+            </button>
+          )}
+        </div>;
       })}
       {lane.projects.map((project) => {
         const preview = resizePreview?.id === project.id ? resizePreview : null;
@@ -158,19 +224,6 @@ export function PlanningFleetTimelineRow({
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
           </button>
         );
-      })}
-      {lane.assignments.map((assignment, index) => {
-        const placement = dateGridPlacement(assignment.startsOn, assignment.endsOn, days);
-        if (!placement) return null;
-        return <button
-          aria-label={`Affectation de ${assignment.crewName} comme ${assignment.assignmentRole}, du ${formatPlanningDate(assignment.startsOn)} au ${formatPlanningDate(assignment.endsOn)}`}
-          className={`planning-fleet-assignment-bar is-${assignment.confirmationStatus}`}
-          key={assignment.id}
-          onClick={() => onOpenAssignment(assignment.id)}
-          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: index + 2 }}
-          title={`${assignment.crewName} · ${assignment.assignmentRole} · ${planningConfirmationLabel(assignment.confirmationStatus)}`}
-          type="button"
-        ><strong>{assignment.crewName}</strong><small>{assignment.assignmentRole}</small></button>;
       })}
     </div>
   );

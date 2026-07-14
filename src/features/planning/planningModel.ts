@@ -1,10 +1,11 @@
-import type {
-  PlanningAssignmentRecord,
-  PlanningDayRecord,
-  PlanningOverview,
-  PlanningPeriodRecord,
-  PlanningPerson,
-  PlanningProjectRecord,
+import {
+  PLANNING_VESSEL_LOCATION_SOURCE,
+  type PlanningAssignmentRecord,
+  type PlanningDayRecord,
+  type PlanningOverview,
+  type PlanningPeriodRecord,
+  type PlanningPerson,
+  type PlanningProjectRecord,
 } from './planningQueries';
 import {
   addPlanningDays,
@@ -148,7 +149,7 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
     const end = `${year}-12-31`;
     return buildDays(start, daysBetween(start, end) + 1);
   }
-  if (mode === 'day') return buildDays(anchorDate, 1);
+  if (mode === 'day') return buildDays(addPlanningDays(anchorDate, -3), 7);
   if (mode === 'week') return buildDays(startOfPlanningWeek(anchorDate), 7);
   if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
@@ -338,16 +339,19 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
   overview.assignments.map(crewEventFromAssignment).forEach((event) => {
     if (!occupied.has(eventKey(event))) events.push(event);
   });
-  overview.days.map(crewEventFromDay).forEach((event) => {
-    const covered = events.some(
-      (current) =>
-        normalizePlanningText(current.person) === normalizePlanningText(event.person) &&
-        normalizePlanningText(current.vessel) === normalizePlanningText(event.vessel) &&
-        current.startsOn <= event.startsOn &&
-        current.endsOn >= event.endsOn,
-    );
-    if (!covered) events.push(event);
-  });
+  overview.days
+    .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE)
+    .map(crewEventFromDay)
+    .forEach((event) => {
+      const covered = events.some(
+        (current) =>
+          normalizePlanningText(current.person) === normalizePlanningText(event.person) &&
+          normalizePlanningText(current.vessel) === normalizePlanningText(event.vessel) &&
+          current.startsOn <= event.startsOn &&
+          current.endsOn >= event.endsOn,
+      );
+      if (!covered) events.push(event);
+    });
   return events;
 }
 
