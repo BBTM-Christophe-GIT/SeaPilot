@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronRight, FilePenLine, GripVertical, Pencil, Plus, UserRoundPlus, X } from 'lucide-react';
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -54,6 +54,7 @@ export function PlanningFleetTimelineRow({
   onAddBoard,
   onOpenVessel,
   selectedId,
+  onSelect,
   onToggle,
 }: TimelineBaseProps & {
   lane: PlanningFleetLane;
@@ -69,6 +70,7 @@ export function PlanningFleetTimelineRow({
   onAddBoard: (lane: PlanningFleetLane) => void;
   onOpenVessel: (lane: PlanningFleetLane) => void;
   selectedId: string | null;
+  onSelect: (id: string) => void;
   onToggle: () => void;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
@@ -233,7 +235,8 @@ export function PlanningFleetTimelineRow({
             className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             draggable={editable && !isPending && !preview}
             key={project.id}
-            onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onOpen(project); }}
+            onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
+            onDoubleClick={() => onOpen(project)}
             onDragEnd={() => { setDraggingId(null); setMovePreview(null); }}
             onDragStart={(event) => {
               setDraggingId(project.id);
@@ -333,6 +336,11 @@ export function PlanningCrewTimelineRow({
   const [editingNote, setEditingNote] = useState<{ eventId: string; date: string; value: string } | null>(null);
   const [pendingNote, setPendingNote] = useState(false);
   const suppressClickRef = useRef(false);
+  const noteClickTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (noteClickTimerRef.current !== null) window.clearTimeout(noteClickTimerRef.current);
+  }, []);
 
   const beginResize = (pointerEvent: React.PointerEvent, item: PlanningCrewEvent, edge: 'start' | 'end') => {
     pointerEvent.preventDefault();
@@ -378,9 +386,12 @@ export function PlanningCrewTimelineRow({
       </div>
       {days.map((day, index) => {
         const occupied = lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date);
-        const canCreate = !hierarchy && editable && viewMode !== 'year' && !occupied;
+        const canSelectEmpty = editable && !occupied;
+        const emptySelectionId = `empty-${lane.key}-${day.date}`;
+        const emptySelected = selectedId === emptySelectionId;
+        const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR') === 'ARMEMENT - CHERBOURG';
         const shared = {
-          className: cellClass(day, { create: canCreate, dragOver: dragOverDate === day.date, drop: editable }),
+          className: cellClass(day, { create: canSelectEmpty, dragOver: dragOverDate === day.date, drop: editable }),
           'data-planning-drop-date': day.date,
           onDragEnter: editable ? () => setDragOverDate(day.date) : undefined,
           onDragLeave: editable ? () => setDragOverDate((current) => current === day.date ? null : current) : undefined,
@@ -400,8 +411,8 @@ export function PlanningCrewTimelineRow({
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
         };
-        return canCreate
-          ? <button {...shared} aria-label={`Créer une affectation pour ${lane.label} le ${formatPlanningDate(day.date)}`} key={day.date} onClick={() => onCreate(lane, day.date)} type="button"><Plus aria-hidden="true" size={13} /></button>
+        return canSelectEmpty
+          ? <button {...shared} aria-label={`Sélectionner la case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ouvrir le formulaire complet.`} key={day.date} onClick={() => onSelect(emptySelectionId)} onDoubleClick={() => onCreate(lane, day.date)} type="button">{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker${armementCell ? ' is-armement' : ' is-default'}`} /> : <Plus aria-hidden="true" size={13} />}</button>
           : <span {...shared} aria-hidden="true" key={day.date} />;
       })}
       {movePreview ? (() => {
@@ -430,8 +441,8 @@ export function PlanningCrewTimelineRow({
                 return;
               }
               onSelect(event.id);
-              onOpen(event);
             }}
+            onDoubleClick={() => onOpen(event)}
             onDragEnd={() => {
               setDraggingId(null);
               setMovePreview(null);
@@ -491,7 +502,19 @@ export function PlanningCrewTimelineRow({
                     return;
                   }
                   onSelect(event.id);
-                  setEditingNote({ eventId: event.id, date: day.date, value: note });
+                  if (noteClickTimerRef.current !== null) window.clearTimeout(noteClickTimerRef.current);
+                  noteClickTimerRef.current = window.setTimeout(() => {
+                    setEditingNote({ eventId: event.id, date: day.date, value: note });
+                    noteClickTimerRef.current = null;
+                  }, 240);
+                }}
+                onDoubleClick={(doubleClickEvent) => {
+                  doubleClickEvent.stopPropagation();
+                  if (noteClickTimerRef.current !== null) {
+                    window.clearTimeout(noteClickTimerRef.current);
+                    noteClickTimerRef.current = null;
+                  }
+                  onOpen(event);
                 }}
                 onDragEnd={() => {
                   setDraggingId(null);
@@ -500,6 +523,10 @@ export function PlanningCrewTimelineRow({
                 }}
                 onDragStart={(dragEvent) => {
                   suppressClickRef.current = true;
+                  if (noteClickTimerRef.current !== null) {
+                    window.clearTimeout(noteClickTimerRef.current);
+                    noteClickTimerRef.current = null;
+                  }
                   setDraggingId(event.id);
                   onSelect(event.id);
                   dragEvent.dataTransfer.effectAllowed = 'move';

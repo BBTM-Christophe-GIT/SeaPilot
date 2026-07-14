@@ -38,6 +38,7 @@ export interface PlanningCrewLane {
   label: string;
   detail: string;
   personId: number | null;
+  vessel: string;
   watchGroup: string;
   events: PlanningCrewEvent[];
 }
@@ -210,6 +211,7 @@ export function buildPlanningCrewLanes(
         label,
         detail: detailValues.join(' · '),
         personId: grouping === 'people' ? linkedPerson?.id ?? first.personId : null,
+        vessel: first.vessel,
         watchGroup: first.board,
         events: laneEvents,
       };

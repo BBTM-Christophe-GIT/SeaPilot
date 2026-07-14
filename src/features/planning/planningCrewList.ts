@@ -1,4 +1,5 @@
 import type { PlanningOverview, PlanningPerson } from './planningQueries';
+import shipOwnerSignatureUrl from './assets/signature-benjamin-bon.png?inline';
 
 export type PlanningCrewListFormat = 'xlsx' | 'pdf';
 
@@ -25,7 +26,7 @@ export interface PlanningCrewListDocument {
   vesselName: string;
   date: string;
   watchGroup: string;
-  captainName: string;
+  shipOwnerName: string;
   rows: PlanningCrewListRow[];
   incompleteProfiles: string[];
 }
@@ -44,7 +45,93 @@ interface CrewListCandidate {
   crewName: string;
   assignmentRole: string;
   watchGroup: string;
-  captainName: string;
+}
+
+const SHIP_OWNER_NAME = 'Benjamin BON';
+
+const COUNTRY_ALIASES: Record<string, string> = {
+  algerie: 'Algeria',
+  belgique: 'Belgium',
+  benin: 'Benin',
+  bresil: 'Brazil',
+  cameroun: 'Cameroon',
+  canada: 'Canada',
+  rdcongo: 'Democratic Republic of the Congo',
+  republiquedemocratiqueducongo: 'Democratic Republic of the Congo',
+  congo: 'Republic of the Congo',
+  cotedivoire: 'Ivory Coast',
+  espagne: 'Spain',
+  etatsunis: 'United States',
+  france: 'France',
+  gabon: 'Gabon',
+  guinee: 'Guinea',
+  italie: 'Italy',
+  madagascar: 'Madagascar',
+  mali: 'Mali',
+  maroc: 'Morocco',
+  maurice: 'Mauritius',
+  mauritanie: 'Mauritania',
+  paysbas: 'Netherlands',
+  portugal: 'Portugal',
+  royaumeuni: 'United Kingdom',
+  senegal: 'Senegal',
+  suisse: 'Switzerland',
+  togo: 'Togo',
+  tunisie: 'Tunisia',
+};
+
+const FOREIGN_BIRTH_CITY_COUNTRIES: Record<string, string> = {
+  abidjan: 'Ivory Coast',
+  alger: 'Algeria',
+  antananarivo: 'Madagascar',
+  bamako: 'Mali',
+  barcelone: 'Spain',
+  bruxelles: 'Belgium',
+  casablanca: 'Morocco',
+  conakry: 'Guinea',
+  cotonou: 'Benin',
+  dakar: 'Senegal',
+  douala: 'Cameroon',
+  geneve: 'Switzerland',
+  kinshasa: 'Democratic Republic of the Congo',
+  libreville: 'Gabon',
+  lisbonne: 'Portugal',
+  lome: 'Togo',
+  londres: 'United Kingdom',
+  madrid: 'Spain',
+  monaco: 'Monaco',
+  montreal: 'Canada',
+  oran: 'Algeria',
+  ouagadougou: 'Burkina Faso',
+  rabat: 'Morocco',
+  rome: 'Italy',
+  sfax: 'Tunisia',
+  tunis: 'Tunisia',
+  yaounde: 'Cameroon',
+};
+
+function normalizedLookupValue(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function inferPlanningBirthCountry(birthPlace: string): string {
+  const normalized = normalizedLookupValue(birthPlace);
+  if (!normalized) return '';
+  const compact = normalized.replaceAll(' ', '');
+  for (const [country, englishName] of Object.entries(COUNTRY_ALIASES)) {
+    if (compact.includes(country)) return englishName;
+  }
+  for (const [city, country] of Object.entries(FOREIGN_BIRTH_CITY_COUNTRIES)) {
+    if (normalized === city || normalized.startsWith(`${city} `) || normalized.endsWith(` ${city}`)) return country;
+  }
+  return 'France';
+}
+
+export function planningIdentityDocumentLabel(value: string): string {
+  const normalized = normalizedLookupValue(value);
+  if (normalized === 'cni' || normalized.includes('carte nationale')) return 'ID';
+  if (normalized === 'passeport' || normalized === 'passport') return 'passport';
+  return value;
 }
 
 function crewListCandidates(overview: PlanningOverview, vesselId: number, date: string): CrewListCandidate[] {
@@ -55,7 +142,6 @@ function crewListCandidates(overview: PlanningOverview, vesselId: number, date: 
       crewName: assignment.crewName,
       assignmentRole: assignment.assignmentRole,
       watchGroup: assignment.watchGroup || 'Affectation',
-      captainName: assignment.captainName,
     }));
   const nativeKeys = new Set(assignments.map((assignment) => assignment.personId ? `person:${assignment.personId}` : `name:${assignment.crewName}`));
   const periods: CrewListCandidate[] = overview.periods
@@ -66,7 +152,6 @@ function crewListCandidates(overview: PlanningOverview, vesselId: number, date: 
       crewName: period.crewName,
       assignmentRole: period.functionLabel,
       watchGroup: period.watchGroup || 'Affectation',
-      captainName: '',
     }));
   return [...assignments, ...periods];
 }
@@ -98,23 +183,22 @@ export function buildPlanningCrewList(overview: PlanningOverview, input: Plannin
     return {
       familyName: person?.lastName || assignment.crewName.split(' ').slice(-1)[0] || '',
       firstName: person?.firstName || assignment.crewName.split(' ').slice(0, -1).join(' '),
-      nationality: '',
+      nationality: 'FR',
       birthDate: person?.birthDate || '',
       birthPlace: person?.birthPlace || '',
-      birthCountry: '',
-      identityDocumentType: person?.identityDocumentType || '',
+      birthCountry: inferPlanningBirthCountry(person?.birthPlace || ''),
+      identityDocumentType: planningIdentityDocumentLabel(person?.identityDocumentType || ''),
       identityDocumentNumber: person?.identityDocumentNumber || '',
       rank: assignment.assignmentRole,
-      visaNumber: '',
+      visaNumber: 'N/A',
     } satisfies PlanningCrewListRow;
   });
 
-  const captain = assignments.find((assignment) => /capitaine|captain/i.test(assignment.assignmentRole));
   return {
     vesselName: vessel.name,
     date: input.date,
     watchGroup: input.watchGroup,
-    captainName: captain?.crewName || assignments[0]?.captainName.replace('-', '') || '',
+    shipOwnerName: SHIP_OWNER_NAME,
     rows,
     incompleteProfiles,
   };
@@ -137,6 +221,30 @@ function rowXml(index: number, cells: string[], height?: number): string {
   return `<row r="${index}"${height ? ` ht="${height}" customHeight="1"` : ''}>${cells.join('')}</row>`;
 }
 
+function shipOwnerSignatureBase64(): string {
+  const [, base64 = ''] = shipOwnerSignatureUrl.split(',', 2);
+  if (!shipOwnerSignatureUrl.startsWith('data:image/png;base64,') || !base64) {
+    throw new Error('La signature du ship owner ne peut pas être intégrée au document.');
+  }
+  return base64;
+}
+
+function signatureDrawingXml(signatureRow: number): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <xdr:oneCellAnchor>
+    <xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${signatureRow + 1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:ext cx="1600000" cy="1061947"/>
+    <xdr:pic>
+      <xdr:nvPicPr><xdr:cNvPr id="2" name="Signature Benjamin BON" descr="Signature de Benjamin BON"/><xdr:cNvPicPr/></xdr:nvPicPr>
+      <xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+      <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1600000" cy="1061947"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></xdr:spPr>
+    </xdr:pic>
+    <xdr:clientData/>
+  </xdr:oneCellAnchor>
+</xdr:wsDr>`;
+}
+
 function worksheetXml(document: PlanningCrewListDocument): string {
   const headers = [
     'No', 'Family name', 'First name', 'Nationality', 'Date of birth', 'Place of birth',
@@ -157,7 +265,7 @@ function worksheetXml(document: PlanningCrewListDocument): string {
     inlineCell(`K${index + 4}`, item.visaNumber, 7),
   ], 23)).join('');
   const signatureRow = Math.max(20, document.rows.length + 7);
-  const printEndRow = signatureRow + 3;
+  const printEndRow = signatureRow + 7;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
@@ -170,46 +278,51 @@ function worksheetXml(document: PlanningCrewListDocument): string {
     ${rowXml(2, [], 10)}
     ${rowXml(3, headers.map((header, index) => inlineCell(`${String.fromCharCode(65 + index)}3`, header, 4)), 38)}
     ${bodyRows}
-    ${rowXml(signatureRow, [inlineCell(`B${signatureRow}`, 'Shipowner signature:', 8)], 22)}
-    ${rowXml(signatureRow + 1, [inlineCell(`B${signatureRow + 1}`, document.captainName, 9)], 22)}
+    ${rowXml(signatureRow, [inlineCell(`B${signatureRow}`, 'Ship owner:', 8)], 22)}
+    ${rowXml(signatureRow + 1, [inlineCell(`B${signatureRow + 1}`, document.shipOwnerName, 9)], 22)}
   </sheetData>
-  <mergeCells count="4"><mergeCell ref="A1:C1"/><mergeCell ref="D1:G1"/><mergeCell ref="H1:I1"/><mergeCell ref="B${signatureRow}:F${signatureRow}"/></mergeCells>
+  <autoFilter ref="A3:K${Math.max(4, document.rows.length + 3)}"/>
+  <mergeCells count="5"><mergeCell ref="A1:C1"/><mergeCell ref="D1:G1"/><mergeCell ref="H1:I1"/><mergeCell ref="B${signatureRow}:F${signatureRow}"/><mergeCell ref="B${signatureRow + 1}:F${signatureRow + 1}"/></mergeCells>
+  <printOptions horizontalCentered="1"/>
   <pageMargins left="0.25" right="0.25" top="0.35" bottom="0.35" header="0.15" footer="0.15"/>
   <pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="1" horizontalDpi="300" verticalDpi="300"/>
-  <printOptions horizontalCentered="1"/>
-  <autoFilter ref="A3:K${Math.max(4, document.rows.length + 3)}"/>
+  <drawing r:id="rId1"/>
 </worksheet>`;
 }
 
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="12"/><color rgb="FF103A5F"/><name val="Arial"/></font><font><i/><sz val="10"/><name val="Arial"/></font></fonts>
-  <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0C5A82"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F1F7"/><bgColor indexed="64"/></patternFill></fill></fills>
-  <borders count="3"><border/><border><left style="thin"><color rgb="FF8BA4B7"/></left><right style="thin"><color rgb="FF8BA4B7"/></right><top style="thin"><color rgb="FF8BA4B7"/></top><bottom style="thin"><color rgb="FF8BA4B7"/></bottom></border><border><bottom style="medium"><color rgb="FF0C5A82"/></bottom></border></borders>
+  <fonts count="4"><font><sz val="10"/><color rgb="FF000000"/><name val="Arial"/></font><font><b/><sz val="16"/><color rgb="FF000000"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FF000000"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF000000"/><name val="Arial"/></font></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="3"><border/><border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom></border><border><bottom style="medium"><color rgb="FF000000"/></bottom></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf></cellXfs>
+  <cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf></cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
 async function crewListXlsxBlob(document: PlanningCrewListDocument): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+  const signatureRow = Math.max(20, document.rows.length + 7);
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>');
   zip.folder('_rels')!.file('.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  zip.folder('xl')!.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="CREW LIST" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">'CREW LIST'!$A$1:$K$${Math.max(23, document.rows.length + 10)}</definedName></definedNames></workbook>`);
+  zip.folder('xl')!.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="CREW LIST" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">'CREW LIST'!$A$1:$K$${signatureRow + 7}</definedName></definedNames></workbook>`);
   zip.folder('xl')!.folder('_rels')!.file('workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
   zip.folder('xl')!.folder('worksheets')!.file('sheet1.xml', worksheetXml(document));
+  zip.folder('xl')!.folder('worksheets')!.folder('_rels')!.file('sheet1.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>');
+  zip.folder('xl')!.folder('drawings')!.file('drawing1.xml', signatureDrawingXml(signatureRow));
+  zip.folder('xl')!.folder('drawings')!.folder('_rels')!.file('drawing1.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/signature-benjamin-bon.png"/></Relationships>');
+  zip.folder('xl')!.folder('media')!.file('signature-benjamin-bon.png', shipOwnerSignatureBase64(), { base64: true });
   zip.folder('xl')!.file('styles.xml', STYLES_XML);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 async function crewListPdfBlob(document: PlanningCrewListDocument): Promise<Blob> {
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
-  const pdf = new jsPDF({ compress: true, orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pdf = new jsPDF({ compress: false, orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
-  pdf.setFillColor(12, 90, 130);
-  pdf.rect(10, 9, pageWidth - 20, 16, 'F');
-  pdf.setTextColor(255, 255, 255);
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  pdf.setTextColor(0, 0, 0);
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(15);
   pdf.text('IMO CREW LIST', 15, 19);
@@ -217,6 +330,8 @@ async function crewListPdfBlob(document: PlanningCrewListDocument): Promise<Blob
   pdf.text(document.vesselName, 72, 19);
   pdf.text(document.watchGroup || 'Toutes les bordées', 148, 19);
   pdf.text(document.date.split('-').reverse().join('/'), pageWidth - 15, 19, { align: 'right' });
+  pdf.setDrawColor(0, 0, 0);
+  pdf.line(10, 25, pageWidth - 10, 25);
   autoTable(pdf, {
     startY: 30,
     head: [[
@@ -229,26 +344,27 @@ async function crewListPdfBlob(document: PlanningCrewListDocument): Promise<Blob
       row.birthCountry, row.identityDocumentType, row.identityDocumentNumber, row.rank, row.visaNumber,
     ]),
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 6.5, cellPadding: 1.5, lineColor: [139, 164, 183], lineWidth: 0.15, valign: 'middle' },
-    headStyles: { fillColor: [12, 90, 130], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-    alternateRowStyles: { fillColor: [238, 245, 249] },
+    styles: { font: 'helvetica', fontSize: 6.5, cellPadding: 1.5, fillColor: [255, 255, 255], lineColor: [0, 0, 0], lineWidth: 0.15, textColor: [0, 0, 0], valign: 'middle' },
+    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+    alternateRowStyles: { fillColor: [255, 255, 255] },
     columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 4: { cellWidth: 20 }, 7: { cellWidth: 31 }, 8: { cellWidth: 31 }, 10: { cellWidth: 27 } },
     margin: { left: 10, right: 10 },
   });
   const finalY = (pdf as typeof pdf & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 55;
-  const signatureY = Math.min(185, finalY + 14);
-  pdf.setTextColor(34, 54, 75);
+  let signatureY = finalY + 12;
+  if (signatureY > 160) {
+    pdf.addPage('a4', 'landscape');
+    signatureY = 20;
+  }
+  pdf.setTextColor(0, 0, 0);
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('Shipowner signature:', 15, signatureY);
-  pdf.setFont('helvetica', 'italic');
-  pdf.text(document.captainName, 15, signatureY + 7);
-  pdf.setDrawColor(12, 90, 130);
-  pdf.line(15, signatureY + 10, 90, signatureY + 10);
+  pdf.text(`Ship owner: ${document.shipOwnerName}`, 15, signatureY);
+  pdf.addImage(shipOwnerSignatureUrl, 'PNG', 15, signatureY + 5, 38, 25);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(7);
-  pdf.setTextColor(105, 119, 135);
-  pdf.text('Generated from SeaPilot Planning data', pageWidth - 15, 198, { align: 'right' });
+  pdf.setTextColor(0, 0, 0);
+  pdf.text('FAL 5 - Crew list', pageWidth - 15, pageHeight - 8, { align: 'right' });
   return pdf.output('blob');
 }
 

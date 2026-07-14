@@ -1335,7 +1335,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       statusLabel: person && isSedentaryPlanningFunction(person.functionLabel) ? 'A Terre' : 'En Mer',
       confirmationStatus: 'provisional',
       watchGroup: targetLane.watchGroup || 'Affectation',
-    }, true);
+    });
   }
 
   if (!permissions.canRead) {
@@ -1472,7 +1472,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <div className="planning-board-guide" aria-label="Légende et gestes du planning">
               {perspective === 'fleet' ? <><span><i className="is-operation" />Opération</span><span><i className="is-maintenance" />Maintenance</span><span><i className="is-unavailability" />Indisponibilité</span></> : <><span><i className="is-sea" />En mer</span><span><i className="is-shore" />À terre</span><span><i className="is-provisional" />Provisoire</span></>}
               <span><i className="is-conflict" />Conflit</span>
-              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Glissez un marin sur un navire · Cliquez une case colorée pour saisir son texte quotidien' : 'Cliquez une zone vide pour ajouter · Glissez pour déplacer'}</small> : null}
+              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez un marin sur un navire' : 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez pour déplacer'}</small> : null}
             </div>
             <div className="planning-board-stats">
               {perspective === 'crew' && conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
@@ -1525,6 +1525,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       onOpenVessel={openVesselEditor}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
                       onSaveLocation={saveVesselLocation}
+                      onSelect={setSelectedTimelineId}
                       onToggle={() => toggleFleetNode(row.key)}
                       pendingId={pendingMutationId}
                       selectedId={selectedTimelineId}
@@ -1553,6 +1554,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   label: row.label,
                   detail: '',
                   personId: row.personId,
+                  vessel: row.vessel,
                   watchGroup: row.board,
                   events: row.events,
                 };

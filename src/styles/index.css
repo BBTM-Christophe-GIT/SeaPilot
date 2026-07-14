@@ -3479,6 +3479,21 @@ button:disabled {
   background: #eef5ff;
 }
 
+.planning-empty-cell-marker {
+  width: min(18px, calc(100% - 4px));
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 5px;
+  background: #15ab73;
+  box-shadow: 0 0 0 2px #087f55, 0 3px 7px rgba(8, 87, 58, 0.2);
+  pointer-events: none;
+}
+
+.planning-empty-cell-marker.is-armement {
+  background: #f4c847;
+  box-shadow: 0 0 0 2px #a87800, 0 3px 7px rgba(120, 82, 0, 0.2);
+}
+
 .planning-day-cell.is-saving {
   cursor: wait;
   opacity: 0.72;

@@ -353,7 +353,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     const periodButton = screen.getByRole('button', { name: /Paul DURAND, En Mer/ });
-    await user.click(periodButton);
+    await user.dblClick(periodButton);
     expect(screen.getByRole('dialog')).toHaveTextContent('Rotation A');
     expect(screen.getByRole('dialog')).toHaveTextContent('sharepoint');
   });
@@ -448,7 +448,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre type d’événement'), 'transit');
     await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Confirmé');
-    await user.click(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
+    await user.dblClick(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
     const dialog = screen.getByRole('dialog');
     await user.clear(within(dialog).getByLabelText('Titre'));
     await user.type(within(dialog).getByLabelText('Titre'), 'Transit Barfleur');
@@ -605,7 +605,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getAllByText(/Aptitude médicale non valide/).length).toBeGreaterThan(1);
   });
 
-  it('adds a one-day sea assignment by clicking an empty sailor cell', async () => {
+  it('adds a one-day sea assignment by double-clicking an empty sailor cell', async () => {
     const user = userEvent.setup();
     const createdAssignment = { ...assignmentRow, id: 102, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'En Mer' };
     const { client, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow], createdAssignment });
@@ -613,8 +613,8 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.click(screen.getByRole('button', { name: 'Créer une affectation pour Paul DURAND le 20/07/2026' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire rapide');
+    await user.dblClick(screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 20\/07\/2026/ }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire complet');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
 
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
@@ -637,7 +637,7 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.click(screen.getByRole('button', { name: 'Créer une affectation pour Paul DURAND le 20/07/2026' }));
+    await user.dblClick(screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 20\/07\/2026/ }));
     expect(screen.getByLabelText('Statut')).toHaveValue('A Terre');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({ status_label: 'A Terre' })));
@@ -655,7 +655,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'Outils' }));
     await user.click(screen.getByRole('button', { name: /Conflits/ }));
     expect(screen.getByText('Double affectation')).toBeInTheDocument();
-    await user.click(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ })[0]);
+    await user.dblClick(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ })[0]);
     expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
     expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
   });
@@ -766,7 +766,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Ajouter une bordée à COTENTIN' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Modifier le texte du 14/07/2026 pour Paul DURAND' }));
-    const noteInput = screen.getByLabelText('Texte du 14/07/2026 pour Paul DURAND');
+    const noteInput = await screen.findByLabelText('Texte du 14/07/2026 pour Paul DURAND');
     await user.clear(noteInput);
     await user.type(noteInput, 'Le Havre');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le texte' }));
@@ -776,6 +776,54 @@ describe('PlanningPage cockpit', () => {
       p_work_date: '2026-07-14',
       p_note: 'Le Havre',
     }));
+  });
+
+  it('selects an empty fleet cell with a green marker and opens the full form only on double-click', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const emptyCell = screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 15\/07\/2026/ });
+    await user.click(emptyCell);
+    expect(emptyCell.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
+    expect(screen.queryByText('Formulaire complet')).not.toBeInTheDocument();
+
+    await user.dblClick(emptyCell);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Nouvelle affectation' })).toBeInTheDocument();
+    expect(container.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
+  });
+
+  it('uses an amber empty-cell marker for Armement - Cherbourg personnel', async () => {
+    const user = userEvent.setup();
+    const armementVessel = { ...vesselRow, name: 'ARMEMENT - CHERBOURG', acronym: 'ARM' };
+    const armementAssignment = { ...assignmentOverviewRow, vessel_name: 'ARMEMENT - CHERBOURG' };
+    const { client } = createClient({ vessels: [armementVessel], assignments: [armementAssignment], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const emptyCell = screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 15\/07\/2026/ });
+    await user.click(emptyCell);
+    expect(emptyCell.querySelector('.planning-empty-cell-marker.is-armement')).toBeInTheDocument();
+  });
+
+  it('selects an existing colored assignment on click and opens its full form on double-click', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const bar = container.querySelector<HTMLButtonElement>('.planning-crew-bar')!;
+
+    await user.click(bar);
+    expect(bar).toHaveClass('is-selected');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.dblClick(bar);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
   });
 
   it('offers a date, vessel, board and Excel/PDF format for the crew list', async () => {

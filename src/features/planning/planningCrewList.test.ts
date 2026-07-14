@@ -1,7 +1,13 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { createPlanningPreviewOverview } from './planningPreviewData';
-import { availablePlanningCrewListBoards, buildPlanningCrewList, generatePlanningCrewList } from './planningCrewList';
+import {
+  availablePlanningCrewListBoards,
+  buildPlanningCrewList,
+  generatePlanningCrewList,
+  inferPlanningBirthCountry,
+  planningIdentityDocumentLabel,
+} from './planningCrewList';
 
 describe('planning crew list', () => {
   it('selects the active board and uses only Planning/Supabase profile fields', () => {
@@ -20,10 +26,18 @@ describe('planning crew list', () => {
     expect(document.rows).toHaveLength(5);
     expect(document.rows[0]).toMatchObject({
       familyName: 'LEPRETRE', firstName: 'Pierre', birthDate: '1982-04-12',
-      birthPlace: 'Cherbourg', identityDocumentType: 'Passeport', identityDocumentNumber: 'FR123456', rank: 'Capitaine',
+      birthPlace: 'Cherbourg', birthCountry: 'France', nationality: 'FR', identityDocumentType: 'passport',
+      identityDocumentNumber: 'FR123456', rank: 'Capitaine', visaNumber: 'N/A',
     });
-    expect(document.rows[0].nationality).toBe('');
+    expect(document.shipOwnerName).toBe('Benjamin BON');
     expect(document.incompleteProfiles).toHaveLength(4);
+  });
+
+  it('normalizes identity documents and infers an English country name from the birth place', () => {
+    expect(planningIdentityDocumentLabel('CNI')).toBe('ID');
+    expect(planningIdentityDocumentLabel('Passeport')).toBe('passport');
+    expect(inferPlanningBirthCountry('Dakar')).toBe('Senegal');
+    expect(inferPlanningBirthCountry('Cherbourg-en-Cotentin')).toBe('France');
   });
 
   it('generates a valid styled Excel workbook with an A4 landscape crew-list sheet', async () => {
@@ -34,11 +48,17 @@ describe('planning crew list', () => {
     const zip = await JSZip.loadAsync(await generated.blob.arrayBuffer());
     const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('string');
     const styles = await zip.file('xl/styles.xml')?.async('string');
+    const drawing = await zip.file('xl/drawings/drawing1.xml')?.async('string');
     expect(generated.fileName).toBe('crew-list-goury-bordee-1-2026-07-14.xlsx');
     expect(sheet).toContain('orientation="landscape"');
     expect(sheet).toContain('IMO CREW LIST');
     expect(sheet).toContain('Pierre');
     expect(sheet).not.toContain('Sophie');
+    expect(sheet!.indexOf('<autoFilter')).toBeLessThan(sheet!.indexOf('<mergeCells'));
+    expect(sheet!.indexOf('<printOptions')).toBeLessThan(sheet!.indexOf('<pageMargins'));
+    expect(drawing).toContain('Signature Benjamin BON');
+    expect(zip.file('xl/media/signature-benjamin-bon.png')).not.toBeNull();
+    expect(styles).not.toMatch(/0C5A82|E8F1F7|103A5F/);
     expect(new DOMParser().parseFromString(styles || '', 'application/xml').querySelector('parsererror')).toBeNull();
   });
 
@@ -52,6 +72,9 @@ describe('planning crew list', () => {
     expect(generated.fileName).toBe('crew-list-goury-bordee-1-2026-07-14.pdf');
     expect(content.startsWith('%PDF-')).toBe(true);
     expect(content).toMatch(/\/MediaBox \[0 0 841\.88\d* 595\.27\d*\]/);
+    expect(content).toContain('FAL 5 - Crew list');
+    expect(content).toContain('Benjamin BON');
+    expect(content).not.toContain('Generated from SeaPilot Planning data');
   });
 
   it('keeps historical Supabase periods available when no native assignment supersedes them', () => {
