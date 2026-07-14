@@ -1,4 +1,4 @@
-import { Check, GripVertical, Pencil, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Ship, UserRound, UsersRound, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -43,21 +43,27 @@ export function PlanningFleetTimelineRow({
   pendingId,
   viewMode,
   dayWidth,
+  expanded,
+  crewCount,
   touchDropTarget,
   onAssignPerson,
   onMove,
   onOpen,
   onResize,
   onSaveLocation,
+  onToggle,
 }: TimelineBaseProps & {
   lane: PlanningFleetLane;
   dayWidth: number;
+  expanded: boolean;
+  crewCount: number;
   touchDropTarget: { vesselId: number; date: string } | null;
   onAssignPerson: (personId: number, lane: PlanningFleetLane, date: string) => void;
   onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
   onSaveLocation: (lane: PlanningFleetLane, date: string, location: string) => Promise<boolean>;
+  onToggle: () => void;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
   const [dragOver, setDragOver] = useState<{ date: string; kind: 'person' | 'project' } | null>(null);
@@ -118,10 +124,18 @@ export function PlanningFleetTimelineRow({
   };
   return (
     <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel}>
-      <div className="planning-row-label">
-        <span className="planning-row-icon" aria-hidden="true">N</span>
+      <button
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`}
+        className="planning-row-label planning-tree-toggle is-vessel"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="planning-row-icon" aria-hidden="true"><Ship size={16} /></span>
         <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
-      </div>
+        <em>{crewCount}</em>
+        {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
+      </button>
       {days.map((day, index) => {
         const touchPersonOver = touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.date === day.date;
         const mouseDragOver = dragOver?.date === day.date;
@@ -229,6 +243,47 @@ export function PlanningFleetTimelineRow({
   );
 }
 
+export function PlanningFleetBoardTimelineRow({
+  board,
+  vessel,
+  crewCount,
+  days,
+  expanded,
+  onToggle,
+}: {
+  board: string;
+  vessel: string;
+  crewCount: number;
+  days: PlanningTimelineDay[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="planning-calendar-grid planning-timeline-row is-fleet-board">
+      <button
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Replier' : 'Déplier'} ${board} de ${vessel}`}
+        className="planning-row-label planning-tree-toggle is-board"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="planning-row-icon" aria-hidden="true"><UsersRound size={15} /></span>
+        <span><strong>{board}</strong></span>
+        <em>{crewCount}</em>
+        {expanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
+      </button>
+      {days.map((day, index) => (
+        <span
+          aria-hidden="true"
+          className={cellClass(day, { create: false, dragOver: false, drop: false })}
+          key={day.date}
+          style={{ gridColumn: index + 2, gridRow: 1 }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function PlanningCrewTimelineRow({
   lane,
   days,
@@ -241,6 +296,7 @@ export function PlanningCrewTimelineRow({
   onMove,
   onOpen,
   onResize,
+  hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
   conflictEventIds: Set<string>;
@@ -249,6 +305,7 @@ export function PlanningCrewTimelineRow({
   onMove: (event: PlanningCrewEvent, date: string) => void;
   onOpen: (event: PlanningCrewEvent) => void;
   onResize: (event: PlanningCrewEvent, edge: 'start' | 'end', delta: number) => void;
+  hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
@@ -293,14 +350,14 @@ export function PlanningCrewTimelineRow({
   };
 
   return (
-    <div className="planning-calendar-grid planning-timeline-row is-crew">
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
       <div className="planning-row-label">
-        <span className="planning-row-icon" aria-hidden="true">E</span>
-        <span><strong>{lane.label}</strong><small>{lane.detail || 'Sans détail'}</small></span>
+        <span className="planning-row-icon" aria-hidden="true"><UserRound size={14} /></span>
+        <span><strong>{lane.label}</strong>{hierarchy ? null : <small>{lane.detail || 'Sans détail'}</small>}</span>
       </div>
       {days.map((day, index) => {
         const occupied = lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date);
-        const canCreate = editable && viewMode !== 'year' && !occupied;
+        const canCreate = !hierarchy && editable && viewMode !== 'year' && !occupied;
         const shared = {
           className: cellClass(day, { create: canCreate, dragOver: dragOverDate === day.date, drop: editable }),
           'data-planning-drop-date': day.date,
@@ -332,7 +389,7 @@ export function PlanningCrewTimelineRow({
           <button
             aria-busy={isPending}
             aria-label={`${event.person}, ${event.status}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${isPending ? ' is-pending' : ''}`}
+            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${isPending ? ' is-pending' : ''}`}
             draggable={editable && !preview && !isPending}
             key={event.id}
             onClick={(clickEvent) => {
@@ -359,7 +416,7 @@ export function PlanningCrewTimelineRow({
           >
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
             {viewMode !== 'year' && placement.span >= 2 ? <GripVertical aria-hidden="true" className="planning-drag-grip" size={13} /> : null}
-            {viewMode !== 'year' && placement.span >= 2 ? <span>{event.status === 'En Mer' ? event.vessel : event.status}</span> : null}
+            {viewMode !== 'year' && placement.span >= 2 ? <span>{event.status === 'En Mer' ? hierarchy ? 'Embarqué' : event.vessel : event.status}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}

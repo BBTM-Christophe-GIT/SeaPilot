@@ -4369,6 +4369,193 @@ button:disabled {
   }
 }
 
+/* Planning v3.1.1: fleet hierarchy and explicit publication actions. */
+.planning-tree-toggle {
+  width: 100%;
+  border: 0;
+  border-right: 1px solid #dce5ee;
+  border-bottom: 1px solid #e5ebf1;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planning-tree-toggle:hover,
+.planning-tree-toggle:focus-visible {
+  z-index: 20;
+  outline: 0;
+  background: #f3f8ff;
+}
+
+.planning-tree-toggle > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.planning-tree-toggle > em {
+  display: inline-flex;
+  min-width: 26px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: #1457ad;
+  background: #e7f0ff;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.planning-timeline-row.is-fleet-board {
+  min-height: 44px;
+  background: #fbfcfe;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-label {
+  padding-left: 20px;
+  color: #1b3557;
+  border-left: 4px solid #8eb7e8;
+  background: #fbfcfe;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-icon {
+  color: #1769dc;
+  background: #eaf2ff;
+}
+
+.planning-timeline-row.is-fleet-board .planning-day-cell {
+  min-height: 44px;
+}
+
+.planning-timeline-row.is-fleet-person {
+  min-height: 40px;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label {
+  padding-left: 40px;
+  border-left-color: transparent;
+  background: #ffffff;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-icon {
+  width: 24px;
+  height: 24px;
+  color: #6d8098;
+  border: 1px solid #aab8c9;
+  background: #ffffff;
+}
+
+.planning-timeline-row.is-fleet-person .planning-day-cell {
+  min-height: 40px;
+}
+
+.planning-crew-bar.is-fleet-tree.is-sea {
+  color: #ffffff;
+  border-color: #0f8f58;
+  background: #12a968;
+}
+
+.planning-crew-bar.is-fleet-tree.is-sea:hover,
+.planning-crew-bar.is-fleet-tree.is-sea:focus-visible {
+  background: #0d9259;
+}
+
+.planning-publication-action-buttons {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.planning-publication-action-menu {
+  position: relative;
+}
+
+.planning-publication-action-menu > button.is-secondary {
+  color: #1c3553;
+  border-color: #cbd6e3;
+  background: #ffffff;
+}
+
+.planning-publication-action-popover {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(360px, calc(100vw - 32px));
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #d6e0eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(24, 49, 78, 0.18);
+}
+
+.planning-publication-action-popover header {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid #e7edf3;
+}
+
+.planning-publication-action-popover header strong,
+.planning-publication-action-popover p span,
+.planning-publication-action-popover button strong {
+  color: #172a43;
+  font-size: 0.78rem;
+}
+
+.planning-publication-action-popover header small,
+.planning-publication-action-popover p small,
+.planning-publication-action-popover button small {
+  color: #6a7a8e;
+  font-size: 0.68rem;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.planning-publication-action-popover p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f5f8fc;
+}
+
+.planning-publication-action-popover > button {
+  width: 100%;
+  justify-content: flex-start;
+  color: #172a43;
+  border-color: transparent;
+  background: #ffffff;
+  text-align: left;
+}
+
+.planning-publication-action-popover > button:hover,
+.planning-publication-action-popover > button:focus-visible {
+  border-color: #b9cee8;
+  background: #eef5ff;
+}
+
+.planning-publication-action-popover > button > span {
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 760px) {
+  .planning-publication-action-popover {
+    right: auto;
+    left: 0;
+  }
+
+  .planning-timeline-row.is-fleet-person .planning-row-label {
+    padding-left: 28px;
+  }
+}
+
 /* Planning P0.3: timed assignments, handovers and audited derogations. */
 .planning-timeline-row.is-fleet {
   min-height: calc(54px + (var(--planning-fleet-assignment-rows, 1) * 26px));

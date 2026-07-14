@@ -37,9 +37,9 @@ const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
 describe('planning P0.2 views', () => {
-  it('builds one fleet lane per active vessel and filters event metadata', () => {
+  it('builds fleet lanes only for vessels with visible crew and filters event metadata', () => {
     const lanes = buildPlanningFleetLanes(overview, range, { ...emptyFilters, eventType: 'transit', responsible: 'Jean MARTIN' });
-    expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
+    expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN']);
     expect(lanes.find((lane) => lane.label === 'COTENTIN')?.projects).toEqual([expect.objectContaining({ title: 'Transit Cherbourg' })]);
     expect(lanes.find((lane) => lane.label === 'COTENTIN')?.locations).toEqual([expect.objectContaining({ workDate: '2026-07-14', comments: 'Cherbourg' })]);
     expect(buildPlanningFleetLanes(overview, range, { ...emptyFilters, status: 'Annulé' }).every((lane) => lane.projects.length === 0)).toBe(true);

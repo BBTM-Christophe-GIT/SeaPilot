@@ -37,6 +37,7 @@ import {
   buildPlanningControlCenter,
   buildPlanningHrAlerts,
   buildPlanningMonthSegments,
+  buildPlanningCrewRows,
   buildPlanningTimeline,
   buildPlanningExportRows,
   formatPlanningPerson,
@@ -102,7 +103,7 @@ import {
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
 import type { PlanningDetectedConflict } from './planningP12';
-import { PlanningCrewTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
+import { PlanningCrewTimelineRow, PlanningFleetBoardTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
 import {
   buildPlanningCrewLanes,
   buildPlanningFleetLanes,
@@ -113,6 +114,7 @@ import {
   removePlanningEvent,
   replacePlanningProject,
   type PlanningCrewGrouping,
+  type PlanningCrewLane,
   type PlanningFleetLane,
   type PlanningPerspective,
 } from './planningViews';
@@ -306,6 +308,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isP22Open, setIsP22Open] = useState(false);
   const [touchPersonDrag, setTouchPersonDrag] = useState<{ person: PlanningPerson; x: number; y: number } | null>(null);
   const [touchDropTarget, setTouchDropTarget] = useState<{ vesselId: number; date: string } | null>(null);
+  const [collapsedFleetNodes, setCollapsedFleetNodes] = useState<Set<string>>(() => new Set());
   const touchDropTargetRef = useRef<{ vesselId: number; date: string } | null>(null);
 
   useEffect(() => {
@@ -365,6 +368,27 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const baseDayWidths: Record<PlanningViewMode, number> = { day: 260, week: 220, fortnight: 110, month: 52, year: 22 };
   const effectiveDayWidth = Math.round(baseDayWidths[viewMode] * zoomLevel / 100);
   const fleetLanes = useMemo(() => buildPlanningFleetLanes(overview, range, filters), [filters, overview, range]);
+  const fleetRows = useMemo(() => buildPlanningCrewRows(overview, timelineDays, filters), [filters, overview, timelineDays]);
+  const fleetLanesByVessel = useMemo(
+    () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
+    [fleetLanes],
+  );
+  const fleetTreeCounts = useMemo(() => {
+    const peopleByNode = new Map<string, Set<string>>();
+    fleetRows.forEach((row) => {
+      if (row.type !== 'person') return;
+      [row.vesselKey, row.boardKey].forEach((key) => {
+        const people = peopleByNode.get(key) || new Set<string>();
+        people.add(row.label);
+        peopleByNode.set(key, people);
+      });
+    });
+    return new Map([...peopleByNode].map(([key, people]) => [key, people.size]));
+  }, [fleetRows]);
+  const fleetVesselCount = useMemo(
+    () => fleetRows.filter((row) => row.type === 'vessel').length,
+    [fleetRows],
+  );
   const crewLanes = useMemo(
     () => buildPlanningCrewLanes(overview, range, filters, crewGrouping),
     [crewGrouping, filters, overview, range],
@@ -1160,6 +1184,32 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setStatusMessage(`${rowsToExport.length} journée(s) exportée(s).`); setIsExportOpen(false);
   }
 
+  function toggleFleetNode(key: string) {
+    setCollapsedFleetNodes((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function openLaneAssignment(targetLane: PlanningCrewLane, date: string) {
+    const person = activePeople.find((item) => item.id === targetLane.personId);
+    const currentVessel = activeVessels.find((item) => item.id === targetLane.events[0]?.vesselId || item.name === targetLane.events[0]?.vessel);
+    openAssignment({
+      vesselId: currentVessel ? String(currentVessel.id) : '',
+      crewPersonId: person ? String(person.id) : '',
+      startsOn: date,
+      endsOn: date,
+      startsAt: localDateTime(date, '08:00'),
+      endsAt: localDateTime(date, '20:00'),
+      assignmentRole: person?.functionLabel || 'Équipage',
+      statusLabel: person && isSedentaryPlanningFunction(person.functionLabel) ? 'A Terre' : 'En Mer',
+      confirmationStatus: 'provisional',
+      watchGroup: targetLane.watchGroup || 'Affectation',
+    }, true);
+  }
+
   if (!permissions.canRead) {
     return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
   }
@@ -1220,7 +1270,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               </div>
               {canEditPlanning ? (
                 <button className="planning-primary-action" onClick={() => perspective === 'fleet' ? openFleetEvent() : openAssignment()} type="button">
-                  <Plus aria-hidden="true" size={17} />{perspective === 'fleet' ? 'Créer un événement' : 'Créer une affectation'}
+                  <Plus aria-hidden="true" size={17} />{perspective === 'fleet' ? 'Nouveau projet' : 'Créer une affectation'}
                 </button>
               ) : null}
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
@@ -1292,7 +1342,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             </div>
             <div className="planning-board-stats">
               {perspective === 'crew' && conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
-              <span>{perspective === 'fleet' ? `${fleetLanes.length} navire(s)` : `${crewLanes.length} ligne(s)`}</span>
+              <span>{perspective === 'fleet' ? `${fleetVesselCount} navire(s) avec équipage` : `${crewLanes.length} ligne(s)`}</span>
               <span>{perspective === 'fleet' ? `${overview.projects.length} événement(s)` : `${allPlanningCrewEvents.length} période(s)`}</span>
             </div>
           </div>
@@ -1314,14 +1364,77 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               })}
             </div>
             <div className="planning-calendar-grid planning-calendar-days">
-              <div className="planning-calendar-corner planning-calendar-label-heading">{perspective === 'fleet' ? 'Navires' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}</div>
+              <div className="planning-calendar-corner planning-calendar-label-heading">{perspective === 'fleet' ? 'Navires · Bordées · Marins' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}</div>
               {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayDate ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
             </div>
 
             <div className="planning-calendar-body">
-              {perspective === 'fleet' && fleetLanes.length ? fleetLanes.map((lane) => (
-                <PlanningFleetTimelineRow dayWidth={effectiveDayWidth} days={days} editable={canEditPlanning} key={lane.key} lane={lane} onAssignPerson={(personId, targetLane, date) => void assignPersonByDrop(personId, targetLane, date)} onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)} onOpen={openProjectEditor} onResize={(project, edge, delta) => void resizeProject(project, edge, delta)} onSaveLocation={saveVesselLocation} pendingId={pendingMutationId} touchDropTarget={touchDropTarget} viewMode={viewMode} />
-              )) : null}
+              {perspective === 'fleet' && fleetRows.length ? fleetRows.map((row) => {
+                if (row.type !== 'vessel' && collapsedFleetNodes.has(row.vesselKey)) return null;
+                if (row.type === 'person' && collapsedFleetNodes.has(row.boardKey)) return null;
+                if (row.type === 'vessel') {
+                  const lane = fleetLanesByVessel.get(row.vessel);
+                  if (!lane) return null;
+                  return (
+                    <PlanningFleetTimelineRow
+                      crewCount={fleetTreeCounts.get(row.key) || 0}
+                      dayWidth={effectiveDayWidth}
+                      days={days}
+                      editable={canEditPlanning}
+                      expanded={!collapsedFleetNodes.has(row.key)}
+                      key={row.key}
+                      lane={lane}
+                      onAssignPerson={(personId, targetLane, date) => void assignPersonByDrop(personId, targetLane, date)}
+                      onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
+                      onOpen={openProjectEditor}
+                      onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
+                      onSaveLocation={saveVesselLocation}
+                      onToggle={() => toggleFleetNode(row.key)}
+                      pendingId={pendingMutationId}
+                      touchDropTarget={touchDropTarget}
+                      viewMode={viewMode}
+                    />
+                  );
+                }
+                if (row.type === 'board') {
+                  return (
+                    <PlanningFleetBoardTimelineRow
+                      board={row.label}
+                      crewCount={fleetTreeCounts.get(row.key) || 0}
+                      days={days}
+                      expanded={!collapsedFleetNodes.has(row.key)}
+                      key={row.key}
+                      onToggle={() => toggleFleetNode(row.key)}
+                      vessel={row.vessel}
+                    />
+                  );
+                }
+                const lane: PlanningCrewLane = {
+                  key: row.key,
+                  label: row.label,
+                  detail: '',
+                  personId: row.personId,
+                  watchGroup: row.board,
+                  events: row.events,
+                };
+                return (
+                  <PlanningCrewTimelineRow
+                    conflictEventIds={conflictEventIds}
+                    dayWidth={effectiveDayWidth}
+                    days={days}
+                    editable={canEditPlanning}
+                    hierarchy
+                    key={row.key}
+                    lane={lane}
+                    onCreate={openLaneAssignment}
+                    onMove={(event, date) => void moveEvent(event, date)}
+                    onOpen={openEvent}
+                    onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
+                    pendingId={pendingMutationId}
+                    viewMode={viewMode}
+                  />
+                );
+              }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
                   conflictEventIds={conflictEventIds}
@@ -1330,22 +1443,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   editable={canEditPlanning}
                   key={lane.key}
                   lane={lane}
-                  onCreate={(targetLane, date) => {
-                    const person = activePeople.find((item) => item.id === targetLane.personId);
-                    const currentVessel = activeVessels.find((item) => item.id === targetLane.events[0]?.vesselId || item.name === targetLane.events[0]?.vessel);
-                    openAssignment({
-                      vesselId: currentVessel ? String(currentVessel.id) : '',
-                      crewPersonId: person ? String(person.id) : '',
-                      startsOn: date,
-                      endsOn: date,
-                      startsAt: localDateTime(date, '08:00'),
-                      endsAt: localDateTime(date, '20:00'),
-                      assignmentRole: person?.functionLabel || 'Équipage',
-                      statusLabel: person && isSedentaryPlanningFunction(person.functionLabel) ? 'A Terre' : 'En Mer',
-                      confirmationStatus: 'provisional',
-                      watchGroup: targetLane.watchGroup || 'Affectation',
-                    }, true);
-                  }}
+                  onCreate={openLaneAssignment}
                   onMove={(event, date) => void moveEvent(event, date)}
                   onOpen={openEvent}
                   onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
@@ -1353,7 +1451,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   viewMode={viewMode}
                 />
               )) : null}
-              {perspective === 'fleet' && !fleetLanes.length ? <div className="planning-calendar-empty"><p>Aucun navire ou événement ne correspond à ces filtres.</p></div> : null}
+              {perspective === 'fleet' && !fleetRows.length ? <div className="planning-calendar-empty"><p>Aucun navire avec marin affecté ne correspond à cette période.</p></div> : null}
               {perspective === 'crew' && !crewLanes.length ? <div className="planning-calendar-empty"><p>Aucune affectation ne correspond à ces filtres.</p></div> : null}
             </div>
           </div>

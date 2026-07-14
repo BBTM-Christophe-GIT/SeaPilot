@@ -89,6 +89,10 @@ dragging an unassigned sailor onto a vessel/day, removes the redundant Navire/Ma
 horizontal scrollbar on every time scale. The rollout and export-first rollback are documented in
 `docs/deployment/planning-v3-1-ui.md`.
 
+Version `3.1.1` adds no migration. It keeps only vessels with visible crew in Fleet, restores the expandable
+vessel → watch group → sailor hierarchy, renames the primary project action, and exposes the content of the
+publication `Actions` menu. Deploy it after `3.1.0` with the same 37 aligned migrations.
+
 ## Current Production Target
 
 The active public URL is:

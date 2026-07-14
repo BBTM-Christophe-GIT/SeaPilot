@@ -367,6 +367,7 @@ export function buildPlanningCrewRows(
   const range = timelineRange(days);
   const events = getAllPlanningCrewEvents(overview).filter(
     (event) =>
+      event.confirmationStatus !== 'cancelled' &&
       rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
       (!filters.vesselName || event.vessel === filters.vesselName) &&
       (!filters.personName || event.person === filters.personName),
@@ -378,10 +379,6 @@ export function buildPlanningCrewRows(
       (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName),
   );
   const vesselNames = new Set(events.map((event) => event.vessel));
-  projects.forEach((project) => {
-    if (project.primaryVesselName) vesselNames.add(project.primaryVesselName);
-    if (project.secondaryVesselName) vesselNames.add(project.secondaryVesselName);
-  });
 
   const rows: PlanningCrewRow[] = [];
   [...vesselNames]

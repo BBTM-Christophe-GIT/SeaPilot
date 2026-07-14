@@ -150,16 +150,16 @@ export function buildPlanningFleetLanes(
     && (!filters.vesselName || day.vesselName === filters.vesselName)
   ));
   const vesselNames = new Set(
-    overview.vessels
-      .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
-      .map((vessel) => vessel.name),
+    getAllPlanningCrewEvents(overview)
+      .filter((event) => (
+        event.confirmationStatus !== 'cancelled'
+        && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
+        && (!filters.vesselName || event.vessel === filters.vesselName)
+        && (!filters.personName || event.person === filters.personName)
+      ))
+      .map((event) => event.vessel)
+      .filter(Boolean),
   );
-  projects.forEach((project) => {
-    if (project.primaryVesselName) vesselNames.add(project.primaryVesselName);
-    if (project.secondaryVesselName) vesselNames.add(project.secondaryVesselName);
-  });
-  assignments.forEach((assignment) => vesselNames.add(assignment.vesselName));
-  locations.forEach((location) => vesselNames.add(location.vesselName));
 
   return [...vesselNames]
     .sort((left, right) => left.localeCompare(right, 'fr'))
