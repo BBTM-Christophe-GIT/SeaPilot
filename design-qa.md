@@ -1,52 +1,51 @@
-# Design QA — Planning SeaPilot 1.4.0
+# Design QA — Planning flotte v3.1.1
 
-- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-6bd8309b-8891-47c5-be97-460bb1c28778.png`
-- Implémentation contrôlée : `https://sea-pilot-ten.vercel.app/modules/planning`
-- Capture d’implémentation : `docs/design/planning-dialog-production.png`
-- Comparaison normalisée : `docs/design/planning-dialog-comparison.png`
-- Viewport de production : 2560 × 1249.
-- Comparaison focalisée : fenêtre `Modifier · Benjamin BON`, normalisée à 1128 × 841 comme la référence.
-- État : production authentifiée en Administrateur, vue mensuelle juillet 2026, éditeur d’une affectation ouvert, version 1.4.0.
+## Sources
 
-## Comparaison visuelle
+- Référence utilisateur : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-cd4d6665-107a-41b8-b306-bb9d1b68d0a4.png`
+- Implémentation : `https://sea-pilot-jmpos7i12-bbtm-app.vercel.app/modules/planning`
+- Capture de la préversion : `C:\Users\chris\.codex\visualizations\2026\07\14\sea-pilot-planning-v3-1-1\preview-login-blocker.png`
 
-La référence et l’implémentation ont été réunies dans la même image de comparaison. La fenêtre conserve la hiérarchie, les dimensions relatives, les espacements, les champs, les actions et les couleurs SeaPilot de la référence. L’implémentation reste un dialogue centré au-dessus du planning afin de conserver le contexte de travail.
+## État et viewport
 
-Le contrôle focalisé confirme que `Bordée / groupe` est maintenant un sélecteur cohérent avec les autres champs. Les options visibles en production sont `Affectation`, `Armement`, `Bordée 1`, `Bordée 2` et `Flying Crew`.
+- Référence : 2331 × 1260, vue Flotte mensuelle avec arborescence navire / bordée / marin.
+- Préversion : capture Chrome au viewport courant après réinitialisation de l'override responsive.
+- État atteint : redirection vers `/login` ; la session de production n'est pas partagée avec l'hôte de préversion.
+- Console de la page de connexion : aucune erreur ni alerte.
 
-## Surfaces de fidélité obligatoires
+## Comparaison
 
-- Typographie : famille, graisse, hiérarchie des libellés et lisibilité des valeurs conformes au système SeaPilot ; aucune troncature dans le dialogue.
-- Espacement et rythme : grille Navire / dates / statut, fonction, bordée, annotation et actions alignée ; marges, rayons et hauteur des champs homogènes.
-- Couleurs et tokens : bleu primaire, fonds de champs, danger Supprimer et voile modal cohérents ; vert `En Mer`, jaune `À Terre` et rouge conflit visibles dans le planning derrière la fenêtre.
-- Images et icônes : icônes Lucide du produit conservées ; aucun actif de référence n’a été remplacé par un dessin CSS ou un glyphe improvisé.
-- Copie et contenu : libellés métier français conservés ; `Bordée / groupe` devient un choix contrôlé sans modifier les autres contenus.
+### Vue complète
 
-## Interactions vérifiées
+La référence et la capture de préversion ont été ouvertes ensemble dans la même entrée de comparaison. La capture de préversion ne contient que l'écran de connexion SeaPilot ; la vue Planning authentifiée n'est donc pas comparable.
 
-- La version `v1.4.0` et le build `2026-07-13.0737` sont visibles en production.
-- Une période de Benjamin BON ouvre bien la fenêtre de modification.
-- Le champ `Bordée / groupe` est exposé comme `combobox` avec cinq options issues du planning.
-- La légende `En mer · À terre · Conflit` et l’aide `Clic = ajouter · Glisser = déplacer · Poignées = étendre` sont visibles.
-- Les actions Supprimer, Annuler et Enregistrer sont présentes et accessibles.
-- Les écritures réelles de clic, déplacement et redimensionnement n’ont pas été déclenchées pendant le contrôle visuel de production afin de ne pas modifier les données ; elles sont couvertes par les tests automatisés.
-- Aucun message d’erreur applicatif SeaPilot observé. Les messages de console restants proviennent du canal de l’extension Chrome.
+### Zones ciblées
 
-## Vérifications automatisées
+- Arborescence navire / bordée / marin : non observable sur la préversion sans authentification.
+- Masquage des navires sans marin : non observable sur la préversion sans authentification.
+- Libellé `Nouveau projet` : non observable sur la préversion sans authentification.
+- Composition du menu `Actions` : non observable sur la préversion sans authentification.
 
-- 197 tests Vitest réussis avec `npm test -- --maxWorkers=2`.
-- Build TypeScript/Vite de production réussi.
-- GitHub Actions, pull request #13 et déploiement Vercel de `df48510fcbce3234e5b9bc69edd4f05585ce7f38` réussis.
+## Preuves automatisées
+
+- Tests React : présence de la hiérarchie, masquage des navires sans équipage, repli/dépli des niveaux et contenu du menu `Actions`.
+- Tests ciblés : 40 réussis.
+- Suite complète : 342 réussis.
+- TypeScript, lint et build de production : réussis.
+
+## Findings
+
+- [P1] La préversion nécessite une nouvelle authentification SeaPilot. Cette barrière empêche la comparaison visuelle et les interactions manuelles sur la vue Planning déployée.
+- Aucun finding visuel de sévérité P0/P1/P2 ne peut être établi sur l'interface Planning tant que cette authentification n'est pas réalisée.
 
 ## Historique de comparaison
 
-- Passage 1 : source et production comparées dans le même visuel ; aucun écart P0, P1 ou P2 relevé.
-- Aucun correctif visuel supplémentaire requis après la comparaison focalisée. La valeur `Affectation` diffère de la valeur `Armement` de la référence car elle correspond à la donnée réellement enregistrée pour Benjamin BON, pas à un écart de composant.
+1. Itération 1 — préversion ouverte à la taille de la référence ; redirection immédiate vers `/login`.
+2. Capture du blocage enregistrée ; DOM confirmé sur le formulaire de connexion ; console sans erreur.
+3. Contrôle visuel interrompu avant la vue Planning afin de ne pas utiliser ni demander de secrets.
 
-## Constats
+## Résultat
 
-- Aucun écart P0, P1 ou P2 restant.
-- Aucun cadrage focalisé supplémentaire requis : tous les champs, la liste de bordée, l’annotation et les actions sont lisibles dans la comparaison principale.
-- P3 possible : enrichir ultérieurement l’aide gestuelle par une aide contextuelle au premier usage.
+final result: blocked
 
-final result: passed
+Blocker : authentification requise sur l'hôte de préversion avant de pouvoir capturer et valider la vue Planning.
