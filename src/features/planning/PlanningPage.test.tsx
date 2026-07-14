@@ -789,6 +789,7 @@ describe('PlanningPage cockpit', () => {
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByLabelText('Date de la crew list')).toHaveValue('2026-07-14');
     expect(within(dialog).getByLabelText('Navire de la crew list')).toHaveValue('1');
+    expect(within(dialog).getByLabelText('Navire de la crew list')).not.toHaveTextContent('NAVIRES SANS EQUIPAGE');
     expect(within(dialog).getByLabelText('Bordée de la crew list')).toHaveValue('Affectation');
     expect(within(dialog).getByLabelText('Format de la crew list')).toHaveValue('xlsx');
     await user.selectOptions(within(dialog).getByLabelText('Format de la crew list'), 'pdf');
