@@ -163,6 +163,7 @@ function createClient(options: {
   createdProject?: unknown;
   updatedProject?: unknown;
   transitionedPublication?: unknown;
+  assistantAccess?: unknown[];
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
@@ -249,12 +250,32 @@ function createClient(options: {
         error: null,
       });
     }
+    if (functionName === 'get_planning_assistant_access') {
+      return Promise.resolve({ data: options.assistantAccess ?? [{ has_access: true, access_mode: 'administrator', expires_on: null, can_manage_pilots: true }], error: null });
+    }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
-  return { client: { from, rpc }, from, insertAssignment, insertProject, updateProject, updateAssignment, vesselOrder };
+  return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, updateAssignment, vesselOrder };
 }
 
 describe('PlanningPage cockpit', () => {
+  it('keeps P2.2 hidden by default and exposes it only after the flag and server access agree', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ projects: [planningProjectRow] });
+    const { rerender } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Réglages du planning' }));
+    expect(screen.queryByRole('button', { name: /Prévisions et scénarios/ })).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('get_planning_assistant_access');
+
+    rerender(<PlanningPage client={client as never} predictionsFeatureEnabled roles={['admin']} />);
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('get_planning_assistant_access'));
+    if (screen.getByRole('button', { name: 'Réglages du planning' }).getAttribute('aria-expanded') !== 'true') {
+      await user.click(screen.getByRole('button', { name: 'Réglages du planning' }));
+    }
+    expect(await screen.findByRole('button', { name: /Prévisions et scénarios/ })).toBeInTheDocument();
+  });
+
   it('renders the monthly crew view and the imported assignment', async () => {
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);

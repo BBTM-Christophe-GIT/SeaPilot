@@ -69,6 +69,14 @@ P2.1 ajoute un moteur de conseil déterministe dans `planningP21.ts`. Il réutil
 
 `PlanningP21Panel.tsx` est chargé dynamiquement uniquement lorsque `VITE_PLANNING_ASSISTANT_ENABLED=true` et que la RPC d’accès confirme un administrateur ou un utilisateur Direction/Armement explicitement inscrit dans `planning_assistant_pilots`. Accepter ou refuser une suggestion appelle seulement `record_planning_assistant_review` : la preuve affichée et la décision humaine sont figées dans `planning_assistant_reviews` et le journal global. Cette RPC ne possède aucun chemin d’écriture vers les affectations, publications ou dérogations. Les administrateurs gèrent l’allowlist pilote par RPC auditée ; le flag reste désactivé par défaut.
 
+### Phase P2.2 — projections bornées et scénarios alternatifs
+
+P2.2 ajoute `planningP22.ts`, un moteur pur qui exploite uniquement le programme déjà saisi. Il calcule la charge descriptive par navire et par marin en jours calendaires uniques, puis classe les périodes de tension avec une règle explicite : opérations × 3 + indisponibilités navire × 3 + mouvements d’équipage × 2 + conflits connus × 2. Le seuil est le maximum entre 6 et le 75e percentile observé. Ces résultats décrivent les données connues ; ils ne prédisent ni une opération future, ni la probabilité d’une absence.
+
+Les simulations d’absence et d’immobilisation ajoutent un événement synthétique uniquement en mémoire, réexécutent les contrôles P1.2, comparent le plan de référence au scénario et présentent deux alternatives manuelles. Chaque résultat sépare faits, règles et estimations, expose données utilisées, hypothèses, limites et confiance, et ne possède aucune action d’application. L’analyse est bornée à 400 jours pour garantir un coût prévisible.
+
+`PlanningP22Panel.tsx` est chargé dynamiquement lorsque `VITE_PLANNING_PREDICTIONS_ENABLED=true` et que l’accès serveur P2.1 autorise déjà l’utilisateur. Le flag P2.2 est indépendant du flag assistant. La qualité des données est analysée dans le périmètre RLS réellement visible : l’absence de matrice d’armement, politique travail/repos, historique d’absences ou contrat d’intégration bloque la fonction concernée au lieu de produire une estimation fragile. La prévision statistique des sous-effectifs, les synchronisations externes et le cache hors connexion persistant restent donc volontairement non développés. Aucun schéma Supabase ni aucune donnée P0/P1 n’est modifié.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -100,6 +108,7 @@ P2.1 ajoute un moteur de conseil déterministe dans `planningP21.ts`. Il réutil
 | Tableau de bord métier | Absent | Opérationnel P1.3 | Opérations, embarqués/disponibles, relèves, vacances, conflits, couverture, conformité et échéances 7/14/30 j | Maintenir |
 | Dépendances | Absent | Opérationnel P1.3 | Opérations, maintenance/remise en service, formation/affectation et livraison/opération ; cycles refusés | Maintenir |
 | Assistant de planification | Absent | Pilote P2.1 | Suggestions déterministes explicables, confiance, données manquantes et décisions acceptées/refusées journalisées ; aucune application automatique | Mesurer le pilote |
+| Projections et scénarios | Absent | Limité P2.2 | Charge descriptive, tension expliquée, simulations locales absence/navire et comparaison de plans ; prévisions statistiques et intégrations bloquées par qualité insuffisante | Enrichir les données avant extension |
 | Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
 | Temps réel et cache | Absent | Absent | Aucun abonnement Supabase Realtime ni cache de requêtes | P1 |
 | Virtualisation / chargement par période | Absent | Absent | Toutes les sources sont chargées avant filtrage client | P0 performance |
@@ -147,6 +156,8 @@ P2.1 ajoute un moteur de conseil déterministe dans `planningP21.ts`. Il réutil
 - `planningP13Exports.ts` construit Excel/PDF/ICS à la demande et reste séparé du rendu et des règles métier.
 - `PlanningP21Panel.tsx` porte l’assistant pilote, son journal et l’administration de l’allowlist ; il est absent du bundle initial.
 - `planningP21.ts` produit les suggestions et preuves sans effet de bord ; `planningP21Queries.ts` limite les écritures aux décisions et accès pilote auditables, tandis que `planningP21Access.ts` garde la vérification d’accès hors du chunk métier.
+- `PlanningP22Panel.tsx` porte projections, scénarios, qualité et état des intégrations ; il est absent du bundle initial et ne propose aucune écriture.
+- `planningP22.ts` contient les calculs purs, les seuils documentés, les portes de qualité et la comparaison référence/scénario ; il réutilise les lectures P1.3 sans créer de service Supabase concurrent.
 - `usePlanningAssistantAccess.ts` n’appelle la RPC d’accès que si le feature flag est actif et que le rôle est éligible.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
@@ -446,6 +457,11 @@ Tests Planning couverts :
 - présence systématique des critères, données, règles, conflits, données absentes, confiance et justification ;
 - performance du moteur sur 500 marins et absence de mutation des données sources ;
 - acceptation/refus limité à la RPC de journalisation, et gestion des pilotes limitée aux administrateurs.
+- activation P2.2 indépendante, mais accès toujours borné par l’autorisation serveur P2.1 ;
+- portes de qualité bloquant sous-effectifs statistiques, intégrations externes et cache persistant lorsque les données requises manquent ;
+- charge navire/marin en jours calendaires uniques, score de tension explicite et preuves faits/règles/estimations ;
+- simulations d’absence et d’immobilisation sans mutation, deux alternatives manuelles et validation humaine obligatoire ;
+- performance bornée sur 500 marins et une année d’analyse.
 
 Commandes de validation :
 
@@ -481,5 +497,6 @@ La procédure de migration, les contrôles pré/post-déploiement et le retour a
 
 1. P2.1 livré derrière feature flag : assistant explicable fondé uniquement sur les données et contraintes P0/P1.
 2. Mesurer les décisions acceptées/refusées du pilote avant toute extension ou automatisation.
-3. Scénarios alternatifs et prévision de sous-effectif, uniquement après validation séparée.
-4. Intégrations externes et mode hors connexion partiel après stabilisation des P0/P1.
+3. P2.2 livré derrière feature flag : charge descriptive, tension et simulations locales explicables, sans application automatique.
+4. Alimenter et valider les matrices d’armement, politiques de repos et historiques avant toute prévision statistique de sous-effectif.
+5. Définir contrats API, identité externe, propriété des données et résolution des conflits avant toute intégration ou persistance hors connexion.

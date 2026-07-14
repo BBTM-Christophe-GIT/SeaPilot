@@ -71,6 +71,12 @@ advisory only and the client bundle keeps it disabled unless `VITE_PLANNING_ASSI
 flag only after the migration and pilot assignments are verified. The complete rollout and rollback sequence is in
 `docs/deployment/planning-p2-1.md`.
 
+Version `3.0.0` adds the P2.2 descriptive projections and local what-if scenarios without a database migration.
+Deploy it only after the same 36 migrations are aligned. Keep `VITE_PLANNING_PREDICTIONS_ENABLED=false` until the
+P2.1 pilot access, data-quality gates and V3 browser recipe are approved. P2.2 performs no Supabase mutation and
+does not enable statistical forecasts or external integrations when their data prerequisites are missing. The full
+rollout and rollback sequence is in `docs/deployment/planning-p2-2-v3.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -106,11 +112,12 @@ As of 2026-07-13:
 - `VITE_SUPABASE_URL` is configured in Vercel for Preview.
 - `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Preview.
 - `VITE_PLANNING_ASSISTANT_ENABLED` defaults to `false`; set it to `true` only for an approved pilot environment.
+- `VITE_PLANNING_PREDICTIONS_ENABLED` defaults to `false`; set it to `true` only after the V3 data-quality and access review.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning P2.1 target contains 36 local and remote migrations through `202607140003_planning_p21_maritime_assistant.sql`; verify `supabase migration list` before each deployment.
+- The Planning V3 target still contains 36 local and remote migrations through `202607140003_planning_p21_maritime_assistant.sql`; P2.2 creates no migration. Verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
