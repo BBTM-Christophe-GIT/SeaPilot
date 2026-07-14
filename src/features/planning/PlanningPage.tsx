@@ -59,6 +59,7 @@ import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTim
 import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictEventIds } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
+import { createPlanningPreviewOverview } from './planningPreviewData';
 import { findPlanningPublication, isPlanningPublicationLocked } from './planningPublication';
 import {
   archivePlanningVessel,
@@ -258,8 +259,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
+  const previewMode = outletContext?.previewMode || false;
   const readPermissions = getPlanningPermissions(effectiveRoles, false);
   const workspaceRef = useRef<HTMLElement>(null);
+  const initialAnchorDate = useMemo(() => todayPlanningDate(), []);
+  const previewOverview = useMemo(
+    () => previewMode ? createPlanningPreviewOverview(initialAnchorDate) : undefined,
+    [initialAnchorDate, previewMode],
+  );
   const {
     overview,
     updateOverview,
@@ -268,8 +275,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isInitialLoading,
     isRefreshing,
     loadErrorMessage,
-  } = usePlanningOverview(effectiveClient, readPermissions.canRead);
-  const [anchorDate, setAnchorDate] = useState(todayPlanningDate);
+  } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview);
+  const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [viewMode, setViewMode] = useState<PlanningViewMode>('month');
   const [perspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');

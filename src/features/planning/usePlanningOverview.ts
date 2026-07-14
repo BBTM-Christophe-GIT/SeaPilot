@@ -30,17 +30,25 @@ interface PlanningLoadState {
   errorMessage: string | null;
 }
 
-export function usePlanningOverview(client: SupabaseClient, enabled: boolean) {
+export function usePlanningOverview(
+  client: SupabaseClient,
+  enabled: boolean,
+  previewOverview?: PlanningOverview,
+) {
   const requestIdRef = useRef(0);
   const [state, setState] = useState<PlanningLoadState>({
-    overview: EMPTY_PLANNING_OVERVIEW,
-    phase: enabled ? 'loading' : 'idle',
-    hasLoaded: false,
+    overview: previewOverview || EMPTY_PLANNING_OVERVIEW,
+    phase: previewOverview ? 'ready' : enabled ? 'loading' : 'idle',
+    hasLoaded: Boolean(previewOverview),
     errorMessage: null,
   });
 
   const reload = useCallback(async (): Promise<boolean> => {
     if (!enabled) return false;
+    if (previewOverview) {
+      setState({ overview: previewOverview, phase: 'ready', hasLoaded: true, errorMessage: null });
+      return true;
+    }
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setState((current) => ({
@@ -63,7 +71,7 @@ export function usePlanningOverview(client: SupabaseClient, enabled: boolean) {
       }));
       return false;
     }
-  }, [client, enabled]);
+  }, [client, enabled, previewOverview]);
 
   useEffect(() => {
     if (!enabled) {

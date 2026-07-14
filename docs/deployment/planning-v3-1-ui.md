@@ -1,6 +1,6 @@
 # Planning v3.1 — déploiement du cockpit simplifié
 
-Version cible : `3.1.1`.
+Version cible : `3.1.2`.
 
 ## Périmètre
 
@@ -35,10 +35,11 @@ La migration est additive. Elle ne crée pas de table, ne réécrit aucune journ
 7. Vérifier le défilement horizontal et le zoom sur les cinq échelles à 1440 × 900 et 1366 × 1024.
 8. Confirmer qu’un rôle lecture seule ne peut ni déposer un marin ni modifier un lieu.
 9. Confirmer qu’une période publiée refuse ces deux écritures côté interface et côté serveur.
+10. Ouvrir un hôte Vercel Preview : `/login` doit rediriger directement vers Planning, avec le badge de données de démonstration et sans requête de session de production.
 
 ## Retour arrière
 
-Pour annuler uniquement `3.1.1`, redéployer le client `3.1.0` sans modifier la base.
+Pour annuler uniquement `3.1.2`, redéployer le client `3.1.1` sans modifier la base. Cela rétablit l’authentification Supabase normale sur les previews.
 
 Pour annuler tout le lot `3.1` :
 

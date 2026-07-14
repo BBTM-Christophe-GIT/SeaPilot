@@ -9,14 +9,23 @@ import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
 import { PlanningPage } from './features/planning/PlanningPage';
+import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
+import { previewSupabaseClient } from './features/preview/previewSupabaseClient';
 import { ProceduresPage } from './features/procedures/ProceduresPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
 import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
 import { AppShell } from './features/shell/AppShell';
+import type { RoleKey } from './features/permissions/roles';
 
-export default function App() {
+interface AppProps {
+  previewModeOverride?: boolean;
+}
+
+export default function App({ previewModeOverride }: AppProps) {
   const homeModule = APP_MODULES.find((module) => module.key === 'home');
+  const previewMode = previewModeOverride ?? isSeaPilotPreviewDeployment();
+  const previewRoles: RoleKey[] | undefined = previewMode ? ['admin'] : undefined;
 
   if (!homeModule) {
     throw new Error('Home module is missing');
@@ -24,9 +33,17 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route element={<RequireAuth />}>
-        <Route element={<AppShell />}>
+      <Route path="/login" element={previewMode ? <Navigate to="/modules/planning" replace /> : <LoginPage />} />
+      <Route element={<RequireAuth allowPreview={previewMode} />}>
+        <Route
+          element={
+            <AppShell
+              client={previewMode ? previewSupabaseClient : undefined}
+              previewMode={previewMode}
+              rolesOverride={previewRoles}
+            />
+          }
+        >
           <Route index element={<ModulePage module={homeModule} />} />
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
             <Route

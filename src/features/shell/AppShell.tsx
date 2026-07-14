@@ -40,11 +40,13 @@ import { fetchCurrentUserRoles } from '../profiles/profileQueries';
 interface AppShellProps {
   rolesOverride?: RoleKey[];
   client?: SupabaseClient;
+  previewMode?: boolean;
 }
 
 export interface AppShellOutletContext {
   roles: RoleKey[];
   client: SupabaseClient;
+  previewMode: boolean;
 }
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
@@ -118,7 +120,7 @@ function getInitials(displayName: string): string {
     .join('');
 }
 
-export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
+export function AppShell({ rolesOverride, client = supabase, previewMode = false }: AppShellProps) {
   const { session, signOut } = useAuth();
   const location = useLocation();
   const sessionUserId = session?.user.id;
@@ -207,11 +209,13 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
     [visibleModules],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
-  const userEmail = session?.user.email || 'utilisateur@bbtm.fr';
-  const userDisplayName =
-    [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
-      (value): value is string => typeof value === 'string' && value.trim().length > 0,
-    ) || userEmail.split('@')[0] || 'Utilisateur';
+  const userEmail = previewMode ? 'preview@seapilot.local' : session?.user.email || 'utilisateur@bbtm.fr';
+  const sessionDisplayName = [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
+  const userDisplayName = previewMode
+    ? 'Préversion SeaPilot'
+    : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur';
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
 
@@ -371,6 +375,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
             <span>{requestedModule?.family || 'SeaPilot'}</span>
             <ChevronRight aria-hidden="true" size={16} />
             <strong>{requestedModule?.label || 'Accueil'}</strong>
+            {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
           </div>
 
           <div className="topbar-actions">
@@ -395,10 +400,14 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
               {isUserMenuOpen ? (
                 <div className="user-menu-popover" role="menu">
                   <span>{userEmail}</span>
-                  <button onClick={() => void signOut()} role="menuitem" type="button">
-                    <LogOut aria-hidden="true" size={16} />
-                    Deconnexion
-                  </button>
+                  {previewMode ? (
+                    <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
+                  ) : (
+                    <button onClick={() => void signOut()} role="menuitem" type="button">
+                      <LogOut aria-hidden="true" size={16} />
+                      Deconnexion
+                    </button>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -409,7 +418,7 @@ export function AppShell({ rolesOverride, client = supabase }: AppShellProps) {
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles, client, previewMode } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>

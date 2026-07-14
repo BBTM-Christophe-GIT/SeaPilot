@@ -142,6 +142,18 @@ As of 2026-07-13:
 - The first production admin user `christophe@bbtm.fr` exists in Supabase Auth, has a matching `public.profiles` row, and has the `admin` role in `public.user_roles`.
 - Production login was validated with this admin user, including access to the private navigation and `/modules/planning`.
 
+## Preview authentication policy
+
+Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot directly without the production login form. They use a local, deterministic Planning dataset and a non-persistent Supabase client:
+
+- no production session or authentication token is copied to preview code;
+- no production table is read or written;
+- save attempts return an explicit preview-only error;
+- a `Préversion · données de démonstration` badge identifies this state;
+- production and every unrelated hostname keep the normal Supabase authentication flow.
+
+This mode is intended for visual review and safe interaction checks. It must not be used to validate production data, RLS results, or real persistence.
+
 ## Required Supabase Values
 
 Create or open the production Supabase project, then copy these two public browser values from the Supabase project API settings when a new environment needs to be configured:
