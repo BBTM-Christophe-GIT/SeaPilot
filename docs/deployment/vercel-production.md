@@ -133,7 +133,7 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.1`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning V3 target contains 37 local and remote migrations through `202607140004_planning_fleet_daily_locations.sql`. Verify `supabase migration list` before each deployment.
+- The Planning V3 target contains 38 local and remote migrations through `202607140005_planning_assignment_daily_notes.sql`. Verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
@@ -146,6 +146,7 @@ As of 2026-07-13:
 
 Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot directly without the production login form. They use a local, deterministic Planning dataset and a non-persistent Supabase client:
 
+- project-level Vercel Authentication is disabled so anonymous preview links reach SeaPilot directly; production remains protected by the SeaPilot application login;
 - no production session or authentication token is copied to preview code;
 - no production table is read or written;
 - save attempts return an explicit preview-only error;
