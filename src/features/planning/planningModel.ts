@@ -65,6 +65,7 @@ export interface PlanningCrewEvent {
   sourceLabel: string;
   assignmentId?: number;
   dailyNotes?: Record<string, string>;
+  dailyStatuses?: Record<string, string>;
 }
 
 export interface PlanningCrewRow {
@@ -340,6 +341,7 @@ function eventKey(event: PlanningCrewEvent): string {
 export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
   const events = overview.periods.map(crewEventFromPeriod);
   const notesByAssignment = new Map<number, Record<string, string>>();
+  const statusesByAssignment = new Map<number, Record<string, string>>();
   overview.days.forEach((day) => {
     if (day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE) return;
     const assignmentId = Number(day.slot365.replace('assignment:', ''));
@@ -347,12 +349,19 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     const notes = notesByAssignment.get(assignmentId) || {};
     notes[day.workDate] = day.comments;
     notesByAssignment.set(assignmentId, notes);
+    const statuses = statusesByAssignment.get(assignmentId) || {};
+    statuses[day.workDate] = normalizePlanningStatus(day.sailorStatus);
+    statusesByAssignment.set(assignmentId, statuses);
   });
   overview.assignments.map(crewEventFromAssignment).forEach((event) => {
-    const enriched = { ...event, dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {} };
+    const enriched = {
+      ...event,
+      dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {},
+      dailyStatuses: statusesByAssignment.get(event.assignmentId || 0) || {},
+    };
     const existingIndex = events.findIndex((current) => eventKey(current) === eventKey(event));
     if (existingIndex === -1) events.push(enriched);
-    else events[existingIndex] = { ...events[existingIndex], assignmentId: event.assignmentId, dailyNotes: enriched.dailyNotes };
+    else events[existingIndex] = { ...events[existingIndex], assignmentId: event.assignmentId, dailyNotes: enriched.dailyNotes, dailyStatuses: enriched.dailyStatuses };
   });
   overview.days
     .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE && day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE)

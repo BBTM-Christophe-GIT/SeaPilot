@@ -675,6 +675,18 @@ export interface SavePlanningAssignmentDayNoteInput {
   note: string;
 }
 
+export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignmentDayNoteInput {
+  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+}
+
+export interface CreatePlanningBoardInput {
+  vesselId: number;
+  watchGroup: string;
+  startsOn: string;
+  endsOn: string;
+  positions: Array<{ personId: number; functionLabel: string }>;
+}
+
 export interface SavePlanningHandoverInput {
   id?: number | null;
   vesselId: string;
@@ -1399,6 +1411,47 @@ export async function savePlanningAssignmentDayNote(
   });
   if (error) throwPlanningDataError('save-assignment-day-note', 'Impossible d’enregistrer le texte quotidien.', error);
   return typeof data === 'number' ? data : null;
+}
+
+export async function savePlanningAssignmentDayState(
+  client: SupabaseClient,
+  input: SavePlanningAssignmentDayStateInput,
+): Promise<number | null> {
+  const assignmentId = planningEntityId(input.assignmentId, "L'affectation");
+  assertSinglePlanningDay(input.workDate, input.workDate);
+  const note = input.note.trim();
+  if (!['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(input.status)) throw new Error('Le statut quotidien est invalide.');
+  if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
+  const { data, error } = await client.rpc('save_planning_assignment_day_state', {
+    p_assignment_id: assignmentId,
+    p_work_date: input.workDate,
+    p_status: input.status,
+    p_note: note,
+  });
+  if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
+  return typeof data === 'number' ? data : null;
+}
+
+export async function createPlanningBoardAssignments(
+  client: SupabaseClient,
+  input: CreatePlanningBoardInput,
+): Promise<number[]> {
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  assertPlanningDateRange(input.startsOn, input.endsOn);
+  const positions = input.positions.map((position) => ({
+    personId: planningEntityId(position.personId, 'Le marin'),
+    functionLabel: requiredPlanningText(position.functionLabel, 'La fonction'),
+  }));
+  if (!positions.length) throw new Error('Sélectionnez au moins un marin pour créer la bordée.');
+  const { data, error } = await client.rpc('create_planning_board_assignments', {
+    p_vessel_id: vesselId,
+    p_watch_group: requiredPlanningText(input.watchGroup, 'La bordée'),
+    p_starts_on: input.startsOn,
+    p_ends_on: input.endsOn,
+    p_positions: positions,
+  });
+  if (error) throwPlanningDataError('create-planning-board', 'Impossible de créer cette bordée.', error);
+  return Array.isArray(data) ? data.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0) : [];
 }
 
 async function writeVesselChangeLog(

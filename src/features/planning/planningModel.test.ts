@@ -219,13 +219,13 @@ describe('planning hierarchy and side panels', () => {
     const technicalDay = {
       id: 51, personId: 1, vesselId: 1, crewName: 'Anne CAPITAINE', captainName: 'Anne CAPITAINE', vesselName: 'GOURY',
       manualVesselName: '', workDate: '2026-07-14', disembarkOn: '2026-07-14', yearNumber: 2026, monthNumber: 7,
-      monthLabel: 'Juillet', dayNumber: 14, functionLabel: 'Capitaine', sailorStatus: 'En Mer', dayStatus: 'Travaille',
+      monthLabel: 'Juillet', dayNumber: 14, functionLabel: 'Capitaine', sailorStatus: 'Repos', dayStatus: 'État quotidien',
       rhythmLabel: '', watchGroup: 'Bordée 1', slot365: 'assignment:50', departureOn: '2026-07-14', workedHours: 0,
       rest24h: 0, cumulative7d: 0, comments: 'Cherbourg', sourceLabel: 'seapilot-assignment-note',
     };
     const events = getAllPlanningCrewEvents({ ...overview, assignments: [assignment], periods: [], days: [technicalDay] });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ assignmentId: 50, dailyNotes: { '2026-07-14': 'Cherbourg' } });
+    expect(events[0]).toMatchObject({ assignmentId: 50, dailyNotes: { '2026-07-14': 'Cherbourg' }, dailyStatuses: { '2026-07-14': 'Repos' } });
   });
 
   it('groups visible crew by vessel, watch and role', () => {

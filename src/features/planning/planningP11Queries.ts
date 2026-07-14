@@ -8,6 +8,7 @@ import type {
   PlanningRotationOccurrence,
   PlanningRotationPattern,
   PlanningRotationSeries,
+  PlanningStcwCertificate,
   PlanningTemplate,
   PlanningTemplateKind,
 } from './planningP11';
@@ -17,6 +18,7 @@ const OCCURRENCE_SELECT = 'id, series_id, assignment_id, occurrence_number, star
 const TEMPLATE_SELECT = 'id, vessel_id, name, template_kind, description, default_duration_days, default_status, configuration, active';
 const MATRIX_SELECT = 'id, vessel_id, name, effective_from, effective_to, status, notes, version';
 const REQUIREMENT_SELECT = 'id, matrix_id, function_label, minimum_count, target_count, required_certificates, required_qualifications, required_authorizations, required_trainings, restrictions, display_order';
+const STCW_CERTIFICATE_SELECT = 'id, source_item_id, name, category, stcw_rules';
 
 interface RotationRow {
   id: number;
@@ -84,6 +86,14 @@ interface RequirementRow {
   required_trainings: string[] | null;
   restrictions: string[] | null;
   display_order: number;
+}
+
+interface StcwCertificateRow {
+  id: number;
+  source_item_id: number;
+  name: string;
+  category: string | null;
+  stcw_rules: string[] | null;
 }
 
 export interface SavePlanningRotationInput {
@@ -236,6 +246,28 @@ export function mapPlanningMatrixRows(rows: MatrixRow[], requirements: PlanningM
   }));
 }
 
+export function mapPlanningStcwCertificateRows(rows: StcwCertificateRow[]): PlanningStcwCertificate[] {
+  return rows.map((row) => ({
+    id: row.id,
+    sourceItemId: row.source_item_id,
+    name: row.name,
+    category: row.category || '',
+    stcwRules: row.stcw_rules || [],
+  }));
+}
+
+export async function fetchPlanningStcwCertificates(client: SupabaseClient): Promise<PlanningStcwCertificate[]> {
+  const { data, error } = await client
+    .from('stcw_certificates')
+    .select(STCW_CERTIFICATE_SELECT)
+    .eq('active', true)
+    .eq('is_credential', true)
+    .order('category')
+    .order('name');
+  if (error) throwPlanningDataError('load-stcw-certificates', 'Impossible de charger la liste des brevets STCW.', error);
+  return mapPlanningStcwCertificateRows((data || []) as StcwCertificateRow[]);
+}
+
 export async function fetchPlanningManningMatrices(client: SupabaseClient): Promise<PlanningManningMatrix[]> {
   const [matricesResult, requirementsResult] = await Promise.all([
     client.from('planning_manning_matrices').select(MATRIX_SELECT).order('effective_from', { ascending: false }),
@@ -248,11 +280,12 @@ export async function fetchPlanningManningMatrices(client: SupabaseClient): Prom
 }
 
 export async function fetchPlanningP11Data(client: SupabaseClient): Promise<PlanningP11Data> {
-  const [rotationsResult, occurrencesResult, templatesResult, matrices] = await Promise.all([
+  const [rotationsResult, occurrencesResult, templatesResult, matrices, certificates] = await Promise.all([
     client.from('planning_rotation_series').select(ROTATION_SELECT).eq('active', true).order('starts_on'),
     client.from('planning_rotation_occurrences').select(OCCURRENCE_SELECT).order('occurrence_number'),
     client.from('planning_templates').select(TEMPLATE_SELECT).eq('active', true).order('name'),
     fetchPlanningManningMatrices(client),
+    fetchPlanningStcwCertificates(client),
   ]);
   const failed = [rotationsResult, occurrencesResult, templatesResult].find((result) => result.error);
   if (failed?.error) throwPlanningDataError('load-planning-p11', 'Impossible de charger la planification structurée.', failed.error);
@@ -261,6 +294,7 @@ export async function fetchPlanningP11Data(client: SupabaseClient): Promise<Plan
     rotations: mapPlanningRotationRows((rotationsResult.data || []) as RotationRow[], occurrences),
     templates: mapPlanningTemplateRows((templatesResult.data || []) as TemplateRow[]),
     matrices,
+    certificates,
   };
 }
 

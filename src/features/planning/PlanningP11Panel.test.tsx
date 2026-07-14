@@ -35,7 +35,7 @@ const overview: PlanningOverview = {
 
 describe('Planning P1.1 panel', () => {
   beforeEach(() => {
-    vi.mocked(fetchPlanningP11Data).mockResolvedValue({ rotations: [], templates: [], matrices: [] });
+    vi.mocked(fetchPlanningP11Data).mockResolvedValue({ rotations: [], templates: [], matrices: [], certificates: [] });
     vi.mocked(savePlanningRotation).mockResolvedValue(5);
     vi.mocked(savePlanningTemplate).mockResolvedValue(6);
     vi.mocked(savePlanningManningMatrix).mockResolvedValue(7);
@@ -77,7 +77,7 @@ describe('Planning P1.1 panel', () => {
 
   it('shows vacancies in read-only mode and does not expose matrix editing', async () => {
     vi.mocked(fetchPlanningP11Data).mockResolvedValue({
-      rotations: [], templates: [], matrices: [{
+      rotations: [], templates: [], certificates: [], matrices: [{
         id: 2, vesselId: 1, name: 'Armement COTENTIN', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
         requirements: [{ id: 3, matrixId: 2, functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: [], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }],
       }],
@@ -88,7 +88,37 @@ describe('Planning P1.1 panel', () => {
     await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
     expect(await screen.findByRole('heading', { name: 'Armement COTENTIN' })).toBeInTheDocument();
     const row = screen.getByRole('cell', { name: 'Capitaine' }).closest('tr')!;
-    expect(within(row).getAllByRole('cell')[4]).toHaveTextContent('1');
+    expect(within(row).getAllByRole('cell')[2]).toHaveTextContent('1');
     expect(screen.queryByRole('button', { name: 'Configurer' })).not.toBeInTheDocument();
+  });
+
+  it('uses a Situation selector and a STCW multi-select without the removed matrix fields', async () => {
+    vi.mocked(fetchPlanningP11Data).mockResolvedValue({
+      rotations: [], templates: [], matrices: [],
+      certificates: [{ id: 1, sourceItemId: 34, name: 'Chef de Quart 500', category: 'Pont', stcwRules: ['II/3'] }],
+    });
+    const user = userEvent.setup();
+    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
+    await screen.findByRole('heading', { name: 'Rotations d’équipage' });
+    await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle décision' }));
+
+    expect(screen.getByLabelText('Situation')).toHaveValue('Situation 1');
+    expect(screen.getAllByRole('option', { name: /Situation/ })).toHaveLength(6);
+    expect(screen.queryByLabelText('Minimum')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cible')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Qualifications')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Formations')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Restrictions')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Applicable à partir du')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Fonction'), 'Capitaine');
+    await user.click(screen.getByRole('checkbox', { name: /Chef de Quart 500/ }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la décision' }));
+
+    await waitFor(() => expect(savePlanningManningMatrix).toHaveBeenCalledWith(client, expect.objectContaining({
+      name: 'Situation 1',
+      status: 'active',
+      requirements: [expect.objectContaining({ minimumCount: 1, targetCount: 1, requiredCertificates: ['Chef de Quart 500'], requiredQualifications: [], requiredTrainings: [], restrictions: [] })],
+    })));
   });
 });

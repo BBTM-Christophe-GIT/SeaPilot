@@ -83,10 +83,19 @@ export interface PlanningManningMatrix {
   requirements: PlanningManningRequirement[];
 }
 
+export interface PlanningStcwCertificate {
+  id: number;
+  sourceItemId: number;
+  name: string;
+  category: string;
+  stcwRules: string[];
+}
+
 export interface PlanningP11Data {
   rotations: PlanningRotationSeries[];
   templates: PlanningTemplate[];
   matrices: PlanningManningMatrix[];
+  certificates: PlanningStcwCertificate[];
 }
 
 export interface PlanningRotationPreviewOccurrence {
@@ -173,6 +182,27 @@ function documentMatches(term: string, values: string[]): boolean {
   });
 }
 
+export function missingManningRequirementTerms(
+  overview: PlanningOverview,
+  personId: number,
+  requirement: PlanningManningRequirement,
+  validUntil: string,
+): string[] {
+  const person = overview.people.find((item) => item.id === personId);
+  if (!person) return requirementTerms(requirement);
+  const documents = overview.hrDocuments.filter((document) => document.personId === personId);
+  const validDocuments = documents.filter((document) => {
+    const invalidStatus = /(expire|invalide|refuse)/.test(normalized(document.status));
+    return !invalidStatus && (!document.expiresOn || document.expiresOn >= validUntil);
+  });
+  const validDocumentValues = validDocuments.flatMap((document) => [document.title, document.categoryKey]);
+  const allDocumentValues = documents.flatMap((document) => [document.title, document.categoryKey]);
+  const profileCertificateValues = [person.deckCertificateLabel || '', person.engineCertificateLabel || ''].filter(Boolean);
+  return requirementTerms(requirement).filter((term) => documentMatches(term, allDocumentValues)
+    ? !documentMatches(term, validDocumentValues)
+    : !documentMatches(term, profileCertificateValues));
+}
+
 export function buildManningMatrixComparison(
   overview: PlanningOverview,
   matrix: PlanningManningMatrix,
@@ -180,13 +210,6 @@ export function buildManningMatrixComparison(
   endsOn: string,
 ): PlanningManningComparisonRow[] {
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
-  const documentsByPerson = new Map<number, typeof overview.hrDocuments>();
-  for (const document of overview.hrDocuments) {
-    if (!document.personId) continue;
-    const documents = documentsByPerson.get(document.personId) || [];
-    documents.push(document);
-    documentsByPerson.set(document.personId, documents);
-  }
   const assignments = overview.assignments.filter((assignment) =>
     assignment.vesselId === matrix.vesselId
     && assignment.confirmationStatus !== 'cancelled'
@@ -203,21 +226,8 @@ export function buildManningMatrixComparison(
         const person = peopleById.get(assignment.crewPersonId);
         return [assignment.assignmentRole, person?.functionLabel || ''].some((role) => normalized(role) === expectedRole);
       });
-      const terms = requirementTerms(requirement);
       const noncompliant = matchingAssignments.flatMap((assignment) => {
-        const person = peopleById.get(assignment.crewPersonId);
-        const personDocuments = documentsByPerson.get(assignment.crewPersonId) || [];
-        const validDocuments = personDocuments
-          .filter((document) => {
-            const invalidStatus = /(expire|invalide|refuse)/.test(normalized(document.status));
-            return !invalidStatus && (!document.expiresOn || document.expiresOn >= assignment.endsOn);
-          });
-        const validDocumentValues = validDocuments.flatMap((document) => [document.title, document.categoryKey]);
-        const allDocumentValues = personDocuments.flatMap((document) => [document.title, document.categoryKey]);
-        const profileCertificateValues = [person?.deckCertificateLabel || '', person?.engineCertificateLabel || ''].filter(Boolean);
-        const missing = terms.filter((term) => documentMatches(term, allDocumentValues)
-          ? !documentMatches(term, validDocumentValues)
-          : !documentMatches(term, profileCertificateValues));
+        const missing = missingManningRequirementTerms(overview, assignment.crewPersonId, requirement, assignment.endsOn);
         return missing.length ? [{
           personId: assignment.crewPersonId,
           personName: assignment.crewName,

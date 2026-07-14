@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSeaPilotPreviewHostname } from './previewMode';
+import { isSeaPilotLocalPreview, isSeaPilotPreviewHostname } from './previewMode';
 
 describe('SeaPilot preview mode', () => {
   it('recognizes Vercel preview hosts owned by the BBTM app team', () => {
@@ -11,5 +11,12 @@ describe('SeaPilot preview mode', () => {
     expect(isSeaPilotPreviewHostname('sea-pilot-ten.vercel.app')).toBe(false);
     expect(isSeaPilotPreviewHostname('sea-pilot.example.com')).toBe(false);
     expect(isSeaPilotPreviewHostname('malicious-bbtm-app.vercel.app')).toBe(false);
+  });
+
+  it('allows the explicit preview query only on a local development host', () => {
+    expect(isSeaPilotLocalPreview('127.0.0.1', '?preview=1')).toBe(true);
+    expect(isSeaPilotLocalPreview('localhost', '?preview=1')).toBe(true);
+    expect(isSeaPilotLocalPreview('sea-pilot-ten.vercel.app', '?preview=1')).toBe(false);
+    expect(isSeaPilotLocalPreview('localhost', '')).toBe(false);
   });
 });

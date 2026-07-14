@@ -34,7 +34,7 @@ import type { PlanningOverview } from './planningQueries';
 type P11Tab = 'rotations' | 'templates' | 'manning';
 type OperationalChange = 'assignments' | 'projects' | 'handovers';
 
-const EMPTY_DATA: PlanningP11Data = { rotations: [], templates: [], matrices: [] };
+const EMPTY_DATA: PlanningP11Data = { rotations: [], templates: [], matrices: [], certificates: [] };
 const TEMPLATE_LABELS: Record<PlanningTemplateKind, string> = {
   handover: 'Relève', maritime_campaign: 'Campagne maritime', safety_vessel: 'Navire de sécurité',
   transit: 'Transit', maintenance: 'Maintenance', provisioning: 'Avitaillement', bunkering: 'Soutage',
@@ -209,26 +209,91 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
   editable: boolean; onReload: () => Promise<void>; setFeedback: (message: string, error?: boolean) => void;
 }) {
   const vessels = overview.vessels.filter((vessel) => vessel.active);
-  const emptyForm = (): SavePlanningManningMatrixInput => ({ vesselId: vessels[0]?.id || 0, name: '', effectiveFrom: range.start, effectiveTo: '', status: 'draft', notes: '', requirements: [requirementInput()] });
+  const situations = Array.from({ length: 6 }, (_, index) => `Situation ${index + 1}`);
+  const emptyForm = (): SavePlanningManningMatrixInput => ({
+    vesselId: vessels[0]?.id || 0,
+    name: situations[0],
+    effectiveFrom: range.start,
+    effectiveTo: '',
+    status: 'active',
+    notes: '',
+    requirements: [requirementInput()],
+  });
   const [form, setForm] = useState<SavePlanningManningMatrixInput>(emptyForm);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(data.matrices[0]?.id || null);
   const [isSaving, setIsSaving] = useState(false);
   const selected = data.matrices.find((matrix) => matrix.id === selectedId) || data.matrices[0] || null;
   const comparison = useMemo(() => selected ? buildManningMatrixComparison(overview, selected, range.start, range.end) : [], [overview, range.end, range.start, selected]);
-  function updateRequirement(index: number, patch: Partial<PlanningManningRequirement>) { setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) })); }
+  function updateRequirement(index: number, patch: Partial<PlanningManningRequirement>) {
+    setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
+  }
   function openMatrix(matrix?: PlanningManningMatrix) {
-    setForm(matrix ? { id: matrix.id, vesselId: matrix.vesselId, name: matrix.name, effectiveFrom: matrix.effectiveFrom, effectiveTo: matrix.effectiveTo, status: matrix.status, notes: matrix.notes, requirements: matrix.requirements.map((item) => ({ ...item })) } : emptyForm()); setIsFormOpen(true);
+    setForm(matrix ? {
+      id: matrix.id,
+      vesselId: matrix.vesselId,
+      name: situations.includes(matrix.name) ? matrix.name : situations[0],
+      effectiveFrom: matrix.effectiveFrom,
+      effectiveTo: matrix.effectiveTo,
+      status: matrix.status,
+      notes: matrix.notes,
+      requirements: matrix.requirements.map((item) => ({ ...item })),
+    } : emptyForm());
+    setIsFormOpen(true);
+  }
+  function toggleCertificate(index: number, certificate: string) {
+    const current = form.requirements[index].requiredCertificates;
+    updateRequirement(index, {
+      requiredCertificates: current.includes(certificate)
+        ? current.filter((item) => item !== certificate)
+        : [...current, certificate],
+    });
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); setIsSaving(true);
-    try { const id = await savePlanningManningMatrix(client, form); await onReload(); setSelectedId(id); setIsFormOpen(false); setFeedback('Décision d’effectif enregistrée et versionnée.'); }
-    catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la décision d’effectif.'), true); }
+    try {
+      const normalizedForm = {
+        ...form,
+        requirements: form.requirements.map((item, index) => ({
+          ...item,
+          minimumCount: 1,
+          targetCount: 1,
+          requiredQualifications: [],
+          requiredTrainings: [],
+          restrictions: [],
+          displayOrder: index,
+        })),
+      };
+      const id = await savePlanningManningMatrix(client, normalizedForm);
+      await onReload(); setSelectedId(id); setIsFormOpen(false);
+      setFeedback('Décision d’effectif enregistrée et versionnée.');
+    } catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la décision d’effectif.'), true); }
     finally { setIsSaving(false); }
   }
-  return <section className="planning-p11-section"><div className="planning-p11-section-heading"><div><h3>Décision d’effectif</h3><p>Comparaison du minimum requis avec les affectations visibles sur la période {formatPlanningDate(range.start)} → {formatPlanningDate(range.end)}.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle décision</button> : null}</div>
-    {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}><div className="planning-p11-form-grid"><label>Nom<input required minLength={2} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label><label>Applicable à partir du<input required type="date" value={form.effectiveFrom} onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })} /></label><label>Applicable jusqu’au<input min={form.effectiveFrom} type="date" value={form.effectiveTo} onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })} /></label><label>État<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as typeof form.status })}><option value="draft">Brouillon</option><option value="active">Active</option><option value="archived">Archivée</option></select></label><label className="is-wide">Notes<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label></div><div className="planning-p11-requirements"><header><h4>Fonctions requises</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter une fonction</button></header>{form.requirements.map((requirement, index) => <fieldset key={index}><legend>Fonction {index + 1}</legend><label>Fonction<input required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })} /></label><label>Minimum<input min={0} max={100} type="number" value={requirement.minimumCount} onChange={(event) => updateRequirement(index, { minimumCount: Number(event.target.value) })} /></label><label>Cible<input min={requirement.minimumCount} max={100} type="number" value={requirement.targetCount} onChange={(event) => updateRequirement(index, { targetCount: Number(event.target.value) })} /></label><label>Brevets<input placeholder="Séparés par des virgules" value={requirement.requiredCertificates.join(', ')} onChange={(event) => updateRequirement(index, { requiredCertificates: csvValues(event.target.value) })} /></label><label>Qualifications<input value={requirement.requiredQualifications.join(', ')} onChange={(event) => updateRequirement(index, { requiredQualifications: csvValues(event.target.value) })} /></label><label>Habilitations<input value={requirement.requiredAuthorizations.join(', ')} onChange={(event) => updateRequirement(index, { requiredAuthorizations: csvValues(event.target.value) })} /></label><label>Formations<input value={requirement.requiredTrainings.join(', ')} onChange={(event) => updateRequirement(index, { requiredTrainings: csvValues(event.target.value) })} /></label><label>Restrictions<input value={requirement.restrictions.join(', ')} onChange={(event) => updateRequirement(index, { restrictions: csvValues(event.target.value) })} /></label>{form.requirements.length > 1 ? <button aria-label={`Supprimer la fonction ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}</fieldset>)}</div><footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la décision</button></footer></form> : null}
-    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span><em>{matrix.status}</em></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Fonction</th><th>Min.</th><th>Cible</th><th>Planifié</th><th>Vacants</th><th>Doublons</th><th>Conformité</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong>{row.restrictions.length ? <small>{row.restrictions.join(' · ')}</small> : null}</td><td>{row.minimumCount}</td><td>{row.targetCount}</td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.duplicateCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
+  return <section className="planning-p11-section">
+    <div className="planning-p11-section-heading"><div><h3>Décision d’effectif</h3><p>Postes attendus et brevets nécessaires pour le navire sélectionné.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle décision</button> : null}</div>
+    {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}>
+      <div className="planning-p11-form-grid">
+        <label>Situation<select required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}>{situations.map((situation) => <option key={situation}>{situation}</option>)}</select></label>
+        <label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
+        <label className="is-wide">Prescriptions ou conditions spéciales<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
+      </div>
+      <div className="planning-p11-requirements"><header><h4>Postes normalement prévus</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter un poste</button></header>
+        {form.requirements.map((requirement, index) => <fieldset key={index}>
+          <legend>Poste {index + 1}</legend>
+          <label>Fonction<input required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })} /></label>
+          <div className="planning-stcw-multiselect" role="group" aria-label={`Brevets requis pour ${requirement.functionLabel || `le poste ${index + 1}`}`}>
+            <span>Brevets</span>
+            <div>{data.certificates.map((certificate) => <label key={certificate.id}><input checked={requirement.requiredCertificates.includes(certificate.name)} onChange={() => toggleCertificate(index, certificate.name)} type="checkbox" /><span><strong>{certificate.name}</strong><small>{[certificate.category, ...certificate.stcwRules].filter(Boolean).join(' · ')}</small></span></label>)}</div>
+            {!data.certificates.length ? <small>Aucun brevet disponible. Appliquez la migration du catalogue STCW.</small> : null}
+          </div>
+          <label>Habilitations<input placeholder="Séparées par des virgules" value={requirement.requiredAuthorizations.join(', ')} onChange={(event) => updateRequirement(index, { requiredAuthorizations: csvValues(event.target.value) })} /></label>
+          {form.requirements.length > 1 ? <button aria-label={`Supprimer le poste ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}
+        </fieldset>)}
+      </div>
+      <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la décision</button></footer>
+    </form> : null}
+    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
   </section>;
 }
 

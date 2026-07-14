@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
+  createPlanningBoardAssignments,
   createPlanningDerogation,
   createPlanningProject,
   createVessel,
@@ -18,6 +19,7 @@ import {
   mapVesselRows,
   savePlanningHandover,
   savePlanningAssignmentDayNote,
+  savePlanningAssignmentDayState,
   savePlanningVesselDayLocation,
   transitionPlanningPublication,
   updatePlanningEvent,
@@ -916,6 +918,38 @@ describe('planning writes', () => {
         incoming_assignment_id: 101,
         comments: 'Dossiers transmis',
       }],
+    }));
+  });
+
+  it('saves one of the four visible daily states with its short comment', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
+    await expect(savePlanningAssignmentDayState({ rpc } as never, {
+      assignmentId: 12,
+      workDate: '2026-07-14',
+      status: 'Repos',
+      note: 'Passation',
+    })).resolves.toBe(8);
+    expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
+      p_assignment_id: 12,
+      p_work_date: '2026-07-14',
+      p_status: 'Repos',
+      p_note: 'Passation',
+    });
+  });
+
+  it('creates selected board positions through the atomic RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [21, 22], error: null });
+    await expect(createPlanningBoardAssignments({ rpc } as never, {
+      vesselId: 3,
+      watchGroup: 'Bordée 2',
+      startsOn: '2026-07-14',
+      endsOn: '2026-07-28',
+      positions: [{ personId: 5, functionLabel: 'Capitaine' }, { personId: 6, functionLabel: 'Matelot' }],
+    })).resolves.toEqual([21, 22]);
+    expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', expect.objectContaining({
+      p_vessel_id: 3,
+      p_watch_group: 'Bordée 2',
+      p_positions: [{ personId: 5, functionLabel: 'Capitaine' }, { personId: 6, functionLabel: 'Matelot' }],
     }));
   });
 

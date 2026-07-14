@@ -3546,24 +3546,31 @@ button:disabled {
   box-shadow: 0 12px 28px rgba(19, 42, 75, 0.28) !important;
 }
 
-.planning-drag-grip {
-  flex: 0 0 auto;
-  margin-left: 6px;
-  opacity: 0.72;
-}
-
 .planning-resize-handle {
   position: absolute;
-  z-index: 6;
+  z-index: 24;
   top: 0;
   bottom: 0;
-  width: 7px;
+  width: 12px;
   cursor: ew-resize;
-  background: rgba(255, 255, 255, 0.36);
+  touch-action: none;
 }
 
 .planning-resize-handle.is-start { left: 0; }
 .planning-resize-handle.is-end { right: 0; }
+
+.planning-resize-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  background: rgba(17, 35, 57, 0.42);
+  content: '';
+  transform: translate(-50%, -50%);
+}
 
 .planning-annotation-dot {
   position: absolute;
@@ -3662,8 +3669,8 @@ button:disabled {
 }
 
 .planning-crew-bar.is-rest {
-  color: #9a3838;
-  background: #ffd7d7;
+  color: #ffffff;
+  background: #d94242;
 }
 
 .planning-crew-bar.is-vacation {
@@ -4385,7 +4392,7 @@ button:disabled {
   }
 
   .planning-resize-handle {
-    width: 14px;
+    width: 18px;
     touch-action: none;
   }
 
@@ -6590,7 +6597,7 @@ button:disabled {
 .planning-p11-requirements fieldset {
   position: relative;
   display: grid;
-  grid-template-columns: 1.3fr 80px 80px repeat(2, minmax(130px, 1fr));
+  grid-template-columns: minmax(150px, 1fr) minmax(260px, 2fr) minmax(150px, 1fr);
   gap: 9px;
   min-width: 0;
   margin: 0;
@@ -9304,6 +9311,21 @@ button.planning-p12-conflict-card {
   background: #edf5ff;
 }
 
+.planning-tree-row.is-person-drop-target {
+  outline: 3px solid #1769dc;
+  outline-offset: -3px;
+  background: #e8f2ff !important;
+}
+
+.planning-tree-row.is-person-drop-target::after {
+  align-self: center;
+  color: #0c57bd;
+  content: 'Déposer ici';
+  font-size: .68rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .planning-timeline-row.is-fleet-person .planning-row-label {
   padding-left: 54px;
 }
@@ -9324,8 +9346,13 @@ button.planning-p12-conflict-card {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: text;
+  cursor: pointer;
 }
+
+.planning-assignment-note-cell.is-sea { background: #15ab73; }
+.planning-assignment-note-cell.is-shore { color: #674900; background: #f4c847; }
+.planning-assignment-note-cell.is-vacation { background: #172033; }
+.planning-assignment-note-cell.is-rest { background: #d94242; }
 
 .planning-assignment-note-cell:disabled {
   color: #fff;
@@ -9334,11 +9361,11 @@ button.planning-p12-conflict-card {
 }
 
 .planning-assignment-note-cell.is-first {
-  margin-left: 8px;
+  margin-left: 12px;
 }
 
 .planning-assignment-note-cell.is-last {
-  margin-right: 8px;
+  margin-right: 12px;
 }
 
 .planning-assignment-note-cell:hover,
@@ -9347,6 +9374,189 @@ button.planning-p12-conflict-card {
   outline: 2px solid #0d48a1;
   outline-offset: -2px;
   background: rgba(255, 255, 255, .2);
+}
+
+.planning-stcw-multiselect {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #425466;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.planning-stcw-multiselect > div {
+  display: grid;
+  max-height: 210px;
+  overflow: auto;
+  border: 1px solid #cbd7e3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.planning-stcw-multiselect > div > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #edf1f5;
+  cursor: pointer;
+}
+
+.planning-stcw-multiselect input {
+  width: 16px;
+  min-height: 16px;
+  margin-top: 2px;
+}
+
+.planning-stcw-multiselect label > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.planning-stcw-multiselect label small {
+  color: #6b7c91;
+  font-weight: 500;
+}
+
+.planning-day-state-dialog {
+  width: min(520px, calc(100vw - 24px));
+}
+
+.planning-day-status-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.planning-day-scope-options {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.planning-day-scope-options legend {
+  width: 100%;
+  margin-bottom: 8px;
+  color: #41546b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.planning-day-scope-options button {
+  min-height: 38px;
+  flex: 1;
+  border: 1px solid #cbd7e3;
+  border-radius: 8px;
+  background: #fff;
+  color: #344a62;
+}
+
+.planning-day-scope-options button.is-active {
+  border-color: #1769dc;
+  color: #0c57bd;
+  background: #e8f2ff;
+  box-shadow: 0 0 0 2px #c9ddff;
+}
+
+.planning-day-status-options legend {
+  margin-bottom: 8px;
+  color: #41546b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.planning-day-status-options label {
+  position: relative;
+  cursor: pointer;
+}
+
+.planning-day-status-options input {
+  position: absolute;
+  opacity: 0;
+}
+
+.planning-day-status-options span {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  border: 3px solid transparent;
+  border-radius: 9px;
+  color: #fff;
+  font-weight: 850;
+}
+
+.planning-day-status-options .is-sea span { background: #15ab73; }
+.planning-day-status-options .is-shore span { color: #674900; background: #f4c847; }
+.planning-day-status-options .is-vacation span { background: #172033; }
+.planning-day-status-options .is-rest span { background: #d94242; }
+.planning-day-status-options input:checked + span { border-color: #1769dc; box-shadow: 0 0 0 2px #bcd6ff; }
+
+.planning-day-comment {
+  display: grid;
+  gap: 6px;
+  color: #41546b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.planning-board-staffing-dialog {
+  width: min(820px, calc(100vw - 24px));
+}
+
+.planning-board-staffing-period {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.planning-board-staffing-period label,
+.planning-board-staffing-list > label {
+  display: grid;
+  gap: 6px;
+  color: #41546b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.planning-board-staffing-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(54vh, 540px);
+  overflow: auto;
+}
+
+.planning-board-staffing-list > label {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr);
+  align-items: center;
+  border: 1px solid #dce5ee;
+  border-radius: 9px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.planning-board-staffing-list label > span {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-board-staffing-list small,
+.planning-board-staffing-list em {
+  color: #6b7c91;
+  font-size: .7rem;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@media (max-width: 700px) {
+  .planning-day-status-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planning-board-staffing-list > label { grid-template-columns: 1fr; }
 }
 
 .planning-assignment-note-editor {

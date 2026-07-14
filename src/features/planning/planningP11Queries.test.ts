@@ -4,6 +4,7 @@ import {
   mapPlanningMatrixRows,
   mapPlanningOccurrenceRows,
   mapPlanningRotationRows,
+  mapPlanningStcwCertificateRows,
   mapPlanningTemplateRows,
   savePlanningManningMatrix,
   savePlanningRotation,
@@ -30,6 +31,16 @@ describe('planning P1.1 query mappers', () => {
     expect(mapPlanningTemplateRows([{ id: 1, vessel_id: null, name: 'Soutage', template_kind: 'bunkering', description: null, default_duration_days: 1, default_status: 'planned', configuration: { port: 'Cherbourg' }, active: true }])[0]).toMatchObject({ templateKind: 'bunkering', configuration: { port: 'Cherbourg' } });
     const matrices = mapPlanningMatrixRows([{ id: 2, vessel_id: 9, name: 'Matrice', effective_from: '2026-01-01', effective_to: null, status: 'active', notes: null, version: 3 }], [{ id: 4, matrixId: 2, functionLabel: 'Chef mécanicien', minimumCount: 1, targetCount: 1, requiredCertificates: ['Chef 3000'], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }]);
     expect(matrices[0]).toMatchObject({ vesselId: 9, version: 3, requirements: [{ requiredCertificates: ['Chef 3000'] }] });
+  });
+
+  it('maps the SharePoint STCW catalogue used by the multi-select', () => {
+    expect(mapPlanningStcwCertificateRows([{
+      id: 7,
+      source_item_id: 34,
+      name: 'Chef de Quart 500',
+      category: 'Pont',
+      stcw_rules: ['II/3'],
+    }])).toEqual([{ id: 7, sourceItemId: 34, name: 'Chef de Quart 500', category: 'Pont', stcwRules: ['II/3'] }]);
   });
 });
 

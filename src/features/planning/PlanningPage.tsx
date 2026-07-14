@@ -67,6 +67,7 @@ import {
   archivePlanningVessel,
   createPlanningDerogation,
   createPlanningAssignment,
+  createPlanningBoardAssignments,
   createPlanningProject,
   createVessel,
   deletePlanningEvent,
@@ -81,8 +82,7 @@ import {
   mapPlanningAssignmentRows,
   revokePlanningDerogation,
   savePlanningHandover,
-  savePlanningAssignmentDayNote,
-  savePlanningVesselDayLocation,
+  savePlanningAssignmentDayState,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningVessel,
@@ -99,6 +99,8 @@ import {
   type PlanningVessel,
   type SavePlanningHandoverInput,
 } from './planningQueries';
+import { missingManningRequirementTerms, type PlanningManningRequirement } from './planningP11';
+import { fetchPlanningManningMatrices } from './planningP11Queries';
 import {
   availablePlanningCrewListBoards,
   buildPlanningCrewList,
@@ -182,6 +184,27 @@ interface ProjectFormState {
 interface ExportFormState { personName: string; startsOn: string; endsOn: string }
 interface CrewListFormState { vesselId: string; date: string; watchGroup: string; format: PlanningCrewListFormat }
 interface VesselFormState { id: number; name: string; acronym: string }
+interface PlanningDayStateForm {
+  event: PlanningCrewEvent;
+  date: string | null;
+  selectedDate: string;
+  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+  note: string;
+}
+interface PlanningBoardPositionForm {
+  key: string;
+  requirement: PlanningManningRequirement;
+  personId: string;
+  candidates: PlanningPerson[];
+}
+interface PlanningBoardForm {
+  vesselId: number;
+  vesselName: string;
+  watchGroup: string;
+  startsOn: string;
+  endsOn: string;
+  positions: PlanningBoardPositionForm[];
+}
 
 type SideTab = 'conflicts' | 'handovers' | 'derogations' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
@@ -309,6 +332,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isProjectQuick, setIsProjectQuick] = useState(false);
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
+  const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
+  const [boardForm, setBoardForm] = useState<PlanningBoardForm | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
@@ -328,10 +353,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isP21Open, setIsP21Open] = useState(false);
   const [isP22Open, setIsP22Open] = useState(false);
   const [touchPersonDrag, setTouchPersonDrag] = useState<{ person: PlanningPerson; x: number; y: number } | null>(null);
-  const [touchDropTarget, setTouchDropTarget] = useState<{ vesselId: number; date: string } | null>(null);
+  const [touchDropTarget, setTouchDropTarget] = useState<{ vesselId: number; watchGroup: string } | null>(null);
   const [collapsedFleetNodes, setCollapsedFleetNodes] = useState<Set<string>>(() => new Set());
   const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
-  const touchDropTargetRef = useRef<{ vesselId: number; date: string } | null>(null);
+  const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -570,7 +595,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsOperationalPanelOpen(false);
   }
 
-  async function assignPersonByDrop(personId: number, lane: PlanningFleetLane, date: string) {
+  async function assignPersonByDrop(personId: number, lane: PlanningFleetLane, watchGroup: string) {
     if (!canEditPlanning || lane.vesselId === null) {
       setErrorMessage('Cette période est verrouillée ou ce navire ne peut pas recevoir une affectation.');
       return;
@@ -584,12 +609,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       ...EMPTY_ASSIGNMENT,
       vesselId: String(lane.vesselId),
       crewPersonId: String(person.id),
-      startsOn: date,
-      endsOn: date,
-      startsAt: localDateTime(date, '08:00'),
-      endsAt: localDateTime(date, '20:00'),
+      startsOn: range.start,
+      endsOn: range.end,
+      startsAt: localDateTime(range.start, '08:00'),
+      endsAt: localDateTime(range.end, '20:00'),
       assignmentRole: person.functionLabel || 'Équipage',
       confirmationStatus: 'provisional',
+      watchGroup,
     };
     const controls = evaluatePlanningAssignment(overview, {
       id: 'drop-assignment',
@@ -598,8 +624,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       vessel: lane.vessel,
       functionLabel: input.assignmentRole,
       status: input.statusLabel,
-      startsOn: date,
-      endsOn: date,
+      startsOn: range.start,
+      endsOn: range.end,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
     }, allPlanningCrewEvents);
@@ -614,7 +640,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       const row = await createPlanningAssignment(effectiveClient, input);
       const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
       updateOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
-      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label} le ${formatPlanningDate(date)}. Ouvrez la vue Équipages pour ajuster la durée.`);
+      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label}, ${watchGroup}, du ${formatPlanningDate(range.start)} au ${formatPlanningDate(range.end)}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, "Impossible d'affecter ce marin par glisser-déposer."));
     } finally {
@@ -622,33 +648,37 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
-  async function saveVesselLocation(lane: PlanningFleetLane, date: string, location: string): Promise<boolean> {
-    if (!canEditPlanning || lane.vesselId === null) return false;
-    setErrorMessage(null);
-    try {
-      await savePlanningVesselDayLocation(effectiveClient, { vesselId: lane.vesselId, workDate: date, location });
-      const daysData = await fetchPlanningDays(effectiveClient);
-      updateOverview((current) => ({ ...current, days: daysData }));
-      setStatusMessage(location.trim() ? `Lieu enregistré pour ${lane.label} le ${formatPlanningDate(date)}.` : `Lieu supprimé pour ${lane.label} le ${formatPlanningDate(date)}.`);
-      return true;
-    } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le lieu quotidien.'));
-      return false;
-    }
+  function openDayState(event: PlanningCrewEvent, date: string | null) {
+    const status = (date ? event.dailyStatuses?.[date] : event.status) || 'En Mer';
+    const allowedStatus = ['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(status) ? status as PlanningDayStateForm['status'] : 'En Mer';
+    setDayStateForm({ event, date, selectedDate: date || event.startsOn, status: allowedStatus, note: date ? event.dailyNotes?.[date] || '' : event.comments || '' });
   }
 
-  async function saveAssignmentDayNote(event: PlanningCrewEvent, date: string, note: string): Promise<boolean> {
-    if (!canEditPlanning || !event.assignmentId) return false;
+  async function saveDayState(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!dayStateForm?.event.assignmentId) return;
+    const dates: string[] = [];
+    if (dayStateForm.date) dates.push(dayStateForm.date);
+    else {
+      for (let date = dayStateForm.event.startsOn; date <= dayStateForm.event.endsOn; date = addPlanningDays(date, 1)) dates.push(date);
+    }
+    setIsSaving(true);
     setErrorMessage(null);
     try {
-      await savePlanningAssignmentDayNote(effectiveClient, { assignmentId: event.assignmentId, workDate: date, note });
+      await Promise.all(dates.map((date) => savePlanningAssignmentDayState(effectiveClient, {
+        assignmentId: dayStateForm.event.assignmentId!,
+        workDate: date,
+        status: dayStateForm.status,
+        note: dayStateForm.note,
+      })));
       const daysData = await fetchPlanningDays(effectiveClient);
       updateOverview((current) => ({ ...current, days: daysData }));
-      setStatusMessage(note.trim() ? `Texte enregistré pour ${event.person} le ${formatPlanningDate(date)}.` : `Texte supprimé pour ${event.person} le ${formatPlanningDate(date)}.`);
-      return true;
+      setStatusMessage(`${dayStateForm.status} enregistré pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
+      setDayStateForm(null);
     } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le texte quotidien.'));
-      return false;
+      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut et le commentaire.'));
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -678,13 +708,60 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
-  function openNewBoard(lane: PlanningFleetLane) {
+  async function openNewBoard(lane: PlanningFleetLane) {
     if (lane.vesselId === null) return;
     const boardNumbers = fleetRows
       .filter((row) => row.type === 'board' && row.vesselId === lane.vesselId)
       .map((row) => Number(row.board.match(/\d+/)?.[0] || 0));
     const watchGroup = `Bordée ${Math.max(0, ...boardNumbers) + 1}`;
-    openAssignment({ vesselId: String(lane.vesselId), watchGroup }, false);
+    setErrorMessage(null);
+    try {
+      const matrices = await fetchPlanningManningMatrices(effectiveClient);
+      const matrix = matrices.find((item) => item.vesselId === lane.vesselId && item.status === 'active')
+        || matrices.find((item) => item.vesselId === lane.vesselId);
+      if (!matrix?.requirements.length) {
+        setErrorMessage(`Configurez d’abord une Décision d’effectif pour ${lane.label}.`);
+        return;
+      }
+      const available = activePeople.filter((person) => !overview.assignments.some((assignment) =>
+        assignment.crewPersonId === person.id
+        && assignment.confirmationStatus !== 'cancelled'
+        && assignment.startsOn <= range.end
+        && assignment.endsOn >= range.start));
+      const positions = matrix.requirements.flatMap((requirement) => Array.from(
+        { length: Math.max(1, requirement.minimumCount) },
+        (_, index): PlanningBoardPositionForm => ({
+          key: `${requirement.id || requirement.displayOrder}-${index}`,
+          requirement,
+          personId: '',
+          candidates: available.filter((person) => !missingManningRequirementTerms(overview, person.id, requirement, range.end).length),
+        }),
+      ));
+      setBoardForm({ vesselId: lane.vesselId, vesselName: lane.label, watchGroup, startsOn: range.start, endsOn: range.end, positions });
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de préparer cette bordée.'));
+    }
+  }
+
+  async function saveNewBoard(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!boardForm) return;
+    const positions = boardForm.positions.filter((position) => position.personId).map((position) => ({
+      personId: Number(position.personId),
+      functionLabel: position.requirement.functionLabel,
+    }));
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await createPlanningBoardAssignments(effectiveClient, { ...boardForm, positions });
+      await handleP11OperationalChange('assignments');
+      setStatusMessage(`${boardForm.watchGroup} créée pour ${boardForm.vesselName} avec ${positions.length} marin(s).`);
+      setBoardForm(null);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de créer cette bordée.'));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function openBoardAssignment(vesselId: number | null, watchGroup: string) {
@@ -748,8 +825,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setTouchPersonDrag((current) => current ? { ...current, x: event.clientX, y: event.clientY } : null);
     const dropElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-planning-person-drop-vessel-id]');
     const vesselId = Number(dropElement?.dataset.planningPersonDropVesselId);
-    const date = dropElement?.dataset.planningPersonDropDate || '';
-    const target = Number.isSafeInteger(vesselId) && vesselId > 0 && date ? { vesselId, date } : null;
+    const watchGroup = dropElement?.dataset.planningPersonDropWatchGroup || '';
+    const target = Number.isSafeInteger(vesselId) && vesselId > 0 && watchGroup ? { vesselId, watchGroup } : null;
     touchDropTargetRef.current = target;
     setTouchDropTarget(target);
   }
@@ -764,7 +841,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     touchDropTargetRef.current = null;
     if (!target) return;
     const lane = fleetLanes.find((item) => item.vesselId === target.vesselId);
-    if (lane) void assignPersonByDrop(personId, lane, target.date);
+    if (lane) void assignPersonByDrop(personId, lane, target.watchGroup);
   }
 
   function cancelTouchPersonDrag() {
@@ -1472,7 +1549,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <div className="planning-board-guide" aria-label="Légende et gestes du planning">
               {perspective === 'fleet' ? <><span><i className="is-operation" />Opération</span><span><i className="is-maintenance" />Maintenance</span><span><i className="is-unavailability" />Indisponibilité</span></> : <><span><i className="is-sea" />En mer</span><span><i className="is-shore" />À terre</span><span><i className="is-provisional" />Provisoire</span></>}
               <span><i className="is-conflict" />Conflit</span>
-              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez un marin sur un navire' : 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez pour déplacer'}</small> : null}
+              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Clic : statut et commentaire · Double-clic : formulaire complet · Glissez un marin sur une bordée' : 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez pour déplacer'}</small> : null}
             </div>
             <div className="planning-board-stats">
               {perspective === 'crew' && conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
@@ -1516,15 +1593,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       days={days}
                       editable={canEditPlanning}
                       expanded={!collapsedFleetNodes.has(row.key)}
+                      hasBoards={fleetRows.some((item) => item.type === 'board' && item.vesselId === lane.vesselId)}
                       key={row.key}
                       lane={lane}
                       onAddBoard={openNewBoard}
-                      onAssignPerson={(personId, targetLane, date) => void assignPersonByDrop(personId, targetLane, date)}
+                      onAssignPerson={(personId, targetLane, watchGroup) => void assignPersonByDrop(personId, targetLane, watchGroup)}
                       onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
                       onOpen={openProjectEditor}
                       onOpenVessel={openVesselEditor}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
-                      onSaveLocation={saveVesselLocation}
                       onSelect={setSelectedTimelineId}
                       onToggle={() => toggleFleetNode(row.key)}
                       pendingId={pendingMutationId}
@@ -1543,9 +1620,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       editable={canEditPlanning}
                       expanded={!collapsedFleetNodes.has(row.key)}
                       key={row.key}
+                      onAssignPerson={(personId, vesselId, watchGroup) => {
+                        const targetLane = fleetLanes.find((item) => item.vesselId === vesselId);
+                        if (targetLane) void assignPersonByDrop(personId, targetLane, watchGroup);
+                      }}
                       onAddPerson={() => openBoardAssignment(row.vesselId, row.board)}
                       onToggle={() => toggleFleetNode(row.key)}
+                      touchDropTarget={touchDropTarget}
                       vessel={row.vessel}
+                      vesselId={row.vesselId}
                     />
                   );
                 }
@@ -1571,7 +1654,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onMove={(event, date) => void moveEvent(event, date)}
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
-                    onSaveDayNote={saveAssignmentDayNote}
+                    onEditDayState={openDayState}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
                     selectedId={selectedTimelineId}
@@ -1612,13 +1695,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           ) : (
             <>
               <header className="planning-side-heading is-unassigned"><div><UsersRound aria-hidden="true" size={20} /><span><small>Affectation rapide</small><strong>Marins non affectés <em>{unassignedPeople.length}</em></strong></span></div></header>
-              <p className="planning-unassigned-help">Glissez un marin sur le jour d’un navire pour l’affecter provisoirement.</p>
+              <p className="planning-unassigned-help">Glissez un marin sur une bordée, ou sur un navire sans bordée.</p>
               <PlanningUnassignedPeopleList editable={canEditPlanning} onPointerCancel={cancelTouchPersonDrag} onPointerDown={beginTouchPersonDrag} onPointerMove={moveTouchPersonDrag} onPointerUp={endTouchPersonDrag} pendingId={pendingMutationId} people={unassignedPeople} />
             </>
           )}
         </aside> : null}
       </div>
 
+      {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onSave={saveDayState} /> : null}
+      {boardForm ? <PlanningBoardStaffingDialog form={boardForm} isSaving={isSaving} onChange={setBoardForm} onClose={() => setBoardForm(null)} onSave={saveNewBoard} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
       {isAssignmentOpen ? (
@@ -1656,6 +1741,57 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
     </section>
   );
+}
+
+function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onSave }: {
+  form: PlanningDayStateForm;
+  isSaving: boolean;
+  onChange: (value: PlanningDayStateForm | null) => void;
+  onClose: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const options = [
+    ['En Mer', 'En mer', 'sea'],
+    ['A Terre', 'À terre', 'shore'],
+    ['Vacance', 'Vacance', 'vacation'],
+    ['Repos', 'Repos', 'rest'],
+  ] as const;
+  return <div className="planning-dialog-backdrop" role="presentation">
+    <form aria-label="Statut et commentaire" aria-modal="true" className="planning-dialog planning-day-state-dialog" onSubmit={onSave} role="dialog">
+      <header><div><Pencil aria-hidden="true" size={20} /><span><small>{form.date ? formatPlanningDate(form.date) : 'Période complète'}</small><h2>{form.event.person}</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
+      <p className="planning-dialog-intro">Choisissez l’état visible dans la grille et, si besoin, un commentaire court.</p>
+      <fieldset className="planning-day-scope-options"><legend>Appliquer à</legend><button className={form.date ? 'is-active' : ''} onClick={() => onChange({ ...form, date: form.selectedDate })} type="button">Ce jour</button><button className={form.date ? '' : 'is-active'} onClick={() => onChange({ ...form, date: null })} type="button">Tout le groupe de cases</button></fieldset>
+      <fieldset className="planning-day-status-options"><legend>Statut</legend>{options.map(([value, label, tone]) => <label className={`is-${tone}`} key={value}><input checked={form.status === value} name="daily-status" onChange={() => onChange({ ...form, status: value })} type="radio" /><span>{label}</span></label>)}</fieldset>
+      <label className="planning-day-comment">Commentaire<input autoFocus maxLength={32} onChange={(event) => onChange({ ...form, note: event.target.value })} placeholder="Texte court affiché dans la case" value={form.note} /></label>
+      <small>{form.note.length}/32</small>
+      <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Appliquer{form.date ? ' à ce jour' : ' à la période'}</button></footer>
+    </form>
+  </div>;
+}
+
+function PlanningBoardStaffingDialog({ form, isSaving, onChange, onClose, onSave }: {
+  form: PlanningBoardForm;
+  isSaving: boolean;
+  onChange: (value: PlanningBoardForm | null) => void;
+  onClose: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return <div className="planning-dialog-backdrop" role="presentation">
+    <form aria-label={`Créer ${form.watchGroup}`} aria-modal="true" className="planning-dialog planning-board-staffing-dialog" onSubmit={onSave} role="dialog">
+      <header><div><UsersRound aria-hidden="true" size={20} /><span><small>{form.vesselName}</small><h2>Créer {form.watchGroup}</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
+      <p className="planning-dialog-intro">Chaque poste vient de la Décision d’effectif. Seuls les marins disponibles dont les brevets correspondent sont proposés.</p>
+      <div className="planning-board-staffing-period"><label>Début<input readOnly type="date" value={form.startsOn} /></label><label>Fin<input readOnly type="date" value={form.endsOn} /></label></div>
+      <div className="planning-board-staffing-list">{form.positions.map((position) => <label key={position.key}>
+        <span><strong>{position.requirement.functionLabel}</strong><small>{position.requirement.requiredCertificates.length ? position.requirement.requiredCertificates.join(' · ') : 'Aucun brevet imposé'}</small></span>
+        <select aria-label={`Marin pour ${position.requirement.functionLabel}`} onChange={(event) => onChange({ ...form, positions: form.positions.map((item) => item.key === position.key ? { ...item, personId: event.target.value } : item) })} value={position.personId}>
+          <option value="">Poste vacant</option>
+          {position.candidates.map((person) => <option disabled={form.positions.some((item) => item.key !== position.key && item.personId === String(person.id))} key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}
+        </select>
+        {!position.candidates.length ? <em>Aucun marin compatible disponible</em> : null}
+      </label>)}</div>
+      <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving || !form.positions.some((position) => position.personId)} type="submit">Créer la bordée</button></footer>
+    </form>
+  </div>;
 }
 
 function PlanningUnassignedPeopleList({ people, editable, pendingId, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
