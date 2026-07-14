@@ -77,6 +77,11 @@ P2.1 pilot access, data-quality gates and V3 browser recipe are approved. P2.2 p
 does not enable statistical forecasts or external integrations when their data prerequisites are missing. The full
 rollout and rollback sequence is in `docs/deployment/planning-p2-2-v3.md`.
 
+Version `3.0.1` corrects rotation-save feedback without a database migration. A successful transactional save is
+now distinguished from a later display refresh failure, preventing duplicate retries. Rotation overlaps, invalid
+inputs and essential assignment controls also receive actionable messages. Deploy it over `3.0.0` with the same
+36 aligned migrations and environment variables.
+
 ## Current Production Target
 
 The active public URL is:

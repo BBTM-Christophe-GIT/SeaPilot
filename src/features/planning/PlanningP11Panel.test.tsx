@@ -59,6 +59,22 @@ describe('Planning P1.1 panel', () => {
     expect(await screen.findByText('6 occurrence(s) générée(s) dans les affectations.')).toBeInTheDocument();
   });
 
+  it('confirms the saved rotation when the operational refresh fails', async () => {
+    const user = userEvent.setup();
+    const consoleWarning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const onOperationalChange = vi.fn().mockRejectedValue(new Error('refresh failed'));
+    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={onOperationalChange} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
+    await screen.findByRole('heading', { name: 'Rotations d’équipage' });
+    await user.click(screen.getByRole('button', { name: 'Nouvelle rotation' }));
+    await user.click(screen.getByRole('button', { name: 'Générer la série' }));
+
+    expect(await screen.findByText('La rotation et ses 6 occurrence(s) sont enregistrées, mais l’affichage n’a pas pu être actualisé. Utilisez le bouton Actualiser.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Générer la série' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Impossible d’enregistrer la rotation.')).not.toBeInTheDocument();
+    expect(consoleWarning).toHaveBeenCalledWith('[Planning]', expect.objectContaining({ operation: 'refresh-after-save-rotation' }));
+    consoleWarning.mockRestore();
+  });
+
   it('shows vacancies in read-only mode and does not expose matrix editing', async () => {
     vi.mocked(fetchPlanningP11Data).mockResolvedValue({
       rotations: [], templates: [], matrices: [{

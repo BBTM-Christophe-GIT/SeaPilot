@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Anchor, CopyPlus, Edit3, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { formatPlanningDate, todayPlanningDate } from './planningDates';
-import { planningErrorMessage } from './planningErrors';
+import { planningErrorMessage, reportPlanningTechnicalError } from './planningErrors';
 import {
   buildManningMatrixComparison,
   buildRotationPreview,
@@ -62,7 +62,7 @@ function RotationTab({ client, data, overview, editable, onReload, onOperational
   editable: boolean;
   onReload: () => Promise<void>;
   onOperationalChange: (kind: OperationalChange) => Promise<void>;
-  setFeedback: (message: string, error?: boolean) => void;
+  setFeedback: (message: string, level?: boolean | 'warning') => void;
 }) {
   const activeVessels = overview.vessels.filter((vessel) => vessel.active);
   const activePeople = overview.people.filter((person) => person.active);
@@ -101,11 +101,25 @@ function RotationTab({ client, data, overview, editable, onReload, onOperational
     setIsSaving(true);
     try {
       await savePlanningRotation(client, form);
+    } catch (error) {
+      setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la rotation.'), true);
+      setIsSaving(false);
+      return;
+    }
+
+    const savedOccurrenceCount = form.occurrenceCount;
+    setForm(initialRotation());
+    setIsFormOpen(false);
+    try {
       await Promise.all([onReload(), onOperationalChange('assignments')]);
-      setForm(initialRotation()); setIsFormOpen(false);
-      setFeedback(`${form.occurrenceCount} occurrence(s) générée(s) dans les affectations.`);
-    } catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la rotation.'), true); }
-    finally { setIsSaving(false); }
+      setFeedback(`${savedOccurrenceCount} occurrence(s) générée(s) dans les affectations.`);
+    } catch (error) {
+      reportPlanningTechnicalError('refresh-after-save-rotation', error, 'warning');
+      setFeedback(
+        `La rotation et ses ${savedOccurrenceCount} occurrence(s) sont enregistrées, mais l’affichage n’a pas pu être actualisé. Utilisez le bouton Actualiser.`,
+        'warning',
+      );
+    } finally { setIsSaving(false); }
   }
 
   async function submitOccurrence(event: FormEvent) {
@@ -226,16 +240,18 @@ export function PlanningP11Panel({ client, overview, range, canManageRotations, 
   const [tab, setTab] = useState<P11Tab>('rotations');
   const [data, setData] = useState<PlanningP11Data>(EMPTY_DATA);
   const [isLoading, setIsLoading] = useState(true);
-  const [feedback, setFeedbackState] = useState<{ message: string; error: boolean } | null>(null);
-  const load = useCallback(async () => { try { setData(await fetchPlanningP11Data(client)); } catch (error) { setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), error: true }); } }, [client]);
+  const [feedback, setFeedbackState] = useState<{ message: string; level: 'success' | 'warning' | 'error' } | null>(null);
+  const reload = useCallback(async () => { setData(await fetchPlanningP11Data(client)); }, [client]);
+  const load = useCallback(async () => { try { await reload(); } catch (error) { setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), level: 'error' }); } }, [reload]);
   useEffect(() => {
     let active = true;
     void fetchPlanningP11Data(client)
       .then((result) => { if (active) setData(result); })
-      .catch((error) => { if (active) setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), error: true }); })
+      .catch((error) => { if (active) setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), level: 'error' }); })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
   }, [client]);
-  const setFeedback = (message: string, error = false) => setFeedbackState({ message, error });
-  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations, modèles et matrice d’armement" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et armement</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button><button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Matrice</button></nav>{feedback ? <p className={feedback.error ? 'form-error planning-p11-feedback' : 'admin-success planning-p11-feedback'} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations, modèles et matrices…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={load} overview={overview} setFeedback={setFeedback} /> : tab === 'templates' ? <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={load} overview={overview} setFeedback={setFeedback} /> : <ManningTab client={client} data={data} editable={canManageManning} onReload={load} overview={overview} range={range} setFeedback={setFeedback} />}</div></section></div>;
+  const setFeedback = (message: string, level: boolean | 'warning' = false) => setFeedbackState({ message, level: level === true ? 'error' : level === 'warning' ? 'warning' : 'success' });
+  const feedbackClassName = feedback?.level === 'error' ? 'form-error' : feedback?.level === 'warning' ? 'planning-warning' : 'admin-success';
+  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations, modèles et matrice d’armement" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et armement</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button><button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Matrice</button></nav>{feedback ? <p className={`${feedbackClassName} planning-p11-feedback`} role={feedback.level === 'error' ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations, modèles et matrices…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : tab === 'templates' ? <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : <ManningTab client={client} data={data} editable={canManageManning} onReload={reload} overview={overview} range={range} setFeedback={setFeedback} />}</div></section></div>;
 }
