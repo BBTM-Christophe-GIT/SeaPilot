@@ -63,6 +63,12 @@ P1.3 finalise le périmètre métier P1 sans modifier les sources opérationnell
 
 `PlanningP13Panel.tsx` est chargé dynamiquement et regroupe tableau de bord, contrôles de repos, notifications, dépendances et exports. Les indicateurs sont calculés depuis les données déjà chargées avec index `Map`/`Set`. Les exports Excel OOXML, PDF et ICS sont générés côté client à la demande pour le Planning, les listes d’équipage, feuilles de relève, anomalies et contrôles travail/repos ; les bibliothèques lourdes restent hors du bundle initial.
 
+### Phase P2.1 — assistant de planification maritime
+
+P2.1 ajoute un moteur de conseil déterministe dans `planningP21.ts`. Il réutilise les conflits P1.2, matrices P1.1, contrôles travail/repos P1.3, dépendances P1.3, relèves, documents RH et historique P0.4. Il identifie les vacances, classe des marins compatibles, explique les incompatibilités, suggère des relèves et réorganisations, détecte les incohérences et résume les modifications. Chaque résultat contient les critères, données vérifiées, règles, conflits, données indisponibles, un score/niveau de confiance et une justification. Une donnée absente réduit la confiance ou produit une conclusion non évaluable ; elle n’est jamais inventée.
+
+`PlanningP21Panel.tsx` est chargé dynamiquement uniquement lorsque `VITE_PLANNING_ASSISTANT_ENABLED=true` et que la RPC d’accès confirme un administrateur ou un utilisateur Direction/Armement explicitement inscrit dans `planning_assistant_pilots`. Accepter ou refuser une suggestion appelle seulement `record_planning_assistant_review` : la preuve affichée et la décision humaine sont figées dans `planning_assistant_reviews` et le journal global. Cette RPC ne possède aucun chemin d’écriture vers les affectations, publications ou dérogations. Les administrateurs gèrent l’allowlist pilote par RPC auditée ; le flag reste désactivé par défaut.
+
 ## 2. Matrice fonctionnelle
 
 | Domaine | État avant le lot | État après le lot | Constat / limite restante | Priorité suivante |
@@ -93,6 +99,7 @@ P1.3 finalise le périmètre métier P1 sans modifier les sources opérationnell
 | Notifications et collaboration | Absent | Opérationnel P1.3 | Huit familles, destinataire individuel, lecture et anti-doublon serveur ; pas d’envoi e-mail/push | Extension éventuelle |
 | Tableau de bord métier | Absent | Opérationnel P1.3 | Opérations, embarqués/disponibles, relèves, vacances, conflits, couverture, conformité et échéances 7/14/30 j | Maintenir |
 | Dépendances | Absent | Opérationnel P1.3 | Opérations, maintenance/remise en service, formation/affectation et livraison/opération ; cycles refusés | Maintenir |
+| Assistant de planification | Absent | Pilote P2.1 | Suggestions déterministes explicables, confiance, données manquantes et décisions acceptées/refusées journalisées ; aucune application automatique | Mesurer le pilote |
 | Responsive ordinateur/iPad | Opérationnel | Opérationnel P0.2 | Timeline prioritaire sous 1500 px, panneau latéral plein écran étroit, contrôles tactiles de 44 px | Maintenir |
 | Temps réel et cache | Absent | Absent | Aucun abonnement Supabase Realtime ni cache de requêtes | P1 |
 | Virtualisation / chargement par période | Absent | Absent | Toutes les sources sont chargées avant filtrage client | P0 performance |
@@ -138,6 +145,9 @@ P1.3 finalise le périmètre métier P1 sans modifier les sources opérationnell
 - `planningP12.ts` contient la détection et l’explication des compatibilités ; `planningP12Queries.ts` centralise les lectures et RPC P1.2.
 - `PlanningP13Panel.tsx` porte le cockpit final P1 ; `planningP13.ts` contient les calculs purs et `planningP13Queries.ts` centralise les lectures/RPC.
 - `planningP13Exports.ts` construit Excel/PDF/ICS à la demande et reste séparé du rendu et des règles métier.
+- `PlanningP21Panel.tsx` porte l’assistant pilote, son journal et l’administration de l’allowlist ; il est absent du bundle initial.
+- `planningP21.ts` produit les suggestions et preuves sans effet de bord ; `planningP21Queries.ts` limite les écritures aux décisions et accès pilote auditables, tandis que `planningP21Access.ts` garde la vérification d’accès hors du chunk métier.
+- `usePlanningAssistantAccess.ts` n’appelle la RPC d’accès que si le feature flag est actif et que le rôle est éligible.
 - `usePlanningOverview.ts` porte le cycle chargement/rafraîchissement/erreur, ignore les réponses obsolètes et préserve le dernier instantané valide pendant un rafraîchissement.
 
 Les prochains refactors peuvent extraire la toolbar et les dialogues par étapes, sans reconstruire le module ni remettre en cause les frontières P0.1.
@@ -188,6 +198,8 @@ Sources fusionnées :
 - `planning_work_rest_policies` : seuils administrés, bornés dans le temps et éventuellement par navire.
 - `planning_notifications` : notifications applicatives individualisées et état de lecture.
 - `planning_dependencies` : liens métier fin-début contrôlés et audités.
+- `planning_assistant_pilots` : allowlist entreprise des utilisateurs Direction/Armement autorisés pendant le pilote.
+- `planning_assistant_reviews` : journal immuable des suggestions acceptées/refusées, avec instantané explicable complet.
 
 Navires, marins, affectations, journées, périodes, projets, certificats, documents RH, règles et publications sont tous requis. Une source indisponible produit un message dédié ; aucune absence technique n’est présentée comme une liste métier vide.
 
@@ -429,6 +441,11 @@ Tests Planning couverts :
 - indicateurs métier et performance sur plusieurs milliers de journées sans balayage quadratique ;
 - dépendances fin-début, référence entreprise et refus des cycles côté RPC ;
 - exports Excel OOXML, PDF et ICS pour les cinq livrables métier P1.3.
+- feature flag inactif par défaut et absence de requête assistant lorsque le flag ou le rôle est hors périmètre ;
+- génération déterministe des vacances, candidats, incompatibilités, relèves, incohérences, documents, résumés et réorganisations ;
+- présence systématique des critères, données, règles, conflits, données absentes, confiance et justification ;
+- performance du moteur sur 500 marins et absence de mutation des données sources ;
+- acceptation/refus limité à la RPC de journalisation, et gestion des pilotes limitée aux administrateurs.
 
 Commandes de validation :
 
@@ -462,6 +479,7 @@ La procédure de migration, les contrôles pré/post-déploiement et le retour a
 
 ### P2
 
-1. Scénarios alternatifs et prévision de sous-effectif.
-2. Assistant de planification fondé uniquement sur les contraintes configurées.
-3. Intégrations externes et mode hors connexion partiel après stabilisation des P0/P1.
+1. P2.1 livré derrière feature flag : assistant explicable fondé uniquement sur les données et contraintes P0/P1.
+2. Mesurer les décisions acceptées/refusées du pilote avant toute extension ou automatisation.
+3. Scénarios alternatifs et prévision de sous-effectif, uniquement après validation séparée.
+4. Intégrations externes et mode hors connexion partiel après stabilisation des P0/P1.

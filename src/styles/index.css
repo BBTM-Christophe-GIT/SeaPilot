@@ -7286,3 +7286,617 @@ button.planning-p12-conflict-card {
   .planning-p13-panel select,
   .planning-p13-panel textarea { min-height: 44px; }
 }
+
+/* Planning P2.1 — assistant maritime explicable */
+.planning-p21-panel {
+  --assistant-primary: #175e6c;
+  --assistant-primary-soft: #e7f3f5;
+  --assistant-ink: #172b36;
+  --assistant-muted: #617681;
+  --assistant-line: #d8e3e8;
+  --assistant-danger: #a72f3f;
+  --assistant-warning: #ad6b12;
+  --assistant-success: #197052;
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, calc(100vw - 36px));
+  max-width: 1180px;
+  height: min(920px, calc(100dvh - 32px));
+  overflow: hidden;
+  color: var(--assistant-ink);
+  background: #f6f8fa;
+}
+
+.planning-p21-header {
+  flex: 0 0 auto;
+}
+
+.planning-p21-header > div,
+.planning-p21-header > div > span {
+  min-width: 0;
+}
+
+.planning-p21-header h2,
+.planning-p21-header small {
+  display: block;
+}
+
+.planning-p21-header small {
+  margin-top: 2px;
+  color: var(--assistant-muted);
+}
+
+.planning-assistant-guardrail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid #b7d9d4;
+  border-radius: 10px;
+  color: #24594e;
+  background: #edf8f5;
+  font-size: .82rem;
+}
+
+.planning-assistant-guardrail span strong {
+  margin-right: 4px;
+}
+
+.planning-assistant-guardrail small {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--assistant-primary);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.planning-p21-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 0 14px 10px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--assistant-line);
+}
+
+.planning-p21-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--assistant-muted);
+  background: transparent;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.planning-p21-tabs button[aria-current="page"] {
+  border-color: var(--assistant-line);
+  color: var(--assistant-primary);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(18 48 62 / 8%);
+}
+
+.planning-p21-tabs button span {
+  min-width: 21px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--assistant-primary);
+  font-size: .68rem;
+}
+
+.planning-p21-tabs button.is-refresh {
+  margin-left: auto;
+  padding-inline: 10px;
+}
+
+.planning-p21-panel .planning-feedback {
+  flex: 0 0 auto;
+  margin: 9px 14px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: #155d42;
+  background: #e7f7ef;
+  font-size: .82rem;
+}
+
+.planning-p21-panel .planning-feedback.is-error {
+  color: #8b2635;
+  background: #fdecef;
+}
+
+.planning-p21-panel > .admin-state,
+.planning-assistant-suggestions,
+.planning-assistant-journal,
+.planning-assistant-pilots {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.planning-assistant-suggestions,
+.planning-assistant-journal,
+.planning-assistant-pilots {
+  flex: 1 1 auto;
+  padding: 14px;
+}
+
+.planning-assistant-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.planning-assistant-summary > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px solid var(--assistant-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.planning-assistant-summary strong {
+  color: var(--assistant-primary);
+  font-size: 1.35rem;
+}
+
+.planning-assistant-summary span {
+  color: var(--assistant-muted);
+  font-size: .78rem;
+}
+
+.planning-assistant-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, .75fr) minmax(160px, .6fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.planning-assistant-filters label,
+.planning-assistant-decision label,
+.planning-assistant-pilot-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--assistant-muted);
+  font-size: .75rem;
+  font-weight: 750;
+}
+
+.planning-assistant-filters select,
+.planning-assistant-decision textarea,
+.planning-assistant-pilot-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid #bacbd3;
+  border-radius: 8px;
+  color: var(--assistant-ink);
+  background: #fff;
+}
+
+.planning-assistant-filters > span {
+  justify-self: end;
+  padding-bottom: 9px;
+  color: var(--assistant-muted);
+  font-size: .78rem;
+}
+
+.planning-assistant-card-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.planning-assistant-card {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--assistant-line);
+  border-top: 4px solid var(--assistant-line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgb(24 54 68 / 5%);
+}
+
+.planning-assistant-card.is-high { border-top-color: var(--assistant-success); }
+.planning-assistant-card.is-medium { border-top-color: var(--assistant-warning); }
+.planning-assistant-card.is-low { border-top-color: var(--assistant-danger); }
+
+.planning-assistant-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planning-assistant-card h3,
+.planning-assistant-card h4,
+.planning-assistant-card p {
+  margin: 0;
+}
+
+.planning-assistant-card h3 {
+  margin-top: 3px;
+  font-size: .98rem;
+  line-height: 1.3;
+}
+
+.planning-assistant-card > p {
+  color: #526a76;
+  font-size: .82rem;
+  line-height: 1.48;
+}
+
+.planning-assistant-type {
+  color: var(--assistant-primary);
+  font-size: .67rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.planning-assistant-confidence {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: .67rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.planning-assistant-confidence.is-high { color: #116043; background: #e2f5eb; }
+.planning-assistant-confidence.is-medium { color: #81510d; background: #fff0d5; }
+.planning-assistant-confidence.is-low { color: #952438; background: #fde7eb; }
+
+.planning-assistant-justification {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: #315764;
+  background: var(--assistant-primary-soft);
+  font-size: .77rem;
+  line-height: 1.4;
+}
+
+.planning-assistant-justification svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.planning-assistant-justification strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.planning-assistant-card details {
+  border-top: 1px solid var(--assistant-line);
+  border-bottom: 1px solid var(--assistant-line);
+  padding: 9px 0;
+}
+
+.planning-assistant-card summary {
+  color: var(--assistant-primary);
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.planning-assistant-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.planning-assistant-evidence-grid section {
+  padding: 9px;
+  border-radius: 8px;
+  background: #f6f8fa;
+}
+
+.planning-assistant-evidence-grid h4,
+.planning-assistant-candidates h4 {
+  margin-bottom: 5px;
+  color: #3d5965;
+  font-size: .72rem;
+  text-transform: uppercase;
+}
+
+.planning-assistant-evidence-grid ul,
+.planning-assistant-evidence-grid p,
+.planning-assistant-candidates ul {
+  margin: 0;
+  color: #5f717a;
+  font-size: .72rem;
+  line-height: 1.4;
+}
+
+.planning-assistant-evidence-grid ul,
+.planning-assistant-candidates ul {
+  display: grid;
+  gap: 3px;
+  padding-left: 16px;
+}
+
+.planning-assistant-candidates {
+  display: grid;
+  gap: 6px;
+}
+
+.planning-assistant-candidates > div {
+  display: grid;
+  grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr);
+  gap: 8px;
+  padding: 8px 9px;
+  border-left: 3px solid var(--assistant-line);
+  border-radius: 7px;
+  background: #f8fafb;
+}
+
+.planning-assistant-candidates > div.is-compatible { border-left-color: var(--assistant-success); }
+.planning-assistant-candidates > div.is-warning { border-left-color: var(--assistant-warning); }
+.planning-assistant-candidates > div.is-incompatible { border-left-color: var(--assistant-danger); }
+
+.planning-assistant-candidates span,
+.planning-assistant-candidates strong,
+.planning-assistant-candidates small {
+  display: block;
+}
+
+.planning-assistant-candidates small {
+  margin-top: 2px;
+  color: var(--assistant-muted);
+  font-size: .68rem;
+}
+
+.planning-assistant-review-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: .74rem;
+}
+
+.planning-assistant-review-state.is-accepted { color: #176047; background: #e5f5ed; }
+.planning-assistant-review-state.is-refused { color: #8d2d3b; background: #fbe9ec; }
+
+.planning-assistant-decision {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-assistant-decision textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.planning-assistant-decision > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.planning-assistant-decision button,
+.planning-assistant-pilot-form button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--assistant-primary);
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.planning-assistant-decision button.is-secondary {
+  color: #8e3040;
+  background: #f8e8eb;
+}
+
+.planning-assistant-decision button:disabled,
+.planning-assistant-pilot-form button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.planning-assistant-journal {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.planning-assistant-journal article {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--assistant-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.planning-assistant-journal article > span {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.planning-assistant-journal .is-accepted { color: #176047; background: #e5f5ed; }
+.planning-assistant-journal .is-refused { color: #8d2d3b; background: #fbe9ec; }
+.planning-assistant-journal p { margin: 4px 0; color: #516873; }
+.planning-assistant-journal small { color: var(--assistant-muted); }
+
+.planning-assistant-pilots {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
+.planning-assistant-pilot-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: #755018;
+  background: #fff2db;
+  font-size: .8rem;
+}
+
+.planning-assistant-pilot {
+  padding: 12px;
+  border: 1px solid var(--assistant-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.planning-assistant-pilot > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.planning-assistant-pilot header strong,
+.planning-assistant-pilot header small {
+  display: block;
+}
+
+.planning-assistant-pilot header small {
+  margin-top: 3px;
+  color: var(--assistant-muted);
+}
+
+.planning-assistant-pilot header > span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 800;
+}
+
+.planning-assistant-pilot header > span.is-enabled { color: #176047; background: #e5f5ed; }
+.planning-assistant-pilot header > span.is-disabled { color: #66757d; background: #edf1f3; }
+
+.planning-assistant-pilot-form {
+  display: grid;
+  grid-template-columns: minmax(150px, .45fr) minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+@media (max-width: 1050px) {
+  .planning-p21-panel {
+    width: min(970px, calc(100vw - 24px));
+    height: min(1230px, calc(100dvh - 24px));
+  }
+
+  .planning-assistant-card-list {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-assistant-pilot-form {
+    grid-template-columns: minmax(150px, .45fr) minmax(240px, 1fr);
+  }
+
+  .planning-assistant-pilot-form button {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 720px) {
+  .planning-p21-panel {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .planning-assistant-guardrail {
+    grid-template-columns: auto minmax(0, 1fr);
+    margin-inline: 10px;
+  }
+
+  .planning-assistant-guardrail small {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .planning-p21-tabs,
+  .planning-assistant-suggestions,
+  .planning-assistant-journal,
+  .planning-assistant-pilots {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .planning-assistant-summary,
+  .planning-assistant-filters,
+  .planning-assistant-evidence-grid,
+  .planning-assistant-pilot-form {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-assistant-filters > span,
+  .planning-assistant-pilot-form button {
+    grid-column: auto;
+    justify-self: start;
+  }
+
+  .planning-assistant-card > header,
+  .planning-assistant-pilot > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .planning-assistant-candidates > div,
+  .planning-assistant-journal article {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-assistant-decision > div {
+    justify-content: stretch;
+  }
+
+  .planning-assistant-decision button {
+    flex: 1 1 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .planning-p21-panel button,
+  .planning-p21-panel input,
+  .planning-p21-panel select,
+  .planning-p21-panel textarea {
+    min-height: 44px;
+  }
+}

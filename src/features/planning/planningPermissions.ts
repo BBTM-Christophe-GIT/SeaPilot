@@ -29,6 +29,8 @@ export interface PlanningPermissions {
   canRefreshNotifications: boolean;
   canViewDashboard: boolean;
   canManageDependencies: boolean;
+  canBeAssistantPilot: boolean;
+  canManageAssistantPilots: boolean;
 }
 
 export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean): PlanningPermissions {
@@ -68,5 +70,7 @@ export function getPlanningPermissions(roles: RoleKey[], isPeriodLocked: boolean
     canRefreshNotifications: isAdmin || isDirection || isArmement,
     canViewDashboard: isAdmin || isDirection || isArmement || isCaptain,
     canManageDependencies: (isAdmin || isDirection || isArmement || isCaptain) && !isPeriodLocked,
+    canBeAssistantPilot: isAdmin || isDirection || isArmement,
+    canManageAssistantPilots: isAdmin,
   };
 }

@@ -65,6 +65,12 @@ notifications and audited operational dependencies. It does not seed regulatory 
 Planning rows. The client also adds the dashboard and lazy Excel/PDF/ICS exports. The complete V2 sequence,
 permission checks, smoke tests and export-first rollback are in `docs/deployment/planning-p1-3-v2.md`.
 
+Apply `supabase/migrations/202607140003_planning_p21_maritime_assistant.sql` before deploying version `2.3.0`.
+P2.1 adds the administrator/office pilot allowlist and an immutable human decision journal. The assistant is
+advisory only and the client bundle keeps it disabled unless `VITE_PLANNING_ASSISTANT_ENABLED=true`. Enable the
+flag only after the migration and pilot assignments are verified. The complete rollout and rollback sequence is in
+`docs/deployment/planning-p2-1.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -99,11 +105,12 @@ As of 2026-07-13:
 - `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Production.
 - `VITE_SUPABASE_URL` is configured in Vercel for Preview.
 - `VITE_SUPABASE_ANON_KEY` is configured in Vercel for Preview.
+- `VITE_PLANNING_ASSISTANT_ENABLED` defaults to `false`; set it to `true` only for an approved pilot environment.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning P1.3 target contains 35 local and remote migrations through `202607140002_planning_p13_work_rest_notifications_exports.sql`; verify `supabase migration list` before each deployment.
+- The Planning P2.1 target contains 36 local and remote migrations through `202607140003_planning_p21_maritime_assistant.sql`; verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.

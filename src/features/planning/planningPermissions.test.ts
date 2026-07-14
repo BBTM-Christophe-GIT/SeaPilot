@@ -152,4 +152,12 @@ describe('planning permissions', () => {
   it('denies Planning access when no Planning role is present', () => {
     expect(getPlanningPermissions([], false).canRead).toBe(false);
   });
+
+  it('limits assistant pilot eligibility to administrators and office roles', () => {
+    expect(getPlanningPermissions(['admin'], false)).toMatchObject({ canBeAssistantPilot: true, canManageAssistantPilots: true });
+    expect(getPlanningPermissions(['direction'], false)).toMatchObject({ canBeAssistantPilot: true, canManageAssistantPilots: false });
+    expect(getPlanningPermissions(['armement'], false)).toMatchObject({ canBeAssistantPilot: true, canManageAssistantPilots: false });
+    expect(getPlanningPermissions(['capitaine'], false)).toMatchObject({ canBeAssistantPilot: false, canManageAssistantPilots: false });
+    expect(getPlanningPermissions(['marin'], false)).toMatchObject({ canBeAssistantPilot: false, canManageAssistantPilots: false });
+  });
 });

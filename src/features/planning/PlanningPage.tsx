@@ -18,6 +18,7 @@ import {
   Settings2,
   ShieldAlert,
   Ship,
+  Sparkles,
   Trash2,
   UserRoundPlus,
   X,
@@ -26,6 +27,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
+import { PLANNING_ASSISTANT_ENABLED } from '../../config/featureFlags';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
@@ -112,10 +114,12 @@ import {
   type PlanningPerspective,
 } from './planningViews';
 import { usePlanningOverview } from './usePlanningOverview';
+import { usePlanningAssistantAccess } from './usePlanningAssistantAccess';
 
 interface PlanningPageProps {
   client?: SupabaseClient;
   roles?: RoleKey[];
+  assistantFeatureEnabled?: boolean;
 }
 
 interface AssignmentFormState {
@@ -208,6 +212,7 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
 
 const PlanningP12Panel = lazy(() => import('./PlanningP12Panel').then((module) => ({ default: module.PlanningP12Panel })));
 const PlanningP13Panel = lazy(() => import('./PlanningP13Panel').then((module) => ({ default: module.PlanningP13Panel })));
+const PlanningP21Panel = lazy(() => import('./PlanningP21Panel').then((module) => ({ default: module.PlanningP21Panel })));
 
 function localDateTime(date: string, time: string): string {
   return date ? `${date}T${time}` : '';
@@ -242,7 +247,7 @@ function timelineStyle(dayWidth: number, dayCount: number) {
   } as React.CSSProperties;
 }
 
-export function PlanningPage({ client, roles }: PlanningPageProps) {
+export function PlanningPage({ client, roles, assistantFeatureEnabled }: PlanningPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -290,6 +295,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   const [isP11Open, setIsP11Open] = useState(false);
   const [isP12Open, setIsP12Open] = useState(false);
   const [isP13Open, setIsP13Open] = useState(false);
+  const [isP21Open, setIsP21Open] = useState(false);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -315,6 +321,12 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
   );
   const isPeriodLocked = isPlanningPublicationLocked(activePublication);
   const permissions = getPlanningPermissions(effectiveRoles, isPeriodLocked);
+  const isPlanningAssistantEnabled = assistantFeatureEnabled ?? PLANNING_ASSISTANT_ENABLED;
+  const { access: assistantAccess, isLoading: isAssistantAccessLoading } = usePlanningAssistantAccess(
+    effectiveClient,
+    isPlanningAssistantEnabled,
+    permissions.canBeAssistantPilot,
+  );
   const canEditPlanning = permissions.canEditEvents;
   const publicationTargetVesselId = activePublication ? activePublication.vesselId : publicationVesselId;
   const captainHasVesselScope = !effectiveRoles.includes('capitaine')
@@ -1090,6 +1102,8 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
           <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et armement</button>
           <button onClick={() => { setIsP12Open(true); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
           {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
+          {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning <small>{assistantAccess.accessMode === 'pilot' ? 'Pilote' : 'P2.1'}</small></button> : null}
+          {isPlanningAssistantEnabled && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
           {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
         </div>
       ) : null}
@@ -1285,6 +1299,7 @@ export function PlanningPage({ client, roles }: PlanningPageProps) {
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
       {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} range={range} /></Suspense> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canExport={permissions.canExport} canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
+      {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {derogationPrefill ? <PlanningDerogationDialog isSaving={isSaving} onClose={() => setDerogationPrefill(null)} onSave={(input) => void handleCreateDerogation(input)} overview={overview} prefill={derogationPrefill} /> : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
