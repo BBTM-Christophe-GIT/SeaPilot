@@ -1,4 +1,5 @@
 import {
+  PLANNING_ASSIGNMENT_NOTE_SOURCE,
   PLANNING_VESSEL_LOCATION_SOURCE,
   type PlanningAssignmentRecord,
   type PlanningDayRecord,
@@ -62,6 +63,8 @@ export interface PlanningCrewEvent {
   endsAt: string;
   comments: string;
   sourceLabel: string;
+  assignmentId?: number;
+  dailyNotes?: Record<string, string>;
 }
 
 export interface PlanningCrewRow {
@@ -303,6 +306,7 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
     endsAt: assignment.endsAt || '',
     comments: assignment.comments,
     sourceLabel: assignment.sourceLabel,
+    assignmentId: assignment.id,
   };
 }
 
@@ -335,12 +339,23 @@ function eventKey(event: PlanningCrewEvent): string {
 
 export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
   const events = overview.periods.map(crewEventFromPeriod);
-  const occupied = new Set(events.map(eventKey));
+  const notesByAssignment = new Map<number, Record<string, string>>();
+  overview.days.forEach((day) => {
+    if (day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE) return;
+    const assignmentId = Number(day.slot365.replace('assignment:', ''));
+    if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return;
+    const notes = notesByAssignment.get(assignmentId) || {};
+    notes[day.workDate] = day.comments;
+    notesByAssignment.set(assignmentId, notes);
+  });
   overview.assignments.map(crewEventFromAssignment).forEach((event) => {
-    if (!occupied.has(eventKey(event))) events.push(event);
+    const enriched = { ...event, dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {} };
+    const existingIndex = events.findIndex((current) => eventKey(current) === eventKey(event));
+    if (existingIndex === -1) events.push(enriched);
+    else events[existingIndex] = { ...events[existingIndex], assignmentId: event.assignmentId, dailyNotes: enriched.dailyNotes };
   });
   overview.days
-    .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE)
+    .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE && day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE)
     .map(crewEventFromDay)
     .forEach((event) => {
       const covered = events.some(

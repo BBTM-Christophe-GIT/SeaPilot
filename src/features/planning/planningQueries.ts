@@ -12,12 +12,13 @@ import {
 
 const VESSEL_SELECT = 'id, name, acronym, active';
 const PLANNING_PERSON_SELECT =
-  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, deck_certificate_label, engine_certificate_label, active';
+  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
 const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
   'id, person_id, vessel_id, crew_name, captain_name, vessel_name, manual_vessel_name, work_date, disembark_on, year_number, month_number, month_label, day_number, function_label, sailor_status, day_status, rhythm_label, watch_group, slot365, departure_on, worked_hours, rest_24h, cumulative_7d, consecutive_rest_hours, rest_period_count, night_work_hours, comments, source_label';
 export const PLANNING_VESSEL_LOCATION_SOURCE = 'seapilot-vessel-location';
+export const PLANNING_ASSIGNMENT_NOTE_SOURCE = 'seapilot-assignment-note';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
@@ -58,6 +59,10 @@ interface PlanningPersonRow {
   contract_type?: string | null;
   hired_on?: string | null;
   departed_on?: string | null;
+  birth_date?: string | null;
+  birth_place?: string | null;
+  identity_document_number?: string | null;
+  identity_document_type?: string | null;
   deck_certificate_label?: string | null;
   engine_certificate_label?: string | null;
   active: boolean;
@@ -312,6 +317,10 @@ export interface PlanningPerson {
   contractType: string;
   hiredOn: string;
   departedOn: string;
+  birthDate?: string;
+  birthPlace?: string;
+  identityDocumentNumber?: string;
+  identityDocumentType?: string;
   deckCertificateLabel?: string;
   engineCertificateLabel?: string;
   active: boolean;
@@ -585,6 +594,10 @@ export interface CreateVesselInput {
   acronym: string;
 }
 
+export interface UpdatePlanningVesselInput extends CreateVesselInput {
+  id: number;
+}
+
 export interface CreatePlanningAssignmentInput {
   vesselId: string;
   captainPersonId: string;
@@ -654,6 +667,12 @@ export interface SavePlanningVesselDayLocationInput {
   vesselId: number;
   workDate: string;
   location: string;
+}
+
+export interface SavePlanningAssignmentDayNoteInput {
+  assignmentId: number;
+  workDate: string;
+  note: string;
 }
 
 export interface SavePlanningHandoverInput {
@@ -726,6 +745,10 @@ export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson
     contractType: row.contract_type || '',
     hiredOn: row.hired_on || '',
     departedOn: row.departed_on || '',
+    birthDate: row.birth_date || '',
+    birthPlace: row.birth_place || '',
+    identityDocumentNumber: row.identity_document_number || '',
+    identityDocumentType: row.identity_document_type || '',
     deckCertificateLabel: row.deck_certificate_label || '',
     engineCertificateLabel: row.engine_certificate_label || '',
     active: row.active,
@@ -1327,6 +1350,21 @@ export async function createPlanningAssignment(
   return data as PlanningAssignmentRow;
 }
 
+export async function updatePlanningVessel(client: SupabaseClient, input: UpdatePlanningVesselInput): Promise<PlanningVessel> {
+  const vesselId = planningEntityId(input.id, 'Le navire');
+  const vesselName = requiredPlanningText(input.name, 'Le nom du navire');
+  const payload = {
+    name: vesselName,
+    acronym: input.acronym.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await client.from('vessels').update(payload).eq('id', vesselId).select(VESSEL_SELECT).single();
+  if (error) throwPlanningDataError('update-vessel', 'Impossible de modifier ce navire.', error);
+  const vessel = mapVesselRows([data as VesselRow])[0];
+  await writeVesselChangeLog(client, vessel.id, 'update', { name: vessel.name, acronym: vessel.acronym });
+  return vessel;
+}
+
 export async function savePlanningVesselDayLocation(
   client: SupabaseClient,
   input: SavePlanningVesselDayLocationInput,
@@ -1345,10 +1383,28 @@ export async function savePlanningVesselDayLocation(
   return typeof data === 'number' ? data : null;
 }
 
+export async function savePlanningAssignmentDayNote(
+  client: SupabaseClient,
+  input: SavePlanningAssignmentDayNoteInput,
+): Promise<number | null> {
+  const assignmentId = planningEntityId(input.assignmentId, "L'affectation");
+  assertSinglePlanningDay(input.workDate, input.workDate);
+  const note = input.note.trim();
+  if (note.length > 32) throw new Error('Le texte quotidien ne peut pas dépasser 32 caractères.');
+
+  const { data, error } = await client.rpc('save_planning_assignment_day_note', {
+    p_assignment_id: assignmentId,
+    p_work_date: input.workDate,
+    p_note: note,
+  });
+  if (error) throwPlanningDataError('save-assignment-day-note', 'Impossible d’enregistrer le texte quotidien.', error);
+  return typeof data === 'number' ? data : null;
+}
+
 async function writeVesselChangeLog(
   client: SupabaseClient,
   vesselId: number,
-  action: 'create' | 'archive',
+  action: 'create' | 'update' | 'archive',
   payload: Record<string, unknown>,
 ) {
   try {

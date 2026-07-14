@@ -125,18 +125,19 @@ export function PlanningPublicationPanel({
                 {ACTION_LABELS[primaryAction]}
               </button>
             ) : null}
-            <div className="planning-publication-action-menu">
+            {menuActions.length ? <div className="planning-publication-action-menu">
               <button
+                aria-label={`Afficher ${menuActions.length} autre${menuActions.length > 1 ? 's' : ''} action${menuActions.length > 1 ? 's' : ''} de publication`}
                 aria-expanded={isActionsOpen}
                 className="is-secondary"
                 onClick={() => setIsActionsOpen((current) => !current)}
                 type="button"
               >
-                Actions <ChevronDown aria-hidden="true" size={15} />
+                Autres actions ({menuActions.length}) <ChevronDown aria-hidden="true" size={15} />
               </button>
               {isActionsOpen ? (
-                <div aria-label="Composition du menu Actions" className="planning-publication-action-popover" role="group">
-                  <header><strong>Actions disponibles</strong><small>Selon le statut et vos permissions</small></header>
+                <div aria-label="Autres actions de publication" className="planning-publication-action-popover" role="group">
+                  <header><strong>Autres actions disponibles</strong><small>Le rôle de chaque action est détaillé ci-dessous.</small></header>
                   {primaryAction ? <p><span>{ACTION_LABELS[primaryAction]}</span><small>{ACTION_DESCRIPTIONS[primaryAction]} Bouton principal.</small></p> : null}
                   {menuActions.map((action) => (
                     <button aria-label={ACTION_LABELS[action]} disabled={isSaving} key={action} onClick={() => void runAction(action)} type="button">
@@ -144,10 +145,9 @@ export function PlanningPublicationPanel({
                       <span><strong>{ACTION_LABELS[action]}</strong><small>{ACTION_DESCRIPTIONS[action]}</small></span>
                     </button>
                   ))}
-                  {!menuActions.length ? <p><small>Aucune autre action disponible à cette étape.</small></p> : null}
                 </div>
               ) : null}
-            </div>
+            </div> : null}
           </div>
           {validationMessage ? <small className="form-error">{validationMessage}</small> : null}
         </div>

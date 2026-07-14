@@ -85,7 +85,7 @@ describe('Planning P1.1 panel', () => {
     const user = userEvent.setup();
     render(<PlanningP11Panel canManageManning={false} canManageRotations={false} canManageTemplates={false} client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
-    await user.click(screen.getByRole('tab', { name: 'Matrice' }));
+    await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
     expect(await screen.findByRole('heading', { name: 'Armement COTENTIN' })).toBeInTheDocument();
     const row = screen.getByRole('cell', { name: 'Capitaine' }).closest('tr')!;
     expect(within(row).getAllByRole('cell')[4]).toHaveTextContent('1');

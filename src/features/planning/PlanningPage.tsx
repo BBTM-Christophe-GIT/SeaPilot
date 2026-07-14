@@ -9,6 +9,8 @@ import {
   Copy,
   Download,
   Expand,
+  FilePenLine,
+  FileSpreadsheet,
   GripVertical,
   Minus,
   Pencil,
@@ -79,9 +81,11 @@ import {
   mapPlanningAssignmentRows,
   revokePlanningDerogation,
   savePlanningHandover,
+  savePlanningAssignmentDayNote,
   savePlanningVesselDayLocation,
   transitionPlanningPublication,
   updatePlanningEvent,
+  updatePlanningVessel,
   updatePlanningProject,
   type PlanningPerson,
   type PlanningConfirmationStatus,
@@ -95,6 +99,12 @@ import {
   type PlanningVessel,
   type SavePlanningHandoverInput,
 } from './planningQueries';
+import {
+  availablePlanningCrewListBoards,
+  buildPlanningCrewList,
+  generatePlanningCrewList,
+  type PlanningCrewListFormat,
+} from './planningCrewList';
 import { PlanningControlSummary } from './PlanningControlSummary';
 import {
   PlanningDerogationDialog,
@@ -170,6 +180,8 @@ interface ProjectFormState {
 }
 
 interface ExportFormState { personName: string; startsOn: string; endsOn: string }
+interface CrewListFormState { vesselId: string; date: string; watchGroup: string; format: PlanningCrewListFormat }
+interface VesselFormState { id: number; name: string; acronym: string }
 
 type SideTab = 'conflicts' | 'handovers' | 'derogations' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
@@ -296,11 +308,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isProjectOpen, setIsProjectOpen] = useState(false);
   const [isProjectQuick, setIsProjectQuick] = useState(false);
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
+  const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
   const [exportForm, setExportForm] = useState<ExportFormState>({ personName: '', startsOn: '', endsOn: '' });
+  const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showWeekends, setShowWeekends] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -316,6 +330,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [touchPersonDrag, setTouchPersonDrag] = useState<{ person: PlanningPerson; x: number; y: number } | null>(null);
   const [touchDropTarget, setTouchDropTarget] = useState<{ vesselId: number; date: string } | null>(null);
   const [collapsedFleetNodes, setCollapsedFleetNodes] = useState<Set<string>>(() => new Set());
+  const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
   const touchDropTargetRef = useRef<{ vesselId: number; date: string } | null>(null);
 
   useEffect(() => {
@@ -325,10 +340,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }, []);
 
   const timelineDays = useMemo(() => buildPlanningTimeline(anchorDate, viewMode), [anchorDate, viewMode]);
-  const days = useMemo(
-    () => showWeekends ? timelineDays : timelineDays.filter((day) => !day.isWeekend),
-    [showWeekends, timelineDays],
-  );
+  const days = timelineDays;
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(timelineDays), [timelineDays]);
   const publicationVessel = useMemo(
@@ -409,6 +421,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   );
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const crewListBoards = useMemo(() => availablePlanningCrewListBoards(
+    overview,
+    Number(crewListForm.vesselId),
+    crewListForm.date,
+  ), [crewListForm.date, crewListForm.vesselId, overview]);
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
   const conflictEventIds = useMemo(() => getPlanningConflictEventIds(overview), [overview]);
   const planningControls = useMemo(() => buildPlanningControlCenter(overview, allPlanningCrewEvents), [allPlanningCrewEvents, overview]);
@@ -616,6 +633,95 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
+  async function saveAssignmentDayNote(event: PlanningCrewEvent, date: string, note: string): Promise<boolean> {
+    if (!canEditPlanning || !event.assignmentId) return false;
+    setErrorMessage(null);
+    try {
+      await savePlanningAssignmentDayNote(effectiveClient, { assignmentId: event.assignmentId, workDate: date, note });
+      const daysData = await fetchPlanningDays(effectiveClient);
+      updateOverview((current) => ({ ...current, days: daysData }));
+      setStatusMessage(note.trim() ? `Texte enregistré pour ${event.person} le ${formatPlanningDate(date)}.` : `Texte supprimé pour ${event.person} le ${formatPlanningDate(date)}.`);
+      return true;
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le texte quotidien.'));
+      return false;
+    }
+  }
+
+  function openVesselEditor(lane: PlanningFleetLane) {
+    const vessel = overview.vessels.find((item) => item.id === lane.vesselId);
+    if (!vessel) {
+      setErrorMessage('La fiche de ce navire est indisponible. Actualisez le planning.');
+      return;
+    }
+    setVesselForm({ id: vessel.id, name: vessel.name, acronym: vessel.acronym });
+  }
+
+  async function saveVesselEditor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!vesselForm || !permissions.canManageVessels) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const vessel = await updatePlanningVessel(effectiveClient, vesselForm);
+      updateOverview((current) => ({ ...current, vessels: current.vessels.map((item) => item.id === vessel.id ? vessel : item) }));
+      setVesselForm(null);
+      setStatusMessage(`Fiche de ${vessel.name} mise à jour.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de modifier ce navire.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openNewBoard(lane: PlanningFleetLane) {
+    if (lane.vesselId === null) return;
+    const boardNumbers = fleetRows
+      .filter((row) => row.type === 'board' && row.vesselId === lane.vesselId)
+      .map((row) => Number(row.board.match(/\d+/)?.[0] || 0));
+    const watchGroup = `Bordée ${Math.max(0, ...boardNumbers) + 1}`;
+    openAssignment({ vesselId: String(lane.vesselId), watchGroup }, false);
+  }
+
+  function openBoardAssignment(vesselId: number | null, watchGroup: string) {
+    if (vesselId === null) return;
+    openAssignment({ vesselId: String(vesselId), watchGroup }, false);
+  }
+
+  function openCrewList() {
+    const vesselId = activeVessels.find((vessel) => availablePlanningCrewListBoards(overview, vessel.id, anchorDate).length)?.id
+      || activeVessels[0]?.id;
+    const boards = vesselId ? availablePlanningCrewListBoards(overview, vesselId, anchorDate) : [];
+    setCrewListForm({ vesselId: vesselId ? String(vesselId) : '', date: anchorDate, watchGroup: boards.length === 1 ? boards[0] : '', format: 'xlsx' });
+    setIsCrewListOpen(true);
+  }
+
+  async function handleGenerateCrewList(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const document = buildPlanningCrewList(overview, {
+        vesselId: Number(crewListForm.vesselId),
+        date: crewListForm.date,
+        watchGroup: crewListForm.watchGroup,
+      });
+      const generated = await generatePlanningCrewList(document, crewListForm.format);
+      const url = URL.createObjectURL(generated.blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = url;
+      anchor.download = generated.fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setStatusMessage(`Crew list ${crewListForm.format.toUpperCase()} générée pour ${document.vesselName}.` + (document.incompleteProfiles.length ? ` ${document.incompleteProfiles.length} profil(s) incomplet(s) : les champs absents restent vides.` : ''));
+      setIsCrewListOpen(false);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de générer la crew list.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function beginTouchPersonDrag(event: React.PointerEvent<HTMLElement>, person: PlanningPerson) {
     if (event.pointerType === 'mouse' || !canEditPlanning) return;
     event.preventDefault();
@@ -766,6 +872,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   function openEvent(event: PlanningCrewEvent) {
     const vessel = activeVessels.find((item) => item.id === event.vesselId || item.name === event.vessel);
     setSelectedEvent(event);
+    setSelectedTimelineId(event.id);
     setEventForm({
       vesselId: vessel ? String(vessel.id) : '', startsOn: event.startsOn, endsOn: event.endsOn,
       startsAt: event.startsAt ? utcToPlanningLocalDateTime(event.startsAt) : localDateTime(event.startsOn, '08:00'),
@@ -882,6 +989,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function openProjectEditor(project: PlanningProjectRecord) {
+    setSelectedTimelineId(`project-${project.id}`);
     setSelectedProject(project);
     setProjectForm({
       title: project.title,
@@ -1300,6 +1408,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <output aria-label="Niveau de zoom">{zoomLevel} %</output>
                 <button aria-label="Zoom avant" disabled={zoomLevel >= 160} onClick={() => setZoomLevel((value) => Math.min(160, value + 20))} type="button"><Plus aria-hidden="true" size={15} /></button>
               </div>
+              <button aria-label={isFullscreen ? 'Quitter le plein écran' : 'Afficher le planning en plein écran'} className="planning-icon-button" onClick={() => void toggleFullscreen()} title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'} type="button"><Expand aria-hidden="true" size={17} /></button>
               <div className="planning-period-controls">
                 <button aria-label="Période précédente" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
                 <label><span>Date de référence</span><input aria-label="Date de référence" onChange={(event) => setAnchorDate(event.target.value)} type="date" value={anchorDate} /></label>
@@ -1310,21 +1419,26 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <button aria-expanded={isSettingsOpen} className="planning-tools-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><Wrench aria-hidden="true" size={17} />Outils</button>
                 {isSettingsOpen ? (
                   <div className="planning-tools-popover">
-                    <strong>Suivi opérationnel</strong>
-                    {visibleSideTabs.filter((tab) => tab.key !== 'unassigned').map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
-                    <hr />
-                    <label><input checked={showWeekends} onChange={(event) => setShowWeekends(event.target.checked)} type="checkbox" />Afficher les week-ends</label>
-                    {permissions.canManageVessels ? <button onClick={() => { setIsVesselsOpen(true); setIsSettingsOpen(false); }} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
-                    <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et armement</button>
-                    <button onClick={() => { setIsP12Open(true); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
-                    {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
-                    {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning</button> : null}
-                    {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP22Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Prévisions et scénarios</button> : null}
-                    {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
-                    {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
-                    {permissions.canManageDerogations ? <button onClick={() => { setDerogationPrefill({ startsAt: localDateTime(range.start || anchorDate, '08:00'), endsAt: localDateTime(range.start || anchorDate, '20:00') }); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation</button> : null}
-                    {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); setIsSettingsOpen(false); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
-                    <button onClick={() => { void toggleFullscreen(); setIsSettingsOpen(false); }} type="button"><Expand aria-hidden="true" size={16} />{isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}</button>
+                    <strong>Outils du planning</strong>
+                    <div className="planning-tools-group"><small>Navires</small>
+                      {permissions.canManageVessels ? <button onClick={() => { setIsVesselsOpen(true); setIsSettingsOpen(false); }} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
+                      {permissions.canExport ? <button onClick={() => { openCrewList(); setIsSettingsOpen(false); }} type="button"><FileSpreadsheet aria-hidden="true" size={16} />Générer une crew list</button> : null}
+                    </div>
+                    <div className="planning-tools-group"><small>Armement</small>
+                      {visibleSideTabs.filter((tab) => !['unassigned', 'certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
+                      <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et décision d’effectif</button>
+                      <button onClick={() => { setIsP12Open(true); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
+                      {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
+                      {permissions.canManageDerogations ? <button onClick={() => { setDerogationPrefill({ startsAt: localDateTime(range.start || anchorDate, '08:00'), endsAt: localDateTime(range.start || anchorDate, '20:00') }); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation</button> : null}
+                    </div>
+                    <div className="planning-tools-group"><small>Marins</small>
+                      {visibleSideTabs.filter((tab) => ['certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
+                      {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); setIsSettingsOpen(false); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
+                      {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
+                      {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning</button> : null}
+                      {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP22Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Prévisions et scénarios</button> : null}
+                      {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1345,7 +1459,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <div className="planning-board-guide" aria-label="Légende et gestes du planning">
               {perspective === 'fleet' ? <><span><i className="is-operation" />Opération</span><span><i className="is-maintenance" />Maintenance</span><span><i className="is-unavailability" />Indisponibilité</span></> : <><span><i className="is-sea" />En mer</span><span><i className="is-shore" />À terre</span><span><i className="is-provisional" />Provisoire</span></>}
               <span><i className="is-conflict" />Conflit</span>
-              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Cliquez un lieu pour le modifier · Glissez un marin sur un jour pour l’affecter' : 'Cliquez une zone vide pour ajouter · Glissez pour déplacer'}</small> : null}
+              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Glissez un marin sur un navire · Cliquez une case colorée pour saisir son texte quotidien' : 'Cliquez une zone vide pour ajouter · Glissez pour déplacer'}</small> : null}
             </div>
             <div className="planning-board-stats">
               {perspective === 'crew' && conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
@@ -1391,13 +1505,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       expanded={!collapsedFleetNodes.has(row.key)}
                       key={row.key}
                       lane={lane}
+                      onAddBoard={openNewBoard}
                       onAssignPerson={(personId, targetLane, date) => void assignPersonByDrop(personId, targetLane, date)}
                       onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
                       onOpen={openProjectEditor}
+                      onOpenVessel={openVesselEditor}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
                       onSaveLocation={saveVesselLocation}
                       onToggle={() => toggleFleetNode(row.key)}
                       pendingId={pendingMutationId}
+                      selectedId={selectedTimelineId}
                       touchDropTarget={touchDropTarget}
                       viewMode={viewMode}
                     />
@@ -1409,8 +1526,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       board={row.label}
                       crewCount={fleetTreeCounts.get(row.key) || 0}
                       days={days}
+                      editable={canEditPlanning}
                       expanded={!collapsedFleetNodes.has(row.key)}
                       key={row.key}
+                      onAddPerson={() => openBoardAssignment(row.vesselId, row.board)}
                       onToggle={() => toggleFleetNode(row.key)}
                       vessel={row.vessel}
                     />
@@ -1437,7 +1556,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onMove={(event, date) => void moveEvent(event, date)}
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
+                    onSaveDayNote={saveAssignmentDayNote}
+                    onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
+                    selectedId={selectedTimelineId}
                     viewMode={viewMode}
                   />
                 );
@@ -1454,7 +1576,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   onMove={(event, date) => void moveEvent(event, date)}
                   onOpen={openEvent}
                   onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
+                  onSelect={setSelectedTimelineId}
                   pendingId={pendingMutationId}
+                  selectedId={selectedTimelineId}
                   viewMode={viewMode}
                 />
               )) : null}
@@ -1512,6 +1636,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {derogationPrefill ? <PlanningDerogationDialog isSaving={isSaving} onClose={() => setDerogationPrefill(null)} onSave={(input) => void handleCreateDerogation(input)} overview={overview} prefill={derogationPrefill} /> : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
+      {vesselForm ? <div className="planning-dialog-backdrop" role="presentation"><form aria-label={`Fiche du navire ${vesselForm.name}`} aria-modal="true" className="planning-dialog planning-vessel-sheet" onSubmit={saveVesselEditor} role="dialog"><header><div><FilePenLine aria-hidden="true" size={20} /><span><small>Fiche navire</small><h2>{vesselForm.name}</h2></span></div><button aria-label="Fermer" onClick={() => setVesselForm(null)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Nom<input aria-label="Nom du navire" disabled={!permissions.canManageVessels} maxLength={120} onChange={(event) => setVesselForm((current) => current ? { ...current, name: event.target.value } : null)} required value={vesselForm.name} /></label><label className="is-wide">Indicatif<input aria-label="Indicatif du navire" disabled={!permissions.canManageVessels} maxLength={40} onChange={(event) => setVesselForm((current) => current ? { ...current, acronym: event.target.value } : null)} value={vesselForm.acronym} /></label></div><footer><button className="is-secondary" onClick={() => setVesselForm(null)} type="button">Fermer</button>{permissions.canManageVessels ? <button disabled={isSaving} type="submit">Enregistrer</button> : null}</footer></form></div> : null}
+      {isCrewListOpen ? <div className="planning-dialog-backdrop" role="presentation"><form aria-modal="true" className="planning-dialog planning-crew-list-dialog" onSubmit={handleGenerateCrewList} role="dialog"><header><div><FileSpreadsheet aria-hidden="true" size={20} /><span><small>Document réglementaire</small><h2>Générer une crew list</h2></span></div><button aria-label="Fermer" onClick={() => setIsCrewListOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><p className="planning-dialog-intro">Le document A4 paysage reprend uniquement les affectations et profils enregistrés dans Supabase.</p><div className="planning-dialog-grid"><label>Date<input aria-label="Date de la crew list" onChange={(event) => { const date = event.target.value; const boards = availablePlanningCrewListBoards(overview, Number(crewListForm.vesselId), date); setCrewListForm((current) => ({ ...current, date, watchGroup: boards.length === 1 ? boards[0] : '' })); }} required type="date" value={crewListForm.date} /></label><label>Navire<select aria-label="Navire de la crew list" onChange={(event) => { const vesselId = event.target.value; const boards = availablePlanningCrewListBoards(overview, Number(vesselId), crewListForm.date); setCrewListForm((current) => ({ ...current, vesselId, watchGroup: boards.length === 1 ? boards[0] : '' })); }} required value={crewListForm.vesselId}><option value="">Choisir</option>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label><label>Bordée<select aria-label="Bordée de la crew list" disabled={!crewListBoards.length} onChange={(event) => setCrewListForm((current) => ({ ...current, watchGroup: event.target.value }))} required={crewListBoards.length > 0} value={crewListForm.watchGroup}><option value="">{crewListBoards.length ? 'Choisir' : 'Aucune bordée à cette date'}</option>{crewListBoards.map((board) => <option key={board}>{board}</option>)}</select></label><label>Format<select aria-label="Format de la crew list" onChange={(event) => setCrewListForm((current) => ({ ...current, format: event.target.value as PlanningCrewListFormat }))} value={crewListForm.format}><option value="xlsx">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select></label></div>{crewListForm.vesselId && !crewListBoards.length ? <p className="planning-crew-list-warning" role="status">Aucune affectation active pour ce navire à cette date.</p> : null}<footer><button className="is-secondary" onClick={() => setIsCrewListOpen(false)} type="button">Annuler</button><button disabled={isSaving || !crewListBoards.length || !crewListForm.watchGroup} type="submit">Générer {crewListForm.format.toUpperCase()}</button></footer></form></div> : null}
       {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
     </section>
   );

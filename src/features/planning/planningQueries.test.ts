@@ -17,10 +17,12 @@ import {
   mapPlanningVersionRows,
   mapVesselRows,
   savePlanningHandover,
+  savePlanningAssignmentDayNote,
   savePlanningVesselDayLocation,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
+  updatePlanningVessel,
 } from './planningQueries';
 
 const vesselRow = {
@@ -175,6 +177,10 @@ describe('planning mappers', () => {
         contractType: '',
         hiredOn: '',
         departedOn: '',
+        birthDate: '',
+        birthPlace: '',
+        identityDocumentNumber: '',
+        identityDocumentType: '',
         deckCertificateLabel: '',
         engineCertificateLabel: '',
         active: true,
@@ -625,6 +631,19 @@ describe('planning writes', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it('updates a vessel sheet and records its audit metadata', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { ...vesselRow, name: 'COTENTIN II' }, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const auditInsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockImplementation((table: string) => table === 'vessels' ? { update } : { insert: auditInsert });
+
+    await expect(updatePlanningVessel({ from } as never, { id: 1, name: ' COTENTIN II ', acronym: ' CT2 ' })).resolves.toMatchObject({ name: 'COTENTIN II' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ name: 'COTENTIN II', acronym: 'CT2' }));
+    expect(auditInsert).toHaveBeenCalledWith(expect.objectContaining({ entity_kind: 'vessel', entity_id: 1, action: 'update' }));
+  });
+
   it('inserts an assignment with nullable captain and default source', async () => {
     const createdRow = {
       ...assignmentRow,
@@ -756,6 +775,31 @@ describe('planning writes', () => {
       workDate: '14/07/2026',
       location: 'Cherbourg',
     })).rejects.toThrow('Les dates doivent être valides et utiliser le format YYYY-MM-DD.');
+  });
+
+  it('saves a short per-day assignment text through the protected RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 901, error: null });
+
+    await expect(savePlanningAssignmentDayNote({ rpc } as never, {
+      assignmentId: 100,
+      workDate: '2026-07-14',
+      note: ' Port Chantereyne ',
+    })).resolves.toBe(901);
+    expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_note', {
+      p_assignment_id: 100,
+      p_work_date: '2026-07-14',
+      p_note: 'Port Chantereyne',
+    });
+  });
+
+  it('rejects an overlong per-day assignment text before Supabase', async () => {
+    const rpc = vi.fn();
+    await expect(savePlanningAssignmentDayNote({ rpc } as never, {
+      assignmentId: 100,
+      workDate: '2026-07-14',
+      note: 'x'.repeat(33),
+    })).rejects.toThrow('32 caractères');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('creates a typed fleet event and returns the normalized Supabase row', async () => {

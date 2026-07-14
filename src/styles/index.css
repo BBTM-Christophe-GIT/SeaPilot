@@ -9244,6 +9244,195 @@ button.planning-p12-conflict-card {
   pointer-events: none;
 }
 
+/* Planning v3.2: contextual hierarchy actions, per-day assignment text and move feedback. */
+.planning-tree-row {
+  display: flex;
+  gap: 5px;
+  padding: 0 8px;
+}
+
+.planning-tree-row.is-board {
+  padding-left: 20px;
+}
+
+.planning-tree-row .planning-tree-toggle {
+  min-width: 0;
+  flex: 1;
+  gap: 8px;
+  padding: 0 4px 0 2px;
+  border: 0;
+  background: transparent;
+}
+
+.planning-tree-row .planning-tree-toggle > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.planning-tree-row .planning-tree-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 1px solid #c5d4e5;
+  border-radius: 7px;
+  color: #1769dc;
+  background: #fff;
+  cursor: pointer;
+}
+
+.planning-tree-row .planning-tree-action:hover,
+.planning-tree-row .planning-tree-action:focus-visible {
+  border-color: #1769dc;
+  outline: 2px solid #bcd6ff;
+  background: #edf5ff;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label {
+  padding-left: 54px;
+}
+
+.planning-assignment-note-cell {
+  z-index: 8;
+  min-width: 0;
+  height: 28px;
+  align-self: center;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, .32);
+  padding: 0 3px;
+  color: #fff;
+  background: transparent;
+  font-size: .6rem;
+  font-weight: 780;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.planning-assignment-note-cell:disabled {
+  color: #fff;
+  opacity: 1;
+  cursor: default;
+}
+
+.planning-assignment-note-cell.is-first {
+  margin-left: 8px;
+}
+
+.planning-assignment-note-cell.is-last {
+  margin-right: 8px;
+}
+
+.planning-assignment-note-cell:hover,
+.planning-assignment-note-cell:focus-visible,
+.planning-assignment-note-cell.is-selected {
+  outline: 2px solid #0d48a1;
+  outline-offset: -2px;
+  background: rgba(255, 255, 255, .2);
+}
+
+.planning-assignment-note-editor {
+  display: flex;
+  z-index: 32;
+  width: max(100%, 190px);
+  height: 34px;
+  align-self: center;
+  gap: 2px;
+  border: 2px solid #1769dc;
+  border-radius: 7px;
+  padding: 2px;
+  background: #fff;
+  box-shadow: 0 9px 24px rgba(14, 56, 110, .25);
+}
+
+.planning-assignment-note-editor input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  padding: 0 5px;
+  font-size: .66rem;
+  outline: 0;
+}
+
+.planning-assignment-note-editor button {
+  display: grid;
+  width: 25px;
+  flex: 0 0 25px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  background: #1769dc;
+}
+
+.planning-assignment-note-editor button:last-child {
+  color: #53677e;
+  background: #e9eef4;
+}
+
+.planning-move-preview {
+  z-index: 28;
+  height: calc(100% - 10px);
+  align-self: center;
+  border: 2px dashed #0f5fd0;
+  border-radius: 8px;
+  background: repeating-linear-gradient(135deg, rgba(23, 105, 220, .28) 0 10px, rgba(111, 169, 248, .12) 10px 20px);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .65) inset;
+  pointer-events: none;
+}
+
+.planning-move-preview.is-crew {
+  height: 31px;
+  border-color: #057a58;
+  background: repeating-linear-gradient(135deg, rgba(12, 151, 96, .35) 0 10px, rgba(95, 214, 164, .14) 10px 20px);
+}
+
+.planning-project-bar.is-selected,
+.planning-crew-bar.is-selected {
+  z-index: 12;
+  outline: 3px solid #0f4fae;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.planning-tools-group {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+  border-top: 1px solid #e1e7ef;
+}
+
+.planning-tools-group > small {
+  padding: 0 10px 3px;
+  color: #6c7a8d;
+  font-size: .62rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.planning-dialog-intro,
+.planning-crew-list-warning {
+  margin: 0 0 14px;
+  color: #5d6d82;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.planning-crew-list-warning {
+  border-left: 3px solid #d79017;
+  padding: 8px 10px;
+  color: #79520a;
+  background: #fff8e7;
+}
+
+.planning-crew-list-dialog {
+  width: min(680px, calc(100vw - 32px));
+}
+
 .planning-side-card {
   top: 16px;
   border-color: #d8e3ef;
