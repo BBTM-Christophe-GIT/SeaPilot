@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -33,6 +33,10 @@ interface TimelineBaseProps {
   pendingId: string | null;
   viewMode: PlanningViewMode;
 }
+
+const EMPTY_SELECTED_GRID_CELLS: ReadonlyMap<string, PlanningGridCell> = new Map();
+const EMPTY_CUT_GRID_CELL_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
 
 function projectStatusIcon(project: PlanningProjectRecord): string {
   const tone = projectStatusTone(project.status);
@@ -311,8 +315,8 @@ export function PlanningCrewTimelineRow({
   onEditDayState,
   onSelect,
   selectedId,
-  selectedGridCells = new Map(),
-  cutGridCellKeys = new Set(),
+  selectedGridCells = EMPTY_SELECTED_GRID_CELLS,
+  cutGridCellKeys = EMPTY_CUT_GRID_CELL_KEYS,
   onGridCellPointerDown,
   onGridCellPointerEnter,
   onConflictCellClick,
@@ -341,6 +345,13 @@ export function PlanningCrewTimelineRow({
   const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const conflictClickTimerRef = useRef<number | null>(null);
+  const laneCoverage = useMemo(() => ({
+    occupiedDates: new Set(days
+      .filter((day) => lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date))
+      .map((day) => day.date)),
+    vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || null,
+    functionLabel: lane.events[0]?.functionLabel || 'Équipage',
+  }), [days, lane.events]);
 
   function cancelPendingConflictClick() {
     if (conflictClickTimerRef.current === null) return;
@@ -403,8 +414,8 @@ export function PlanningCrewTimelineRow({
         <span><strong>{lane.label}</strong>{hierarchy ? null : <small>{lane.detail || 'Sans détail'}</small>}</span>
       </div>
       {days.map((day, index) => {
-        const occupied = lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date);
-        const vesselId = lane.events.find((event) => event.vesselId !== null)?.vesselId || null;
+        const occupied = laneCoverage.occupiedDates.has(day.date);
+        const vesselId = laneCoverage.vesselId;
         const showEmptyButton = editable && !occupied;
         const canPaintEmpty = hierarchy && lane.personId !== null && vesselId !== null && Boolean(onGridCellPointerDown);
         const emptySelectionId = `empty-${lane.key}-${day.date}`;
@@ -421,7 +432,7 @@ export function PlanningCrewTimelineRow({
           vesselId,
           vessel: lane.vessel,
           watchGroup: lane.watchGroup,
-          functionLabel: lane.events[0]?.functionLabel || 'Équipage',
+          functionLabel: laneCoverage.functionLabel,
           assignmentId: null,
           eventId: null,
           status: planningGridDefaultStatus(lane.vessel),
@@ -473,15 +484,16 @@ export function PlanningCrewTimelineRow({
         const endsOn = preview?.endsOn || event.endsOn;
         const placement = dateGridPlacement(startsOn, endsOn, days);
         if (!placement) return null;
-        const conflictDates = conflictDatesByEvent.get(event.id) || new Set<string>();
+        const conflictDates = conflictDatesByEvent.get(event.id) || EMPTY_CONFLICT_DATES;
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
+        const hasDailyGrid = hierarchy && Boolean(event.assignmentId) && viewMode !== 'year';
         return (
           <Fragment key={event.id}>
           <button
             aria-busy={isPending}
             aria-label={`${event.person}, ${event.status}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
+            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ' has-daily-grid' : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
             draggable={editable && !preview && !isPending}
             onClick={(clickEvent) => {
               if (suppressClickRef.current) {
@@ -520,7 +532,7 @@ export function PlanningCrewTimelineRow({
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
           </button>
-          {hierarchy && event.assignmentId && viewMode !== 'year' ? days.map((day, dayIndex) => {
+          {hasDailyGrid ? days.map((day, dayIndex) => {
             if (day.date < event.startsOn || day.date > event.endsOn) return null;
             if (event.personId === null || event.vesselId === null) return null;
             const cellKey = planningGridCellKey(lane.key, day.date);

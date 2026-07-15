@@ -376,11 +376,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [gridConflictForm, setGridConflictForm] = useState<PlanningGridConflictForm | null>(null);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
   const gridPaintRef = useRef<{ laneKey: string; cells: Map<string, PlanningGridCell> } | null>(null);
+  const gridPaintFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
     document.addEventListener('fullscreenchange', handleFullscreen);
     return () => document.removeEventListener('fullscreenchange', handleFullscreen);
+  }, []);
+
+  useEffect(() => () => {
+    if (gridPaintFrameRef.current === null) return;
+    if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(gridPaintFrameRef.current);
+    else window.clearTimeout(gridPaintFrameRef.current);
   }, []);
 
   const timelineDays = useMemo(() => buildPlanningTimeline(anchorDate, viewMode), [anchorDate, viewMode]);
@@ -786,13 +793,27 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     if (!paint || paint.laneKey !== cell.laneKey || cell.isConflict || paint.cells.has(cell.key)) return;
     const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
     paint.cells.set(cell.key, paintedCell);
-    setSelectedGridCells(new Map(paint.cells));
+    if (gridPaintFrameRef.current !== null) return;
+    const flushSelection = () => {
+      gridPaintFrameRef.current = null;
+      const currentPaint = gridPaintRef.current;
+      if (currentPaint) setSelectedGridCells(new Map(currentPaint.cells));
+    };
+    gridPaintFrameRef.current = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame(flushSelection)
+      : window.setTimeout(flushSelection, 0);
   }
 
   async function finishPlanningGridPaint() {
     const paint = gridPaintRef.current;
     gridPaintRef.current = null;
     if (!paint?.cells.size) return;
+    if (gridPaintFrameRef.current !== null) {
+      if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(gridPaintFrameRef.current);
+      else window.clearTimeout(gridPaintFrameRef.current);
+      gridPaintFrameRef.current = null;
+      setSelectedGridCells(new Map(paint.cells));
+    }
     const cells = sortPlanningGridCells([...paint.cells.values()]);
     await persistPlanningGridCells(
       cells,
@@ -1896,7 +1917,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                     onEditDayState={openDayState}
-                    onConflictCellClick={!isSaving && !gridClipboard ? openPlanningGridConflict : undefined}
+                    onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
                     onGridCellPointerDown={beginPlanningGridPaint}
                     onGridCellPointerEnter={extendPlanningGridPaint}
                     onSelect={setSelectedTimelineId}
