@@ -683,6 +683,8 @@ export interface PlanningGridMutationCell {
   personId: number;
   vesselId: number;
   assignmentId?: number | null;
+  eventId?: number | null;
+  eventKind?: 'assignment' | 'period' | 'day' | null;
   workDate: string;
   status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
   note: string;
@@ -1468,7 +1470,7 @@ function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {
     assertSinglePlanningDay(cell.workDate, cell.workDate);
     if (!['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(cell.status)) throw new Error('Le statut quotidien est invalide.');
     if (cell.note.trim().length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-    return {
+    const payload = {
       personId,
       vesselId,
       assignmentId,
@@ -1478,6 +1480,10 @@ function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {
       watchGroup: cell.watchGroup.trim() || 'Affectation',
       functionLabel: cell.functionLabel.trim() || 'Équipage',
     };
+    if (!cell.eventKind && !cell.eventId) return payload;
+    const eventId = planningEntityId(cell.eventId, "L'événement source");
+    if (!['assignment', 'period', 'day'].includes(cell.eventKind || '')) throw new Error("Le type d'événement source est invalide.");
+    return { ...payload, eventId, eventKind: cell.eventKind };
   });
 }
 
@@ -1504,6 +1510,21 @@ export async function removePlanningGridCells(
     p_reason: normalizedReason,
   });
   if (error) throwPlanningDataError('remove-planning-grid-cells', 'Impossible d’effacer les cases sélectionnées.', error);
+  return (data || { deletedCells: 0, affectedAssignments: 0, createdSplits: 0 }) as RemovePlanningGridCellsResult;
+}
+
+export async function resolvePlanningGridConflictCells(
+  client: SupabaseClient,
+  cells: PlanningGridMutationCell[],
+  reason: string,
+): Promise<RemovePlanningGridCellsResult> {
+  const normalizedReason = requiredPlanningText(reason, 'Le motif');
+  if (normalizedReason.length > 240) throw new Error('Le motif ne peut pas dépasser 240 caractères.');
+  const { data, error } = await client.rpc('resolve_planning_grid_conflict_cells', {
+    p_cells: planningGridMutationPayload(cells),
+    p_reason: normalizedReason,
+  });
+  if (error) throwPlanningDataError('resolve-planning-grid-conflict', 'Impossible de résoudre le conflit sélectionné.', error);
   return (data || { deletedCells: 0, affectedAssignments: 0, createdSplits: 0 }) as RemovePlanningGridCellsResult;
 }
 

@@ -24,6 +24,7 @@ import {
   savePlanningAssignmentDayState,
   savePlanningVesselDayLocation,
   removePlanningGridCells,
+  resolvePlanningGridConflictCells,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
@@ -962,6 +963,21 @@ describe('planning writes', () => {
     expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', {
       p_cells: [expect.objectContaining({ assignmentId: 9, workDate: '2026-07-14' })],
       p_reason: 'Conflit résolu',
+    });
+  });
+
+  it('resolves assignment and historical-period cells through one transactional RPC', async () => {
+    const result = { deletedCells: 3, affectedAssignments: 0, createdSplits: 0 };
+    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
+    const cells = [{
+      personId: 12, vesselId: 4, assignmentId: null, eventKind: 'period' as const, eventId: 301,
+      workDate: '2026-07-14', status: 'En Mer' as const, note: '', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+    }];
+
+    await expect(resolvePlanningGridConflictCells({ rpc } as never, cells, 'Conflit historique résolu')).resolves.toEqual(result);
+    expect(rpc).toHaveBeenCalledWith('resolve_planning_grid_conflict_cells', {
+      p_cells: [expect.objectContaining({ assignmentId: null, eventKind: 'period', eventId: 301, workDate: '2026-07-14' })],
+      p_reason: 'Conflit historique résolu',
     });
   });
 

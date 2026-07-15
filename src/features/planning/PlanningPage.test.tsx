@@ -300,6 +300,9 @@ function createClient(options: {
     if (functionName === 'remove_planning_grid_cells') {
       return Promise.resolve({ data: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 }, error: null });
     }
+    if (functionName === 'resolve_planning_grid_conflict_cells') {
+      return Promise.resolve({ data: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 }, error: null });
+    }
     if (functionName === 'move_planning_grid_cells') {
       return Promise.resolve({ data: { applied: { savedCells: 1, createdAssignments: 1 }, removed: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 } }, error: null });
     }
@@ -955,11 +958,49 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' });
     await userEvent.setup().click(within(dialog).getAllByRole('button', { name: /COTENTIN.*Garder cette ligne/ })[0]);
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', expect.objectContaining({
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('resolve_planning_grid_conflict_cells', expect.objectContaining({
       p_cells: [
-        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-10' }),
-        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-11' }),
-        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-12' }),
+        expect.objectContaining({ assignmentId: 101, eventKind: 'assignment', eventId: 101, workDate: '2026-07-10' }),
+        expect.objectContaining({ assignmentId: 101, eventKind: 'assignment', eventId: 101, workDate: '2026-07-11' }),
+        expect.objectContaining({ assignmentId: 101, eventKind: 'assignment', eventId: 101, workDate: '2026-07-12' }),
+      ],
+      p_reason: 'Résolution de conflit : priorité à COTENTIN / Affectation',
+    })));
+    expect(confirm).toHaveBeenCalledOnce();
+    confirm.mockRestore();
+  });
+
+  it('opens and resolves a conflict against a historical period without an assignment id', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const historicalPeriod = {
+      ...planningPeriodRow,
+      id: 301,
+      person_id: 11,
+      vessel_id: 2,
+      vessel_name: 'SUROIT',
+      starts_on: '2026-07-10',
+      ends_on: '2026-07-12',
+      slot365_source_id: '301',
+      slot365_source_key: 'SLOT-301',
+    };
+    const { client, rpc } = createClient({
+      vessels: [vesselRow, secondVesselRow],
+      assignments: [assignmentOverviewRow],
+      periods: [historicalPeriod],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const conflictCell = screen.getByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ });
+
+    await userEvent.setup().click(conflictCell);
+    const dialog = await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' });
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: /COTENTIN.*Garder cette ligne/ }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('resolve_planning_grid_conflict_cells', expect.objectContaining({
+      p_cells: [
+        expect.objectContaining({ assignmentId: null, eventKind: 'period', eventId: 301, workDate: '2026-07-10' }),
+        expect.objectContaining({ assignmentId: null, eventKind: 'period', eventId: 301, workDate: '2026-07-11' }),
+        expect.objectContaining({ assignmentId: null, eventKind: 'period', eventId: 301, workDate: '2026-07-12' }),
       ],
       p_reason: 'Résolution de conflit : priorité à COTENTIN / Affectation',
     })));
