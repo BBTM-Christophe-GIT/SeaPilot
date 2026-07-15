@@ -82,6 +82,7 @@ import {
   mapPlanningAssignmentRows,
   movePlanningGridCells,
   removePlanningGridCells,
+  resolvePlanningGridConflictCells,
   revokePlanningDerogation,
   savePlanningHandover,
   savePlanningAssignmentDayState,
@@ -741,8 +742,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   function openPlanningGridConflict(cell: PlanningGridCell) {
     const events = allPlanningCrewEvents.filter((event) => (
-      event.assignmentId
-      && event.personId === cell.personId
+      event.personId === cell.personId
       && event.startsOn <= cell.workDate
       && event.endsOn >= cell.workDate
       && conflictDatesByEvent.get(event.id)?.has(cell.workDate)
@@ -887,7 +887,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     if (!gridConflictForm) return;
     const removals = new Map<string, PlanningGridCell>();
     gridConflictForm.events.filter((event) => event.id !== priority.id).forEach((event) => {
-      if (!event.assignmentId || event.personId === null || event.vesselId === null) return;
+      if (event.personId === null || event.vesselId === null) return;
       const startsOn = event.startsOn > priority.startsOn ? event.startsOn : priority.startsOn;
       const endsOn = event.endsOn < priority.endsOn ? event.endsOn : priority.endsOn;
       for (let date = startsOn; date <= endsOn; date = addPlanningDays(date, 1)) {
@@ -896,10 +896,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           key: planningGridCellKey(laneKey, date), laneKey, workDate: date,
           personId: event.personId, person: event.person, vesselId: event.vesselId,
           vessel: event.vessel, watchGroup: event.board, functionLabel: event.functionLabel,
-          assignmentId: event.assignmentId, eventId: event.id,
+          assignmentId: event.assignmentId || null, eventId: event.id,
           status: planningGridDefaultStatus(event.vessel), note: event.dailyNotes?.[date] || '', isConflict: true,
         };
-        removals.set(`${event.assignmentId}:${date}`, cell);
+        removals.set(`${event.id}:${date}`, cell);
       }
     });
     const cells = [...removals.values()];
@@ -908,9 +908,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await removePlanningGridCells(
+      await resolvePlanningGridConflictCells(
         effectiveClient,
-        planningGridMutationCells(cells),
+        planningGridConflictMutationCells(cells),
         `Résolution de conflit : priorité à ${priority.vessel} / ${priority.board}`,
       );
       await refreshPlanningGridData();
@@ -2021,6 +2021,18 @@ function planningGridMutationCells(cells: PlanningGridCell[]) {
     watchGroup: cell.watchGroup,
     functionLabel: cell.functionLabel,
   }));
+}
+
+function planningGridConflictMutationCells(cells: PlanningGridCell[]) {
+  return planningGridMutationCells(cells).map((cell, index) => {
+    const sourceEventId = cells[index].eventId || '';
+    const [eventKind, rawEventId] = sourceEventId.split('-');
+    const eventId = Number(rawEventId);
+    if (!['assignment', 'period', 'day'].includes(eventKind) || !Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("La ligne source du conflit n'est pas identifiable.");
+    }
+    return { ...cell, eventKind: eventKind as 'assignment' | 'period' | 'day', eventId };
+  });
 }
 
 function hydratePlanningGridCells(cells: PlanningGridCell[], assignments: ReturnType<typeof mapPlanningAssignmentOverviewRows>): PlanningGridCell[] {
