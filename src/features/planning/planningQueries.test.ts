@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  applyPlanningGridCells,
   createPlanningAssignment,
   createPlanningBoardAssignments,
   createPlanningDerogation,
@@ -17,10 +18,12 @@ import {
   mapPlanningPublicationRows,
   mapPlanningVersionRows,
   mapVesselRows,
+  movePlanningGridCells,
   savePlanningHandover,
   savePlanningAssignmentDayNote,
   savePlanningAssignmentDayState,
   savePlanningVesselDayLocation,
+  removePlanningGridCells,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
@@ -935,6 +938,47 @@ describe('planning writes', () => {
       p_status: 'Repos',
       p_note: 'Passation',
     });
+  });
+
+  it('persists painted cells through one batch RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { savedCells: 2, createdAssignments: 1 }, error: null });
+    await expect(applyPlanningGridCells({ rpc } as never, [{
+      personId: 12, vesselId: 4, assignmentId: null, workDate: '2026-07-14',
+      status: 'En Mer', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+    }])).resolves.toEqual({ savedCells: 2, createdAssignments: 1 });
+    expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', { p_cells: [{
+      personId: 12, vesselId: 4, assignmentId: null, workDate: '2026-07-14',
+      status: 'En Mer', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+    }] });
+  });
+
+  it('removes selected dates with an explicit history reason', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { deletedCells: 2, affectedAssignments: 1, createdSplits: 1 }, error: null });
+    const cells = [{
+      personId: 12, vesselId: 4, assignmentId: 9, workDate: '2026-07-14',
+      status: 'En Mer' as const, note: '', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+    }];
+    await expect(removePlanningGridCells({ rpc } as never, cells, 'Conflit résolu')).resolves.toEqual({ deletedCells: 2, affectedAssignments: 1, createdSplits: 1 });
+    expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ assignmentId: 9, workDate: '2026-07-14' })],
+      p_reason: 'Conflit résolu',
+    });
+  });
+
+  it('moves cut cells through one transactional RPC', async () => {
+    const result = {
+      applied: { savedCells: 1, createdAssignments: 1 },
+      removed: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 },
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
+    const source = [{ personId: 12, vesselId: 4, assignmentId: 9, workDate: '2026-07-14', status: 'En Mer' as const, note: '', watchGroup: 'Bordée 1', functionLabel: 'Capitaine' }];
+    const target = [{ ...source[0], vesselId: 5, assignmentId: null, workDate: '2026-07-18' }];
+    await expect(movePlanningGridCells({ rpc } as never, source, target, 'Couper-coller')).resolves.toEqual(result);
+    expect(rpc).toHaveBeenCalledWith('move_planning_grid_cells', expect.objectContaining({
+      p_source_cells: [expect.objectContaining({ vesselId: 4, workDate: '2026-07-14' })],
+      p_target_cells: [expect.objectContaining({ vesselId: 5, workDate: '2026-07-18' })],
+      p_reason: 'Couper-coller',
+    }));
   });
 
   it('creates selected board positions through the atomic RPC', async () => {

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
 import { Fragment, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -13,6 +13,13 @@ import {
   type PlanningViewMode,
 } from './planningModel';
 import type { PlanningProjectRecord } from './planningQueries';
+import {
+  planningGridCellKey,
+  planningGridCellsShareSegment,
+  planningGridDefaultStatus,
+  normalizePlanningGridStatus,
+  type PlanningGridCell,
+} from './planningGrid';
 import {
   planningConfirmationLabel,
   planningFleetEventTypeLabel,
@@ -295,7 +302,7 @@ export function PlanningCrewTimelineRow({
   editable,
   pendingId,
   viewMode,
-  conflictEventIds,
+  conflictDatesByEvent,
   dayWidth,
   onCreate,
   onMove,
@@ -304,10 +311,14 @@ export function PlanningCrewTimelineRow({
   onEditDayState,
   onSelect,
   selectedId,
+  selectedGridCells = new Map(),
+  cutGridCellKeys = new Set(),
+  onGridCellPointerDown,
+  onGridCellPointerEnter,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
-  conflictEventIds: Set<string>;
+  conflictDatesByEvent: Map<string, Set<string>>;
   dayWidth: number;
   onCreate: (lane: PlanningCrewLane, date: string) => void;
   onMove: (event: PlanningCrewEvent, date: string) => void;
@@ -316,6 +327,10 @@ export function PlanningCrewTimelineRow({
   onEditDayState?: (event: PlanningCrewEvent, date: string | null) => void;
   onSelect: (id: string) => void;
   selectedId: string | null;
+  selectedGridCells?: ReadonlyMap<string, PlanningGridCell>;
+  cutGridCellKeys?: ReadonlySet<string>;
+  onGridCellPointerDown?: (cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onGridCellPointerEnter?: (cell: PlanningGridCell) => void;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -368,12 +383,32 @@ export function PlanningCrewTimelineRow({
       </div>
       {days.map((day, index) => {
         const occupied = lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date);
-        const canSelectEmpty = editable && !occupied;
+        const vesselId = lane.events.find((event) => event.vesselId !== null)?.vesselId || null;
+        const showEmptyButton = editable && !occupied;
+        const canPaintEmpty = hierarchy && lane.personId !== null && vesselId !== null && Boolean(onGridCellPointerDown);
         const emptySelectionId = `empty-${lane.key}-${day.date}`;
-        const emptySelected = selectedId === emptySelectionId;
-        const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR') === 'ARMEMENT - CHERBOURG';
+        const emptyKey = planningGridCellKey(lane.key, day.date);
+        const emptySelectedCell = selectedGridCells.get(emptyKey);
+        const emptySelected = Boolean(emptySelectedCell) || selectedId === emptySelectionId;
+        const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR').includes('ARMEMENT');
+        const emptyCell: PlanningGridCell | null = lane.personId !== null && vesselId !== null ? {
+          key: emptyKey,
+          laneKey: lane.key,
+          workDate: day.date,
+          personId: lane.personId,
+          person: lane.label,
+          vesselId,
+          vessel: lane.vessel,
+          watchGroup: lane.watchGroup,
+          functionLabel: lane.events[0]?.functionLabel || 'Équipage',
+          assignmentId: null,
+          eventId: null,
+          status: planningGridDefaultStatus(lane.vessel),
+          note: '',
+          isConflict: false,
+        } : null;
         const shared = {
-          className: cellClass(day, { create: canSelectEmpty, dragOver: dragOverDate === day.date, drop: editable }),
+          className: cellClass(day, { create: showEmptyButton, dragOver: dragOverDate === day.date, drop: editable }),
           'data-planning-drop-date': day.date,
           onDragEnter: editable ? () => setDragOverDate(day.date) : undefined,
           onDragLeave: editable ? () => setDragOverDate((current) => current === day.date ? null : current) : undefined,
@@ -393,8 +428,18 @@ export function PlanningCrewTimelineRow({
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
         };
-        return canSelectEmpty
-          ? <button {...shared} aria-label={`Sélectionner la case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ouvrir le formulaire complet.`} key={day.date} onClick={() => onSelect(emptySelectionId)} onDoubleClick={() => onCreate(lane, day.date)} type="button">{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker${armementCell ? ' is-armement' : ' is-default'}`} /> : <Plus aria-hidden="true" size={13} />}</button>
+        return showEmptyButton
+          ? <button
+              {...shared}
+              aria-label={`Sélectionner la case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ouvrir le formulaire complet.`}
+              data-planning-grid-cell={emptyKey}
+              key={day.date}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSelect(emptySelectionId); }}
+              onDoubleClick={() => onCreate(lane, day.date)}
+              onPointerDown={(event) => { if (canPaintEmpty && emptyCell) onGridCellPointerDown?.(emptyCell, event); }}
+              onPointerEnter={() => { if (canPaintEmpty && emptyCell) onGridCellPointerEnter?.(emptyCell); }}
+              type="button"
+            >{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker ${armementCell ? 'is-armement' : 'is-default'} is-${planningStatusTone(emptySelectedCell?.status || emptyCell?.status || 'En Mer')}`} /> : <Plus aria-hidden="true" size={13} />}</button>
           : <span {...shared} aria-hidden="true" key={day.date} />;
       })}
       {movePreview ? (() => {
@@ -407,7 +452,8 @@ export function PlanningCrewTimelineRow({
         const endsOn = preview?.endsOn || event.endsOn;
         const placement = dateGridPlacement(startsOn, endsOn, days);
         if (!placement) return null;
-        const isConflict = conflictEventIds.has(event.id);
+        const conflictDates = conflictDatesByEvent.get(event.id) || new Set<string>();
+        const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
         return (
           <Fragment key={event.id}>
@@ -448,28 +494,56 @@ export function PlanningCrewTimelineRow({
             type="button"
           >
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
-            {viewMode !== 'year' && placement.span >= 2 ? <span>{event.status === 'En Mer' ? hierarchy ? 'Embarqué' : event.vessel : event.status}</span> : null}
+            {viewMode !== 'year' && placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : event.status}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
           </button>
           {hierarchy && event.assignmentId && viewMode !== 'year' ? days.map((day, dayIndex) => {
             if (day.date < event.startsOn || day.date > event.endsOn) return null;
-            const note = event.dailyNotes?.[day.date] || '';
-            const dailyStatus = event.dailyStatuses?.[day.date] || event.status;
+            if (event.personId === null || event.vesselId === null) return null;
+            const cellKey = planningGridCellKey(lane.key, day.date);
+            const storedCell: PlanningGridCell = {
+              key: cellKey,
+              laneKey: lane.key,
+              workDate: day.date,
+              personId: event.personId,
+              person: event.person,
+              vesselId: event.vesselId,
+              vessel: event.vessel,
+              watchGroup: event.board,
+              functionLabel: event.functionLabel,
+              assignmentId: event.assignmentId || null,
+              eventId: event.id,
+              status: normalizePlanningGridStatus(event.dailyStatuses?.[day.date] || event.status, event.vessel),
+              note: event.dailyNotes?.[day.date] || '',
+              isConflict: conflictDates.has(day.date),
+            };
+            const cell = selectedGridCells.get(cellKey) || storedCell;
+            const adjacentCell = (date: string): PlanningGridCell | null => {
+              if (date < event.startsOn || date > event.endsOn) return null;
+              const adjacentKey = planningGridCellKey(lane.key, date);
+              return selectedGridCells.get(adjacentKey) || {
+                ...storedCell,
+                key: adjacentKey,
+                workDate: date,
+                status: normalizePlanningGridStatus(event.dailyStatuses?.[date] || event.status, event.vessel),
+                note: event.dailyNotes?.[date] || '',
+                isConflict: conflictDates.has(date),
+              };
+            };
+            const segmentStart = !planningGridCellsShareSegment(adjacentCell(addPlanningDays(day.date, -1)), cell);
+            const segmentEnd = !planningGridCellsShareSegment(cell, adjacentCell(addPlanningDays(day.date, 1)));
             return (
               <button
-                aria-label={`Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
-                className={`planning-assignment-note-cell is-${planningStatusTone(dailyStatus)}${selectedId === event.id ? ' is-selected' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}`}
-                disabled={!editable || !onEditDayState}
-                draggable={editable && !isPending}
+                aria-label={`${cell.isConflict ? 'Conflit. ' : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
+                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
+                data-planning-grid-cell={cellKey}
+                disabled={!editable}
                 key={`${event.id}-${day.date}`}
                 onClick={(noteEvent) => {
+                  noteEvent.preventDefault();
                   noteEvent.stopPropagation();
-                  if (suppressClickRef.current) {
-                    suppressClickRef.current = false;
-                    return;
-                  }
                   onSelect(event.id);
                 }}
                 onContextMenu={(contextEvent) => {
@@ -483,22 +557,12 @@ export function PlanningCrewTimelineRow({
                   doubleClickEvent.stopPropagation();
                   onOpen(event);
                 }}
-                onDragEnd={() => {
-                  setDraggingId(null);
-                  setMovePreview(null);
-                  window.setTimeout(() => { suppressClickRef.current = false; }, 0);
-                }}
-                onDragStart={(dragEvent) => {
-                  suppressClickRef.current = true;
-                  setDraggingId(event.id);
-                  onSelect(event.id);
-                  dragEvent.dataTransfer.effectAllowed = 'move';
-                  dragEvent.dataTransfer.setData('application/x-seapilot-event', event.id);
-                }}
+                onPointerDown={(pointerEvent) => onGridCellPointerDown?.(cell, pointerEvent)}
+                onPointerEnter={() => onGridCellPointerEnter?.(cell)}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={note || 'Ajouter un texte court pour ce jour'}
+                title={cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'}
                 type="button"
-              >{note}</button>
+              >{cell.note}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
           }) : null}
           </Fragment>
