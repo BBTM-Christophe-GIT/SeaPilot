@@ -771,10 +771,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setStatusMessage("Destination sélectionnée. Utilisez Ctrl+V pour coller.");
       return;
     }
-    if (cell.isConflict) {
-      openPlanningGridConflict(cell);
-      return;
-    }
+    if (cell.isConflict) return;
     const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
     const cells = new Map([[paintedCell.key, paintedCell]]);
     gridPaintRef.current = { laneKey: cell.laneKey, cells };
@@ -1918,6 +1915,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                     onEditDayState={openDayState}
+                    onConflictCellClick={!isSaving && !gridClipboard ? openPlanningGridConflict : undefined}
                     onGridCellPointerDown={beginPlanningGridPaint}
                     onGridCellPointerEnter={extendPlanningGridPaint}
                     onSelect={setSelectedTimelineId}
