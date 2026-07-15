@@ -413,6 +413,9 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.querySelector('.planning-board-titlebar')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Légende et gestes du planning')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Conflits planning')).not.toBeInTheDocument();
     expect(screen.getByText('Navires · Bordées · Marins')).toBeInTheDocument();
     expect(screen.getByText('Bordée 1')).toBeInTheDocument();
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);

@@ -3248,82 +3248,9 @@ button:disabled {
   font-weight: 800;
 }
 
-.planning-board-titlebar {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 14px;
-  border-bottom: 1px solid #e3e9f0;
-  padding: 0 14px;
-  color: #627188;
-  font-size: 0.68rem;
-  font-weight: 760;
-}
-
-.planning-board-titlebar strong {
-  margin-right: auto;
-  color: #1a2a41;
-  font-size: 0.82rem;
-}
-
-.planning-board-guide,
-.planning-board-stats {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.planning-board-guide > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.planning-board-guide i {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  background: #15ab73;
-}
-
-.planning-board-guide i.is-shore {
-  background: #f4c847;
-}
-
-.planning-board-guide i.is-conflict {
-  border: 1px solid var(--planning-event-conflict-strong);
-  background: var(--planning-event-conflict);
-}
-
-.planning-board-guide i.is-operation { background: var(--planning-event-operation); }
-.planning-board-guide i.is-maintenance { background: var(--planning-event-maintenance); }
-.planning-board-guide i.is-unavailability { background: var(--planning-event-unavailability); }
-.planning-board-guide i.is-provisional {
-  border: 1px dashed #557086;
-  background: repeating-linear-gradient(135deg, #a9bcc9 0 2px, transparent 2px 4px);
-}
-
-.planning-board-guide small {
-  border-left: 1px solid #dce4ed;
-  padding-left: 10px;
-  color: #2c6bea;
-  font-size: 0.62rem;
-  font-weight: 780;
-  white-space: nowrap;
-}
-
-.planning-board-stats .is-conflict {
-  border: 1px solid rgba(204, 31, 58, .2);
-  border-radius: 999px;
-  padding: 3px 7px;
-  color: var(--planning-event-conflict-selected);
-  background: var(--planning-event-conflict-soft);
-}
-
 .planning-calendar-scroll {
   --planning-label-width: 218px;
-  max-height: calc(100vh - 278px);
+  max-height: calc(100vh - 244px);
   min-height: 480px;
   overflow: auto;
   scrollbar-color: #8c9894 #edf1f4;
@@ -3394,10 +3321,14 @@ button:disabled {
 .planning-calendar-label-heading {
   display: flex;
   align-items: center;
-  padding: 0 15px;
-  color: #41526a;
-  font-size: 0.7rem;
-  font-weight: 820;
+  border-bottom: 1px solid #cad6e4;
+  padding: 0 12px;
+  color: #52647a;
+  background: #f7f9fc;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
 }
 
 .planning-day-heading {
@@ -4431,7 +4362,7 @@ button:disabled {
   }
 
   .planning-calendar-scroll {
-    max-height: calc(100vh - 330px);
+    max-height: calc(100vh - 296px);
   }
 }
 
@@ -4454,10 +4385,6 @@ button:disabled {
     flex: 0 0 170px;
   }
 
-  .planning-board-guide small,
-  .planning-board-stats span:last-child {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -4520,10 +4447,6 @@ button:disabled {
 
   .planning-edit-controls {
     margin-left: auto;
-  }
-
-  .planning-board-titlebar span {
-    display: none;
   }
 
   .planning-calendar-scroll {
@@ -9284,7 +9207,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-calendar-scroll {
-  max-height: calc(100vh - 318px);
+  max-height: calc(100vh - 284px);
   overflow-x: scroll;
   overflow-y: auto;
   scrollbar-color: #7d8ca0 #e9eef3;
@@ -9453,18 +9376,22 @@ button.planning-p12-conflict-card {
 /* Planning v3.2: contextual hierarchy actions, per-day assignment text and move feedback. */
 .planning-tree-row {
   display: flex;
-  gap: 5px;
-  padding: 0 8px;
+  gap: 4px;
+  padding: 0 7px;
 }
 
 .planning-tree-row.is-board {
-  padding-left: 20px;
+  padding-left: 18px;
 }
 
 .planning-tree-row .planning-tree-toggle {
+  display: flex;
   min-width: 0;
+  height: auto;
   flex: 1;
-  gap: 8px;
+  align-self: stretch;
+  align-items: center;
+  gap: 6px;
   padding: 0 4px 0 2px;
   border: 0;
   background: transparent;
@@ -9512,6 +9439,77 @@ button.planning-p12-conflict-card {
 
 .planning-timeline-row.is-fleet-person .planning-row-label {
   padding-left: 54px;
+  border-left-color: #dbe6f2;
+  color: #34465c;
+  background: #ffffff;
+  font-size: .66rem;
+  font-weight: 660;
+}
+
+.planning-timeline-row.is-fleet .planning-row-label.planning-tree-row.is-vessel {
+  border-top: 1px solid #cbd8e6;
+  border-bottom: 1px solid #d5e0eb;
+  border-left-color: #1769dc;
+  color: #17385d;
+  background: #f6f9fd;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle strong {
+  color: #123b65;
+  font-size: .73rem;
+  font-weight: 900;
+  letter-spacing: .008em;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle small {
+  margin-top: 2px;
+  color: #687b91;
+  font-size: .55rem;
+  font-weight: 720;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 6px;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > span {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > em {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > svg {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-label.planning-tree-row.is-board {
+  border-bottom: 1px solid #dfe7f0;
+  border-left-color: #8eb7e8;
+  color: #294a6d;
+  background: #f8fafc;
+}
+
+.planning-tree-row.is-board .planning-tree-toggle strong {
+  color: #294a6d;
+  font-size: .69rem;
+  font-weight: 820;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label strong {
+  color: #34465c;
+  font-size: .66rem;
+  font-weight: 680;
+  letter-spacing: .004em;
 }
 
 .planning-assignment-note-cell {
@@ -10213,7 +10211,7 @@ button.planning-p12-conflict-card {
 
   .planning-calendar-scroll {
     --planning-label-width: 190px;
-    max-height: calc(100vh - 380px);
+    max-height: calc(100vh - 346px);
   }
 
   .planning-toolbar-main,
@@ -10266,11 +10264,6 @@ button.planning-p12-conflict-card {
 
   .planning-filter-strip {
     display: flex;
-  }
-
-  .planning-board-guide,
-  .planning-board-stats {
-    display: none;
   }
 
   .planning-unassigned-list,
