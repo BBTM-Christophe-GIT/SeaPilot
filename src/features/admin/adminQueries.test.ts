@@ -1,12 +1,70 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assignUserRole,
+  fetchAdminInviteCandidates,
   fetchAdminUsers,
   fetchSharePointImportSources,
+  inviteSeaPilotUser,
+  mapAdminInviteCandidateRows,
   mapAdminProfileRows,
   mapSharePointSourceRows,
   removeUserRole,
 } from './adminQueries';
+
+describe('administrator invitations', () => {
+  it('maps active people available for an account link', () => {
+    expect(mapAdminInviteCandidateRows([
+      {
+        id: 42,
+        first_name: 'David',
+        last_name: 'FIDELIN',
+        email: ' david@example.test ',
+        function_label: 'Matelot',
+      },
+    ])).toEqual([
+      {
+        id: 42,
+        displayName: 'David FIDELIN',
+        email: 'david@example.test',
+        functionLabel: 'Matelot',
+      },
+    ]);
+  });
+
+  it('loads only active people not yet linked to an Auth user', async () => {
+    const orderByFirstName = vi.fn().mockResolvedValue({ data: [], error: null });
+    const orderByLastName = vi.fn().mockReturnValue({ order: orderByFirstName });
+    const isUnlinked = vi.fn().mockReturnValue({ order: orderByLastName });
+    const eqActive = vi.fn().mockReturnValue({ is: isUnlinked });
+    const select = vi.fn().mockReturnValue({ eq: eqActive });
+    const from = vi.fn().mockReturnValue({ select });
+
+    await expect(fetchAdminInviteCandidates({ from } as never)).resolves.toEqual([]);
+
+    expect(from).toHaveBeenCalledWith('people');
+    expect(eqActive).toHaveBeenCalledWith('active', true);
+    expect(isUnlinked).toHaveBeenCalledWith('user_id', null);
+    expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
+    expect(orderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });
+  });
+
+  it('invokes the secure server-side invitation function', async () => {
+    const invoke = vi.fn().mockResolvedValue({ data: { invitation: { invitationId: 7 } }, error: null });
+    const input = {
+      email: 'nouveau@example.test',
+      displayName: 'Nouvel Utilisateur',
+      roleKeys: ['marin'] as const,
+      personId: 42,
+    };
+
+    await inviteSeaPilotUser({ functions: { invoke } } as never, {
+      ...input,
+      roleKeys: [...input.roleKeys],
+    });
+
+    expect(invoke).toHaveBeenCalledWith('admin-invite-user', { body: input });
+  });
+});
 
 describe('mapAdminProfileRows', () => {
   it('maps profiles and filters unknown roles', () => {

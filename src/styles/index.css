@@ -21,7 +21,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -131,6 +132,63 @@ button:disabled {
   min-height: 44px;
   color: #ffffff;
   background: #0c5598;
+}
+
+.login-description {
+  margin: 0;
+  color: #536276;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.login-success {
+  display: grid;
+  gap: 4px;
+  border-left: 3px solid #1d7a48;
+  padding: 10px 12px;
+  color: #115333;
+  background: #ecf9f2;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.login-alternate-actions {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e3e9f0;
+  padding-top: 14px;
+}
+
+.login-panel .login-link-button {
+  min-height: 32px;
+  justify-content: flex-start;
+  padding: 2px 0;
+  color: #0c5598;
+  background: transparent;
+  text-align: left;
+}
+
+.login-panel .login-link-button:hover {
+  color: #083f73;
+  text-decoration: underline;
+}
+
+.login-panel .login-link-button:focus-visible {
+  border-radius: 3px;
+  outline: 3px solid rgba(12, 102, 183, 0.18);
+  outline-offset: 2px;
+}
+
+.login-alternate-actions p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.password-update-form {
+  display: grid;
+  gap: 16px;
 }
 
 .form-error {
@@ -753,6 +811,60 @@ button:disabled {
   gap: 18px;
 }
 
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-primary-button,
+.admin-secondary-button,
+.admin-icon-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-weight: 750;
+}
+
+.admin-primary-button {
+  border: 1px solid #0c5598;
+  color: #ffffff;
+  background: #0c5598;
+}
+
+.admin-primary-button:hover:not(:disabled) {
+  border-color: #083f73;
+  background: #083f73;
+}
+
+.admin-secondary-button,
+.admin-icon-button {
+  border: 1px solid #c9d5e3;
+  color: #253044;
+  background: #ffffff;
+}
+
+.admin-secondary-button:hover:not(:disabled),
+.admin-icon-button:hover:not(:disabled) {
+  background: #f3f6f9;
+}
+
+.admin-primary-button:focus-visible,
+.admin-secondary-button:focus-visible,
+.admin-icon-button:focus-visible {
+  outline: 3px solid rgba(12, 102, 183, 0.2);
+  outline-offset: 2px;
+}
+
+.admin-icon-button {
+  width: 40px;
+  padding: 0;
+}
+
 .admin-header h1 {
   margin: 0;
   color: #111827;
@@ -804,6 +916,163 @@ button:disabled {
 
 .admin-notices {
   min-height: 42px;
+}
+
+.admin-dialog-backdrop {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  padding: 24px;
+  background: rgba(18, 33, 58, 0.58);
+}
+
+.admin-dialog {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 18px;
+  border: 1px solid #c9d5e3;
+  border-radius: 10px;
+  padding: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(18, 33, 58, 0.28);
+}
+
+.admin-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.admin-dialog-header h2 {
+  margin: 2px 0 0;
+  color: #111827;
+  font-size: 1.4rem;
+}
+
+.admin-dialog-description {
+  margin: 0;
+  color: #536276;
+  line-height: 1.5;
+}
+
+.admin-invite-form {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-invite-form > label {
+  display: grid;
+  gap: 7px;
+  color: #354259;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-invite-form input[type="text"],
+.admin-invite-form input[type="email"],
+.admin-invite-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: #172033;
+  background: #fbfcfe;
+}
+
+.admin-invite-form input:focus,
+.admin-invite-form select:focus {
+  border-color: #0c66b7;
+  outline: 3px solid rgba(12, 102, 183, 0.16);
+}
+
+.admin-role-picker {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.admin-role-picker legend {
+  padding: 0 5px;
+  color: #253044;
+  font-weight: 800;
+}
+
+.admin-role-picker > p {
+  margin: 0;
+  color: #667085;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.admin-role-picker > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-role-picker label {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #dbe3ed;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #354259;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.admin-role-picker input {
+  width: 17px;
+  height: 17px;
+  accent-color: #0c5598;
+}
+
+.admin-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .admin-header {
+    align-items: flex-start;
+  }
+
+  .admin-header-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-dialog-backdrop {
+    align-items: start;
+    padding: 12px;
+  }
+
+  .admin-dialog {
+    margin-top: 12px;
+    padding: 18px;
+  }
+
+  .admin-role-picker > div {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
 }
 
 .admin-success {

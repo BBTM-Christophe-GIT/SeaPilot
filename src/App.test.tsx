@@ -22,6 +22,8 @@ function createAuthClient(session: { user: { id: string } } | null = null) {
         data: { subscription: { unsubscribe: vi.fn() } },
       }),
       signInWithPassword: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+      updateUser: vi.fn(),
       signOut: vi.fn(),
     },
   };
@@ -54,7 +56,7 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Connexion a SeaPilot' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connexion à SeaPilot' })).toBeInTheDocument();
   });
 
   it('opens the Planning application directly with safe demo data on a preview deployment', async () => {
@@ -73,7 +75,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Connexion a SeaPilot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();
   });
 
   it('renders the fleet certificates module with imported certificate data', async () => {
