@@ -854,6 +854,17 @@ describe('PlanningPage cockpit', () => {
     expect(container.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
   });
 
+  it('keeps a legacy fleet period visible when no daily assignment id exists', async () => {
+    const { client } = createClient({ assignments: [], periods: [planningPeriodRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const periodBar = container.querySelector('.planning-crew-bar.is-fleet-tree.is-sea');
+    expect(periodBar).toBeInTheDocument();
+    expect(periodBar).not.toHaveClass('has-daily-grid');
+    expect(container.querySelectorAll('.planning-assignment-note-cell')).toHaveLength(0);
+  });
+
   it('uses an amber empty-cell marker for Armement - Cherbourg personnel', async () => {
     const user = userEvent.setup();
     const armementVessel = { ...vesselRow, name: 'ARMEMENT - CHERBOURG', acronym: 'ARM' };
@@ -978,6 +989,32 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).not.toBeInTheDocument();
     fireEvent.pointerUp(conflictCell, { button: 0 });
     fireEvent.click(conflictCell.querySelector('.planning-grid-conflict-icon')!, { button: 0, detail: 1 });
+
+    expect(await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toHaveLength(1);
+  });
+
+  it('opens conflict prioritization even when grid cells were copied previously', async () => {
+    const conflictAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      vessel_id: 2,
+      vessel_name: 'SUROIT',
+      starts_on: '2026-07-10',
+      ends_on: '2026-07-12',
+    };
+    const { client } = createClient({
+      vessels: [vesselRow, secondVesselRow],
+      assignments: [assignmentOverviewRow, conflictAssignment],
+      periods: [],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const conflictCell = screen.getAllByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ })[0];
+
+    fireEvent.pointerDown(conflictCell, { button: 0, ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    fireEvent.click(conflictCell, { button: 0, detail: 1 });
 
     expect(await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toBeInTheDocument();
     expect(screen.getAllByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toHaveLength(1);

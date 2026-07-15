@@ -9563,7 +9563,7 @@ button.planning-p12-conflict-card {
 .planning-empty-cell-marker.is-vacation { background: #172033; box-shadow: 0 0 0 2px #050a13, 0 3px 7px rgba(5, 10, 19, .2); }
 .planning-empty-cell-marker.is-rest { background: #d94242; box-shadow: 0 0 0 2px #aa2020, 0 3px 7px rgba(130, 25, 25, .2); }
 
-.planning-crew-bar.is-fleet-tree {
+.planning-crew-bar.is-fleet-tree.has-daily-grid {
   border-color: transparent !important;
   background: transparent !important;
   background-image: none !important;
