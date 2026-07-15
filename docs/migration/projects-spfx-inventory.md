@@ -836,4 +836,97 @@ Elle ne devra pas encore exécuter la migration des données ni reconstruire l'i
 
 ---
 
-**Arrêt de phase 0 :** aucun code applicatif, schéma Supabase, import ou fichier SharePoint n'a été modifié dans cette phase. Ce document constitue le point de transmission obligatoire vers la phase 1.
+**Arrêt historique de phase 0 :** aucun code applicatif, schéma Supabase, import ou fichier SharePoint n'avait été modifié à cette étape. La mise à jour ci-dessous constitue désormais le point de transmission vers la phase 2.
+
+## 17. Mise à jour de transmission — schéma livré en phase 1
+
+Date de livraison : 15 juillet 2026.
+
+Références :
+
+- migration : `supabase/migrations/202607150006_projects_phase1_model.sql` ;
+- tests : `supabase/tests/projects_phase1_model_test.sql` ;
+- modèle détaillé et procédure : `docs/migration/projects-phase1-supabase-model.md`.
+
+### 17.1 État effectif du dictionnaire cible
+
+Les statuts « Absent » ou « Incomplet » des sections 5.2 et 5.3 décrivent SeaPilot avant la phase 1. Pour les phases suivantes, la matrice ci-dessous fait autorité sur le schéma effectivement livré.
+
+| Groupe inventaire | Structure Supabase livrée | État après phase 1 |
+|---|---|---|
+| P01 identité | `projects.title`, `projects.project_code`, index unique normalisé par société | Modèle livré ; UI/import non migrés |
+| P02 client/affréteur | `projects.client_id` + snapshots source ; `clients.company_id` | Relation composite même société livrée |
+| P03 navire principal | `projects.primary_vessel_id` + snapshots source | Relation composite même société livrée |
+| P04 propriétaire | `project_contracts.owner_identity` | Colonne typée livrée |
+| P05 limite d'affectation | `project_contracts.vessel_assignment_limit` | Colonne typée livrée |
+| P06–P09 prolongations | `extension_count`, `extension_duration`, `extension_unit`, `auto_extension_period`, `max_extension_days` | Colonnes et contrôles numériques livrés |
+| P10–P14 dates/ports | `delivery_at`, `redelivery_at`, `charter_starts_at`, `charter_ends_at`, `delivery_port`, `redelivery_port` | Colonnes temporelles/textes et cohérence chronologique livrées |
+| P15–P22 frais et options | frais de mobilisation/démobilisation + devise ; `is_rov_support`, `is_diving_support` | Colonnes typées livrées |
+| P23–P24 loyers | `charter_hire`, `extension_hire`, `hire_currency`, `hire_unit` | Colonnes numériques/devise livrées |
+| P25 zone d'opération | `projects.operation_area` | Colonne typée livrée |
+| P26 audit maximum | `project_contracts.max_audit_period` | Colonne typée livrée |
+| P27 type de contrat | `projects.contract_type` | Colonne texte livrée ; choix live à confirmer |
+| P28 navire secondaire | `projects.secondary_vessel_id` + snapshots source | Relation composite même société livrée |
+| 34 zones + 2 signatures SUPPLYTIME | `project_contracts.supplytime_data` versionné `supplytime-2017-v1` | JSON objet strict, clés fermées, valeurs texte/null, 1 Mio maximum |
+| Valeurs source non mappées | `source_payload` sur clients, projets, contrats et documents | Trace JSON objet, non canonique et protégée |
+| Documents Projets/Contractuels | IDs drive/item/liste, URL, chemin, nom, catégorie, taille, type MIME, extension, ETag/CTag, dates | Métadonnées livrées ; aucun contenu de fichier |
+| Cycle de vie | `archived_at/by`, `created_by`, `updated_by` | Archivage logique et auteurs livrés |
+| Audit | `project_change_log` | Journal append-only livré, payload brut et contacts client exclus |
+
+Les valeurs de choix exactes pour les statuts, types de contrat, unités et champs SharePoint non confirmés ne sont volontairement pas inventées. Elles devront être ajoutées aux mappings après extraction du catalogue live, avant resserrement éventuel des contraintes.
+
+### 17.2 Numérotation effectivement livrée
+
+- `project_number_counters` possède un compteur par société et préfixe ;
+- l'allocation utilise un verrou `FOR UPDATE` et un index unique normalisé ;
+- les créations SeaPilot ignorent tout code proposé par le navigateur et reçoivent un code base-side ;
+- les imports SharePoint conservent leur code historique et leurs identifiants source ;
+- le plancher initial `207` traduit uniquement la règle `P{id+206}` et ne représente aucun volume réel ;
+- après import historique et avant bascule, `projects_set_number_floor` doit recevoir le prochain numéro validé explicitement ; elle ne peut pas diminuer le compteur et n'utilise jamais `max(id)`.
+
+### 17.3 Autorisations effectivement livrées
+
+| Capacité Projets | Rôles après phase 1 |
+|---|---|
+| Lire clients, projets, contrats, documents et audit | `admin`, `direction`, société active uniquement |
+| Créer/modifier clients, projets et contrats | `admin`, `direction`, société active uniquement |
+| Écrire les métadonnées documentaires SharePoint | `admin` uniquement |
+| Archiver un projet | `admin`, `direction`, via RPC |
+| Régler le plancher de numérotation | `admin` uniquement |
+| Réconcilier les liens SharePoint | `service_role` ou `admin` |
+| Supprimer physiquement | aucun rôle authentifié |
+| `armement`, `capitaine`, `marin` sur le catalogue | aucun accès tant qu'une extension n'est pas validée |
+
+Les droits fonctionnels existants de DPR, Achats et Plan d'action sont préservés. Leurs RLS et leurs relations reçoivent uniquement l'isolation `company_id` nécessaire pour éviter un rattachement à un projet d'une autre société.
+
+### 17.4 Décisions et non-décisions de phase 1
+
+- `projects` et `planning_projects` restent séparés ; aucune colonne ni clé étrangère n'a été ajoutée au Planning.
+- Les fichiers restent dans SharePoint ; aucun bucket Storage ni champ binaire n'a été créé.
+- Les nouvelles créations de projets/clients ont `seapilot` comme provenance par défaut ; aucune double écriture SharePoint n'est introduite.
+- Les identifiants SharePoint sont protégés contre la modification par un utilisateur authentifié.
+- Les contraintes historiques sensibles sont `NOT VALID` : elles s'appliquent aux nouvelles lignes, puis seront validées après réconciliation en phase de reprise.
+- Aucun enum de statut ou de type de contrat n'est créé sans catalogue live confirmé.
+- Aucune donnée live n'a été importée pendant cette phase.
+
+### 17.5 Contrôles de sortie de phase 1
+
+- reconstruction locale complète de toutes les migrations ;
+- 54 assertions pgTAP sur le schéma, le JSON, les RLS/RPC, les rôles et adhésions actives, l'isolation société, la provenance, l'audit, les documents, l'archivage et la numérotation ;
+- lint Supabase local ;
+- tests, lint et build applicatifs à consigner dans la PR de phase 1 ;
+- vérification qu'aucun export métier, secret ou binaire SharePoint n'entre dans le diff.
+
+### 17.6 Critères d'entrée de la phase 2
+
+La phase 2 pourra traiter exclusivement l'export et l'import idempotent après :
+
+1. extraction hors Git du catalogue live et des volumes réels des cinq sources ;
+2. validation des noms internes, choix, obligations, devises et lookups encore inconnus ;
+3. définition du rapport créé/mis à jour/inchangé/rejeté/ambigu ;
+4. preuve qu'aucun dossier ni contenu binaire ne sera copié ;
+5. stratégie explicite d'alignement du compteur après import des codes historiques ;
+6. plan de validation des contraintes `NOT VALID` et des références DPR/Achats/Actions ;
+7. maintien de l'absence de lien automatique avec `planning_projects`.
+
+**Arrêt de phase 1 : le modèle et sa sécurité sont livrés ; aucune donnée live n'a été migrée et aucun fichier n'a quitté SharePoint.**
