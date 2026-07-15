@@ -96,6 +96,20 @@ Les migrations Supabase liées sont appliquées jusqu'à `202607150005`. Les sta
 
 Ces chiffres sont des estimations PostgreSQL et devront être complétés par des comptages exacts au moment de la reprise.
 
+### 3.4 Inventaire des cinq sources demandées
+
+| Source | Type et emplacement | Identifiant vérifié | Volume live | État de preuve |
+|---|---|---|---:|---|
+| `BBTM - Projets` | Liste, `/sites/QHSE/Lists/BBTM  Projets` | List ID non disponible | Non relevé | Chemin confirmé par le manifeste SPFx ; catalogue live inaccessible sans session CLI Microsoft 365 |
+| `BBTM - Clients` | Liste, variantes `/sites/QHSE/Lists/BBTM  Clients` et `/sites/QHSE/Lists/BBTM Clients` | List ID non disponible | Non relevé | Titre et variantes établis par le code ; chemin canonique à résoudre live |
+| `BBTM - Flotte` | Liste, `/sites/QHSE/Lists/BBTM%20%20Flotte` | List ID versionné `543b9f00-aed2-489a-808a-7b64cc835a83`, non revalidé live | Non relevé | Utilisée comme lookup et déjà déclarée dans l'inventaire SeaPilot |
+| `Documents Projets` | Bibliothèque, `/sites/QHSE/Documents%20Projets` | Drive ID Graph live `b!j0eX05ggd0iS7a1x5WccnspY9pQFywFKhPc9dkTkf_Ou31l1uVoWRrtjl4GcYGNl` ; List ID non disponible | Non relevé | Bibliothèque et URL vérifiées par Microsoft Graph le 15 juillet 2026 |
+| `Documents Contractuels` | Bibliothèque, `/sites/QHSE/Documents%20Contractuels` | Drive ID Graph live `b!j0eX05ggd0iS7a1x5WccnspY9pQFywFKhPc9dkTkf_OWUUcnVo9hTIk_y0nRfdyl` ; List ID non disponible | Non relevé | Bibliothèque et URL vérifiées par Microsoft Graph le 15 juillet 2026 |
+
+Les deux drive IDs live contiennent le segment `ywF` absent des valeurs actuellement versionnées dans `sharePointInventory.ts`. Les valeurs versionnées ne doivent donc pas être utilisées pour une reprise avant correction et test de lecture.
+
+Le connecteur Graph disponible expose les bibliothèques mais pas le catalogue des listes, leurs colonnes ni un comptage récursif fiable par bibliothèque. La commande `m365 status --output json` n'a pas répondu avant expiration du délai local ; aucun export live n'a donc été exécuté et aucun volume indicatif n'est présenté comme réel.
+
 ## 4. Inventaire fonctionnel du module SPFx
 
 ### 4.1 Sources configurées
@@ -174,6 +188,17 @@ Le service convertit dynamiquement les valeurs selon le type SharePoint :
 Cette règle dépend de l'identifiant technique de SharePoint et ne doit pas être transposée dans le navigateur SeaPilot. Les codes existants doivent être conservés. Les nouveaux codes devront être alloués côté serveur de façon transactionnelle et unique après décision métier sur la séquence.
 
 Le module SPFx ne propose pas de formulaire général de modification d'un projet existant. Le seul `MERGE` observé finalise le titre juste après la création. La modification complète et l'archivage dans SeaPilot sont donc nécessaires à la nouvelle source de vérité, mais constituent une extension du comportement historique.
+
+Validations réellement observées :
+
+- le nom du projet est le seul champ toujours marqué obligatoire par l'interface ;
+- les autres obligations viennent du catalogue `Required` SharePoint, avec les limites de propagation décrites dans le dictionnaire ;
+- les champs vides facultatifs sont omis du payload ;
+- les nombres acceptent espaces et virgule décimale avant conversion ;
+- les dates locales sont converties en ISO, avec minuit local pour une date sans heure ;
+- aucune validation croisée n'empêche une fin avant un début, une durée sans unité, un montant sans devise ou un doublon de code/titre ;
+- SharePoint constitue le dernier niveau de validation de type et de champ obligatoire ;
+- aucune modification générale, suppression ou transition de statut n'est implémentée.
 
 ### 4.5 Création d'un client
 
@@ -257,6 +282,166 @@ Les noms suivants sont établis par le code ou les tests SPFx. Ils ne remplacent
 | Commentaires | alias de commentaires | description/note | Ne pas fusionner sans règle avec les clauses |
 | Technique | `Modified` | `source_modified_at` | Sert à la reprise incrémentale et au contrôle |
 | Technique | `FieldValuesAsText` | aucun stockage canonique | Aide à décoder les lookups lors de l'export |
+
+### 5.1 Règles de lecture du dictionnaire détaillé
+
+Le code SPFx lit pour chaque colonne : libellé, `InternalName`, `StaticName`, `EntityPropertyName`, type, caractère masqué/lecture seule/obligatoire, multivaleur, lookup, choix et valeur par défaut. En l'absence du catalogue live, les mentions suivantes sont utilisées :
+
+- **confirmé code** : nom interne ou comportement explicitement codé ;
+- **attendu test** : type exercé par un test unitaire, mais pas prouvé sur la liste live ;
+- **`? live`** : choix, défaut ou obligation impossible à établir sans le catalogue ;
+- **déjà migré** : colonne Supabase et mapper présents pour la donnée ;
+- **incomplet** : une cible existe, mais la source, la transformation ou la relation est partielle ;
+- **absent** : aucune cible canonique n'existe ;
+- **obsolète** : champ volontairement exclu ou mapping actuel à retirer/remplacer.
+
+Le formulaire applique `required` aux champs texte, nombre, devise, date, URL, note et choix simple. Il ne le propage pas aux sélecteurs lookup, multichoix, booléens ni aux cases ROV/plongée. Une colonne requise peut donc n'être rejetée que par SharePoint au moment du POST. Cette lacune ne doit pas être reproduite : les contraintes cibles devront être validées par RPC/base et reflétées dans l'interface.
+
+Les valeurs par défaut sont initialisées depuis `DefaultValue`. Deux surcharges SPFx existent : une identité juridique/adresse d'armateur codée dans l'application, qui doit devenir une donnée de configuration contrôlée, et `Voyage` pour la période d'extension automatique.
+
+### 5.2 Champs métier Projets reconnus par SPFx
+
+| Réf. | Libellé et nom interne/alias | Métadonnées source connues | Transformation et cible Supabase proposée | Section, dépendances et règles | Statut SeaPilot |
+|---|---|---|---|---|---|
+| P01 | Titre — `Title` | Text attendu ; choix n/a ; défaut `? live` ; requis `? live` | Extraire séparément code et libellé ; `projects.project_code`, `projects.title` ; conserver le titre source | Hors formulaire dynamique ; le nom saisi est obligatoire ; renommage post-création `P{ID+206} - nom` | Incomplet : `title`/`project_code` existent, extraction et allocation serveur absentes |
+| P02 | 3. Affréteur — `_x0033__x002e_Affr_x00e9_teur` | Lookup confirmé code ; lookup cible/choix/défaut/requis `? live` | ID source vers `client_sharepoint_item_id`, résolution vers `client_id`, snapshot `client_name` | Identification ; dépend de `BBTM - Clients` ; création d'un client puis sélection automatique | Incomplet : relations prévues, alias réel absent du mapper |
+| P03 | 2. Armateur et lieu des opérations — `_x0032__x002e_Armateuretlieudeso` | Note attendu test ; défaut SPFx codé ; requis `? live` | Texte contractuel/configuration, par exemple `project_contracts.owner_identity` | Identification ; présenté comme « Armateur » | Absent |
+| P04 | 4. Navire — `Navire` ou alias numéroté commençant par `4` | Lookup attendu test ; lookup cible/défaut/requis `? live` | ID source vers `primary_vessel_sharepoint_item_id`, résolution `primary_vessel_id`, snapshot du nom | Identification ; dépend de `BBTM - Flotte` et des règles d'éligibilité | Incomplet : colonnes présentes, saisie SeaPilot encore libre |
+| P05 | Contrat / Type de contrat — `Contrat`, `TypedeContrat` | Choice attendu test ; choix/défaut/requis `? live` | Valeur normalisée et contrainte, `projects.contract_type` | Identification ; le libellé devient « Type de contrat » | Absent |
+| P06 | Statut — `Statut` | Choice attendu test ; choix/défaut/requis `? live` | Enumération/table de référence et transitions validées, `projects.status` | Identification ; ne pas reprendre les cinq valeurs SeaPilot codées en dur avant comparaison live | Incomplet : colonne présente, choix et transitions non contrôlés |
+| P07 | 17. Affectation du navire limitée à — `_x0031_7_x002e_Affectationdunavi` | Note attendu test ; défaut/requis `? live` | Texte ou structure contractuelle validée, `project_contracts.vessel_assignment_limit` | Identification, carte Mission | Absent |
+| P08 | 18.1 Navire support ROV — `_x0031_8_x002e_1Indiquersilenavi` | Choice attendu test ; UI convertit `Oui`/vide ; choix/défaut/requis `? live` | Normaliser en booléen nullable `projects.is_rov_support` tout en conservant la valeur source | Identification, carte Mission ; la case SPFx ignore `required` | Absent |
+| P09 | 18.2 Navire support de plongée — `_x0031_8_x002e_2Naviresupportdep` | Choice attendu test ; UI convertit `Oui`/vide ; choix/défaut/requis `? live` | Normaliser en booléen nullable `projects.is_diving_support` | Identification, carte Mission ; la case SPFx ignore `required` | Absent |
+| P10 | 5. Date Livraison / alias tableau `7. Date Livraison`, `DateLivraison`, `Delivery Date` | DateTime attendu test ; défaut/requis `? live` | Conserver date et heure si présentes, `projects.delivery_at` ; dériver la date pour les filtres | Planning/Livraison ; alimente SUPPLYTIME box 4 et tableau | Incomplet : `starts_on` existe mais le mapper actuel utilise un alias Planning non vérifié |
+| P11 | 7. Port de Livraison — `PortLivraison` et alias de libellé | Text attendu test ; défaut/requis `? live` | `projects.delivery_port` | Planning/Livraison ; alimente SUPPLYTIME box 6 et tableau | Absent |
+| P12 | 8.1 Port de restitution / alias tableau `9. Port de restitution`, `PortRestitution`, `Redelivery Port` | Text attendu test ; défaut/requis `? live` | `projects.redelivery_port` | Planning/Restitution ; alimente SUPPLYTIME box 7 et tableau | Absent |
+| P13 | 9.1 Date début Affrètement — alias `DateDebutAffretement` | DateTime attendu test ; défaut/requis `? live` | `projects.charter_starts_at` ou date canonique validée | Planning/Livraison ; distincte de la date de livraison tant que les données ne prouvent pas leur équivalence | Incomplet : seule `starts_on` existe |
+| P14 | 9.2 Date fin Affrètement / alias tableau `9. Date de restitution`, `DateRestitution`, `Redelivery Date` | DateTime attendu test ; défaut/requis `? live` | `projects.charter_ends_at`/`redelivery_at` selon catalogue | Planning/Restitution ; alimente la période SUPPLYTIME et le tableau | Incomplet : seule `ends_on` existe et le mapper emploie `Datefin` non vérifié |
+| P15 | 10.1.1 Nombre de prolongations — alias `NombreProlongation` | Number attendu test ; défaut/requis `? live` | Entier non négatif `project_contracts.extension_count` | Planning/Prolongation ; groupe compact avec P16/P17 | Absent |
+| P16 | 10.1.2 Durée de la prolongation — alias `DureeProlongation` | Number attendu test ; défaut/requis `? live` | Numérique non négatif `project_contracts.extension_duration` | Planning/Prolongation | Absent |
+| P17 | 10.1.3 Unité de durée — alias `UniteDureeProlongation` | Choice attendu test ; choix/défaut/requis `? live` | Unité contrôlée `project_contracts.extension_unit` | Planning/Prolongation ; cohérence obligatoire avec P16 | Absent |
+| P18 | 11.1 Période d'extension automatique — alias `PeriodeExtensionAuto` | Choice attendu test ; défaut SPFx `Voyage` ; choix/requis `? live` | Valeur contrôlée `project_contracts.auto_extension_period` | Planning/Prolongation | Absent |
+| P19 | 11.2 Durée maximale de prolongation (jours) — alias `DureeMaxProlongation` | Number attendu test ; défaut/requis `? live` | Entier non négatif `project_contracts.max_extension_days` | Planning/Prolongation | Absent |
+| P20 | 12.1 Forfait mobilisation — alias `ForfaitMobilisation` | Currency attendu test ; devise/défaut/requis `? live` | Montant + devise explicite, `project_contracts.mobilisation_fee_*` | Offre commerciale | Absent |
+| P21 | 8. Forfait mobilisation — Obligations HSE — alias `ForfaitMobilisationHse` | Type/défaut/requis `? live` | Conserver en staging tant que la raison d'exclusion n'est pas validée | Classé `other` et volontairement absent du formulaire SPFx | Obsolète dans l'UI SPFx ; décision de conservation métier requise |
+| P22 | 15. Forfait démobilisation — alias `ForfaitDemobilisation` | Currency attendu test ; devise/défaut/requis `? live` | Montant + devise, `project_contracts.demobilisation_fee_*` | Offre commerciale | Absent |
+| P23 | Loyer d'affrètement — alias `LoyerAffretement` | Currency attendu test ; devise/défaut/requis `? live` | Montant/unité/devise, `project_contracts.charter_hire_*` | Offre commerciale ; peut alimenter SUPPLYTIME box 20 après règle explicite | Absent |
+| P24 | 21. Loyer d'affrètement en prolongation — alias `LoyerProlongation` | Currency attendu test ; devise/défaut/requis `? live` | Montant/unité/devise, `project_contracts.extension_hire_*` | Offre commerciale ; peut alimenter SUPPLYTIME box 21 | Absent |
+| P25 | 16. Zone d'opération — alias `ZoneOperation` | Text attendu test ; défaut/requis `? live` | `projects.operation_area` ou champ contractuel selon usages de filtre | Opérations ; alimente potentiellement SUPPLYTIME box 16 | Absent |
+| P26 | 26. Période maximale d'audit — alias `PeriodeMaxAudit` | Note attendu test ; défaut/requis `? live` | Champ contractuel validé `project_contracts.max_audit_period` | Opérations dans le formulaire SPFx malgré son numéro SUPPLYTIME | Absent |
+| P27 | Commentaires / `CommentaireInterne` | Note attendu test ; défaut/requis `? live` | Séparer description métier, note interne et clause ; `projects.description` ou audit dédié | Opérations | Incomplet : `description` existe mais fusionne actuellement plusieurs alias |
+| P28 | Navire 2 — `Navire2`, `Navire_x0020_2` | Lookup attendu test ; lookup cible/défaut/requis `? live` | ID source, `secondary_vessel_id` et snapshot | Affiché dans tableau/SUPPLYTIME mais exclu du formulaire de création SPFx | Incomplet : colonnes présentes, saisie SeaPilot libre et ID non résolu à la création |
+
+### 5.3 Colonnes contractuelles SUPPLYTIME reconnues par clé
+
+SPFx recherche une colonne dont le libellé, nom interne, nom statique ou propriété d'entité correspond exactement à la clé normalisée ci-dessous. Le code ne prouve pas que ces 36 colonnes existent sur la liste live. Pour chaque ligne, le type, les choix, la valeur par défaut et le caractère obligatoire sont donc `? live`.
+
+| Clé interne reconnue et libellé de l'aperçu | Transformation/cible proposée | Classement réel du formulaire SPFx | Règle métier | Statut SeaPilot |
+|---|---|---|---|---|
+| `box01_owners` — Owners / place of business | `project_contracts.supplytime_data.box01_owners` et identité armateur canonique | Non affiché (`other`) | P03 doit surcharger la zone lorsqu'elle est canonique | Absent |
+| `box02_charterers` — Charterers / place of business | `supplytime_data.box02_charterers` et référence client | Offre commerciale par heuristique `charter` | Le client P02 reste la relation canonique | Absent |
+| `box03_vessel` — Vessel name and IMO number | `supplytime_data.box03_vessel` | Opérations | Surchargé par P04/P28 dans l'aperçu | Absent |
+| `box04_delivery_date` — Date of delivery | `supplytime_data.box04_delivery_date` | Non affiché (`other`) | Surchargé par P10 dans l'aperçu | Absent |
+| `box05_cancelling_date` — Cancelling date and time | `supplytime_data.box05_cancelling_date` et éventuellement colonne typée | Non affiché (`other`) | Conserver date et heure ; ne pas confondre avec livraison | Absent |
+| `box06_port_delivery` — Port/place of delivery | `supplytime_data.box06_port_delivery` | Non affiché (`other`) | Surchargé par P11 dans l'aperçu | Absent |
+| `box07_delivery_range` — Redelivery range/place | `supplytime_data.box07_delivery_range` | Non affiché (`other`) | Surchargé par P12 dans l'aperçu | Absent |
+| `box08_notice_delivery` — Notices/delivery options | `supplytime_data.box08_notice_delivery` | Non affiché (`other`) | Texte contractuel | Absent |
+| `box09_period` — Period of hire | `supplytime_data.box09_period` | Non affiché (`other`) | Surchargé par la période P10/P14 affichée | Absent |
+| `box10_extension` — Extension period/option | `supplytime_data.box10_extension` | Non affiché (`other`) | Peut être dérivé de P15 à P17 seulement après règle validée | Absent |
+| `box11_continuation` — Further extension period | `supplytime_data.box11_continuation` | Non affiché (`other`) | Peut dépendre de P18/P19 | Absent |
+| `box12_mobilisation` — Mobilisation fee | `supplytime_data.box12_mobilisation` | Offre commerciale via le libellé `fee` | Ne pas dupliquer P20 sans règle de priorité | Absent |
+| `box13_early_termination` — Early termination | `supplytime_data.box13_early_termination` | Contrat SUPPLYTIME | Texte contractuel | Absent |
+| `box14_bunker_delivery` — Bunkers delivery | `supplytime_data.box14_bunker_delivery` | Opérations | Texte carburant/opérations | Absent |
+| `box15_declaration` — Owners declaration | `supplytime_data.box15_declaration` | Non affiché (`other`) | Texte contractuel | Absent |
+| `box16_area_operation` — Area of operation | `supplytime_data.box16_area_operation` | Opérations | Ne pas dupliquer P25 sans règle de priorité | Absent |
+| `box17_employment` — Employment of vessel | `supplytime_data.box17_employment` | Opérations | Surchargé par `Title` dans l'aperçu | Absent |
+| `box18_delivery_hour` — Delivery hour/fuel | `supplytime_data.box18_delivery_hour` | Non affiché (`other`) | Conserver une éventuelle heure explicite | Absent |
+| `box19_special_fuel` — Special provisions/fuel details | `supplytime_data.box19_special_fuel` | Opérations | Texte carburant/opérations | Absent |
+| `box20_charter_hire` — Charter hire | `supplytime_data.box20_charter_hire` et montant typé P23 | Offre commerciale | Type Currency seulement exercé par test, non confirmé live | Absent |
+| `box21_extension_hire` — Extension hire | `supplytime_data.box21_extension_hire` et montant typé P24 | Offre commerciale | Type/devise/unité à valider | Absent |
+| `box22_invoice_remittance` — Invoice/remittance options | `supplytime_data.box22_invoice_remittance` | Offre commerciale | Texte de facturation | Absent |
+| `box23_payment` — Payment details | `supplytime_data.box23_payment` | Offre commerciale | Donnée potentiellement sensible ; droits dédiés à envisager | Absent |
+| `box24_account_group` — Owners account group | `supplytime_data.box24_account_group` | Offre commerciale | Ne pas y stocker de secret bancaire non nécessaire | Absent |
+| `box25_internal_price` — Internal price | `supplytime_data.box25_internal_price` | Offre commerciale | Montant et visibilité à contrôler | Absent |
+| `box26_max_price` — Maximum audit price | `supplytime_data.box26_max_price` | Offre commerciale | Distinct de P26 « période maximale d'audit » | Absent |
+| `box27_war_risk` — War risks | `supplytime_data.box27_war_risk` | Contrat SUPPLYTIME | Texte contractuel | Absent |
+| `box28_terror` — Terror risks | `supplytime_data.box28_terror` | Contrat SUPPLYTIME | Texte contractuel | Absent |
+| `box29_notice_money` — Notice/money due | `supplytime_data.box29_notice_money` | Non affiché (`other`) | Texte contractuel/financier | Absent |
+| `box30_cancellation_clause` — Cancellation clause | `supplytime_data.box30_cancellation_clause` | Contrat SUPPLYTIME | Texte contractuel | Absent |
+| `box31_taxes` — Taxes | `supplytime_data.box31_taxes` | Offre commerciale, car la règle `taxes` précède la règle contrat | Décision d'interface à confirmer | Absent |
+| `box32_other_law` — Other law/jurisdiction | `supplytime_data.box32_other_law` | Contrat SUPPLYTIME | Texte juridique | Absent |
+| `box33_dispute_resolution` — Dispute resolution | `supplytime_data.box33_dispute_resolution` | Contrat SUPPLYTIME | Texte juridique | Absent |
+| `box34_additional_clauses` — Additional clauses | `supplytime_data.box34_additional_clauses` | Contrat SUPPLYTIME | Type Note seulement exercé par test, non confirmé live | Absent |
+| `signature_owners` — Owners signature | `supplytime_data.signature_owners` ou référence documentaire, jamais un secret | Contrat SUPPLYTIME | Déterminer si texte, nom ou simple emplacement de signature | Absent |
+| `signature_charterers` — Charterers signature | `supplytime_data.signature_charterers` ou référence documentaire | Contrat SUPPLYTIME | Même décision que signature armateur | Absent |
+
+La classification ci-dessus décrit le code SPFx tel qu'il fonctionne. Plusieurs boxes alimentent l'aperçu tout en étant classées `other` et donc invisibles dans l'assistant de création. La cible ne doit pas reproduire cet écart accidentel : toutes les clauses conservées devront avoir un parcours de consultation et de modification explicite.
+
+### 5.4 Champs Clients
+
+Seul `Title` est explicitement consommé comme libellé par SPFx. Les autres champs ci-dessous proviennent du mapping SeaPilot existant et constituent des hypothèses à vérifier, pas un catalogue live.
+
+| Libellé et nom interne/alias | Métadonnées source | Transformation/cible | Interface et règles | Statut SeaPilot |
+|---|---|---|---|---|
+| Nom client — `Title` | Text attendu ; défaut/requis `? live` | Trim vers `clients.name`, provenance conservée | Formulaire client dynamique ; libellé de l'option affréteur | Déjà migré dans le modèle et le mapper ; données non importées |
+| Code client — `CodeClient`, alias `Code`, `ClientCode` | Text supposé par migration ; défaut/requis `? live` | Normalisation vers `clients.code` | Unicité/règle métier non définie | Incomplet, alias non vérifiés |
+| Email — `Email` | Text supposé ; défaut/requis `? live` | Validation email puis `clients.email` | Donnée personnelle ; exposition minimale | Incomplet, champ live non vérifié |
+| Téléphone — `Telephone` | Text supposé ; défaut/requis `? live` | Normalisation légère vers `clients.phone` | Donnée personnelle | Incomplet, champ live non vérifié |
+| Adresse — `Adresse` | Text supposé ; défaut/requis `? live` | `clients.address` | Ne pas confondre avec l'identité armateur P03 | Incomplet, champ live non vérifié |
+| Ville — `Ville` | Text supposé ; défaut/requis `? live` | `clients.city` | Complément d'adresse | Incomplet, champ live non vérifié |
+| Pays — `Pays` | Text supposé ; défaut/requis `? live` | Valeur contrôlée éventuelle, `clients.country` | Choix live à vérifier | Incomplet, champ live non vérifié |
+| Actif — `Actif` | Boolean supposé ; défaut/requis `? live` | Boolean non nul, défaut cible `true` | Conditionne les options futures | Incomplet, champ live non vérifié |
+| Toute autre colonne visible/modifiable | Catalogue inconnu | Staging puis décision explicite ; aucune suppression silencieuse | SPFx la rend automatiquement dans le formulaire | Absent jusqu'à extraction live |
+
+Le formulaire Client reprend les mêmes conversions de type que Projets. Une fois créé, l'ID SharePoint du client est injecté dans le lookup affréteur du projet courant.
+
+### 5.5 Champs Flotte utilisés par Projets
+
+| Libellé et nom interne | Type attendu | Transformation/cible | Règle | Statut SeaPilot |
+|---|---|---|---|---|
+| ID — `Id`, `ID` | Counter/Number standard | `vessels.sharepoint_item_id`, puis relation projet | Doit être strictement positif | Déjà migré pour la flotte ; relation projet incomplète |
+| Nom navire — `Title` | Text | Snapshot du nom + résolution `vessels.id` | Option triée en français | Déjà migré |
+| Type d'unité — `Typedunit_x00e9_` | Choice/Text à confirmer | Champ type de `vessels` | Seule la valeur exacte `Navire` est éligible | Déjà migré ; choix live non revalidé |
+| Date de sortie de flotte — `Datesortiedeflotte` | DateTime | Date canonique de sortie | Navire conservé si vide ou strictement postérieur à aujourd'hui ; une sortie le jour courant est exclue | Déjà migré ; règle réutilisée par Projets |
+
+### 5.6 Métadonnées des deux bibliothèques documentaires
+
+| Libellé et nom interne | Type/obligation connus | Transformation/cible | Règle | Statut SeaPilot |
+|---|---|---|---|---|
+| ID — `ID`, `Id` | Counter standard, obligatoire technique | `sharepoint_item_id`/`source_sharepoint_id` | Clé de rejeu avec le List ID non nul | Incomplet : colonnes présentes, List ID manquant |
+| Identifiant unique — `UniqueId`, `GUID` | Guid standard | `sharepoint_unique_id` | Identité secondaire de contrôle | Incomplet : cible présente, mapper à vérifier |
+| Nom fichier — `FileLeafRef` | File/Text standard ; obligatoire pour un fichier | `title` et futur `file_name` explicite | Ignorer les dossiers | Incomplet : mappé vers `title` seulement |
+| Chemin — `FileRef`, `ServerRelativeUrl` | Text standard | `sharepoint_file_ref`/`folder_path` | Ne doit pas être réduit à `notes` | Incomplet : mapper actuel le met aussi dans `notes` |
+| URL absolue — `EncodedAbsUrl`, Graph `webUrl` | URL/Text | `file_url` canonique SharePoint | Refuser les URL hors tenant/site autorisé | Déjà migré pour l'ouverture ; validation absente |
+| Modifié — `Modified`, Graph `lastModifiedDateTime` | DateTime | `source_modified_at` | Reprise incrémentale et réconciliation | Incomplet |
+| Type d'objet — `FSObjType`, `FileSystemObjectType`, facet Graph `folder`/`file` | Integer/facet standard | Champ de staging, pas de stockage métier requis | Importer uniquement les fichiers | Absent du filtre du mapper actuel |
+| Type MIME/extension — `File_x0020_Type` ou facet Graph `file.mimeType` | Text | `mime_type`, `file_extension` | Métadonnée uniquement, aucun contenu binaire | Absent |
+| Taille — `File_x0020_Size` ou facet Graph `size` | Number | `file_size_bytes` | Contrôle de réconciliation | Absent |
+| Version — `ETag`, `eTag`, `cTag` | Text | `source_etag` | Détection de modification sans téléchargement | Absent |
+| Projet lookup — `ProjetId`, alias `ProjectId`, `ProjetLookupId` | Lookup attendu ; requis `? live` | `project_sharepoint_item_id`, puis `project_id` | Résolution prioritaire par ID stable | Incomplet, champ live non vérifié |
+| Projet libellé — `Projet`, `Project`, `ProjetLookupValue`, `ProjectTitle` | Lookup/Text attendu | Snapshot `project_title` | Repli seulement si ID/code absent | Incomplet |
+| Numéro projet — `NumeroProjet`, `Num_x00e9_roProjet`, `ProjectCode`, `CodeProjet`, `Code` | Text attendu | `project_code` normalisé | Repli de résolution après ID | Incomplet, alias live non vérifiés |
+| Catégorie | Champ live inconnu ou catégorie fixe par bibliothèque | `category_key` contrôlé | Valeur actuelle fixe `project_document`/`contract_document` | Incomplet |
+
+Les tables actuelles ne possèdent pas encore toutes les colonnes de métadonnées recommandées. Aucune colonne ne doit contenir les octets du fichier.
+
+### 5.7 Champs système SharePoint et traitement
+
+| Nom interne | Traitement SPFx | Cible/traitement recommandé | Statut |
+|---|---|---|---|
+| `ID` | Lu pour l'identité et la numérotation | `sharepoint_item_id`, jamais PK métier | Déjà migré comme provenance |
+| `Modified` | Lu et affichable | `source_modified_at` | Déjà migré |
+| `Created` | Exclu du formulaire | `source_created_at` si nécessaire à l'historique | Absent |
+| `Author` | Exclu du formulaire | Staging ou audit pseudonymisé selon besoin | Absent, ne pas importer sans finalité |
+| `Editor` | Exclu du formulaire | Staging ou audit pseudonymisé selon besoin | Absent, ne pas importer sans finalité |
+| `GUID` | Exclu du formulaire | `sharepoint_unique_id` | Incomplet |
+| `Attachments` | Exclu du formulaire | Inventorier séparément ; fichier maintenu dans SharePoint | Absent |
+| `ContentType` | Exclu du formulaire | `source_content_type` si utile au mapping | Absent |
+| `FileSystemObjectType` | Exclu du formulaire | Filtre fichier/dossier pour les bibliothèques | Absent du contrôle actuel |
+| `OData__UIVersionString` | Exclu du formulaire | Staging/version technique éventuelle | Obsolète pour le modèle métier |
+| `ServerRedirectedEmbedUri` | Exclu du formulaire | Ignorer | Obsolète |
+| `ServerRedirectedEmbedUrl` | Exclu du formulaire | Ignorer | Obsolète |
+| `FieldValuesAsText` | Développé pour décoder les valeurs affichées | Utilisé pendant l'export, non stocké comme donnée canonique | Obsolète après transformation |
 
 Incohérences à résoudre avec le catalogue SharePoint :
 
@@ -444,6 +629,12 @@ Le Plan d'action suit le même principe : relation `project_id` lorsqu'elle est 
 
 ## 11. Autorisations et sécurité
 
+### 11.0 Autorisation du module SPFx
+
+SPFx ne contient aucune matrice de rôles métier Projets. Le mot de passe partagé côté client masque le chargement mais n'est pas une autorisation serveur. Une fois ce contrôle franchi, les appels `SPHttpClient` s'exécutent avec l'identité Microsoft 365 courante et sont finalement autorisés ou refusés par les permissions des listes SharePoint.
+
+Les boutons de création de projet, de création de client, d'actualisation et de diagnostic ne font l'objet d'aucun contrôle de rôle dans le composant. `projectsShowDiagnosticButton` et `projectsDiagnosticMode` sont des propriétés de WebPart, pas des droits. Le modèle cible ne doit donc pas chercher à reproduire des « rôles SPFx » inexistants ; il doit faire valider une matrice métier SeaPilot explicite.
+
 ### 11.1 Situation actuelle
 
 Les politiques RLS des quatre tables autorisent actuellement :
@@ -513,12 +704,78 @@ La phase 1 ne doit pas deviner les éléments suivants :
 Commandes de collecte en lecture seule après authentification Microsoft 365 CLI :
 
 ```powershell
-m365 spo list get --webUrl https://bbtm668.sharepoint.com/sites/QHSE --url "/sites/QHSE/Lists/BBTM  Projets" --properties "Id,Title,RootFolder,ItemCount" --output json
-m365 spo field list --webUrl https://bbtm668.sharepoint.com/sites/QHSE --listUrl "/sites/QHSE/Lists/BBTM  Projets" --output json
-m365 spo listitem list --webUrl https://bbtm668.sharepoint.com/sites/QHSE --listUrl "/sites/QHSE/Lists/BBTM  Projets" --fields "Id,Title,Modified" --output json
+$webUrl = 'https://bbtm668.sharepoint.com/sites/QHSE'
+$sources = @(
+  [pscustomobject]@{ Key = 'projects';  Kind = 'list';    Url = '/sites/QHSE/Lists/BBTM  Projets' },
+  [pscustomobject]@{ Key = 'clients';   Kind = 'list';    Url = '/sites/QHSE/Lists/BBTM  Clients' },
+  [pscustomobject]@{ Key = 'fleet';     Kind = 'list';    Url = '/sites/QHSE/Lists/BBTM  Flotte' },
+  [pscustomobject]@{ Key = 'project-documents';  Kind = 'library'; Url = '/sites/QHSE/Documents Projets' },
+  [pscustomobject]@{ Key = 'contract-documents'; Kind = 'library'; Url = '/sites/QHSE/Documents Contractuels' }
+)
+
+# GUID, titre, URL et ItemCount déclaratif de chaque source.
+foreach ($source in $sources) {
+  m365 spo list get `
+    --webUrl $webUrl `
+    --url $source.Url `
+    --properties 'Id,Title,ItemCount,BaseTemplate,BaseType,LastItemModifiedDate' `
+    --output json
+}
+
+# Catalogue exhaustif : Title, InternalName, StaticName, EntityPropertyName,
+# TypeAsString, Required, Hidden, ReadOnlyField, Choices, DefaultValue,
+# LookupList, LookupField et AllowMultipleValues sont notamment attendus.
+foreach ($source in $sources) {
+  m365 spo field list --webUrl $webUrl --listUrl $source.Url --output json
+}
+
+# Comptage exact paginé. ItemCount seul peut inclure les dossiers d'une bibliothèque.
+function Get-AllSpoRows {
+  param(
+    [Parameter(Mandatory)] [string] $ListUrl,
+    [Parameter(Mandatory)] [string] $Fields
+  )
+
+  $pageNumber = 0
+  $allRows = @()
+  do {
+    $raw = m365 spo listitem list `
+      --webUrl $webUrl `
+      --listUrl $ListUrl `
+      --fields $Fields `
+      --pageSize 5000 `
+      --pageNumber $pageNumber `
+      --output json
+    if ($LASTEXITCODE -ne 0) { throw "Échec de lecture de $ListUrl, page $pageNumber" }
+    $batch = if ([string]::IsNullOrWhiteSpace($raw)) { @() } else { @($raw | ConvertFrom-Json) }
+    $allRows += $batch
+    $pageNumber += 1
+  } while ($batch.Count -eq 5000)
+
+  return $allRows
+}
+
+foreach ($source in $sources) {
+  $fields = if ($source.Kind -eq 'library') {
+    'ID,Title,Modified,UniqueId,FSObjType,FileLeafRef,FileRef,EncodedAbsUrl'
+  } else {
+    'ID,Title,Modified'
+  }
+  $rows = @(Get-AllSpoRows -ListUrl $source.Url -Fields $fields)
+  $fileCount = if ($source.Kind -eq 'library') {
+    @($rows | Where-Object { $_.FSObjType -eq 0 }).Count
+  } else {
+    $null
+  }
+  [pscustomobject]@{
+    Source = $source.Key
+    TotalItems = $rows.Count
+    FilesOnly = $fileCount
+  }
+}
 ```
 
-Les mêmes commandes doivent être exécutées pour Clients et adaptées aux bibliothèques. Les sorties métier restent hors Git et doivent être stockées dans un emplacement local ignoré et protégé.
+Si le chemin Clients à double espace échoue, répéter les trois lectures avec `/sites/QHSE/Lists/BBTM Clients`, puis conserver l'URL retournée par `spo list get`. Les sorties métier restent hors Git et doivent être stockées uniquement dans un emplacement local ignoré et protégé. Ne jamais copier une sortie brute dans ce document.
 
 ## 14. Contrôles de données à préparer
 
@@ -565,6 +822,17 @@ Ses livrables devront être limités à :
 - stratégie de migration compatible avec un import idempotent.
 
 Elle ne devra pas encore exécuter la migration des données ni reconstruire l'interface complète.
+
+### 16.1 Critères d'acceptation des phases suivantes
+
+| Phase | Critères d'acceptation minimaux avant arrêt de phase |
+|---|---|
+| 1 — Modèle cible et sécurité | Catalogue live des cinq sources archivé hors Git ; chaque champ a un mapping décidé ; migrations réversibles ; contraintes de code/date/relations ; audit et archivage ; RLS/RPC testées positivement et négativement pour chaque rôle ; séparation `projects`/`planning_projects` documentée ; aucune donnée métier importée |
+| 2 — Export et import idempotent | Identifiants de site/liste/drive non nuls et vérifiés ; dry-run disponible ; rapport créé/mis à jour/inchangé/rejeté/ambigu ; aucun dossier importé comme fichier ; aucune suppression implicite ; second rejeu identique sans doublon ni mutation inattendue ; aucun binaire transféré hors SharePoint |
+| 3 — Reprise des données | Volumes exacts source/cible réconciliés ; historiques et codes conservés ; dates et choix contrôlés ; clients/navires/documents liés ou explicitement signalés ; échantillons métier validés ; rejets corrigés ou acceptés par écrit ; sauvegarde et procédure de retour documentées |
+| 4 — Parité fonctionnelle Projets | Liste, sélection, détail, création client/projet, modification, archivage, statuts, champs obligatoires et aperçu SUPPLYTIME couverts ; codes alloués côté serveur ; fichiers ouverts dans SharePoint ; aucune double écriture ; tests interface, requêtes et RLS verts |
+| 5 — Intégrations | DPR, Achats et Plan d'action utilisent les IDs du catalogue sans perdre leurs snapshots historiques ; références orphelines/ambiguës mesurées ; Planning reste indépendant ; éventuel lien Planning ajouté uniquement sur preuve déterministe ; tests de non-régression verts |
+| 6 — Bascule | Supabase déclaré source de vérité ; écritures SharePoint listes désactivées dans le parcours SeaPilot ; accès et secrets revus ; imports finaux rejouables ; monitoring et support prêts ; validation métier formelle ; déploiement production et procédure de retour vérifiés |
 
 ---
 
