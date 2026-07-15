@@ -413,6 +413,9 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.querySelector('.planning-board-titlebar')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Légende et gestes du planning')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Conflits planning')).not.toBeInTheDocument();
     expect(screen.getByText('Navires · Bordées · Marins')).toBeInTheDocument();
     expect(screen.getByText('Bordée 1')).toBeInTheDocument();
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
@@ -951,6 +954,64 @@ describe('PlanningPage cockpit', () => {
     })));
     expect(confirm).toHaveBeenCalledOnce();
     confirm.mockRestore();
+  });
+
+  it('waits for one completed left click before opening conflict prioritization', async () => {
+    const conflictAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      vessel_id: 2,
+      vessel_name: 'SUROIT',
+      starts_on: '2026-07-10',
+      ends_on: '2026-07-12',
+    };
+    const { client } = createClient({
+      vessels: [vesselRow, secondVesselRow],
+      assignments: [assignmentOverviewRow, conflictAssignment],
+      periods: [],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const conflictCell = screen.getAllByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ })[0];
+
+    fireEvent.pointerDown(conflictCell, { button: 0 });
+    expect(screen.queryByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).not.toBeInTheDocument();
+    fireEvent.pointerUp(conflictCell, { button: 0 });
+    fireEvent.click(conflictCell.querySelector('.planning-grid-conflict-icon')!, { button: 0, detail: 1 });
+
+    expect(await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).toHaveLength(1);
+  });
+
+  it('keeps right-click and double-click workflows on conflict cells', async () => {
+    const user = userEvent.setup();
+    const conflictAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      vessel_id: 2,
+      vessel_name: 'SUROIT',
+      starts_on: '2026-07-10',
+      ends_on: '2026-07-12',
+    };
+    const { client } = createClient({
+      vessels: [vesselRow, secondVesselRow],
+      assignments: [assignmentOverviewRow, conflictAssignment],
+      periods: [],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const conflictCell = screen.getAllByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ })[0];
+
+    fireEvent.contextMenu(conflictCell);
+    const statusDialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    expect(screen.queryByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).not.toBeInTheDocument();
+    await user.click(within(statusDialog).getByRole('button', { name: 'Fermer' }));
+
+    await user.dblClick(conflictCell);
+    const fullForm = await screen.findByRole('dialog');
+    expect(within(fullForm).getByText('Formulaire complet')).toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+    expect(screen.queryByRole('dialog', { name: 'Résoudre le conflit d’affectation' })).not.toBeInTheDocument();
   });
 
   it('opens daily status on right-click and the full assignment form only on double-click', async () => {

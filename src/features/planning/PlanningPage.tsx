@@ -49,7 +49,6 @@ import {
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   isSedentaryPlanningFunction,
-  planningPeriodTitle,
   shiftPlanningAnchor,
   timelineRange,
   type PlanningCrewEvent,
@@ -449,10 +448,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return new Map([...peopleByNode].map(([key, people]) => [key, people.size]));
   }, [fleetRows]);
-  const fleetVesselCount = useMemo(
-    () => fleetRows.filter((row) => row.type === 'vessel').length,
-    [fleetRows],
-  );
   const crewLanes = useMemo(
     () => buildPlanningCrewLanes(overview, range, filters, crewGrouping),
     [crewGrouping, filters, overview, range],
@@ -771,10 +766,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setStatusMessage("Destination sélectionnée. Utilisez Ctrl+V pour coller.");
       return;
     }
-    if (cell.isConflict) {
-      openPlanningGridConflict(cell);
-      return;
-    }
+    if (cell.isConflict) return;
     const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
     const cells = new Map([[paintedCell.key, paintedCell]]);
     gridPaintRef.current = { laneKey: cell.laneKey, cells };
@@ -1806,20 +1798,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             </div> : null}
           </div>
 
-          <div className="planning-board-titlebar">
-            <strong>{planningPeriodTitle(days, viewMode)}</strong>
-            <div className="planning-board-guide" aria-label="Légende et gestes du planning">
-              {perspective === 'fleet' ? <><span><i className="is-operation" />Opération</span><span><i className="is-maintenance" />Maintenance</span><span><i className="is-unavailability" />Indisponibilité</span></> : <><span><i className="is-sea" />En mer</span><span><i className="is-shore" />À terre</span><span><i className="is-provisional" />Provisoire</span></>}
-              <span><i className="is-conflict" />Conflit</span>
-              {canEditPlanning ? <small>{perspective === 'fleet' ? 'Clic droit : statut et commentaire · Double-clic : formulaire complet · Glissez un marin sur une bordée' : 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez pour déplacer'}</small> : null}
-            </div>
-            <div className="planning-board-stats">
-              {conflictDatesByEvent.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictDatesByEvent.size} ligne(s) en conflit</span> : null}
-              <span>{perspective === 'fleet' ? `${fleetVesselCount} navire(s) avec équipage` : `${crewLanes.length} ligne(s)`}</span>
-              <span>{perspective === 'fleet' ? `${overview.projects.length} événement(s)` : `${allPlanningCrewEvents.length} période(s)`}</span>
-            </div>
-          </div>
-
           <div className="planning-calendar-scroll" data-planning-view-mode={viewMode} style={timelineStyle(effectiveDayWidth, days.length)} tabIndex={0}>
             <div className="planning-calendar-grid planning-calendar-months">
               <div className="planning-calendar-corner" />
@@ -1918,6 +1896,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                     onEditDayState={openDayState}
+                    onConflictCellClick={!isSaving && !gridClipboard ? openPlanningGridConflict : undefined}
                     onGridCellPointerDown={beginPlanningGridPaint}
                     onGridCellPointerEnter={extendPlanningGridPaint}
                     onSelect={setSelectedTimelineId}

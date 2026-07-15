@@ -2763,6 +2763,25 @@ button:disabled {
 
 /* Planning cockpit migrated from the SPFx Dashboard */
 .planning-workspace {
+  --planning-event-operation: #1769dc;
+  --planning-event-operation-hover: #0f58bd;
+  --planning-event-operation-selected: #0b4698;
+  --planning-event-operation-shadow: rgba(23, 105, 220, .28);
+  --planning-event-maintenance: #bd5b0a;
+  --planning-event-maintenance-hover: #9d4706;
+  --planning-event-maintenance-selected: #7d3504;
+  --planning-event-maintenance-shadow: rgba(189, 91, 10, .28);
+  --planning-event-unavailability: #b8324e;
+  --planning-event-unavailability-hover: #98263f;
+  --planning-event-unavailability-selected: #761c31;
+  --planning-event-unavailability-shadow: rgba(184, 50, 78, .28);
+  --planning-event-conflict: #cc1f3a;
+  --planning-event-conflict-hover: #ad172f;
+  --planning-event-conflict-selected: #861126;
+  --planning-event-conflict-strong: #790e22;
+  --planning-event-conflict-soft: #fff0f3;
+  --planning-event-conflict-shadow: rgba(173, 23, 47, .34);
+  --planning-event-selection-ring: #0f4fae;
   display: grid;
   position: relative;
   min-width: 0;
@@ -3229,80 +3248,9 @@ button:disabled {
   font-weight: 800;
 }
 
-.planning-board-titlebar {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 14px;
-  border-bottom: 1px solid #e3e9f0;
-  padding: 0 14px;
-  color: #627188;
-  font-size: 0.68rem;
-  font-weight: 760;
-}
-
-.planning-board-titlebar strong {
-  margin-right: auto;
-  color: #1a2a41;
-  font-size: 0.82rem;
-}
-
-.planning-board-guide,
-.planning-board-stats {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.planning-board-guide > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.planning-board-guide i {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  background: #15ab73;
-}
-
-.planning-board-guide i.is-shore {
-  background: #f4c847;
-}
-
-.planning-board-guide i.is-conflict {
-  background: #e43e4d;
-}
-
-.planning-board-guide i.is-operation { background: #1769dc; }
-.planning-board-guide i.is-maintenance { background: #e08325; }
-.planning-board-guide i.is-unavailability { background: #c83b4c; }
-.planning-board-guide i.is-provisional {
-  border: 1px dashed #557086;
-  background: repeating-linear-gradient(135deg, #a9bcc9 0 2px, transparent 2px 4px);
-}
-
-.planning-board-guide small {
-  border-left: 1px solid #dce4ed;
-  padding-left: 10px;
-  color: #2c6bea;
-  font-size: 0.62rem;
-  font-weight: 780;
-  white-space: nowrap;
-}
-
-.planning-board-stats .is-conflict {
-  border-radius: 999px;
-  padding: 3px 7px;
-  color: #b42332;
-  background: #fff0f1;
-}
-
 .planning-calendar-scroll {
   --planning-label-width: 218px;
-  max-height: calc(100vh - 278px);
+  max-height: calc(100vh - 244px);
   min-height: 480px;
   overflow: auto;
   scrollbar-color: #8c9894 #edf1f4;
@@ -3373,10 +3321,14 @@ button:disabled {
 .planning-calendar-label-heading {
   display: flex;
   align-items: center;
-  padding: 0 15px;
-  color: #41526a;
-  font-size: 0.7rem;
-  font-weight: 820;
+  border-bottom: 1px solid #cad6e4;
+  padding: 0 12px;
+  color: #52647a;
+  background: #f7f9fc;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
 }
 
 .planning-day-heading {
@@ -3688,22 +3640,58 @@ button:disabled {
 }
 
 .planning-project-bar {
+  --planning-event-color: var(--planning-event-operation);
+  --planning-event-color-hover: var(--planning-event-operation-hover);
+  --planning-event-color-selected: var(--planning-event-operation-selected);
+  --planning-event-shadow: var(--planning-event-operation-shadow);
   display: flex;
   position: relative;
   height: 32px;
   align-items: center;
+  border: 1px solid transparent;
   border-radius: 7px;
   color: #ffffff;
-  background: #2c6bea;
-  box-shadow: 0 3px 8px rgba(35, 90, 200, 0.22);
+  background: var(--planning-event-color);
+  box-shadow: 0 3px 9px var(--planning-event-shadow);
+  container-name: planning-event;
+  container-type: inline-size;
   font-size: 0.66rem;
   font-weight: 850;
+  transition: background-color 120ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
 
-.planning-project-bar.is-operation { background: #1769dc; }
-.planning-project-bar.is-transit { background: #058f9b; }
-.planning-project-bar.is-maintenance { background: #d6781d; }
-.planning-project-bar.is-unavailability { background: #c83b4c; }
+.planning-project-bar.is-operation {
+  --planning-event-color: var(--planning-event-operation);
+  --planning-event-color-hover: var(--planning-event-operation-hover);
+  --planning-event-color-selected: var(--planning-event-operation-selected);
+  --planning-event-shadow: var(--planning-event-operation-shadow);
+}
+
+.planning-project-bar.is-transit {
+  --planning-event-color: #058f9b;
+  --planning-event-color-hover: #04737d;
+  --planning-event-color-selected: #035b63;
+  --planning-event-shadow: rgba(5, 143, 155, .28);
+}
+
+.planning-project-bar.is-maintenance {
+  --planning-event-color: var(--planning-event-maintenance);
+  --planning-event-color-hover: var(--planning-event-maintenance-hover);
+  --planning-event-color-selected: var(--planning-event-maintenance-selected);
+  --planning-event-shadow: var(--planning-event-maintenance-shadow);
+}
+
+.planning-project-bar.is-unavailability {
+  --planning-event-color: var(--planning-event-unavailability);
+  --planning-event-color-hover: var(--planning-event-unavailability-hover);
+  --planning-event-color-selected: var(--planning-event-unavailability-selected);
+  --planning-event-shadow: var(--planning-event-unavailability-shadow);
+}
+
+.planning-project-bar:hover {
+  background: var(--planning-event-color-hover);
+  box-shadow: 0 5px 13px var(--planning-event-shadow);
+}
 
 .planning-project-bar > small {
   overflow: hidden;
@@ -3715,9 +3703,15 @@ button:disabled {
 }
 
 .planning-project-bar > span:first-child {
+  min-width: 0;
   overflow: hidden;
   padding: 0 22px 4px 8px;
   text-overflow: ellipsis;
+}
+
+@container planning-event (max-width: 110px) {
+  .planning-project-bar > small { display: none; }
+  .planning-project-bar > span:first-child { padding-right: 20px; }
 }
 
 .planning-project-status-rail {
@@ -3815,9 +3809,14 @@ button:disabled {
 }
 
 .planning-crew-bar.has-conflict {
+  border: 1px solid var(--planning-event-conflict-strong);
   color: #ffffff;
-  background: #e43e4d;
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(228, 62, 77, 0.38), 0 4px 11px rgba(180, 35, 50, 0.24);
+  background: var(--planning-event-conflict);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--planning-event-conflict-shadow), 0 4px 11px var(--planning-event-conflict-shadow);
+}
+
+.planning-crew-bar.has-conflict:hover {
+  background: var(--planning-event-conflict-hover);
 }
 
 .planning-crew-bar.is-resize-preview {
@@ -4363,7 +4362,7 @@ button:disabled {
   }
 
   .planning-calendar-scroll {
-    max-height: calc(100vh - 330px);
+    max-height: calc(100vh - 296px);
   }
 }
 
@@ -4386,10 +4385,6 @@ button:disabled {
     flex: 0 0 170px;
   }
 
-  .planning-board-guide small,
-  .planning-board-stats span:last-child {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -4452,10 +4447,6 @@ button:disabled {
 
   .planning-edit-controls {
     margin-left: auto;
-  }
-
-  .planning-board-titlebar span {
-    display: none;
   }
 
   .planning-calendar-scroll {
@@ -9216,7 +9207,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-calendar-scroll {
-  max-height: calc(100vh - 318px);
+  max-height: calc(100vh - 284px);
   overflow-x: scroll;
   overflow-y: auto;
   scrollbar-color: #7d8ca0 #e9eef3;
@@ -9385,18 +9376,22 @@ button.planning-p12-conflict-card {
 /* Planning v3.2: contextual hierarchy actions, per-day assignment text and move feedback. */
 .planning-tree-row {
   display: flex;
-  gap: 5px;
-  padding: 0 8px;
+  gap: 4px;
+  padding: 0 7px;
 }
 
 .planning-tree-row.is-board {
-  padding-left: 20px;
+  padding-left: 18px;
 }
 
 .planning-tree-row .planning-tree-toggle {
+  display: flex;
   min-width: 0;
+  height: auto;
   flex: 1;
-  gap: 8px;
+  align-self: stretch;
+  align-items: center;
+  gap: 6px;
   padding: 0 4px 0 2px;
   border: 0;
   background: transparent;
@@ -9444,6 +9439,77 @@ button.planning-p12-conflict-card {
 
 .planning-timeline-row.is-fleet-person .planning-row-label {
   padding-left: 54px;
+  border-left-color: #dbe6f2;
+  color: #34465c;
+  background: #ffffff;
+  font-size: .66rem;
+  font-weight: 660;
+}
+
+.planning-timeline-row.is-fleet .planning-row-label.planning-tree-row.is-vessel {
+  border-top: 1px solid #cbd8e6;
+  border-bottom: 1px solid #d5e0eb;
+  border-left-color: #1769dc;
+  color: #17385d;
+  background: #f6f9fd;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle strong {
+  color: #123b65;
+  font-size: .73rem;
+  font-weight: 900;
+  letter-spacing: .008em;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle small {
+  margin-top: 2px;
+  color: #687b91;
+  font-size: .55rem;
+  font-weight: 720;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 6px;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > span {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > em {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > svg {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-label.planning-tree-row.is-board {
+  border-bottom: 1px solid #dfe7f0;
+  border-left-color: #8eb7e8;
+  color: #294a6d;
+  background: #f8fafc;
+}
+
+.planning-tree-row.is-board .planning-tree-toggle strong {
+  color: #294a6d;
+  font-size: .69rem;
+  font-weight: 820;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label strong {
+  color: #34465c;
+  font-size: .66rem;
+  font-weight: 680;
+  letter-spacing: .004em;
 }
 
 .planning-assignment-note-cell {
@@ -9524,15 +9590,50 @@ button.planning-p12-conflict-card {
 
 .planning-assignment-note-cell.has-conflict {
   z-index: 15;
-  border: 2px solid #9d1022;
+  border-top: 2px solid var(--planning-event-conflict-strong);
+  border-right: 1px solid rgba(255, 255, 255, .5);
+  border-bottom: 2px solid var(--planning-event-conflict-strong);
+  border-left: 0;
   color: #fff;
-  background: repeating-linear-gradient(135deg, #de263d 0 7px, #b8132b 7px 14px);
-  box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgba(210, 28, 53, .46), 0 5px 14px rgba(117, 12, 28, .3);
-  animation: planning-grid-conflict-pulse 1.4s ease-in-out infinite alternate;
+  background: repeating-linear-gradient(135deg, var(--planning-event-conflict) 0 9px, var(--planning-event-conflict-hover) 9px 14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), inset 0 -1px 0 rgba(68, 4, 17, .18), 0 3px 8px var(--planning-event-conflict-shadow);
+  filter: none;
 }
 
-@keyframes planning-grid-conflict-pulse {
-  to { filter: brightness(1.16); }
+.planning-assignment-note-cell.has-conflict.is-segment-start {
+  border-left: 2px solid var(--planning-event-conflict-strong);
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.planning-assignment-note-cell.has-conflict.is-segment-end {
+  border-right: 2px solid var(--planning-event-conflict-strong);
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.planning-assignment-note-cell.has-conflict:hover {
+  z-index: 17;
+  outline: 2px solid #ffffff;
+  outline-offset: -4px;
+  background: repeating-linear-gradient(135deg, var(--planning-event-conflict-hover) 0 9px, var(--planning-event-conflict-strong) 9px 14px);
+  box-shadow: 0 0 0 3px var(--planning-event-conflict-shadow), 0 5px 12px var(--planning-event-conflict-shadow);
+}
+
+.planning-assignment-note-cell.has-conflict.is-selected {
+  z-index: 18;
+  outline: 3px solid var(--planning-event-selection-ring);
+  outline-offset: 2px;
+  background: repeating-linear-gradient(135deg, var(--planning-event-conflict-selected) 0 9px, var(--planning-event-conflict-strong) 9px 14px);
+  box-shadow: 0 0 0 2px #ffffff, 0 5px 12px var(--planning-event-conflict-shadow);
+}
+
+.planning-assignment-note-cell.has-conflict:focus-visible {
+  z-index: 19;
+  outline: 3px solid var(--planning-event-conflict-strong);
+  outline-offset: 3px;
+  background: repeating-linear-gradient(135deg, var(--planning-event-conflict-hover) 0 9px, var(--planning-event-conflict-strong) 9px 14px);
+  box-shadow: 0 0 0 2px #ffffff, 0 5px 12px var(--planning-event-conflict-shadow);
 }
 
 .planning-grid-conflict-icon {
@@ -9829,12 +9930,40 @@ button.planning-p12-conflict-card {
   background: repeating-linear-gradient(135deg, rgba(12, 151, 96, .35) 0 10px, rgba(95, 214, 164, .14) 10px 20px);
 }
 
-.planning-project-bar.is-selected,
 .planning-crew-bar.is-selected {
   z-index: 12;
-  outline: 3px solid #0f4fae;
+  outline: 3px solid var(--planning-event-selection-ring);
   outline-offset: 2px;
   box-shadow: 0 0 0 3px #fff;
+}
+
+.planning-project-bar.is-selected {
+  z-index: 12;
+  outline: 3px solid var(--planning-event-selection-ring);
+  outline-offset: 2px;
+  background: var(--planning-event-color-selected);
+  box-shadow: 0 0 0 3px #ffffff, 0 5px 13px var(--planning-event-shadow);
+}
+
+.planning-crew-bar.has-conflict.is-selected {
+  background: var(--planning-event-conflict-selected);
+  box-shadow: 0 0 0 3px #ffffff, 0 5px 13px var(--planning-event-conflict-shadow);
+}
+
+.planning-project-bar:focus-visible {
+  z-index: 13;
+  outline: 2px solid #ffffff;
+  outline-offset: -3px;
+  background: var(--planning-event-color-hover);
+  box-shadow: 0 0 0 3px var(--planning-event-color-selected), 0 5px 13px var(--planning-event-shadow);
+}
+
+.planning-crew-bar.has-conflict:focus-visible {
+  z-index: 13;
+  outline: 2px solid #ffffff;
+  outline-offset: -3px;
+  background: var(--planning-event-conflict-hover);
+  box-shadow: 0 0 0 3px var(--planning-event-conflict-strong), 0 5px 13px var(--planning-event-conflict-shadow);
 }
 
 .planning-tools-group {
@@ -10082,7 +10211,7 @@ button.planning-p12-conflict-card {
 
   .planning-calendar-scroll {
     --planning-label-width: 190px;
-    max-height: calc(100vh - 380px);
+    max-height: calc(100vh - 346px);
   }
 
   .planning-toolbar-main,
@@ -10135,11 +10264,6 @@ button.planning-p12-conflict-card {
 
   .planning-filter-strip {
     display: flex;
-  }
-
-  .planning-board-guide,
-  .planning-board-stats {
-    display: none;
   }
 
   .planning-unassigned-list,

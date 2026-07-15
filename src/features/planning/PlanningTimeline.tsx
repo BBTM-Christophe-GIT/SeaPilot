@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
-import { Fragment, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -315,6 +315,7 @@ export function PlanningCrewTimelineRow({
   cutGridCellKeys = new Set(),
   onGridCellPointerDown,
   onGridCellPointerEnter,
+  onConflictCellClick,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
@@ -331,6 +332,7 @@ export function PlanningCrewTimelineRow({
   cutGridCellKeys?: ReadonlySet<string>;
   onGridCellPointerDown?: (cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) => void;
   onGridCellPointerEnter?: (cell: PlanningGridCell) => void;
+  onConflictCellClick?: (cell: PlanningGridCell) => void;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -338,6 +340,25 @@ export function PlanningCrewTimelineRow({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
+  const conflictClickTimerRef = useRef<number | null>(null);
+
+  function cancelPendingConflictClick() {
+    if (conflictClickTimerRef.current === null) return;
+    window.clearTimeout(conflictClickTimerRef.current);
+    conflictClickTimerRef.current = null;
+  }
+
+  function scheduleConflictClick(cell: PlanningGridCell) {
+    cancelPendingConflictClick();
+    conflictClickTimerRef.current = window.setTimeout(() => {
+      conflictClickTimerRef.current = null;
+      onConflictCellClick?.(cell);
+    }, 220);
+  }
+
+  useEffect(() => () => {
+    if (conflictClickTimerRef.current !== null) window.clearTimeout(conflictClickTimerRef.current);
+  }, []);
 
   const beginResize = (pointerEvent: React.PointerEvent, item: PlanningCrewEvent, edge: 'start' | 'end') => {
     pointerEvent.preventDefault();
@@ -544,16 +565,23 @@ export function PlanningCrewTimelineRow({
                 onClick={(noteEvent) => {
                   noteEvent.preventDefault();
                   noteEvent.stopPropagation();
+                  if (cell.isConflict && onConflictCellClick && !noteEvent.ctrlKey && !noteEvent.metaKey) {
+                    onSelect(event.id);
+                    scheduleConflictClick(cell);
+                    return;
+                  }
                   onSelect(event.id);
                 }}
                 onContextMenu={(contextEvent) => {
                   if (!editable || !onEditDayState) return;
                   contextEvent.preventDefault();
                   contextEvent.stopPropagation();
+                  cancelPendingConflictClick();
                   onSelect(event.id);
                   onEditDayState(event, day.date);
                 }}
                 onDoubleClick={(doubleClickEvent) => {
+                  cancelPendingConflictClick();
                   doubleClickEvent.stopPropagation();
                   onOpen(event);
                 }}
