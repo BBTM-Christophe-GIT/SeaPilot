@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  fetchPlanningStcwCertificates,
   mapPlanningMatrixRows,
   mapPlanningOccurrenceRows,
   mapPlanningRotationRows,
@@ -41,6 +42,26 @@ describe('planning P1.1 query mappers', () => {
       category: 'Pont',
       stcw_rules: ['II/3'],
     }])).toEqual([{ id: 7, sourceItemId: 34, name: 'Chef de Quart 500', category: 'Pont', stcwRules: ['II/3'] }]);
+  });
+
+  it('loads every active STCW catalogue entry so the UI can split certificates and authorizations', async () => {
+    const secondOrder = vi.fn().mockResolvedValue({
+      data: [{ id: 47, source_item_id: 47, name: 'CACES', category: 'Conduite d’Engin', stcw_rules: [] }],
+      error: null,
+    });
+    const firstOrder = vi.fn().mockReturnValue({ order: secondOrder });
+    const eq = vi.fn().mockReturnValue({ order: firstOrder });
+    const select = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ select });
+
+    await expect(fetchPlanningStcwCertificates({ from } as unknown as SupabaseClient)).resolves.toEqual([
+      { id: 47, sourceItemId: 47, name: 'CACES', category: 'Conduite d’Engin', stcwRules: [] },
+    ]);
+    expect(from).toHaveBeenCalledWith('stcw_certificates');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith('active', true);
+    expect(firstOrder).toHaveBeenCalledWith('category');
+    expect(secondOrder).toHaveBeenCalledWith('name');
   });
 });
 

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -323,11 +323,6 @@ export function PlanningCrewTimelineRow({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
-  const clickTimerRef = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
-  }, []);
 
   const beginResize = (pointerEvent: React.PointerEvent, item: PlanningCrewEvent, edge: 'start' | 'end') => {
     pointerEvent.preventDefault();
@@ -428,21 +423,15 @@ export function PlanningCrewTimelineRow({
                 return;
               }
               onSelect(event.id);
-              if (hierarchy && event.assignmentId && onEditDayState) {
-                if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
-                clickTimerRef.current = window.setTimeout(() => {
-                  onEditDayState(event, null);
-                  clickTimerRef.current = null;
-                }, 220);
-              }
             }}
-            onDoubleClick={() => {
-              if (clickTimerRef.current !== null) {
-                window.clearTimeout(clickTimerRef.current);
-                clickTimerRef.current = null;
-              }
-              onOpen(event);
+            onContextMenu={(contextEvent) => {
+              if (!editable || !hierarchy || !event.assignmentId || !onEditDayState) return;
+              contextEvent.preventDefault();
+              contextEvent.stopPropagation();
+              onSelect(event.id);
+              onEditDayState(event, null);
             }}
+            onDoubleClick={() => onOpen(event)}
             onDragEnd={() => {
               setDraggingId(null);
               setMovePreview(null);
@@ -482,18 +471,16 @@ export function PlanningCrewTimelineRow({
                     return;
                   }
                   onSelect(event.id);
-                  if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
-                  clickTimerRef.current = window.setTimeout(() => {
-                    onEditDayState?.(event, day.date);
-                    clickTimerRef.current = null;
-                  }, 240);
+                }}
+                onContextMenu={(contextEvent) => {
+                  if (!editable || !onEditDayState) return;
+                  contextEvent.preventDefault();
+                  contextEvent.stopPropagation();
+                  onSelect(event.id);
+                  onEditDayState(event, day.date);
                 }}
                 onDoubleClick={(doubleClickEvent) => {
                   doubleClickEvent.stopPropagation();
-                  if (clickTimerRef.current !== null) {
-                    window.clearTimeout(clickTimerRef.current);
-                    clickTimerRef.current = null;
-                  }
                   onOpen(event);
                 }}
                 onDragEnd={() => {
@@ -503,10 +490,6 @@ export function PlanningCrewTimelineRow({
                 }}
                 onDragStart={(dragEvent) => {
                   suppressClickRef.current = true;
-                  if (clickTimerRef.current !== null) {
-                    window.clearTimeout(clickTimerRef.current);
-                    clickTimerRef.current = null;
-                  }
                   setDraggingId(event.id);
                   onSelect(event.id);
                   dragEvent.dataTransfer.effectAllowed = 'move';

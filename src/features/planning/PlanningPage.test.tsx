@@ -768,7 +768,10 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Ouvrir la fiche de COTENTIN' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ajouter une bordée à COTENTIN' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' }));
+    const dayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    await user.click(dayCell);
+    expect(screen.queryByRole('dialog', { name: 'Statut et commentaire' })).not.toBeInTheDocument();
+    fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     await user.click(within(dialog).getByText('Repos'));
     const noteInput = within(dialog).getByLabelText('Commentaire');
@@ -840,7 +843,7 @@ describe('PlanningPage cockpit', () => {
     expect(emptyCell.querySelector('.planning-empty-cell-marker.is-armement')).toBeInTheDocument();
   });
 
-  it('opens daily status on click and the full assignment form only on double-click', async () => {
+  it('opens daily status on right-click and the full assignment form only on double-click', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -849,6 +852,8 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(bar);
     expect(bar).toHaveClass('is-selected');
+    expect(screen.queryByRole('dialog', { name: 'Statut et commentaire' })).not.toBeInTheDocument();
+    fireEvent.contextMenu(bar);
     const statusDialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(statusDialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
     await user.click(within(statusDialog).getByRole('button', { name: 'Fermer' }));

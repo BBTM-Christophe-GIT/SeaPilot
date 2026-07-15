@@ -261,7 +261,6 @@ export async function fetchPlanningStcwCertificates(client: SupabaseClient): Pro
     .from('stcw_certificates')
     .select(STCW_CERTIFICATE_SELECT)
     .eq('active', true)
-    .eq('is_credential', true)
     .order('category')
     .order('name');
   if (error) throwPlanningDataError('load-stcw-certificates', 'Impossible de charger la liste des brevets STCW.', error);

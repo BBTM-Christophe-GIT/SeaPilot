@@ -6597,7 +6597,7 @@ button:disabled {
 .planning-p11-requirements fieldset {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(260px, 2fr) minmax(150px, 1fr);
+  grid-template-columns: minmax(150px, .8fr) repeat(2, minmax(230px, 1.6fr));
   gap: 9px;
   min-width: 0;
   margin: 0;
@@ -9394,13 +9394,38 @@ button.planning-p12-conflict-card {
   background: #fff;
 }
 
-.planning-stcw-multiselect > div > label {
+.planning-stcw-multiselect > div > section {
+  display: grid;
+}
+
+.planning-stcw-multiselect > div > section + section {
+  border-top: 1px solid #dce5ee;
+}
+
+.planning-stcw-multiselect h6 {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  margin: 0;
+  background: #edf4fa;
+  color: #24455b;
+  padding: 6px 9px;
+  font-size: .7rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.planning-stcw-multiselect section > div > label {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 7px 9px;
   border-bottom: 1px solid #edf1f5;
   cursor: pointer;
+}
+
+.planning-stcw-multiselect section > div > label:last-child {
+  border-bottom: 0;
 }
 
 .planning-stcw-multiselect input {

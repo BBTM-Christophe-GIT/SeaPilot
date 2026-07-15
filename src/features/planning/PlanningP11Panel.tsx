@@ -14,6 +14,7 @@ import {
   type PlanningRotationOccurrence,
   type PlanningRotationPattern,
   type PlanningRotationSeries,
+  type PlanningStcwCertificate,
   type PlanningTemplate,
   type PlanningTemplateKind,
 } from './planningP11';
@@ -43,9 +44,93 @@ const TEMPLATE_LABELS: Record<PlanningTemplateKind, string> = {
 const PATTERN_LABELS: Record<PlanningRotationPattern, string> = {
   '7_7': '7 / 7', '10_10': '10 / 10', '14_14': '14 / 14', custom: 'Personnalisée',
 };
+const MANNING_FUNCTION_GROUPS = [
+  {
+    label: 'Pont',
+    functions: [
+      'Capitaine',
+      '2nd Capitaine',
+      'Lieutenant pont',
+      'Officier chef de quart passerelle',
+      'Officier chargé de la sécurité',
+      'Officier chargé de la sûreté du navire – SSO',
+      'Officier chargé des opérations cargo',
+      'Officier de positionnement dynamique – DPO',
+      'Maître d’équipage',
+      'Matelot qualifié pont',
+      'Matelot',
+      'Matelot de quart',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+  {
+    label: 'Machine',
+    functions: [
+      'Chef mécanicien',
+      '2nd Mécanicien',
+      'Officier chef de quart machine',
+      'Officier électrotechnicien – ETO',
+      'Maître machine',
+      'Matelot machine',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+] as const;
+const MANNING_CERTIFICATE_CATEGORIES = ['Pont', 'Machine', 'Formation de Sécurité'] as const;
+const MANNING_CERTIFICATE_CATEGORY_SET = new Set<string>(MANNING_CERTIFICATE_CATEGORIES);
 
-function csvValues(value: string): string[] {
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
+interface PlanningCertificateChoiceGroup {
+  label: string;
+  certificates: PlanningStcwCertificate[];
+}
+
+function groupCertificates(
+  certificates: PlanningStcwCertificate[],
+  allowedCategories?: readonly string[],
+): PlanningCertificateChoiceGroup[] {
+  const grouped = new Map<string, PlanningStcwCertificate[]>();
+  const allowed = allowedCategories ? new Set(allowedCategories) : null;
+  for (const certificate of certificates) {
+    if (allowed && !allowed.has(certificate.category)) continue;
+    const values = grouped.get(certificate.category) || [];
+    values.push(certificate);
+    grouped.set(certificate.category, values);
+  }
+  const categories = allowedCategories
+    ? allowedCategories.filter((category) => grouped.has(category))
+    : [...grouped.keys()].sort((left, right) => left.localeCompare(right, 'fr'));
+  return categories.map((category) => ({
+    label: category,
+    certificates: [...(grouped.get(category) || [])].sort((left, right) => left.name.localeCompare(right.name, 'fr')),
+  }));
+}
+
+function PlanningCertificateMultiSelect({
+  label,
+  ariaLabel,
+  groups,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  ariaLabel: string;
+  groups: PlanningCertificateChoiceGroup[];
+  selected: string[];
+  onToggle: (certificate: string) => void;
+}) {
+  return <div className="planning-stcw-multiselect" role="group" aria-label={ariaLabel}>
+    <span>{label}</span>
+    <div>
+      {groups.map((group) => <section key={group.label}>
+        <h6>{group.label}</h6>
+        <div>{group.certificates.map((certificate) => <label key={certificate.id}>
+          <input checked={selected.includes(certificate.name)} onChange={() => onToggle(certificate.name)} type="checkbox" />
+          <span><strong>{certificate.name}</strong><small>{certificate.stcwRules.join(' · ') || certificate.category}</small></span>
+        </label>)}</div>
+      </section>)}
+    </div>
+    {!groups.length ? <small>Aucune valeur disponible dans le catalogue STCW.</small> : null}
+  </div>;
 }
 
 function requirementInput(requirement?: PlanningManningRequirement, displayOrder = 0): PlanningManningRequirement {
@@ -225,6 +310,22 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
   const [isSaving, setIsSaving] = useState(false);
   const selected = data.matrices.find((matrix) => matrix.id === selectedId) || data.matrices[0] || null;
   const comparison = useMemo(() => selected ? buildManningMatrixComparison(overview, selected, range.start, range.end) : [], [overview, range.end, range.start, selected]);
+  const certificateGroups = useMemo(
+    () => groupCertificates(data.certificates, MANNING_CERTIFICATE_CATEGORIES),
+    [data.certificates],
+  );
+  const authorizationGroups = useMemo(
+    () => groupCertificates(data.certificates.filter((certificate) => !MANNING_CERTIFICATE_CATEGORY_SET.has(certificate.category))),
+    [data.certificates],
+  );
+  const certificateNames = useMemo(
+    () => new Set(certificateGroups.flatMap((group) => group.certificates.map((certificate) => certificate.name))),
+    [certificateGroups],
+  );
+  const authorizationNames = useMemo(
+    () => new Set(authorizationGroups.flatMap((group) => group.certificates.map((certificate) => certificate.name))),
+    [authorizationGroups],
+  );
   function updateRequirement(index: number, patch: Partial<PlanningManningRequirement>) {
     setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
   }
@@ -237,16 +338,30 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
       effectiveTo: matrix.effectiveTo,
       status: matrix.status,
       notes: matrix.notes,
-      requirements: matrix.requirements.map((item) => ({ ...item })),
+      requirements: matrix.requirements.map((item) => ({
+        ...item,
+        requiredCertificates: [...new Set([
+          ...item.requiredCertificates.filter((value) => !authorizationNames.has(value)),
+          ...item.requiredAuthorizations.filter((value) => certificateNames.has(value)),
+        ])],
+        requiredAuthorizations: [...new Set([
+          ...item.requiredAuthorizations.filter((value) => !certificateNames.has(value)),
+          ...item.requiredCertificates.filter((value) => authorizationNames.has(value)),
+        ])],
+      })),
     } : emptyForm());
     setIsFormOpen(true);
   }
-  function toggleCertificate(index: number, certificate: string) {
-    const current = form.requirements[index].requiredCertificates;
+  function toggleRequirementValue(
+    index: number,
+    field: 'requiredCertificates' | 'requiredAuthorizations',
+    value: string,
+  ) {
+    const current = form.requirements[index][field];
     updateRequirement(index, {
-      requiredCertificates: current.includes(certificate)
-        ? current.filter((item) => item !== certificate)
-        : [...current, certificate],
+      [field]: current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value],
     });
   }
   async function submit(event: FormEvent) {
@@ -281,13 +396,24 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
       <div className="planning-p11-requirements"><header><h4>Postes normalement prévus</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter un poste</button></header>
         {form.requirements.map((requirement, index) => <fieldset key={index}>
           <legend>Poste {index + 1}</legend>
-          <label>Fonction<input required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })} /></label>
-          <div className="planning-stcw-multiselect" role="group" aria-label={`Brevets requis pour ${requirement.functionLabel || `le poste ${index + 1}`}`}>
-            <span>Brevets</span>
-            <div>{data.certificates.map((certificate) => <label key={certificate.id}><input checked={requirement.requiredCertificates.includes(certificate.name)} onChange={() => toggleCertificate(index, certificate.name)} type="checkbox" /><span><strong>{certificate.name}</strong><small>{[certificate.category, ...certificate.stcwRules].filter(Boolean).join(' · ')}</small></span></label>)}</div>
-            {!data.certificates.length ? <small>Aucun brevet disponible. Appliquez la migration du catalogue STCW.</small> : null}
-          </div>
-          <label>Habilitations<input placeholder="Séparées par des virgules" value={requirement.requiredAuthorizations.join(', ')} onChange={(event) => updateRequirement(index, { requiredAuthorizations: csvValues(event.target.value) })} /></label>
+          <label>Fonction<select required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })}>
+            <option value="">Sélectionner une fonction</option>
+            {MANNING_FUNCTION_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.functions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</optgroup>)}
+          </select></label>
+          <PlanningCertificateMultiSelect
+            ariaLabel={`Brevets requis pour ${requirement.functionLabel || `le poste ${index + 1}`}`}
+            groups={certificateGroups}
+            label="Brevets"
+            onToggle={(value) => toggleRequirementValue(index, 'requiredCertificates', value)}
+            selected={requirement.requiredCertificates}
+          />
+          <PlanningCertificateMultiSelect
+            ariaLabel={`Habilitations requises pour ${requirement.functionLabel || `le poste ${index + 1}`}`}
+            groups={authorizationGroups}
+            label="Habilitations"
+            onToggle={(value) => toggleRequirementValue(index, 'requiredAuthorizations', value)}
+            selected={requirement.requiredAuthorizations}
+          />
           {form.requirements.length > 1 ? <button aria-label={`Supprimer le poste ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}
         </fieldset>)}
       </div>
