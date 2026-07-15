@@ -93,6 +93,11 @@ Version `3.1.1` adds no migration. It keeps only vessels with visible crew in Fl
 vessel → watch group → sailor hierarchy, renames the primary project action, and exposes the content of the
 publication `Actions` menu. Deploy it after `3.1.0` with the same 37 aligned migrations.
 
+Version `3.4.0` redesigns the role-aware application sidebar without a database migration. It keeps the existing
+BBTM logo and permission matrix, adds color-coded section cards, a dark submenu surface, a blue active state and a
+pinned version/collapse footer. The responsive and rollback checks are documented in
+`docs/deployment/sidebar-v3-4-ui.md`.
+
 ## Current Production Target
 
 The active public URL is:
