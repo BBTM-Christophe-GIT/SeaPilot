@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Briefcase,
+  Archive,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -8,6 +9,8 @@ import {
   FileText,
   History,
   Info,
+  Pencil,
+  Plus,
   RefreshCw,
   Ship,
   Users,
@@ -17,6 +20,8 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { ClientEditor, ProjectEditor } from './ProjectEditors';
+import { archiveProject } from './projectMutations';
 import {
   buildProjectMetrics,
   fetchProjectsData,
@@ -52,6 +57,7 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
   projectDocuments: [],
   projects: [],
   warnings: [],
+  vessels: [],
 };
 
 const PROJECTS_PER_PAGE = 40;
@@ -138,6 +144,10 @@ function technicalErrorMessage(error: unknown): string {
 
 function warningIsPresent(data: ProjectsData, source: ProjectsDataSource): boolean {
   return data.warnings.some((warning) => warning.source === source);
+}
+
+function canManageProjects(roles: RoleKey[]): boolean {
+  return roles.includes('admin') || roles.includes('direction');
 }
 
 function DetailField({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
@@ -296,7 +306,7 @@ function ProjectDetail({
           <h2 id="selected-project-title">{project.title}</h2>
           {project.description ? <span>{project.description}</span> : null}
         </div>
-        <span className="project-status-chip">{displayText(project.status)}</span>
+        <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
       </header>
 
       <ProvenanceNotice contract={contract} project={project} />
@@ -390,9 +400,11 @@ function ProjectDetail({
   );
 }
 
-export function ProjectsPage({ client }: ProjectsPageProps) {
+export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
+  const effectiveRoles = roles || outletContext?.roles || [];
+  const isManager = canManageProjects(effectiveRoles);
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -400,6 +412,13 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
+  const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
+  const [mutationMessage, setMutationMessage] = useState('');
+  const [mutationError, setMutationError] = useState('');
+  const [isArchiving, setIsArchiving] = useState(false);
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -503,6 +522,10 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
   const safePage = Math.min(currentPage, pageCount - 1);
   const visibleProjects = filteredProjects.slice(safePage * PROJECTS_PER_PAGE, (safePage + 1) * PROJECTS_PER_PAGE);
   const hasActiveFilters = Object.values(filters).some(Boolean);
+  const contractTypeOptions = useMemo(
+    () => uniqueSorted(projectsData.projects.map((project) => project.contractType)),
+    [projectsData.projects],
+  );
 
   function updateFilterValue(key: keyof ProjectFilterState, value: string) {
     setCurrentPage(0);
@@ -512,6 +535,35 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
   function resetFilters() {
     setCurrentPage(0);
     setFilters(EMPTY_PROJECT_FILTERS);
+  }
+
+  function openProjectEditor(project?: ProjectRecord) {
+    setMutationError('');
+    setEditingProject(project);
+    setProjectEditorOpen(true);
+  }
+
+  function openClientEditor(clientRecord?: ClientRecord) {
+    setMutationError('');
+    setEditingClient(clientRecord);
+    setClientEditorOpen(true);
+  }
+
+  async function archiveSelectedProject() {
+    if (!selectedProject || !window.confirm(`Archiver ${selectedProject.projectCode || selectedProject.title} ?`)) return;
+    setMutationError('');
+    setMutationMessage('');
+    setIsArchiving(true);
+    try {
+      await archiveProject(effectiveClient, selectedProject.id);
+      setSelectedProjectId(null);
+      setMutationMessage('Projet archivé dans Supabase.');
+      setLoadAttempt((attempt) => attempt + 1);
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
+    } finally {
+      setIsArchiving(false);
+    }
   }
 
   if (isLoading) {
@@ -646,8 +698,20 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
       </div>
 
       <div className="planning-toolbar">
-        <span className="planning-mode-read">Lecture seule · Supabase</span>
+        <span className="planning-mode-read">Source structurée · Supabase</span>
+        {isManager ? (
+          <div className="project-write-actions">
+            <button onClick={() => openClientEditor()} type="button"><Users aria-hidden="true" size={16} /> Nouveau client</button>
+            <button onClick={() => openProjectEditor()} type="button"><Plus aria-hidden="true" size={16} /> Nouveau projet</button>
+            <button disabled={!selectedProject || Boolean(selectedProject.archivedAt)} onClick={() => selectedProject && openProjectEditor(selectedProject)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le projet</button>
+            <button disabled={!selectedClient} onClick={() => selectedClient && openClientEditor(selectedClient)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le client</button>
+            <button className="is-danger" disabled={!selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} onClick={archiveSelectedProject} type="button"><Archive aria-hidden="true" size={16} /> Archiver</button>
+          </div>
+        ) : null}
       </div>
+
+      {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
+      {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
       {projectsData.projects.length === 0 ? (
         <div className="admin-state">Aucun projet n’est disponible dans Supabase.</div>
@@ -705,7 +769,7 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
                         </td>
                         <td>{formatPeriod(project.deliveryAt || project.startsOn, project.redeliveryAt || project.endsOn)}</td>
                         <td>
-                          <span className="project-status-chip">{displayText(project.status)}</span>
+                          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
                         </td>
                       </tr>
                     );
@@ -742,6 +806,37 @@ export function ProjectsPage({ client }: ProjectsPageProps) {
           ) : null}
         </div>
       )}
+
+      {projectEditorOpen ? (
+        <ProjectEditor
+          client={effectiveClient}
+          clients={projectsData.clients}
+          contract={editingProject ? projectsData.projectContracts.find((item) => item.projectId === editingProject.id && !item.archivedAt) : undefined}
+          contractTypes={contractTypeOptions}
+          onClose={() => setProjectEditorOpen(false)}
+          onSaved={(result) => {
+            setProjectEditorOpen(false);
+            setSelectedProjectId(result.id);
+            setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+          project={editingProject}
+          statuses={statusOptions}
+          vessels={projectsData.vessels}
+        />
+      ) : null}
+      {clientEditorOpen ? (
+        <ClientEditor
+          client={effectiveClient}
+          clientRecord={editingClient}
+          onClose={() => setClientEditorOpen(false)}
+          onSaved={() => {
+            setClientEditorOpen(false);
+            setMutationMessage('Client enregistré dans Supabase.');
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

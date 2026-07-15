@@ -106,6 +106,7 @@ describe('projectQueries', () => {
       project_contracts: { data: null, error: new Error('contracts unavailable') },
       project_documents: { data: [], error: null },
       projects: { data: [projectRow], error: null },
+      vessels: { data: [], error: null },
     });
 
     const data = await fetchProjectsData(client as never);
@@ -124,6 +125,7 @@ describe('projectQueries', () => {
       project_contracts: { data: [], error: null },
       project_documents: { data: [], error: null },
       projects: { data: null, error: new Error('projects unavailable') },
+      vessels: { data: [], error: null },
     });
 
     await expect(fetchProjectsData(client as never)).rejects.toThrow('projects unavailable');

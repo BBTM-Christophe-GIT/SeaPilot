@@ -6,6 +6,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { fetchProjectCatalogOptions, type ProjectCatalogOption } from '../projects/projectMutations';
 import {
   buildPurchaseRequestMetrics,
   createPurchaseRequest,
@@ -41,6 +42,7 @@ const EMPTY_FORM: CreatePurchaseRequestInput = {
   amountHt: '',
   currency: 'EUR',
   description: '',
+  projectId: null,
   projectCode: '',
   projectTitle: '',
   requestedOn: '',
@@ -136,6 +138,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [requests, setRequests] = useState<PurchaseRequestRecord[]>([]);
   const [filters, setFilters] = useState<PurchaseRequestFilterState>(EMPTY_FILTERS);
   const [requestForm, setRequestForm] = useState<CreatePurchaseRequestInput>(EMPTY_FORM);
+  const [catalogProjects, setCatalogProjects] = useState<ProjectCatalogOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -147,10 +150,14 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetchPurchaseRequests(effectiveClient)
-      .then((loadedRequests) => {
+    Promise.all([
+      fetchPurchaseRequests(effectiveClient),
+      isManager ? fetchProjectCatalogOptions(effectiveClient).catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([loadedRequests, loadedProjects]) => {
         if (isMounted) {
           setRequests(sortPurchaseRequests(loadedRequests));
+          setCatalogProjects(loadedProjects);
         }
       })
       .catch(() => {
@@ -167,7 +174,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient]);
+  }, [effectiveClient, isManager]);
 
   const filteredRequests = useMemo(
     () => requests.filter((request) => requestMatchesFilters(request, filters)),
@@ -178,7 +185,10 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     () => uniqueSorted([...requests.map((request) => request.status), ...PURCHASE_STATUS_OPTIONS]),
     [requests],
   );
-  const projectOptions = useMemo(() => uniqueSorted(requests.map((request) => request.projectCode)), [requests]);
+  const projectOptions = useMemo(
+    () => uniqueSorted([...requests.map((request) => request.projectCode), ...catalogProjects.map((project) => project.projectCode)]),
+    [catalogProjects, requests],
+  );
   const supplierOptions = useMemo(() => uniqueSorted(requests.map((request) => request.supplierName)), [requests]);
   const hasActiveFilters = Object.values(filters).some(Boolean);
 
@@ -189,10 +199,20 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     }));
   }
 
-  function updateFormValue(key: keyof CreatePurchaseRequestInput, value: string) {
+  function updateFormValue(key: keyof CreatePurchaseRequestInput, value: string | number | null) {
     setRequestForm((currentForm) => ({
       ...currentForm,
       [key]: value,
+    }));
+  }
+
+  function selectCatalogProject(projectId: string) {
+    const project = catalogProjects.find((option) => option.id === Number(projectId));
+    setRequestForm((currentForm) => ({
+      ...currentForm,
+      projectId: project?.id ?? null,
+      projectCode: project?.projectCode || '',
+      projectTitle: project?.title || '',
     }));
   }
 
@@ -342,12 +362,11 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
             <input onChange={(event) => updateFormValue('supplierName', event.target.value)} value={requestForm.supplierName} />
           </label>
           <label>
-            Numero projet achat
-            <input onChange={(event) => updateFormValue('projectCode', event.target.value)} value={requestForm.projectCode} />
-          </label>
-          <label>
-            Nom projet achat
-            <input onChange={(event) => updateFormValue('projectTitle', event.target.value)} value={requestForm.projectTitle} />
+            Projet du catalogue achat
+            <select onChange={(event) => selectCatalogProject(event.target.value)} value={requestForm.projectId ?? ''}>
+              <option value="">Aucun projet</option>
+              {catalogProjects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} - {project.title}</option>)}
+            </select>
           </label>
           <label>
             Montant HT demande

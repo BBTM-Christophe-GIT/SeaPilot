@@ -84,6 +84,7 @@ function createClient(actions: unknown[] = [pontActionRow, machineActionRow], do
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'action_items') {
         return {
@@ -120,6 +121,7 @@ function createClientWithCreatedAction(createdAction: unknown) {
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'action_items') {
         return {
@@ -207,8 +209,7 @@ describe('ActionPlanPage', () => {
     fireEvent.change(screen.getByLabelText('Categorie action'), { target: { value: 'action' } });
     fireEvent.change(screen.getByLabelText('Type action'), { target: { value: 'Action corrective' } });
     fireEvent.change(screen.getByLabelText('Type audit'), { target: { value: 'Interne' } });
-    fireEvent.change(screen.getByLabelText('Numero projet action'), { target: { value: 'P-2026-014' } });
-    fireEvent.change(screen.getByLabelText('Nom projet action'), { target: { value: 'Campagne Atlantique 2026' } });
+    await user.selectOptions(screen.getByLabelText('Projet du catalogue action'), '880');
     fireEvent.change(screen.getByLabelText('Navire action'), { target: { value: 'COTENTIN' } });
     fireEvent.change(screen.getByLabelText('Ouverture action'), { target: { value: '2026-09-02' } });
     fireEvent.change(screen.getByLabelText('Echeance action'), { target: { value: '2026-09-20' } });
@@ -221,6 +222,7 @@ describe('ActionPlanPage', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter action' }));
 
     expect(insert).toHaveBeenCalledWith({
+      project_id: 880,
       project_code: 'P-2026-014',
       project_title: 'Campagne Atlantique 2026',
       vessel_name: 'COTENTIN',

@@ -166,6 +166,7 @@ export interface DprMetrics {
 
 export interface CreateDprItemInput {
   title: string;
+  projectId: number | null;
   projectCode: string;
   projectTitle: string;
   vesselName: string;
@@ -349,6 +350,7 @@ export async function createDprItem(client: SupabaseClient, input: CreateDprItem
 
   const payload = {
     title,
+    project_id: input.projectId,
     project_code: optionalText(input.projectCode),
     project_title: optionalText(input.projectTitle),
     vessel_name: optionalText(input.vesselName),

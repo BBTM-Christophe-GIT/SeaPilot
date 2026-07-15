@@ -40,6 +40,7 @@ function makeProject(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     startsOn: '2026-07-01',
     status: 'Contrat signé',
     title: 'Campagne Atlantique 2026',
+    updatedAt: '2026-07-15T10:00:00Z',
     ...overrides,
   };
 }

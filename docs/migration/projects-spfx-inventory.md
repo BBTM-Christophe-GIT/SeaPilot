@@ -986,3 +986,51 @@ Les tests de la phase couvrent :
 - l'aperçu est un rendu structuré des zones SUPPLYTIME, pas une reproduction graphique éditable des deux pages du formulaire papier.
 
 **Arrêt de phase 3 : la parité de consultation prévue pour cette phase est livrée dans le code et couverte par les tests ; aucune écriture métier, migration de données ou copie de fichier n'a été ajoutée.**
+
+## 19. Mise à jour de transmission — écritures métier livrées en phase 4
+
+Date de livraison : 16 juillet 2026.
+
+Références :
+
+- migration : `supabase/migrations/202607160001_projects_phase4_business_writes.sql` ;
+- tests de base : `supabase/tests/projects_phase4_business_writes_test.sql` ;
+- contrat détaillé : `docs/migration/projects-phase4-business-writes.md` ;
+- interface : `src/features/projects/ProjectEditors.tsx` et `projectMutations.ts`.
+
+### 19.1 Matrice de parité après phase 4
+
+| Capacité phase 0 | État effectif phase 4 |
+|---|---|
+| Création/modification projet | Livrée par formulaire SeaPilot et RPC atomique `projects_save` |
+| Création/modification client | Livrée pour `admin`/`direction` par `clients_save` |
+| Sélection navires | Référentiel `vessels`, société active et disponibilité vérifiées en base |
+| Champs obligatoires/défauts | Titre/nom obligatoires ; dates, devises, prolongations et relations validées ; défauts confirmés uniquement |
+| Sections SPFx adaptées | Identification, Planning, Offre commerciale, Opérations, Contrat SUPPLYTIME |
+| Données commerciales/contractuelles | Colonnes typées et 36 zones SUPPLYTIME enregistrées avec le projet dans une transaction |
+| Numéro `P…` | Alloué uniquement en base sous verrou ; collision testée ; aucun `max(id)` navigateur |
+| Archivage | Transition logique par RPC ; aucune suppression physique authentifiée |
+| Autorisations | `admin`/`direction` écrivent ; refus serveur des autres rôles et sociétés |
+| Journalisation | Triggers d'audit existants conservés ; contacts et payload brut exclus |
+| Provenance importée | Codes/IDs/payload/source SharePoint préservés lors des modifications |
+| Modules dépendants | DPR, Achats et Plan d'action sélectionnent `projects.id` via catalogue RPC et conservent leurs snapshots |
+| Planning | Toujours séparé, sans relation inventée ni duplication |
+
+### 19.2 Décisions effectives
+
+- les trois tables métier centrales ne sont plus insérables/modifiables directement par `authenticated` ;
+- le contrat et le projet sont enregistrés atomiquement, avec verrou optimiste `updated_at` ;
+- les choix non confirmés restent dynamiques à partir de Supabase ; aucun enum spéculatif n'est ajouté ;
+- `armement` peut lire le catalogue minimal pour ses écritures DPR/Achats/Actions, sans accéder aux clients, contrats ou informations commerciales ;
+- les créations des modules dépendants stockent la FK canonique et les snapshots historiques, sans dupliquer le catalogue ;
+- aucun appel de liste SharePoint, transfert de fichier ou double écriture n'est introduit.
+
+### 19.3 Critères de sortie vérifiés
+
+- migrations locales rejouables et tests phase 1 + phase 4 verts ;
+- succès, validations, refus de rôles/sociétés, conflit optimiste, collision de numéro, archivage et audit testés ;
+- erreurs réseau et payload RPC couverts côté TypeScript/composants ;
+- build production et lint applicatif exécutés ;
+- documentation de schéma, workflows et risques mise à jour.
+
+**Arrêt de phase 4 : les workflows d'écriture Projets sont validés. Les travaux de bascule ou de réconciliation supplémentaires restent hors de cette phase.**

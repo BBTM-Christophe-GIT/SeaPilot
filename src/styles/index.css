@@ -2713,6 +2713,217 @@ button:disabled {
   gap: 10px;
 }
 
+.project-write-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.project-write-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-write-actions button.is-danger {
+  color: #a5202e;
+  border-color: #e2a4aa;
+}
+
+.project-mutation-success {
+  margin: 0;
+  padding: 10px 12px;
+  color: #176b45;
+  background: #eaf8f1;
+  border: 1px solid #a9ddc4;
+  border-radius: 8px;
+}
+
+.project-editor-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(13, 29, 46, 0.62);
+}
+
+.project-editor {
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(7, 22, 38, 0.32);
+}
+
+.project-editor.is-client {
+  width: min(720px, 100%);
+}
+
+.project-editor > header,
+.project-editor form > footer {
+  position: sticky;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--surface);
+}
+
+.project-editor > header {
+  top: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-editor > header h2,
+.project-editor > header span,
+.project-editor fieldset,
+.project-editor legend,
+.project-editor h3,
+.project-editor p {
+  margin: 0;
+}
+
+.project-editor > header span {
+  color: var(--muted-text);
+  font-size: 0.78rem;
+}
+
+.project-editor > header button {
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  min-height: 38px;
+}
+
+.project-editor form {
+  display: grid;
+  gap: 16px;
+}
+
+.project-editor fieldset {
+  min-width: 0;
+  padding: 0 18px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-editor legend {
+  width: 100%;
+  padding: 16px 0 10px;
+  color: var(--navy);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.project-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.project-editor fieldset .project-editor-grid {
+  padding: 0;
+}
+
+.project-editor-grid label,
+.project-supplytime-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.project-editor-grid label.is-wide,
+.project-supplytime-editor label.is-wide {
+  grid-column: 1 / -1;
+}
+
+.project-editor input,
+.project-editor select,
+.project-editor textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}
+
+.project-editor textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.project-editor .project-editor-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.project-editor .project-editor-check input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.project-supplytime-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.project-supplytime-editor section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.project-editor .form-error {
+  margin: 0 18px;
+}
+
+.project-editor form > footer {
+  bottom: 0;
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .project-editor-grid,
+  .project-supplytime-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .project-editor-grid label.is-wide,
+  .project-supplytime-editor label.is-wide {
+    grid-column: auto;
+  }
+
+  .project-editor-backdrop {
+    padding: 0;
+  }
+
+  .project-editor {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+}
+
 .projects-read-layout {
   display: grid;
   align-items: start;

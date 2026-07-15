@@ -67,6 +67,7 @@ export interface CreatePurchaseRequestInput {
   requestedOn: string;
   requesterName: string;
   supplierName: string;
+  projectId: number | null;
   projectCode: string;
   projectTitle: string;
   amountHt: string;
@@ -188,6 +189,7 @@ export async function createPurchaseRequest(
     requested_on: optionalText(input.requestedOn),
     requester_name: optionalText(input.requesterName),
     supplier_name: optionalText(input.supplierName),
+    project_id: input.projectId,
     project_code: optionalText(input.projectCode),
     project_title: optionalText(input.projectTitle),
     amount_ht: optionalNumber(input.amountHt),

@@ -35,6 +35,7 @@ const atlantiqueProjectRow = {
   starts_on: '2026-07-01',
   status: 'Contrat signé',
   title: 'Campagne Atlantique 2026',
+  updated_at: '2026-07-15T10:00:00Z',
 };
 
 const mancheProjectRow = {
@@ -157,6 +158,7 @@ const ifremerClientRow = {
   sharepoint_list_title: 'BBTM - Clients',
   source_label: 'SharePoint',
   source_modified_at: '2026-07-14T12:00:00Z',
+  updated_at: '2026-07-15T10:00:00Z',
 };
 
 const ceremaClientRow = { ...ifremerClientRow, city: 'Rouen', code: 'CER', email: '', id: 51, name: 'Cerema' };
@@ -166,13 +168,26 @@ interface MockSource {
   error: unknown;
 }
 
-function createClient(overrides: Partial<Record<string, MockSource>> = {}) {
+function createClient(
+  overrides: Partial<Record<string, MockSource>> = {},
+  rpcResult: { data: unknown; error: unknown } = {
+    data: { id: 990, project_code: 'P1196', title: 'Projet SeaPilot', updated_at: '2026-07-16T08:00:00Z' },
+    error: null,
+  },
+) {
   const sources: Record<string, MockSource> = {
     clients: { data: [ifremerClientRow, ceremaClientRow], error: null },
     contract_documents: { data: [atlantiqueContractDocumentRow], error: null },
     project_contracts: { data: [atlantiqueContractRow], error: null },
     project_documents: { data: [atlantiqueProjectDocumentRow, mancheProjectDocumentRow], error: null },
     projects: { data: [atlantiqueProjectRow, mancheProjectRow], error: null },
+    vessels: {
+      data: [
+        { id: 12, name: 'COTENTIN', acronym: 'COT', active: true, fleet_exit_on: null, sharepoint_item_id: '12' },
+        { id: 13, name: 'SUROIT', acronym: 'SUR', active: true, fleet_exit_on: null, sharepoint_item_id: '13' },
+      ],
+      error: null,
+    },
     ...overrides,
   };
   const from = vi.fn((table: string) => ({
@@ -185,7 +200,8 @@ function createClient(overrides: Partial<Record<string, MockSource>> = {}) {
     })),
   }));
 
-  return { client: { from }, from };
+  const rpc = vi.fn().mockResolvedValue(rpcResult);
+  return { client: { from, rpc }, from, rpc };
 }
 
 describe('ProjectsPage', () => {
@@ -269,5 +285,40 @@ describe('ProjectsPage', () => {
 
     expect(await screen.findByText('Aucun projet n’est disponible dans Supabase.')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('creates a project through the atomic Supabase RPC and displays the server number', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Projets' });
+    await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet SeaPilot');
+    await user.selectOptions(screen.getByLabelText('Client / affréteur'), '50');
+    await user.selectOptions(screen.getByLabelText('Navire principal'), '12');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+
+    expect(await screen.findByText('P1196 enregistré dans Supabase.')).toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+      target_project_id: null,
+      target_title: 'Projet SeaPilot',
+      target_client_id: 50,
+      target_primary_vessel_id: 12,
+    }));
+  });
+
+  it('keeps the project form open and exposes a Supabase network error', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({}, { data: null, error: { message: 'Failed to fetch' } });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+
+    await screen.findByRole('heading', { name: 'Projets' });
+    await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet hors ligne');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(screen.getByRole('dialog', { name: 'Créer un projet' })).toBeInTheDocument();
   });
 });

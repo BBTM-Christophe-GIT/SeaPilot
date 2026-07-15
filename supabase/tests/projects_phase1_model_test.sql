@@ -266,8 +266,13 @@ select ok(
   'raw source payload is excluded from audit snapshots'
 );
 select lives_ok(
-  $$insert into public.clients (name, email, phone, address) values ('Audited client', 'private@example.invalid', '+33000000000', 'Private address')$$,
-  'admin can create a client'
+  $$select public.clients_save(
+      target_name => 'Audited client',
+      target_email => 'private@example.invalid',
+      target_phone => '+33000000000',
+      target_address => 'Private address'
+    )$$,
+  'admin can create a client through the controlled RPC'
 );
 select ok(
   not exists (

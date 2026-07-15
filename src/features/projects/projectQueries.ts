@@ -34,6 +34,7 @@ const PROJECT_SELECT = [
   'sharepoint_item_id',
   'source_modified_at',
   'archived_at',
+  'updated_at',
 ].join(', ');
 
 const PROJECT_CONTRACT_SELECT = [
@@ -62,6 +63,8 @@ const PROJECT_CONTRACT_SELECT = [
   'source_modified_at',
   'archived_at',
 ].join(', ');
+
+const VESSEL_SELECT = ['id', 'name', 'acronym', 'active', 'fleet_exit_on', 'sharepoint_item_id'].join(', ');
 
 const PROJECT_DOCUMENT_SELECT = [
   'id',
@@ -101,6 +104,7 @@ const CLIENT_SELECT = [
   'sharepoint_item_id',
   'source_modified_at',
   'archived_at',
+  'updated_at',
 ].join(', ');
 
 interface ProjectRow {
@@ -135,6 +139,7 @@ interface ProjectRow {
   sharepoint_item_id: string | null;
   source_modified_at: string | null;
   archived_at: string | null;
+  updated_at: string;
 }
 
 interface ProjectContractRow {
@@ -162,6 +167,15 @@ interface ProjectContractRow {
   sharepoint_item_id: string | null;
   source_modified_at: string | null;
   archived_at: string | null;
+}
+
+interface VesselRow {
+  id: number;
+  name: string;
+  acronym: string | null;
+  active: boolean | null;
+  fleet_exit_on: string | null;
+  sharepoint_item_id: string | null;
 }
 
 interface ProjectDocumentRow {
@@ -202,6 +216,7 @@ interface ClientRow {
   sharepoint_item_id: string | null;
   source_modified_at: string | null;
   archived_at: string | null;
+  updated_at: string;
 }
 
 export interface ProjectRecord {
@@ -236,6 +251,7 @@ export interface ProjectRecord {
   sharePointItemId: string;
   sourceModifiedAt: string;
   archivedAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectContractRecord {
@@ -303,9 +319,19 @@ export interface ClientRecord {
   sharePointItemId: string;
   sourceModifiedAt: string;
   archivedAt: string;
+  updatedAt: string;
 }
 
-export type ProjectsDataSource = 'clients' | 'contractDocuments' | 'projectContracts' | 'projectDocuments';
+export interface VesselRecord {
+  id: number;
+  name: string;
+  acronym: string;
+  active: boolean;
+  fleetExitOn: string;
+  sharePointItemId: string;
+}
+
+export type ProjectsDataSource = 'clients' | 'contractDocuments' | 'projectContracts' | 'projectDocuments' | 'vessels';
 
 export interface ProjectsDataWarning {
   source: ProjectsDataSource;
@@ -318,6 +344,7 @@ export interface ProjectsData {
   projectDocuments: ProjectDocumentRecord[];
   contractDocuments: ProjectDocumentRecord[];
   clients: ClientRecord[];
+  vessels: VesselRecord[];
   warnings: ProjectsDataWarning[];
 }
 
@@ -429,6 +456,7 @@ export function mapProjectRows(rows: ProjectRow[]): ProjectRecord[] {
     sharePointItemId: nullableText(row.sharepoint_item_id),
     sourceModifiedAt: nullableText(row.source_modified_at),
     archivedAt: nullableText(row.archived_at),
+    updatedAt: nullableText(row.updated_at),
   }));
 }
 
@@ -458,6 +486,17 @@ export function mapProjectContractRows(rows: ProjectContractRow[]): ProjectContr
     sharePointItemId: nullableText(row.sharepoint_item_id),
     sourceModifiedAt: nullableText(row.source_modified_at),
     archivedAt: nullableText(row.archived_at),
+  }));
+}
+
+export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    acronym: nullableText(row.acronym),
+    active: row.active ?? true,
+    fleetExitOn: nullableText(row.fleet_exit_on),
+    sharePointItemId: nullableText(row.sharepoint_item_id),
   }));
 }
 
@@ -502,6 +541,7 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     sharePointItemId: nullableText(row.sharepoint_item_id),
     sourceModifiedAt: nullableText(row.source_modified_at),
     archivedAt: nullableText(row.archived_at),
+    updatedAt: nullableText(row.updated_at),
   }));
 }
 
@@ -541,6 +581,10 @@ export async function fetchClients(client: SupabaseClient): Promise<ClientRecord
   return mapClientRows((await fetchRowsById(client, 'clients', CLIENT_SELECT)) as ClientRow[]);
 }
 
+export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord[]> {
+  return mapVesselRows((await fetchRowsById(client, 'vessels', VESSEL_SELECT)) as VesselRow[]);
+}
+
 const OPTIONAL_SOURCES: Array<{
   source: ProjectsDataSource;
   label: string;
@@ -549,23 +593,25 @@ const OPTIONAL_SOURCES: Array<{
   { source: 'projectDocuments', label: 'les documents projets' },
   { source: 'contractDocuments', label: 'les documents contractuels' },
   { source: 'clients', label: 'les fiches clients' },
+  { source: 'vessels', label: 'le référentiel navires' },
 ];
 
 export async function fetchProjectsData(client: SupabaseClient): Promise<ProjectsData> {
-  const [projectsResult, contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult] =
+  const [projectsResult, contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult, vesselsResult] =
     await Promise.allSettled([
       fetchProjects(client),
       fetchProjectContracts(client),
       fetchProjectDocuments(client),
       fetchContractDocuments(client),
       fetchClients(client),
+      fetchVessels(client),
     ]);
 
   if (projectsResult.status === 'rejected') {
     throw projectsResult.reason;
   }
 
-  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult];
+  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult, vesselsResult];
   const warnings = optionalResults.flatMap((result, index) =>
     result.status === 'rejected' ? [OPTIONAL_SOURCES[index]] : [],
   );
@@ -576,6 +622,7 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     projectDocuments: projectDocumentsResult.status === 'fulfilled' ? projectDocumentsResult.value : [],
     contractDocuments: contractDocumentsResult.status === 'fulfilled' ? contractDocumentsResult.value : [],
     clients: clientsResult.status === 'fulfilled' ? clientsResult.value : [],
+    vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     warnings,
   };
 }
