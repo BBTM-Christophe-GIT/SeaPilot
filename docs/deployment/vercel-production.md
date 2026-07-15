@@ -98,6 +98,13 @@ BBTM logo and permission matrix, adds color-coded section cards, a dark submenu 
 pinned version/collapse footer. The responsive and rollback checks are documented in
 `docs/deployment/sidebar-v3-4-ui.md`.
 
+Apply `supabase/migrations/202607150004_user_invitation_workflow.sql`, then
+`supabase/migrations/202607150005_user_invitation_lint_cleanup.sql`, and deploy the
+`admin-invite-user` Edge Function before version `3.5.0`. Administrators can then invite an account, assign its
+company roles and optionally link it to an existing sailor. Public signup remains disabled. Activation and password
+recovery return to `/auth/update-password`; the full rollout, SMTP warning, permission checks and rollback procedure
+are documented in `docs/deployment/user-invitations-v3-5.md`.
+
 ## Current Production Target
 
 The active public URL is:
@@ -125,7 +132,7 @@ The repository includes `vercel.json` so direct links like `/login` and `/module
 
 ## Current Environment State
 
-As of 2026-07-13:
+As of 2026-07-15:
 
 - `VITE_APP_BASE_URL=https://sea-pilot-ten.vercel.app` is configured in Vercel for Production and Preview.
 - `VITE_SUPABASE_URL` is configured in Vercel for Production.
@@ -138,12 +145,13 @@ As of 2026-07-13:
 - The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.1`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning V3 target contains 38 local and remote migrations through `202607140005_planning_assignment_daily_notes.sql`. Verify `supabase migration list` before each deployment.
+- The v3.5 target contains 44 local migrations through `202607150005_user_invitation_lint_cleanup.sql`. Verify local/remote alignment with `supabase migration list --linked` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
 - Supabase Auth redirect allow-list includes the production URL, current Vercel aliases, branch preview alias, and local dev URLs.
 - Supabase public signup is disabled; users must be created or invited administratively.
+- New accounts are invited from Administration through the `admin-invite-user` Edge Function; the browser never receives `service_role`.
 - The first production admin user `christophe@bbtm.fr` exists in Supabase Auth, has a matching `public.profiles` row, and has the `admin` role in `public.user_roles`.
 - Production login was validated with this admin user, including access to the private navigation and `/modules/planning`.
 

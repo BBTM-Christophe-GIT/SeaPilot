@@ -73,6 +73,76 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
 }
 
 describe('AdminPage', () => {
+  it('invites a new user with a role and optional sailor link', async () => {
+    const user = userEvent.setup();
+    const invoke = vi.fn().mockResolvedValue({ data: { invitation: { invitationId: 7 } }, error: null });
+    const client = {
+      functions: { invoke },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return createProfilesQuery([]);
+        }
+
+        if (table === 'sharepoint_sources') {
+          return createSharePointSourcesQuery([]);
+        }
+
+        if (table === 'role_module_permissions') {
+          return createNavigationPermissionsQuery();
+        }
+
+        if (table === 'people') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockReturnValue({
+                  order: vi.fn().mockReturnValue({
+                    order: vi.fn().mockResolvedValue({
+                      data: [
+                        {
+                          id: 42,
+                          first_name: 'David',
+                          last_name: 'FIDELIN',
+                          email: 'david@example.test',
+                          function_label: 'Matelot',
+                        },
+                      ],
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    };
+
+    render(<AdminPage client={client as never} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Inviter un utilisateur' }));
+    expect(screen.getByRole('dialog', { name: 'Inviter un utilisateur' })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Associer à un marin (facultatif)'), '42');
+    expect(screen.getByLabelText('Nom affiché')).toHaveValue('David FIDELIN');
+    expect(screen.getByLabelText('Adresse email')).toHaveValue('david@example.test');
+    expect(screen.getByRole('checkbox', { name: 'Marin' })).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: "Envoyer l'invitation" }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('admin-invite-user', {
+      body: {
+        email: 'david@example.test',
+        displayName: 'David FIDELIN',
+        roleKeys: ['marin'],
+        personId: 42,
+      },
+    }));
+    expect(screen.getByText(/Invitation envoyée/)).toBeInTheDocument();
+  });
+
   it('renders users and their assigned roles', async () => {
     const client = createAdminClient();
 

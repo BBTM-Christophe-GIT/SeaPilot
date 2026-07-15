@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ActionPlanPage } from './features/actionPlan/ActionPlanPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { LoginPage } from './features/auth/LoginPage';
+import { PasswordUpdatePage } from './features/auth/PasswordUpdatePage';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { DprPage } from './features/dpr/DprPage';
 import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
@@ -34,6 +35,10 @@ export default function App({ previewModeOverride }: AppProps) {
   return (
     <Routes>
       <Route path="/login" element={previewMode ? <Navigate to="/modules/planning" replace /> : <LoginPage />} />
+      <Route
+        path="/auth/update-password"
+        element={previewMode ? <Navigate to="/modules/planning" replace /> : <PasswordUpdatePage />}
+      />
       <Route element={<RequireAuth allowPreview={previewMode} />}>
         <Route
           element={

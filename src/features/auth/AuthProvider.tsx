@@ -7,6 +7,8 @@ interface AuthContextValue {
   session: Session | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string, redirectTo: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -91,6 +93,20 @@ function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>)
       isLoading,
       signIn: async (email: string, password: string) => {
         const { error } = await client.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          throw error;
+        }
+      },
+      sendPasswordReset: async (email: string, redirectTo: string) => {
+        const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
+
+        if (error) {
+          throw error;
+        }
+      },
+      updatePassword: async (password: string) => {
+        const { error } = await client.auth.updateUser({ password });
 
         if (error) {
           throw error;

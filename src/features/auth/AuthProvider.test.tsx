@@ -12,6 +12,8 @@ describe('AuthProvider', () => {
           data: { subscription: { unsubscribe: vi.fn() } },
         }),
         signInWithPassword: vi.fn(),
+        resetPasswordForEmail: vi.fn(),
+        updateUser: vi.fn(),
         signOut: vi.fn(),
       },
     };

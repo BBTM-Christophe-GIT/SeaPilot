@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database, PanelLeft, ShieldCheck, Users } from 'lucide-react';
+import { Database, PanelLeft, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { NAVIGATION_MODULES, type ModuleKey } from '../permissions/moduleAccess';
@@ -17,6 +17,7 @@ import {
   type AdminUser,
   type SharePointImportSource,
 } from './adminQueries';
+import { InviteUserDialog } from './InviteUserDialog';
 
 interface AdminPageProps {
   client?: SupabaseClient;
@@ -63,6 +64,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
   const [savingNavigationKey, setSavingNavigationKey] = useState<string | null>(null);
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -139,6 +141,18 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     }
   }
 
+  async function handleUserInvited() {
+    setIsInviteDialogOpen(false);
+    setStatusMessage("Invitation envoyée. L'utilisateur doit maintenant activer son compte depuis l'email reçu.");
+
+    try {
+      const loadedUsers = await fetchAdminUsers(client);
+      setUsers(loadedUsers);
+    } catch {
+      setErrorMessage("L'invitation a bien été envoyée, mais la liste des utilisateurs n'a pas pu être actualisée.");
+    }
+  }
+
   if (isLoading) {
     return <div className="admin-state">Chargement des utilisateurs...</div>;
   }
@@ -150,9 +164,15 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
           <p className="module-family">Administration</p>
           <h1>Gestion des utilisateurs</h1>
         </div>
-        <div className="admin-summary" aria-label="Nombre d'utilisateurs">
-          <Users aria-hidden="true" size={18} />
-          <strong>{users.length}</strong>
+        <div className="admin-header-actions">
+          <div className="admin-summary" aria-label="Nombre d'utilisateurs">
+            <Users aria-hidden="true" size={18} />
+            <strong>{users.length}</strong>
+          </div>
+          <button className="admin-primary-button" onClick={() => setIsInviteDialogOpen(true)} type="button">
+            <UserPlus aria-hidden="true" size={18} />
+            Inviter un utilisateur
+          </button>
         </div>
       </div>
 
@@ -329,6 +349,14 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
           </div>
         )}
       </section>
+
+      {isInviteDialogOpen ? (
+        <InviteUserDialog
+          client={client}
+          onClose={() => setIsInviteDialogOpen(false)}
+          onInvited={handleUserInvited}
+        />
+      ) : null}
     </section>
   );
 }

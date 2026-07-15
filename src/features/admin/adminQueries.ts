@@ -22,6 +22,14 @@ interface SharePointSourceRow {
   confirmed: boolean;
 }
 
+interface AdminInviteCandidateRow {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  function_label: string | null;
+}
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -37,6 +45,20 @@ export interface SharePointImportSource {
   targetTable: string;
   importPriority: number;
   confirmed: boolean;
+}
+
+export interface AdminInviteCandidate {
+  id: number;
+  displayName: string;
+  email: string;
+  functionLabel: string;
+}
+
+export interface AdminInvitationInput {
+  email: string;
+  displayName: string;
+  roleKeys: RoleKey[];
+  personId: number | null;
 }
 
 function isRoleKey(role: string): role is RoleKey {
@@ -71,6 +93,15 @@ export function mapSharePointSourceRows(rows: SharePointSourceRow[]): SharePoint
   }));
 }
 
+export function mapAdminInviteCandidateRows(rows: AdminInviteCandidateRow[]): AdminInviteCandidate[] {
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: `${row.first_name} ${row.last_name}`.trim(),
+    email: row.email?.trim() || '',
+    functionLabel: row.function_label?.trim() || '',
+  }));
+}
+
 export async function fetchAdminUsers(client: SupabaseClient): Promise<AdminUser[]> {
   const { data, error } = await client
     .from('profiles')
@@ -96,6 +127,55 @@ export async function fetchSharePointImportSources(client: SupabaseClient): Prom
   }
 
   return mapSharePointSourceRows((data || []) as SharePointSourceRow[]);
+}
+
+export async function fetchAdminInviteCandidates(client: SupabaseClient): Promise<AdminInviteCandidate[]> {
+  const { data, error } = await client
+    .from('people')
+    .select('id, first_name, last_name, email, function_label')
+    .eq('active', true)
+    .is('user_id', null)
+    .order('last_name', { ascending: true })
+    .order('first_name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapAdminInviteCandidateRows((data || []) as AdminInviteCandidateRow[]);
+}
+
+async function readInvitationError(error: unknown): Promise<string> {
+  const context = (error as { context?: { json?: () => Promise<unknown> } } | null)?.context;
+
+  if (context?.json) {
+    try {
+      const payload = await context.json() as { message?: unknown };
+
+      if (typeof payload.message === 'string' && payload.message.trim()) {
+        return payload.message;
+      }
+    } catch {
+      // Fall back to the client error below when the response is not JSON.
+    }
+  }
+
+  return error instanceof Error && error.message
+    ? error.message
+    : "Impossible d'envoyer l'invitation.";
+}
+
+export async function inviteSeaPilotUser(
+  client: SupabaseClient,
+  input: AdminInvitationInput,
+): Promise<void> {
+  const { error } = await client.functions.invoke('admin-invite-user', {
+    body: input,
+  });
+
+  if (error) {
+    throw new Error(await readInvitationError(error));
+  }
 }
 
 export async function assignUserRole(client: SupabaseClient, userId: string, roleKey: RoleKey): Promise<void> {
