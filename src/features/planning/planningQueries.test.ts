@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPlanningAssignment,
+  createPlanningBoardAssignments,
   createPlanningDerogation,
   createPlanningProject,
   createVessel,
@@ -17,9 +18,13 @@ import {
   mapPlanningVersionRows,
   mapVesselRows,
   savePlanningHandover,
+  savePlanningAssignmentDayNote,
+  savePlanningAssignmentDayState,
+  savePlanningVesselDayLocation,
   transitionPlanningPublication,
   updatePlanningEvent,
   updatePlanningProject,
+  updatePlanningVessel,
 } from './planningQueries';
 
 const vesselRow = {
@@ -174,6 +179,10 @@ describe('planning mappers', () => {
         contractType: '',
         hiredOn: '',
         departedOn: '',
+        birthDate: '',
+        birthPlace: '',
+        identityDocumentNumber: '',
+        identityDocumentType: '',
         deckCertificateLabel: '',
         engineCertificateLabel: '',
         active: true,
@@ -624,6 +633,19 @@ describe('planning writes', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it('updates a vessel sheet and records its audit metadata', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { ...vesselRow, name: 'COTENTIN II' }, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const auditInsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockImplementation((table: string) => table === 'vessels' ? { update } : { insert: auditInsert });
+
+    await expect(updatePlanningVessel({ from } as never, { id: 1, name: ' COTENTIN II ', acronym: ' CT2 ' })).resolves.toMatchObject({ name: 'COTENTIN II' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ name: 'COTENTIN II', acronym: 'CT2' }));
+    expect(auditInsert).toHaveBeenCalledWith(expect.objectContaining({ entity_kind: 'vessel', entity_id: 1, action: 'update' }));
+  });
+
   it('inserts an assignment with nullable captain and default source', async () => {
     const createdRow = {
       ...assignmentRow,
@@ -734,6 +756,52 @@ describe('planning writes', () => {
       departure_on: '2026-07-07',
       disembark_on: '2026-07-07',
     }));
+  });
+
+  it('saves a trimmed fleet location through the protected daily RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 201, error: null });
+
+    await expect(savePlanningVesselDayLocation({ rpc } as never, {
+      vesselId: 1,
+      workDate: '2026-07-14',
+      location: '  Cherbourg  ',
+    })).resolves.toBe(201);
+    expect(rpc).toHaveBeenCalledWith('save_planning_vessel_day_location', {
+      p_vessel_id: 1,
+      p_work_date: '2026-07-14',
+      p_location: 'Cherbourg',
+    });
+
+    await expect(savePlanningVesselDayLocation({ rpc } as never, {
+      vesselId: 1,
+      workDate: '14/07/2026',
+      location: 'Cherbourg',
+    })).rejects.toThrow('Les dates doivent être valides et utiliser le format YYYY-MM-DD.');
+  });
+
+  it('saves a short per-day assignment text through the protected RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 901, error: null });
+
+    await expect(savePlanningAssignmentDayNote({ rpc } as never, {
+      assignmentId: 100,
+      workDate: '2026-07-14',
+      note: ' Port Chantereyne ',
+    })).resolves.toBe(901);
+    expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_note', {
+      p_assignment_id: 100,
+      p_work_date: '2026-07-14',
+      p_note: 'Port Chantereyne',
+    });
+  });
+
+  it('rejects an overlong per-day assignment text before Supabase', async () => {
+    const rpc = vi.fn();
+    await expect(savePlanningAssignmentDayNote({ rpc } as never, {
+      assignmentId: 100,
+      workDate: '2026-07-14',
+      note: 'x'.repeat(33),
+    })).rejects.toThrow('32 caractères');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('creates a typed fleet event and returns the normalized Supabase row', async () => {
@@ -850,6 +918,38 @@ describe('planning writes', () => {
         incoming_assignment_id: 101,
         comments: 'Dossiers transmis',
       }],
+    }));
+  });
+
+  it('saves one of the four visible daily states with its short comment', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
+    await expect(savePlanningAssignmentDayState({ rpc } as never, {
+      assignmentId: 12,
+      workDate: '2026-07-14',
+      status: 'Repos',
+      note: 'Passation',
+    })).resolves.toBe(8);
+    expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
+      p_assignment_id: 12,
+      p_work_date: '2026-07-14',
+      p_status: 'Repos',
+      p_note: 'Passation',
+    });
+  });
+
+  it('creates selected board positions through the atomic RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [21, 22], error: null });
+    await expect(createPlanningBoardAssignments({ rpc } as never, {
+      vesselId: 3,
+      watchGroup: 'Bordée 2',
+      startsOn: '2026-07-14',
+      endsOn: '2026-07-28',
+      positions: [{ personId: 5, functionLabel: 'Capitaine' }, { personId: 6, functionLabel: 'Matelot' }],
+    })).resolves.toEqual([21, 22]);
+    expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', expect.objectContaining({
+      p_vessel_id: 3,
+      p_watch_group: 'Bordée 2',
+      p_positions: [{ personId: 5, functionLabel: 'Capitaine' }, { personId: 6, functionLabel: 'Matelot' }],
     }));
   });
 

@@ -19,13 +19,13 @@ Le contrôle distant réalisé avant migration comptait 11 affectations, 171 jou
 
 ### Phase P0.2 — vues et événements
 
-P0.2 conserve l’architecture P0.1 et extrait seulement le rendu des lignes dans `PlanningTimeline.tsx` et la construction des perspectives dans `planningViews.ts`. La vue Flotte affiche opérations, transits, maintenances et indisponibilités ; la vue Équipages affiche embarquements, repos, congés, formations et indisponibilités avec un état provisoire, confirmé ou annulé. Les filtres navire, marin, type, statut et responsable restent actifs après une mutation.
+P0.2 conserve l’architecture P0.1 et extrait seulement le rendu des lignes dans `PlanningTimeline.tsx` et la construction des perspectives dans `planningViews.ts`. Le cockpit courant propose deux vues explicites : Flotte pour les navires, opérations, transits, maintenances, indisponibilités et affectations ; Équipages pour les embarquements, repos, congés, formations et indisponibilités avec un état provisoire, confirmé ou annulé. Les anciennes perspectives redondantes Navire et Marin ont été retirées. La vue Flotte est structurée en trois niveaux repliables — navire, bordée, marin — et masque les navires sans marin affecté sur la période visible. Les filtres navire, marin, type, statut et responsable restent actifs après une mutation et sont regroupés dans un panneau repliable.
 
-Les formulaires rapide et complet utilisent un panneau latéral commun. Les interactions souris et clavier reposent sur des contrôles natifs ; les poignées utilisent Pointer Events avec cibles tactiles élargies. Sur iPad, une modification reste également réalisable par le formulaire lorsque le glisser-déposer HTML natif n’est pas proposé par le navigateur.
+Les formulaires rapide et complet utilisent un panneau latéral commun. En vue Flotte, la liste persistante des marins non affectés permet de déposer directement un marin sur le jour d’un navire ; SeaPilot crée alors une affectation provisoire de 08:00 à 20:00, après les contrôles P0, sans rechargement intégral. La poignée tactile utilise Pointer Events sur iPad, tandis que la carte reste glissable à la souris. Le lieu libre par navire/jour est limité à `ARMEMENT - CHERBOURG`. Les autres cases colorées appartiennent à une affectation et acceptent un texte court distinct chaque jour. Toutes les échelles conservent un débordement horizontal explicite ; la vue Jour montre une fenêtre mobile de sept jours centrée sur la date de référence.
 
 ### Phase P0.3 — affectations maritimes, relèves et contrôles essentiels
 
-P0.3 ajoute une précision horaire aux affectations existantes sans supprimer leurs dates civiles : `starts_at` et `ends_at` conservent les instants UTC, tandis que `starts_on` et `ends_on` restent synchronisés en calendrier `Europe/Paris` pour la timeline et les données historiques. Les vues Flotte, Équipages, Navire et Marin présentent désormais les affectations provisoires ou confirmées et ouvrent le même panneau d’édition.
+P0.3 ajoute une précision horaire aux affectations existantes sans supprimer leurs dates civiles : `starts_at` et `ends_at` conservent les instants UTC, tandis que `starts_on` et `ends_on` restent synchronisés en calendrier `Europe/Paris` pour la timeline et les données historiques. La vue Équipages présente les affectations provisoires ou confirmées et ouvre le panneau d’édition complet. La vue Flotte affiche le nom du marin uniquement au troisième niveau de l’arborescence, sans répéter sa fonction ; les opérations et lieux quotidiens restent portés par la ligne navire, et les périodes d’affectation par la ligne marin.
 
 Les contrôles distinguent Information, Avertissement et Blocage pour les doubles affectations, absences, indisponibilités, fonctions incompatibles, titres expirés ou expirant pendant l’embarquement, aptitude médicale et qualifications pont/machine manquantes. Les blocages essentiels (activité, absence/indisponibilité et aptitude médicale) sont aussi contrôlés par trigger PostgreSQL. Les niveaux restent configurables dans `planning_rules`.
 
@@ -84,12 +84,12 @@ Les simulations d’absence et d’immobilisation ajoutent un événement synth�
 | Route et intégration SeaPilot | Opérationnel | Opérationnel | Route protégée sous `/modules/planning`, navigation et authentification conservées | Maintenir |
 | Données navires, marins et projets | Opérationnel | Opérationnel | Données réelles Supabase et historiques SharePoint | Maintenir |
 | Vue équipages | Opérationnel | Opérationnel P0.2 | Marins ou équipes en lignes ; première colonne et dates fixes ; affectations provisoires/confirmées | Maintenir |
-| Vue flotte | Partiel | Opérationnel P0.2 | Navires en lignes ; opérations, transits, maintenance et indisponibilités typés | Maintenir |
-| Échelles temporelles | Partiel | Opérationnel P0.2 | Jour, semaine de 7 jours, deux semaines, mois glissant de 49 jours et année | Maintenir |
-| Filtres et navigation temporelle | Opérationnel | Opérationnel P0.2 | Période, navire, marin, type, statut, responsable, zoom et week-ends | Maintenir |
+| Vue flotte | Partiel | Opérationnel P0.2 | Arborescence navire → bordée → marin ; navires vides masqués ; opérations et lieux sur le navire, affectations sur le marin, dépôt direct disponible | Maintenir |
+| Échelles temporelles | Partiel | Opérationnel P0.2 | Jour mobile de 7 jours, semaine, deux semaines, mois glissant de 49 jours et année, tous avec défilement horizontal | Maintenir |
+| Filtres et navigation temporelle | Opérationnel | Opérationnel P0.2 | Période, navire, marin, type, statut, responsable, zoom et défilement horizontal permanent ; les week-ends restent toujours visibles | Maintenir |
 | Création rapide et complète | Opérationnel | Opérationnel P0.2 | Panneau latéral commun ; contrôles avant enregistrement ; pièces jointes hors P0.2 | Maintenir |
 | Modification directe | Opérationnel | Opérationnel P0.2 | Édition, déplacement, changement de navire et redimensionnement optimistes avec retour arrière | Maintenir |
-| Affectations | Partiel | Opérationnel P0.3 | Fonction, instants, statut provisoire/confirmé, modification/retrait et quatre vues ; matrice d’armement hors périmètre | Maintenir |
+| Affectations | Partiel | Opérationnel P0.3 | Fonction, instants, statut provisoire/confirmé, modification/retrait et dépôt Flotte simplifié ; périodes visibles dans l’arborescence et détail complet dans Équipages | Maintenir |
 | Détection de double affectation | Partiel | Opérationnel P0.3 | Détecte les affectations natives et historiques sur deux navires ; niveau configurable | Maintenir |
 | Disponibilités et absences | Partiel | Opérationnel P1.2 | Demande, validation, refus, annulation, impacts et historique UTC ; les statuts historiques restent lus | Maintenir |
 | Qualifications et certificats marins | Partiel | Amélioré P0.3 | Expiré/expirant et qualification pont/machine signalés ; pas de matrice d’armement par navire | P0 ultérieur |
@@ -103,7 +103,7 @@ Les simulations d’absence et d’immobilisation ajoutent un événement synth�
 | Validation, publication, verrouillage | Absent | Opérationnel P0.4 | Cycle complet, multi-acteurs, verrou serveur et réouverture motivée par période/flotte/navire | Maintenir |
 | Historique | Partiel | Opérationnel P0.4 | Journal sémantique, auteurs figés, versions complètes immuables et consultation dans le panneau latéral | P1 : comparaison visuelle de versions |
 | Permissions | Partiel | Opérationnel P0.4 | Matrice d’actions, périmètre entreprise/navire/période/personne et contrôle identique UI/RPC/RLS | Maintenir |
-| Export | Partiel | Opérationnel P1.3 | Excel OOXML, PDF et ICS : Planning, équipage, relève, anomalies et travail/repos | Maintenir |
+| Export | Partiel | Opérationnel P1.3 | Excel OOXML, PDF et ICS : Planning, équipage, relève, anomalies et travail/repos ; crew list dédiée A4 paysage par date/navire/bordée | Maintenir |
 | Notifications et collaboration | Absent | Opérationnel P1.3 | Huit familles, destinataire individuel, lecture et anti-doublon serveur ; pas d’envoi e-mail/push | Extension éventuelle |
 | Tableau de bord métier | Absent | Opérationnel P1.3 | Opérations, embarqués/disponibles, relèves, vacances, conflits, couverture, conformité et échéances 7/14/30 j | Maintenir |
 | Dépendances | Absent | Opérationnel P1.3 | Opérations, maintenance/remise en service, formation/affectation et livraison/opération ; cycles refusés | Maintenir |
@@ -140,7 +140,7 @@ Les simulations d’absence et d’immobilisation ajoutent un événement synth�
 ### Composants
 
 - `PlanningPage.tsx` orchestre chargement, perspectives, filtres, formulaires, mutations optimistes et actions.
-- `PlanningTimeline.tsx` rend séparément une ligne Flotte ou Équipages, les zones de création, les barres, le glisser-déposer et le redimensionnement Pointer Events.
+- `PlanningTimeline.tsx` rend séparément une ligne Flotte ou Équipages, les zones de sélection/création, les barres, le glisser-déposer et le redimensionnement Pointer Events ; le clic simple sélectionne et le double-clic ouvre le formulaire complet.
 - `planningViews.ts` construit les lignes par navire, marin ou équipe, applique les filtres P0.2 et porte les transformations immuables utilisées pour le retour arrière.
 - `PlanningEventDialog` édite une journée, période ou affectation.
 - `PlanningProjectDialog` édite les projets Planning existants.
@@ -154,6 +154,7 @@ Les simulations d’absence et d’immobilisation ajoutent un événement synth�
 - `planningP12.ts` contient la détection et l’explication des compatibilités ; `planningP12Queries.ts` centralise les lectures et RPC P1.2.
 - `PlanningP13Panel.tsx` porte le cockpit final P1 ; `planningP13.ts` contient les calculs purs et `planningP13Queries.ts` centralise les lectures/RPC.
 - `planningP13Exports.ts` construit Excel/PDF/ICS à la demande et reste séparé du rendu et des règles métier.
+- `planningCrewList.ts` sélectionne une bordée à une date depuis l’instantané Supabase et génère une crew list Excel ou PDF A4 paysage monochrome sans lire les données du fichier modèle fourni ; il normalise les champs FAL 5 et embarque le nom/signature du ship owner.
 - `PlanningP21Panel.tsx` porte l’assistant pilote, son journal et l’administration de l’allowlist ; il est absent du bundle initial.
 - `planningP21.ts` produit les suggestions et preuves sans effet de bord ; `planningP21Queries.ts` limite les écritures aux décisions et accès pilote auditables, tandis que `planningP21Access.ts` garde la vérification d’accès hors du chunk métier.
 - `PlanningP22Panel.tsx` porte projections, scénarios, qualité et état des intégrations ; il est absent du bundle initial et ne propose aucune écriture.
@@ -320,6 +321,10 @@ Retour arrière : suivre `docs/deployment/planning-p0-v1.md`. Les colonnes d’e
 
 `202607130008_planning_p04_audit_backfill_cleanup.sql` retire du journal les seules mises à jour anonymes dont les instantanés avant/après diffèrent exclusivement par l’ajout de `company_id`. Ce nettoyage rejouable conserve toutes les actions utilisateur et empêche le backfill multi-entreprise d’apparaître comme une modification métier.
 
+`202607140004_planning_fleet_daily_locations.sql` réutilise `planning_days` pour le lieu libre d’un navire à une date, identifié par `source_label = 'seapilot-vessel-location'` et sans relation marin. Un index unique partiel garantit une seule valeur par entreprise, navire et date. La RPC `save_planning_vessel_day_location` valide la longueur, l’entreprise, le navire actif, l’action `edit_event`, la RLS et le verrou de publication avant un upsert ou une suppression atomique. La migration ne modifie aucune journée historique et peut être rejouée. Le retour arrière exporte d’abord ces lignes techniques, puis retire la RPC et l’index ; aucune donnée existante n’est supprimée automatiquement.
+
+`202607140005_planning_assignment_daily_notes.sql` réutilise aussi `planning_days` pour un texte de 32 caractères au maximum par affectation et par date. La clé technique `slot365 = 'assignment:<id>'` et le `source_label = 'seapilot-assignment-note'` évitent toute table concurrente et permettent au modèle de rattacher le texte à la barre colorée sans exposer la ligne comme un événement supplémentaire. La RPC vérifie l’entreprise, la plage de l’affectation, l’état non annulé, `edit_event`, la RLS et le verrou de publication. La migration est additive, idempotente et ne réécrit aucune donnée existante.
+
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
 ## 6. Contrôles livrés
@@ -429,7 +434,10 @@ Tests Planning couverts :
 - préremplissage et comparaison des bordées (inchangé, remplacé, vacant, non conforme) ;
 - formulaire complet et lecture seule d’une relève, payload RPC transactionnel ;
 - payload, attribution serveur et historique des dérogations ;
-- vues Flotte, Équipages, Navire et Marin avec ouverture d’une même affectation.
+- vues Flotte et Équipages, absence des anciennes vues redondantes Navire/Marin, et conservation des filtres lors du changement de perspective ;
+- dépôt souris d’un marin non affecté sur un navire/jour, affectation provisoire sans rechargement complet et contrôles métier réutilisés ;
+- lieu libre par navire/jour, exclusion de ces lignes techniques des événements équipage et RPC de sauvegarde validée ;
+- défilement horizontal et zoom sur Jour/Semaine/Deux semaines/Mois/An, avec poignée tactile réservée au glisser-déposer iPad.
 - séparation des capacités administrateur, direction, armement, capitaine et marin ;
 - auteurs et horodatages du workflow, archivage motivé et historique visible ;
 - parcours SQL soumission → validation capitaine → publication → blocage → réouverture → modification ;

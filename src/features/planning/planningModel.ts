@@ -1,10 +1,12 @@
-import type {
-  PlanningAssignmentRecord,
-  PlanningDayRecord,
-  PlanningOverview,
-  PlanningPeriodRecord,
-  PlanningPerson,
-  PlanningProjectRecord,
+import {
+  PLANNING_ASSIGNMENT_NOTE_SOURCE,
+  PLANNING_VESSEL_LOCATION_SOURCE,
+  type PlanningAssignmentRecord,
+  type PlanningDayRecord,
+  type PlanningOverview,
+  type PlanningPeriodRecord,
+  type PlanningPerson,
+  type PlanningProjectRecord,
 } from './planningQueries';
 import {
   addPlanningDays,
@@ -61,6 +63,9 @@ export interface PlanningCrewEvent {
   endsAt: string;
   comments: string;
   sourceLabel: string;
+  assignmentId?: number;
+  dailyNotes?: Record<string, string>;
+  dailyStatuses?: Record<string, string>;
 }
 
 export interface PlanningCrewRow {
@@ -148,7 +153,7 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
     const end = `${year}-12-31`;
     return buildDays(start, daysBetween(start, end) + 1);
   }
-  if (mode === 'day') return buildDays(anchorDate, 1);
+  if (mode === 'day') return buildDays(addPlanningDays(anchorDate, -3), 7);
   if (mode === 'week') return buildDays(startOfPlanningWeek(anchorDate), 7);
   if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
@@ -302,6 +307,7 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
     endsAt: assignment.endsAt || '',
     comments: assignment.comments,
     sourceLabel: assignment.sourceLabel,
+    assignmentId: assignment.id,
   };
 }
 
@@ -334,20 +340,42 @@ function eventKey(event: PlanningCrewEvent): string {
 
 export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
   const events = overview.periods.map(crewEventFromPeriod);
-  const occupied = new Set(events.map(eventKey));
+  const notesByAssignment = new Map<number, Record<string, string>>();
+  const statusesByAssignment = new Map<number, Record<string, string>>();
+  overview.days.forEach((day) => {
+    if (day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE) return;
+    const assignmentId = Number(day.slot365.replace('assignment:', ''));
+    if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return;
+    const notes = notesByAssignment.get(assignmentId) || {};
+    notes[day.workDate] = day.comments;
+    notesByAssignment.set(assignmentId, notes);
+    const statuses = statusesByAssignment.get(assignmentId) || {};
+    statuses[day.workDate] = normalizePlanningStatus(day.sailorStatus);
+    statusesByAssignment.set(assignmentId, statuses);
+  });
   overview.assignments.map(crewEventFromAssignment).forEach((event) => {
-    if (!occupied.has(eventKey(event))) events.push(event);
+    const enriched = {
+      ...event,
+      dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {},
+      dailyStatuses: statusesByAssignment.get(event.assignmentId || 0) || {},
+    };
+    const existingIndex = events.findIndex((current) => eventKey(current) === eventKey(event));
+    if (existingIndex === -1) events.push(enriched);
+    else events[existingIndex] = { ...events[existingIndex], assignmentId: event.assignmentId, dailyNotes: enriched.dailyNotes, dailyStatuses: enriched.dailyStatuses };
   });
-  overview.days.map(crewEventFromDay).forEach((event) => {
-    const covered = events.some(
-      (current) =>
-        normalizePlanningText(current.person) === normalizePlanningText(event.person) &&
-        normalizePlanningText(current.vessel) === normalizePlanningText(event.vessel) &&
-        current.startsOn <= event.startsOn &&
-        current.endsOn >= event.endsOn,
-    );
-    if (!covered) events.push(event);
-  });
+  overview.days
+    .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE && day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE)
+    .map(crewEventFromDay)
+    .forEach((event) => {
+      const covered = events.some(
+        (current) =>
+          normalizePlanningText(current.person) === normalizePlanningText(event.person) &&
+          normalizePlanningText(current.vessel) === normalizePlanningText(event.vessel) &&
+          current.startsOn <= event.startsOn &&
+          current.endsOn >= event.endsOn,
+      );
+      if (!covered) events.push(event);
+    });
   return events;
 }
 
@@ -363,6 +391,7 @@ export function buildPlanningCrewRows(
   const range = timelineRange(days);
   const events = getAllPlanningCrewEvents(overview).filter(
     (event) =>
+      event.confirmationStatus !== 'cancelled' &&
       rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
       (!filters.vesselName || event.vessel === filters.vesselName) &&
       (!filters.personName || event.person === filters.personName),
@@ -374,10 +403,6 @@ export function buildPlanningCrewRows(
       (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName),
   );
   const vesselNames = new Set(events.map((event) => event.vessel));
-  projects.forEach((project) => {
-    if (project.primaryVesselName) vesselNames.add(project.primaryVesselName);
-    if (project.secondaryVesselName) vesselNames.add(project.secondaryVesselName);
-  });
 
   const rows: PlanningCrewRow[] = [];
   [...vesselNames]

@@ -11,13 +11,15 @@ import {
 import type {
   PlanningConfirmationStatus,
   PlanningAssignmentRecord,
+  PlanningDayRecord,
   PlanningFleetEventType,
   PlanningOverview,
   PlanningProjectRecord,
   PlanningVessel,
 } from './planningQueries';
+import { PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
 
-export type PlanningPerspective = 'fleet' | 'crew' | 'vessel' | 'sailor';
+export type PlanningPerspective = 'fleet' | 'crew';
 export type PlanningCrewGrouping = 'people' | 'teams';
 
 export interface PlanningFleetLane {
@@ -28,6 +30,7 @@ export interface PlanningFleetLane {
   vessel: string;
   projects: PlanningProjectRecord[];
   assignments: PlanningAssignmentRecord[];
+  locations: PlanningDayRecord[];
 }
 
 export interface PlanningCrewLane {
@@ -35,6 +38,7 @@ export interface PlanningCrewLane {
   label: string;
   detail: string;
   personId: number | null;
+  vessel: string;
   watchGroup: string;
   events: PlanningCrewEvent[];
 }
@@ -140,16 +144,23 @@ export function buildPlanningFleetLanes(
     && (!filters.status || normalizedEquals(assignment.statusLabel, filters.status) || assignment.confirmationStatus === filters.status)
     && (!filters.responsible || assignment.captainName === filters.responsible)
   ));
+  const locations = overview.days.filter((day) => (
+    day.sourceLabel === PLANNING_VESSEL_LOCATION_SOURCE
+    && day.workDate >= range.start
+    && day.workDate <= range.end
+    && (!filters.vesselName || day.vesselName === filters.vesselName)
+  ));
   const vesselNames = new Set(
-    overview.vessels
-      .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
-      .map((vessel) => vessel.name),
+    getAllPlanningCrewEvents(overview)
+      .filter((event) => (
+        event.confirmationStatus !== 'cancelled'
+        && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
+        && (!filters.vesselName || event.vessel === filters.vesselName)
+        && (!filters.personName || event.person === filters.personName)
+      ))
+      .map((event) => event.vessel)
+      .filter(Boolean),
   );
-  projects.forEach((project) => {
-    if (project.primaryVesselName) vesselNames.add(project.primaryVesselName);
-    if (project.secondaryVesselName) vesselNames.add(project.secondaryVesselName);
-  });
-  assignments.forEach((assignment) => vesselNames.add(assignment.vesselName));
 
   return [...vesselNames]
     .sort((left, right) => left.localeCompare(right, 'fr'))
@@ -163,6 +174,7 @@ export function buildPlanningFleetLanes(
         vessel: vesselName,
         projects: projects.filter((project) => project.primaryVesselName === vesselName || project.secondaryVesselName === vesselName),
         assignments: assignments.filter((assignment) => assignment.vesselName === vesselName),
+        locations: locations.filter((location) => location.vesselName === vesselName),
       };
     });
 }
@@ -199,6 +211,7 @@ export function buildPlanningCrewLanes(
         label,
         detail: detailValues.join(' · '),
         personId: grouping === 'people' ? linkedPerson?.id ?? first.personId : null,
+        vessel: first.vessel,
         watchGroup: first.board,
         events: laneEvents,
       };

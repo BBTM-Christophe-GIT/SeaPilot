@@ -77,6 +77,22 @@ P2.1 pilot access, data-quality gates and V3 browser recipe are approved. P2.2 p
 does not enable statistical forecasts or external integrations when their data prerequisites are missing. The full
 rollout and rollback sequence is in `docs/deployment/planning-p2-2-v3.md`.
 
+Version `3.0.1` corrects rotation-save feedback without a database migration. A successful transactional save is
+now distinguished from a later display refresh failure, preventing duplicate retries. Rotation overlaps, invalid
+inputs and essential assignment controls also receive actionable messages. Deploy it over `3.0.0` with the same
+36 aligned migrations and environment variables.
+
+Apply `supabase/migrations/202607140004_planning_fleet_daily_locations.sql` before deploying version `3.1.0`.
+The simplified Fleet cockpit reuses `planning_days` for one company-scoped daily vessel location, protected by the
+existing `edit_event` action, RLS and publication locks. The client then enables direct provisional assignment by
+dragging an unassigned sailor onto a vessel/day, removes the redundant Navire/Marin perspectives and keeps a
+horizontal scrollbar on every time scale. The rollout and export-first rollback are documented in
+`docs/deployment/planning-v3-1-ui.md`.
+
+Version `3.1.1` adds no migration. It keeps only vessels with visible crew in Fleet, restores the expandable
+vessel → watch group → sailor hierarchy, renames the primary project action, and exposes the content of the
+publication `Actions` menu. Deploy it after `3.1.0` with the same 37 aligned migrations.
+
 ## Current Production Target
 
 The active public URL is:
@@ -114,10 +130,10 @@ As of 2026-07-13:
 - `VITE_PLANNING_ASSISTANT_ENABLED` defaults to `false`; set it to `true` only for an approved pilot environment.
 - `VITE_PLANNING_PREDICTIONS_ENABLED` defaults to `false`; set it to `true` only after the V3 data-quality and access review.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
-- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.0`.
+- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.1`.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
-- The Planning V3 target still contains 36 local and remote migrations through `202607140003_planning_p21_maritime_assistant.sql`; P2.2 creates no migration. Verify `supabase migration list` before each deployment.
+- The Planning V3 target contains 38 local and remote migrations through `202607140005_planning_assignment_daily_notes.sql`. Verify `supabase migration list` before each deployment.
 - `supabase db push --dry-run` reports the remote database is up to date.
 - `supabase db lint --linked` reports no schema errors.
 - Supabase Auth `site_url` is set to `https://sea-pilot-ten.vercel.app`.
@@ -125,6 +141,19 @@ As of 2026-07-13:
 - Supabase public signup is disabled; users must be created or invited administratively.
 - The first production admin user `christophe@bbtm.fr` exists in Supabase Auth, has a matching `public.profiles` row, and has the `admin` role in `public.user_roles`.
 - Production login was validated with this admin user, including access to the private navigation and `/modules/planning`.
+
+## Preview authentication policy
+
+Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot directly without the production login form. They use a local, deterministic Planning dataset and a non-persistent Supabase client:
+
+- project-level Vercel Authentication is disabled so anonymous preview links reach SeaPilot directly; production remains protected by the SeaPilot application login;
+- no production session or authentication token is copied to preview code;
+- no production table is read or written;
+- save attempts return an explicit preview-only error;
+- a `Préversion · données de démonstration` badge identifies this state;
+- production and every unrelated hostname keep the normal Supabase authentication flow.
+
+This mode is intended for visual review and safe interaction checks. It must not be used to validate production data, RLS results, or real persistence.
 
 ## Required Supabase Values
 

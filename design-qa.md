@@ -1,52 +1,64 @@
-# Design QA — Planning SeaPilot 1.4.0
+# Design QA — Planning flotte v3.1.2
 
-- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-6bd8309b-8891-47c5-be97-460bb1c28778.png`
-- Implémentation contrôlée : `https://sea-pilot-ten.vercel.app/modules/planning`
-- Capture d’implémentation : `docs/design/planning-dialog-production.png`
-- Comparaison normalisée : `docs/design/planning-dialog-comparison.png`
-- Viewport de production : 2560 × 1249.
-- Comparaison focalisée : fenêtre `Modifier · Benjamin BON`, normalisée à 1128 × 841 comme la référence.
-- État : production authentifiée en Administrateur, vue mensuelle juillet 2026, éditeur d’une affectation ouvert, version 1.4.0.
+## Sources
 
-## Comparaison visuelle
+- Référence utilisateur : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-cd4d6665-107a-41b8-b306-bb9d1b68d0a4.png`
+- Implémentation : `https://sea-pilot-dlhxv1131-bbtm-app.vercel.app/modules/planning`
+- Capture ordinateur : `C:\Users\chris\.codex\visualizations\2026\07\14\sea-pilot-planning-v3-1-2\planning-preview-desktop-1440x900.png`
+- Capture menu Actions : `C:\Users\chris\.codex\visualizations\2026\07\14\sea-pilot-planning-v3-1-2\planning-preview-actions-open-1440x900.png`
+- Capture iPad 12,9 pouces : `C:\Users\chris\.codex\visualizations\2026\07\14\sea-pilot-planning-v3-1-2\planning-preview-ipad-1366x1024.png`
 
-La référence et l’implémentation ont été réunies dans la même image de comparaison. La fenêtre conserve la hiérarchie, les dimensions relatives, les espacements, les champs, les actions et les couleurs SeaPilot de la référence. L’implémentation reste un dialogue centré au-dessus du planning afin de conserver le contexte de travail.
+## État et viewports
 
-Le contrôle focalisé confirme que `Bordée / groupe` est maintenant un sélecteur cohérent avec les autres champs. Les options visibles en production sont `Affectation`, `Armement`, `Bordée 1`, `Bordée 2` et `Flying Crew`.
+- Référence : 2331 × 1260, vue Flotte mensuelle avec arborescence navire / bordée / marin.
+- Ordinateur : 1440 × 900, vue Flotte mensuelle du 29/06/2026 au 16/08/2026.
+- iPad 12,9 pouces : 1366 × 1024, même vue et mêmes données.
+- Préversion : ouverture de `/login` redirigée directement vers `/modules/planning`, sans formulaire d'authentification SeaPilot.
+- Données : jeu de démonstration local et non persistant ; aucune lecture ou écriture dans Supabase de production.
 
-## Surfaces de fidélité obligatoires
+La référence a une largeur supérieure aux captures de contrôle. La comparaison porte donc sur la hiérarchie visuelle, la densité, les alignements et les comportements responsives, pas sur une superposition pixel à pixel.
 
-- Typographie : famille, graisse, hiérarchie des libellés et lisibilité des valeurs conformes au système SeaPilot ; aucune troncature dans le dialogue.
-- Espacement et rythme : grille Navire / dates / statut, fonction, bordée, annotation et actions alignée ; marges, rayons et hauteur des champs homogènes.
-- Couleurs et tokens : bleu primaire, fonds de champs, danger Supprimer et voile modal cohérents ; vert `En Mer`, jaune `À Terre` et rouge conflit visibles dans le planning derrière la fenêtre.
-- Images et icônes : icônes Lucide du produit conservées ; aucun actif de référence n’a été remplacé par un dessin CSS ou un glyphe improvisé.
-- Copie et contenu : libellés métier français conservés ; `Bordée / groupe` devient un choix contrôlé sans modifier les autres contenus.
+## Comparaison
 
-## Interactions vérifiées
+### Vue complète
 
-- La version `v1.4.0` et le build `2026-07-13.0737` sont visibles en production.
-- Une période de Benjamin BON ouvre bien la fenêtre de modification.
-- Le champ `Bordée / groupe` est exposé comme `combobox` avec cinq options issues du planning.
-- La légende `En mer · À terre · Conflit` et l’aide `Clic = ajouter · Glisser = déplacer · Poignées = étendre` sont visibles.
-- Les actions Supprimer, Annuler et Enregistrer sont présentes et accessibles.
-- Les écritures réelles de clic, déplacement et redimensionnement n’ont pas été déclenchées pendant le contrôle visuel de production afin de ne pas modifier les données ; elles sont couvertes par les tests automatisés.
-- Aucun message d’erreur applicatif SeaPilot observé. Les messages de console restants proviennent du canal de l’extension Chrome.
+La référence et les captures de la préversion ont été ouvertes ensemble dans la même entrée de comparaison. L'implémentation conserve la structure attendue : calendrier en colonnes, première colonne fixe, navires en niveau 1, bordées en niveau 2 et marins en niveau 3. Les barres bleues représentent les projets navire et les barres vertes les affectations équipage.
 
-## Vérifications automatisées
+L'application conserve son shell SeaPilot, ses contrôles de publication et ses composants existants. Cette différence avec la maquette isolée est intentionnelle et ne dégrade pas la lecture de la grille.
 
-- 197 tests Vitest réussis avec `npm test -- --maxWorkers=2`.
-- Build TypeScript/Vite de production réussi.
-- GitHub Actions, pull request #13 et déploiement Vercel de `df48510fcbce3234e5b9bc69edd4f05585ce7f38` réussis.
+### Zones ciblées
+
+- Arborescence : `ARMEMENT - CHERBOURG` et `GOURY` sont visibles avec leurs bordées et leurs marins.
+- Masquage : le navire de démonstration sans marin n'est pas affiché ; le compteur indique deux navires avec équipage.
+- Création : le bouton principal porte le libellé `Nouveau projet`.
+- Affectation rapide : la liste `Marins non affectés` reste visible à droite avec l'instruction de glisser-déposer.
+- Menu `Actions` : l'ouverture affiche clairement l'action disponible, son rôle et l'absence d'autre action au statut courant.
+- Responsive : à 1366 × 1024, la grille, la liste des marins non affectés, les actions et la navigation restent accessibles ; le calendrier conserve son défilement horizontal.
+- États repliés : le repli de `GOURY` masque ses bordées et marins, puis le dépliage les restaure.
+
+## Preuves automatisées et manuelles
+
+- TypeScript : réussi.
+- Lint : réussi.
+- Tests ciblés : 36 réussis, puis 12 réussis après les derniers ajustements.
+- Suite complète : 55 fichiers, 346 tests réussis.
+- Build de production : réussi ; avertissement Vite non bloquant sur le poids du bundle principal (~928,59 kB).
+- Console navigateur sur la préversion : aucune erreur ni alerte.
+- GitHub Actions : contrôles de test et build réussis.
+- Vercel : déploiement du commit `72ec55b6b1983ba14d11294b3522813e3588e978` réussi.
+
+## Findings
+
+- Aucun défaut P0, P1 ou P2 observé sur le parcours contrôlé.
+- [P3] La référence est une maquette pleine largeur, alors que la préversion inclut le shell SeaPilot et le panneau d'affectation rapide. La grille est donc visuellement plus compacte à largeur identique ; le défilement horizontal compense cette densité.
+- [P3] La préversion Vercel peut encore demander l'authentification de protection Vercel dans un navigateur qui n'est pas connecté à Vercel. Ce contrôle est extérieur à l'authentification SeaPilot et au code de l'application.
 
 ## Historique de comparaison
 
-- Passage 1 : source et production comparées dans le même visuel ; aucun écart P0, P1 ou P2 relevé.
-- Aucun correctif visuel supplémentaire requis après la comparaison focalisée. La valeur `Affectation` diffère de la valeur `Armement` de la référence car elle correspond à la donnée réellement enregistrée pour Benjamin BON, pas à un écart de composant.
+1. Itération 1 — préversion v3.1.1 redirigée vers la connexion SeaPilot ; contrôle visuel bloqué.
+2. Itération 2 — ajout d'un mode de prévisualisation sûr : accès direct au Planning et données locales non persistantes.
+3. Itération 3 — validation de l'ouverture directe, du menu `Actions`, du repli/dépli de `GOURY`, de la console et des viewports ordinateur/iPad.
 
-## Constats
-
-- Aucun écart P0, P1 ou P2 restant.
-- Aucun cadrage focalisé supplémentaire requis : tous les champs, la liste de bordée, l’annotation et les actions sont lisibles dans la comparaison principale.
-- P3 possible : enrichir ultérieurement l’aide gestuelle par une aide contextuelle au premier usage.
+## Résultat
 
 final result: passed

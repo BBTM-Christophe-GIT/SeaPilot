@@ -57,6 +57,25 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Connexion a SeaPilot' })).toBeInTheDocument();
   });
 
+  it('opens the Planning application directly with safe demo data on a preview deployment', async () => {
+    const client = createAuthClient();
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/login']}>
+          <App previewModeOverride />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByText('Préversion · données de démonstration')).toBeInTheDocument();
+    expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
+    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
+    expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
+    expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Connexion a SeaPilot' })).not.toBeInTheDocument();
+  });
+
   it('renders the fleet certificates module with imported certificate data', async () => {
     vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
     supabaseMock.from.mockReset();

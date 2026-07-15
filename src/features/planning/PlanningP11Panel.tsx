@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Anchor, CopyPlus, Edit3, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { formatPlanningDate, todayPlanningDate } from './planningDates';
-import { planningErrorMessage } from './planningErrors';
+import { planningErrorMessage, reportPlanningTechnicalError } from './planningErrors';
 import {
   buildManningMatrixComparison,
   buildRotationPreview,
@@ -14,6 +14,7 @@ import {
   type PlanningRotationOccurrence,
   type PlanningRotationPattern,
   type PlanningRotationSeries,
+  type PlanningStcwCertificate,
   type PlanningTemplate,
   type PlanningTemplateKind,
 } from './planningP11';
@@ -34,7 +35,7 @@ import type { PlanningOverview } from './planningQueries';
 type P11Tab = 'rotations' | 'templates' | 'manning';
 type OperationalChange = 'assignments' | 'projects' | 'handovers';
 
-const EMPTY_DATA: PlanningP11Data = { rotations: [], templates: [], matrices: [] };
+const EMPTY_DATA: PlanningP11Data = { rotations: [], templates: [], matrices: [], certificates: [] };
 const TEMPLATE_LABELS: Record<PlanningTemplateKind, string> = {
   handover: 'Relève', maritime_campaign: 'Campagne maritime', safety_vessel: 'Navire de sécurité',
   transit: 'Transit', maintenance: 'Maintenance', provisioning: 'Avitaillement', bunkering: 'Soutage',
@@ -43,9 +44,93 @@ const TEMPLATE_LABELS: Record<PlanningTemplateKind, string> = {
 const PATTERN_LABELS: Record<PlanningRotationPattern, string> = {
   '7_7': '7 / 7', '10_10': '10 / 10', '14_14': '14 / 14', custom: 'Personnalisée',
 };
+const MANNING_FUNCTION_GROUPS = [
+  {
+    label: 'Pont',
+    functions: [
+      'Capitaine',
+      '2nd Capitaine',
+      'Lieutenant pont',
+      'Officier chef de quart passerelle',
+      'Officier chargé de la sécurité',
+      'Officier chargé de la sûreté du navire – SSO',
+      'Officier chargé des opérations cargo',
+      'Officier de positionnement dynamique – DPO',
+      'Maître d’équipage',
+      'Matelot qualifié pont',
+      'Matelot',
+      'Matelot de quart',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+  {
+    label: 'Machine',
+    functions: [
+      'Chef mécanicien',
+      '2nd Mécanicien',
+      'Officier chef de quart machine',
+      'Officier électrotechnicien – ETO',
+      'Maître machine',
+      'Matelot machine',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+] as const;
+const MANNING_CERTIFICATE_CATEGORIES = ['Pont', 'Machine', 'Formation de Sécurité'] as const;
+const MANNING_CERTIFICATE_CATEGORY_SET = new Set<string>(MANNING_CERTIFICATE_CATEGORIES);
 
-function csvValues(value: string): string[] {
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
+interface PlanningCertificateChoiceGroup {
+  label: string;
+  certificates: PlanningStcwCertificate[];
+}
+
+function groupCertificates(
+  certificates: PlanningStcwCertificate[],
+  allowedCategories?: readonly string[],
+): PlanningCertificateChoiceGroup[] {
+  const grouped = new Map<string, PlanningStcwCertificate[]>();
+  const allowed = allowedCategories ? new Set(allowedCategories) : null;
+  for (const certificate of certificates) {
+    if (allowed && !allowed.has(certificate.category)) continue;
+    const values = grouped.get(certificate.category) || [];
+    values.push(certificate);
+    grouped.set(certificate.category, values);
+  }
+  const categories = allowedCategories
+    ? allowedCategories.filter((category) => grouped.has(category))
+    : [...grouped.keys()].sort((left, right) => left.localeCompare(right, 'fr'));
+  return categories.map((category) => ({
+    label: category,
+    certificates: [...(grouped.get(category) || [])].sort((left, right) => left.name.localeCompare(right.name, 'fr')),
+  }));
+}
+
+function PlanningCertificateMultiSelect({
+  label,
+  ariaLabel,
+  groups,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  ariaLabel: string;
+  groups: PlanningCertificateChoiceGroup[];
+  selected: string[];
+  onToggle: (certificate: string) => void;
+}) {
+  return <div className="planning-stcw-multiselect" role="group" aria-label={ariaLabel}>
+    <span>{label}</span>
+    <div>
+      {groups.map((group) => <section key={group.label}>
+        <h6>{group.label}</h6>
+        <div>{group.certificates.map((certificate) => <label key={certificate.id}>
+          <input checked={selected.includes(certificate.name)} onChange={() => onToggle(certificate.name)} type="checkbox" />
+          <span><strong>{certificate.name}</strong><small>{certificate.stcwRules.join(' · ') || certificate.category}</small></span>
+        </label>)}</div>
+      </section>)}
+    </div>
+    {!groups.length ? <small>Aucune valeur disponible dans le catalogue STCW.</small> : null}
+  </div>;
 }
 
 function requirementInput(requirement?: PlanningManningRequirement, displayOrder = 0): PlanningManningRequirement {
@@ -62,7 +147,7 @@ function RotationTab({ client, data, overview, editable, onReload, onOperational
   editable: boolean;
   onReload: () => Promise<void>;
   onOperationalChange: (kind: OperationalChange) => Promise<void>;
-  setFeedback: (message: string, error?: boolean) => void;
+  setFeedback: (message: string, level?: boolean | 'warning') => void;
 }) {
   const activeVessels = overview.vessels.filter((vessel) => vessel.active);
   const activePeople = overview.people.filter((person) => person.active);
@@ -101,11 +186,25 @@ function RotationTab({ client, data, overview, editable, onReload, onOperational
     setIsSaving(true);
     try {
       await savePlanningRotation(client, form);
+    } catch (error) {
+      setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la rotation.'), true);
+      setIsSaving(false);
+      return;
+    }
+
+    const savedOccurrenceCount = form.occurrenceCount;
+    setForm(initialRotation());
+    setIsFormOpen(false);
+    try {
       await Promise.all([onReload(), onOperationalChange('assignments')]);
-      setForm(initialRotation()); setIsFormOpen(false);
-      setFeedback(`${form.occurrenceCount} occurrence(s) générée(s) dans les affectations.`);
-    } catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la rotation.'), true); }
-    finally { setIsSaving(false); }
+      setFeedback(`${savedOccurrenceCount} occurrence(s) générée(s) dans les affectations.`);
+    } catch (error) {
+      reportPlanningTechnicalError('refresh-after-save-rotation', error, 'warning');
+      setFeedback(
+        `La rotation et ses ${savedOccurrenceCount} occurrence(s) sont enregistrées, mais l’affichage n’a pas pu être actualisé. Utilisez le bouton Actualiser.`,
+        'warning',
+      );
+    } finally { setIsSaving(false); }
   }
 
   async function submitOccurrence(event: FormEvent) {
@@ -195,26 +294,132 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
   editable: boolean; onReload: () => Promise<void>; setFeedback: (message: string, error?: boolean) => void;
 }) {
   const vessels = overview.vessels.filter((vessel) => vessel.active);
-  const emptyForm = (): SavePlanningManningMatrixInput => ({ vesselId: vessels[0]?.id || 0, name: '', effectiveFrom: range.start, effectiveTo: '', status: 'draft', notes: '', requirements: [requirementInput()] });
+  const situations = Array.from({ length: 6 }, (_, index) => `Situation ${index + 1}`);
+  const emptyForm = (): SavePlanningManningMatrixInput => ({
+    vesselId: vessels[0]?.id || 0,
+    name: situations[0],
+    effectiveFrom: range.start,
+    effectiveTo: '',
+    status: 'active',
+    notes: '',
+    requirements: [requirementInput()],
+  });
   const [form, setForm] = useState<SavePlanningManningMatrixInput>(emptyForm);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(data.matrices[0]?.id || null);
   const [isSaving, setIsSaving] = useState(false);
   const selected = data.matrices.find((matrix) => matrix.id === selectedId) || data.matrices[0] || null;
   const comparison = useMemo(() => selected ? buildManningMatrixComparison(overview, selected, range.start, range.end) : [], [overview, range.end, range.start, selected]);
-  function updateRequirement(index: number, patch: Partial<PlanningManningRequirement>) { setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) })); }
+  const certificateGroups = useMemo(
+    () => groupCertificates(data.certificates, MANNING_CERTIFICATE_CATEGORIES),
+    [data.certificates],
+  );
+  const authorizationGroups = useMemo(
+    () => groupCertificates(data.certificates.filter((certificate) => !MANNING_CERTIFICATE_CATEGORY_SET.has(certificate.category))),
+    [data.certificates],
+  );
+  const certificateNames = useMemo(
+    () => new Set(certificateGroups.flatMap((group) => group.certificates.map((certificate) => certificate.name))),
+    [certificateGroups],
+  );
+  const authorizationNames = useMemo(
+    () => new Set(authorizationGroups.flatMap((group) => group.certificates.map((certificate) => certificate.name))),
+    [authorizationGroups],
+  );
+  function updateRequirement(index: number, patch: Partial<PlanningManningRequirement>) {
+    setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
+  }
   function openMatrix(matrix?: PlanningManningMatrix) {
-    setForm(matrix ? { id: matrix.id, vesselId: matrix.vesselId, name: matrix.name, effectiveFrom: matrix.effectiveFrom, effectiveTo: matrix.effectiveTo, status: matrix.status, notes: matrix.notes, requirements: matrix.requirements.map((item) => ({ ...item })) } : emptyForm()); setIsFormOpen(true);
+    setForm(matrix ? {
+      id: matrix.id,
+      vesselId: matrix.vesselId,
+      name: situations.includes(matrix.name) ? matrix.name : situations[0],
+      effectiveFrom: matrix.effectiveFrom,
+      effectiveTo: matrix.effectiveTo,
+      status: matrix.status,
+      notes: matrix.notes,
+      requirements: matrix.requirements.map((item) => ({
+        ...item,
+        requiredCertificates: [...new Set([
+          ...item.requiredCertificates.filter((value) => !authorizationNames.has(value)),
+          ...item.requiredAuthorizations.filter((value) => certificateNames.has(value)),
+        ])],
+        requiredAuthorizations: [...new Set([
+          ...item.requiredAuthorizations.filter((value) => !certificateNames.has(value)),
+          ...item.requiredCertificates.filter((value) => authorizationNames.has(value)),
+        ])],
+      })),
+    } : emptyForm());
+    setIsFormOpen(true);
+  }
+  function toggleRequirementValue(
+    index: number,
+    field: 'requiredCertificates' | 'requiredAuthorizations',
+    value: string,
+  ) {
+    const current = form.requirements[index][field];
+    updateRequirement(index, {
+      [field]: current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value],
+    });
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); setIsSaving(true);
-    try { const id = await savePlanningManningMatrix(client, form); await onReload(); setSelectedId(id); setIsFormOpen(false); setFeedback('Matrice d’armement enregistrée et versionnée.'); }
-    catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la matrice.'), true); }
+    try {
+      const normalizedForm = {
+        ...form,
+        requirements: form.requirements.map((item, index) => ({
+          ...item,
+          minimumCount: 1,
+          targetCount: 1,
+          requiredQualifications: [],
+          requiredTrainings: [],
+          restrictions: [],
+          displayOrder: index,
+        })),
+      };
+      const id = await savePlanningManningMatrix(client, normalizedForm);
+      await onReload(); setSelectedId(id); setIsFormOpen(false);
+      setFeedback('Décision d’effectif enregistrée et versionnée.');
+    } catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la décision d’effectif.'), true); }
     finally { setIsSaving(false); }
   }
-  return <section className="planning-p11-section"><div className="planning-p11-section-heading"><div><h3>Matrice d’armement</h3><p>Comparaison du minimum requis avec les affectations visibles sur la période {formatPlanningDate(range.start)} → {formatPlanningDate(range.end)}.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle matrice</button> : null}</div>
-    {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}><div className="planning-p11-form-grid"><label>Nom<input required minLength={2} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label><label>Applicable à partir du<input required type="date" value={form.effectiveFrom} onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })} /></label><label>Applicable jusqu’au<input min={form.effectiveFrom} type="date" value={form.effectiveTo} onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })} /></label><label>État<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as typeof form.status })}><option value="draft">Brouillon</option><option value="active">Active</option><option value="archived">Archivée</option></select></label><label className="is-wide">Notes<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label></div><div className="planning-p11-requirements"><header><h4>Fonctions requises</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter une fonction</button></header>{form.requirements.map((requirement, index) => <fieldset key={index}><legend>Fonction {index + 1}</legend><label>Fonction<input required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })} /></label><label>Minimum<input min={0} max={100} type="number" value={requirement.minimumCount} onChange={(event) => updateRequirement(index, { minimumCount: Number(event.target.value) })} /></label><label>Cible<input min={requirement.minimumCount} max={100} type="number" value={requirement.targetCount} onChange={(event) => updateRequirement(index, { targetCount: Number(event.target.value) })} /></label><label>Brevets<input placeholder="Séparés par des virgules" value={requirement.requiredCertificates.join(', ')} onChange={(event) => updateRequirement(index, { requiredCertificates: csvValues(event.target.value) })} /></label><label>Qualifications<input value={requirement.requiredQualifications.join(', ')} onChange={(event) => updateRequirement(index, { requiredQualifications: csvValues(event.target.value) })} /></label><label>Habilitations<input value={requirement.requiredAuthorizations.join(', ')} onChange={(event) => updateRequirement(index, { requiredAuthorizations: csvValues(event.target.value) })} /></label><label>Formations<input value={requirement.requiredTrainings.join(', ')} onChange={(event) => updateRequirement(index, { requiredTrainings: csvValues(event.target.value) })} /></label><label>Restrictions<input value={requirement.restrictions.join(', ')} onChange={(event) => updateRequirement(index, { restrictions: csvValues(event.target.value) })} /></label>{form.requirements.length > 1 ? <button aria-label={`Supprimer la fonction ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}</fieldset>)}</div><footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la matrice</button></footer></form> : null}
-    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span><em>{matrix.status}</em></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Fonction</th><th>Min.</th><th>Cible</th><th>Planifié</th><th>Vacants</th><th>Doublons</th><th>Conformité</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong>{row.restrictions.length ? <small>{row.restrictions.join(' · ')}</small> : null}</td><td>{row.minimumCount}</td><td>{row.targetCount}</td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.duplicateCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune matrice configurée.</p></div>}
+  return <section className="planning-p11-section">
+    <div className="planning-p11-section-heading"><div><h3>Décision d’effectif</h3><p>Postes attendus et brevets nécessaires pour le navire sélectionné.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle décision</button> : null}</div>
+    {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}>
+      <div className="planning-p11-form-grid">
+        <label>Situation<select required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}>{situations.map((situation) => <option key={situation}>{situation}</option>)}</select></label>
+        <label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
+        <label className="is-wide">Prescriptions ou conditions spéciales<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
+      </div>
+      <div className="planning-p11-requirements"><header><h4>Postes normalement prévus</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter un poste</button></header>
+        {form.requirements.map((requirement, index) => <fieldset key={index}>
+          <legend>Poste {index + 1}</legend>
+          <label>Fonction<select required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })}>
+            <option value="">Sélectionner une fonction</option>
+            {MANNING_FUNCTION_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.functions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</optgroup>)}
+          </select></label>
+          <PlanningCertificateMultiSelect
+            ariaLabel={`Brevets requis pour ${requirement.functionLabel || `le poste ${index + 1}`}`}
+            groups={certificateGroups}
+            label="Brevets"
+            onToggle={(value) => toggleRequirementValue(index, 'requiredCertificates', value)}
+            selected={requirement.requiredCertificates}
+          />
+          <PlanningCertificateMultiSelect
+            ariaLabel={`Habilitations requises pour ${requirement.functionLabel || `le poste ${index + 1}`}`}
+            groups={authorizationGroups}
+            label="Habilitations"
+            onToggle={(value) => toggleRequirementValue(index, 'requiredAuthorizations', value)}
+            selected={requirement.requiredAuthorizations}
+          />
+          {form.requirements.length > 1 ? <button aria-label={`Supprimer le poste ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}
+        </fieldset>)}
+      </div>
+      <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la décision</button></footer>
+    </form> : null}
+    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
   </section>;
 }
 
@@ -226,16 +431,18 @@ export function PlanningP11Panel({ client, overview, range, canManageRotations, 
   const [tab, setTab] = useState<P11Tab>('rotations');
   const [data, setData] = useState<PlanningP11Data>(EMPTY_DATA);
   const [isLoading, setIsLoading] = useState(true);
-  const [feedback, setFeedbackState] = useState<{ message: string; error: boolean } | null>(null);
-  const load = useCallback(async () => { try { setData(await fetchPlanningP11Data(client)); } catch (error) { setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), error: true }); } }, [client]);
+  const [feedback, setFeedbackState] = useState<{ message: string; level: 'success' | 'warning' | 'error' } | null>(null);
+  const reload = useCallback(async () => { setData(await fetchPlanningP11Data(client)); }, [client]);
+  const load = useCallback(async () => { try { await reload(); } catch (error) { setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), level: 'error' }); } }, [reload]);
   useEffect(() => {
     let active = true;
     void fetchPlanningP11Data(client)
       .then((result) => { if (active) setData(result); })
-      .catch((error) => { if (active) setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), error: true }); })
+      .catch((error) => { if (active) setFeedbackState({ message: planningErrorMessage(error, 'Impossible de charger la planification structurée.'), level: 'error' }); })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
   }, [client]);
-  const setFeedback = (message: string, error = false) => setFeedbackState({ message, error });
-  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations, modèles et matrice d’armement" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et armement</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button><button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Matrice</button></nav>{feedback ? <p className={feedback.error ? 'form-error planning-p11-feedback' : 'admin-success planning-p11-feedback'} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations, modèles et matrices…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={load} overview={overview} setFeedback={setFeedback} /> : tab === 'templates' ? <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={load} overview={overview} setFeedback={setFeedback} /> : <ManningTab client={client} data={data} editable={canManageManning} onReload={load} overview={overview} range={range} setFeedback={setFeedback} />}</div></section></div>;
+  const setFeedback = (message: string, level: boolean | 'warning' = false) => setFeedbackState({ message, level: level === true ? 'error' : level === 'warning' ? 'warning' : 'success' });
+  const feedbackClassName = feedback?.level === 'error' ? 'form-error' : feedback?.level === 'warning' ? 'planning-warning' : 'admin-success';
+  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations, modèles et décision d’effectif" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et armement</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button><button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Décision d’effectif</button></nav>{feedback ? <p className={`${feedbackClassName} planning-p11-feedback`} role={feedback.level === 'error' ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations, modèles et décisions d’effectif…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : tab === 'templates' ? <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : <ManningTab client={client} data={data} editable={canManageManning} onReload={reload} overview={overview} range={range} setFeedback={setFeedback} />}</div></section></div>;
 }

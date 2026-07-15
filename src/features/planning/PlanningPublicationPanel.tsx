@@ -1,4 +1,4 @@
-import { Archive, CheckCircle2, LockKeyhole, Send, ShieldCheck, UnlockKeyhole } from 'lucide-react';
+import { Archive, CheckCircle2, ChevronDown, LockKeyhole, Send, ShieldCheck, UnlockKeyhole } from 'lucide-react';
 import { useState } from 'react';
 import { formatPlanningDate, type PlanningDateRange } from './planningModel';
 import { formatPlanningDateTime } from './planningDates';
@@ -15,6 +15,14 @@ const ACTION_LABELS: Record<PlanningPublicationAction, string> = {
   publish: 'Publier la version',
   reopen: 'Réouvrir pour modification',
   archive: 'Archiver',
+};
+
+const ACTION_DESCRIPTIONS: Record<PlanningPublicationAction, string> = {
+  submit: 'Envoie la période au circuit de validation.',
+  validate: 'Confirme que la période peut être publiée.',
+  publish: 'Crée et verrouille une nouvelle version.',
+  reopen: 'Déverrouille la période avec une justification.',
+  archive: 'Clôture la période avec une justification.',
 };
 
 interface PlanningPublicationPanelProps {
@@ -46,7 +54,10 @@ export function PlanningPublicationPanel({
 }: PlanningPublicationPanelProps) {
   const [comment, setComment] = useState('');
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actions = planningPublicationActions(publication, allowedActions);
+  const primaryAction = actions.find((action) => action !== 'reopen' && action !== 'archive') || null;
+  const menuActions = primaryAction ? actions.filter((action) => action !== primaryAction) : actions;
   const locked = isPlanningPublicationLocked(publication);
   const startsOn = publication?.startsOn || range.start;
   const endsOn = publication?.endsOn || range.end;
@@ -57,7 +68,10 @@ export function PlanningPublicationPanel({
       return;
     }
     setValidationMessage(null);
-    if (await onAction(action, comment)) setComment('');
+    if (await onAction(action, comment)) {
+      setComment('');
+      setIsActionsOpen(false);
+    }
   }
 
   return (
@@ -99,19 +113,41 @@ export function PlanningPublicationPanel({
               value={comment}
             />
           </label>
-          <div>
-            {actions.map((action) => (
+          <div className="planning-publication-action-buttons">
+            {primaryAction ? (
               <button
-                className={action === 'reopen' || action === 'archive' ? 'is-secondary' : 'is-primary'}
+                className="is-primary"
                 disabled={isSaving}
-                key={action}
-                onClick={() => void runAction(action)}
+                onClick={() => void runAction(primaryAction)}
                 type="button"
               >
-                <PublicationActionIcon action={action} />
-                {ACTION_LABELS[action]}
+                <PublicationActionIcon action={primaryAction} />
+                {ACTION_LABELS[primaryAction]}
               </button>
-            ))}
+            ) : null}
+            {menuActions.length ? <div className="planning-publication-action-menu">
+              <button
+                aria-label={`Afficher ${menuActions.length} autre${menuActions.length > 1 ? 's' : ''} action${menuActions.length > 1 ? 's' : ''} de publication`}
+                aria-expanded={isActionsOpen}
+                className="is-secondary"
+                onClick={() => setIsActionsOpen((current) => !current)}
+                type="button"
+              >
+                Autres actions ({menuActions.length}) <ChevronDown aria-hidden="true" size={15} />
+              </button>
+              {isActionsOpen ? (
+                <div aria-label="Autres actions de publication" className="planning-publication-action-popover" role="group">
+                  <header><strong>Autres actions disponibles</strong><small>Le rôle de chaque action est détaillé ci-dessous.</small></header>
+                  {primaryAction ? <p><span>{ACTION_LABELS[primaryAction]}</span><small>{ACTION_DESCRIPTIONS[primaryAction]} Bouton principal.</small></p> : null}
+                  {menuActions.map((action) => (
+                    <button aria-label={ACTION_LABELS[action]} disabled={isSaving} key={action} onClick={() => void runAction(action)} type="button">
+                      <PublicationActionIcon action={action} />
+                      <span><strong>{ACTION_LABELS[action]}</strong><small>{ACTION_DESCRIPTIONS[action]}</small></span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div> : null}
           </div>
           {validationMessage ? <small className="form-error">{validationMessage}</small> : null}
         </div>

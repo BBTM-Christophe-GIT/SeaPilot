@@ -21,4 +21,33 @@ describe('planning Supabase errors', () => {
     }
     consoleError.mockRestore();
   });
+
+  it('explains rotation overlaps and blocking assignment controls', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(() => throwPlanningDataError('save-rotation', 'Échec.', {
+      code: '23P01',
+      message: 'PLANNING_ROTATION_OVERLAP: marin deja affecte du 2026-07-14 au 2026-07-28.',
+    })).toThrow('possède déjà une affectation');
+    expect(() => throwPlanningDataError('save-rotation', 'Échec.', {
+      code: 'P0001',
+      message: 'PLANNING_CONTROL_BLOCKED: crew_absence',
+    })).toThrow('absence validée');
+    expect(() => throwPlanningDataError('save-rotation', 'Échec.', {
+      code: 'P0001',
+      message: 'PLANNING_CONTROL_BLOCKED: expired_medical',
+    })).toThrow('visite médicale');
+    consoleError.mockRestore();
+  });
+
+  it('explains invalid rotation inputs and interrupted network requests', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(() => throwPlanningDataError('save-rotation', 'Échec.', {
+      code: '22023',
+      message: 'PLANNING_ROTATION_PATTERN_MISMATCH',
+    })).toThrow('rythme ou les dates');
+    expect(() => throwPlanningDataError('save-rotation', 'Échec.', {
+      message: 'Failed to fetch',
+    })).toThrow('connexion au service Planning');
+    consoleError.mockRestore();
+  });
 });

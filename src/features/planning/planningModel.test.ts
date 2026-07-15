@@ -58,7 +58,8 @@ const overview: PlanningOverview = {
 
 describe('planning timeline rules', () => {
   it('builds day, week, fortnight, month and year ranges', () => {
-    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(1);
+    expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(7);
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'day'))).toEqual({ start: '2026-07-09', end: '2026-07-15' });
     expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
     expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
     expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);
@@ -208,6 +209,25 @@ describe('planning timeline rules', () => {
 });
 
 describe('planning hierarchy and side panels', () => {
+  it('attaches per-day texts to their assignment without exposing technical rows', () => {
+    const assignment = {
+      id: 50, vesselId: 1, vesselName: 'GOURY', captainPersonId: 1, captainName: 'Anne CAPITAINE',
+      crewPersonId: 1, crewName: 'Anne CAPITAINE', startsOn: '2026-07-01', endsOn: '2026-07-20',
+      startsAt: '2026-07-01T06:00:00Z', endsAt: '2026-07-20T18:00:00Z', assignmentRole: 'Capitaine',
+      statusLabel: 'En Mer', confirmationStatus: 'confirmed' as const, watchGroup: 'Bordée 1', comments: '', sourceLabel: 'seapilot',
+    };
+    const technicalDay = {
+      id: 51, personId: 1, vesselId: 1, crewName: 'Anne CAPITAINE', captainName: 'Anne CAPITAINE', vesselName: 'GOURY',
+      manualVesselName: '', workDate: '2026-07-14', disembarkOn: '2026-07-14', yearNumber: 2026, monthNumber: 7,
+      monthLabel: 'Juillet', dayNumber: 14, functionLabel: 'Capitaine', sailorStatus: 'Repos', dayStatus: 'État quotidien',
+      rhythmLabel: '', watchGroup: 'Bordée 1', slot365: 'assignment:50', departureOn: '2026-07-14', workedHours: 0,
+      rest24h: 0, cumulative7d: 0, comments: 'Cherbourg', sourceLabel: 'seapilot-assignment-note',
+    };
+    const events = getAllPlanningCrewEvents({ ...overview, assignments: [assignment], periods: [], days: [technicalDay] });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ assignmentId: 50, dailyNotes: { '2026-07-14': 'Cherbourg' }, dailyStatuses: { '2026-07-14': 'Repos' } });
+  });
+
   it('groups visible crew by vessel, watch and role', () => {
     const rows = buildPlanningCrewRows(overview, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
     expect(rows.map((row) => [row.type, row.label])).toEqual([
