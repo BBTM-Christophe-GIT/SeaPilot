@@ -930,3 +930,59 @@ La phase 2 pourra traiter exclusivement l'export et l'import idempotent après :
 7. maintien de l'absence de lien automatique avec `planning_projects`.
 
 **Arrêt de phase 1 : le modèle et sa sécurité sont livrés ; aucune donnée live n'a été migrée et aucun fichier n'a quitté SharePoint.**
+
+## 18. Mise à jour de transmission — consultation livrée en phase 3
+
+Date de livraison : 15 juillet 2026.
+
+Cette phase fait évoluer le module existant `src/features/projects` en lecture seule. Elle ne crée ni ne modifie aucun projet, client, contrat ou document et n'ajoute aucune migration Supabase.
+
+### 18.1 Parité de consultation effectivement livrée
+
+| Capacité inventoriée | Implémentation phase 3 | État |
+|---|---|---|
+| Liste et sélection | portefeuille trié, sélection explicite par bouton clavier, détail du premier projet visible par défaut | Livré |
+| Recherche et filtres | recherche sans sensibilité aux accents ; filtres statut, client, navire et chevauchement de période | Livré |
+| Indicateurs | projets actifs/affichés, documents projets/contractuels et clients représentés, recalculés selon les filtres | Livré |
+| Identification | numéro, statut, type de contrat, affréteur, armateur, navires, limite d'affectation, supports ROV/plongée et coordonnées client | Livré selon le schéma de phase 1 |
+| Planning | période historique, livraison/restitution, ports, début/fin d'affrètement et prolongations | Livré selon le schéma de phase 1 |
+| Offre commerciale | mobilisation, démobilisation, loyer initial et loyer de prolongation avec devise/unité | Livré selon le schéma de phase 1 |
+| Opérations | zone d'opération, période maximale d'audit, description et documents projets | Livré selon le schéma de phase 1 |
+| Contrat SUPPLYTIME | aperçu textuel des 34 zones et deux signatures, groupé comme dans l'inventaire | Livré |
+| Priorités SUPPLYTIME | les champs canoniques armateur, client, navires, livraison, ports, période, zone et emploi priment sur leur valeur JSON historique | Livré et testé |
+| Documents | métadonnées Supabase uniquement ; ouverture du lien dans SharePoint ; aucun contenu téléchargé ou stocké par SeaPilot | Livré |
+| Provenance | source, liste/item SharePoint et dernière modification source affichés lorsque disponibles | Livré |
+| États asynchrones | chargement, jeu valide vide, filtres sans résultat, erreur principale avec nouvelle tentative et sources secondaires partielles distinctes | Livré et testé |
+| Écriture | ancien formulaire simplifié et appel d'insertion retirés de l'interface Projets | Hors périmètre volontairement |
+
+### 18.2 Contrat de lecture et performance
+
+- le navigateur interroge uniquement les tables Supabase `projects`, `clients`, `project_contracts`, `project_documents` et `contract_documents` ;
+- aucun appel SharePoint de liste, bibliothèque ou Graph n'est exécuté par l'écran ; seuls les liens de fichiers sont ouverts à la demande de l'utilisateur ;
+- les cinq sources Supabase sont lancées en parallèle ; l'échec de `projects` produit un état d'erreur, tandis que chaque source secondaire en échec produit un avertissement de consultation partielle ;
+- chaque table est parcourue par pagination keyset sur sa clé primaire `id`, par lots de 500, afin de ne pas subir la limite implicite d'une réponse PostgREST ;
+- la liste rend au plus 40 projets par page, diffère la recherche lors de la frappe et limite le travail de rendu des lignes hors écran ;
+- les RLS livrées en phase 1 restent l'autorité de sécurité. L'interface ne tente pas de compenser un refus RLS par une liste vide.
+
+### 18.3 Couverture automatisée
+
+Les tests de la phase couvrent :
+
+- mapping complet du projet, du contrat typé, de la provenance et du JSON SUPPLYTIME ;
+- filtrage texte/structuré et chevauchement de périodes ;
+- conservation ou repli de la sélection ;
+- priorité des valeurs canoniques et présence des 36 emplacements SUPPLYTIME ;
+- sélection accessible, cinq sections de détail, liens SharePoint et absence de formulaire d'écriture ;
+- erreur de la source principale, source secondaire partielle et jeu Supabase réellement vide ;
+- intégration de la route `/modules/projects` dans l'application.
+
+### 18.4 Risques et validations restant ouverts
+
+- la validation métier visuelle sur les données réelles reste nécessaire après réconciliation de la phase 2 ;
+- les choix live de statut/type/unité non confirmés restent affichés tels qu'importés et ne sont pas inventés par l'interface ;
+- les valeurs absentes sont signalées « Non renseigné » ; elles ne sont pas dérivées lorsque l'inventaire n'a pas validé une règle de priorité ;
+- un document sans URL reste visible avec « Lien SharePoint indisponible » et doit être corrigé par la réconciliation, sans téléchargement de secours ;
+- l'accès reste limité par les RLS phase 1 à `admin` et `direction` tant qu'une extension de matrice de rôles n'est pas validée ;
+- l'aperçu est un rendu structuré des zones SUPPLYTIME, pas une reproduction graphique éditable des deux pages du formulaire papier.
+
+**Arrêt de phase 3 : la parité de consultation prévue pour cette phase est livrée dans le code et couverte par les tests ; aucune écriture métier, migration de données ou copie de fichier n'a été ajoutée.**
