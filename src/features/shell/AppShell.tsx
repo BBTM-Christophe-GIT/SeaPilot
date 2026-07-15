@@ -73,6 +73,18 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Administration: Settings,
 };
 
+const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
+  Accueil: 'home',
+  QHSE: 'qhse',
+  Opérations: 'operations',
+  Achats: 'purchasing',
+  Planning: 'planning',
+  'Ressources Humaines': 'human-resources',
+  Maintenance: 'maintenance',
+  Levage: 'lifting',
+  Administration: 'administration',
+};
+
 const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   home: LayoutDashboard,
   kpi: BarChart3,
@@ -284,7 +296,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
 
             if (directModule) {
               return (
-                <section className="navigation-family navigation-direct-family" key={family}>
+                <section
+                  className="navigation-family navigation-direct-family"
+                  data-family-theme={FAMILY_THEME_KEYS[family]}
+                  key={family}
+                >
                   <NavLink
                     aria-label={directModule.label}
                     className="navigation-direct-link"
@@ -292,15 +308,18 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                     title={directModule.label}
                     to={directModule.key === 'home' ? '/' : `/modules/${directModule.key}`}
                   >
-                    <FamilyIcon aria-hidden="true" size={17} />
-                    <span>{directModule.label}</span>
+                    <span className="navigation-icon-tile">
+                      <FamilyIcon aria-hidden="true" size={20} />
+                    </span>
+                    <span className="navigation-link-label">{directModule.label}</span>
+                    <ChevronRight aria-hidden="true" className="navigation-direct-chevron" size={17} />
                   </NavLink>
                 </section>
               );
             }
 
             return (
-              <section className="navigation-family" key={family}>
+              <section className="navigation-family" data-family-theme={FAMILY_THEME_KEYS[family]} key={family}>
                 <button
                   aria-expanded={isExpanded}
                   className="navigation-family-button"
@@ -308,8 +327,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   title={family}
                   type="button"
                 >
-                  <FamilyIcon aria-hidden="true" size={17} />
-                  <span>{family}</span>
+                  <span className="navigation-icon-tile">
+                    <FamilyIcon aria-hidden="true" size={20} />
+                  </span>
+                  <span className="navigation-label">{family}</span>
                   {isExpanded ? (
                     <ChevronUp aria-hidden="true" className="navigation-chevron" size={15} />
                   ) : (
@@ -328,8 +349,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                           title={module.label}
                           to={module.key === 'home' ? '/' : `/modules/${module.key}`}
                         >
+                          <span aria-hidden="true" className="navigation-submenu-bullet" />
                           <ModuleIcon aria-hidden="true" size={16} />
-                          <span>{module.label}</span>
+                          <span className="navigation-link-label">{module.label}</span>
                         </NavLink>
                       );
                     })}
@@ -346,7 +368,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             <strong>{APP_VERSION_LABEL}</strong>
           </div>
           <button
-            aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Reduire le menu'}
+            aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Réduire le menu'}
             className="sidebar-collapse-button"
             onClick={() => setIsSidebarCollapsed((isCollapsed) => !isCollapsed)}
             type="button"
@@ -356,7 +378,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             ) : (
               <ChevronLeft aria-hidden="true" size={17} />
             )}
-            <span>{isSidebarCollapsed ? 'Agrandir' : 'Reduire le menu'}</span>
+            <span>{isSidebarCollapsed ? 'Agrandir' : 'Réduire le menu'}</span>
           </button>
         </div>
       </aside>

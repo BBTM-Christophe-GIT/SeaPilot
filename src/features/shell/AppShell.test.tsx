@@ -33,15 +33,54 @@ describe('AppShell', () => {
     );
 
     expect(await screen.findByText('SeaPilot')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'BBTM' })).toHaveAttribute('src', '/bbtm-logo.png');
     expect(screen.getByText('Projets')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'QHSE' })).toBeInTheDocument();
+    const qhseButton = screen.getByRole('button', { name: 'QHSE' });
+    expect(qhseButton).toBeInTheDocument();
+    expect(qhseButton.closest('section')).toHaveAttribute('data-family-theme', 'qhse');
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Planning' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reduire le menu' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
+  });
+
+  it('marks the current direct module as active', async () => {
+    const client = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({
+          data: { subscription: { unsubscribe: vi.fn() } },
+        }),
+        signInWithPassword: vi.fn(),
+        signOut: vi.fn(),
+      },
+    };
+    const planningModule = APP_MODULES.find((module) => module.key === 'planning');
+
+    if (!planningModule) {
+      throw new Error('Planning module is missing');
+    }
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/planning']}>
+          <Routes>
+            <Route element={<AppShell rolesOverride={['admin']} />}>
+              <Route path="modules/planning" element={<ModulePage module={planningModule} />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByRole('link', { name: 'Planning' })).toHaveClass('active');
+    expect(screen.getByRole('link', { name: 'Planning' }).closest('section')).toHaveAttribute(
+      'data-family-theme',
+      'planning',
+    );
   });
 
   it('loads roles from Supabase when no override is provided', async () => {
