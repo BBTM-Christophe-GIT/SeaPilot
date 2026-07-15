@@ -1,4 +1,4 @@
-import { rangesOverlap } from './planningDates';
+import { addPlanningDays, rangesOverlap } from './planningDates';
 import { getAllPlanningCrewEvents, normalizePlanningText, type PlanningCrewEvent } from './planningModel';
 import type { PlanningOverview } from './planningQueries';
 
@@ -27,13 +27,17 @@ export function getPlanningConflicts(
 }
 
 export function getPlanningConflictEventIds(overview: PlanningOverview): Set<string> {
+  return new Set(getPlanningConflictDatesByEvent(overview).keys());
+}
+
+export function getPlanningConflictDatesByEvent(overview: PlanningOverview): Map<string, Set<string>> {
   const eventsByPerson = new Map<string, PlanningCrewEvent[]>();
   getAllPlanningCrewEvents(overview).forEach((event) => {
     const key = planningPersonKey(event);
     eventsByPerson.set(key, [...(eventsByPerson.get(key) || []), event]);
   });
 
-  const conflicted = new Set<string>();
+  const conflicted = new Map<string, Set<string>>();
   eventsByPerson.forEach((events) => {
     const sorted = [...events].sort((left, right) => left.startsOn.localeCompare(right.startsOn));
     sorted.forEach((event, index) => {
@@ -44,8 +48,16 @@ export function getPlanningConflictEventIds(overview: PlanningOverview): Set<str
           normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
           && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)
         ) {
-          conflicted.add(event.id);
-          conflicted.add(candidate.id);
+          const startsOn = event.startsOn > candidate.startsOn ? event.startsOn : candidate.startsOn;
+          const endsOn = event.endsOn < candidate.endsOn ? event.endsOn : candidate.endsOn;
+          for (let date = startsOn; date <= endsOn; date = addPlanningDays(date, 1)) {
+            const eventDates = conflicted.get(event.id) || new Set<string>();
+            const candidateDates = conflicted.get(candidate.id) || new Set<string>();
+            eventDates.add(date);
+            candidateDates.add(date);
+            conflicted.set(event.id, eventDates);
+            conflicted.set(candidate.id, candidateDates);
+          }
         }
       }
     });

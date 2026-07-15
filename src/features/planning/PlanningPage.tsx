@@ -59,12 +59,13 @@ import {
 } from './planningModel';
 import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
-import { getPlanningConflictEventIds } from './planningOverlap';
+import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
 import { createPlanningPreviewOverview } from './planningPreviewData';
 import { findPlanningPublication, isPlanningPublicationLocked } from './planningPublication';
 import {
   archivePlanningVessel,
+  applyPlanningGridCells,
   createPlanningDerogation,
   createPlanningAssignment,
   createPlanningBoardAssignments,
@@ -80,6 +81,8 @@ import {
   fetchPlanningVersions,
   mapPlanningAssignmentOverviewRows,
   mapPlanningAssignmentRows,
+  movePlanningGridCells,
+  removePlanningGridCells,
   revokePlanningDerogation,
   savePlanningHandover,
   savePlanningAssignmentDayState,
@@ -99,6 +102,14 @@ import {
   type PlanningVessel,
   type SavePlanningHandoverInput,
 } from './planningQueries';
+import {
+  buildPlanningGridPaste,
+  planningGridCellKey,
+  planningGridDefaultStatus,
+  sortPlanningGridCells,
+  type PlanningGridCell,
+  type PlanningGridClipboard,
+} from './planningGrid';
 import { missingManningRequirementTerms, type PlanningManningRequirement } from './planningP11';
 import { fetchPlanningManningMatrices } from './planningP11Queries';
 import {
@@ -204,6 +215,11 @@ interface PlanningBoardForm {
   startsOn: string;
   endsOn: string;
   positions: PlanningBoardPositionForm[];
+}
+
+interface PlanningGridConflictForm {
+  cell: PlanningGridCell;
+  events: PlanningCrewEvent[];
 }
 
 type SideTab = 'conflicts' | 'handovers' | 'derogations' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
@@ -356,7 +372,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [touchDropTarget, setTouchDropTarget] = useState<{ vesselId: number; watchGroup: string } | null>(null);
   const [collapsedFleetNodes, setCollapsedFleetNodes] = useState<Set<string>>(() => new Set());
   const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
+  const [selectedGridCells, setSelectedGridCells] = useState<Map<string, PlanningGridCell>>(() => new Map());
+  const [gridClipboard, setGridClipboard] = useState<PlanningGridClipboard | null>(null);
+  const [gridConflictForm, setGridConflictForm] = useState<PlanningGridConflictForm | null>(null);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
+  const gridPaintRef = useRef<{ laneKey: string; cells: Map<string, PlanningGridCell> } | null>(null);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -456,7 +476,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     crewListForm.date,
   ), [crewListForm.date, crewListForm.vesselId, overview]);
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
-  const conflictEventIds = useMemo(() => getPlanningConflictEventIds(overview), [overview]);
+  const conflictDatesByEvent = useMemo(() => getPlanningConflictDatesByEvent(overview), [overview]);
+  const cutGridCellKeys = useMemo(
+    () => new Set(gridClipboard?.mode === 'cut' ? gridClipboard.cells.map((cell) => cell.key) : []),
+    [gridClipboard],
+  );
   const planningControls = useMemo(() => buildPlanningControlCenter(overview, allPlanningCrewEvents), [allPlanningCrewEvents, overview]);
   const assignmentControls = useMemo(() => {
     const person = overview.people.find((item) => String(item.id) === assignmentForm.crewPersonId);
@@ -677,6 +701,211 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setDayStateForm(null);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut et le commentaire.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function refreshPlanningGridData(cells: PlanningGridCell[] = []): Promise<PlanningGridCell[]> {
+    const [assignmentRows, planningDays, history] = await Promise.all([
+      fetchPlanningAssignmentOverviewRows(effectiveClient),
+      fetchPlanningDays(effectiveClient),
+      fetchPlanningHistory(effectiveClient),
+    ]);
+    const assignments = mapPlanningAssignmentOverviewRows(assignmentRows);
+    updateOverview((current) => ({ ...current, assignments, days: planningDays, history }));
+    return hydratePlanningGridCells(cells, assignments);
+  }
+
+  async function persistPlanningGridCells(cells: PlanningGridCell[], message: string): Promise<boolean> {
+    if (!cells.length || !canEditPlanning) return false;
+    setIsSaving(true);
+    setPendingMutationId('planning-grid');
+    setErrorMessage(null);
+    try {
+      await applyPlanningGridCells(effectiveClient, planningGridMutationCells(cells));
+      const hydrated = await refreshPlanningGridData(cells);
+      setSelectedGridCells(new Map(hydrated.map((cell) => [cell.key, cell])));
+      setStatusMessage(message);
+      return true;
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, "Impossible d'enregistrer la sélection dans le planning."));
+      return false;
+    } finally {
+      setIsSaving(false);
+      setPendingMutationId(null);
+    }
+  }
+
+  function openPlanningGridConflict(cell: PlanningGridCell) {
+    const events = allPlanningCrewEvents.filter((event) => (
+      event.assignmentId
+      && event.personId === cell.personId
+      && event.startsOn <= cell.workDate
+      && event.endsOn >= cell.workDate
+      && conflictDatesByEvent.get(event.id)?.has(cell.workDate)
+    ));
+    if (events.length < 2) {
+      setErrorMessage("Ce conflit n'est plus présent. Actualisez le planning.");
+      return;
+    }
+    setSelectedGridCells(new Map([[cell.key, cell]]));
+    setGridConflictForm({ cell, events });
+  }
+
+  function beginPlanningGridPaint(cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || !canEditPlanning || isSaving) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedGridCells((current) => {
+        const next = new Map(current);
+        if (next.has(cell.key)) next.delete(cell.key);
+        else next.set(cell.key, cell);
+        return next;
+      });
+      return;
+    }
+    if (gridClipboard) {
+      setSelectedGridCells(new Map([[cell.key, cell]]));
+      setStatusMessage("Destination sélectionnée. Utilisez Ctrl+V pour coller.");
+      return;
+    }
+    if (cell.isConflict) {
+      openPlanningGridConflict(cell);
+      return;
+    }
+    const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
+    const cells = new Map([[paintedCell.key, paintedCell]]);
+    gridPaintRef.current = { laneKey: cell.laneKey, cells };
+    setSelectedGridCells(new Map(cells));
+    const cleanup = () => {
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    const finish = () => { cleanup(); void finishPlanningGridPaint(); };
+    const cancel = () => { cleanup(); gridPaintRef.current = null; };
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', cancel, { once: true });
+  }
+
+  function extendPlanningGridPaint(cell: PlanningGridCell) {
+    const paint = gridPaintRef.current;
+    if (!paint || paint.laneKey !== cell.laneKey || cell.isConflict || paint.cells.has(cell.key)) return;
+    const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
+    paint.cells.set(cell.key, paintedCell);
+    setSelectedGridCells(new Map(paint.cells));
+  }
+
+  async function finishPlanningGridPaint() {
+    const paint = gridPaintRef.current;
+    gridPaintRef.current = null;
+    if (!paint?.cells.size) return;
+    const cells = sortPlanningGridCells([...paint.cells.values()]);
+    await persistPlanningGridCells(
+      cells,
+      `${cells.length} case${cells.length > 1 ? 's' : ''} enregistrée${cells.length > 1 ? 's' : ''}.`,
+    );
+  }
+
+  async function deleteSelectedPlanningGridCells(reason = 'Suppression manuelle depuis la grille') {
+    const cells = [...selectedGridCells.values()].filter((cell) => cell.assignmentId !== null);
+    if (!cells.length) {
+      setErrorMessage('Aucune case enregistrée ne peut être supprimée dans cette sélection.');
+      return;
+    }
+    if (!window.confirm(`Supprimer ${cells.length} case${cells.length > 1 ? 's' : ''} ? Les périodes adjacentes seront conservées et cette action sera historisée.`)) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await removePlanningGridCells(effectiveClient, planningGridMutationCells(cells), reason);
+      await refreshPlanningGridData();
+      setSelectedGridCells(new Map());
+      setGridClipboard((current) => current?.mode === 'cut' ? null : current);
+      setStatusMessage(`${cells.length} case${cells.length > 1 ? 's supprimées' : ' supprimée'} ; la modification est historisée.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de supprimer les cases sélectionnées.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function pastePlanningGridClipboard() {
+    if (!gridClipboard || !selectedGridCells.size) {
+      setErrorMessage("Copiez ou coupez des cases, puis sélectionnez la case d'arrivée.");
+      return;
+    }
+    const targets = buildPlanningGridPaste(gridClipboard.cells, [...selectedGridCells.values()]);
+    if (!targets.length) {
+      setErrorMessage("La destination doit appartenir à une seule ligne marin/navire.");
+      return;
+    }
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      if (gridClipboard.mode === 'cut') {
+        const targetKeys = new Set(targets.map((cell) => cell.key));
+        const sources = gridClipboard.cells.filter((cell) => cell.assignmentId !== null && !targetKeys.has(cell.key));
+        if (sources.length) {
+          await movePlanningGridCells(
+            effectiveClient,
+            planningGridMutationCells(sources),
+            planningGridMutationCells(targets),
+            'Déplacement par couper-coller depuis la grille',
+          );
+        } else {
+          await applyPlanningGridCells(effectiveClient, planningGridMutationCells(targets));
+        }
+      } else {
+        await applyPlanningGridCells(effectiveClient, planningGridMutationCells(targets));
+      }
+      const hydrated = await refreshPlanningGridData(targets);
+      setSelectedGridCells(new Map(hydrated.map((cell) => [cell.key, cell])));
+      setGridClipboard(null);
+      setStatusMessage(`${targets.length} case${targets.length > 1 ? 's' : ''} ${gridClipboard.mode === 'cut' ? 'déplacée' : 'copiée'}${targets.length > 1 ? 's' : ''}.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, `Impossible de ${gridClipboard.mode === 'cut' ? 'déplacer' : 'copier'} les cases.`));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function resolvePlanningGridConflict(priority: PlanningCrewEvent) {
+    if (!gridConflictForm) return;
+    const removals = new Map<string, PlanningGridCell>();
+    gridConflictForm.events.filter((event) => event.id !== priority.id).forEach((event) => {
+      if (!event.assignmentId || event.personId === null || event.vesselId === null) return;
+      const startsOn = event.startsOn > priority.startsOn ? event.startsOn : priority.startsOn;
+      const endsOn = event.endsOn < priority.endsOn ? event.endsOn : priority.endsOn;
+      for (let date = startsOn; date <= endsOn; date = addPlanningDays(date, 1)) {
+        const laneKey = `${event.vesselId}-${event.board}-${event.personId}`;
+        const cell: PlanningGridCell = {
+          key: planningGridCellKey(laneKey, date), laneKey, workDate: date,
+          personId: event.personId, person: event.person, vesselId: event.vesselId,
+          vessel: event.vessel, watchGroup: event.board, functionLabel: event.functionLabel,
+          assignmentId: event.assignmentId, eventId: event.id,
+          status: planningGridDefaultStatus(event.vessel), note: event.dailyNotes?.[date] || '', isConflict: true,
+        };
+        removals.set(`${event.assignmentId}:${date}`, cell);
+      }
+    });
+    const cells = [...removals.values()];
+    if (!cells.length) return;
+    if (!window.confirm(`Conserver ${priority.vessel} / ${priority.board} comme ligne prioritaire et supprimer uniquement ${cells.length} case${cells.length > 1 ? 's' : ''} en chevauchement sur les autres lignes ?`)) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await removePlanningGridCells(
+        effectiveClient,
+        planningGridMutationCells(cells),
+        `Résolution de conflit : priorité à ${priority.vessel} / ${priority.board}`,
+      );
+      await refreshPlanningGridData();
+      setGridConflictForm(null);
+      setSelectedGridCells(new Map());
+      setStatusMessage('Chevauchement supprimé. La ligne prioritaire est conservée et la résolution est historisée.');
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de résoudre ce conflit.'));
     } finally {
       setIsSaving(false);
     }
@@ -1415,6 +1644,39 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
   }
 
+  useEffect(() => {
+    const handleGridShortcut = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && (key === 'c' || key === 'x')) {
+        if (!selectedGridCells.size) return;
+        event.preventDefault();
+        const mode = key === 'x' ? 'cut' : 'copy';
+        const cells = sortPlanningGridCells([...selectedGridCells.values()]);
+        setGridClipboard({ mode, cells });
+        setStatusMessage(`${cells.length} case${cells.length > 1 ? 's' : ''} ${mode === 'cut' ? 'coupée' : 'copiée'}${cells.length > 1 ? 's' : ''}. Sélectionnez la destination puis utilisez Ctrl+V.`);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && key === 'v') {
+        event.preventDefault();
+        void pastePlanningGridClipboard();
+        return;
+      }
+      if ((key === 'delete' || key === 'backspace') && selectedGridCells.size) {
+        event.preventDefault();
+        void deleteSelectedPlanningGridCells();
+        return;
+      }
+      if (key === 'escape' && gridClipboard) {
+        setGridClipboard(null);
+        setStatusMessage('Copier-couper annulé.');
+      }
+    };
+    window.addEventListener('keydown', handleGridShortcut);
+    return () => window.removeEventListener('keydown', handleGridShortcut);
+  });
+
   if (!permissions.canRead) {
     return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
   }
@@ -1552,7 +1814,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               {canEditPlanning ? <small>{perspective === 'fleet' ? 'Clic droit : statut et commentaire · Double-clic : formulaire complet · Glissez un marin sur une bordée' : 'Cliquez une case vide pour la sélectionner · Double-cliquez pour le formulaire complet · Glissez pour déplacer'}</small> : null}
             </div>
             <div className="planning-board-stats">
-              {perspective === 'crew' && conflictEventIds.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictEventIds.size} conflit(s)</span> : null}
+              {conflictDatesByEvent.size ? <span className="is-conflict" aria-label="Conflits planning">{conflictDatesByEvent.size} ligne(s) en conflit</span> : null}
               <span>{perspective === 'fleet' ? `${fleetVesselCount} navire(s) avec équipage` : `${crewLanes.length} ligne(s)`}</span>
               <span>{perspective === 'fleet' ? `${overview.projects.length} événement(s)` : `${allPlanningCrewEvents.length} période(s)`}</span>
             </div>
@@ -1643,7 +1905,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 };
                 return (
                   <PlanningCrewTimelineRow
-                    conflictEventIds={conflictEventIds}
+                    conflictDatesByEvent={conflictDatesByEvent}
+                    cutGridCellKeys={cutGridCellKeys}
                     dayWidth={effectiveDayWidth}
                     days={days}
                     editable={canEditPlanning}
@@ -1655,16 +1918,19 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onOpen={openEvent}
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                     onEditDayState={openDayState}
+                    onGridCellPointerDown={beginPlanningGridPaint}
+                    onGridCellPointerEnter={extendPlanningGridPaint}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
                     selectedId={selectedTimelineId}
+                    selectedGridCells={selectedGridCells}
                     viewMode={viewMode}
                   />
                 );
               }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
-                  conflictEventIds={conflictEventIds}
+                  conflictDatesByEvent={conflictDatesByEvent}
                   dayWidth={effectiveDayWidth}
                   days={days}
                   editable={canEditPlanning}
@@ -1703,6 +1969,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       </div>
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onSave={saveDayState} /> : null}
+      {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
       {boardForm ? <PlanningBoardStaffingDialog form={boardForm} isSaving={isSaving} onChange={setBoardForm} onClose={() => setBoardForm(null)} onSave={saveNewBoard} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
@@ -1741,6 +2008,54 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
     </section>
   );
+}
+
+function planningGridMutationCells(cells: PlanningGridCell[]) {
+  return cells.map((cell) => ({
+    personId: cell.personId,
+    vesselId: cell.vesselId,
+    assignmentId: cell.assignmentId,
+    workDate: cell.workDate,
+    status: cell.status,
+    note: cell.note,
+    watchGroup: cell.watchGroup,
+    functionLabel: cell.functionLabel,
+  }));
+}
+
+function hydratePlanningGridCells(cells: PlanningGridCell[], assignments: ReturnType<typeof mapPlanningAssignmentOverviewRows>): PlanningGridCell[] {
+  return cells.map((cell) => {
+    const assignment = assignments.find((item) => (
+      item.crewPersonId === cell.personId
+      && item.vesselId === cell.vesselId
+      && item.watchGroup === cell.watchGroup
+      && item.startsOn <= cell.workDate
+      && item.endsOn >= cell.workDate
+    ));
+    return assignment ? { ...cell, assignmentId: assignment.id, eventId: `assignment-${assignment.id}` } : cell;
+  });
+}
+
+function PlanningGridConflictDialog({ form, isSaving, onClose, onResolve }: {
+  form: PlanningGridConflictForm;
+  isSaving: boolean;
+  onClose: () => void;
+  onResolve: (event: PlanningCrewEvent) => void;
+}) {
+  return <div className="planning-dialog-backdrop" role="presentation">
+    <section aria-label="Résoudre le conflit d’affectation" aria-modal="true" className="planning-dialog planning-grid-conflict-dialog" role="dialog">
+      <header><div><ShieldAlert aria-hidden="true" size={21} /><span><small>{formatPlanningDate(form.cell.workDate)}</small><h2>Conflit d’affectation</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
+      <p className="planning-dialog-intro"><strong>{form.cell.person}</strong> est affecté sur plusieurs lignes. Choisissez celle à conserver : seules les cases qui se chevauchent seront supprimées des autres lignes.</p>
+      <div className="planning-grid-conflict-options">
+        {form.events.map((event) => <button disabled={isSaving} key={event.id} onClick={() => onResolve(event)} type="button">
+          <span><strong>{event.vessel}</strong><small>{event.board} · {event.functionLabel || 'Fonction non renseignée'}</small></span>
+          <em>Garder cette ligne</em>
+        </button>)}
+      </div>
+      <p className="planning-grid-conflict-audit"><ClipboardCheck aria-hidden="true" size={16} /> Une confirmation sera demandée et la décision sera historisée.</p>
+      <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button></footer>
+    </section>
+  </div>;
 }
 
 function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onSave }: {

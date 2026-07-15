@@ -294,6 +294,15 @@ function createClient(options: {
     if (functionName === 'save_planning_assignment_day_state') {
       return Promise.resolve({ data: 202, error: null });
     }
+    if (functionName === 'apply_planning_grid_cells') {
+      return Promise.resolve({ data: { savedCells: 1, createdAssignments: 1 }, error: null });
+    }
+    if (functionName === 'remove_planning_grid_cells') {
+      return Promise.resolve({ data: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 }, error: null });
+    }
+    if (functionName === 'move_planning_grid_cells') {
+      return Promise.resolve({ data: { applied: { savedCells: 1, createdAssignments: 1 }, removed: { deletedCells: 1, affectedAssignments: 1, createdSplits: 0 } }, error: null });
+    }
     if (functionName === 'create_planning_board_assignments') {
       return Promise.resolve({ data: [301], error: null });
     }
@@ -425,7 +434,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Équipes' })).toHaveClass('is-active');
     expect(screen.queryByRole('tab', { name: 'Navire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
-  }, 20_000);
+  }, 30_000);
 
   it('creates a fleet event from the complete side panel', async () => {
     const user = userEvent.setup();
@@ -769,6 +778,10 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Ajouter une bordée à COTENTIN' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' })).toBeInTheDocument();
     const dayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    const previousDayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 13/07/2026 pour Paul DURAND' });
+    expect(previousDayCell).toHaveClass('is-segment-end');
+    expect(dayCell).toHaveClass('is-segment-start');
+    expect(dayCell).not.toHaveTextContent(/En mer|À terre|Embarqué/i);
     await user.click(dayCell);
     expect(screen.queryByRole('dialog', { name: 'Statut et commentaire' })).not.toBeInTheDocument();
     fireEvent.contextMenu(dayCell);
@@ -814,7 +827,7 @@ describe('PlanningPage cockpit', () => {
 
   it('selects an empty fleet cell with a green marker and opens the full form only on double-click', async () => {
     const user = userEvent.setup();
-    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
@@ -822,6 +835,14 @@ describe('PlanningPage cockpit', () => {
     await user.click(emptyCell);
     expect(emptyCell.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
     expect(screen.queryByText('Formulaire complet')).not.toBeInTheDocument();
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({
+        personId: 11,
+        vesselId: 1,
+        workDate: '2026-07-15',
+        status: 'En Mer',
+      })],
+    }));
 
     await user.dblClick(emptyCell);
     const dialog = await screen.findByRole('dialog');
@@ -841,6 +862,95 @@ describe('PlanningPage cockpit', () => {
     const emptyCell = screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 15\/07\/2026/ });
     await user.click(emptyCell);
     expect(emptyCell.querySelector('.planning-empty-cell-marker.is-armement')).toBeInTheDocument();
+  });
+
+  it('paints adjacent empty days and persists them in one batch on pointer release', async () => {
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const first = screen.getByRole('button', { name: /case vide de Paul DURAND le 15\/07\/2026/ });
+    const second = screen.getByRole('button', { name: /case vide de Paul DURAND le 16\/07\/2026/ });
+
+    fireEvent.pointerDown(first, { button: 0, buttons: 1 });
+    fireEvent.pointerEnter(second, { buttons: 1 });
+    fireEvent.pointerUp(window, { button: 0 });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [
+        expect.objectContaining({ workDate: '2026-07-15', status: 'En Mer' }),
+        expect.objectContaining({ workDate: '2026-07-16', status: 'En Mer' }),
+      ],
+    }));
+  });
+
+  it('supports Ctrl+X and Ctrl+V between grid dates through the atomic move RPC', async () => {
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    const target = screen.getByRole('button', { name: /case vide de Paul DURAND le 18\/07\/2026/ });
+
+    fireEvent.pointerDown(source, { button: 0, ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    await screen.findByText(/1 case copiée/);
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+    await screen.findByText(/1 case coupée/);
+    fireEvent.pointerDown(target, { button: 0 });
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('move_planning_grid_cells', expect.objectContaining({
+      p_source_cells: [expect.objectContaining({ assignmentId: 100, workDate: '2026-07-14' })],
+      p_target_cells: [expect.objectContaining({ personId: 11, vesselId: 1, workDate: '2026-07-18' })],
+      p_reason: 'Déplacement par couper-coller depuis la grille',
+    })));
+  });
+
+  it('deletes selected persisted cells with Delete and records an explicit reason', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    fireEvent.pointerDown(source, { button: 0, ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ assignmentId: 100, workDate: '2026-07-14' })],
+      p_reason: 'Suppression manuelle depuis la grille',
+    }));
+    expect(confirm).toHaveBeenCalledOnce();
+    confirm.mockRestore();
+  });
+
+  it('resolves a visible conflict by removing only the overlap after confirmation', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const conflictAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      vessel_id: 2,
+      vessel_name: 'SUROIT',
+      starts_on: '2026-07-10',
+      ends_on: '2026-07-12',
+    };
+    const { client, rpc } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [assignmentOverviewRow, conflictAssignment], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const conflictCells = screen.getAllByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ });
+
+    await userEvent.setup().click(conflictCells[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'Résoudre le conflit d’affectation' });
+    await userEvent.setup().click(within(dialog).getAllByRole('button', { name: /COTENTIN.*Garder cette ligne/ })[0]);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', expect.objectContaining({
+      p_cells: [
+        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-10' }),
+        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-11' }),
+        expect.objectContaining({ assignmentId: 101, workDate: '2026-07-12' }),
+      ],
+      p_reason: 'Résolution de conflit : priorité à COTENTIN / Affectation',
+    })));
+    expect(confirm).toHaveBeenCalledOnce();
+    confirm.mockRestore();
   });
 
   it('opens daily status on right-click and the full assignment form only on double-click', async () => {

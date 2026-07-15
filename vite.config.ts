@@ -9,6 +9,8 @@ export default defineConfig({
     maxWorkers: 4,
     pool: 'threads',
     setupFiles: './src/test/setup.ts',
-    testTimeout: 10_000,
+    // The Planning cockpit renders a large day-by-day accessibility tree. Give
+    // full-suite workers enough headroom when several jsdom files run together.
+    testTimeout: 20_000,
   },
 });

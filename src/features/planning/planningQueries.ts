@@ -679,6 +679,33 @@ export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignm
   status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
 }
 
+export interface PlanningGridMutationCell {
+  personId: number;
+  vesselId: number;
+  assignmentId?: number | null;
+  workDate: string;
+  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+  note: string;
+  watchGroup: string;
+  functionLabel: string;
+}
+
+export interface ApplyPlanningGridCellsResult {
+  savedCells: number;
+  createdAssignments: number;
+}
+
+export interface RemovePlanningGridCellsResult {
+  deletedCells: number;
+  affectedAssignments: number;
+  createdSplits: number;
+}
+
+export interface MovePlanningGridCellsResult {
+  applied: ApplyPlanningGridCellsResult;
+  removed: RemovePlanningGridCellsResult;
+}
+
 export interface CreatePlanningBoardInput {
   vesselId: number;
   watchGroup: string;
@@ -1430,6 +1457,73 @@ export async function savePlanningAssignmentDayState(
   });
   if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
   return typeof data === 'number' ? data : null;
+}
+
+function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {
+  if (!cells.length || cells.length > 744) throw new Error('Sélectionnez entre 1 et 744 cases du planning.');
+  return cells.map((cell) => {
+    const personId = planningEntityId(cell.personId, 'Le marin');
+    const vesselId = planningEntityId(cell.vesselId, 'Le navire');
+    const assignmentId = cell.assignmentId ? planningEntityId(cell.assignmentId, "L'affectation") : null;
+    assertSinglePlanningDay(cell.workDate, cell.workDate);
+    if (!['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(cell.status)) throw new Error('Le statut quotidien est invalide.');
+    if (cell.note.trim().length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
+    return {
+      personId,
+      vesselId,
+      assignmentId,
+      workDate: cell.workDate,
+      status: cell.status,
+      note: cell.note.trim(),
+      watchGroup: cell.watchGroup.trim() || 'Affectation',
+      functionLabel: cell.functionLabel.trim() || 'Équipage',
+    };
+  });
+}
+
+export async function applyPlanningGridCells(
+  client: SupabaseClient,
+  cells: PlanningGridMutationCell[],
+): Promise<ApplyPlanningGridCellsResult> {
+  const { data, error } = await client.rpc('apply_planning_grid_cells', {
+    p_cells: planningGridMutationPayload(cells),
+  });
+  if (error) throwPlanningDataError('apply-planning-grid-cells', 'Impossible d’enregistrer les cases sélectionnées.', error);
+  return (data || { savedCells: 0, createdAssignments: 0 }) as ApplyPlanningGridCellsResult;
+}
+
+export async function removePlanningGridCells(
+  client: SupabaseClient,
+  cells: PlanningGridMutationCell[],
+  reason: string,
+): Promise<RemovePlanningGridCellsResult> {
+  const normalizedReason = requiredPlanningText(reason, 'Le motif');
+  if (normalizedReason.length > 240) throw new Error('Le motif ne peut pas dépasser 240 caractères.');
+  const { data, error } = await client.rpc('remove_planning_grid_cells', {
+    p_cells: planningGridMutationPayload(cells),
+    p_reason: normalizedReason,
+  });
+  if (error) throwPlanningDataError('remove-planning-grid-cells', 'Impossible d’effacer les cases sélectionnées.', error);
+  return (data || { deletedCells: 0, affectedAssignments: 0, createdSplits: 0 }) as RemovePlanningGridCellsResult;
+}
+
+export async function movePlanningGridCells(
+  client: SupabaseClient,
+  sourceCells: PlanningGridMutationCell[],
+  targetCells: PlanningGridMutationCell[],
+  reason: string,
+): Promise<MovePlanningGridCellsResult> {
+  const normalizedReason = requiredPlanningText(reason, 'Le motif');
+  const { data, error } = await client.rpc('move_planning_grid_cells', {
+    p_source_cells: planningGridMutationPayload(sourceCells),
+    p_target_cells: planningGridMutationPayload(targetCells),
+    p_reason: normalizedReason,
+  });
+  if (error) throwPlanningDataError('move-planning-grid-cells', 'Impossible de déplacer les cases sélectionnées.', error);
+  return (data || {
+    applied: { savedCells: 0, createdAssignments: 0 },
+    removed: { deletedCells: 0, affectedAssignments: 0, createdSplits: 0 },
+  }) as MovePlanningGridCellsResult;
 }
 
 export async function createPlanningBoardAssignments(
