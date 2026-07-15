@@ -39,10 +39,16 @@ export function normalizePlanningGridStatus(status: string, vessel: string): Pla
 }
 
 export function planningGridCellsShareSegment(
-  left: Pick<PlanningGridCell, 'status' | 'note'> | null,
-  right: Pick<PlanningGridCell, 'status' | 'note'> | null,
+  left: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict'> | null,
+  right: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict'> | null,
 ): boolean {
-  return Boolean(left && right && left.status === right.status && left.note === right.note);
+  return Boolean(
+    left
+    && right
+    && left.status === right.status
+    && left.note === right.note
+    && left.isConflict === right.isConflict,
+  );
 }
 
 export function sortPlanningGridCells(cells: PlanningGridCell[]): PlanningGridCell[] {

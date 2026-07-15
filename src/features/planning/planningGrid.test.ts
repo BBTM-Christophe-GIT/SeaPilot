@@ -22,10 +22,11 @@ describe('Planning grid editing helpers', () => {
     expect(planningGridDefaultStatus('GOURY')).toBe('En Mer');
   });
 
-  it('separates adjacent cells when either status or comment differs', () => {
+  it('separates adjacent cells when status, comment or conflict state differs', () => {
     expect(planningGridCellsShareSegment(cell('a', '2026-07-14', 'En Mer', 'Cherbourg'), cell('a', '2026-07-15', 'En Mer', 'Cherbourg'))).toBe(true);
     expect(planningGridCellsShareSegment(cell('a', '2026-07-14', 'En Mer', 'Cherbourg'), cell('a', '2026-07-15', 'A Terre', 'Cherbourg'))).toBe(false);
     expect(planningGridCellsShareSegment(cell('a', '2026-07-14', 'En Mer', 'Cherbourg'), cell('a', '2026-07-15', 'En Mer', 'Dieppe'))).toBe(false);
+    expect(planningGridCellsShareSegment(cell('a', '2026-07-14', 'En Mer'), { ...cell('a', '2026-07-15', 'En Mer'), isConflict: true })).toBe(false);
   });
 
   it('pastes a copied sequence on another line from the selected anchor date', () => {
