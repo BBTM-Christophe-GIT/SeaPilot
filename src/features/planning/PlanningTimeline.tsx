@@ -501,12 +501,28 @@ export function PlanningCrewTimelineRow({
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
         const hasDailyGrid = hierarchy && Boolean(event.assignmentId) && viewMode !== 'year';
+        const visibleDailyStates = hasDailyGrid
+          ? days.flatMap((day) => {
+              if (day.date < event.startsOn || day.date > event.endsOn) return [];
+              const selectedCell = selectedGridCells.get(planningGridCellKey(lane.key, day.date));
+              return [{
+                note: selectedCell?.note ?? event.dailyNotes?.[day.date] ?? '',
+                status: normalizePlanningGridStatus(selectedCell?.status ?? event.dailyStatuses?.[day.date] ?? event.status, event.vessel),
+              }];
+            })
+          : [];
+        const hasVisibleDailyNotes = visibleDailyStates.some((cell) => Boolean(cell.note.trim()));
+        const continuousDailyStatus = visibleDailyStates.length > 0
+          && visibleDailyStates.every((cell) => cell.status === visibleDailyStates[0].status)
+          ? visibleDailyStates[0].status
+          : null;
+        const dailyBaseTone = planningStatusTone(continuousDailyStatus || event.status);
         return (
           <Fragment key={event.id}>
           <button
             aria-busy={isPending}
             aria-label={`${event.person}, ${event.status}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ' has-daily-grid' : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
+            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
             draggable={editable && !preview && !isPending}
             onClick={(clickEvent) => {
               if (suppressClickRef.current) {
@@ -618,6 +634,15 @@ export function PlanningCrewTimelineRow({
               >{cell.note}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
           }) : null}
+          {hasDailyGrid && continuousDailyStatus && !hasVisibleDailyNotes && placement.span >= 2 ? (
+            <span
+              aria-hidden="true"
+              className="planning-fleet-assignment-label"
+              style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
+            >
+              {continuousDailyStatus === 'En Mer' ? event.vessel : continuousDailyStatus}
+            </span>
+          ) : null}
           </Fragment>
         );
       })}

@@ -5,6 +5,7 @@
 - Référence Flotte avant harmonisation : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-653befc2-a574-4cd0-9be8-323eff4bca01.png`
 - Référence visuelle Équipages : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-75546dae-4306-4c62-bba9-74af28a3c33e.png`
 - Capture utilisateur des cases vertes avant correction : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-5ccc95d5-1ca3-4f49-816d-a54f93cd54cc.png`
+- Référence ciblée de barre continue : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-f3edcf54-4aea-4954-88ef-a91cfc7ade79.png`
 - Implémentation : `https://sea-pilot-git-codex-flotte-design-equipages-bbtm-app.vercel.app/modules/planning`
 - Capture navigateur de l’implémentation : non disponible dans cette session.
 
@@ -28,7 +29,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 - Espacement et rythme : lignes Flotte réduites à 50 px, bordées et marins à 42 px ; contrôle visuel bloqué.
 - Couleurs : accent vert d’eau et compteurs harmonisés avec Équipages ; contrôle visuel bloqué.
 - Barres : projets réduits à 23 px avec libellé centré et poignées compactes ; contrôle visuel bloqué.
-- Cases quotidiennes : hauteur réduite de 28 à 23 px, extrémités de segment arrondies, retrait de 11 px autour des poignées et ombre verte légère ; contrôle visuel après correction bloqué.
+- Cases quotidiennes : hauteur de 23 px, aucun séparateur entre les jours d’un même segment, fond continu, poignées aux extrémités et nom du navire centré en l’absence de commentaire visible ; contrôle visuel après correction bloqué.
 - Copie : aucun libellé métier ajouté, retiré ou renommé.
 - Icônes : les icônes Lucide existantes sont conservées ; aucune ressource de substitution n’a été créée.
 - Responsive : règles existantes conservées, mais les viewports cible n’ont pas été capturés.
@@ -36,7 +37,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 ## Validation fonctionnelle
 
 - `npm run lint` : réussi.
-- `npm test` : 64 fichiers et 446 tests réussis.
+- `npm test` : 64 fichiers et 447 tests réussis.
 - `npm run build` : réussi.
 - Clic gauche sur un projet Flotte : sélection testée.
 - Double-clic sur un projet Flotte : ouverture du formulaire complet testée.
@@ -58,6 +59,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 3. Déploiement Vercel Preview réussi et route vérifiée en HTTP 200.
 4. Capture navigateur bloquée par l’absence de l’outil de contrôle du navigateur intégré ; autorisation Playwright en attente.
 5. La capture utilisateur suivante a isolé un P2 visuel : cases vertes encore trop épaisses et carrées. Le CSS a été aligné sur les barres Équipages ; une nouvelle capture reste nécessaire pour confirmer la correction.
+6. La référence ciblée suivante demande une barre totalement continue. Les bordures et ombres par case ont été retirées ; une couche de barre et un libellé non interactifs ont été ajoutés derrière/au-dessus des boutons quotidiens afin de préserver tous les gestes.
 
 ## Résultat
 
