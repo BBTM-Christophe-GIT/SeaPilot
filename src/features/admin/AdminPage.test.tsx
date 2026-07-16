@@ -153,7 +153,55 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Direction pour admin@example.test' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Marin pour admin@example.test' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Renvoyer le lien à admin@example.test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer admin@example.test' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Suivi du Temps de travail visible pour Marin' })).toBeChecked();
+  });
+
+  it('resends an access link from the user row', async () => {
+    const user = userEvent.setup();
+    const invoke = vi.fn().mockResolvedValue({
+      data: { message: 'Une nouvelle invitation a été envoyée.' },
+      error: null,
+    });
+    const client = {
+      ...createAdminClient(),
+      functions: { invoke },
+    };
+
+    render(<AdminPage client={client as never} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Renvoyer le lien à admin@example.test' }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('admin-manage-user', {
+      body: { action: 'resend_access', userId: 'user-1' },
+    }));
+    expect(screen.getByText('Une nouvelle invitation a été envoyée.')).toBeInTheDocument();
+  });
+
+  it('deletes an account after confirmation and removes its row', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const invoke = vi.fn().mockResolvedValue({
+      data: { message: 'Utilisateur supprimé. Sa fiche RH et son historique sont conservés.' },
+      error: null,
+    });
+    const client = {
+      ...createAdminClient(),
+      functions: { invoke },
+    };
+
+    render(<AdminPage client={client as never} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Supprimer admin@example.test' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Sa fiche RH et son historique métier seront conservés.'));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('admin-manage-user', {
+      body: { action: 'delete', userId: 'user-1' },
+    }));
+    expect(screen.queryByText('admin@example.test')).not.toBeInTheDocument();
+    expect(screen.getByText(/Utilisateur supprimé/)).toBeInTheDocument();
+    confirm.mockRestore();
   });
 
   it('renders SharePoint import monitoring sources', async () => {

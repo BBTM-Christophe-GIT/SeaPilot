@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database, PanelLeft, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { Database, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { NAVIGATION_MODULES, type ModuleKey } from '../permissions/moduleAccess';
@@ -11,9 +11,11 @@ import {
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import {
   assignUserRole,
+  deleteSeaPilotUser,
   fetchAdminUsers,
   fetchSharePointImportSources,
   removeUserRole,
+  resendSeaPilotUserAccess,
   type AdminUser,
   type SharePointImportSource,
 } from './adminQueries';
@@ -63,6 +65,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
   const [navigationPermissions, setNavigationPermissions] = useState<NavigationPermission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
+  const [savingUserActionKey, setSavingUserActionKey] = useState<string | null>(null);
   const [savingNavigationKey, setSavingNavigationKey] = useState<string | null>(null);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -141,6 +144,42 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     }
   }
 
+  async function handleResendAccess(user: AdminUser) {
+    setSavingUserActionKey(`${user.id}:resend`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      setStatusMessage(await resendSeaPilotUserAccess(client, user.id));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'envoyer un nouveau lien.");
+    } finally {
+      setSavingUserActionKey(null);
+    }
+  }
+
+  async function handleDeleteUser(user: AdminUser) {
+    const confirmed = window.confirm(
+      `Supprimer l’utilisateur ${user.displayName} (${user.email}) ?\n\n`
+      + 'Son accès sera désactivé définitivement. Sa fiche RH et son historique métier seront conservés.',
+    );
+    if (!confirmed) return;
+
+    setSavingUserActionKey(`${user.id}:delete`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const message = await deleteSeaPilotUser(client, user.id);
+      setUsers((currentUsers) => currentUsers.filter((candidate) => candidate.id !== user.id));
+      setStatusMessage(message);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible de supprimer cet utilisateur.");
+    } finally {
+      setSavingUserActionKey(null);
+    }
+  }
+
   async function handleUserInvited() {
     setIsInviteDialogOpen(false);
     setStatusMessage("Invitation envoyée. L'utilisateur doit maintenant activer son compte depuis l'email reçu.");
@@ -194,6 +233,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
                     {ROLE_LABELS[role]}
                   </th>
                 ))}
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -213,7 +253,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
                           <input
                             aria-label={`${ROLE_LABELS[role]} pour ${user.email}`}
                             checked={user.roles.includes(role)}
-                            disabled={savingRoleKey !== null}
+                            disabled={savingRoleKey !== null || savingUserActionKey !== null}
                             onChange={(event) => void handleRoleChange(user.id, role, event.target.checked)}
                             type="checkbox"
                           />
@@ -225,6 +265,30 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
                       </td>
                     );
                   })}
+                  <td>
+                    <div className="admin-user-actions">
+                      <button
+                        aria-label={`Renvoyer le lien à ${user.email}`}
+                        className="admin-user-action-button"
+                        disabled={savingUserActionKey !== null}
+                        onClick={() => void handleResendAccess(user)}
+                        type="button"
+                      >
+                        <MailPlus aria-hidden="true" size={15} />
+                        {savingUserActionKey === `${user.id}:resend` ? 'Envoi…' : 'Renvoyer'}
+                      </button>
+                      <button
+                        aria-label={`Supprimer ${user.email}`}
+                        className="admin-user-action-button is-danger"
+                        disabled={savingUserActionKey !== null}
+                        onClick={() => void handleDeleteUser(user)}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                        {savingUserActionKey === `${user.id}:delete` ? 'Suppression…' : 'Supprimer'}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

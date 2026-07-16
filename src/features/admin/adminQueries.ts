@@ -61,6 +61,10 @@ export interface AdminInvitationInput {
   personId: number | null;
 }
 
+interface AdminUserActionResponse {
+  message?: unknown;
+}
+
 function isRoleKey(role: string): role is RoleKey {
   return ROLE_KEYS.includes(role as RoleKey);
 }
@@ -145,7 +149,7 @@ export async function fetchAdminInviteCandidates(client: SupabaseClient): Promis
   return mapAdminInviteCandidateRows((data || []) as AdminInviteCandidateRow[]);
 }
 
-async function readInvitationError(error: unknown): Promise<string> {
+async function readFunctionError(error: unknown, fallbackMessage: string): Promise<string> {
   const context = (error as { context?: { json?: () => Promise<unknown> } } | null)?.context;
 
   if (context?.json) {
@@ -162,7 +166,7 @@ async function readInvitationError(error: unknown): Promise<string> {
 
   return error instanceof Error && error.message
     ? error.message
-    : "Impossible d'envoyer l'invitation.";
+    : fallbackMessage;
 }
 
 export async function inviteSeaPilotUser(
@@ -174,8 +178,37 @@ export async function inviteSeaPilotUser(
   });
 
   if (error) {
-    throw new Error(await readInvitationError(error));
+    throw new Error(await readFunctionError(error, "Impossible d'envoyer l'invitation."));
   }
+}
+
+async function manageSeaPilotUser(
+  client: SupabaseClient,
+  userId: string,
+  action: 'resend_access' | 'delete',
+): Promise<string> {
+  const { data, error } = await client.functions.invoke('admin-manage-user', {
+    body: { action, userId },
+  });
+
+  if (error) {
+    throw new Error(await readFunctionError(error, "Impossible d'effectuer cette action sur l'utilisateur."));
+  }
+
+  const message = (data as AdminUserActionResponse | null)?.message;
+  return typeof message === 'string' && message.trim()
+    ? message
+    : action === 'delete'
+      ? 'Utilisateur supprimé.'
+      : 'Un nouveau lien a été envoyé.';
+}
+
+export function resendSeaPilotUserAccess(client: SupabaseClient, userId: string): Promise<string> {
+  return manageSeaPilotUser(client, userId, 'resend_access');
+}
+
+export function deleteSeaPilotUser(client: SupabaseClient, userId: string): Promise<string> {
+  return manageSeaPilotUser(client, userId, 'delete');
 }
 
 export async function assignUserRole(client: SupabaseClient, userId: string, roleKey: RoleKey): Promise<void> {
