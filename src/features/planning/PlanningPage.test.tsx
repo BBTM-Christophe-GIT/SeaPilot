@@ -559,7 +559,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByText('Verrouillé')).toBeInTheDocument();
   });
 
-  it('removes editing controls when the displayed planning is published', async () => {
+  it('keeps editing locked while exposing a direct action to modify a published planning again', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ publications: [publicationRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -571,10 +571,48 @@ describe('PlanningPage cockpit', () => {
     expect(publicationPanel).toHaveTextContent('Publié par Direction BBTM');
     expect(screen.getByText('Verrouillé')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau projet' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Afficher 2 autres actions de publication/ }));
+    expect(screen.getByRole('button', { name: 'Modifier à nouveau' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Afficher 1 autre action de publication/ }));
     expect(screen.getByRole('group', { name: 'Autres actions de publication' })).toHaveTextContent('Le rôle de chaque action est détaillé');
-    expect(screen.getByRole('button', { name: 'Réouvrir pour modification' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Archiver' })).toBeInTheDocument();
+  });
+
+  it('reopens an archived planning so events can be modified again', async () => {
+    const user = userEvent.setup();
+    const archivedPublication = {
+      ...publicationRow,
+      status: 'archived',
+      current_version: 2,
+      comment: 'Fin de période archivée',
+    };
+    const reopenedPublication = {
+      ...archivedPublication,
+      status: 'modified_after_publication',
+      comment: 'Correction des affectations validées',
+      locked_at: null,
+      locked_by: null,
+      locked_by_name: null,
+    };
+    const { client } = createClient({
+      publications: [archivedPublication],
+      transitionedPublication: reopenedPublication,
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.getByRole('region', { name: 'Pilotage de publication' })).toHaveTextContent('Archivé');
+    await user.type(screen.getByLabelText('Commentaire de publication'), 'Correction des affectations validées');
+    await user.click(screen.getByRole('button', { name: 'Modifier à nouveau' }));
+
+    expect(await screen.findByText('Planning déverrouillé. Vous pouvez le modifier à nouveau.')).toBeInTheDocument();
+    expect(client.rpc).toHaveBeenCalledWith('transition_planning_publication', expect.objectContaining({
+      p_action: 'reopen',
+      p_publication_id: 500,
+      p_comment: 'Correction des affectations validées',
+    }));
+    expect(screen.queryByText('Verrouillé')).not.toBeInTheDocument();
+    expect(screen.getByText('Modification')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
   });
 
   it('shows immutable versions and the semantic Planning history', async () => {

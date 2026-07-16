@@ -33,7 +33,7 @@ Une relève regroupe navire, instant, lieu, durée de passation, responsable, co
 
 ### Phase P0.4 — gouvernance et préparation V1
 
-P0.4 finalise le cycle `preparation` → `pending_validation` → `validated` → `published`, puis `modified_after_publication` après une réouverture motivée, et `archived` en fin de vie. La publication reste définie par période et par flotte ou navire. Chaque transition conserve son auteur, son horodatage, son commentaire et le numéro de version ; chaque publication crée un instantané JSON immuable incluant affectations, journées, périodes, opérations, relèves, bordées et dérogations.
+P0.4 finalise le cycle `preparation` → `pending_validation` → `validated` → `published`, puis `modified_after_publication` après une réouverture motivée, et `archived` pour clôturer une période. Une période verrouillée, y compris archivée, peut être reprise explicitement par un rôle autorisé sans altérer les versions publiées. La publication reste définie par période et par flotte ou navire. Chaque transition conserve son auteur, son horodatage, son commentaire et le numéro de version ; chaque publication crée un instantané JSON immuable incluant affectations, journées, périodes, opérations, relèves, bordées et dérogations.
 
 La migration `202607130007_planning_p04_governance_v1.sql` corrige aussi la contrainte P0.3 qui avait omis le type d’historique `publication`. Le journal transactionnel distingue désormais création, modification, déplacement/redimensionnement, affectation, désaffectation, validation, publication, annulation, dérogation, changement de statut, archivage et réouverture.
 
@@ -325,6 +325,8 @@ Retour arrière : suivre `docs/deployment/planning-p0-v1.md`. Les colonnes d’e
 
 `202607140005_planning_assignment_daily_notes.sql` réutilise aussi `planning_days` pour un texte de 32 caractères au maximum par affectation et par date. La clé technique `slot365 = 'assignment:<id>'` et le `source_label = 'seapilot-assignment-note'` évitent toute table concurrente et permettent au modèle de rattacher le texte à la barre colorée sans exposer la ligne comme un événement supplémentaire. La RPC vérifie l’entreprise, la plage de l’affectation, l’état non annulé, `edit_event`, la RLS et le verrou de publication. La migration est additive, idempotente et ne réécrit aucune donnée existante.
 
+`202607160005_planning_reopen_archived.sql` étend la transition sécurisée `reopen` aux périodes archivées. Elle conserve la matrice d’autorisation, le motif obligatoire, le numéro de version et les instantanés publiés, retire uniquement le verrou courant et journalise le passage vers `modified_after_publication` ou `preparation`.
+
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
 ## 6. Contrôles livrés
@@ -355,7 +357,7 @@ Le workflow est contrôlé par action et périmètre :
 2. la période figée est validée ;
 3. la période validée est publiée et son numéro de version est incrémenté ;
 4. un instantané immuable des affectations, journées, périodes, projets, relèves, postes et dérogations concernés est enregistré ;
-5. toute modification ultérieure exige une réouverture motivée, puis une nouvelle soumission et une nouvelle publication.
+5. toute modification ultérieure exige l’action visible « Modifier à nouveau » et un motif d’au moins dix caractères, y compris si la période a été archivée, puis une nouvelle soumission et une nouvelle publication.
 
 Le périmètre peut couvrir toute la flotte ou un navire existant. Le trigger vérifie l’ancienne et la nouvelle période d’un événement : il empêche donc aussi de déplacer un événement hors d’une zone verrouillée ou vers une zone verrouillée. Relèves, postes et dérogations sont soumis au même verrou. L’interface retire les contrôles d’édition, mais le trigger PostgreSQL reste l’autorité de sécurité.
 

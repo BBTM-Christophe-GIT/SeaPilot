@@ -32,6 +32,7 @@ export function planningPublicationActions(
   else if (publication.status === 'pending_validation') actions = ['validate', 'reopen', 'archive'];
   else if (publication.status === 'validated') actions = ['publish', 'reopen', 'archive'];
   else if (publication.status === 'published') actions = ['reopen', 'archive'];
+  else if (publication.status === 'archived') actions = ['reopen'];
   else actions = [];
   return allowedActions ? actions.filter((action) => allowedActions.includes(action)) : actions;
 }

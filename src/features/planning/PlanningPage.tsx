@@ -597,7 +597,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         submit: 'Période soumise et verrouillée pour validation.',
         validate: 'Planning validé. Il peut maintenant être publié.',
         publish: `Planning publié en version ${publication.currentVersion}.`,
-        reopen: 'Période réouverte. La justification a été historisée.',
+        reopen: 'Planning déverrouillé. Vous pouvez le modifier à nouveau.',
         archive: 'Période archivée.',
       };
       setStatusMessage(messages[action]);

@@ -13,7 +13,7 @@ const ACTION_LABELS: Record<PlanningPublicationAction, string> = {
   submit: 'Soumettre à validation',
   validate: 'Valider la période',
   publish: 'Publier la version',
-  reopen: 'Réouvrir pour modification',
+  reopen: 'Modifier à nouveau',
   archive: 'Archiver',
 };
 
@@ -57,7 +57,8 @@ export function PlanningPublicationPanel({
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actions = planningPublicationActions(publication, allowedActions);
   const primaryAction = actions.find((action) => action !== 'reopen' && action !== 'archive') || null;
-  const menuActions = primaryAction ? actions.filter((action) => action !== primaryAction) : actions;
+  const reopenAction = actions.includes('reopen') ? 'reopen' : null;
+  const menuActions = actions.filter((action) => action !== primaryAction && action !== reopenAction);
   const locked = isPlanningPublicationLocked(publication);
   const startsOn = publication?.startsOn || range.start;
   const endsOn = publication?.endsOn || range.end;
@@ -123,6 +124,17 @@ export function PlanningPublicationPanel({
               >
                 <PublicationActionIcon action={primaryAction} />
                 {ACTION_LABELS[primaryAction]}
+              </button>
+            ) : null}
+            {reopenAction ? (
+              <button
+                className={primaryAction ? 'is-secondary' : 'is-primary'}
+                disabled={isSaving}
+                onClick={() => void runAction(reopenAction)}
+                type="button"
+              >
+                <PublicationActionIcon action={reopenAction} />
+                {ACTION_LABELS[reopenAction]}
               </button>
             ) : null}
             {menuActions.length ? <div className="planning-publication-action-menu">
