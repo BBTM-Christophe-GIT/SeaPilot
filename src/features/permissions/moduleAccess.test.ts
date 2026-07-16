@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { NAVIGATION_MODULES, canAccessModule, getVisibleModules } from './moduleAccess';
 
 describe('module access', () => {
+  it.each([
+    ['admin', true],
+    ['direction', true],
+    ['armement', false],
+    ['capitaine', false],
+    ['marin', false],
+  ] as const)('applies the validated Projects role matrix to %s', (role, expected) => {
+    expect(canAccessModule([role], 'projects')).toBe(expected);
+  });
+
   it('hides projects from marins', () => {
     expect(canAccessModule(['marin'], 'projects')).toBe(false);
   });

@@ -121,6 +121,32 @@ describe('buildMicrosoft365ListItemsCommand', () => {
       ],
     });
   });
+
+  it('targets a document library by title when its list id is not configured', () => {
+    expect(
+      buildMicrosoft365ListItemsCommand('library-documents-projets', {
+        camlQuery: '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
+      }),
+    ).toEqual({
+      command: 'pnpm',
+      args: [
+        '--package=@pnp/cli-microsoft365',
+        'dlx',
+        'm365',
+        'spo',
+        'listitem',
+        'list',
+        '--webUrl',
+        'https://bbtm668.sharepoint.com/sites/QHSE',
+        '--listTitle',
+        'Documents Projets',
+        '--camlQuery',
+        '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
+        '--output',
+        'json',
+      ],
+    });
+  });
 });
 
 describe('buildMicrosoft365ViewGetCommand', () => {
@@ -193,6 +219,39 @@ describe('buildSharePointCamlQueryFromView', () => {
 });
 
 describe('runSharePointListExportCli', () => {
+  it('exports library metadata recursively without downloading file content', async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify([{ ID: 990, FileLeafRef: 'rapport.pdf', FileRef: '/sites/QHSE/Documents Projets/rapport.pdf' }]),
+      stderr: '',
+      exitCode: 0,
+    });
+    const writeTextFile = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runSharePointListExportCli(
+        ['--source-key', 'library-documents-projets', '--output', 'C:\\exports\\projects-documents.json'],
+        {
+          now: () => new Date('2026-07-16T12:00:00.000Z'),
+          runCommand,
+          writeTextFile,
+        },
+      ),
+    ).resolves.toBe(0);
+
+    expect(runCommand).toHaveBeenCalledWith('pnpm', expect.arrayContaining([
+      'listitem',
+      'list',
+      '--listTitle',
+      'Documents Projets',
+      '--camlQuery',
+      '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
+    ]));
+    expect(writeTextFile).toHaveBeenCalledWith(
+      'C:\\exports\\projects-documents.json',
+      expect.stringContaining('"FileRef": "/sites/QHSE/Documents Projets/rapport.pdf"'),
+    );
+  });
+
   it('exports a configured source to a bundle file', async () => {
     const runCommand = vi.fn().mockResolvedValue({
       stdout: JSON.stringify([{ ID: 42, Title: 'LECOCQ', Pr_x00e9_nom: 'Julien' }]),

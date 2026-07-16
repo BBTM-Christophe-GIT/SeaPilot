@@ -103,6 +103,7 @@ function createClient(
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'dpr_items') {
         return {
@@ -147,6 +148,7 @@ function createClientWithCreatedReport(createdReport: unknown) {
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'dpr_items') {
         return {
@@ -232,8 +234,7 @@ describe('DprPage', () => {
 
     await screen.findByRole('heading', { name: 'Daily Progress Report' });
     fireEvent.change(screen.getByLabelText('Titre DPR'), { target: { value: 'DPR manuel COTENTIN' } });
-    fireEvent.change(screen.getByLabelText('Numero projet DPR'), { target: { value: 'P-2026-014' } });
-    fireEvent.change(screen.getByLabelText('Nom projet DPR'), { target: { value: 'Campagne Atlantique 2026' } });
+    await user.selectOptions(screen.getByLabelText('Projet du catalogue DPR'), '880');
     fireEvent.change(screen.getByLabelText('Nom navire DPR'), { target: { value: 'COTENTIN' } });
     fireEvent.change(screen.getByLabelText('Date DPR'), { target: { value: '2026-07-03' } });
     fireEvent.change(screen.getByLabelText('Heure DPR'), { target: { value: '19:00' } });
@@ -246,6 +247,7 @@ describe('DprPage', () => {
 
     expect(insert).toHaveBeenCalledWith({
       title: 'DPR manuel COTENTIN',
+      project_id: 880,
       project_code: 'P-2026-014',
       project_title: 'Campagne Atlantique 2026',
       vessel_name: 'COTENTIN',

@@ -124,6 +124,7 @@ export interface ActionPlanMetrics {
 }
 
 export interface CreateActionItemInput {
+  projectId: number | null;
   projectCode: string;
   projectTitle: string;
   vesselName: string;
@@ -261,6 +262,7 @@ export async function createActionItem(client: SupabaseClient, input: CreateActi
   }
 
   const payload = {
+    project_id: input.projectId,
     project_code: optionalText(input.projectCode),
     project_title: optionalText(input.projectTitle),
     vessel_name: optionalText(input.vesselName),

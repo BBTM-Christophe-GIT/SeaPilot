@@ -155,8 +155,8 @@ export function buildMicrosoft365ListItemsCommand(
   const source = getSharePointSourceByKey(sourceKey);
   const listId = options.listId || source?.listId;
 
-  if (!source || !listId) {
-    throw new Error(`SharePoint source ${sourceKey} does not define a list id.`);
+  if (!source) {
+    throw new Error(`Unknown SharePoint source ${sourceKey}.`);
   }
 
   const args = [
@@ -168,9 +168,13 @@ export function buildMicrosoft365ListItemsCommand(
     'list',
     '--webUrl',
     source.siteUrl,
-    '--listId',
-    listId,
   ];
+
+  if (listId) {
+    args.push('--listId', listId);
+  } else {
+    args.push('--listTitle', source.title);
+  }
 
   if (options.camlQuery) {
     args.push('--camlQuery', options.camlQuery);
@@ -255,7 +259,13 @@ async function exportSourceRows(
   iqyPath: string | undefined,
 ): Promise<Microsoft365ListRow[]> {
   const iqy = await readIqyMetadata(sourceKey, dependencies, iqyPath);
-  const camlQuery = await fetchCamlQueryForIqyView(sourceKey, dependencies, iqy);
+  const source = getSharePointSourceByKey(sourceKey);
+  const iqyCamlQuery = await fetchCamlQueryForIqyView(sourceKey, dependencies, iqy);
+  const camlQuery =
+    iqyCamlQuery ||
+    (source?.sourceType === 'library'
+      ? buildSharePointCamlQueryFromView({ sourceKey, view: { ViewQuery: '' } })
+      : undefined);
   const command = buildMicrosoft365ListItemsCommand(sourceKey, {
     camlQuery,
     listId: iqy?.listId,

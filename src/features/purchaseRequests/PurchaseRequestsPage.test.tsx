@@ -46,6 +46,7 @@ function createClient(requests: unknown[] = [capteursRequestRow, piecesRequestRo
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') {
         return {
@@ -72,6 +73,7 @@ function createClientWithCreatedRequest(createdRequest: unknown) {
     }),
   });
   const client = {
+    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') {
         return {
@@ -143,8 +145,7 @@ describe('PurchaseRequestsPage', () => {
     fireEvent.change(screen.getByLabelText('Date demande'), { target: { value: '2026-09-05' } });
     fireEvent.change(screen.getByLabelText('Demandeur'), { target: { value: 'Julien LECOCQ' } });
     fireEvent.change(screen.getByLabelText('Fournisseur'), { target: { value: 'Chantier Naval Manche' } });
-    fireEvent.change(screen.getByLabelText('Numero projet achat'), { target: { value: 'P-2026-014' } });
-    fireEvent.change(screen.getByLabelText('Nom projet achat'), { target: { value: 'Campagne Atlantique 2026' } });
+    await user.selectOptions(screen.getByLabelText('Projet du catalogue achat'), '880');
     fireEvent.change(screen.getByLabelText('Montant HT demande'), { target: { value: '9800,75' } });
     fireEvent.change(screen.getByLabelText('Devise demande'), { target: { value: 'EUR' } });
     await user.selectOptions(screen.getByLabelText('Statut achat'), 'A valider');
@@ -157,6 +158,7 @@ describe('PurchaseRequestsPage', () => {
       requested_on: '2026-09-05',
       requester_name: 'Julien LECOCQ',
       supplier_name: 'Chantier Naval Manche',
+      project_id: 880,
       project_code: 'P-2026-014',
       project_title: 'Campagne Atlantique 2026',
       amount_ht: 9800.75,

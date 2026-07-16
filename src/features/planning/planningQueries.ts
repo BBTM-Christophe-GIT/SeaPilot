@@ -22,7 +22,7 @@ export const PLANNING_ASSIGNMENT_NOTE_SOURCE = 'seapilot-assignment-note';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
-  'id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
+  'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
 const PLANNING_HR_DOCUMENT_SELECT =
   'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
@@ -143,6 +143,7 @@ interface PlanningPeriodRow {
 
 interface PlanningProjectRow {
   id: number;
+  catalog_project_id?: number | null;
   title: string;
   starts_on: string | null;
   ends_on: string | null;
@@ -396,6 +397,7 @@ export interface PlanningPeriodRecord {
 
 export interface PlanningProjectRecord {
   id: number;
+  catalogProjectId?: number | null;
   title: string;
   startsOn: string;
   endsOn: string;
@@ -912,6 +914,7 @@ export function mapPlanningPeriodRows(rows: PlanningPeriodRow[]): PlanningPeriod
 export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProjectRecord[] {
   return rows.map((row) => ({
     id: row.id,
+    catalogProjectId: row.catalog_project_id ?? null,
     title: row.title,
     startsOn: textOrEmpty(row.starts_on),
     endsOn: textOrEmpty(row.ends_on || row.starts_on),

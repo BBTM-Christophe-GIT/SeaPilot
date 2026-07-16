@@ -1,100 +1,141 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Briefcase, ClipboardList, FileText, Ship, Upload, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import {
+  Briefcase,
+  Archive,
+  CalendarDays,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  Download,
+  ExternalLink,
+  History,
+  Info,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Ship,
+  Users,
+} from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import type { ProjectGeneratedDocumentKind } from './projectDocumentGeneration';
+import { archiveProject } from './projectMutations';
+import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import {
   buildProjectMetrics,
-  createProject,
   fetchProjectsData,
   type ClientRecord,
-  type CreateProjectInput,
+  type ProjectContractRecord,
   type ProjectDocumentRecord,
+  type ProjectPlanningOccurrenceRecord,
   type ProjectRecord,
   type ProjectsData,
+  type ProjectsDataSource,
 } from './projectQueries';
+import {
+  buildSupplytimePreview,
+  documentBelongsToProject,
+  EMPTY_PROJECT_FILTERS,
+  filterDocumentsForProjects,
+  getProjectVesselNames,
+  projectMatchesFilters,
+  resolveSelectedProject,
+  sortProjects,
+  uniqueSorted,
+  type ProjectFilterState,
+} from './projectReadModel';
 
 interface ProjectsPageProps {
   client?: SupabaseClient;
   roles?: RoleKey[];
 }
 
-interface ProjectFilterState {
-  search: string;
-  status: string;
-  clientName: string;
-  vesselName: string;
-  dateFrom: string;
-  dateTo: string;
-}
-
 const EMPTY_PROJECTS_DATA: ProjectsData = {
   clients: [],
   contractDocuments: [],
+  projectContracts: [],
   projectDocuments: [],
+  planningOccurrences: [],
   projects: [],
+  warnings: [],
+  vessels: [],
 };
 
-const EMPTY_FILTERS: ProjectFilterState = {
-  search: '',
-  status: '',
-  clientName: '',
-  vesselName: '',
-  dateFrom: '',
-  dateTo: '',
-};
+const PROJECTS_PER_PAGE = 40;
+const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
+const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
 
-const EMPTY_PROJECT_FORM: CreateProjectInput = {
-  clientName: '',
-  description: '',
-  endsOn: '',
-  primaryVesselName: '',
-  projectCode: '',
-  secondaryVesselName: '',
-  startsOn: '',
-  status: 'A planifier',
-  title: '',
-};
-
-const PROJECT_STATUS_OPTIONS = ['A planifier', 'Offre Transmise', 'Contrat Signe', 'Valide', 'Facture'];
-
-function canManageProjects(roles: RoleKey[]): boolean {
-  return roles.some((role) => role === 'admin' || role === 'direction');
+function displayText(value: string | number | null | undefined): string {
+  return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
 }
 
-function displayText(value: string): string {
-  return value || '-';
+function formatDate(value: string): string {
+  if (!value) {
+    return 'Non renseignée';
+  }
+
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('fr-FR', {
+        dateStyle: 'medium',
+        ...(dateOnly ? {} : { timeStyle: 'short' as const }),
+      }).format(date);
 }
 
-function normalizeSearchValue(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+function formatPeriod(start: string, end: string): string {
+  if (start && end) {
+    return `${formatDate(start)} au ${formatDate(end)}`;
+  }
+
+  return start ? `À partir du ${formatDate(start)}` : end ? `Jusqu’au ${formatDate(end)}` : 'Non renseignée';
 }
 
-function uniqueSorted(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+function formatMoney(value: number | null, currency: string, unit = ''): string {
+  if (value === null) {
+    return 'Non renseigné';
+  }
+
+  const formatted = new Intl.NumberFormat('fr-FR', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(value);
+  return [formatted, currency, unit ? `/ ${unit}` : ''].filter(Boolean).join(' ');
 }
 
-function sortProjects(projects: ProjectRecord[]): ProjectRecord[] {
-  return [...projects].sort(
-    (left, right) =>
-      right.startsOn.localeCompare(left.startsOn) ||
-      left.projectCode.localeCompare(right.projectCode, 'fr') ||
-      left.title.localeCompare(right.title, 'fr'),
-  );
+function formatFileSize(value: number | null): string {
+  if (value === null) {
+    return '';
+  }
+
+  if (value < 1024) {
+    return `${value} octets`;
+  }
+
+  const units = ['Ko', 'Mo', 'Go'];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(size)} ${units[unitIndex]}`;
 }
 
 function sortDocuments(documents: ProjectDocumentRecord[]): ProjectDocumentRecord[] {
   return [...documents].sort(
     (left, right) =>
-      left.projectCode.localeCompare(right.projectCode, 'fr') ||
-      left.projectTitle.localeCompare(right.projectTitle, 'fr') ||
-      left.title.localeCompare(right.title, 'fr'),
+      right.sourceModifiedAt.localeCompare(left.sourceModifiedAt) || left.title.localeCompare(right.title, 'fr'),
   );
 }
 
@@ -102,146 +143,353 @@ function sortClients(clients: ClientRecord[]): ClientRecord[] {
   return [...clients].sort((left, right) => left.name.localeCompare(right.name, 'fr'));
 }
 
-function getVesselNames(project: ProjectRecord): string[] {
-  return [project.primaryVesselName, project.secondaryVesselName].filter(Boolean);
-}
-
-function projectMatchesDateFilters(project: ProjectRecord, filters: ProjectFilterState): boolean {
-  const projectStart = project.startsOn || project.endsOn;
-  const projectEnd = project.endsOn || project.startsOn;
-
-  if (filters.dateFrom && projectEnd && projectEnd < filters.dateFrom) {
-    return false;
-  }
-
-  if (filters.dateTo && projectStart && projectStart > filters.dateTo) {
-    return false;
-  }
-
-  return true;
-}
-
-function projectMatchesStructuredFilters(project: ProjectRecord, filters: ProjectFilterState): boolean {
-  if (filters.status && project.status !== filters.status) {
-    return false;
-  }
-
-  if (filters.clientName && project.clientName !== filters.clientName) {
-    return false;
-  }
-
-  if (filters.vesselName && !getVesselNames(project).includes(filters.vesselName)) {
-    return false;
-  }
-
-  return projectMatchesDateFilters(project, filters);
-}
-
-function projectMatchesFilters(project: ProjectRecord, filters: ProjectFilterState): boolean {
-  if (!projectMatchesStructuredFilters(project, filters)) {
-    return false;
-  }
-
-  if (!filters.search) {
-    return true;
-  }
-
-  const searchable = normalizeSearchValue(
-    [
-      project.title,
-      project.projectCode,
-      project.clientName,
-      project.primaryVesselName,
-      project.secondaryVesselName,
-      project.status,
-      project.description,
-      project.sourceLabel,
-    ].join(' '),
-  );
-
-  return searchable.includes(normalizeSearchValue(filters.search));
-}
-
-function findDocumentProject(document: ProjectDocumentRecord, projects: ProjectRecord[]): ProjectRecord | undefined {
-  return projects.find(
-    (project) =>
-      (document.projectId && project.id === document.projectId) ||
-      (document.projectCode && project.projectCode === document.projectCode) ||
-      (document.projectTitle && project.title === document.projectTitle),
+function sortPlanningOccurrences(occurrences: ProjectPlanningOccurrenceRecord[]): ProjectPlanningOccurrenceRecord[] {
+  return [...occurrences].sort(
+    (left, right) => left.startsOn.localeCompare(right.startsOn) || left.id - right.id,
   );
 }
 
-function documentMatchesFilters(
-  document: ProjectDocumentRecord,
-  projects: ProjectRecord[],
-  filters: ProjectFilterState,
-): boolean {
-  const relatedProject = findDocumentProject(document, projects);
-  const hasStructuredFilters = Boolean(filters.status || filters.clientName || filters.vesselName || filters.dateFrom || filters.dateTo);
-
-  if (hasStructuredFilters && (!relatedProject || !projectMatchesStructuredFilters(relatedProject, filters))) {
-    return false;
+function technicalErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return `Impossible de charger les projets depuis Supabase. ${error.message}`;
   }
 
-  if (!filters.search) {
-    return true;
-  }
+  return 'Impossible de charger les projets depuis Supabase. Réessayez ou contactez un administrateur.';
+}
 
-  const searchable = normalizeSearchValue(
-    [
-      document.title,
-      document.projectCode,
-      document.projectTitle,
-      document.categoryKey,
-      document.notes,
-      document.sourceLabel,
-      relatedProject?.title,
-      relatedProject?.description,
-      relatedProject?.clientName,
-      relatedProject?.primaryVesselName,
-      relatedProject?.secondaryVesselName,
-      relatedProject?.status,
-    ].join(' '),
+function warningIsPresent(data: ProjectsData, source: ProjectsDataSource): boolean {
+  return data.warnings.some((warning) => warning.source === source);
+}
+
+function canManageProjects(roles: RoleKey[]): boolean {
+  return roles.includes('admin') || roles.includes('direction');
+}
+
+function DetailField({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? 'project-detail-field is-wide' : 'project-detail-field'}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
   );
-
-  return searchable.includes(normalizeSearchValue(filters.search));
 }
 
-function formatProjectPeriod(project: ProjectRecord): string {
-  if (project.startsOn && project.endsOn) {
-    return `${project.startsOn} au ${project.endsOn}`;
+function ProvenanceNotice({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
+  const historicalSource = [project.sourceLabel, project.sharePointListTitle, project.sharePointItemId]
+    .filter(Boolean)
+    .join(' · ');
+  const contractSource = contract
+    ? [contract.sourceLabel, contract.sharePointListTitle, contract.sharePointItemId].filter(Boolean).join(' · ')
+    : '';
+
+  if (!historicalSource && !contractSource) {
+    return null;
   }
 
-  return project.startsOn || project.endsOn || '-';
+  return (
+    <aside className="project-provenance" aria-label="Provenance historique">
+      <History aria-hidden="true" size={18} />
+      <div>
+        <strong>Données structurées consultées dans Supabase</strong>
+        {historicalSource ? <span>{`Projet repris depuis ${historicalSource}.`}</span> : null}
+        {project.sourceModifiedAt ? <span>{`Dernière modification source : ${formatDate(project.sourceModifiedAt)}.`}</span> : null}
+        {contractSource && contractSource !== historicalSource ? <span>{`Contrat repris depuis ${contractSource}.`}</span> : null}
+      </div>
+    </aside>
+  );
 }
 
-function renderDocumentRows(documents: ProjectDocumentRecord[]) {
-  return documents.map((document) => (
-    <tr key={document.id}>
-      <th scope="row">
-        <span className="project-document-title">
-          <FileText aria-hidden="true" size={16} />
-          {document.title}
-        </span>
-        {document.notes ? <small>{document.notes}</small> : null}
-      </th>
-      <td>
-        <strong>{displayText(document.projectCode)}</strong>
-        <small>{displayText(document.projectTitle)}</small>
-      </td>
-      <td>{displayText(document.categoryKey)}</td>
-      <td>{displayText(document.sourceLabel)}</td>
-      <td>
-        {document.fileUrl ? (
-          <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
-            {`Ouvrir le fichier ${document.title}`}
-          </a>
+function ProjectDocuments({
+  documents,
+  emptyLabel,
+}: {
+  documents: ProjectDocumentRecord[];
+  emptyLabel: string;
+}) {
+  if (documents.length === 0) {
+    return <p className="project-section-empty">{emptyLabel}</p>;
+  }
+
+  return (
+    <>
+      <p className="project-document-help">
+        SeaPilot ouvre l’URL SharePoint d’origine sans télécharger le fichier. Si Microsoft 365 demande une connexion,
+        authentifiez-vous avec votre compte autorisé. Un fichier signalé introuvable peut avoir été déplacé ou supprimé et
+        nécessite un rafraîchissement des métadonnées.
+      </p>
+      <ul className="project-document-list">
+        {documents.map((document) => {
+          const linkState = getSharePointDocumentLinkState(document.fileUrl);
+          const metadata = [
+            document.categoryKey,
+            document.fileExtension || document.mimeType,
+            formatFileSize(document.fileSizeBytes),
+            document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
+          ].filter(Boolean);
+
+          return (
+            <li key={document.id}>
+              <FileText aria-hidden="true" size={18} />
+              <div>
+                <strong>{document.fileName || document.title}</strong>
+                {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
+                {document.folderPath || document.notes ? <small>{document.folderPath || document.notes}</small> : null}
+                {document.projectId === null ? (
+                  <small className="project-document-warning">Rattachement au projet Supabase non résolu</small>
+                ) : null}
+              </div>
+              {linkState.status === 'available' ? (
+                <a href={linkState.href} rel="noreferrer" target="_blank">
+                  Ouvrir dans SharePoint
+                  <span className="sr-only"> : {document.fileName || document.title}</span>
+                </a>
+              ) : (
+                <span className="project-missing-link">
+                  {linkState.status === 'missing' ? 'URL SharePoint absente' : 'URL SharePoint invalide ou non autorisée'}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+function SupplytimePreview({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
+  const groups = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
+  const populatedCount = groups.flatMap((group) => group.fields).filter((field) => field.value).length;
+
+  return (
+    <div className="project-supplytime">
+      <div className="project-supplytime-heading">
+        <div>
+          <h4>Aperçu SUPPLYTIME 2017</h4>
+          <p>{`${populatedCount} zone(s) renseignée(s) sur 36. Les champs métier canoniques priment sur leur copie historique.`}</p>
+        </div>
+        <span>{contract?.supplytimeSchemaVersion || 'supplytime-2017-v1'}</span>
+      </div>
+      {groups.map((group, index) => (
+        <details key={group.id} open={index === 0}>
+          <summary>{group.label}</summary>
+          <dl className="project-supplytime-grid">
+            {group.fields.map((field) => (
+              <DetailField
+                key={field.key}
+                label={field.label}
+                value={
+                  <>
+                    <span>{displayText(field.value)}</span>
+                    {field.source === 'canonical' ? <small>Donnée métier canonique</small> : null}
+                    {field.source === 'supplytime' ? <small>Valeur contractuelle historique</small> : null}
+                  </>
+                }
+                wide
+              />
+            ))}
+          </dl>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function ProjectDetail({
+  project,
+  contract,
+  client,
+  projectDocuments,
+  contractDocuments,
+  contractUnavailable,
+  projectDocumentsUnavailable,
+  contractDocumentsUnavailable,
+  generatingDocument,
+  isManager,
+  onAddPlanningOccurrence,
+  onGenerateDocument,
+  planningOccurrences,
+}: {
+  project: ProjectRecord;
+  contract?: ProjectContractRecord;
+  client?: ClientRecord;
+  projectDocuments: ProjectDocumentRecord[];
+  contractDocuments: ProjectDocumentRecord[];
+  contractUnavailable: boolean;
+  projectDocumentsUnavailable: boolean;
+  contractDocumentsUnavailable: boolean;
+  generatingDocument: ProjectGeneratedDocumentKind | null;
+  isManager: boolean;
+  onAddPlanningOccurrence: () => void;
+  onGenerateDocument: (kind: ProjectGeneratedDocumentKind) => void;
+  planningOccurrences: ProjectPlanningOccurrenceRecord[];
+}) {
+  const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
+  const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
+  const extension = [
+    contract?.extensionCount === null || contract?.extensionCount === undefined
+      ? ''
+      : `${contract.extensionCount} prolongation(s)`,
+    contract?.extensionDuration === null || contract?.extensionDuration === undefined
+      ? ''
+      : `${contract.extensionDuration} ${contract.extensionUnit}`.trim(),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <article className="project-detail" aria-labelledby="selected-project-title">
+      <header className="project-detail-header">
+        <div>
+          <p>{project.projectCode || 'Projet sans numéro'}</p>
+          <h2 id="selected-project-title">{project.title}</h2>
+          {project.description ? <span>{project.description}</span> : null}
+        </div>
+        <div className="project-detail-header-actions">
+          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+          {isManager ? (
+            <button disabled={Boolean(project.archivedAt)} onClick={onAddPlanningOccurrence} type="button">
+              <CalendarPlus aria-hidden="true" size={16} /> Nouvelle opération
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <ProvenanceNotice contract={contract} project={project} />
+
+      {contractUnavailable ? (
+        <p className="project-partial-state" role="status">
+          Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
+        </p>
+      ) : !contract ? (
+        <p className="project-partial-state" role="status">
+          Aucune fiche contractuelle structurée n’est associée à ce projet.
+        </p>
+      ) : null}
+
+      <section className="project-detail-section" aria-labelledby="project-identification-title">
+        <h3 id="project-identification-title">Identification</h3>
+        <dl className="project-detail-grid">
+          <DetailField label="Numéro" value={displayText(project.projectCode)} />
+          <DetailField label="Statut" value={displayText(project.status)} />
+          <DetailField label="Type de contrat" value={displayText(project.contractType)} />
+          <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
+          <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} wide />
+          <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
+          <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
+          <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} wide />
+          <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
+          <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
+          {client ? (
+            <DetailField
+              label="Coordonnées client"
+              value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'}
+              wide
+            />
+          ) : null}
+        </dl>
+      </section>
+
+      <section className="project-detail-section" aria-labelledby="project-planning-title">
+        <div className="project-section-heading">
+          <h3 id="project-planning-title">Planning</h3>
+          <span>{planningOccurrences.length} opération(s)</span>
+        </div>
+        <dl className="project-detail-grid">
+          <DetailField label="Période de référence" value={formatPeriod(project.startsOn, project.endsOn)} wide />
+          <DetailField label="Livraison" value={formatDate(project.deliveryAt)} />
+          <DetailField label="Port de livraison" value={displayText(project.deliveryPort)} />
+          <DetailField label="Début d’affrètement" value={formatDate(project.charterStartsAt)} />
+          <DetailField label="Fin d’affrètement" value={formatDate(project.charterEndsAt)} />
+          <DetailField label="Restitution" value={formatDate(project.redeliveryAt)} />
+          <DetailField label="Port de restitution" value={displayText(project.redeliveryPort)} />
+          <DetailField label="Période opérationnelle" value={formatPeriod(projectStart, projectEnd)} wide />
+          <DetailField label="Prolongations" value={displayText(extension)} />
+          <DetailField label="Extension automatique" value={displayText(contract?.autoExtensionPeriod)} />
+          <DetailField label="Maximum de prolongation" value={contract?.maxExtensionDays === null || contract?.maxExtensionDays === undefined ? 'Non renseigné' : `${contract.maxExtensionDays} jours`} />
+        </dl>
+        {planningOccurrences.length > 0 ? (
+          <ul className="project-planning-occurrences">
+            {planningOccurrences.map((occurrence) => (
+              <li key={occurrence.id}>
+                <CalendarDays aria-hidden="true" size={18} />
+                <div>
+                  <strong>{formatPeriod(occurrence.startsOn, occurrence.endsOn)}</strong>
+                  <span>{displayText(occurrence.primaryVesselName)} · {displayText(occurrence.status)}</span>
+                  {occurrence.description ? <small>{occurrence.description}</small> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
-          '-'
+          <p className="project-section-empty">Aucune opération planning associée.</p>
         )}
-      </td>
-    </tr>
-  ));
+      </section>
+
+      <section className="project-detail-section" aria-labelledby="project-commercial-title">
+        <div className="project-section-heading">
+          <h3 id="project-commercial-title">Offre commerciale</h3>
+          {isManager ? (
+            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('offer')} type="button">
+              <Download aria-hidden="true" size={16} />
+              {generatingDocument === 'offer' ? 'Génération…' : "Générer l'offre PDF"}
+            </button>
+          ) : null}
+        </div>
+        <dl className="project-detail-grid">
+          <DetailField label="Forfait mobilisation" value={formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || '')} />
+          <DetailField label="Forfait démobilisation" value={formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || '')} />
+          <DetailField label="Loyer d’affrètement" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
+          <DetailField label="Loyer en prolongation" value={formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
+        </dl>
+        <div className="project-generated-document-note">
+          <span>Rubriques commerciales reprises des offres historiques SharePoint. Le PDF est généré localement pour validation.</span>
+          <a href={CONTRACT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Contractuels
+          </a>
+        </div>
+      </section>
+
+      <section className="project-detail-section" aria-labelledby="project-operations-title">
+        <h3 id="project-operations-title">Opérations</h3>
+        <dl className="project-detail-grid">
+          <DetailField label="Zone d’opération" value={displayText(project.operationArea)} wide />
+          <DetailField label="Période maximale d’audit" value={displayText(contract?.maxAuditPeriod)} />
+          <DetailField label="Description / commentaires" value={displayText(project.description)} wide />
+        </dl>
+        <h4>Documents Projets</h4>
+        {projectDocumentsUnavailable ? (
+          <p className="project-section-empty">Documents projets indisponibles en raison d’une erreur de chargement.</p>
+        ) : (
+          <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
+        )}
+        <a className="project-sharepoint-folder-link" href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Projets
+        </a>
+      </section>
+
+      <section className="project-detail-section" aria-labelledby="project-contract-title">
+        <div className="project-section-heading">
+          <h3 id="project-contract-title">Contrat</h3>
+          {isManager ? (
+            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('contract')} type="button">
+              <Download aria-hidden="true" size={16} />
+              {generatingDocument === 'contract' ? 'Génération…' : 'Générer le contrat PDF'}
+            </button>
+          ) : null}
+        </div>
+        {!contractUnavailable ? <SupplytimePreview contract={contract} project={project} /> : null}
+        <h4>Documents contractuels</h4>
+        {contractDocumentsUnavailable ? (
+          <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
+        ) : (
+          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+        )}
+        <p className="project-document-help">
+          Le contrat utilise les deux fonds SUPPLYTIME 2017 et les positions des 36 zones du module SPFx. Aucun binaire n'est envoyé vers Supabase ou Vercel.
+        </p>
+      </section>
+    </article>
+  );
 }
 
 export function ProjectsPage({ client, roles }: ProjectsPageProps) {
@@ -250,16 +498,25 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProjects(effectiveRoles);
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
-  const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_FILTERS);
-  const [projectForm, setProjectForm] = useState<CreateProjectInput>(EMPTY_PROJECT_FORM);
+  const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
+  const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
+  const [mutationMessage, setMutationMessage] = useState('');
+  const [mutationError, setMutationError] = useState('');
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
+  const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
     let isMounted = true;
-
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -267,16 +524,18 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       .then((loadedData) => {
         if (isMounted) {
           setProjectsData({
+            ...loadedData,
             clients: sortClients(loadedData.clients),
             contractDocuments: sortDocuments(loadedData.contractDocuments),
+            planningOccurrences: sortPlanningOccurrences(loadedData.planningOccurrences),
             projectDocuments: sortDocuments(loadedData.projectDocuments),
             projects: sortProjects(loadedData.projects),
           });
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (isMounted) {
-          setErrorMessage('Impossible de charger les projets.');
+          setErrorMessage(technicalErrorMessage(error));
         }
       })
       .finally(() => {
@@ -288,96 +547,193 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient]);
+  }, [effectiveClient, loadAttempt]);
 
+  const effectiveFilters = useMemo(() => ({ ...filters, search: deferredSearch }), [deferredSearch, filters]);
+  const projectDocumentSet = useMemo(
+    () => deduplicateProjectDocuments(projectsData.projectDocuments),
+    [projectsData.projectDocuments],
+  );
+  const contractDocumentSet = useMemo(
+    () => deduplicateProjectDocuments(projectsData.contractDocuments),
+    [projectsData.contractDocuments],
+  );
   const filteredProjects = useMemo(
-    () => projectsData.projects.filter((project) => projectMatchesFilters(project, filters)),
-    [filters, projectsData.projects],
+    () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters)),
+    [effectiveFilters, projectsData.projects],
   );
   const filteredProjectDocuments = useMemo(
-    () =>
-      projectsData.projectDocuments.filter((document) =>
-        documentMatchesFilters(document, projectsData.projects, filters),
-      ),
-    [filters, projectsData.projectDocuments, projectsData.projects],
+    () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
+    [filteredProjects, projectDocumentSet.documents],
   );
   const filteredContractDocuments = useMemo(
+    () => filterDocumentsForProjects(contractDocumentSet.documents, filteredProjects),
+    [contractDocumentSet.documents, filteredProjects],
+  );
+  const filteredClients = useMemo(
     () =>
-      projectsData.contractDocuments.filter((document) =>
-        documentMatchesFilters(document, projectsData.projects, filters),
+      projectsData.clients.filter((clientRecord) =>
+        filteredProjects.some(
+          (project) => project.clientId === clientRecord.id || project.clientName === clientRecord.name,
+        ),
       ),
-    [filters, projectsData.contractDocuments, projectsData.projects],
+    [filteredProjects, projectsData.clients],
   );
   const metrics = useMemo(
     () =>
       buildProjectMetrics({
-        clients: projectsData.clients,
+        ...projectsData,
+        clients: filteredClients,
         contractDocuments: filteredContractDocuments,
         projectDocuments: filteredProjectDocuments,
         projects: filteredProjects,
       }),
-    [filteredContractDocuments, filteredProjectDocuments, filteredProjects, projectsData.clients],
+    [filteredClients, filteredContractDocuments, filteredProjectDocuments, filteredProjects, projectsData],
   );
   const statusOptions = useMemo(
-    () => uniqueSorted([...projectsData.projects.map((project) => project.status), ...PROJECT_STATUS_OPTIONS]),
+    () => uniqueSorted(projectsData.projects.map((project) => project.status)),
     [projectsData.projects],
   );
   const clientOptions = useMemo(
-    () => uniqueSorted([...projectsData.projects.map((project) => project.clientName), ...projectsData.clients.map((client) => client.name)]),
+    () =>
+      uniqueSorted([
+        ...projectsData.projects.map((project) => project.clientName),
+        ...projectsData.clients.map((clientRecord) => clientRecord.name),
+      ]),
     [projectsData.clients, projectsData.projects],
   );
   const vesselOptions = useMemo(
-    () => uniqueSorted(projectsData.projects.flatMap((project) => getVesselNames(project))),
+    () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))),
     [projectsData.projects],
   );
+  const selectedProject = resolveSelectedProject(filteredProjects, selectedProjectId);
+  const selectedContract = selectedProject
+    ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
+    : undefined;
+  const selectedClient = selectedProject
+    ? projectsData.clients.find(
+        (clientRecord) => clientRecord.id === selectedProject.clientId || clientRecord.name === selectedProject.clientName,
+      )
+    : undefined;
+  const selectedProjectDocuments = selectedProject
+    ? projectDocumentSet.documents.filter((document) => documentBelongsToProject(document, selectedProject))
+    : [];
+  const selectedContractDocuments = selectedProject
+    ? contractDocumentSet.documents.filter((document) => documentBelongsToProject(document, selectedProject))
+    : [];
+  const selectedPlanningOccurrences = selectedProject
+    ? projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === selectedProject.id)
+    : [];
+  const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
+    (document) => document.projectId === null,
+  ).length;
+  const duplicateDocumentCount = projectDocumentSet.duplicateCount + contractDocumentSet.duplicateCount;
+  const pageCount = Math.max(1, Math.ceil(filteredProjects.length / PROJECTS_PER_PAGE));
+  const safePage = Math.min(currentPage, pageCount - 1);
+  const visibleProjects = filteredProjects.slice(safePage * PROJECTS_PER_PAGE, (safePage + 1) * PROJECTS_PER_PAGE);
   const hasActiveFilters = Object.values(filters).some(Boolean);
-  const hasVisibleData =
-    filteredProjects.length > 0 || filteredProjectDocuments.length > 0 || filteredContractDocuments.length > 0;
+  const contractTypeOptions = useMemo(
+    () => uniqueSorted(projectsData.projects.map((project) => project.contractType)),
+    [projectsData.projects],
+  );
 
   function updateFilterValue(key: keyof ProjectFilterState, value: string) {
-    setFilters((currentFilters) => ({
-      ...currentFilters,
-      [key]: value,
-    }));
+    setCurrentPage(0);
+    setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
   }
 
-  function updateProjectFormValue(key: keyof CreateProjectInput, value: string) {
-    setProjectForm((currentForm) => ({
-      ...currentForm,
-      [key]: value,
-    }));
+  function resetFilters() {
+    setCurrentPage(0);
+    setFilters(EMPTY_PROJECT_FILTERS);
   }
 
-  async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatusMessage(null);
-    setErrorMessage(null);
-    setIsSaving(true);
+  function openProjectEditor(project?: ProjectRecord) {
+    setMutationError('');
+    setEditingProject(project);
+    setProjectEditorOpen(true);
+  }
 
+  function openClientEditor(clientRecord?: ClientRecord) {
+    setMutationError('');
+    setEditingClient(clientRecord);
+    setClientEditorOpen(true);
+  }
+
+  async function archiveSelectedProject() {
+    if (!selectedProject || !window.confirm(`Archiver ${selectedProject.projectCode || selectedProject.title} ?`)) return;
+    setMutationError('');
+    setMutationMessage('');
+    setIsArchiving(true);
     try {
-      const project = await createProject(effectiveClient, projectForm);
-      setProjectsData((currentData) => ({
-        ...currentData,
-        projects: sortProjects([...currentData.projects, project]),
-      }));
-      setProjectForm(EMPTY_PROJECT_FORM);
-      setStatusMessage('Projet ajoute.');
-    } catch {
-      setErrorMessage("Impossible d'ajouter ce projet.");
+      await archiveProject(effectiveClient, selectedProject.id);
+      setSelectedProjectId(null);
+      setMutationMessage('Projet archivé dans Supabase.');
+      setLoadAttempt((attempt) => attempt + 1);
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
     } finally {
-      setIsSaving(false);
+      setIsArchiving(false);
+    }
+  }
+
+  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind) {
+    if (!selectedProject) return;
+    setMutationError('');
+    setMutationMessage('');
+    setGeneratingDocument(kind);
+    try {
+      const { downloadGeneratedProjectDocument, generateProjectDocument } = await import('./projectDocumentGeneration');
+      const generated = await generateProjectDocument(kind, {
+        client: selectedClient,
+        contract: selectedContract,
+        project: selectedProject,
+      });
+      downloadGeneratedProjectDocument(generated);
+      setMutationMessage(`${generated.fileName} généré. Après validation, déposez-le dans SharePoint.`);
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
+    } finally {
+      setGeneratingDocument(null);
     }
   }
 
   if (isLoading) {
-    return <div className="admin-state">Chargement des projets...</div>;
+    return (
+      <div className="admin-state" role="status">
+        Chargement des projets depuis Supabase…
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <section className="projects-page">
+        <div className="admin-header">
+          <div>
+            <p className="module-family">Opérations</p>
+            <h1>Projets</h1>
+          </div>
+        </div>
+        <div className="project-error-state" role="alert">
+          <Info aria-hidden="true" size={22} />
+          <div>
+            <strong>Erreur de chargement</strong>
+            <p>{errorMessage}</p>
+            <button onClick={() => setLoadAttempt((attempt) => attempt + 1)} type="button">
+              <RefreshCw aria-hidden="true" size={16} />
+              Réessayer
+            </button>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (
     <section className="projects-page">
       <div className="admin-header">
         <div>
-          <p className="module-family">Operations</p>
+          <p className="module-family">Opérations</p>
           <h1>Projets</h1>
         </div>
         <div className="projects-summary-grid">
@@ -386,35 +742,58 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             <strong>{metrics.activeProjects}</strong>
             <span>actifs</span>
           </div>
+          <div className="planning-summary" aria-label="Projets affichés">
+            <CalendarDays aria-hidden="true" size={18} />
+            <strong>{metrics.totalProjects}</strong>
+            <span>affichés</span>
+          </div>
           <div className="planning-summary" aria-label="Documents projets">
             <FileText aria-hidden="true" size={18} />
-            <strong>{metrics.projectDocumentCount}</strong>
-            <span>projets</span>
+            <strong>{warningIsPresent(projectsData, 'projectDocuments') ? '—' : metrics.projectDocumentCount}</strong>
+            <span>documents</span>
           </div>
           <div className="planning-summary" aria-label="Documents contractuels">
             <ClipboardList aria-hidden="true" size={18} />
-            <strong>{metrics.contractDocumentCount}</strong>
+            <strong>{warningIsPresent(projectsData, 'contractDocuments') ? '—' : metrics.contractDocumentCount}</strong>
             <span>contrats</span>
           </div>
-          <div className="planning-summary" aria-label="Clients actifs">
+          <div className="planning-summary" aria-label="Clients représentés">
             <Users aria-hidden="true" size={18} />
-            <strong>{metrics.clientCount}</strong>
+            <strong>{warningIsPresent(projectsData, 'clients') ? '—' : metrics.clientCount}</strong>
             <span>clients</span>
           </div>
         </div>
       </div>
 
-      <div className="admin-notices" aria-live="polite">
-        {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      </div>
+      {projectsData.warnings.length > 0 ? (
+        <div className="project-partial-state" role="status">
+          <strong>Consultation partielle.</strong>{' '}
+          {`Le chargement de ${projectsData.warnings.map((warning) => warning.label).join(', ')} a échoué.`}
+        </div>
+      ) : null}
+
+      {unresolvedDocumentCount > 0 || duplicateDocumentCount > 0 ? (
+        <aside className="project-document-state" role="status">
+          <Info aria-hidden="true" size={18} />
+          <div>
+            <strong>Métadonnées documentaires à contrôler</strong>
+            {unresolvedDocumentCount > 0 ? (
+              <span>{`${unresolvedDocumentCount} document(s) sans rattachement Supabase résolu.`}</span>
+            ) : null}
+            {duplicateDocumentCount > 0 ? (
+              <span>{`${duplicateDocumentCount} doublon(s) de métadonnées masqué(s) dans la consultation.`}</span>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
 
       <div className="planning-filter-panel projects-filter-panel" aria-label="Filtres projets">
         <label>
           Recherche projets
           <input
             onChange={(event) => updateFilterValue('search', event.target.value)}
-            placeholder="Projet, client, navire..."
+            placeholder="Projet, client, navire, zone…"
+            type="search"
             value={filters.search}
           />
         </label>
@@ -456,191 +835,172 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <input onChange={(event) => updateFilterValue('dateFrom', event.target.value)} type="date" value={filters.dateFrom} />
         </label>
         <label>
-          Projet jusqu'au
+          Projet jusqu’au
           <input onChange={(event) => updateFilterValue('dateTo', event.target.value)} type="date" value={filters.dateTo} />
         </label>
-        <button disabled={!hasActiveFilters} onClick={() => setFilters(EMPTY_FILTERS)} type="button">
-          Reinitialiser
+        <button disabled={!hasActiveFilters} onClick={resetFilters} type="button">
+          Réinitialiser
         </button>
       </div>
 
       <div className="planning-toolbar">
-        <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>
-          {isManager ? 'Modification' : 'Lecture seule'}
-        </span>
+        <span className="planning-mode-read">Source structurée · Supabase</span>
+        {isManager ? (
+          <div className="project-write-actions">
+            <button onClick={() => openClientEditor()} type="button"><Users aria-hidden="true" size={16} /> Nouveau client</button>
+            <button onClick={() => openProjectEditor()} type="button"><Plus aria-hidden="true" size={16} /> Nouveau projet</button>
+            <button disabled={!selectedProject || Boolean(selectedProject.archivedAt)} onClick={() => selectedProject && openProjectEditor(selectedProject)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le projet</button>
+            <button disabled={!selectedClient} onClick={() => selectedClient && openClientEditor(selectedClient)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le client</button>
+            <button className="is-danger" disabled={!selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} onClick={archiveSelectedProject} type="button"><Archive aria-hidden="true" size={16} /> Archiver</button>
+          </div>
+        ) : null}
       </div>
 
-      {isManager ? (
-        <form className="planning-form projects-form" onSubmit={handleCreateProject}>
-          <div className="planning-form-title">
-            <Upload aria-hidden="true" size={18} />
-            <strong>Nouveau projet</strong>
-          </div>
-          <label>
-            Numero projet
-            <input onChange={(event) => updateProjectFormValue('projectCode', event.target.value)} value={projectForm.projectCode} />
-          </label>
-          <label>
-            Titre projet
-            <input onChange={(event) => updateProjectFormValue('title', event.target.value)} required value={projectForm.title} />
-          </label>
-          <label>
-            Client projet
-            <input
-              list="project-client-options"
-              onChange={(event) => updateProjectFormValue('clientName', event.target.value)}
-              value={projectForm.clientName}
-            />
-          </label>
-          <datalist id="project-client-options">
-            {projectsData.clients.map((clientOption) => (
-              <option key={clientOption.id} value={clientOption.name} />
-            ))}
-          </datalist>
-          <label>
-            Navire principal projet
-            <input
-              onChange={(event) => updateProjectFormValue('primaryVesselName', event.target.value)}
-              value={projectForm.primaryVesselName}
-            />
-          </label>
-          <label>
-            Navire secondaire projet
-            <input
-              onChange={(event) => updateProjectFormValue('secondaryVesselName', event.target.value)}
-              value={projectForm.secondaryVesselName}
-            />
-          </label>
-          <label>
-            Debut projet
-            <input onChange={(event) => updateProjectFormValue('startsOn', event.target.value)} type="date" value={projectForm.startsOn} />
-          </label>
-          <label>
-            Fin projet
-            <input onChange={(event) => updateProjectFormValue('endsOn', event.target.value)} type="date" value={projectForm.endsOn} />
-          </label>
-          <label>
-            Statut projet
-            <select onChange={(event) => updateProjectFormValue('status', event.target.value)} value={projectForm.status}>
-              {PROJECT_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Description projet
-            <input onChange={(event) => updateProjectFormValue('description', event.target.value)} value={projectForm.description} />
-          </label>
-          <button disabled={isSaving} type="submit">
-            Ajouter projet
-          </button>
-        </form>
-      ) : null}
+      {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
+      {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
-      {!hasVisibleData ? (
-        <div className="admin-state">Aucun projet a afficher.</div>
+      {projectsData.projects.length === 0 ? (
+        <div className="admin-state">Aucun projet n’est disponible dans Supabase.</div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="admin-state">
+          <div>
+            <strong>Aucun projet ne correspond aux filtres.</strong>
+            <button className="project-inline-action" onClick={resetFilters} type="button">
+              Réinitialiser les filtres
+            </button>
+          </div>
+        </div>
       ) : (
-        <div className="projects-sections">
-          {filteredProjects.length > 0 ? (
-            <section className="projects-panel" aria-labelledby="projects-list-title">
-              <div className="procedures-section-heading">
-                <h2 id="projects-list-title">Portefeuille projets</h2>
-                <span>{filteredProjects.length} projet(s)</span>
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table projects-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Projet</th>
-                      <th scope="col">Numero</th>
-                      <th scope="col">Client</th>
-                      <th scope="col">Navire</th>
-                      <th scope="col">Periode</th>
-                      <th scope="col">Statut</th>
-                      <th scope="col">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProjects.map((project) => (
-                      <tr key={project.id}>
+        <div className="projects-read-layout">
+          <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
+            <div className="procedures-section-heading">
+              <h2 id="projects-list-title">Portefeuille projets</h2>
+              <span>{filteredProjects.length} projet(s)</span>
+            </div>
+            <div className="admin-table-wrap">
+              <table className="admin-table projects-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Projet</th>
+                    <th scope="col">Client / navire</th>
+                    <th scope="col">Période</th>
+                    <th scope="col">Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleProjects.map((project) => {
+                    const isSelected = selectedProject?.id === project.id;
+                    return (
+                      <tr className={isSelected ? 'is-selected' : undefined} key={project.id}>
                         <th scope="row">
-                          <span className="project-title">
-                            <Briefcase aria-hidden="true" size={16} />
-                            {project.title}
-                          </span>
-                          {project.description ? <small>{project.description}</small> : null}
+                          <button
+                            aria-pressed={isSelected}
+                            className="project-select-button"
+                            onClick={() => setSelectedProjectId(project.id)}
+                            type="button"
+                          >
+                            <span className="project-title">
+                              <Briefcase aria-hidden="true" size={16} />
+                              {project.title}
+                            </span>
+                            <small>{project.projectCode || 'Sans numéro'}</small>
+                          </button>
                         </th>
-                        <td>{displayText(project.projectCode)}</td>
-                        <td>{displayText(project.clientName)}</td>
                         <td>
+                          {displayText(project.clientName)}
                           <span className="project-vessel">
-                            <Ship aria-hidden="true" size={15} />
+                            <Ship aria-hidden="true" size={14} />
                             {displayText(project.primaryVesselName)}
                           </span>
-                          {project.secondaryVesselName ? <small>{project.secondaryVesselName}</small> : null}
                         </td>
-                        <td>{formatProjectPeriod(project)}</td>
+                        <td>{formatPeriod(project.deliveryAt || project.startsOn, project.redeliveryAt || project.endsOn)}</td>
                         <td>
-                          <span className="project-status-chip">{displayText(project.status)}</span>
+                          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
                         </td>
-                        <td>{displayText(project.sourceLabel)}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {pageCount > 1 ? (
+              <nav className="project-pagination" aria-label="Pagination des projets">
+                <button disabled={safePage === 0} onClick={() => setCurrentPage(safePage - 1)} type="button">
+                  <ChevronLeft aria-hidden="true" size={16} />
+                  Précédent
+                </button>
+                <span>{`Page ${safePage + 1} sur ${pageCount}`}</span>
+                <button disabled={safePage === pageCount - 1} onClick={() => setCurrentPage(safePage + 1)} type="button">
+                  Suivant
+                  <ChevronRight aria-hidden="true" size={16} />
+                </button>
+              </nav>
+            ) : null}
+          </section>
 
-          {filteredProjectDocuments.length > 0 ? (
-            <section className="projects-panel" aria-labelledby="project-documents-title">
-              <div className="procedures-section-heading">
-                <h2 id="project-documents-title">Documents Projets</h2>
-                <span>{filteredProjectDocuments.length} fichier(s)</span>
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table projects-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Document</th>
-                      <th scope="col">Projet</th>
-                      <th scope="col">Categorie</th>
-                      <th scope="col">Source</th>
-                      <th scope="col">Fichier</th>
-                    </tr>
-                  </thead>
-                  <tbody>{renderDocumentRows(filteredProjectDocuments)}</tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          {filteredContractDocuments.length > 0 ? (
-            <section className="projects-panel" aria-labelledby="contract-documents-title">
-              <div className="procedures-section-heading">
-                <h2 id="contract-documents-title">Documents Contractuels</h2>
-                <span>{filteredContractDocuments.length} fichier(s)</span>
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table projects-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Document</th>
-                      <th scope="col">Projet</th>
-                      <th scope="col">Categorie</th>
-                      <th scope="col">Source</th>
-                      <th scope="col">Fichier</th>
-                    </tr>
-                  </thead>
-                  <tbody>{renderDocumentRows(filteredContractDocuments)}</tbody>
-                </table>
-              </div>
-            </section>
+          {selectedProject ? (
+            <ProjectDetail
+              client={selectedClient}
+              contract={selectedContract}
+              contractDocuments={selectedContractDocuments}
+              contractDocumentsUnavailable={warningIsPresent(projectsData, 'contractDocuments')}
+              contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
+              generatingDocument={generatingDocument}
+              isManager={isManager}
+              onAddPlanningOccurrence={() => setPlanningEditorOpen(true)}
+              onGenerateDocument={(kind) => void generateSelectedProjectDocument(kind)}
+              planningOccurrences={selectedPlanningOccurrences}
+              project={selectedProject}
+              projectDocuments={selectedProjectDocuments}
+              projectDocumentsUnavailable={warningIsPresent(projectsData, 'projectDocuments')}
+            />
           ) : null}
         </div>
       )}
+
+      {projectEditorOpen ? (
+        <ProjectEditor
+          client={effectiveClient}
+          clients={projectsData.clients}
+          contract={editingProject ? projectsData.projectContracts.find((item) => item.projectId === editingProject.id && !item.archivedAt) : undefined}
+          contractTypes={contractTypeOptions}
+          onClose={() => setProjectEditorOpen(false)}
+          onSaved={(result) => {
+            setProjectEditorOpen(false);
+            setSelectedProjectId(result.id);
+            setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+          project={editingProject}
+          statuses={statusOptions}
+          vessels={projectsData.vessels}
+        />
+      ) : null}
+      {clientEditorOpen ? (
+        <ClientEditor
+          client={effectiveClient}
+          clientRecord={editingClient}
+          onClose={() => setClientEditorOpen(false)}
+          onSaved={() => {
+            setClientEditorOpen(false);
+            setMutationMessage('Client enregistré dans Supabase.');
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+        />
+      ) : null}
+      {planningEditorOpen && selectedProject ? (
+        <ProjectPlanningEditor
+          client={effectiveClient}
+          onClose={() => setPlanningEditorOpen(false)}
+          onSaved={() => {
+            setPlanningEditorOpen(false);
+            setMutationMessage('Opération ajoutée au Planning Supabase.');
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+          project={selectedProject}
+          vessels={projectsData.vessels}
+        />
+      ) : null}
     </section>
   );
 }

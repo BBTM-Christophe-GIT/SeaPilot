@@ -167,6 +167,7 @@ type SourcePayloadMapper = (item: SharePointListItem, source: SharePointMigratio
 type SourceRowValidator = (row: SharePointImportRow) => boolean;
 
 const CONFLICT_COLUMNS = ['sharepoint_list_id', 'sharepoint_item_id'] as const;
+const DOCUMENT_DRIVE_CONFLICT_COLUMNS = ['sharepoint_drive_id', 'sharepoint_drive_item_id'] as const;
 
 const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'library-alerte-securite': mapGenericDocumentPayload,
@@ -202,6 +203,8 @@ const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
 };
 
 const SOURCE_ROW_VALIDATORS: Partial<Record<string, SourceRowValidator>> = {
+  'library-documents-contractuels': (row) => row.is_folder !== true,
+  'library-documents-projets': (row) => row.is_folder !== true,
   'list-bbtm-flotte': (row) => Boolean(row.name),
   'list-kpi-projets-planning': (row) => Boolean(row.title),
   'list-smtr-journees-planning': (row) => Boolean(row.crew_name && row.work_date),
@@ -335,15 +338,32 @@ function looksLikeFilePath(value: string): boolean {
   return /\.[a-z0-9]{2,8}(?:$|[?#])/i.test(value.trim());
 }
 
-function buildSharePointAbsoluteUrl(source: SharePointMigrationSource, pathOrUrl: string): string {
+function buildSharePointAbsoluteUrl(source: SharePointMigrationSource, pathOrUrl: string): string | null {
   const trimmed = pathOrUrl.trim().replace(/\\/g, '/');
 
   if (!trimmed) {
-    return '';
+    return null;
   }
 
   if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
+    try {
+      const candidate = new URL(trimmed);
+      const site = new URL(source.siteUrl);
+      const sitePath = site.pathname.replace(/\/$/, '').toLowerCase();
+      const candidatePath = decodeURIComponent(candidate.pathname).toLowerCase();
+
+      if (
+        candidate.protocol !== 'https:' ||
+        candidate.origin !== site.origin ||
+        (candidatePath !== sitePath && !candidatePath.startsWith(`${sitePath}/`))
+      ) {
+        return null;
+      }
+
+      return trimmed;
+    } catch {
+      return null;
+    }
   }
 
   const originMatch = source.siteUrl.match(/^(https?:\/\/[^/]+)/i);
@@ -351,6 +371,34 @@ function buildSharePointAbsoluteUrl(source: SharePointMigrationSource, pathOrUrl
   const serverRelativePath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 
   return encodeURI(`${origin}${serverRelativePath}`);
+}
+
+function isSharePointFolder(item: SharePointListItem): boolean {
+  const objectType = text(item, ['FSObjType', 'FileSystemObjectType', 'ObjectType'])?.toLowerCase();
+  const contentTypeId = text(item, ['ContentTypeId'])?.toLowerCase();
+
+  return objectType === '1' || objectType === 'folder' || Boolean(contentTypeId?.startsWith('0x0120'));
+}
+
+function documentFolderPath(item: SharePointListItem): string | null {
+  const explicitFolder = text(item, ['FileDirRef', 'FolderPath']);
+  if (explicitFolder) {
+    return explicitFolder;
+  }
+
+  const fileRef = text(item, ['FileRef', 'ServerRelativeUrl']);
+  const separatorIndex = fileRef?.lastIndexOf('/') ?? -1;
+  return fileRef && separatorIndex > 0 ? fileRef.slice(0, separatorIndex) : null;
+}
+
+function documentFileExtension(item: SharePointListItem, fileName: string): string | null {
+  const explicitExtension = text(item, ['File_x0020_Type', 'FileType', 'Extension']);
+  if (explicitExtension) {
+    return explicitExtension.replace(/^\./, '').toLowerCase();
+  }
+
+  const match = fileName.match(/\.([a-z0-9]{1,12})$/i);
+  return match?.[1]?.toLowerCase() || null;
 }
 
 function buildSharePointDocumentUrl(
@@ -895,6 +943,7 @@ function projectDocumentPayload(
 ): SharePointImportRow {
   const itemId = sourceItemId(item);
   const title = requiredText(item, ['FileLeafRef', 'Title'], `Document projet SharePoint ${itemId || ''}`.trim());
+  const fileRef = text(item, ['FileRef', 'ServerRelativeUrl']);
 
   return withReconciliation(item, source, {
     project_id: null,
@@ -905,8 +954,19 @@ function projectDocumentPayload(
     title,
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
-    file_url: text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl),
-    notes: text(item, ['FileRef', 'ServerRelativeUrl']),
+    sharepoint_drive_id: source.driveId || null,
+    sharepoint_drive_item_id: itemId,
+    file_name: title,
+    folder_path: documentFolderPath(item),
+    mime_type: text(item, ['MimeType', 'File_x0020_MimeType']),
+    file_extension: documentFileExtension(item, title),
+    file_size_bytes: numeric(item, ['File_x0020_Size', 'FileSizeDisplay', 'Size']),
+    source_etag: text(item, ['ETag', 'eTag']),
+    source_ctag: text(item, ['CTag', 'cTag']),
+    source_created_at: text(item, ['Created', 'CreatedDateTime']),
+    is_folder: isSharePointFolder(item),
+    file_url: buildSharePointDocumentUrl(item, source, ['FileLeafRef', 'Title']),
+    notes: fileRef,
   });
 }
 
@@ -1127,7 +1187,10 @@ export function buildSharePointUpsertBatch(sourceKey: string, items: SharePointL
   return {
     sourceKey,
     targetTable: source.targetTable,
-    conflictColumns: CONFLICT_COLUMNS,
+    conflictColumns:
+      sourceKey === 'library-documents-projets' || sourceKey === 'library-documents-contractuels'
+        ? DOCUMENT_DRIVE_CONFLICT_COLUMNS
+        : CONFLICT_COLUMNS,
     rows: validator ? rows.filter(validator) : rows,
   };
 }

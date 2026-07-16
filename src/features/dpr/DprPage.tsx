@@ -6,6 +6,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { fetchProjectCatalogOptions, type ProjectCatalogOption } from '../projects/projectMutations';
 import {
   buildDprMetrics,
   createDprItem,
@@ -39,6 +40,7 @@ const EMPTY_FILTERS: DprFilterState = {
 
 const EMPTY_DPR_FORM: CreateDprItemInput = {
   title: '',
+  projectId: null,
   projectCode: '',
   projectTitle: '',
   vesselName: '',
@@ -196,6 +198,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [reports, setReports] = useState<DprItemRecord[]>([]);
   const [archives, setArchives] = useState<DprArchiveRecord[]>([]);
   const [mgoPrices, setMgoPrices] = useState<MgoPriceRecord[]>([]);
+  const [catalogProjects, setCatalogProjects] = useState<ProjectCatalogOption[]>([]);
   const [filters, setFilters] = useState<DprFilterState>(EMPTY_FILTERS);
   const [dprForm, setDprForm] = useState<CreateDprItemInput>(EMPTY_DPR_FORM);
   const [isLoading, setIsLoading] = useState(true);
@@ -209,12 +212,16 @@ export function DprPage({ client, roles }: DprPageProps) {
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetchDprData(effectiveClient)
-      .then((loadedData) => {
+    Promise.all([
+      fetchDprData(effectiveClient),
+      isManager ? fetchProjectCatalogOptions(effectiveClient).catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([loadedData, loadedProjects]) => {
         if (isMounted) {
           setReports(sortDprReports(loadedData.reports));
           setArchives(sortDprArchives(loadedData.archives));
           setMgoPrices(loadedData.mgoPrices);
+          setCatalogProjects(loadedProjects);
         }
       })
       .catch(() => {
@@ -231,9 +238,12 @@ export function DprPage({ client, roles }: DprPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient]);
+  }, [effectiveClient, isManager]);
 
-  const projectOptions = useMemo(() => uniqueSorted(reports.map((report) => report.projectCode)), [reports]);
+  const projectOptions = useMemo(
+    () => uniqueSorted([...reports.map((report) => report.projectCode), ...catalogProjects.map((project) => project.projectCode)]),
+    [catalogProjects, reports],
+  );
   const vesselOptions = useMemo(() => uniqueSorted(reports.map((report) => report.vesselName)), [reports]);
   const filteredReports = useMemo(
     () => reports.filter((report) => reportMatchesFilters(report, filters)),
@@ -255,10 +265,20 @@ export function DprPage({ client, roles }: DprPageProps) {
     }));
   }
 
-  function updateDprFormValue(key: keyof CreateDprItemInput, value: string | boolean) {
+  function updateDprFormValue(key: keyof CreateDprItemInput, value: string | boolean | number | null) {
     setDprForm((currentForm) => ({
       ...currentForm,
       [key]: value,
+    }));
+  }
+
+  function selectCatalogProject(projectId: string) {
+    const project = catalogProjects.find((option) => option.id === Number(projectId));
+    setDprForm((currentForm) => ({
+      ...currentForm,
+      projectId: project?.id ?? null,
+      projectCode: project?.projectCode || '',
+      projectTitle: project?.title || '',
     }));
   }
 
@@ -381,18 +401,11 @@ export function DprPage({ client, roles }: DprPageProps) {
             <input onChange={(event) => updateDprFormValue('title', event.target.value)} value={dprForm.title} />
           </label>
           <label>
-            Numero projet DPR
-            <input
-              onChange={(event) => updateDprFormValue('projectCode', event.target.value)}
-              value={dprForm.projectCode}
-            />
-          </label>
-          <label>
-            Nom projet DPR
-            <input
-              onChange={(event) => updateDprFormValue('projectTitle', event.target.value)}
-              value={dprForm.projectTitle}
-            />
+            Projet du catalogue DPR
+            <select onChange={(event) => selectCatalogProject(event.target.value)} value={dprForm.projectId ?? ''}>
+              <option value="">Aucun projet</option>
+              {catalogProjects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} - {project.title}</option>)}
+            </select>
           </label>
           <label>
             Nom navire DPR

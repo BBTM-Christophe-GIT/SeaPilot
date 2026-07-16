@@ -6,6 +6,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { fetchProjectCatalogOptions, type ProjectCatalogOption } from '../projects/projectMutations';
 import {
   buildActionPlanMetrics,
   createActionItem,
@@ -57,6 +58,7 @@ const EMPTY_FORM: CreateActionItemInput = {
   ownerName: '',
   auditorName: '',
   priorityLabel: 'Normale',
+  projectId: null,
   projectCode: '',
   projectTitle: '',
   status: 'Ouvert',
@@ -240,6 +242,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
   const [filters, setFilters] = useState<ActionFilterState>(EMPTY_FILTERS);
   const [actionForm, setActionForm] = useState<CreateActionItemInput>(EMPTY_FORM);
+  const [catalogProjects, setCatalogProjects] = useState<ProjectCatalogOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -251,13 +254,17 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetchActionPlanData(effectiveClient)
-      .then((loadedData) => {
+    Promise.all([
+      fetchActionPlanData(effectiveClient),
+      isManager ? fetchProjectCatalogOptions(effectiveClient).catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([loadedData, loadedProjects]) => {
         if (isMounted) {
           setData({
             actions: sortActions(loadedData.actions),
             documents: sortDocuments(loadedData.documents),
           });
+          setCatalogProjects(loadedProjects);
         }
       })
       .catch(() => {
@@ -274,7 +281,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient]);
+  }, [effectiveClient, isManager]);
 
   const filteredActions = useMemo(
     () => data.actions.filter((action) => actionMatchesFilters(action, filters)),
@@ -297,7 +304,10 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     [data.actions],
   );
   const vesselOptions = useMemo(() => uniqueSorted(data.actions.map((action) => action.vesselName)), [data.actions]);
-  const projectOptions = useMemo(() => uniqueSorted(data.actions.map((action) => action.projectCode)), [data.actions]);
+  const projectOptions = useMemo(
+    () => uniqueSorted([...data.actions.map((action) => action.projectCode), ...catalogProjects.map((project) => project.projectCode)]),
+    [catalogProjects, data.actions],
+  );
   const hasActiveFilters = Object.values(filters).some(Boolean);
   const hasVisibleData = filteredActions.length > 0 || filteredDocuments.length > 0;
 
@@ -308,10 +318,20 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     }));
   }
 
-  function updateFormValue(key: keyof CreateActionItemInput, value: string) {
+  function updateFormValue(key: keyof CreateActionItemInput, value: string | number | null) {
     setActionForm((currentForm) => ({
       ...currentForm,
       [key]: value,
+    }));
+  }
+
+  function selectCatalogProject(projectId: string) {
+    const project = catalogProjects.find((option) => option.id === Number(projectId));
+    setActionForm((currentForm) => ({
+      ...currentForm,
+      projectId: project?.id ?? null,
+      projectCode: project?.projectCode || '',
+      projectTitle: project?.title || '',
     }));
   }
 
@@ -471,12 +491,11 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
             <input onChange={(event) => updateFormValue('auditType', event.target.value)} value={actionForm.auditType} />
           </label>
           <label>
-            Numero projet action
-            <input onChange={(event) => updateFormValue('projectCode', event.target.value)} value={actionForm.projectCode} />
-          </label>
-          <label>
-            Nom projet action
-            <input onChange={(event) => updateFormValue('projectTitle', event.target.value)} value={actionForm.projectTitle} />
+            Projet du catalogue action
+            <select onChange={(event) => selectCatalogProject(event.target.value)} value={actionForm.projectId ?? ''}>
+              <option value="">Aucun projet</option>
+              {catalogProjects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} - {project.title}</option>)}
+            </select>
           </label>
           <label>
             Navire action
