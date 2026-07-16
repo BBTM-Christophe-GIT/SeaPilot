@@ -13,6 +13,7 @@ import {
   getUnbilledPlanningProjects,
   isSedentaryPlanningFunction,
   normalizePlanningStatus,
+  planningStatusDisplayLabel,
   planningStatusTone,
   projectStatusTone,
   timelineRange,
@@ -70,6 +71,8 @@ describe('planning timeline rules', () => {
 
   it('normalizes imported crew and project statuses', () => {
     expect(normalizePlanningStatus('Embarqué')).toBe('En Mer');
+    expect(planningStatusDisplayLabel('Vacance')).toBe('Vacances');
+    expect(planningStatusDisplayLabel('Repos')).toBe('Repos');
     expect(planningStatusTone('Formation')).toBe('training');
     expect(projectStatusTone('À facturer')).toBe('billed');
     expect(projectStatusTone('Validé')).toBe('valid');

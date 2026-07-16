@@ -225,6 +225,10 @@ export function normalizePlanningStatus(value: string): string {
   return value || 'En Mer';
 }
 
+export function planningStatusDisplayLabel(value: string): string {
+  return normalizePlanningStatus(value) === 'Vacance' ? 'Vacances' : value;
+}
+
 export function planningStatusTone(value: string): string {
   const key = normalizePlanningText(normalizePlanningStatus(value));
   if (key === 'ENMER') return 'sea';
@@ -691,14 +695,14 @@ export function evaluatePlanningAssignment(
       add(controlResult(overview, candidate, 'crew_absence', {
         id: `crew-absence-${candidate.id}-${event.id}`,
         title: 'Absence sur la période',
-        detail: `${candidate.person} est déclaré « ${event.status} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
+        detail: `${candidate.person} est déclaré « ${planningStatusDisplayLabel(event.status)} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
         date: overlapDate,
       }));
     } else if (['sea', 'shore'].includes(candidateTone) && UNAVAILABLE_STATUS_TONES.has(eventTone)) {
       add(controlResult(overview, candidate, 'crew_unavailability', {
         id: `crew-unavailability-${candidate.id}-${event.id}`,
         title: 'Indisponibilité sur la période',
-        detail: `${candidate.person} est déclaré « ${event.status} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
+        detail: `${candidate.person} est déclaré « ${planningStatusDisplayLabel(event.status)} » du ${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}.`,
         date: overlapDate,
       }));
     }

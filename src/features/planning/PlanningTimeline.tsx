@@ -6,6 +6,7 @@ import validIcon from './assets/icone_valide.svg';
 import { addPlanningDays, daysBetween, formatPlanningDate, todayPlanningDate } from './planningDates';
 import {
   dateGridPlacement,
+  planningStatusDisplayLabel,
   planningStatusTone,
   projectStatusTone,
   type PlanningCrewEvent,
@@ -521,7 +522,7 @@ export function PlanningCrewTimelineRow({
           <Fragment key={event.id}>
           <button
             aria-busy={isPending}
-            aria-label={`${event.person}, ${event.status}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
+            aria-label={`${event.person}, ${planningStatusDisplayLabel(event.status)}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
             className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
             draggable={editable && !preview && !isPending}
             onClick={(clickEvent) => {
@@ -552,11 +553,11 @@ export function PlanningCrewTimelineRow({
               dragEvent.dataTransfer.setData('application/x-seapilot-event', event.id);
             }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${event.person}\n${event.vessel} · ${event.status} · ${planningConfirmationLabel(event.confirmationStatus)}\n${formatPlanningDate(startsOn)} → ${formatPlanningDate(endsOn)}`}
+            title={`${event.person}\n${event.vessel} · ${planningStatusDisplayLabel(event.status)} · ${planningConfirmationLabel(event.confirmationStatus)}\n${formatPlanningDate(startsOn)} → ${formatPlanningDate(endsOn)}`}
             type="button"
           >
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
-            {viewMode !== 'year' && placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : event.status}</span> : null}
+            {viewMode !== 'year' && placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
