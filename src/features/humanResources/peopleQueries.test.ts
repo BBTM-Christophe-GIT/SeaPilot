@@ -460,8 +460,9 @@ describe('buildHumanResourcesDashboard', () => {
         user_id: null,
         first_name: 'Lea',
         last_name: 'BUREAU',
-        function_label: 'Direction',
-        role_label: 'Sedentaire',
+        function_label: 'Responsable administratif',
+        grade_label: 'Sedentaire',
+        role_label: 'Navigant',
         active: true,
       },
     ]);
@@ -494,7 +495,11 @@ describe('buildHumanResourcesDashboard', () => {
       averageTenureYears: expect.any(Number),
       medicalComplianceRate: 50,
     });
-    expect(dashboard.groups.map((group) => group.label)).toEqual(['Capitaine', 'Matelot polyvalent', 'Direction']);
+    expect(dashboard.groups.map((group) => group.label)).toEqual([
+      'Capitaine',
+      'Matelot polyvalent',
+      'Responsable administratif',
+    ]);
     expect(dashboard.groups[0].people[0].categorySummaries).toEqual([
       { key: 'certificate', label: 'Certificats', count: 1, urgentCount: 1, renewalDueCount: 1 },
       { key: 'medical_visit', label: 'Visite Médicale', count: 1, urgentCount: 0, renewalDueCount: 1 },
@@ -669,20 +674,21 @@ describe('createPerson', () => {
         email: ' jean@example.test ',
         functionLabel: ' Capitaine ',
         gradeLabel: ' Capitaine 200 ',
+        phone: ' +33 1 02 03 04 05 ',
+        postalAddress: ' 1 quai des pilotes, 76000 Rouen ',
+        contractType: ' CDI ',
       }),
     ).resolves.toEqual(mapPersonRows([personRow])[0]);
-    expect(insert).toHaveBeenCalledWith({
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       first_name: 'Jean',
       last_name: 'Martin',
       email: 'jean@example.test',
       function_label: 'Capitaine',
       grade_label: 'Capitaine 200',
-      role_label: null,
-      register_label: null,
-      sex: null,
-      sailor_number: null,
-      m365_account: null,
-    });
+      phone: '+33 1 02 03 04 05',
+      postal_address: '1 quai des pilotes, 76000 Rouen',
+      contract_type: 'CDI',
+    }));
   });
 });
 

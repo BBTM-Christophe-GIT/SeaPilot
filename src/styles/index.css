@@ -2020,7 +2020,54 @@ button:disabled {
 }
 
 .hr-create-dialog {
-  width: min(100%, 840px);
+  width: min(100%, 1040px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.hr-create-section-tabs {
+  border-top: 0;
+}
+
+.hr-create-dialog-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+
+.hr-create-dialog-content > section {
+  display: grid;
+  gap: 16px;
+}
+
+.hr-create-dialog-content h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.hr-create-documents-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #cfe0f2;
+  border-radius: 10px;
+  padding: 16px;
+  color: #31506f;
+  background: #f5f9fe;
+}
+
+.hr-create-documents-note svg {
+  flex: 0 0 auto;
+  color: #1769e8;
+}
+
+.hr-create-documents-note strong {
+  color: #173457;
+}
+
+.hr-create-documents-note p {
+  margin: 5px 0 0;
+  line-height: 1.5;
 }
 
 .hr-renewal-dialog {
