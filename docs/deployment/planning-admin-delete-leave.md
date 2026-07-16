@@ -6,6 +6,8 @@ La vue Planning utilise désormais le libellé « Congés » dans les barres, le
 
 La colonne fixe « Navires · Bordées · Marins » reste également au-dessus des barres du calendrier lors d’un défilement horizontal, y compris sur les écrans étroits. Les barres de congés ne recouvrent plus les noms des marins.
 
+Le statut technique historique `Vacance` est conservé dans les données et les API, mais toutes ses présentations dans l’application utilisent désormais le libellé « Vacances ».
+
 Un administrateur peut supprimer définitivement une entrée de type `leave` depuis la fiche ouverte en cliquant sur la barre de congés. L’action :
 
 - affiche une confirmation explicite ;

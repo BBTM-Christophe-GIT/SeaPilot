@@ -910,7 +910,9 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
-    await user.click(within(dialog).getByText('Repos'));
+    expect(within(dialog).getByRole('radio', { name: 'Vacances' })).toBeInTheDocument();
+    expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();
+    await user.click(within(dialog).getByText('Vacances'));
     const noteInput = within(dialog).getByLabelText('Commentaire');
     await user.clear(noteInput);
     await user.type(noteInput, 'Le Havre');
@@ -919,9 +921,10 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
       p_assignment_id: 100,
       p_work_date: '2026-07-14',
-      p_status: 'Repos',
+      p_status: 'Vacance',
       p_note: 'Le Havre',
     }));
+    expect(await screen.findByText('Vacances enregistrées pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
   });
 
   it('creates a board from the vessel staffing decision and proposes compatible available sailors', async () => {
