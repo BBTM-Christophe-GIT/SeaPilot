@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchProjectsData, mapProjectContractRows, mapProjectRows } from './projectQueries';
+import {
+  fetchProjectsData,
+  mapProjectContractRows,
+  mapProjectPlanningOccurrenceRows,
+  mapProjectRows,
+} from './projectQueries';
 
 const projectRow = {
   archived_at: null,
@@ -105,6 +110,7 @@ describe('projectQueries', () => {
       contract_documents: { data: [], error: null },
       project_contracts: { data: null, error: new Error('contracts unavailable') },
       project_documents: { data: [], error: null },
+      planning_projects: { data: [], error: null },
       projects: { data: [projectRow], error: null },
       vessels: { data: [], error: null },
     });
@@ -124,10 +130,42 @@ describe('projectQueries', () => {
       contract_documents: { data: [], error: null },
       project_contracts: { data: [], error: null },
       project_documents: { data: [], error: null },
+      planning_projects: { data: [], error: null },
       projects: { data: null, error: new Error('projects unavailable') },
       vessels: { data: [], error: null },
     });
 
     await expect(fetchProjectsData(client as never)).rejects.toThrow('projects unavailable');
+  });
+
+  it('maps only planning occurrences explicitly linked to a catalog project', () => {
+    expect(mapProjectPlanningOccurrenceRows([
+      {
+        id: 1,
+        catalog_project_id: 880,
+        starts_on: '2026-07-01',
+        ends_on: '2026-07-05',
+        primary_vessel_id: 12,
+        primary_vessel_name: 'COTENTIN',
+        status: 'Validé',
+        description: 'Rotation 1',
+        source_label: 'seapilot-projects',
+        created_at: '2026-07-16T08:00:00Z',
+      },
+      {
+        id: 2,
+        catalog_project_id: null,
+        starts_on: '2026-07-10',
+        ends_on: '2026-07-12',
+        primary_vessel_id: 12,
+        primary_vessel_name: 'COTENTIN',
+        status: 'Validé',
+        description: 'Événement planning indépendant',
+        source_label: 'seapilot-admin',
+        created_at: '2026-07-16T08:00:00Z',
+      },
+    ] as never)).toEqual([
+      expect.objectContaining({ id: 1, projectId: 880, primaryVesselName: 'COTENTIN' }),
+    ]);
   });
 });

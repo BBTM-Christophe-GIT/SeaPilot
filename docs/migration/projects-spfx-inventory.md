@@ -1098,3 +1098,21 @@ Contrôles livrés :
 Le site et les deux drives SharePoint attendus sont confirmés, sans déplacement de fichier. Le rafraîchissement reste idempotent, sans téléchargement, purge ou prune. Le parcours Windows de l’exporteur a été corrigé pour transmettre les requêtes CAML sans interprétation par `cmd.exe` ; sans session Microsoft 365, il s’arrête désormais explicitement avant tout export.
 
 **Arrêt de phase 6 : sécurité durcie et recette automatisable fournie ; bascule non autorisée tant que la réconciliation live et la validation métier ne sont pas achevées.**
+
+## 22. Complément validé — offres, contrats et exécutions multiples
+
+Le besoin métier confirmé le 16 juillet 2026 lève l'ambiguïté sur la relation Planning : un projet catalogue peut être exécuté plusieurs fois. Les deux modèles restent séparés, mais `planning_projects.catalog_project_id` fournit désormais un lien explicite, optionnel et protégé par la société. Il n'est jamais déduit d'un titre historique.
+
+Éléments effectivement livrés :
+
+- action « Nouvelle opération » sur la fiche projet, réservée à Admin et Direction ;
+- RPC créant une nouvelle occurrence à chaque appel, avec contrôles base sur projet, société, navire et dates ;
+- liste de toutes les occurrences rattachées dans la section Planning ;
+- génération locale d'une offre PDF structurée selon les rubriques historiques SharePoint ;
+- génération du contrat PDF sur les deux modèles SUPPLYTIME strictement repris du SPFx, avec les 36 positions d'origine ;
+- liens vers les bibliothèques SharePoint pour déposer la version validée, sans stockage de binaire dans SeaPilot ;
+- correction du fond opaque et du contraste des fenêtres de création/modification.
+
+L'absence de modèle d'offre vierge dans le dépôt SPFx est documentée dans `docs/migration/projects-offers-planning.md`. L'offre générée reprend les rubriques d'un document historique de la bibliothèque contractuelle sans embarquer ce document ni ses données dans Git.
+
+Le NO-GO de réconciliation live de la section 21 n'est pas annulé par ce complément : les fonctionnalités peuvent être déployées, mais la migration des données historiques reste à réconcilier avant de déclarer la bascule métier complète.

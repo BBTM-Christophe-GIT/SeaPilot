@@ -246,6 +246,18 @@ function canonicalSupplytimeValue(
   const vessels = getProjectVesselNames(project).join(' / ');
   const periodStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const periodEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
+  const money = (value: number | null | undefined, currency: string, unit = '') => {
+    if (value === null || value === undefined) return '';
+    return [
+      new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value),
+      currency,
+      unit ? `/ ${unit}` : '',
+    ].filter(Boolean).join(' ');
+  };
+  const extension = contract?.extensionCount !== null && contract?.extensionCount !== undefined
+    && contract.extensionDuration !== null
+    ? `${contract.extensionCount} x ${contract.extensionDuration} ${contract.extensionUnit}`.trim()
+    : '';
 
   const canonicalValues: Record<string, string> = {
     box01_owners: contract?.ownerIdentity || '',
@@ -255,8 +267,15 @@ function canonicalSupplytimeValue(
     box06_port_delivery: project.deliveryPort,
     box07_delivery_range: project.redeliveryPort,
     box09_period: [periodStart, periodEnd].filter(Boolean).join(' — '),
+    box10_extension: extension,
+    box11_continuation: contract?.autoExtensionPeriod || '',
+    box12_mobilisation: money(contract?.mobilisationFee, contract?.feeCurrency || ''),
+    box15_declaration: money(contract?.demobilisationFee, contract?.feeCurrency || ''),
     box16_area_operation: project.operationArea,
     box17_employment: project.title,
+    box20_charter_hire: money(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit),
+    box21_extension_hire: money(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit),
+    box26_max_price: contract?.maxAuditPeriod || '',
   };
 
   return canonicalValues[key] || '';

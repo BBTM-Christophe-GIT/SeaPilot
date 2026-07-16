@@ -119,6 +119,10 @@ describe('projectReadModel', () => {
       source: 'supplytime',
       value: '30 juin 2026 à 18 h',
     });
+    expect(fields.find((field) => field.key === 'box20_charter_hire')).toMatchObject({
+      source: 'canonical',
+      value: expect.stringContaining('12'),
+    });
     expect(fields.find((field) => field.key === 'box34_additional_clauses')).toMatchObject({
       source: 'empty',
       value: '',

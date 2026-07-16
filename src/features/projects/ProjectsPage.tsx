@@ -3,10 +3,13 @@ import {
   Briefcase,
   Archive,
   CalendarDays,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   FileText,
+  Download,
+  ExternalLink,
   History,
   Info,
   Pencil,
@@ -20,7 +23,8 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { ClientEditor, ProjectEditor } from './ProjectEditors';
+import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import type { ProjectGeneratedDocumentKind } from './projectDocumentGeneration';
 import { archiveProject } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import {
@@ -29,6 +33,7 @@ import {
   type ClientRecord,
   type ProjectContractRecord,
   type ProjectDocumentRecord,
+  type ProjectPlanningOccurrenceRecord,
   type ProjectRecord,
   type ProjectsData,
   type ProjectsDataSource,
@@ -56,12 +61,15 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
   contractDocuments: [],
   projectContracts: [],
   projectDocuments: [],
+  planningOccurrences: [],
   projects: [],
   warnings: [],
   vessels: [],
 };
 
 const PROJECTS_PER_PAGE = 40;
+const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
+const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
 
 function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
@@ -133,6 +141,12 @@ function sortDocuments(documents: ProjectDocumentRecord[]): ProjectDocumentRecor
 
 function sortClients(clients: ClientRecord[]): ClientRecord[] {
   return [...clients].sort((left, right) => left.name.localeCompare(right.name, 'fr'));
+}
+
+function sortPlanningOccurrences(occurrences: ProjectPlanningOccurrenceRecord[]): ProjectPlanningOccurrenceRecord[] {
+  return [...occurrences].sort(
+    (left, right) => left.startsOn.localeCompare(right.startsOn) || left.id - right.id,
+  );
 }
 
 function technicalErrorMessage(error: unknown): string {
@@ -289,6 +303,11 @@ function ProjectDetail({
   contractUnavailable,
   projectDocumentsUnavailable,
   contractDocumentsUnavailable,
+  generatingDocument,
+  isManager,
+  onAddPlanningOccurrence,
+  onGenerateDocument,
+  planningOccurrences,
 }: {
   project: ProjectRecord;
   contract?: ProjectContractRecord;
@@ -298,6 +317,11 @@ function ProjectDetail({
   contractUnavailable: boolean;
   projectDocumentsUnavailable: boolean;
   contractDocumentsUnavailable: boolean;
+  generatingDocument: ProjectGeneratedDocumentKind | null;
+  isManager: boolean;
+  onAddPlanningOccurrence: () => void;
+  onGenerateDocument: (kind: ProjectGeneratedDocumentKind) => void;
+  planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
@@ -320,7 +344,14 @@ function ProjectDetail({
           <h2 id="selected-project-title">{project.title}</h2>
           {project.description ? <span>{project.description}</span> : null}
         </div>
-        <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+        <div className="project-detail-header-actions">
+          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+          {isManager ? (
+            <button disabled={Boolean(project.archivedAt)} onClick={onAddPlanningOccurrence} type="button">
+              <CalendarPlus aria-hidden="true" size={16} /> Nouvelle opération
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <ProvenanceNotice contract={contract} project={project} />
@@ -359,7 +390,10 @@ function ProjectDetail({
       </section>
 
       <section className="project-detail-section" aria-labelledby="project-planning-title">
-        <h3 id="project-planning-title">Planning</h3>
+        <div className="project-section-heading">
+          <h3 id="project-planning-title">Planning</h3>
+          <span>{planningOccurrences.length} opération(s)</span>
+        </div>
         <dl className="project-detail-grid">
           <DetailField label="Période de référence" value={formatPeriod(project.startsOn, project.endsOn)} wide />
           <DetailField label="Livraison" value={formatDate(project.deliveryAt)} />
@@ -373,16 +407,46 @@ function ProjectDetail({
           <DetailField label="Extension automatique" value={displayText(contract?.autoExtensionPeriod)} />
           <DetailField label="Maximum de prolongation" value={contract?.maxExtensionDays === null || contract?.maxExtensionDays === undefined ? 'Non renseigné' : `${contract.maxExtensionDays} jours`} />
         </dl>
+        {planningOccurrences.length > 0 ? (
+          <ul className="project-planning-occurrences">
+            {planningOccurrences.map((occurrence) => (
+              <li key={occurrence.id}>
+                <CalendarDays aria-hidden="true" size={18} />
+                <div>
+                  <strong>{formatPeriod(occurrence.startsOn, occurrence.endsOn)}</strong>
+                  <span>{displayText(occurrence.primaryVesselName)} · {displayText(occurrence.status)}</span>
+                  {occurrence.description ? <small>{occurrence.description}</small> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="project-section-empty">Aucune opération planning associée.</p>
+        )}
       </section>
 
       <section className="project-detail-section" aria-labelledby="project-commercial-title">
-        <h3 id="project-commercial-title">Offre commerciale</h3>
+        <div className="project-section-heading">
+          <h3 id="project-commercial-title">Offre commerciale</h3>
+          {isManager ? (
+            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('offer')} type="button">
+              <Download aria-hidden="true" size={16} />
+              {generatingDocument === 'offer' ? 'Génération…' : "Générer l'offre PDF"}
+            </button>
+          ) : null}
+        </div>
         <dl className="project-detail-grid">
           <DetailField label="Forfait mobilisation" value={formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || '')} />
           <DetailField label="Forfait démobilisation" value={formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || '')} />
           <DetailField label="Loyer d’affrètement" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
           <DetailField label="Loyer en prolongation" value={formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
         </dl>
+        <div className="project-generated-document-note">
+          <span>Rubriques commerciales reprises des offres historiques SharePoint. Le PDF est généré localement pour validation.</span>
+          <a href={CONTRACT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Contractuels
+          </a>
+        </div>
       </section>
 
       <section className="project-detail-section" aria-labelledby="project-operations-title">
@@ -398,10 +462,21 @@ function ProjectDetail({
         ) : (
           <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
         )}
+        <a className="project-sharepoint-folder-link" href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Projets
+        </a>
       </section>
 
       <section className="project-detail-section" aria-labelledby="project-contract-title">
-        <h3 id="project-contract-title">Contrat</h3>
+        <div className="project-section-heading">
+          <h3 id="project-contract-title">Contrat</h3>
+          {isManager ? (
+            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('contract')} type="button">
+              <Download aria-hidden="true" size={16} />
+              {generatingDocument === 'contract' ? 'Génération…' : 'Générer le contrat PDF'}
+            </button>
+          ) : null}
+        </div>
         {!contractUnavailable ? <SupplytimePreview contract={contract} project={project} /> : null}
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (
@@ -409,6 +484,9 @@ function ProjectDetail({
         ) : (
           <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
+        <p className="project-document-help">
+          Le contrat utilise les deux fonds SUPPLYTIME 2017 et les positions des 36 zones du module SPFx. Aucun binaire n'est envoyé vers Supabase ou Vercel.
+        </p>
       </section>
     </article>
   );
@@ -428,11 +506,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
   const [isArchiving, setIsArchiving] = useState(false);
+  const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -447,6 +527,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             ...loadedData,
             clients: sortClients(loadedData.clients),
             contractDocuments: sortDocuments(loadedData.contractDocuments),
+            planningOccurrences: sortPlanningOccurrences(loadedData.planningOccurrences),
             projectDocuments: sortDocuments(loadedData.projectDocuments),
             projects: sortProjects(loadedData.projects),
           });
@@ -540,6 +621,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedContractDocuments = selectedProject
     ? contractDocumentSet.documents.filter((document) => documentBelongsToProject(document, selectedProject))
     : [];
+  const selectedPlanningOccurrences = selectedProject
+    ? projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === selectedProject.id)
+    : [];
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -589,6 +673,27 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
     } finally {
       setIsArchiving(false);
+    }
+  }
+
+  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind) {
+    if (!selectedProject) return;
+    setMutationError('');
+    setMutationMessage('');
+    setGeneratingDocument(kind);
+    try {
+      const { downloadGeneratedProjectDocument, generateProjectDocument } = await import('./projectDocumentGeneration');
+      const generated = await generateProjectDocument(kind, {
+        client: selectedClient,
+        contract: selectedContract,
+        project: selectedProject,
+      });
+      downloadGeneratedProjectDocument(generated);
+      setMutationMessage(`${generated.fileName} généré. Après validation, déposez-le dans SharePoint.`);
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
+    } finally {
+      setGeneratingDocument(null);
     }
   }
 
@@ -840,6 +945,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               contractDocuments={selectedContractDocuments}
               contractDocumentsUnavailable={warningIsPresent(projectsData, 'contractDocuments')}
               contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
+              generatingDocument={generatingDocument}
+              isManager={isManager}
+              onAddPlanningOccurrence={() => setPlanningEditorOpen(true)}
+              onGenerateDocument={(kind) => void generateSelectedProjectDocument(kind)}
+              planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}
               projectDocumentsUnavailable={warningIsPresent(projectsData, 'projectDocuments')}
@@ -876,6 +986,19 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             setMutationMessage('Client enregistré dans Supabase.');
             setLoadAttempt((attempt) => attempt + 1);
           }}
+        />
+      ) : null}
+      {planningEditorOpen && selectedProject ? (
+        <ProjectPlanningEditor
+          client={effectiveClient}
+          onClose={() => setPlanningEditorOpen(false)}
+          onSaved={() => {
+            setPlanningEditorOpen(false);
+            setMutationMessage('Opération ajoutée au Planning Supabase.');
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+          project={selectedProject}
+          vessels={projectsData.vessels}
         />
       ) : null}
     </section>

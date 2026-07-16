@@ -110,6 +110,19 @@ const CLIENT_SELECT = [
   'updated_at',
 ].join(', ');
 
+const PROJECT_PLANNING_OCCURRENCE_SELECT = [
+  'id',
+  'catalog_project_id',
+  'starts_on',
+  'ends_on',
+  'primary_vessel_id',
+  'primary_vessel_name',
+  'status',
+  'description',
+  'source_label',
+  'created_at',
+].join(', ');
+
 interface ProjectRow {
   id: number;
   title: string;
@@ -223,6 +236,19 @@ interface ClientRow {
   source_modified_at: string | null;
   archived_at: string | null;
   updated_at: string;
+}
+
+interface ProjectPlanningOccurrenceRow {
+  id: number;
+  catalog_project_id: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  primary_vessel_id: number | null;
+  primary_vessel_name: string | null;
+  status: string | null;
+  description: string | null;
+  source_label: string | null;
+  created_at: string;
 }
 
 export interface ProjectRecord {
@@ -340,7 +366,26 @@ export interface VesselRecord {
   sharePointItemId: string;
 }
 
-export type ProjectsDataSource = 'clients' | 'contractDocuments' | 'projectContracts' | 'projectDocuments' | 'vessels';
+export interface ProjectPlanningOccurrenceRecord {
+  id: number;
+  projectId: number;
+  startsOn: string;
+  endsOn: string;
+  primaryVesselId: number | null;
+  primaryVesselName: string;
+  status: string;
+  description: string;
+  sourceLabel: string;
+  createdAt: string;
+}
+
+export type ProjectsDataSource =
+  | 'clients'
+  | 'contractDocuments'
+  | 'planningOccurrences'
+  | 'projectContracts'
+  | 'projectDocuments'
+  | 'vessels';
 
 export interface ProjectsDataWarning {
   source: ProjectsDataSource;
@@ -353,6 +398,7 @@ export interface ProjectsData {
   projectDocuments: ProjectDocumentRecord[];
   contractDocuments: ProjectDocumentRecord[];
   clients: ClientRecord[];
+  planningOccurrences: ProjectPlanningOccurrenceRecord[];
   vessels: VesselRecord[];
   warnings: ProjectsDataWarning[];
 }
@@ -557,6 +603,26 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
   }));
 }
 
+export function mapProjectPlanningOccurrenceRows(
+  rows: ProjectPlanningOccurrenceRow[],
+): ProjectPlanningOccurrenceRecord[] {
+  return rows.flatMap((row) => {
+    if (!Number.isInteger(row.catalog_project_id) || Number(row.catalog_project_id) <= 0) return [];
+    return [{
+      id: row.id,
+      projectId: Number(row.catalog_project_id),
+      startsOn: nullableText(row.starts_on),
+      endsOn: nullableText(row.ends_on || row.starts_on),
+      primaryVesselId: row.primary_vessel_id,
+      primaryVesselName: nullableText(row.primary_vessel_name),
+      status: nullableText(row.status) || 'A planifier',
+      description: nullableText(row.description),
+      sourceLabel: nullableText(row.source_label),
+      createdAt: nullableText(row.created_at),
+    }];
+  });
+}
+
 export function buildProjectMetrics(data: ProjectsData): ProjectMetrics {
   return {
     activeProjects: data.projects.filter(isActiveProject).length,
@@ -597,6 +663,14 @@ export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord
   return mapVesselRows((await fetchRowsById(client, 'vessels', VESSEL_SELECT)) as VesselRow[]);
 }
 
+export async function fetchProjectPlanningOccurrences(
+  client: SupabaseClient,
+): Promise<ProjectPlanningOccurrenceRecord[]> {
+  return mapProjectPlanningOccurrenceRows(
+    (await fetchRowsById(client, 'planning_projects', PROJECT_PLANNING_OCCURRENCE_SELECT)) as ProjectPlanningOccurrenceRow[],
+  );
+}
+
 const OPTIONAL_SOURCES: Array<{
   source: ProjectsDataSource;
   label: string;
@@ -604,17 +678,19 @@ const OPTIONAL_SOURCES: Array<{
   { source: 'projectContracts', label: 'les informations contractuelles et SUPPLYTIME' },
   { source: 'projectDocuments', label: 'les documents projets' },
   { source: 'contractDocuments', label: 'les documents contractuels' },
+  { source: 'planningOccurrences', label: 'les op\u00e9rations du planning' },
   { source: 'clients', label: 'les fiches clients' },
   { source: 'vessels', label: 'le référentiel navires' },
 ];
 
 export async function fetchProjectsData(client: SupabaseClient): Promise<ProjectsData> {
-  const [projectsResult, contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult, vesselsResult] =
+  const [projectsResult, contractsResult, projectDocumentsResult, contractDocumentsResult, occurrencesResult, clientsResult, vesselsResult] =
     await Promise.allSettled([
       fetchProjects(client),
       fetchProjectContracts(client),
       fetchProjectDocuments(client),
       fetchContractDocuments(client),
+      fetchProjectPlanningOccurrences(client),
       fetchClients(client),
       fetchVessels(client),
     ]);
@@ -623,7 +699,7 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     throw projectsResult.reason;
   }
 
-  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, clientsResult, vesselsResult];
+  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, occurrencesResult, clientsResult, vesselsResult];
   const warnings = optionalResults.flatMap((result, index) =>
     result.status === 'rejected' ? [OPTIONAL_SOURCES[index]] : [],
   );
@@ -633,6 +709,7 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     projectContracts: contractsResult.status === 'fulfilled' ? contractsResult.value : [],
     projectDocuments: projectDocumentsResult.status === 'fulfilled' ? projectDocumentsResult.value : [],
     contractDocuments: contractDocumentsResult.status === 'fulfilled' ? contractDocumentsResult.value : [],
+    planningOccurrences: occurrencesResult.status === 'fulfilled' ? occurrencesResult.value : [],
     clients: clientsResult.status === 'fulfilled' ? clientsResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     warnings,

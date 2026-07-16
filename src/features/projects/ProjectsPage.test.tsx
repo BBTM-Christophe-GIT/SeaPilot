@@ -1,7 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
+
+const documentGenerationMocks = vi.hoisted(() => ({
+  downloadGeneratedProjectDocument: vi.fn(),
+  generateProjectDocument: vi.fn(),
+}));
+
+vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
 
 const atlantiqueProjectRow = {
   archived_at: null,
@@ -170,6 +177,33 @@ const ifremerClientRow = {
 
 const ceremaClientRow = { ...ifremerClientRow, city: 'Rouen', code: 'CER', email: '', id: 51, name: 'Cerema' };
 
+const atlantiquePlanningOccurrenceRows = [
+  {
+    catalog_project_id: 880,
+    created_at: '2026-06-01T08:00:00Z',
+    description: 'Rotation 1',
+    ends_on: '2026-07-03',
+    id: 1201,
+    primary_vessel_id: 12,
+    primary_vessel_name: 'COTENTIN',
+    source_label: 'SeaPilot',
+    starts_on: '2026-07-01',
+    status: 'Planifié',
+  },
+  {
+    catalog_project_id: 880,
+    created_at: '2026-06-05T08:00:00Z',
+    description: 'Rotation 2',
+    ends_on: '2026-07-10',
+    id: 1202,
+    primary_vessel_id: 12,
+    primary_vessel_name: 'COTENTIN',
+    source_label: 'SeaPilot',
+    starts_on: '2026-07-08',
+    status: 'À planifier',
+  },
+];
+
 interface MockSource {
   data: unknown[] | null;
   error: unknown;
@@ -185,6 +219,7 @@ function createClient(
   const sources: Record<string, MockSource> = {
     clients: { data: [ifremerClientRow, ceremaClientRow], error: null },
     contract_documents: { data: [atlantiqueContractDocumentRow], error: null },
+    planning_projects: { data: atlantiquePlanningOccurrenceRows, error: null },
     project_contracts: { data: [atlantiqueContractRow], error: null },
     project_documents: { data: [atlantiqueProjectDocumentRow, mancheProjectDocumentRow], error: null },
     projects: { data: [atlantiqueProjectRow, mancheProjectRow], error: null },
@@ -212,6 +247,14 @@ function createClient(
 }
 
 describe('ProjectsPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    documentGenerationMocks.generateProjectDocument.mockResolvedValue({
+      blob: new Blob(['pdf'], { type: 'application/pdf' }),
+      fileName: 'P1086 - Offre - R1.pdf',
+    });
+  });
+
   it('filters projects and associated indicators by status, client, vessel, period and search', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
@@ -252,13 +295,23 @@ describe('ProjectsPage', () => {
     expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
     expect(screen.getByText('Clauses particulières Atlantique')).toBeInTheDocument();
     expect(screen.getByText('Projet repris depuis SharePoint · BBTM - Projets · 880.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeInTheDocument();
+    expect(screen.getByText('2 opération(s)')).toBeInTheDocument();
+    expect(screen.getByText('Rotation 1')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
       'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',
     );
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
     expect(from.mock.calls.map(([table]) => table)).toEqual(
-      expect.arrayContaining(['projects', 'project_contracts', 'project_documents', 'contract_documents', 'clients']),
+      expect.arrayContaining([
+        'projects',
+        'project_contracts',
+        'project_documents',
+        'contract_documents',
+        'clients',
+        'planning_projects',
+      ]),
     );
   });
 
@@ -381,5 +434,51 @@ describe('ProjectsPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch');
     expect(screen.getByRole('dialog', { name: 'Créer un projet' })).toBeInTheDocument();
+  });
+
+  it('adds independent planning occurrences to the selected project through the secure RPC', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({}, { data: [{ id: 1301 }], error: null });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+
+    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle opération' }));
+    fireEvent.change(screen.getByLabelText('Début *'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Fin *'), { target: { value: '2026-09-05' } });
+    await user.clear(screen.getByLabelText('Description / mission'));
+    await user.type(screen.getByLabelText('Description / mission'), 'Rotation septembre');
+    await user.click(screen.getByRole('button', { name: 'Ajouter au planning' }));
+
+    expect(rpc).toHaveBeenCalledWith('projects_create_planning_occurrence', {
+      target_description: 'Rotation septembre',
+      target_ends_on: '2026-09-05',
+      target_primary_vessel_id: 12,
+      target_project_id: 880,
+      target_starts_on: '2026-09-01',
+      target_status: 'A planifier',
+    });
+    expect(await screen.findByText('Opération ajoutée au Planning Supabase.')).toBeInTheDocument();
+  });
+
+  it('generates offer and contract PDFs locally without writing a binary to Supabase', async () => {
+    const user = userEvent.setup();
+    const { client, from, rpc } = createClient();
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
+    await user.click(screen.getByRole('button', { name: "Générer l'offre PDF" }));
+    await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
+      'offer',
+      expect.objectContaining({ project: expect.objectContaining({ id: 880 }) }),
+    ));
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat PDF' }));
+
+    expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
+      'contract',
+      expect.objectContaining({ contract: expect.objectContaining({ projectId: 880 }) }),
+    );
+    expect(documentGenerationMocks.downloadGeneratedProjectDocument).toHaveBeenCalledTimes(2);
+    expect(from.mock.calls.map(([table]) => table)).not.toContain('storage');
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,15 @@ export interface ProjectCatalogOption {
   title: string;
 }
 
+export interface ProjectPlanningOccurrenceWriteInput {
+  projectId: number;
+  startsOn: string;
+  endsOn: string;
+  primaryVesselId: number | null;
+  status: string;
+  description: string;
+}
+
 export interface ProjectWriteInput {
   projectId: number | null;
   title: string;
@@ -235,6 +244,43 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
 export async function archiveProject(client: SupabaseClient, projectId: number): Promise<void> {
   const { error } = await client.rpc('projects_archive', { target_project_id: projectId });
   if (error) throw mutationError(error, "Impossible d’archiver le projet.");
+}
+
+export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOccurrenceWriteInput): string[] {
+  const errors: string[] = [];
+  if (!Number.isInteger(input.projectId) || input.projectId <= 0) errors.push('Le projet est obligatoire.');
+  if (!input.startsOn) errors.push("La date de d\u00e9but de l'op\u00e9ration est obligatoire.");
+  if (!input.endsOn) errors.push("La date de fin de l'op\u00e9ration est obligatoire.");
+  if (input.startsOn && input.endsOn && input.endsOn < input.startsOn) {
+    errors.push("La fin de l'op\u00e9ration ne peut pas pr\u00e9c\u00e9der son d\u00e9but.");
+  }
+  if (input.primaryVesselId === null || !Number.isInteger(input.primaryVesselId) || input.primaryVesselId <= 0) {
+    errors.push("Le navire de l'op\u00e9ration est obligatoire.");
+  }
+  return errors;
+}
+
+export async function createProjectPlanningOccurrence(
+  client: SupabaseClient,
+  input: ProjectPlanningOccurrenceWriteInput,
+): Promise<number> {
+  const validationErrors = validateProjectPlanningOccurrenceInput(input);
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
+
+  const { data, error } = await client.rpc('projects_create_planning_occurrence', {
+    target_project_id: input.projectId,
+    target_starts_on: input.startsOn,
+    target_ends_on: input.endsOn,
+    target_primary_vessel_id: input.primaryVesselId,
+    target_status: optionalText(input.status),
+    target_description: optionalText(input.description),
+  });
+  if (error) throw mutationError(error, "Impossible d'ajouter cette op\u00e9ration au planning.");
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row || !Number.isInteger(Number(row.id))) {
+    throw new Error("Supabase n'a retourn\u00e9 aucune op\u00e9ration apr\u00e8s l'enregistrement.");
+  }
+  return Number(row.id);
 }
 
 export async function fetchProjectCatalogOptions(client: SupabaseClient): Promise<ProjectCatalogOption[]> {

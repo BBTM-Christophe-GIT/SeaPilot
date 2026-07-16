@@ -2747,10 +2747,18 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(13, 29, 46, 0.62);
+  background: rgba(7, 20, 34, 0.76);
+  backdrop-filter: blur(3px);
 }
 
 .project-editor {
+  --surface: #ffffff;
+  --surface-subtle: #f4f7f9;
+  --line: #d9e2e8;
+  --line-strong: #aebfca;
+  --text: #182132;
+  --muted-text: #5d6f7c;
+  --navy: #0b2f4a;
   width: min(1080px, 100%);
   max-height: calc(100vh - 36px);
   overflow: auto;
@@ -2758,10 +2766,15 @@ button:disabled {
   background: var(--surface);
   border-radius: 12px;
   box-shadow: 0 24px 70px rgba(7, 22, 38, 0.32);
+  isolation: isolate;
 }
 
 .project-editor.is-client {
   width: min(720px, 100%);
+}
+
+.project-editor.is-planning {
+  width: min(760px, 100%);
 }
 
 .project-editor > header,
@@ -2897,10 +2910,128 @@ button:disabled {
   margin: 0 18px;
 }
 
+.project-editor-note {
+  margin: 0 18px 16px !important;
+  padding: 10px 12px;
+  color: #425866;
+  background: #edf5f8;
+  border: 1px solid #c8dce5;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
 .project-editor form > footer {
   bottom: 0;
   justify-content: flex-end;
   border-top: 1px solid var(--line);
+}
+
+.project-detail-header-actions,
+.project-section-heading,
+.project-generated-document-note,
+.project-sharepoint-folder-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-detail-header-actions {
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.project-detail-header-actions button,
+.project-section-heading button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 10px;
+  color: #0b4e75;
+  background: #ffffff;
+  border: 1px solid #afc6d5;
+  border-radius: 7px;
+  font-weight: 700;
+}
+
+.project-section-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.project-section-heading h3 {
+  margin: 0;
+}
+
+.project-section-heading > span {
+  color: #617381;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.project-planning-occurrences {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-planning-occurrences li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  color: #1d3342;
+  background: #f5faf8;
+  border: 1px solid #cfe4da;
+  border-radius: 8px;
+}
+
+.project-planning-occurrences li > svg {
+  color: #16805d;
+}
+
+.project-planning-occurrences li div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.project-planning-occurrences span,
+.project-planning-occurrences small {
+  color: #617381;
+}
+
+.project-generated-document-note {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: #425866;
+  background: #f2f7fa;
+  border: 1px solid #d4e2e9;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.project-generated-document-note a,
+.project-sharepoint-folder-link {
+  flex: 0 0 auto;
+  color: #0b6075;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.project-sharepoint-folder-link {
+  width: fit-content;
+  margin-top: 12px;
+}
+
+.project-generated-document-note a:hover,
+.project-sharepoint-folder-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 760px) {
@@ -2921,6 +3052,18 @@ button:disabled {
   .project-editor {
     max-height: 100vh;
     border-radius: 0;
+  }
+
+  .project-detail-header-actions,
+  .project-section-heading,
+  .project-generated-document-note {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-detail-header-actions button,
+  .project-section-heading button {
+    width: 100%;
   }
 }
 

@@ -22,7 +22,7 @@ select ok(
   to_regclass('public.projects_company_code_normalized_unique_idx') is not null,
   'normalized project code has a unique index'
 );
-select hasnt_column('public', 'planning_projects', 'catalog_project_id', 'planning_projects remains separate');
+select has_column('public', 'planning_projects', 'catalog_project_id', 'planning_projects keeps a separate optional catalog link');
 select has_fk('public', 'project_contracts', 'contract is related to a catalog project');
 select ok(
   to_regclass('public.project_documents_drive_item_unique_idx') is not null,

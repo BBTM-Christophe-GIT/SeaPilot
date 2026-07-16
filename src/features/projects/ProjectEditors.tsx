@@ -2,10 +2,12 @@ import { X } from 'lucide-react';
 import { useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
+  createProjectPlanningOccurrence,
   saveClient,
   saveProject,
   type ClientWriteInput,
   type ProjectMutationResult,
+  type ProjectPlanningOccurrenceWriteInput,
   type ProjectWriteInput,
 } from './projectMutations';
 import type {
@@ -34,6 +36,14 @@ interface ClientEditorProps {
   clientRecord?: ClientRecord;
   onClose: () => void;
   onSaved: (clientId: number) => void;
+}
+
+interface ProjectPlanningEditorProps {
+  client: SupabaseClient;
+  onClose: () => void;
+  onSaved: (occurrenceId: number) => void;
+  project: ProjectRecord;
+  vessels: VesselRecord[];
 }
 
 function toLocalDateTime(value: string): string {
@@ -324,6 +334,87 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
             <button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer dans Supabase'}</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function dateOnly(value: string): string {
+  return value ? value.slice(0, 10) : '';
+}
+
+export function ProjectPlanningEditor({
+  client,
+  onClose,
+  onSaved,
+  project,
+  vessels,
+}: ProjectPlanningEditorProps) {
+  const [form, setForm] = useState<ProjectPlanningOccurrenceWriteInput>({
+    projectId: project.id,
+    startsOn: dateOnly(project.deliveryAt || project.charterStartsAt || project.startsOn),
+    endsOn: dateOnly(project.redeliveryAt || project.charterEndsAt || project.endsOn),
+    primaryVesselId: project.primaryVesselId,
+    status: 'A planifier',
+    description: project.description,
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const eligibleVessels = vessels.filter((vessel) => vessel.active || vessel.id === project.primaryVesselId);
+
+  function update<K extends keyof ProjectPlanningOccurrenceWriteInput>(
+    key: K,
+    value: ProjectPlanningOccurrenceWriteInput[K],
+  ) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      onSaved(await createProjectPlanningOccurrence(client, form));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette op\u00e9ration au planning.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="project-editor-backdrop">
+      <section aria-labelledby="project-planning-editor-title" aria-modal="true" className="project-editor is-planning" role="dialog">
+        <header>
+          <div>
+            <span>{project.projectCode || 'Projet catalogue'}</span>
+            <h2 id="project-planning-editor-title">Nouvelle opération</h2>
+          </div>
+          <button aria-label="Fermer le formulaire opération" disabled={isSaving} onClick={onClose} type="button">
+            <X aria-hidden="true" size={20} />
+          </button>
+        </header>
+        <form onSubmit={submit}>
+          <div className="project-editor-grid">
+            <Field label="Projet" wide><input disabled value={`${project.projectCode || ''} - ${project.title}`.replace(/^ - /, '')} /></Field>
+            <Field label="Début *"><input autoFocus onChange={(event) => update('startsOn', event.target.value)} required type="date" value={form.startsOn} /></Field>
+            <Field label="Fin *"><input onChange={(event) => update('endsOn', event.target.value)} required type="date" value={form.endsOn} /></Field>
+            <Field label="Navire *">
+              <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} required value={form.primaryVesselId ?? ''}>
+                <option value="">Choisir un navire</option>
+                {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+              </select>
+            </Field>
+            <Field label="Statut"><input onChange={(event) => update('status', event.target.value)} value={form.status} /></Field>
+            <Field label="Description / mission" wide><textarea onChange={(event) => update('description', event.target.value)} value={form.description} /></Field>
+          </div>
+          <p className="project-editor-note">Chaque enregistrement est une occurrence indépendante dans le Planning. Le projet catalogue reste inchangé.</p>
+          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
+          <footer>
+            <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
+            <button disabled={isSaving} type="submit">{isSaving ? 'Ajout en cours\u2026' : 'Ajouter au planning'}</button>
           </footer>
         </form>
       </section>

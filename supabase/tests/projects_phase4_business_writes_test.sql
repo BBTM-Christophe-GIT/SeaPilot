@@ -329,7 +329,7 @@ select throws_ok(
     )$$,
   '23503', 'Selected client is unavailable in the active company', 'cross-company client relations are rejected'
 );
-select hasnt_column('public', 'planning_projects', 'catalog_project_id', 'planning projects remain independent from the catalog');
+select has_column('public', 'planning_projects', 'catalog_project_id', 'planning projects remain separate with an optional catalog link');
 select throws_ok(
   $$insert into public.clients (name) values ('Bypass client')$$,
   '42501', null, 'authenticated users cannot bypass the client RPC with direct table writes'

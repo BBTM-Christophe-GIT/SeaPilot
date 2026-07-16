@@ -24,6 +24,7 @@ describe('previewSupabaseClient', () => {
   it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {
     const projects = await previewSupabaseClient.from('projects').select('*').order('id');
     const documents = await previewSupabaseClient.from('project_documents').select('*').order('id');
+    const occurrences = await previewSupabaseClient.from('planning_projects').select('*').order('id');
     const write = await previewSupabaseClient.rpc('projects_save', { target_title: 'Forbidden preview write' });
 
     expect(projects.error).toBeNull();
@@ -37,6 +38,7 @@ describe('previewSupabaseClient', () => {
         is_folder: false,
       }),
     ]);
+    expect(occurrences.data?.filter((occurrence) => occurrence.catalog_project_id === 9001)).toHaveLength(2);
     expect(write.error).toMatchObject({ message: expect.stringContaining('ne peuvent pas être enregistrées') });
   });
 });

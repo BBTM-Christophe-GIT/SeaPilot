@@ -12,7 +12,7 @@ Ce runbook est la procédure opérateur de la migration du catalogue métier Pro
 | Métadonnées documentaires et rattachement au projet | Supabase | Import idempotent depuis SharePoint ; aucune suppression implicite |
 | Contenu, version, déplacement, suppression et droits des fichiers | SharePoint | Les fichiers ne quittent jamais `Documents Projets` ou `Documents Contractuels` |
 | Consultation d’un fichier | SharePoint | SeaPilot ouvre l’URL protégée d’origine ; Microsoft 365 authentifie l’utilisateur |
-| Planning opérationnel | `planning_projects` dans Supabase | Reste indépendant de `projects` ; aucun rapprochement automatique |
+| Planning opérationnel | `planning_projects` dans Supabase | Table distincte ; lien explicite optionnel vers `projects`, plusieurs occurrences autorisées par projet |
 | DPR, Achats et Plan d’action | Supabase | Référence `projects.id` si résolue et conserve les instantanés historiques sinon |
 
 Il est interdit de créer un bucket Supabase Storage, de copier un binaire dans Vercel ou Git, de rendre une URL SharePoint publique, ou de réactiver une double écriture vers les listes SharePoint.
@@ -94,7 +94,7 @@ npm run import:sharepoint -- `
 
 Le bundle place les clients et la flotte avant les projets, puis les documents. L’import effectue des upserts fondés sur les identifiants SharePoint stables. Il ne purge, ne prune et ne supprime aucune ligne.
 
-Rejouer exactement la même commande. Les volumes et nombres de doublons doivent rester identiques. Une variation sans changement de source, un nouveau doublon ou une suppression est un No-Go. Ne pas appeler `--resolve-planning-links` pour rapprocher le catalogue : `planning_projects` reste indépendant.
+Rejouer exactement la même commande. Les volumes et nombres de doublons doivent rester identiques. Une variation sans changement de source, un nouveau doublon ou une suppression est un No-Go. Ne pas appeler `--resolve-planning-links` pour rapprocher les lignes historiques : seul le lien explicite créé par `projects_create_planning_occurrence` est autorisé.
 
 ## 6. Aligner le numéro de projet
 
@@ -135,7 +135,9 @@ Conserver les détails nominatifs dans le journal sécurisé ; le rapport Git ne
 | Capitaine | Non | Non | Non | Non |
 | Marin | Non | Non | Non | Non |
 
-Avec cinq comptes dédiés, vérifier liste, recherche, filtres, sélection, détail, sections métier, aperçu SUPPLYTIME, création, modification, validations, archivage, collision concurrente et erreurs réseau. Ouvrir un document de chaque bibliothèque avec une session Microsoft 365 valide, puis vérifier le message attendu sans session. Tester en desktop et mobile. Confirmer que Planning reste indépendant et qu’un nouveau projet est disponible dans DPR, Achats et Plan d’action via le catalogue minimal, sans duplication.
+Avec cinq comptes dédiés, vérifier liste, recherche, filtres, sélection, détail, sections métier, aperçu SUPPLYTIME, création, modification, validations, archivage, collision concurrente et erreurs réseau. Générer une offre et un contrat, contrôler leur contenu puis déposer les versions validées dans SharePoint. Créer deux occurrences Planning depuis le même projet et confirmer deux identifiants Planning distincts portant le même `catalog_project_id`. Ouvrir un document de chaque bibliothèque avec une session Microsoft 365 valide, puis vérifier le message attendu sans session. Tester en desktop et mobile. Confirmer qu’un nouveau projet est disponible dans DPR, Achats et Plan d’action via le catalogue minimal, sans duplication.
+
+La génération navigateur ne publie aucun fichier : elle télécharge un PDF de travail. Le dépôt, la version, les droits et la signature restent gérés dans SharePoint.
 
 ## 9. Go / No-Go
 

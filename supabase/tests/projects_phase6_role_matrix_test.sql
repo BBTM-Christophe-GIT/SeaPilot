@@ -31,7 +31,7 @@ select ok(
   'anonymous users have no project table privilege'
 );
 select ok(not has_sequence_privilege('anon', 'public.projects_id_seq', 'USAGE'), 'anonymous users cannot allocate project IDs');
-select hasnt_column('public', 'planning_projects', 'catalog_project_id', 'planning projects remain independent from the catalog');
+select has_column('public', 'planning_projects', 'catalog_project_id', 'planning projects remain separate with an optional catalog link');
 
 insert into auth.users (id, email)
 values

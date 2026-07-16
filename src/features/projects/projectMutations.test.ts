@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   archiveProject,
+  createProjectPlanningOccurrence,
   fetchProjectCatalogOptions,
   saveClient,
   saveProject,
   validateProjectWriteInput,
+  validateProjectPlanningOccurrenceInput,
 } from './projectMutations';
 
 describe('projectMutations', () => {
@@ -90,5 +92,45 @@ describe('projectMutations', () => {
       { id: 901, projectCode: 'P1107', title: 'Projet concurrent' },
     ]);
     expect(rpc).toHaveBeenCalledWith('projects_catalog_options');
+  });
+
+  it('creates repeatable planning occurrences through the secured project RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ id: 1201 }], error: null });
+    const input = {
+      projectId: 901,
+      startsOn: '2026-08-03',
+      endsOn: '2026-08-08',
+      primaryVesselId: 12,
+      status: 'A planifier',
+      description: 'Première rotation',
+    };
+
+    expect(validateProjectPlanningOccurrenceInput(input)).toEqual([]);
+    await expect(createProjectPlanningOccurrence({ rpc } as never, input)).resolves.toBe(1201);
+    await expect(createProjectPlanningOccurrence({ rpc } as never, { ...input, startsOn: '2026-08-14', endsOn: '2026-08-21' })).resolves.toBe(1201);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenCalledWith('projects_create_planning_occurrence', {
+      target_project_id: 901,
+      target_starts_on: '2026-08-03',
+      target_ends_on: '2026-08-08',
+      target_primary_vessel_id: 12,
+      target_status: 'A planifier',
+      target_description: 'Première rotation',
+    });
+  });
+
+  it('rejects an incomplete or inverted planning occurrence before calling Supabase', async () => {
+    const rpc = vi.fn();
+    const input = {
+      projectId: 901,
+      startsOn: '2026-08-09',
+      endsOn: '2026-08-08',
+      primaryVesselId: null,
+      status: '',
+      description: '',
+    };
+    expect(validateProjectPlanningOccurrenceInput(input)).toHaveLength(2);
+    await expect(createProjectPlanningOccurrence({ rpc } as never, input)).rejects.toThrow("fin de l'opération");
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
