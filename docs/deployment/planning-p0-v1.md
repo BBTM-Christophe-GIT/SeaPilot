@@ -1,10 +1,12 @@
 # SeaPilot Planning P0 — préparation au déploiement V1
 
+> Document historique. Le circuit de validation et de publication par période décrit ci-dessous est remplacé par la diffusion globale documentée dans `planning-global-distribution-leave-workflow.md` et les migrations `202607160006` à `202607160008`.
+
 Version applicative cible : `1.9.0`
 Migrations cibles : `202607130007_planning_p04_governance_v1.sql`, puis `202607130008_planning_p04_audit_backfill_cleanup.sql`
 Périmètre : Planning P0.1 à P0.4, sans fonctionnalité P1/P2.
 
-Correctif ultérieur : `202607160005_planning_reopen_archived.sql` doit être appliquée pour permettre la reprise motivée d’une période archivée sans modifier les versions publiées.
+Le correctif `202607160005_planning_reopen_archived.sql` reste dans l’historique des migrations, mais son parcours applicatif est désactivé par la diffusion globale.
 
 ## 1. Ordre des migrations
 

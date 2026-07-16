@@ -140,6 +140,21 @@ const medicalDocumentRow = {
   medical_unfit: false,
   file_url: null,
 };
+const requestedLeaveRow = {
+  id: 700,
+  person_id: 11,
+  absence_type: 'leave',
+  starts_at: '2026-07-06T06:00:00Z',
+  ends_at: '2026-07-09T16:00:00Z',
+  reason: '',
+  status: 'requested',
+  requested_by: 'user-sailor',
+  reviewed_by: null,
+  reviewed_at: null,
+  review_comment: null,
+  created_at: '2026-07-01T08:00:00Z',
+  updated_at: '2026-07-01T08:00:00Z',
+};
 const publicationRow = {
   id: 500,
   vessel_id: null,
@@ -183,6 +198,8 @@ function createClient(options: {
   handoverPositions?: unknown[];
   derogations?: unknown[];
   derogationHistory?: unknown[];
+  absences?: unknown[];
+  publishedSnapshot?: Record<string, unknown>;
   createdAssignment?: unknown;
   createdProject?: unknown;
   updatedProject?: unknown;
@@ -255,6 +272,12 @@ function createClient(options: {
     if (table === 'planning_derogations') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.derogations ?? [], error: null }) }) };
     }
+    if (table === 'planning_absences') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.absences ?? [], error: null }) }) };
+    }
+    if (table === 'planning_conflict_cases' || table === 'planning_conflict_case_history') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+    }
     if (table === 'planning_manning_matrices') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.matrices ?? [], error: null }) }) };
     }
@@ -275,6 +298,43 @@ function createClient(options: {
   const rpc = vi.fn().mockImplementation((functionName: string) => {
     if (functionName === 'planning_assignment_overview') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
+    }
+    if (functionName === 'planning_release_history') {
+      return Promise.resolve({ data: options.versions ?? [], error: null });
+    }
+    if (functionName === 'latest_planning_release') {
+      return Promise.resolve({
+        data: options.publishedSnapshot ? {
+          release: options.versions?.[0] ?? {
+            id: 1,
+            publication_id: 1,
+            version_number: 1,
+            comment: '',
+            created_at: '2026-07-13T10:00:00Z',
+            created_by: 'user-publish',
+            created_by_name: 'Direction BBTM',
+          },
+          snapshot: options.publishedSnapshot,
+        } : null,
+        error: null,
+      });
+    }
+    if (functionName === 'publish_planning_release') {
+      return Promise.resolve({
+        data: options.versions?.[0] ?? {
+          id: 1,
+          publication_id: 1,
+          version_number: 1,
+          comment: '',
+          created_at: '2026-07-13T10:00:00Z',
+          created_by: 'user-publish',
+          created_by_name: 'Direction BBTM',
+        },
+        error: null,
+      });
+    }
+    if (functionName === 'review_planning_absence' || functionName === 'save_planning_absence') {
+      return Promise.resolve({ data: 1, error: null });
     }
     if (functionName === 'transition_planning_publication') {
       return Promise.resolve({
@@ -539,80 +599,58 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
   });
 
-  it('submits and locks the visible period for validation', async () => {
+  it('diffuses the current planning globally without locking office editing', async () => {
     const user = userEvent.setup();
-    const { client } = createClient({ assignments: [] });
+    const release = {
+      id: 1,
+      publication_id: 1,
+      version_number: 1,
+      comment: '',
+      created_at: '2026-07-13T10:00:00Z',
+      created_by: 'user-publish',
+      created_by_name: 'Direction BBTM',
+    };
+    const { client } = createClient({ assignments: [], versions: [release] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByRole('region', { name: 'Pilotage de publication' })).toHaveTextContent('En préparation');
-    await user.type(screen.getByLabelText('Commentaire de publication'), 'Préparation planning été');
-    await user.click(screen.getByRole('button', { name: 'Soumettre à validation' }));
+    const distributionPanel = screen.getByRole('region', { name: 'Diffusion du planning' });
+    expect(distributionPanel).toHaveTextContent('Version 1');
+    await user.click(screen.getByRole('button', { name: 'Diffuser le Planning' }));
 
-    expect(await screen.findByText('Période soumise et verrouillée pour validation.')).toBeInTheDocument();
-    expect(client.rpc).toHaveBeenCalledWith('transition_planning_publication', expect.objectContaining({
-      p_action: 'submit',
-      p_starts_on: '2026-06-29',
-      p_ends_on: '2026-08-16',
-      p_comment: 'Préparation planning été',
-    }));
-    expect(screen.getByText('Verrouillé')).toBeInTheDocument();
+    expect(await screen.findByText('Planning diffusé en version 1.')).toBeInTheDocument();
+    expect(client.rpc).toHaveBeenCalledWith('publish_planning_release');
+    expect(screen.getByText('Brouillon modifiable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
   });
 
-  it('keeps editing locked while exposing a direct action to modify a published planning again', async () => {
-    const user = userEvent.setup();
-    const { client } = createClient({ publications: [publicationRow] });
-    render(<PlanningPage client={client as never} roles={['admin']} />);
-
+  it('allows Armement to diffuse the planning without a validation circuit', async () => {
+    const { client } = createClient();
+    render(<PlanningPage client={client as never} roles={['armement']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    const publicationPanel = screen.getByRole('region', { name: 'Pilotage de publication' });
-    expect(publicationPanel).toHaveTextContent('Publié');
-    expect(publicationPanel).toHaveTextContent('Version 1');
-    expect(publicationPanel).toHaveTextContent('Publié par Direction BBTM');
-    expect(screen.getByText('Verrouillé')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouveau projet' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Modifier à nouveau' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Afficher 1 autre action de publication/ }));
-    expect(screen.getByRole('group', { name: 'Autres actions de publication' })).toHaveTextContent('Le rôle de chaque action est détaillé');
-    expect(screen.getByRole('button', { name: 'Archiver' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Diffuser le Planning' })).toBeInTheDocument();
+    expect(screen.queryByText(/Soumettre|Valider la période|Archiver/)).not.toBeInTheDocument();
   });
 
-  it('reopens an archived planning so events can be modified again', async () => {
+  it('shows pending leave on the timeline and opens approval by clicking its period', async () => {
     const user = userEvent.setup();
-    const archivedPublication = {
-      ...publicationRow,
-      status: 'archived',
-      current_version: 2,
-      comment: 'Fin de période archivée',
-    };
-    const reopenedPublication = {
-      ...archivedPublication,
-      status: 'modified_after_publication',
-      comment: 'Correction des affectations validées',
-      locked_at: null,
-      locked_by: null,
-      locked_by_name: null,
-    };
-    const { client } = createClient({
-      publications: [archivedPublication],
-      transitionedPublication: reopenedPublication,
+    const { client, rpc } = createClient({
+      assignments: [assignmentOverviewRow],
+      absences: [requestedLeaveRow],
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByRole('region', { name: 'Pilotage de publication' })).toHaveTextContent('Archivé');
-    await user.type(screen.getByLabelText('Commentaire de publication'), 'Correction des affectations validées');
-    await user.click(screen.getByRole('button', { name: 'Modifier à nouveau' }));
+    expect(screen.getByRole('button', { name: /Demandes en attente.*1/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(screen.getByRole('button', { name: /Congé à valider/ }));
 
-    expect(await screen.findByText('Planning déverrouillé. Vous pouvez le modifier à nouveau.')).toBeInTheDocument();
-    expect(client.rpc).toHaveBeenCalledWith('transition_planning_publication', expect.objectContaining({
-      p_action: 'reopen',
-      p_publication_id: 500,
-      p_comment: 'Correction des affectations validées',
-    }));
-    expect(screen.queryByText('Verrouillé')).not.toBeInTheDocument();
-    expect(screen.getByText('Modification')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
+    expect(await screen.findByText('Aucun motif renseigné.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('review_planning_absence', expect.objectContaining({
+      p_absence_id: 700,
+      p_action: 'approve',
+    })));
   });
 
   it('shows immutable versions and the semantic Planning history', async () => {
@@ -648,7 +686,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Outils' }));
     await user.click(screen.getByRole('button', { name: /Historique/ }));
-    expect(screen.getByText('Version publiée 1')).toBeInTheDocument();
+    expect(screen.getByText('Version diffusée 1')).toBeInTheDocument();
     expect(screen.getByText('Planning publié en version 1')).toBeInTheDocument();
     expect(screen.getAllByText(/Direction BBTM/).length).toBeGreaterThan(0);
   });
@@ -730,14 +768,35 @@ describe('PlanningPage cockpit', () => {
 
   it('keeps marins in read-only mode', async () => {
     const user = userEvent.setup();
-    const { client } = createClient({ periods: [planningPeriodRow] });
+    const release = {
+      id: 1,
+      publication_id: 1,
+      version_number: 1,
+      comment: '',
+      created_at: '2026-07-13T10:00:00Z',
+      created_by: 'user-publish',
+      created_by_name: 'Direction BBTM',
+    };
+    const { client } = createClient({
+      versions: [release],
+      publishedSnapshot: {
+        assignments: [],
+        days: [],
+        periods: [planningPeriodRow],
+        projects: [],
+        handovers: [],
+        derogations: [],
+      },
+    });
     render(<PlanningPage client={client as never} roles={['marin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
-    expect(screen.getByText('Lecture seule')).toBeInTheDocument();
+    expect(screen.getByText('Dernière version diffusée')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Demander un congé' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
   });
 
   it('allows office direction to edit while keeping vessel administration restricted', async () => {
@@ -745,7 +804,7 @@ describe('PlanningPage cockpit', () => {
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByText('Modification')).toBeInTheDocument();
+    expect(screen.getByText('Brouillon modifiable')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Créer une affectation' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Outils' }));

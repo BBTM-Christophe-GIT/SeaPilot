@@ -39,6 +39,18 @@ describe('planning P1.2 absence query contracts', () => {
     }));
   });
 
+  it('accepts a leave request without an optional reason', async () => {
+    const { client, rpc } = rpcClient(6);
+    await expect(savePlanningAbsence(client, {
+      personId: 2,
+      absenceType: 'leave',
+      startsAt: '2026-11-02T08:00',
+      endsAt: '2026-11-05T18:00',
+      reason: '',
+    })).resolves.toBe(6);
+    expect(rpc).toHaveBeenCalledWith('save_planning_absence', expect.objectContaining({ p_reason: '' }));
+  });
+
   it('rejects incoherent absence dates before any network call', () => {
     const { client, rpc } = rpcClient();
     expect(() => savePlanningAbsence(client, { personId: 2, absenceType: 'leave', startsAt: '2026-08-02T08:00', endsAt: '2026-08-01T18:00', reason: 'Congé' })).toThrow('strictement postérieure');

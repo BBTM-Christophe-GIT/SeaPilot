@@ -412,7 +412,10 @@ describe('fetchPlanningOverview', () => {
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
     const periodsOrderByCrew = vi.fn().mockResolvedValue({ data: [planningPeriodRow], error: null });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
-    const rpc = vi.fn().mockResolvedValue({ data: [assignmentOverviewRow], error: null });
+    const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
+      data: name === 'planning_assignment_overview' ? [assignmentOverviewRow] : [],
+      error: null,
+    }));
     const from = vi.fn().mockImplementation((table: string) => {
       if (table === 'vessels') {
         return {
@@ -486,7 +489,7 @@ describe('fetchPlanningOverview', () => {
       certificates: [],
       hrDocuments: [],
       rules: [],
-      publications: mapPlanningPublicationRows([planningPublicationRow]),
+      publications: [],
       versions: [],
       history: [],
       handovers: [],
@@ -522,7 +525,10 @@ describe('fetchPlanningOverview', () => {
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
     const periodsOrderByCrew = vi.fn().mockResolvedValue({ data: [], error: null });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
-    const rpc = vi.fn().mockResolvedValue({ data: [inactiveAssignmentOverviewRow], error: null });
+    const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
+      data: name === 'planning_assignment_overview' ? [inactiveAssignmentOverviewRow] : [],
+      error: null,
+    }));
     const from = vi.fn().mockImplementation((table: string) => {
       if (table === 'vessels') {
         return {

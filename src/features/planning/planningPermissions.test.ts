@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { getPlanningPermissions } from './planningPermissions';
 
 describe('planning permissions', () => {
-  it('separates direction validation/publication from vessel administration', () => {
+  it('lets direction edit and distribute without a validation circuit', () => {
     expect(getPlanningPermissions(['direction'], false)).toMatchObject({
       canRead: true,
       canEditEvents: true,
-      canSubmitPublication: true,
-      canValidatePublication: true,
+      canSubmitPublication: false,
+      canValidatePublication: false,
       canPublishPublication: true,
-      canReopenPublication: true,
+      canReopenPublication: false,
       canArchivePublication: false,
       canManageVessels: false,
       canManageHandovers: false,
@@ -31,12 +31,12 @@ describe('planning permissions', () => {
     });
   });
 
-  it('lets armement prepare events and handovers without validating or publishing', () => {
+  it('lets armement edit, handle handovers and distribute', () => {
     expect(getPlanningPermissions(['armement'], false)).toMatchObject({
       canEditEvents: true,
-      canSubmitPublication: true,
+      canSubmitPublication: false,
       canValidatePublication: false,
-      canPublishPublication: false,
+      canPublishPublication: true,
       canManageHandovers: true,
       canManageDerogations: false,
       canManageRotations: true,
@@ -56,26 +56,26 @@ describe('planning permissions', () => {
     });
   });
 
-  it('limits a captain to reading, scoped validation and history', () => {
+  it('limits a captain to the latest distributed planning and leave requests', () => {
     expect(getPlanningPermissions(['capitaine'], false)).toMatchObject({
       canRead: true,
       canEditEvents: false,
-      canValidatePublication: true,
+      canValidatePublication: false,
       canPublishPublication: false,
       canManageRotations: false,
       canManageTemplates: false,
       canManageManning: false,
       canRequestAbsences: true,
       canReviewAbsences: false,
-      canManageConflictCases: true,
+      canManageConflictCases: false,
       canPrepareReplacements: false,
-      canViewHistory: true,
+      canViewHistory: false,
       canManageWorkRestPolicies: false,
       canViewWorkRest: true,
       canViewNotifications: true,
       canRefreshNotifications: false,
       canViewDashboard: true,
-      canManageDependencies: true,
+      canManageDependencies: false,
     });
   });
 
@@ -102,15 +102,15 @@ describe('planning permissions', () => {
     });
   });
 
-  it('allows an administrator to perform every Planning action', () => {
+  it('allows an administrator to edit and distribute without legacy workflow actions', () => {
     expect(getPlanningPermissions(['admin'], false)).toMatchObject({
       canRead: true,
       canEditEvents: true,
-      canSubmitPublication: true,
-      canValidatePublication: true,
+      canSubmitPublication: false,
+      canValidatePublication: false,
       canPublishPublication: true,
-      canReopenPublication: true,
-      canArchivePublication: true,
+      canReopenPublication: false,
+      canArchivePublication: false,
       canManageVessels: true,
       canManageHandovers: true,
       canManageDerogations: true,
@@ -131,22 +131,23 @@ describe('planning permissions', () => {
     });
   });
 
-  it('blocks business mutations while retaining workflow actions on a locked period', () => {
+  it('ignores legacy period locks for office business mutations', () => {
     const permissions = getPlanningPermissions(['admin'], true);
-    expect(permissions.canEditEvents).toBe(false);
-    expect(permissions.canManageHandovers).toBe(false);
-    expect(permissions.canManageDerogations).toBe(false);
-    expect(permissions.canManageRotations).toBe(false);
-    expect(permissions.canManageTemplates).toBe(false);
-    expect(permissions.canManageManning).toBe(false);
-    expect(permissions.canPrepareReplacements).toBe(false);
-    expect(permissions.canManageDependencies).toBe(false);
+    expect(permissions.canEditEvents).toBe(true);
+    expect(permissions.canManageHandovers).toBe(true);
+    expect(permissions.canManageDerogations).toBe(true);
+    expect(permissions.canManageRotations).toBe(true);
+    expect(permissions.canManageTemplates).toBe(true);
+    expect(permissions.canManageManning).toBe(true);
+    expect(permissions.canPrepareReplacements).toBe(true);
+    expect(permissions.canManageDependencies).toBe(true);
     expect(permissions.canManageWorkRestPolicies).toBe(true);
     expect(permissions.canRequestAbsences).toBe(true);
     expect(permissions.canReviewAbsences).toBe(true);
     expect(permissions.canManageConflictCases).toBe(true);
     expect(permissions.canManagePublication).toBe(true);
-    expect(permissions.canReopenPublication).toBe(true);
+    expect(permissions.canPublishPublication).toBe(true);
+    expect(permissions.canReopenPublication).toBe(false);
   });
 
   it('denies Planning access when no Planning role is present', () => {
