@@ -502,6 +502,22 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
   }, 30_000);
 
+  it('keeps fleet project selection and double-click editing after the compact visual redesign', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const projectButton = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    expect(projectButton.querySelector('.planning-project-title')).toHaveTextContent('Transit Cherbourg');
+    await user.click(projectButton);
+    expect(projectButton).toHaveClass('is-selected');
+    expect(screen.queryByRole('heading', { name: 'Modifier l’événement' })).not.toBeInTheDocument();
+
+    await user.dblClick(projectButton);
+    expect(await screen.findByRole('heading', { name: 'Modifier l’événement' })).toBeInTheDocument();
+  });
+
   it('creates a fleet event from the complete side panel', async () => {
     const user = userEvent.setup();
     const createdProject = { ...planningProjectRow, id: 601, title: 'Maintenance annuelle', event_type: 'maintenance', status: 'A planifier' };

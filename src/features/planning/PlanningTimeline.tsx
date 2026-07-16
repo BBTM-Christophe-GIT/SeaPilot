@@ -222,7 +222,7 @@ export function PlanningFleetTimelineRow({
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
-            <span>{project.title}</span>
+            <span className="planning-project-title">{project.title}</span>
             <small>{planningFleetEventTypeLabel(project.eventType)}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}

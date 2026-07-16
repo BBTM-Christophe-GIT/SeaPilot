@@ -4877,7 +4877,7 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.planning-project-bar > span:first-child {
+.planning-project-title {
   min-width: 0;
   overflow: hidden;
   padding: 0 22px 4px 8px;
@@ -4886,7 +4886,7 @@ button:disabled {
 
 @container planning-event (max-width: 110px) {
   .planning-project-bar > small { display: none; }
-  .planning-project-bar > span:first-child { padding-right: 20px; }
+  .planning-project-title { padding-right: 20px; }
 }
 
 .planning-project-status-rail {
@@ -11247,6 +11247,213 @@ button.planning-p12-conflict-card {
   outline-offset: -3px;
   background: var(--planning-event-conflict-hover);
   box-shadow: 0 0 0 3px var(--planning-event-conflict-strong), 0 5px 13px var(--planning-event-conflict-shadow);
+}
+
+/* Planning fleet visual parity: reuse the compact rhythm and bar language from the crew view. */
+.planning-timeline-row.is-fleet {
+  min-height: 50px;
+  grid-auto-rows: 1fr;
+  transition: background-color 140ms ease;
+}
+
+.planning-timeline-row.is-fleet-board,
+.planning-timeline-row.is-fleet-person {
+  min-height: 42px;
+}
+
+.planning-timeline-row.is-fleet .planning-day-cell {
+  align-items: center;
+  overflow: hidden;
+  padding: 0;
+}
+
+.planning-timeline-row.is-fleet .planning-row-label.planning-tree-row.is-vessel {
+  border-top-color: #d8e3e8;
+  border-bottom-color: #dce6ea;
+  border-left-color: #159581;
+  color: #173d3a;
+  background: #fbfefd;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-label.planning-tree-row.is-board {
+  border-bottom-color: #e1e9ec;
+  border-left-color: #83c8bc;
+  color: #244f4b;
+  background: #fcfefe;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label {
+  padding-left: 54px;
+  border-left-color: #d7e7e3;
+  color: #263f4a;
+  background: #ffffff;
+  font-size: .68rem;
+  font-weight: 680;
+}
+
+.planning-tree-row {
+  gap: 5px;
+  padding-inline: 8px;
+}
+
+.planning-tree-row.is-board {
+  padding-left: 20px;
+}
+
+.planning-tree-row .planning-tree-toggle,
+.planning-tree-row.is-vessel .planning-tree-toggle {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  gap: 7px;
+  padding: 0 3px;
+  color: inherit;
+  text-align: left;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.planning-tree-row .planning-tree-toggle:hover,
+.planning-tree-row .planning-tree-toggle:focus-visible {
+  color: #08726d;
+  background: #eef9f6;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle > span,
+.planning-tree-row.is-vessel .planning-tree-toggle > em,
+.planning-tree-row.is-vessel .planning-tree-toggle > svg {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.planning-tree-row .planning-tree-toggle > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle strong {
+  color: #153e3a;
+  font-size: .72rem;
+  font-weight: 880;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle small {
+  margin-top: 1px;
+  color: #70847f;
+  font-size: .55rem;
+  font-weight: 680;
+}
+
+.planning-tree-row.is-board .planning-tree-toggle strong,
+.planning-timeline-row.is-fleet-person .planning-row-label strong {
+  color: #294d4a;
+  font-size: .68rem;
+  font-weight: 760;
+}
+
+.planning-tree-row .planning-tree-toggle > em {
+  display: inline-flex;
+  min-width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #08726d;
+  background: #e5f5f1;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.planning-tree-row .planning-tree-toggle > svg {
+  flex: 0 0 auto;
+  color: #128b83;
+}
+
+.planning-tree-row .planning-tree-action {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-color: #bcdad5;
+  color: #087b73;
+  background: #ffffff;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.planning-tree-row .planning-tree-action:hover,
+.planning-tree-row .planning-tree-action:focus-visible {
+  border-color: #159581;
+  color: #075f5a;
+  outline: 0;
+  background: #eaf7f4;
+  box-shadow: 0 0 0 2px #ccebe5;
+}
+
+.planning-tree-row.is-person-drop-target {
+  outline-color: #159581;
+  background: #e7f7f3 !important;
+}
+
+.planning-tree-row.is-person-drop-target::after {
+  color: #08726d;
+}
+
+.planning-timeline-row.is-fleet .planning-project-bar {
+  height: 23px;
+  align-self: center;
+  justify-content: center;
+  margin: 0 2px;
+  border-color: rgba(255, 255, 255, .76);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px var(--planning-event-shadow);
+  font-size: .59rem;
+  font-weight: 840;
+  letter-spacing: .005em;
+  transition: background-color 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+
+.planning-timeline-row.is-fleet .planning-project-bar:hover {
+  box-shadow: 0 4px 10px var(--planning-event-shadow);
+  filter: saturate(1.04) brightness(1.02);
+}
+
+.planning-timeline-row.is-fleet .planning-project-title {
+  width: 100%;
+  padding: 0 16px 2px;
+  text-align: center;
+}
+
+.planning-timeline-row.is-fleet .planning-project-bar > small {
+  display: none;
+}
+
+.planning-timeline-row.is-fleet .planning-project-status-rail {
+  top: auto;
+  height: 3px;
+  opacity: .9;
+}
+
+.planning-timeline-row.is-fleet .planning-project-status-rail img {
+  display: none;
+}
+
+.planning-timeline-row.is-fleet .planning-resize-handle {
+  width: 11px;
+}
+
+.planning-timeline-row.is-fleet .planning-resize-handle::after {
+  width: 3px;
+  height: 12px;
+  border-color: rgba(255, 255, 255, .94);
+  background: rgba(20, 47, 65, .36);
+}
+
+.planning-timeline-row.is-fleet .planning-project-bar.is-selected {
+  outline-width: 2px;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #ffffff, 0 4px 10px var(--planning-event-shadow);
 }
 
 .planning-tools-group {
