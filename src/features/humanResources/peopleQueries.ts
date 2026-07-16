@@ -320,19 +320,6 @@ export interface StaffEvolutionPoint {
   count: number;
 }
 
-export interface CreatePersonInput {
-  firstName: string;
-  lastName: string;
-  email: string;
-  functionLabel: string;
-  gradeLabel: string;
-  roleLabel?: string;
-  registerLabel?: string;
-  sex?: string;
-  sailorNumber?: string;
-  m365Account?: string;
-}
-
 export interface UpdatePersonDetailsInput {
   firstName: string;
   lastName: string;
@@ -373,6 +360,11 @@ export interface UpdatePersonDetailsInput {
   craneTrainingOn: string;
   craneInductionOn: string;
 }
+
+type CreatePersonRequiredField = 'firstName' | 'lastName' | 'email' | 'functionLabel' | 'gradeLabel';
+
+export type CreatePersonInput = Pick<UpdatePersonDetailsInput, CreatePersonRequiredField> &
+  Partial<Omit<UpdatePersonDetailsInput, CreatePersonRequiredField>>;
 
 export interface RenewHrDocumentInput {
   document: HrDocumentRecord;
@@ -660,7 +652,7 @@ export function mapHrDocumentRows(rows: HrDocumentRow[]): HrDocumentRecord[] {
 }
 
 function isSedentary(person: PersonRecord): boolean {
-  const searchable = normalizeSearchValue(`${person.roleLabel} ${person.functionLabel}`);
+  const searchable = normalizeSearchValue(`${person.gradeLabel} ${person.roleLabel} ${person.functionLabel}`);
   return searchable.includes('sedentaire') || searchable.includes('direction') || searchable.includes('yard manager');
 }
 
@@ -937,18 +929,7 @@ export async function fetchHumanResourcesData(client: SupabaseClient): Promise<H
 }
 
 export async function createPerson(client: SupabaseClient, input: CreatePersonInput): Promise<PersonRecord> {
-  const payload = {
-    first_name: input.firstName.trim(),
-    last_name: input.lastName.trim(),
-    email: optionalText(input.email),
-    function_label: optionalText(input.functionLabel),
-    grade_label: optionalText(input.gradeLabel),
-    role_label: optionalText(input.roleLabel),
-    register_label: optionalText(input.registerLabel),
-    sex: optionalText(input.sex),
-    sailor_number: optionalText(input.sailorNumber),
-    m365_account: optionalText(input.m365Account),
-  };
+  const payload = buildPersonDetailsPayload(input);
   const { data, error } = await client.from('people').insert(payload).select(PEOPLE_SELECT).single();
 
   if (error) {
@@ -1094,7 +1075,18 @@ export async function updatePersonDetails(
   personId: number,
   input: UpdatePersonDetailsInput,
 ): Promise<PersonRecord> {
-  const payload = {
+  const payload = buildPersonDetailsPayload(input);
+  const { data, error } = await client.from('people').update(payload).eq('id', personId).select(PEOPLE_SELECT).single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPersonRows([data as unknown as PersonRow])[0];
+}
+
+function buildPersonDetailsPayload(input: CreatePersonInput | UpdatePersonDetailsInput) {
+  return {
     first_name: input.firstName.trim(),
     last_name: input.lastName.trim(),
     email: optionalText(input.email),
@@ -1134,11 +1126,4 @@ export async function updatePersonDetails(
     crane_training_on: optionalText(input.craneTrainingOn),
     crane_induction_on: optionalText(input.craneInductionOn),
   };
-  const { data, error } = await client.from('people').update(payload).eq('id', personId).select(PEOPLE_SELECT).single();
-
-  if (error) {
-    throw error;
-  }
-
-  return mapPersonRows([data as unknown as PersonRow])[0];
 }

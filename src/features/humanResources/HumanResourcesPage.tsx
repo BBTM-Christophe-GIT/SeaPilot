@@ -15,8 +15,6 @@ import {
   Ruler,
   Upload,
   Search,
-  Settings2,
-  ShieldCheck,
   TrendingUp,
   UserPlus,
   UserRound,
@@ -43,13 +41,11 @@ import {
   formatPersonName,
   getHrDocumentCategoryLabel,
   getHrFunctionVisibilityKey,
-  HR_DOCUMENT_CATEGORY_LABELS,
   HR_PRIMARY_FUNCTIONS,
   HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
   normalizeHrFunctionLabel,
   renewHrDocument,
-  saveHrVisibilityRules,
   stripFileExtension,
   updateHrDocumentMedicalDetails,
   updatePersonDetails,
@@ -69,18 +65,7 @@ interface HumanResourcesPageProps {
   roles?: RoleKey[];
 }
 
-interface PersonFormState {
-  firstName: string;
-  lastName: string;
-  email: string;
-  functionLabel: string;
-  gradeLabel: string;
-  roleLabel: string;
-  registerLabel: string;
-  sex: string;
-  sailorNumber: string;
-  m365Account: string;
-}
+type PersonFormState = UpdatePersonDetailsInput;
 
 interface HrFilterState {
   collaboratorId: string;
@@ -101,6 +86,34 @@ const EMPTY_FORM: PersonFormState = {
   sex: '',
   sailorNumber: '',
   m365Account: '',
+  phone: '',
+  postalAddress: '',
+  birthDate: '',
+  birthPlace: '',
+  identityDocumentNumber: '',
+  identityDocumentType: '',
+  contractType: '',
+  hiredOn: '',
+  departedOn: '',
+  departureReason: '',
+  emergencyContactName: '',
+  emergencyContactRelationship: '',
+  emergencyContactPhone: '',
+  emergencyContactAddress: '',
+  waistSize: '',
+  chestSize: '',
+  fullHeightSize: '',
+  inseamSize: '',
+  hipSize: '',
+  weightKg: '',
+  shoeSize: '',
+  coverallSize: '',
+  pantsSize: '',
+  jacketSize: '',
+  deckCertificateLabel: '',
+  engineCertificateLabel: '',
+  craneTrainingOn: '',
+  craneInductionOn: '',
 };
 
 const EMPTY_FILTERS: HrFilterState = {
@@ -148,27 +161,17 @@ const HR_CATEGORY_ORDER = [
 ];
 
 const HR_DETAILS_SECTIONS = [
-  { key: 'identity', label: 'Identite et poste' },
+  { key: 'identity', label: 'Identité et poste' },
   { key: 'contract', label: 'Contrat et dates' },
-  { key: 'contact', label: 'Coordonnees' },
+  { key: 'contact', label: 'Coordonnées' },
   { key: 'emergency', label: 'Contact urgence' },
   { key: 'administrative', label: 'Documents administratifs' },
-  { key: 'health', label: 'Sante et habilitations' },
+  { key: 'health', label: 'Santé et habilitations' },
   { key: 'clothing', label: 'Tenues et mensurations' },
   { key: 'documents', label: 'Documents' },
 ] as const;
 
 type HrDetailsSectionKey = (typeof HR_DETAILS_SECTIONS)[number]['key'];
-
-const HR_VISIBILITY_ROLES: Array<{ key: RoleKey; label: string }> = [
-  { key: 'admin', label: 'Admin' },
-  { key: 'direction', label: 'Direction' },
-  { key: 'armement', label: 'Armement' },
-  { key: 'capitaine', label: 'Capitaine' },
-  { key: 'marin', label: 'Marin' },
-];
-
-const DEFAULT_VISIBILITY_ROLES = HR_VISIBILITY_ROLES.map((role) => role.key);
 
 function isVisibilityItemAllowed(
   rules: HrVisibilityRule[],
@@ -182,44 +185,6 @@ function isVisibilityItemAllowed(
 
   const rule = rules.find((candidate) => candidate.scope === scope && candidate.itemKey === itemKey);
   return !rule || roles.some((role) => rule.visibleToRoles.includes(role));
-}
-
-function buildVisibilityCatalog(
-  people: PersonRecord[],
-  documents: HrDocumentRecord[],
-  savedRules: HrVisibilityRule[],
-): HrVisibilityRule[] {
-  const catalog = new Map<string, HrVisibilityRule>();
-  const addItem = (scope: HrVisibilityScope, itemKey: string, itemLabel: string) => {
-    if (!itemKey || !itemLabel) {
-      return;
-    }
-
-    const savedRule = savedRules.find((rule) => rule.scope === scope && rule.itemKey === itemKey);
-    catalog.set(`${scope}:${itemKey}`, savedRule || { scope, itemKey, itemLabel, visibleToRoles: DEFAULT_VISIBILITY_ROLES });
-  };
-
-  HR_PRIMARY_FUNCTIONS.forEach((label) => addItem('function', getHrFunctionVisibilityKey(label), label));
-  people.forEach((person) => {
-    const label = normalizeHrFunctionLabel(person.functionLabel);
-    addItem('function', getHrFunctionVisibilityKey(label), label);
-  });
-  Object.entries(HR_DOCUMENT_CATEGORY_LABELS).forEach(([key, label]) => addItem('document_type', key, label));
-  documents.forEach((document) => addItem('document_type', document.categoryKey, getHrDocumentCategoryLabel(document.categoryKey)));
-  HR_DETAILS_SECTIONS.forEach((section) => addItem('section', section.key, section.label));
-
-  return [...catalog.values()].sort((left, right) => {
-    const scopeOrder: HrVisibilityScope[] = ['function', 'document_type', 'section'];
-    const scopeDifference = scopeOrder.indexOf(left.scope) - scopeOrder.indexOf(right.scope);
-
-    if (scopeDifference !== 0) {
-      return scopeDifference;
-    }
-
-    return left.scope === 'function'
-      ? compareHrFunctionLabels(left.itemLabel, right.itemLabel)
-      : left.itemLabel.localeCompare(right.itemLabel, 'fr');
-  });
 }
 
 function canManagePersonnel(roles: RoleKey[]): boolean {
@@ -539,6 +504,7 @@ function EditableField({
   multiline = false,
   onUpdate,
   options,
+  required = false,
   type = 'text',
 }: {
   field: keyof UpdatePersonDetailsInput;
@@ -547,6 +513,7 @@ function EditableField({
   multiline?: boolean;
   onUpdate: (key: keyof UpdatePersonDetailsInput, value: string) => void;
   options?: string[];
+  required?: boolean;
   type?: string;
 }) {
   const selectOptions = options && form[field] && !options.includes(form[field]) ? [form[field], ...options] : options;
@@ -555,9 +522,9 @@ function EditableField({
     <label className="hr-edit-field">
       {label}
       {multiline ? (
-        <textarea onChange={(event) => onUpdate(field, event.target.value)} rows={3} value={form[field]} />
+        <textarea onChange={(event) => onUpdate(field, event.target.value)} required={required} rows={3} value={form[field]} />
       ) : selectOptions ? (
-        <select onChange={(event) => onUpdate(field, event.target.value)} value={form[field]}>
+        <select onChange={(event) => onUpdate(field, event.target.value)} required={required} value={form[field]}>
           <option value="">Sélectionner</option>
           {selectOptions.map((option) => (
             <option key={option} value={option}>
@@ -566,7 +533,7 @@ function EditableField({
           ))}
         </select>
       ) : (
-        <input onChange={(event) => onUpdate(field, event.target.value)} type={type} value={form[field]} />
+        <input onChange={(event) => onUpdate(field, event.target.value)} required={required} type={type} value={form[field]} />
       )}
     </label>
   );
@@ -620,7 +587,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
-  const isAdmin = effectiveRoles.includes('admin');
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
@@ -632,7 +598,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
-  const [isVisibilityOpen, setIsVisibilityOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -826,11 +791,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
       ),
     [effectiveRoles, visibilityRules],
   );
-  const visibilityCatalog = useMemo(
-    () => buildVisibilityCatalog(people, documents, visibilityRules),
-    [documents, people, visibilityRules],
-  );
-
   useEffect(() => {
     if (selectedPersonId !== null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
       setSelectedPersonId(visiblePeople[0]?.id ?? null);
@@ -1001,24 +961,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     }
   }
 
-  async function handleSaveVisibilityRules(rules: HrVisibilityRule[]) {
-    setStatusMessage(null);
-    setErrorMessage(null);
-    setIsSaving(true);
-
-    try {
-      const savedRules = await saveHrVisibilityRules(effectiveClient, rules);
-      setVisibilityRules(savedRules);
-      setIsVisibilityOpen(false);
-      setStatusMessage('Visibilité RH mise à jour.');
-    } catch {
-      setErrorMessage("Impossible de mettre à jour la visibilité RH. Vérifiez que la migration a bien été appliquée.");
-      throw new Error('hr-visibility-update-failed');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
       documents: roleVisibleDocuments,
@@ -1065,21 +1007,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
               <FileDown aria-hidden="true" size={17} />
               {isGeneratingTrainingPlan ? 'Génération du PDF...' : 'Plan de Formation'}
             </button>
-          ) : null}
-          {isAdmin ? (
-            <button className="hr-secondary-button" onClick={() => setIsVisibilityOpen(true)} type="button">
-              <Settings2 aria-hidden="true" size={17} />
-              Paramétrer les accès
-            </button>
-          ) : null}
-          {isAdmin ? (
-            <span className="hr-visibility-summary">
-              <ShieldCheck aria-hidden="true" size={17} />
-              <span>
-                <strong>Visibilité par rôle</strong>
-                Fonctions, documents et sections
-              </span>
-            </span>
           ) : null}
         </div>
       </header>
@@ -1268,15 +1195,6 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreatePerson}
           onUpdate={updateFormValue}
-        />
-      ) : null}
-
-      {isVisibilityOpen ? (
-        <VisibilitySettingsDialog
-          isSaving={isSaving}
-          onClose={() => setIsVisibilityOpen(false)}
-          onSave={handleSaveVisibilityRules}
-          rules={visibilityCatalog}
         />
       ) : null}
 
@@ -1871,9 +1789,171 @@ function CreatePersonDialog({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (key: keyof PersonFormState, value: string) => void;
 }) {
+  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>('identity');
+  const [formError, setFormError] = useState('');
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      event.preventDefault();
+      setActiveSectionKey('identity');
+      setFormError('Le prénom et le nom sont obligatoires.');
+      return;
+    }
+
+    setFormError('');
+    onSubmit(event);
+  }
+
+  function renderActiveSection() {
+    switch (activeSectionKey) {
+      case 'identity':
+        return (
+          <section>
+            <h3>Identité et poste</h3>
+            <DetailsGrid isEditing>
+              <EditableField field="firstName" form={form} label="Prénom" onUpdate={onUpdate} required />
+              <EditableField field="lastName" form={form} label="Nom" onUpdate={onUpdate} required />
+              <label className="hr-edit-field">
+                Fonction
+                <input
+                  list="hr-create-function-options"
+                  onChange={(event) => onUpdate('functionLabel', event.target.value)}
+                  value={form.functionLabel}
+                />
+                <datalist id="hr-create-function-options">
+                  {HR_PRIMARY_FUNCTIONS.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+              </label>
+              <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={onUpdate} />
+              <EditableField
+                field="roleLabel"
+                form={form}
+                label="Rôle"
+                onUpdate={onUpdate}
+                options={['Navigant', 'Sédentaire', 'Stagiaire']}
+              />
+              <EditableField field="registerLabel" form={form} label="Registre" onUpdate={onUpdate} options={['RIF', 'ENIM']} />
+              <EditableField field="sex" form={form} label="Sexe" onUpdate={onUpdate} options={['Femme', 'Homme', 'Autre']} />
+              <EditableField field="sailorNumber" form={form} label="Numéro de marin" onUpdate={onUpdate} />
+              <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={onUpdate} />
+              <EditableField field="email" form={form} label="Email" onUpdate={onUpdate} type="email" />
+            </DetailsGrid>
+          </section>
+        );
+      case 'contract':
+        return (
+          <section>
+            <h3>Contrat et dates</h3>
+            <DetailsGrid isEditing>
+              <EditableField
+                field="contractType"
+                form={form}
+                label="Type de contrat"
+                onUpdate={onUpdate}
+                options={['CDI', 'CDD', 'Intérim', 'Alternance', 'Stage', 'Prestataire']}
+              />
+              <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={onUpdate} type="date" />
+              <EditableField field="departedOn" form={form} label="Date départ" onUpdate={onUpdate} type="date" />
+              <EditableField field="departureReason" form={form} label="Cause départ" onUpdate={onUpdate} />
+              <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={onUpdate} type="date" />
+              <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={onUpdate} />
+            </DetailsGrid>
+          </section>
+        );
+      case 'contact':
+        return (
+          <section>
+            <h3>Coordonnées</h3>
+            <DetailsGrid isEditing>
+              <EditableField field="postalAddress" form={form} label="Adresse postale" multiline onUpdate={onUpdate} />
+              <EditableField field="phone" form={form} label="Téléphone" onUpdate={onUpdate} />
+            </DetailsGrid>
+          </section>
+        );
+      case 'emergency':
+        return (
+          <section>
+            <h3>Contact urgence</h3>
+            <DetailsGrid isEditing>
+              <EditableField field="emergencyContactName" form={form} label="Contact" onUpdate={onUpdate} />
+              <EditableField field="emergencyContactRelationship" form={form} label="Lien parenté" onUpdate={onUpdate} />
+              <EditableField field="emergencyContactPhone" form={form} label="Téléphone urgence" onUpdate={onUpdate} />
+              <EditableField field="emergencyContactAddress" form={form} label="Adresse urgence" multiline onUpdate={onUpdate} />
+            </DetailsGrid>
+          </section>
+        );
+      case 'administrative':
+        return (
+          <section>
+            <h3>Documents administratifs</h3>
+            <DetailsGrid isEditing>
+              <EditableField
+                field="identityDocumentType"
+                form={form}
+                label="Type document identité"
+                onUpdate={onUpdate}
+                options={['Carte nationale d’identité', 'Passeport', 'Titre de séjour', 'Livret maritime']}
+              />
+              <EditableField field="identityDocumentNumber" form={form} label="Numéro document identité" onUpdate={onUpdate} />
+            </DetailsGrid>
+          </section>
+        );
+      case 'health':
+        return (
+          <section>
+            <h3>Santé et habilitations</h3>
+            <DetailsGrid isEditing>
+              <EditableField field="deckCertificateLabel" form={form} label="Brevet Pont" onUpdate={onUpdate} />
+              <EditableField field="engineCertificateLabel" form={form} label="Brevet Machine" onUpdate={onUpdate} />
+              <EditableField field="craneInductionOn" form={form} label="Induction grutage" onUpdate={onUpdate} type="date" />
+              <EditableField field="craneTrainingOn" form={form} label="Formation grutage" onUpdate={onUpdate} type="date" />
+            </DetailsGrid>
+          </section>
+        );
+      case 'clothing':
+        return (
+          <section>
+            <h3>Tenues et mensurations</h3>
+            <DetailsGrid isEditing>
+              <EditableField field="coverallSize" form={form} label="Combinaison" onUpdate={onUpdate} />
+              <EditableField field="pantsSize" form={form} label="Pantalon" onUpdate={onUpdate} />
+              <EditableField field="jacketSize" form={form} label="Veste" onUpdate={onUpdate} />
+              <EditableField field="shoeSize" form={form} label="Pointure" onUpdate={onUpdate} />
+              <EditableField field="weightKg" form={form} label="Poids" onUpdate={onUpdate} />
+              <EditableField field="waistSize" form={form} label="Tour de taille" onUpdate={onUpdate} />
+              <EditableField field="chestSize" form={form} label="Poitrine" onUpdate={onUpdate} />
+              <EditableField field="fullHeightSize" form={form} label="Taille totale" onUpdate={onUpdate} />
+              <EditableField field="inseamSize" form={form} label="Entrejambe" onUpdate={onUpdate} />
+              <EditableField field="hipSize" form={form} label="Tour de hanche" onUpdate={onUpdate} />
+            </DetailsGrid>
+          </section>
+        );
+      case 'documents':
+        return (
+          <section>
+            <h3>Documents</h3>
+            <div className="hr-create-documents-note">
+              <FileText aria-hidden="true" size={22} />
+              <div>
+                <strong>Documents à rattacher après création</strong>
+                <p>
+                  Enregistrez d’abord le collaborateur. Les fichiers pourront ensuite être ajoutés dans sa fiche RH et seront
+                  stockés dans Supabase avec son identifiant.
+                </p>
+              </div>
+            </div>
+          </section>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
     <div aria-label="Nouveau collaborateur" aria-modal="true" className="hr-dialog-backdrop" role="dialog">
-      <form className="hr-dialog hr-create-dialog" onSubmit={onSubmit}>
+      <form className="hr-dialog hr-create-dialog" onSubmit={handleSubmit}>
         <div className="hr-dialog-header">
           <div>
             <p>Fiche RH</p>
@@ -1883,66 +1963,24 @@ function CreatePersonDialog({
             <X aria-hidden="true" size={18} />
           </button>
         </div>
-        <div className="hr-form-grid">
-          <label>
-            Prenom
-            <input onChange={(event) => onUpdate('firstName', event.target.value)} required value={form.firstName} />
-          </label>
-          <label>
-            Nom
-            <input onChange={(event) => onUpdate('lastName', event.target.value)} required value={form.lastName} />
-          </label>
-          <label>
-            Fonction
-            <input list="hr-function-options" onChange={(event) => onUpdate('functionLabel', event.target.value)} value={form.functionLabel} />
-            <datalist id="hr-function-options">
-              {HR_PRIMARY_FUNCTIONS.map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </label>
-          <label>
-            Grade
-            <input onChange={(event) => onUpdate('gradeLabel', event.target.value)} value={form.gradeLabel} />
-          </label>
-          <label>
-            Rôle
-            <select onChange={(event) => onUpdate('roleLabel', event.target.value)} value={form.roleLabel}>
-              <option value="">Sélectionner</option>
-              {['Navigant', 'Sédentaire', 'Stagiaire'].map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Registre
-            <select onChange={(event) => onUpdate('registerLabel', event.target.value)} value={form.registerLabel}>
-              <option value="">Sélectionner</option>
-              <option>RIF</option>
-              <option>ENIM</option>
-            </select>
-          </label>
-          <label>
-            Sexe
-            <select onChange={(event) => onUpdate('sex', event.target.value)} value={form.sex}>
-              <option value="">Sélectionner</option>
-              <option>Femme</option>
-              <option>Homme</option>
-              <option>Autre</option>
-            </select>
-          </label>
-          <label>
-            Numero de marin
-            <input onChange={(event) => onUpdate('sailorNumber', event.target.value)} value={form.sailorNumber} />
-          </label>
-          <label>
-            Compte M365
-            <input onChange={(event) => onUpdate('m365Account', event.target.value)} value={form.m365Account} />
-          </label>
-          <label>
-            Email
-            <input onChange={(event) => onUpdate('email', event.target.value)} type="email" value={form.email} />
-          </label>
+        <nav aria-label="Sections nouvelle fiche RH" className="hr-profile-tabs hr-create-section-tabs">
+          {HR_DETAILS_SECTIONS.map((section) => (
+            <button
+              aria-current={activeSectionKey === section.key ? 'page' : undefined}
+              aria-label={section.label}
+              className={activeSectionKey === section.key ? 'is-active' : ''}
+              key={section.key}
+              onClick={() => setActiveSectionKey(section.key)}
+              type="button"
+            >
+              <ProfileTabIcon tabKey={section.key} />
+              <span>{section.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="hr-create-dialog-content">
+          {renderActiveSection()}
+          {formError ? <p className="form-error">{formError}</p> : null}
         </div>
         <div className="hr-dialog-footer">
           <button className="hr-secondary-button" onClick={onClose} type="button">
@@ -1952,132 +1990,6 @@ function CreatePersonDialog({
             Enregistrer
           </button>
         </div>
-      </form>
-    </div>
-  );
-}
-
-function VisibilitySettingsDialog({
-  isSaving,
-  onClose,
-  onSave,
-  rules,
-}: {
-  isSaving: boolean;
-  onClose: () => void;
-  onSave: (rules: HrVisibilityRule[]) => Promise<void>;
-  rules: HrVisibilityRule[];
-}) {
-  const [draftRules, setDraftRules] = useState(rules);
-  const [formError, setFormError] = useState('');
-  const scopeLabels: Record<HrVisibilityScope, string> = {
-    function: 'Fonctions',
-    document_type: 'Types de document',
-    section: 'Sections de la fiche RH',
-  };
-
-  useEffect(() => setDraftRules(rules), [rules]);
-
-  function toggleRole(rule: HrVisibilityRule, role: RoleKey, checked: boolean) {
-    if (role === 'admin') {
-      return;
-    }
-
-    setDraftRules((currentRules) =>
-      currentRules.map((candidate) => {
-        if (candidate.scope !== rule.scope || candidate.itemKey !== rule.itemKey) {
-          return candidate;
-        }
-
-        const nextRoles = new Set(candidate.visibleToRoles);
-        if (checked) {
-          nextRoles.add(role);
-        } else {
-          nextRoles.delete(role);
-        }
-        nextRoles.add('admin');
-
-        return { ...candidate, visibleToRoles: [...nextRoles] };
-      }),
-    );
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFormError('');
-
-    try {
-      await onSave(draftRules);
-    } catch {
-      setFormError("L'enregistrement a échoué.");
-    }
-  }
-
-  return (
-    <div aria-label="Paramétrer la visibilité RH" aria-modal="true" className="hr-dialog-backdrop" role="dialog">
-      <form className="hr-dialog hr-visibility-dialog" onSubmit={handleSubmit}>
-        <div className="hr-dialog-header">
-          <div>
-            <p>Administration RH</p>
-            <h2>Visibilité par rôle</h2>
-            <span>Définissez les fonctions, documents et sections accessibles à chaque profil.</span>
-          </div>
-          <button aria-label="Fermer" className="hr-icon-button" disabled={isSaving} onClick={onClose} type="button">
-            <X aria-hidden="true" size={18} />
-          </button>
-        </div>
-        <div className="hr-visibility-body">
-          {(['function', 'document_type', 'section'] as HrVisibilityScope[]).map((scope) => (
-            <section className="hr-visibility-scope" key={scope}>
-              <div className="hr-visibility-scope-title">
-                <h3>{scopeLabels[scope]}</h3>
-                <small>Administrateur toujours autorisé</small>
-              </div>
-              <div className="hr-visibility-table-wrap">
-                <table className="hr-visibility-table">
-                  <thead>
-                    <tr>
-                      <th>Élément</th>
-                      {HR_VISIBILITY_ROLES.map((role) => (
-                        <th key={role.key}>{role.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {draftRules
-                      .filter((rule) => rule.scope === scope)
-                      .map((rule) => (
-                        <tr key={`${rule.scope}:${rule.itemKey}`}>
-                          <th>{rule.itemLabel}</th>
-                          {HR_VISIBILITY_ROLES.map((role) => (
-                            <td key={role.key}>
-                              <input
-                                aria-label={`${rule.itemLabel} visible pour ${role.label}`}
-                                checked={role.key === 'admin' || rule.visibleToRoles.includes(role.key)}
-                                disabled={isSaving || role.key === 'admin'}
-                                onChange={(event) => toggleRole(rule, role.key, event.currentTarget.checked)}
-                                type="checkbox"
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ))}
-        </div>
-        {formError ? <p className="form-error">{formError}</p> : null}
-        <footer className="hr-dialog-footer">
-          <button className="hr-secondary-button" disabled={isSaving} onClick={onClose} type="button">
-            Annuler
-          </button>
-          <button className="hr-primary-button" disabled={isSaving} type="submit">
-            <ShieldCheck aria-hidden="true" size={17} />
-            {isSaving ? 'Enregistrement...' : 'Enregistrer la visibilité'}
-          </button>
-        </footer>
       </form>
     </div>
   );

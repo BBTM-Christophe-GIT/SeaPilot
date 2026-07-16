@@ -199,7 +199,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByRole('checkbox', { name: 'Actif' })).not.toBeInTheDocument();
 
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
-    expect(within(profile).getByRole('button', { name: 'Identite et poste' })).toHaveAttribute('aria-current', 'page');
+    expect(within(profile).getByRole('button', { name: 'Identité et poste' })).toHaveAttribute('aria-current', 'page');
     expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
     expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
     expect(within(profile).getByText('2009574')).toBeInTheDocument();
@@ -218,7 +218,8 @@ describe('HumanResourcesPage', () => {
       id: index + 10,
       first_name: `Sedentaire${index + 1}`,
       function_label: functionLabel,
-      role_label: 'Sedentaire',
+      grade_label: 'Sédentaire',
+      role_label: 'Navigant',
       user_id: null,
     }));
 
@@ -227,6 +228,7 @@ describe('HumanResourcesPage', () => {
     const distribution = await screen.findByRole('region', { name: 'Effectifs par fonction' });
     expect(within(distribution).getByText('Sédentaires')).toBeInTheDocument();
     expect(within(distribution).getByText('5')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Effectif RH')).getByText('5')).toBeInTheDocument();
     sedentaryFunctions.forEach((functionLabel) => {
       expect(within(distribution).queryByText(functionLabel)).not.toBeInTheDocument();
     });
@@ -251,19 +253,13 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByText('Capitaine 200')).not.toBeInTheDocument();
   });
 
-  it('lets administrators configure visibility by function, document type and section', async () => {
-    const user = userEvent.setup();
-
+  it('does not render the role visibility access controls', async () => {
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Paramétrer les accès' }));
-
-    const dialog = screen.getByRole('dialog', { name: 'Paramétrer la visibilité RH' });
-    expect(within(dialog).getByRole('heading', { name: 'Fonctions' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: 'Types de document' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: 'Sections de la fiche RH' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('checkbox', { name: 'Capitaine visible pour Marin' })).toBeChecked();
-    expect(within(dialog).getByRole('checkbox', { name: 'Capitaine visible pour Admin' })).toBeDisabled();
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    expect(screen.queryByRole('button', { name: 'Paramétrer les accès' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Visibilité par rôle')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fonctions, documents et sections')).not.toBeInTheDocument();
   });
 
   it('filters the RH dashboard by collaborator, category, status and due state', async () => {
@@ -328,12 +324,12 @@ describe('HumanResourcesPage', () => {
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
-    const identitySection = within(profile).getByRole('button', { name: 'Identite et poste' });
+    const identitySection = within(profile).getByRole('button', { name: 'Identité et poste' });
     const contractSection = within(profile).getByRole('button', { name: 'Contrat et dates' });
-    const contactSection = within(profile).getByRole('button', { name: 'Coordonnees' });
+    const contactSection = within(profile).getByRole('button', { name: 'Coordonnées' });
     const emergencySection = within(profile).getByRole('button', { name: 'Contact urgence' });
     const administrativeSection = within(profile).getByRole('button', { name: 'Documents administratifs' });
-    const healthSection = within(profile).getByRole('button', { name: 'Sante et habilitations' });
+    const healthSection = within(profile).getByRole('button', { name: 'Santé et habilitations' });
     const clothingSection = within(profile).getByRole('button', { name: 'Tenues et mensurations' });
 
     expect(identitySection).toHaveAttribute('aria-current', 'page');
@@ -456,7 +452,7 @@ describe('HumanResourcesPage', () => {
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
-    await user.click(within(profile).getByRole('button', { name: 'Sante et habilitations' }));
+    await user.click(within(profile).getByRole('button', { name: 'Santé et habilitations' }));
 
     const withoutBridgeWatch = within(profile).getByRole('checkbox', { name: /n'impliquant pas la veille/i });
     const withBridgeWatch = within(profile).getByRole('checkbox', { name: /y compris la veille/i });
@@ -474,7 +470,7 @@ describe('HumanResourcesPage', () => {
       }),
     );
     expect(documentEq).toHaveBeenCalledWith('id', documents[0].id);
-    await user.click(within(profile).getByRole('button', { name: 'Sante et habilitations' }));
+    await user.click(within(profile).getByRole('button', { name: 'Santé et habilitations' }));
     expect(
       within(profile).getByText(
         'Remplit les conditions médicales requises pour toutes les fonctions à bord y compris la veille à la passerelle',
@@ -537,7 +533,7 @@ describe('HumanResourcesPage', () => {
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
-    await user.click(within(profile).getByRole('button', { name: 'Coordonnees' }));
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnées' }));
     fireEvent.change(within(profile).getByLabelText('Telephone'), { target: { value: '+33 6 11 22 33 44' } });
     fireEvent.change(within(profile).getByLabelText('Adresse postale'), {
       target: { value: '3 quai BBTM, 76600 Le Havre' },
@@ -560,7 +556,7 @@ describe('HumanResourcesPage', () => {
     );
     expect(eq).toHaveBeenCalledWith('id', 1);
     expect(await screen.findByText('Fiche collaborateur mise a jour.')).toBeInTheDocument();
-    await user.click(within(profile).getByRole('button', { name: 'Coordonnees' }));
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnées' }));
     expect(within(profile).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
     expect(within(profile).getByText('CDD')).toBeInTheDocument();
@@ -575,7 +571,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByRole('region', { name: 'Documents RH a rattacher' })).not.toBeInTheDocument();
   });
 
-  it('creates a personnel record for office roles', async () => {
+  it('creates a complete Supabase personnel record from all RH sections', async () => {
     const user = userEvent.setup();
     const createdPerson = {
       ...activePerson,
@@ -619,26 +615,56 @@ describe('HumanResourcesPage', () => {
     await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
     await user.click(screen.getByRole('button', { name: 'Nouveau Collaborateur' }));
     const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
-    fireEvent.change(within(dialog).getByLabelText('Prenom'), { target: { value: 'Marie' } });
+    expect(within(dialog).getAllByRole('button', { name: /Identité et poste|Contrat et dates|Coordonnées|Contact urgence|Documents administratifs|Santé et habilitations|Tenues et mensurations|Documents/ })).toHaveLength(8);
+    fireEvent.change(within(dialog).getByLabelText('Prénom'), { target: { value: 'Marie' } });
     fireEvent.change(within(dialog).getByLabelText('Nom'), { target: { value: 'LEGRAND' } });
     fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: 'marie@example.test' } });
     fireEvent.change(within(dialog).getByLabelText('Fonction'), { target: { value: 'Lieutenant' } });
     fireEvent.change(within(dialog).getByLabelText('Grade'), { target: { value: 'Pont' } });
-    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Contrat et dates' }));
+    await user.selectOptions(within(dialog).getByLabelText('Type de contrat'), 'CDI');
+    fireEvent.change(within(dialog).getByLabelText('Date embauche'), { target: { value: '2026-08-01' } });
+    fireEvent.change(within(dialog).getByLabelText('Date naissance'), { target: { value: '1990-05-12' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Coordonnées' }));
+    fireEvent.change(within(dialog).getByLabelText('Téléphone'), { target: { value: '+33 6 10 20 30 40' } });
+    fireEvent.change(within(dialog).getByLabelText('Adresse postale'), { target: { value: '5 quai de France, Rouen' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Contact urgence' }));
+    fireEvent.change(within(dialog).getByLabelText('Contact'), { target: { value: 'Paul LEGRAND' } });
+    fireEvent.change(within(dialog).getByLabelText('Téléphone urgence'), { target: { value: '+33 6 99 88 77 66' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Documents administratifs' }));
+    await user.selectOptions(within(dialog).getByLabelText('Type document identité'), 'Passeport');
+    fireEvent.change(within(dialog).getByLabelText('Numéro document identité'), { target: { value: 'FR123456' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Santé et habilitations' }));
+    fireEvent.change(within(dialog).getByLabelText('Brevet Pont'), { target: { value: 'Capitaine 200' } });
+    fireEvent.change(within(dialog).getByLabelText('Formation grutage'), { target: { value: '2026-06-15' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Tenues et mensurations' }));
+    fireEvent.change(within(dialog).getByLabelText('Combinaison'), { target: { value: 'M' } });
+    fireEvent.change(within(dialog).getByLabelText('Pointure'), { target: { value: '39' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Documents' }));
+    expect(within(dialog).getByText('Documents à rattacher après création')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
 
     await waitFor(() =>
-      expect(insert).toHaveBeenCalledWith({
+      expect(insert).toHaveBeenCalledWith(expect.objectContaining({
         first_name: 'Marie',
         last_name: 'LEGRAND',
         email: 'marie@example.test',
         function_label: 'Lieutenant',
         grade_label: 'Pont',
-        role_label: null,
-        register_label: null,
-        sex: null,
-        sailor_number: null,
-        m365_account: null,
-      }),
+        contract_type: 'CDI',
+        hired_on: '2026-08-01',
+        birth_date: '1990-05-12',
+        phone: '+33 6 10 20 30 40',
+        postal_address: '5 quai de France, Rouen',
+        emergency_contact_name: 'Paul LEGRAND',
+        emergency_contact_phone: '+33 6 99 88 77 66',
+        identity_document_type: 'Passeport',
+        identity_document_number: 'FR123456',
+        deck_certificate_label: 'Capitaine 200',
+        crane_training_on: '2026-06-15',
+        coverall_size: 'M',
+        shoe_size: 39,
+      })),
     );
     expect(await screen.findByRole('button', { name: 'Afficher la fiche de Marie LEGRAND' })).toBeInTheDocument();
     expect(screen.getByText('Collaborateur ajoute.')).toBeInTheDocument();
