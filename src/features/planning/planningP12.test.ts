@@ -43,7 +43,7 @@ const overview: PlanningOverview = {
 
 const data: PlanningP12Data = {
   absences: [
-    { id: 60, personId: 1, absenceType: 'leave', startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-10T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-10', reason: 'Congé validé', status: 'approved', requestedBy: 'user', reviewedBy: 'manager', reviewedAt: '2026-07-10T10:00:00Z', reviewComment: '', createdAt: '', updatedAt: '' },
+    { id: 60, personId: 1, absenceType: 'leave', startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-10T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-10', reason: 'Congés validés', status: 'approved', requestedBy: 'user', reviewedBy: 'manager', reviewedAt: '2026-07-10T10:00:00Z', reviewComment: '', createdAt: '', updatedAt: '' },
     { id: 61, personId: 4, absenceType: 'training', startsAt: '2026-08-01T06:00:00Z', endsAt: '2026-08-14T18:00:00Z', startsOn: '2026-08-01', endsOn: '2026-08-14', reason: 'Formation', status: 'approved', requestedBy: 'user', reviewedBy: 'manager', reviewedAt: '2026-07-10T10:00:00Z', reviewComment: '', createdAt: '', updatedAt: '' },
   ],
   conflictCases: [],

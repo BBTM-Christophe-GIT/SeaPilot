@@ -407,7 +407,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setAbsences(await fetchPlanningAbsences(effectiveClient));
       return true;
     } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congé.'));
+      setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
       return false;
     }
   }, [effectiveClient, previewMode, readPermissions.canRead]);
@@ -420,7 +420,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         if (active) setAbsences(result);
       })
       .catch((error) => {
-        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congé.'));
+        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
       });
     return () => {
       active = false;
@@ -1715,7 +1715,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           {permissions.canRequestAbsences ? (
             <button className="planning-command-button" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} type="button">
               <CalendarOff aria-hidden="true" size={18} />
-              Demander un congé
+              Demander des congés
             </button>
           ) : null}
           {permissions.canReviewAbsences ? (
@@ -2008,7 +2008,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDerogation={permissions.canManageDerogations ? () => openDerogation(selectedEventControls, selectedEvent.kind === 'assignment' ? Number(selectedEvent.id.split('-').pop()) : undefined) : undefined} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
-      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteLeaves={permissions.canDeleteLeaves} canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canExport={permissions.canExport} canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}

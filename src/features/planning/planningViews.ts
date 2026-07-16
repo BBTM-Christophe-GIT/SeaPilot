@@ -91,7 +91,7 @@ export function planningCrewEventTypeLabel(type: string): string {
   return {
     assignment: 'Embarquement / affectation',
     rest: 'Repos',
-    leave: 'Congé',
+    leave: 'Congés',
     training: 'Formation',
     unavailability: 'Indisponibilité',
   }[type] || type;

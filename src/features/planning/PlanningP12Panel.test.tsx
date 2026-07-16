@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP12Panel } from './PlanningP12Panel';
 import type { PlanningOverview } from './planningQueries';
 import {
+  deletePlanningLeave,
   ensurePlanningConflictCase,
   fetchPlanningP12Data,
   reviewPlanningAbsence,
@@ -14,6 +15,7 @@ import {
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 vi.mock('./planningP12Queries', () => ({
+  deletePlanningLeave: vi.fn(),
   ensurePlanningConflictCase: vi.fn(),
   fetchPlanningP12Data: vi.fn(),
   reviewPlanningAbsence: vi.fn(),
@@ -34,7 +36,7 @@ const overview: PlanningOverview = {
 
 const data = {
   absences: [
-    { id: 30, personId: 10, absenceType: 'leave' as const, startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-07T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-07', reason: 'Congé familial', status: 'approved' as const, requestedBy: 'anne', reviewedBy: 'manager', reviewedAt: '2026-07-10T10:00:00Z', reviewComment: 'Validé', createdAt: '', updatedAt: '' },
+    { id: 30, personId: 10, absenceType: 'leave' as const, startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-07T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-07', reason: 'Congés familiaux', status: 'approved' as const, requestedBy: 'anne', reviewedBy: 'manager', reviewedAt: '2026-07-10T10:00:00Z', reviewComment: 'Validé', createdAt: '', updatedAt: '' },
     { id: 31, personId: 11, absenceType: 'training' as const, startsAt: '2026-08-20T06:00:00Z', endsAt: '2026-08-20T16:00:00Z', startsOn: '2026-08-20', endsOn: '2026-08-20', reason: 'Formation sécurité', status: 'requested' as const, requestedBy: 'paul', reviewedBy: '', reviewedAt: '', reviewComment: '', createdAt: '', updatedAt: '' },
   ],
   conflictCases: [],
@@ -49,6 +51,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP12P
     range: { start: '2026-08-01', end: '2026-08-31' },
     canRequestAbsences: true,
     canReviewAbsences: true,
+    canDeleteLeaves: true,
     canManageConflictCases: true,
     canPrepareReplacements: true,
     canManageDerogations: true,
@@ -65,7 +68,10 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP12P
 
 describe('Planning P1.2 panel', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
     vi.mocked(fetchPlanningP12Data).mockResolvedValue(data);
+    vi.mocked(deletePlanningLeave).mockResolvedValue(30);
     vi.mocked(savePlanningAbsence).mockResolvedValue(32);
     vi.mocked(reviewPlanningAbsence).mockResolvedValue(31);
     vi.mocked(ensurePlanningConflictCase).mockResolvedValue(40);
@@ -75,7 +81,7 @@ describe('Planning P1.2 panel', () => {
   it('creates and approves absence requests while showing assignment impacts', async () => {
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByRole('heading', { name: 'Congé validé' });
+    await screen.findByRole('heading', { name: 'Congés validés' });
     await user.click(screen.getByRole('tab', { name: /Absences/ }));
     const approvedCard = screen.getByText('Anne MARTIN').closest('article')!;
     expect(approvedCard).toHaveTextContent(/1\s*affectation\(s\) concernée\(s\) · 1 poste\(s\) vacant\(s\)/);
@@ -93,7 +99,7 @@ describe('Planning P1.2 panel', () => {
     const user = userEvent.setup();
     const onPrepareReplacement = vi.fn();
     renderPanel({ onPrepareReplacement });
-    await screen.findByRole('heading', { name: 'Congé validé' });
+    await screen.findByRole('heading', { name: 'Congés validés' });
     await user.selectOptions(screen.getByLabelText('Priorité'), 'high');
     await user.selectOptions(screen.getByLabelText('Statut'), 'in_progress');
     await user.type(screen.getByLabelText('Commentaire'), 'Recherche en cours');
@@ -108,5 +114,36 @@ describe('Planning P1.2 panel', () => {
     expect(onPrepareReplacement).not.toHaveBeenCalled();
     await user.click(within(card).getByRole('button', { name: 'Préparer l’affectation manuelle' }));
     expect(onPrepareReplacement).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }), expect.objectContaining({ assignmentId: 20 }));
+  });
+
+  it('lets administrators permanently delete leave after confirmation', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const props = renderPanel({ initialTab: 'absences' });
+
+    await screen.findByText('Congés familiaux');
+    await user.click(screen.getByRole('button', { name: 'Supprimer les congés de Anne MARTIN' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Supprimer les congés de Anne MARTIN'));
+    await waitFor(() => expect(deletePlanningLeave).toHaveBeenCalledWith(client, 30));
+    expect(props.onAuditChange).toHaveBeenCalled();
+    expect(await screen.findByText('Congés supprimés. Les impacts ont été recalculés.')).toBeInTheDocument();
+  });
+
+  it('keeps leave when the administrator cancels confirmation', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPanel({ initialTab: 'absences' });
+
+    await screen.findByText('Congés familiaux');
+    await user.click(screen.getByRole('button', { name: 'Supprimer les congés de Anne MARTIN' }));
+
+    expect(deletePlanningLeave).not.toHaveBeenCalled();
+  });
+
+  it('does not expose leave deletion to non-administrators', async () => {
+    renderPanel({ canDeleteLeaves: false, initialTab: 'absences' });
+    await screen.findByText('Congés familiaux');
+    expect(screen.queryByRole('button', { name: /Supprimer les congés/ })).not.toBeInTheDocument();
   });
 });

@@ -659,7 +659,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.getByRole('button', { name: /Demandes en attente.*1/ })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.click(screen.getByRole('button', { name: /Congé à valider/ }));
+    await user.click(screen.getByRole('button', { name: /Congés à valider/ }));
 
     expect(await screen.findByText('Aucun motif renseigné.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Valider' }));
@@ -810,7 +810,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByText('Dernière version diffusée')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Demander un congé' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
   });

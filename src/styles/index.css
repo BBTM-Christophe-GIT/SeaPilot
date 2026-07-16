@@ -8248,6 +8248,7 @@ button:disabled {
 .planning-p12-form footer,
 .planning-p12-treatment footer,
 .planning-p12-review > div,
+.planning-p12-card-actions,
 .planning-p12-detail-actions {
   display: flex;
   justify-content: flex-end;
@@ -8353,6 +8354,15 @@ button:disabled {
 }
 
 .planning-p12-review button.is-danger {
+  background: #b42318;
+}
+
+.planning-p12-card-actions {
+  border-top: 1px solid #e5ecf1;
+  padding-top: 10px;
+}
+
+.planning-p12-card-actions button.is-danger {
   background: #b42318;
 }
 

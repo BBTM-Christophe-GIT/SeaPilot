@@ -32,7 +32,7 @@ function fixture(): { overview: PlanningOverview; data: PlanningP13Data } {
   const data: PlanningP13Data = {
     policies: [], notifications: [], dependencies: [],
     p12: {
-      absences: [{ id: 60, personId: 1, absenceType: 'leave', startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-10T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-10', reason: 'Congé validé', status: 'approved', requestedBy: 'user', reviewedBy: 'manager', reviewedAt: '', reviewComment: '', createdAt: '', updatedAt: '' }],
+      absences: [{ id: 60, personId: 1, absenceType: 'leave', startsAt: '2026-08-04T06:00:00Z', endsAt: '2026-08-10T16:00:00Z', startsOn: '2026-08-04', endsOn: '2026-08-10', reason: 'Congés validés', status: 'approved', requestedBy: 'user', reviewedBy: 'manager', reviewedAt: '', reviewComment: '', createdAt: '', updatedAt: '' }],
       conflictCases: [], conflictHistory: [],
       matrices: [{ id: 70, vesselId: 10, name: 'Armement', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1, requirements: [{ id: 71, matrixId: 70, functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: ['Capitaine 3000'], requiredQualifications: ['Grue offshore'], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }] }],
     },
