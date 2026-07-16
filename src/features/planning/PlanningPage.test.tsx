@@ -502,6 +502,22 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
   }, 30_000);
 
+  it('keeps fleet project selection and double-click editing after the compact visual redesign', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const projectButton = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    expect(projectButton.querySelector('.planning-project-title')).toHaveTextContent('Transit Cherbourg');
+    await user.click(projectButton);
+    expect(projectButton).toHaveClass('is-selected');
+    expect(screen.queryByRole('heading', { name: 'Modifier l’événement' })).not.toBeInTheDocument();
+
+    await user.dblClick(projectButton);
+    expect(await screen.findByRole('heading', { name: 'Modifier l’événement' })).toBeInTheDocument();
+  });
+
   it('creates a fleet event from the complete side panel', async () => {
     const user = userEvent.setup();
     const createdProject = { ...planningProjectRow, id: 601, title: 'Maintenance annuelle', event_type: 'maintenance', status: 'A planifier' };
@@ -874,7 +890,7 @@ describe('PlanningPage cockpit', () => {
       source_label: 'seapilot-assignment-note',
     };
     const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [assignmentNoteRow] });
-    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
     expect(screen.getByRole('button', { name: 'Ouvrir la fiche de COTENTIN' })).toBeInTheDocument();
@@ -882,13 +898,18 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' })).toBeInTheDocument();
     const dayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
     const previousDayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 13/07/2026 pour Paul DURAND' });
+    const firstDayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 01/07/2026 pour Paul DURAND' });
     expect(previousDayCell).toHaveClass('is-segment-end');
     expect(dayCell).toHaveClass('is-segment-start');
+    expect(firstDayCell).toHaveClass('is-first', 'is-segment-start', 'is-sea');
+    expect(dayCell).toHaveClass('is-last', 'is-segment-start', 'is-sea');
+    expect(container.querySelector('.planning-fleet-assignment-label')).not.toBeInTheDocument();
     expect(dayCell).not.toHaveTextContent(/En mer|À terre|Embarqué/i);
     await user.click(dayCell);
     expect(screen.queryByRole('dialog', { name: 'Statut et commentaire' })).not.toBeInTheDocument();
     fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
     await user.click(within(dialog).getByText('Repos'));
     const noteInput = within(dialog).getByLabelText('Commentaire');
     await user.clear(noteInput);
@@ -952,6 +973,16 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: 'Nouvelle affectation' })).toBeInTheDocument();
     expect(container.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
+  });
+
+  it('renders a continuous fleet assignment label without replacing daily interaction buttons', async () => {
+    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    expect(container.querySelector('.planning-fleet-assignment-label')).toHaveTextContent('COTENTIN');
+    expect(container.querySelectorAll('.planning-assignment-note-cell').length).toBeGreaterThan(1);
+    expect(screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 10/07/2026 pour Paul DURAND' })).toBeInTheDocument();
   });
 
   it('keeps a legacy fleet period visible when no daily assignment id exists', async () => {
