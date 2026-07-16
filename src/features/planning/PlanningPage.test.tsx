@@ -898,8 +898,11 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' })).toBeInTheDocument();
     const dayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
     const previousDayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 13/07/2026 pour Paul DURAND' });
+    const firstDayCell = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 01/07/2026 pour Paul DURAND' });
     expect(previousDayCell).toHaveClass('is-segment-end');
     expect(dayCell).toHaveClass('is-segment-start');
+    expect(firstDayCell).toHaveClass('is-first', 'is-segment-start', 'is-sea');
+    expect(dayCell).toHaveClass('is-last', 'is-segment-start', 'is-sea');
     expect(dayCell).not.toHaveTextContent(/En mer|À terre|Embarqué/i);
     await user.click(dayCell);
     expect(screen.queryByRole('dialog', { name: 'Statut et commentaire' })).not.toBeInTheDocument();

@@ -11456,6 +11456,54 @@ button.planning-p12-conflict-card {
   box-shadow: 0 0 0 2px #ffffff, 0 4px 10px var(--planning-event-shadow);
 }
 
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell {
+  height: 23px;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  font-size: .58rem;
+  box-shadow: 0 2px 5px rgba(23, 48, 75, .12);
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea {
+  border-top-color: #0b8e60;
+  border-bottom-color: #0b8e60;
+  background: #15ab73;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 2px 5px rgba(8, 109, 72, .18);
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-first {
+  margin-left: 11px;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-last {
+  margin-right: 11px;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-segment-start {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-segment-end {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea.is-segment-start {
+  border-left: 1px solid #0b8e60;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea.is-segment-end {
+  border-right: 1px solid #0b8e60;
+}
+
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea:hover,
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea:focus-visible,
+.planning-timeline-row.is-fleet-person .planning-assignment-note-cell.is-sea.is-selected {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .24), 0 3px 8px rgba(8, 109, 72, .24);
+}
+
 .planning-tools-group {
   display: grid;
   gap: 3px;

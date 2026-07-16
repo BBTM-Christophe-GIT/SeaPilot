@@ -4,6 +4,7 @@
 
 - Référence Flotte avant harmonisation : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-653befc2-a574-4cd0-9be8-323eff4bca01.png`
 - Référence visuelle Équipages : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-75546dae-4306-4c62-bba9-74af28a3c33e.png`
+- Capture utilisateur des cases vertes avant correction : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-5ccc95d5-1ca3-4f49-816d-a54f93cd54cc.png`
 - Implémentation : `https://sea-pilot-git-codex-flotte-design-equipages-bbtm-app.vercel.app/modules/planning`
 - Capture navigateur de l’implémentation : non disponible dans cette session.
 
@@ -27,6 +28,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 - Espacement et rythme : lignes Flotte réduites à 50 px, bordées et marins à 42 px ; contrôle visuel bloqué.
 - Couleurs : accent vert d’eau et compteurs harmonisés avec Équipages ; contrôle visuel bloqué.
 - Barres : projets réduits à 23 px avec libellé centré et poignées compactes ; contrôle visuel bloqué.
+- Cases quotidiennes : hauteur réduite de 28 à 23 px, extrémités de segment arrondies, retrait de 11 px autour des poignées et ombre verte légère ; contrôle visuel après correction bloqué.
 - Copie : aucun libellé métier ajouté, retiré ou renommé.
 - Icônes : les icônes Lucide existantes sont conservées ; aucune ressource de substitution n’a été créée.
 - Responsive : règles existantes conservées, mais les viewports cible n’ont pas été capturés.
@@ -39,7 +41,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 - Clic gauche sur un projet Flotte : sélection testée.
 - Double-clic sur un projet Flotte : ouverture du formulaire complet testée.
 - Clic gauche, clic droit et double-clic sur les affectations Flotte : tests existants réussis.
-- Vercel Preview : déploiement réussi pour le commit `c8a64693900d5421d121398a2d5ebc257eb01e1a`.
+- Vercel Preview : la branche `codex/flotte-design-equipages` est redéployée après chaque mise à jour de cette QA.
 
 ## Findings
 
@@ -55,6 +57,7 @@ La comparaison visuelle source / rendu ne peut donc pas être déclarée réussi
 2. Implémentation, tests et build terminés.
 3. Déploiement Vercel Preview réussi et route vérifiée en HTTP 200.
 4. Capture navigateur bloquée par l’absence de l’outil de contrôle du navigateur intégré ; autorisation Playwright en attente.
+5. La capture utilisateur suivante a isolé un P2 visuel : cases vertes encore trop épaisses et carrées. Le CSS a été aligné sur les barres Équipages ; une nouvelle capture reste nécessaire pour confirmer la correction.
 
 ## Résultat
 

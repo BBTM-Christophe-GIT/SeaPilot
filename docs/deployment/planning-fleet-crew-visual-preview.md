@@ -10,6 +10,7 @@ La vue Flotte reprend la densité et le langage visuel de la vue Équipages sans
 - accent vert d’eau commun à la vue Équipages ;
 - compteurs, chevrons et actions contextuelles harmonisés ;
 - barres de projet fines, centrées et dotées des mêmes poignées discrètes que les affectations ;
+- cases quotidiennes colorées ramenées à 23 px, avec retrait autour des poignées, extrémités arrondies et ombre légère ;
 - états de survol, sélection et dépôt rendus plus légers.
 
 ## Interactions conservées
@@ -28,8 +29,9 @@ Le changement ne nécessite ni migration Supabase ni nouvelle variable d’envir
 
 1. Ouvrir `/modules/planning` en mode preview avec la vue Flotte active.
 2. Comparer la densité des lignes et des barres avec la vue Équipages.
-3. Vérifier le clic gauche, le clic droit et le double-clic sur une affectation Flotte.
-4. Vérifier le clic gauche et le double-clic sur un projet Flotte.
-5. Déplacer puis redimensionner une barre dans les deux sens.
-6. Replier et déplier un navire puis une bordée.
-7. Contrôler l’absence de chevauchement à 1440 × 900 et 1366 × 1024.
+3. Vérifier que les cases vertes forment une barre fine, continue et arrondie uniquement aux extrémités de chaque segment.
+4. Vérifier le clic gauche, le clic droit et le double-clic sur une affectation Flotte.
+5. Vérifier le clic gauche et le double-clic sur un projet Flotte.
+6. Déplacer puis redimensionner une barre dans les deux sens.
+7. Replier et déplier un navire puis une bordée.
+8. Contrôler l’absence de chevauchement à 1440 × 900 et 1366 × 1024.
