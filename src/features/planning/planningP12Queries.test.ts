@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  deletePlanningLeave,
   ensurePlanningConflictCase,
   mapPlanningAbsenceRows,
   reviewPlanningAbsence,
@@ -16,14 +17,14 @@ function rpcClient(result: unknown = 42) {
 describe('planning P1.2 absence query contracts', () => {
   it('maps UTC timestamps to Europe/Paris calendar dates', () => {
     const [absence] = mapPlanningAbsenceRows([{
-      id: 1, person_id: 2, absence_type: 'leave', starts_at: '2026-10-24T22:30:00Z', ends_at: '2026-10-25T23:30:00Z', reason: 'Congé', status: 'requested', requested_by: 'user', reviewed_by: null, reviewed_at: null, review_comment: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z',
+      id: 1, person_id: 2, absence_type: 'leave', starts_at: '2026-10-24T22:30:00Z', ends_at: '2026-10-25T23:30:00Z', reason: 'Congés', status: 'requested', requested_by: 'user', reviewed_by: null, reviewed_at: null, review_comment: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z',
     }]);
     expect(absence).toMatchObject({ startsOn: '2026-10-25', endsOn: '2026-10-26', reviewedBy: '', reviewComment: '' });
   });
 
   it('treats an end at local midnight as the exclusive boundary of the previous day', () => {
     const [absence] = mapPlanningAbsenceRows([{
-      id: 2, person_id: 2, absence_type: 'leave', starts_at: '2026-08-01T06:00:00Z', ends_at: '2026-08-01T22:00:00Z', reason: 'Congé', status: 'approved', requested_by: 'user', reviewed_by: 'manager', reviewed_at: '2026-07-01T00:00:00Z', review_comment: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z',
+      id: 2, person_id: 2, absence_type: 'leave', starts_at: '2026-08-01T06:00:00Z', ends_at: '2026-08-01T22:00:00Z', reason: 'Congés', status: 'approved', requested_by: 'user', reviewed_by: 'manager', reviewed_at: '2026-07-01T00:00:00Z', review_comment: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z',
     }]);
     expect(absence).toMatchObject({ startsOn: '2026-08-01', endsOn: '2026-08-01' });
   });
@@ -53,7 +54,7 @@ describe('planning P1.2 absence query contracts', () => {
 
   it('rejects incoherent absence dates before any network call', () => {
     const { client, rpc } = rpcClient();
-    expect(() => savePlanningAbsence(client, { personId: 2, absenceType: 'leave', startsAt: '2026-08-02T08:00', endsAt: '2026-08-01T18:00', reason: 'Congé' })).toThrow('strictement postérieure');
+    expect(() => savePlanningAbsence(client, { personId: 2, absenceType: 'leave', startsAt: '2026-08-02T08:00', endsAt: '2026-08-01T18:00', reason: 'Congés' })).toThrow('strictement postérieure');
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -65,6 +66,12 @@ describe('planning P1.2 absence query contracts', () => {
     expect(rpc).toHaveBeenNthCalledWith(1, 'review_planning_absence', expect.objectContaining({ p_action: 'approve' }));
     expect(rpc).toHaveBeenNthCalledWith(2, 'review_planning_absence', expect.objectContaining({ p_action: 'reject' }));
     expect(rpc).toHaveBeenNthCalledWith(3, 'review_planning_absence', expect.objectContaining({ p_action: 'cancel' }));
+  });
+
+  it('uses the administrator-only RPC to delete leave', async () => {
+    const { client, rpc } = rpcClient(9);
+    await expect(deletePlanningLeave(client, 9)).resolves.toBe(9);
+    expect(rpc).toHaveBeenCalledWith('delete_planning_leave', { p_absence_id: 9 });
   });
 });
 

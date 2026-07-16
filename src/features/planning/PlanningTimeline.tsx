@@ -649,7 +649,9 @@ export function PlanningCrewTimelineRow({
       {laneAbsences.map((absence) => {
         const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);
         if (!placement) return null;
-        const statusLabel = absence.status === 'approved' ? 'Validée' : 'À valider';
+        const statusLabel = absence.status === 'approved'
+          ? absence.absenceType === 'leave' ? 'Validés' : 'Validée'
+          : 'À valider';
         return (
           <button
             aria-label={`${planningAbsenceTypeLabel(absence.absenceType)} ${statusLabel.toLocaleLowerCase('fr-FR')} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)}`}

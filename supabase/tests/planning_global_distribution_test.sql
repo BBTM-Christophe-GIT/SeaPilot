@@ -1,6 +1,6 @@
 begin;
 
-select plan(30);
+select plan(37);
 
 select has_table('public', 'planning_releases', 'global planning releases are stored in Supabase');
 select ok(
@@ -18,6 +18,14 @@ select ok(
 select ok(
   not has_function_privilege('anon', 'public.publish_planning_release()', 'EXECUTE'),
   'anonymous users cannot distribute a planning'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.delete_planning_leave(bigint)', 'EXECUTE'),
+  'authenticated users can invoke the administrator-protected leave deletion RPC'
+);
+select ok(
+  not has_function_privilege('anon', 'public.delete_planning_leave(bigint)', 'EXECUTE'),
+  'anonymous users cannot invoke leave deletion'
 );
 select ok(
   not has_function_privilege(
@@ -262,6 +270,31 @@ select is(
   'the leave request is pending approval'
 );
 
+set local role postgres;
+insert into public.planning_dependencies (
+  company_id,
+  dependency_type,
+  predecessor_kind,
+  predecessor_id,
+  successor_kind,
+  successor_id,
+  lag_minutes,
+  starts_on,
+  ends_on
+)
+values (
+  public.current_planning_company_id(),
+  'training_assignment',
+  'absence',
+  (select max(id) from public.planning_absences),
+  'assignment',
+  (select max(id) from public.planning_assignments),
+  0,
+  '2037-02-01',
+  '2037-02-05'
+);
+set local role authenticated;
+
 select set_config('request.jwt.claim.sub', '73000000-0000-0000-0000-000000000002', true);
 select lives_ok(
   $$select public.review_planning_absence(
@@ -275,6 +308,54 @@ select is(
   (select status from public.planning_absences order by id desc limit 1),
   'approved',
   'the approved leave is persisted'
+);
+select throws_ok(
+  $$select public.delete_planning_leave((select max(id) from public.planning_absences))$$,
+  '42501',
+  null,
+  'Armement cannot permanently delete leave'
+);
+
+select set_config('request.jwt.claim.sub', '73000000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  $$select public.delete_planning_leave((select max(id) from public.planning_absences))$$,
+  'an administrator can permanently delete leave'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.planning_absences
+    where requested_by = '73000000-0000-0000-0000-000000000004'
+  ),
+  0,
+  'the leave row is deleted'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.planning_dependencies
+    where predecessor_kind = 'absence'
+      and predecessor_id = (
+        select (payload #>> '{before,id}')::bigint
+        from public.planning_change_log
+        where entity_kind = 'absence' and action = 'delete'
+        order by changed_at desc
+        limit 1
+      )
+  ),
+  0,
+  'dependencies linked to the deleted leave are removed'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.planning_change_log
+    where entity_kind = 'absence'
+      and action = 'delete'
+      and payload #>> '{before,requested_by}' = '73000000-0000-0000-0000-000000000004'
+  ),
+  1,
+  'the deleted leave remains traceable in Planning history'
 );
 
 set local role postgres;

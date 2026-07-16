@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   ShieldAlert,
+  Trash2,
   UserRoundSearch,
   X,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ import {
   type PlanningReplacementFilters,
 } from './planningP12';
 import {
+  deletePlanningLeave,
   ensurePlanningConflictCase,
   fetchPlanningP12Data,
   reviewPlanningAbsence,
@@ -67,6 +69,9 @@ const CONFLICT_STATUSES: PlanningConflictStatus[] = ['open', 'in_progress', 'res
 
 const ABSENCE_STATUS_LABELS: Record<PlanningAbsenceRecord['status'], string> = {
   requested: 'Demandée', approved: 'Validée', rejected: 'Refusée', cancelled: 'Annulée',
+};
+const LEAVE_STATUS_LABELS: Record<PlanningAbsenceRecord['status'], string> = {
+  requested: 'Demandés', approved: 'Validés', rejected: 'Refusés', cancelled: 'Annulés',
 };
 const CONFLICT_STATUS_LABELS: Record<PlanningConflictStatus, string> = {
   open: 'Ouvert', in_progress: 'En cours', resolved: 'Résolu', dismissed: 'Classé sans suite', derogated: 'Dérogation',
@@ -108,12 +113,17 @@ function compatibilityLabel(compatibility: 'compatible' | 'warning' | 'incompati
   return compatibility === 'compatible' ? 'Compatible' : compatibility === 'warning' ? 'À confirmer' : 'Incompatible';
 }
 
+function absenceStatusLabel(absence: PlanningAbsenceRecord): string {
+  return absence.absenceType === 'leave' ? LEAVE_STATUS_LABELS[absence.status] : ABSENCE_STATUS_LABELS[absence.status];
+}
+
 export function PlanningP12Panel({
   client,
   overview,
   range,
   canRequestAbsences,
   canReviewAbsences,
+  canDeleteLeaves,
   canManageConflictCases,
   canPrepareReplacements,
   canManageDerogations,
@@ -132,6 +142,7 @@ export function PlanningP12Panel({
   range: PlanningDateRange;
   canRequestAbsences: boolean;
   canReviewAbsences: boolean;
+  canDeleteLeaves: boolean;
   canManageConflictCases: boolean;
   canPrepareReplacements: boolean;
   canManageDerogations: boolean;
@@ -269,6 +280,26 @@ export function PlanningP12Panel({
     }
   }
 
+  async function removeLeave(absence: PlanningAbsenceRecord, personName: string) {
+    const confirmed = window.confirm(
+      `Supprimer les congés de ${personName} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)} ?\n\n`
+      + 'Cette action est définitive et sera enregistrée dans l’historique Planning.',
+    );
+    if (!confirmed) return;
+
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      await deletePlanningLeave(client, absence.id);
+      await Promise.all([load(), onAuditChange()]);
+      setFeedback({ message: 'Congés supprimés. Les impacts ont été recalculés.', error: false });
+    } catch (error) {
+      setFeedback({ message: planningErrorMessage(error, 'Impossible de supprimer les congés.'), error: true });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function editAbsence(absence: PlanningAbsenceRecord) {
     setAbsenceForm({
       id: absence.id,
@@ -356,9 +387,32 @@ export function PlanningP12Panel({
               </form> : null}
               <div className="planning-p12-absence-list">{displayedAbsences.length ? displayedAbsences.map((absence) => {
                 const person = overview.people.find((item) => item.id === absence.personId);
+                const personName = person ? formatPlanningPerson(person) : `Marin #${absence.personId}`;
                 const impacts = absenceImpactedAssignments(overview, absence);
-                return <article className={`planning-p12-card${absence.id === initialAbsenceId ? ' is-selected' : ''}`} key={absence.id}><header><div><strong>{person ? formatPlanningPerson(person) : `Marin #${absence.personId}`}</strong><small>{planningAbsenceTypeLabel(absence.absenceType)} · {formatPlanningDateTime(absence.startsAt)} au {formatPlanningDateTime(absence.endsAt)}</small></div><span className={`planning-p12-status is-${absence.status}`}>{ABSENCE_STATUS_LABELS[absence.status]}</span></header><p>{absence.reason || 'Aucun motif renseigné.'}</p><div className="planning-p12-impact"><strong>{impacts.length}</strong><span>affectation(s) concernée(s){absence.status === 'approved' && impacts.length ? ` · ${impacts.length} poste(s) vacant(s)` : ''}</span></div>{absence.reviewComment ? <small>Décision · {absence.reviewComment}</small> : null}{absence.status === 'requested' ? <div className="planning-p12-review"><label>Commentaire<input aria-label={`Commentaire pour ${person ? formatPlanningPerson(person) : absence.id}`} value={reviewComments[absence.id] || ''} onChange={(event) => setReviewComments((current) => ({ ...current, [absence.id]: event.target.value }))} /></label><div>{canRequestAbsences ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}{canReviewAbsences ? <><button className="is-success" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'approve')} type="button"><Check size={15} />Valider</button><button className="is-danger" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'reject')} type="button"><Ban size={15} />Refuser</button></> : null}<button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button></div></div> : null}</article>;
-              }) : <div className="planning-calendar-empty"><CalendarOff size={24} /><p>{requestedOnly ? 'Aucune demande de congé en attente.' : 'Aucune absence dans le périmètre visible.'}</p></div>}</div>
+                return <article className={`planning-p12-card${absence.id === initialAbsenceId ? ' is-selected' : ''}`} key={absence.id}>
+                  <header>
+                    <div><strong>{personName}</strong><small>{planningAbsenceTypeLabel(absence.absenceType)} · {formatPlanningDateTime(absence.startsAt)} au {formatPlanningDateTime(absence.endsAt)}</small></div>
+                    <span className={`planning-p12-status is-${absence.status}`}>{absenceStatusLabel(absence)}</span>
+                  </header>
+                  <p>{absence.reason || 'Aucun motif renseigné.'}</p>
+                  <div className="planning-p12-impact"><strong>{impacts.length}</strong><span>affectation(s) concernée(s){absence.status === 'approved' && impacts.length ? ` · ${impacts.length} poste(s) vacant(s)` : ''}</span></div>
+                  {absence.reviewComment ? <small>Décision · {absence.reviewComment}</small> : null}
+                  {absence.status === 'requested' ? <div className="planning-p12-review">
+                    <label>Commentaire<input aria-label={`Commentaire pour ${personName}`} value={reviewComments[absence.id] || ''} onChange={(event) => setReviewComments((current) => ({ ...current, [absence.id]: event.target.value }))} /></label>
+                    <div>
+                      {canRequestAbsences ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}
+                      {canReviewAbsences ? <>
+                        <button className="is-success" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'approve')} type="button"><Check size={15} />Valider</button>
+                        <button className="is-danger" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'reject')} type="button"><Ban size={15} />Refuser</button>
+                      </> : null}
+                      <button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button>
+                    </div>
+                  </div> : null}
+                  {canDeleteLeaves && absence.absenceType === 'leave' ? <div className="planning-p12-card-actions">
+                    <button aria-label={`Supprimer les congés de ${personName}`} className="is-danger" disabled={isSaving} onClick={() => void removeLeave(absence, personName)} type="button"><Trash2 aria-hidden="true" size={15} />Supprimer les congés</button>
+                  </div> : null}
+                </article>;
+              }) : <div className="planning-calendar-empty"><CalendarOff size={24} /><p>{requestedOnly ? 'Aucune demande de congés en attente.' : 'Aucune absence dans le périmètre visible.'}</p></div>}</div>
             </section>
           ) : null}
           {!isLoading && tab === 'conflicts' ? (

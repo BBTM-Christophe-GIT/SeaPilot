@@ -122,7 +122,7 @@ export async function fetchPlanningAbsences(client: SupabaseClient): Promise<Pla
     .from('planning_absences')
     .select(ABSENCE_SELECT)
     .order('starts_at', { ascending: false });
-  if (error) throwPlanningDataError('load-planning-absences', 'Impossible de charger les demandes de congé.', error);
+  if (error) throwPlanningDataError('load-planning-absences', 'Impossible de charger les demandes de congés.', error);
   return mapPlanningAbsenceRows((data || []) as AbsenceRow[]);
 }
 
@@ -225,6 +225,12 @@ export function reviewPlanningAbsence(
     p_absence_id: planningEntityId(absenceId, 'La demande'),
     p_action: action,
     p_comment: normalizedComment || null,
+  });
+}
+
+export function deletePlanningLeave(client: SupabaseClient, absenceId: number): Promise<number> {
+  return callRpc(client, 'delete-leave', 'Impossible de supprimer les congés.', 'delete_planning_leave', {
+    p_absence_id: planningEntityId(absenceId, 'La demande de congés'),
   });
 }
 

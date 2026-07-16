@@ -122,7 +122,7 @@ export interface PlanningDateRange {
 }
 
 const ABSENCE_TYPE_LABELS: Record<PlanningAbsenceType, string> = {
-  leave: 'Congé',
+  leave: 'Congés',
   illness: 'Maladie',
   training: 'Formation',
   medical_visit: 'Visite médicale',
@@ -151,8 +151,8 @@ export function planningConflictTypeLabel(type: PlanningConflictType): string {
 }
 
 function absenceDecisionLabel(type: PlanningAbsenceType, approved: boolean): string {
-  const feminine = type !== 'leave';
-  return `${planningAbsenceTypeLabel(type)} ${approved ? (feminine ? 'validée' : 'validé') : (feminine ? 'demandée' : 'demandé')}`;
+  if (type === 'leave') return `Congés ${approved ? 'validés' : 'demandés'}`;
+  return `${planningAbsenceTypeLabel(type)} ${approved ? 'validée' : 'demandée'}`;
 }
 
 function dateIntersection(left: PlanningDateRange, right: PlanningDateRange): PlanningDateRange | null {
