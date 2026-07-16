@@ -100,7 +100,7 @@ const atlantiqueProjectDocumentRow = {
   file_extension: 'pdf',
   file_name: 'Plan projet Atlantique.pdf',
   file_size_bytes: 2048,
-  file_url: 'https://sharepoint.test/projets/plan-atlantique.pdf',
+  file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',
   folder_path: '/sites/QHSE/Documents Projets/P1086',
   id: 882,
   is_folder: false,
@@ -111,6 +111,9 @@ const atlantiqueProjectDocumentRow = {
   project_sharepoint_item_id: '880',
   project_title: 'Campagne Atlantique 2026',
   sharepoint_item_id: '882',
+  sharepoint_drive_id: 'drive-projects',
+  sharepoint_drive_item_id: 'item-882',
+  sharepoint_list_id: 'list-projects',
   sharepoint_list_title: 'Documents Projets',
   source_label: 'SharePoint',
   source_modified_at: '2026-07-14T12:00:00Z',
@@ -121,12 +124,13 @@ const atlantiqueProjectDocumentRow = {
 const mancheProjectDocumentRow = {
   ...atlantiqueProjectDocumentRow,
   file_name: 'Plan projet Manche.pdf',
-  file_url: 'https://sharepoint.test/projets/plan-manche.pdf',
+  file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1087/plan-manche.pdf',
   id: 883,
   project_code: 'P1087',
   project_id: 881,
   project_sharepoint_item_id: '881',
   project_title: 'Campagne Manche 2026',
+  sharepoint_drive_item_id: 'item-883',
   sharepoint_item_id: '883',
   title: 'Plan projet Manche.pdf',
 };
@@ -135,10 +139,13 @@ const atlantiqueContractDocumentRow = {
   ...atlantiqueProjectDocumentRow,
   category_key: 'contract',
   file_name: 'Contrat Atlantique signé.pdf',
-  file_url: 'https://sharepoint.test/contrats/contrat-atlantique.pdf',
+  file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P1086/contrat-atlantique.pdf',
   folder_path: '/sites/QHSE/Documents Contractuels/P1086',
   id: 884,
   sharepoint_item_id: '884',
+  sharepoint_drive_id: 'drive-contracts',
+  sharepoint_drive_item_id: 'item-884',
+  sharepoint_list_id: 'list-contracts',
   sharepoint_list_title: 'Documents Contractuels',
   title: 'Contrat Atlantique signé.pdf',
 };
@@ -247,7 +254,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Projet repris depuis SharePoint · BBTM - Projets · 880.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
-      'https://sharepoint.test/projets/plan-atlantique.pdf',
+      'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',
     );
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
     expect(from.mock.calls.map(([table]) => table)).toEqual(
@@ -276,6 +283,60 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText(/Consultation partielle/)).toBeInTheDocument();
     expect(screen.getAllByText('Campagne Manche 2026').length).toBeGreaterThan(0);
     expect(screen.getByText(/informations contractuelles et SUPPLYTIME sont temporairement indisponibles/)).toBeInTheDocument();
+  });
+
+  it('blocks invalid links and explains missing links, moved files, and Microsoft 365 authentication', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      contract_documents: {
+        data: [{ ...atlantiqueContractDocumentRow, file_url: '' }],
+        error: null,
+      },
+      project_documents: {
+        data: [{ ...atlantiqueProjectDocumentRow, file_url: 'https://evil.example/public/plan.pdf' }],
+        error: null,
+      },
+    });
+
+    render(<ProjectsPage client={client as never} />);
+
+    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
+    expect(await screen.findByText('URL SharePoint invalide ou non autorisée')).toBeInTheDocument();
+    expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
+    expect(screen.getAllByText(/Microsoft 365 demande une connexion/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/déplacé ou supprimé/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: /Plan projet Atlantique.pdf/ })).not.toBeInTheDocument();
+  });
+
+  it('reports unresolved relations and hides duplicate metadata without hiding the document', async () => {
+    const user = userEvent.setup();
+    const duplicate = {
+      ...atlantiqueProjectDocumentRow,
+      id: 999,
+      source_modified_at: '2026-07-13T12:00:00Z',
+    };
+    const unresolved = {
+      ...mancheProjectDocumentRow,
+      id: 998,
+      project_id: null,
+      project_sharepoint_item_id: null,
+      project_code: '',
+      project_title: '',
+      sharepoint_drive_item_id: 'item-unresolved',
+      sharepoint_item_id: '998',
+      source_sharepoint_id: '998',
+    };
+    const { client } = createClient({
+      project_documents: { data: [atlantiqueProjectDocumentRow, duplicate, unresolved], error: null },
+    });
+
+    render(<ProjectsPage client={client as never} />);
+
+    expect(await screen.findByText('Métadonnées documentaires à contrôler')).toBeInTheDocument();
+    expect(screen.getByText('1 document(s) sans rattachement Supabase résolu.')).toBeInTheDocument();
+    expect(screen.getByText('1 doublon(s) de métadonnées masqué(s) dans la consultation.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
+    expect(screen.getAllByText('Plan projet Atlantique.pdf')).toHaveLength(1);
   });
 
   it('distinguishes a valid empty Supabase result from a loading or error state', async () => {

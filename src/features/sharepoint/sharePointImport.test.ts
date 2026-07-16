@@ -990,7 +990,7 @@ describe('SharePoint import mapping', () => {
     expect(batch).toEqual({
       sourceKey: 'library-documents-projets',
       targetTable: 'project_documents',
-      conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
+      conflictColumns: ['sharepoint_drive_id', 'sharepoint_drive_item_id'],
       rows: [
         {
           project_id: null,
@@ -1001,6 +1001,17 @@ describe('SharePoint import mapping', () => {
           title: 'P-2026-014 Rapport campagne.pdf',
           source_label: 'sharepoint',
           source_sharepoint_id: '990',
+          sharepoint_drive_id: expect.stringContaining('Ou31l1uVoWRrtjl4GcYGNl'),
+          sharepoint_drive_item_id: '990',
+          file_name: 'P-2026-014 Rapport campagne.pdf',
+          folder_path: '/sites/QHSE/Documents Projets/P-2026-014',
+          mime_type: null,
+          file_extension: 'pdf',
+          file_size_bytes: null,
+          source_etag: null,
+          source_ctag: null,
+          source_created_at: null,
+          is_folder: false,
           file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/rapport.pdf',
           notes: '/sites/QHSE/Documents Projets/P-2026-014/rapport.pdf',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
@@ -1039,7 +1050,7 @@ describe('SharePoint import mapping', () => {
     expect(batch).toEqual({
       sourceKey: 'library-documents-contractuels',
       targetTable: 'contract_documents',
-      conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
+      conflictColumns: ['sharepoint_drive_id', 'sharepoint_drive_item_id'],
       rows: [
         {
           project_id: null,
@@ -1050,6 +1061,17 @@ describe('SharePoint import mapping', () => {
           title: 'P-2026-014 Contrat signe.pdf',
           source_label: 'sharepoint',
           source_sharepoint_id: '991',
+          sharepoint_drive_id: expect.stringContaining('OWUUcnVo9hTIk_y0nRfdyl'),
+          sharepoint_drive_item_id: '991',
+          file_name: 'P-2026-014 Contrat signe.pdf',
+          folder_path: '/sites/QHSE/Documents Contractuels/P-2026-014',
+          mime_type: null,
+          file_extension: 'pdf',
+          file_size_bytes: null,
+          source_etag: null,
+          source_ctag: null,
+          source_created_at: null,
+          is_folder: false,
           file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P-2026-014/contrat.pdf',
           notes: '/sites/QHSE/Documents Contractuels/P-2026-014/contrat.pdf',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
@@ -1064,6 +1086,35 @@ describe('SharePoint import mapping', () => {
         },
       ],
     });
+  });
+
+  it('ignores folders and rejects an out-of-site project document URL', () => {
+    const batch = buildSharePointUpsertBatch('library-documents-projets', [
+      {
+        fields: {
+          ID: 992,
+          FSObjType: 1,
+          FileLeafRef: 'P-2026-014',
+          FileRef: '/sites/QHSE/Documents Projets/P-2026-014',
+        },
+      },
+      {
+        fields: {
+          ID: 993,
+          FSObjType: 0,
+          FileLeafRef: 'rapport.pdf',
+          FileRef: '/sites/QHSE/Documents Projets/P-2026-014/rapport.pdf',
+          EncodedAbsUrl: 'https://evil.example/public/rapport.pdf',
+        },
+      },
+    ]);
+
+    expect(batch.rows).toHaveLength(1);
+    expect(batch.rows[0]).toEqual(expect.objectContaining({
+      file_url: null,
+      is_folder: false,
+      sharepoint_drive_item_id: '993',
+    }));
   });
 
   it('maps Brevets et Visites Medicales library items to HR document upserts', () => {

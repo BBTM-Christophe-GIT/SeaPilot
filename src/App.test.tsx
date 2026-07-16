@@ -425,7 +425,7 @@ describe('App', () => {
             title: 'Plan projet Atlantique.pdf',
             source_label: 'SharePoint',
             source_sharepoint_id: '881',
-            file_url: 'https://sharepoint.test/projets/plan.pdf',
+            file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',
             notes: '/sites/QHSE/Documents Projets/P-2026-014/plan.pdf',
           },
         ]);
@@ -443,7 +443,7 @@ describe('App', () => {
             title: 'Contrat Atlantique signe.pdf',
             source_label: 'SharePoint',
             source_sharepoint_id: '882',
-            file_url: 'https://sharepoint.test/contrats/contrat.pdf',
+            file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P-2026-014/contrat.pdf',
             notes: '/sites/QHSE/Documents Contractuels/P-2026-014/contrat.pdf',
           },
         ]);
@@ -490,7 +490,7 @@ describe('App', () => {
     expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
-      'https://sharepoint.test/projets/plan.pdf',
+      'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',
     );
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });

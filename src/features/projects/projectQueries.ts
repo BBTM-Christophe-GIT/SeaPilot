@@ -78,8 +78,11 @@ const PROJECT_DOCUMENT_SELECT = [
   'source_sharepoint_id',
   'file_url',
   'notes',
+  'sharepoint_list_id',
   'sharepoint_list_title',
   'sharepoint_item_id',
+  'sharepoint_drive_id',
+  'sharepoint_drive_item_id',
   'file_name',
   'folder_path',
   'mime_type',
@@ -190,8 +193,11 @@ interface ProjectDocumentRow {
   source_sharepoint_id: string | null;
   file_url: string | null;
   notes: string | null;
+  sharepoint_list_id: string | null;
   sharepoint_list_title: string | null;
   sharepoint_item_id: string | null;
+  sharepoint_drive_id: string | null;
+  sharepoint_drive_item_id: string | null;
   file_name: string | null;
   folder_path: string | null;
   mime_type: string | null;
@@ -293,8 +299,11 @@ export interface ProjectDocumentRecord {
   sourceSharePointId: string;
   fileUrl: string;
   notes: string;
+  sharePointListId: string;
   sharePointListTitle: string;
   sharePointItemId: string;
+  sharePointDriveId: string;
+  sharePointDriveItemId: string;
   fileName: string;
   folderPath: string;
   mimeType: string;
@@ -513,8 +522,11 @@ export function mapProjectDocumentRows(rows: ProjectDocumentRow[]): ProjectDocum
     sourceSharePointId: nullableText(row.source_sharepoint_id),
     fileUrl: nullableText(row.file_url),
     notes: nullableText(row.notes),
+    sharePointListId: nullableText(row.sharepoint_list_id),
     sharePointListTitle: nullableText(row.sharepoint_list_title),
     sharePointItemId: nullableText(row.sharepoint_item_id),
+    sharePointDriveId: nullableText(row.sharepoint_drive_id),
+    sharePointDriveItemId: nullableText(row.sharepoint_drive_item_id),
     fileName: nullableText(row.file_name),
     folderPath: nullableText(row.folder_path),
     mimeType: nullableText(row.mime_type),

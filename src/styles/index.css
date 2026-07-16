@@ -3148,6 +3148,7 @@ button:disabled {
 
 .project-provenance,
 .project-partial-state,
+.project-document-state,
 .project-error-state {
   display: flex;
   align-items: flex-start;
@@ -3179,6 +3180,23 @@ button:disabled {
   color: #70410b;
   background: #fff7e8;
   line-height: 1.45;
+}
+
+.project-document-state {
+  margin: 0;
+  border: 1px solid #efcf95;
+  color: #70410b;
+  background: #fff7e8;
+}
+
+.project-document-state div,
+.project-document-state span {
+  display: grid;
+  gap: 3px;
+}
+
+.project-document-state span {
+  font-size: 0.82rem;
 }
 
 .project-error-state {
@@ -3213,6 +3231,15 @@ button:disabled {
   border: 1px solid #e3e9f0;
   border-radius: 7px;
   padding: 12px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
+.project-document-help {
+  margin: 0 0 10px;
+  color: #52647a;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .project-document-list strong,
@@ -3250,6 +3277,11 @@ button:disabled {
   color: #66758a;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.project-document-list .project-document-warning {
+  color: #8a4b08;
+  font-weight: 800;
 }
 
 .project-section-empty {

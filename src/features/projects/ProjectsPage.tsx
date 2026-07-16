@@ -22,6 +22,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor } from './ProjectEditors';
 import { archiveProject } from './projectMutations';
+import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import {
   buildProjectMetrics,
   fetchProjectsData,
@@ -196,35 +197,48 @@ function ProjectDocuments({
   }
 
   return (
-    <ul className="project-document-list">
-      {documents.map((document) => {
-        const metadata = [
-          document.categoryKey,
-          document.fileExtension || document.mimeType,
-          formatFileSize(document.fileSizeBytes),
-          document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
-        ].filter(Boolean);
+    <>
+      <p className="project-document-help">
+        SeaPilot ouvre l’URL SharePoint d’origine sans télécharger le fichier. Si Microsoft 365 demande une connexion,
+        authentifiez-vous avec votre compte autorisé. Un fichier signalé introuvable peut avoir été déplacé ou supprimé et
+        nécessite un rafraîchissement des métadonnées.
+      </p>
+      <ul className="project-document-list">
+        {documents.map((document) => {
+          const linkState = getSharePointDocumentLinkState(document.fileUrl);
+          const metadata = [
+            document.categoryKey,
+            document.fileExtension || document.mimeType,
+            formatFileSize(document.fileSizeBytes),
+            document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
+          ].filter(Boolean);
 
-        return (
-          <li key={document.id}>
-            <FileText aria-hidden="true" size={18} />
-            <div>
-              <strong>{document.fileName || document.title}</strong>
-              {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
-              {document.folderPath || document.notes ? <small>{document.folderPath || document.notes}</small> : null}
-            </div>
-            {document.fileUrl ? (
-              <a href={document.fileUrl} rel="noreferrer" target="_blank">
-                Ouvrir dans SharePoint
-                <span className="sr-only"> : {document.fileName || document.title}</span>
-              </a>
-            ) : (
-              <span className="project-missing-link">Lien SharePoint indisponible</span>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+          return (
+            <li key={document.id}>
+              <FileText aria-hidden="true" size={18} />
+              <div>
+                <strong>{document.fileName || document.title}</strong>
+                {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
+                {document.folderPath || document.notes ? <small>{document.folderPath || document.notes}</small> : null}
+                {document.projectId === null ? (
+                  <small className="project-document-warning">Rattachement au projet Supabase non résolu</small>
+                ) : null}
+              </div>
+              {linkState.status === 'available' ? (
+                <a href={linkState.href} rel="noreferrer" target="_blank">
+                  Ouvrir dans SharePoint
+                  <span className="sr-only"> : {document.fileName || document.title}</span>
+                </a>
+              ) : (
+                <span className="project-missing-link">
+                  {linkState.status === 'missing' ? 'URL SharePoint absente' : 'URL SharePoint invalide ou non autorisée'}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 
@@ -455,17 +469,25 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }, [effectiveClient, loadAttempt]);
 
   const effectiveFilters = useMemo(() => ({ ...filters, search: deferredSearch }), [deferredSearch, filters]);
+  const projectDocumentSet = useMemo(
+    () => deduplicateProjectDocuments(projectsData.projectDocuments),
+    [projectsData.projectDocuments],
+  );
+  const contractDocumentSet = useMemo(
+    () => deduplicateProjectDocuments(projectsData.contractDocuments),
+    [projectsData.contractDocuments],
+  );
   const filteredProjects = useMemo(
     () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters)),
     [effectiveFilters, projectsData.projects],
   );
   const filteredProjectDocuments = useMemo(
-    () => filterDocumentsForProjects(projectsData.projectDocuments, filteredProjects),
-    [filteredProjects, projectsData.projectDocuments],
+    () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
+    [filteredProjects, projectDocumentSet.documents],
   );
   const filteredContractDocuments = useMemo(
-    () => filterDocumentsForProjects(projectsData.contractDocuments, filteredProjects),
-    [filteredProjects, projectsData.contractDocuments],
+    () => filterDocumentsForProjects(contractDocumentSet.documents, filteredProjects),
+    [contractDocumentSet.documents, filteredProjects],
   );
   const filteredClients = useMemo(
     () =>
@@ -513,11 +535,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       )
     : undefined;
   const selectedProjectDocuments = selectedProject
-    ? projectsData.projectDocuments.filter((document) => documentBelongsToProject(document, selectedProject))
+    ? projectDocumentSet.documents.filter((document) => documentBelongsToProject(document, selectedProject))
     : [];
   const selectedContractDocuments = selectedProject
-    ? projectsData.contractDocuments.filter((document) => documentBelongsToProject(document, selectedProject))
+    ? contractDocumentSet.documents.filter((document) => documentBelongsToProject(document, selectedProject))
     : [];
+  const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
+    (document) => document.projectId === null,
+  ).length;
+  const duplicateDocumentCount = projectDocumentSet.duplicateCount + contractDocumentSet.duplicateCount;
   const pageCount = Math.max(1, Math.ceil(filteredProjects.length / PROJECTS_PER_PAGE));
   const safePage = Math.min(currentPage, pageCount - 1);
   const visibleProjects = filteredProjects.slice(safePage * PROJECTS_PER_PAGE, (safePage + 1) * PROJECTS_PER_PAGE);
@@ -639,6 +665,21 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <strong>Consultation partielle.</strong>{' '}
           {`Le chargement de ${projectsData.warnings.map((warning) => warning.label).join(', ')} a échoué.`}
         </div>
+      ) : null}
+
+      {unresolvedDocumentCount > 0 || duplicateDocumentCount > 0 ? (
+        <aside className="project-document-state" role="status">
+          <Info aria-hidden="true" size={18} />
+          <div>
+            <strong>Métadonnées documentaires à contrôler</strong>
+            {unresolvedDocumentCount > 0 ? (
+              <span>{`${unresolvedDocumentCount} document(s) sans rattachement Supabase résolu.`}</span>
+            ) : null}
+            {duplicateDocumentCount > 0 ? (
+              <span>{`${duplicateDocumentCount} doublon(s) de métadonnées masqué(s) dans la consultation.`}</span>
+            ) : null}
+          </div>
+        </aside>
       ) : null}
 
       <div className="planning-filter-panel projects-filter-panel" aria-label="Filtres projets">

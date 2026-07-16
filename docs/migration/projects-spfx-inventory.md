@@ -1034,3 +1034,48 @@ Références :
 - documentation de schéma, workflows et risques mise à jour.
 
 **Arrêt de phase 4 : les workflows d'écriture Projets sont validés. Les travaux de bascule ou de réconciliation supplémentaires restent hors de cette phase.**
+
+## 20. Mise à jour de transmission — intégration documentaire livrée en phase 5
+
+Date de livraison : 16 juillet 2026.
+
+Références :
+
+- contrat de frontière : `docs/migration/projects-phase5-sharepoint-documents.md` ;
+- migration : `supabase/migrations/202607160002_projects_phase5_sharepoint_documents.sql` ;
+- interface : `src/features/projects/projectDocuments.ts` et `ProjectsPage.tsx` ;
+- rafraîchissement : `npm run refresh:sharepoint:project-documents`.
+
+### 20.1 Parité documentaire effective
+
+| Exigence | État effectif phase 5 |
+|---|---|
+| Source de consultation | Métadonnées lues uniquement dans Supabase |
+| Ouverture | Lien explicite vers l’URL SharePoint d’origine, sans transformation publique |
+| Frontière fichiers | Contenu conservé exclusivement dans SharePoint ; aucun bucket ou transfert binaire |
+| URL absente/invalide | Document visible, lien bloqué et anomalie explicite |
+| Déplacé/supprimé | Aide utilisateur et rafraîchissement des métadonnées ; aucun téléchargement de contrôle |
+| Authentification Microsoft 365 | Connexion demandée directement par SharePoint ; aucun contournement SeaPilot |
+| Document non résolu | Comptage global et signalement sur la fiche lorsqu’il est associé par instantané historique |
+| Doublon | Identité drive/item protégée en base ; doublons historiques masqués et comptés dans l’interface |
+| Rafraîchissement | Export récursif des métadonnées, dry-run par défaut, upsert explicite avec `--apply`, sans suppression |
+| Lien de dossier pour dépôt | Non livré : besoin, dossier canonique et autorisations non confirmés par l’inventaire |
+
+### 20.2 Décisions effectives
+
+- seules les URL HTTPS de `bbtm668.sharepoint.com/sites/QHSE` deviennent cliquables ;
+- le navigateur n’appelle ni Graph ni les listes SharePoint et ne sonde pas le contenu ;
+- les bibliothèques sans List ID configuré sont exportées par leur titre avec une requête CAML récursive ;
+- les dossiers sont exclus avant l’upsert ;
+- l’identité d’import des fichiers est `(sharepoint_drive_id, sharepoint_drive_item_id)` ;
+- l’export temporaire reste dans `.data/`, déjà exclu de Git ;
+- aucune purge, aucun prune, aucune suppression implicite et aucune copie binaire ne sont introduits.
+
+### 20.3 Critères de sortie
+
+- tests des liens, anomalies, doublons, relations orphelines, mappings et export récursif réussis ;
+- migration additive et test d’idempotence Supabase fournis ;
+- lint, suite automatisée et build production exécutés ;
+- frontière et procédure opérateur documentées.
+
+**Arrêt de phase 5 : la consultation et le rafraîchissement des métadonnées documentaires sont livrés ; les fichiers restent dans SharePoint et aucun lien de dépôt non validé n’est ajouté.**
