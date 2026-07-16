@@ -5,18 +5,44 @@ import { runSharePointListExportCli } from '../src/features/sharepoint/sharePoin
 
 const execFileAsync = promisify(execFile);
 
+async function runCommandFile(command: string, args: string[]) {
+  if (process.platform !== 'win32') {
+    return execFileAsync(command, args, {
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    });
+  }
+
+  const executable = command === 'pnpm' ? 'pnpm.cmd' : command;
+  const encodedArgs = Buffer.from(JSON.stringify(args), 'utf8').toString('base64');
+  const powerShellCommand = [
+    "$argumentJson = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:SEAPILOT_COMMAND_ARGUMENTS))",
+    '$commandArguments = @($argumentJson | ConvertFrom-Json)',
+    '& $env:SEAPILOT_COMMAND @commandArguments',
+    'exit $LASTEXITCODE',
+  ].join('; ');
+
+  return execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', powerShellCommand],
+    {
+      env: {
+        ...process.env,
+        SEAPILOT_COMMAND: executable,
+        SEAPILOT_COMMAND_ARGUMENTS: encodedArgs,
+      },
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+}
+
 const exitCode = await runSharePointListExportCli(process.argv.slice(2), {
   now: () => new Date(),
   readTextFile: (path) => readFile(path, 'utf8'),
   runCommand: async (command, args) => {
-    const executable = process.platform === 'win32' && command === 'pnpm' ? 'pnpm.cmd' : command;
-
     try {
-      const { stdout, stderr } = await execFileAsync(executable, args, {
-        maxBuffer: 64 * 1024 * 1024,
-        shell: process.platform === 'win32',
-        windowsHide: true,
-      });
+      const { stdout, stderr } = await runCommandFile(command, args);
 
       return {
         exitCode: 0,

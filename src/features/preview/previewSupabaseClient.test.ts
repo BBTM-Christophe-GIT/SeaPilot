@@ -20,4 +20,23 @@ describe('previewSupabaseClient', () => {
     ]));
     expect(write.error).toMatchObject({ message: expect.stringContaining('ne peuvent pas être enregistrées') });
   });
+
+  it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {
+    const projects = await previewSupabaseClient.from('projects').select('*').order('id');
+    const documents = await previewSupabaseClient.from('project_documents').select('*').order('id');
+    const write = await previewSupabaseClient.rpc('projects_save', { target_title: 'Forbidden preview write' });
+
+    expect(projects.error).toBeNull();
+    expect(projects.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ project_code: 'P901', source_label: 'sharepoint' }),
+      expect.objectContaining({ project_code: 'P902', source_label: 'seapilot' }),
+    ]));
+    expect(documents.data).toEqual([
+      expect.objectContaining({
+        file_url: expect.stringContaining('bbtm668.sharepoint.com/sites/QHSE/'),
+        is_folder: false,
+      }),
+    ]);
+    expect(write.error).toMatchObject({ message: expect.stringContaining('ne peuvent pas être enregistrées') });
+  });
 });

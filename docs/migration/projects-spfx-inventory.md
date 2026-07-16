@@ -1079,3 +1079,22 @@ Références :
 - frontière et procédure opérateur documentées.
 
 **Arrêt de phase 5 : la consultation et le rafraîchissement des métadonnées documentaires sont livrés ; les fichiers restent dans SharePoint et aucun lien de dépôt non validé n’est ajouté.**
+
+## 21. Transmission phase 6 — recette finale et bascule
+
+La recette du 16 juillet 2026 conclut à un **NO-GO**. Le projet Supabase lié est bien `SeaPilot`, mais il contient 0 projet, 0 client, 0 document projet et 0 document contractuel. Les 14 navires et 18 `planning_projects` présents ne constituent pas le catalogue Projets. La session Microsoft 365 CLI est déconnectée ; les volumes live des cinq sources ne peuvent donc pas être établis ni rapprochés.
+
+Les contrôles d’intégrité à zéro ne sont pas une preuve lorsque les tables sont vides. La migration ne sera terminée qu’après l’export live, un dry-run, deux imports identiques, le rapprochement des volumes et anomalies, l’alignement explicite du compteur et une validation métier des cinq rôles.
+
+Contrôles livrés :
+
+- `supabase/validation/projects_phase6_reconciliation.sql` — volumes et anomalies agrégés sans donnée métier ;
+- `supabase/validation/projects_phase6_security.sql` — RLS, privilèges, RPC et frontière Storage ;
+- `supabase/tests/projects_phase6_role_matrix_test.sql` — 36 assertions sur Admin, Direction, Armement, Capitaine et Marin ;
+- `supabase/migrations/202607160003_projects_phase6_security_hardening.sql` — révocation explicite des privilèges `anon`/`public` du domaine ;
+- `docs/migration/projects-cutover-runbook.md` — import/rejeu, contrôles, retour arrière et responsabilités ;
+- `docs/migration/projects-phase6-final-acceptance.md` — preuves et conditions de levée du No-Go.
+
+Le site et les deux drives SharePoint attendus sont confirmés, sans déplacement de fichier. Le rafraîchissement reste idempotent, sans téléchargement, purge ou prune. Le parcours Windows de l’exporteur a été corrigé pour transmettre les requêtes CAML sans interprétation par `cmd.exe` ; sans session Microsoft 365, il s’arrête désormais explicitement avant tout export.
+
+**Arrêt de phase 6 : sécurité durcie et recette automatisable fournie ; bascule non autorisée tant que la réconciliation live et la validation métier ne sont pas achevées.**
