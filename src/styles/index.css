@@ -1105,7 +1105,7 @@ button:disabled {
 
 .admin-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 940px;
   border-collapse: collapse;
   color: #253044;
 }
@@ -1150,6 +1150,55 @@ button:disabled {
   color: #66758a;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.admin-user-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.admin-user-action-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #c9d5e3;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #27415f;
+  background: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-user-action-button:hover:not(:disabled) {
+  border-color: #8ca5c1;
+  background: #f4f8fc;
+}
+
+.admin-user-action-button.is-danger {
+  border-color: #efc7c7;
+  color: #a52828;
+  background: #fffafa;
+}
+
+.admin-user-action-button.is-danger:hover:not(:disabled) {
+  border-color: #dc8f8f;
+  background: #fff1f1;
+}
+
+.admin-user-action-button:focus-visible {
+  outline: 3px solid rgba(12, 102, 183, 0.18);
+  outline-offset: 2px;
+}
+
+.admin-user-action-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .admin-success-chip,

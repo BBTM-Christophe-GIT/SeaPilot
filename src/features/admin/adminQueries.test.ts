@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assignUserRole,
+  deleteSeaPilotUser,
   fetchAdminInviteCandidates,
   fetchAdminUsers,
   fetchSharePointImportSources,
@@ -9,6 +10,7 @@ import {
   mapAdminProfileRows,
   mapSharePointSourceRows,
   removeUserRole,
+  resendSeaPilotUserAccess,
 } from './adminQueries';
 
 describe('administrator invitations', () => {
@@ -63,6 +65,44 @@ describe('administrator invitations', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('admin-invite-user', { body: input });
+  });
+
+  it('invokes the secure user-management function to resend access', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: { message: 'Une nouvelle invitation a été envoyée.' },
+      error: null,
+    });
+
+    await expect(resendSeaPilotUserAccess(
+      { functions: { invoke } } as never,
+      '73000000-0000-0000-0000-000000000002',
+    )).resolves.toBe('Une nouvelle invitation a été envoyée.');
+
+    expect(invoke).toHaveBeenCalledWith('admin-manage-user', {
+      body: {
+        action: 'resend_access',
+        userId: '73000000-0000-0000-0000-000000000002',
+      },
+    });
+  });
+
+  it('invokes the secure user-management function to delete an account', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: { message: 'Utilisateur supprimé.' },
+      error: null,
+    });
+
+    await expect(deleteSeaPilotUser(
+      { functions: { invoke } } as never,
+      '73000000-0000-0000-0000-000000000002',
+    )).resolves.toBe('Utilisateur supprimé.');
+
+    expect(invoke).toHaveBeenCalledWith('admin-manage-user', {
+      body: {
+        action: 'delete',
+        userId: '73000000-0000-0000-0000-000000000002',
+      },
+    });
   });
 });
 
