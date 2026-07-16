@@ -44,6 +44,7 @@ describe('planning publication workflow helpers', () => {
     expect(planningPublicationActions(null)).toEqual(['submit']);
     expect(planningPublicationActions({ ...publication, status: 'pending_validation' })).toEqual(['validate', 'reopen', 'archive']);
     expect(planningPublicationActions({ ...publication, status: 'validated' })).toEqual(['publish', 'reopen', 'archive']);
+    expect(planningPublicationActions({ ...publication, status: 'archived' })).toEqual(['reopen']);
   });
 
   it('prioritizes a fleet lock over an editable vessel draft for the visible period', () => {

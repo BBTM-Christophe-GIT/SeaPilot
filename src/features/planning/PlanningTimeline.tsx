@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -13,6 +13,7 @@ import {
   type PlanningViewMode,
 } from './planningModel';
 import type { PlanningProjectRecord } from './planningQueries';
+import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
   planningGridCellsShareSegment,
@@ -37,6 +38,7 @@ interface TimelineBaseProps {
 const EMPTY_SELECTED_GRID_CELLS: ReadonlyMap<string, PlanningGridCell> = new Map();
 const EMPTY_CUT_GRID_CELL_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
+const EMPTY_ABSENCES: PlanningAbsenceRecord[] = [];
 
 function projectStatusIcon(project: PlanningProjectRecord): string {
   const tone = projectStatusTone(project.status);
@@ -320,6 +322,8 @@ export function PlanningCrewTimelineRow({
   onGridCellPointerDown,
   onGridCellPointerEnter,
   onConflictCellClick,
+  absences = EMPTY_ABSENCES,
+  onOpenAbsence,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
@@ -337,6 +341,8 @@ export function PlanningCrewTimelineRow({
   onGridCellPointerDown?: (cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) => void;
   onGridCellPointerEnter?: (cell: PlanningGridCell) => void;
   onConflictCellClick?: (cell: PlanningGridCell) => void;
+  absences?: PlanningAbsenceRecord[];
+  onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -352,6 +358,13 @@ export function PlanningCrewTimelineRow({
     vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || null,
     functionLabel: lane.events[0]?.functionLabel || 'Équipage',
   }), [days, lane.events]);
+  const laneAbsences = useMemo(
+    () => absences.filter((absence) => (
+      absence.personId === lane.personId
+      && (absence.status === 'requested' || absence.status === 'approved')
+    )),
+    [absences, lane.personId],
+  );
 
   function cancelPendingConflictClick() {
     if (conflictClickTimerRef.current === null) return;
@@ -606,6 +619,25 @@ export function PlanningCrewTimelineRow({
             );
           }) : null}
           </Fragment>
+        );
+      })}
+      {laneAbsences.map((absence) => {
+        const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);
+        if (!placement) return null;
+        const statusLabel = absence.status === 'approved' ? 'Validée' : 'À valider';
+        return (
+          <button
+            aria-label={`${planningAbsenceTypeLabel(absence.absenceType)} ${statusLabel.toLocaleLowerCase('fr-FR')} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)}`}
+            className={`planning-absence-bar is-${absence.status}`}
+            key={`absence-${absence.id}`}
+            onClick={() => onOpenAbsence?.(absence)}
+            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}`}
+            type="button"
+          >
+            <CalendarOff aria-hidden="true" size={12} />
+            <span>{planningAbsenceTypeLabel(absence.absenceType)}</span>
+          </button>
         );
       })}
     </div>

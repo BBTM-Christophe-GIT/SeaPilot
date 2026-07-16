@@ -10810,6 +10810,114 @@ button.planning-p12-conflict-card {
   background: #fff;
 }
 
+/* Global planning distribution and leave overlays. */
+.planning-publication-panel.is-global {
+  grid-template-columns: minmax(250px, auto) minmax(240px, 1fr) auto;
+  border-left-color: #1769dc;
+  background: #f8fbff;
+}
+
+.planning-publication-panel.is-global .planning-publication-lock {
+  color: #155fc0;
+  background: #e4efff;
+}
+
+.planning-publication-panel.is-global .planning-publication-actions {
+  display: flex;
+  grid-template-columns: none;
+  justify-content: flex-end;
+}
+
+.planning-publication-panel.is-global .planning-publication-actions button {
+  min-width: 190px;
+}
+
+.planning-command-button.has-alert {
+  border-color: #e2a12a;
+  color: #7f4b00;
+  background: #fff8e9;
+}
+
+.planning-command-button.has-alert > span {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #fff;
+  background: #c87500;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.planning-timeline-row.is-crew:has(.planning-absence-bar) {
+  min-height: 56px;
+}
+
+.planning-absence-bar {
+  display: flex;
+  z-index: 22;
+  min-width: 0;
+  height: 20px;
+  align-self: end;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  margin: 0 2px 2px;
+  border: 1px dashed #a55f00;
+  border-radius: 6px;
+  padding: 0 6px;
+  color: #714100;
+  background: #fff0c8;
+  box-shadow: 0 2px 5px rgba(93, 55, 0, .18);
+  font-size: .61rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planning-absence-bar.is-approved {
+  border-style: solid;
+  border-color: #13704d;
+  color: #0d563a;
+  background: #dff5e9;
+  box-shadow: 0 2px 5px rgba(13, 86, 58, .16);
+}
+
+.planning-absence-bar svg {
+  flex: 0 0 auto;
+}
+
+.planning-absence-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planning-absence-bar:hover,
+.planning-absence-bar:focus-visible {
+  z-index: 24;
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+  filter: brightness(.98) saturate(1.08);
+}
+
+.planning-p12-card.is-selected {
+  border-color: #1769dc;
+  box-shadow: 0 0 0 3px rgba(23, 105, 220, .14);
+}
+
+@media (max-width: 980px) {
+  .planning-publication-panel.is-global {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-publication-panel.is-global .planning-publication-actions,
+  .planning-publication-panel.is-global .planning-publication-actions button {
+    width: 100%;
+  }
+}
+
 .planning-stcw-multiselect > div > section {
   display: grid;
 }

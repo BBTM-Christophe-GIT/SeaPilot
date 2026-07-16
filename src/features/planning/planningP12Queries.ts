@@ -12,7 +12,7 @@ import type {
   PlanningDetectedConflict,
   PlanningP12Data,
 } from './planningP12';
-import { assertPlanningDateTimeRange, planningEntityId, requiredPlanningText } from './planningValidation';
+import { assertPlanningDateTimeRange, planningEntityId } from './planningValidation';
 
 const ABSENCE_SELECT = 'id, person_id, absence_type, starts_at, ends_at, reason, status, requested_by, reviewed_by, reviewed_at, review_comment, created_at, updated_at';
 const CONFLICT_CASE_SELECT = 'id, conflict_key, conflict_type, severity, title, description, person_id, vessel_id, assignment_id, project_id, handover_id, absence_id, starts_on, ends_on, owner_id, owner_name, priority, status, last_comment, derogation_id, first_seen_at, last_seen_at, resolved_at, updated_at';
@@ -117,6 +117,15 @@ export function mapPlanningAbsenceRows(rows: AbsenceRow[]): PlanningAbsenceRecor
   }));
 }
 
+export async function fetchPlanningAbsences(client: SupabaseClient): Promise<PlanningAbsenceRecord[]> {
+  const { data, error } = await client
+    .from('planning_absences')
+    .select(ABSENCE_SELECT)
+    .order('starts_at', { ascending: false });
+  if (error) throwPlanningDataError('load-planning-absences', 'Impossible de charger les demandes de congé.', error);
+  return mapPlanningAbsenceRows((data || []) as AbsenceRow[]);
+}
+
 export function mapPlanningConflictCaseRows(rows: ConflictCaseRow[]): PlanningConflictCaseRecord[] {
   return rows.map((row) => ({
     id: row.id,
@@ -190,8 +199,8 @@ async function callRpc<T>(
 
 export function savePlanningAbsence(client: SupabaseClient, input: SavePlanningAbsenceInput): Promise<number> {
   assertPlanningDateTimeRange(input.startsAt, input.endsAt);
-  const reason = requiredPlanningText(input.reason, 'Le motif');
-  if (reason.length < 3) throw new Error('Le motif doit contenir au moins 3 caractères.');
+  const reason = input.reason.trim();
+  if (reason.length > 1000) throw new Error('Le motif ne peut pas dépasser 1 000 caractères.');
   return callRpc(client, 'save-absence', 'Impossible d’enregistrer la demande d’absence.', 'save_planning_absence', {
     p_absence_id: input.id || null,
     p_person_id: planningEntityId(input.personId, 'Le marin'),

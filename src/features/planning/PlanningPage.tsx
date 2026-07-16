@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity,
+  CalendarOff,
   CalendarDays,
   ClipboardCheck,
   ChevronDown,
@@ -27,7 +28,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -61,7 +62,6 @@ import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
 import { createPlanningPreviewOverview } from './planningPreviewData';
-import { findPlanningPublication, isPlanningPublicationLocked } from './planningPublication';
 import {
   archivePlanningVessel,
   applyPlanningGridCells,
@@ -77,7 +77,6 @@ import {
   fetchPlanningHistory,
   fetchPlanningDays,
   fetchPlanningProjects,
-  fetchPlanningVersions,
   mapPlanningAssignmentOverviewRows,
   mapPlanningAssignmentRows,
   movePlanningGridCells,
@@ -86,7 +85,7 @@ import {
   revokePlanningDerogation,
   savePlanningHandover,
   savePlanningAssignmentDayState,
-  transitionPlanningPublication,
+  publishPlanningRelease,
   updatePlanningEvent,
   updatePlanningVessel,
   updatePlanningProject,
@@ -97,7 +96,6 @@ import {
   type PlanningDerogationRecord,
   type PlanningHandoverRecord,
   type PlanningHistoryRecord,
-  type PlanningPublicationAction,
   type PlanningProjectRecord,
   type PlanningVessel,
   type SavePlanningHandoverInput,
@@ -126,7 +124,8 @@ import {
 } from './PlanningP03Panels';
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
-import type { PlanningDetectedConflict } from './planningP12';
+import type { PlanningAbsenceRecord, PlanningDetectedConflict } from './planningP12';
+import { fetchPlanningAbsences } from './planningP12Queries';
 import { PlanningCrewTimelineRow, PlanningFleetBoardTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
 import {
   buildPlanningCrewLanes,
@@ -312,6 +311,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const effectiveRoles = roles || outletContext?.roles || [];
   const previewMode = outletContext?.previewMode || false;
   const readPermissions = getPlanningPermissions(effectiveRoles, false);
+  const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const workspaceRef = useRef<HTMLElement>(null);
   const initialAnchorDate = useMemo(() => todayPlanningDate(), []);
   const previewOverview = useMemo(
@@ -326,7 +326,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isInitialLoading,
     isRefreshing,
     loadErrorMessage,
-  } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview);
+  } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [viewMode, setViewMode] = useState<PlanningViewMode>('month');
   const [perspective, setPerspective] = useState<PlanningPerspective>('fleet');
@@ -365,6 +365,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [derogationPrefill, setDerogationPrefill] = useState<Partial<CreatePlanningDerogationInput> | null>(null);
   const [isP11Open, setIsP11Open] = useState(false);
   const [isP12Open, setIsP12Open] = useState(false);
+  const [p12Launch, setP12Launch] = useState<{
+    tab: 'absences' | 'conflicts' | 'replacements';
+    absenceId: number | null;
+    openAbsenceForm: boolean;
+    requestedOnly: boolean;
+  }>({ tab: 'conflicts', absenceId: null, openAbsenceForm: false, requestedOnly: false });
   const [isP13Open, setIsP13Open] = useState(false);
   const [isP21Open, setIsP21Open] = useState(false);
   const [isP22Open, setIsP22Open] = useState(false);
@@ -375,6 +381,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [selectedGridCells, setSelectedGridCells] = useState<Map<string, PlanningGridCell>>(() => new Map());
   const [gridClipboard, setGridClipboard] = useState<PlanningGridClipboard | null>(null);
   const [gridConflictForm, setGridConflictForm] = useState<PlanningGridConflictForm | null>(null);
+  const [absences, setAbsences] = useState<PlanningAbsenceRecord[]>([]);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
   const gridPaintRef = useRef<{ laneKey: string; cells: Map<string, PlanningGridCell> } | null>(null);
   const gridPaintFrameRef = useRef<number | null>(null);
@@ -391,21 +398,40 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     else window.clearTimeout(gridPaintFrameRef.current);
   }, []);
 
+  const loadAbsences = useCallback(async (): Promise<boolean> => {
+    if (!readPermissions.canRead || previewMode) {
+      setAbsences([]);
+      return true;
+    }
+    try {
+      setAbsences(await fetchPlanningAbsences(effectiveClient));
+      return true;
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congé.'));
+      return false;
+    }
+  }, [effectiveClient, previewMode, readPermissions.canRead]);
+
+  useEffect(() => {
+    if (!readPermissions.canRead || previewMode) return undefined;
+    let active = true;
+    void fetchPlanningAbsences(effectiveClient)
+      .then((result) => {
+        if (active) setAbsences(result);
+      })
+      .catch((error) => {
+        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congé.'));
+      });
+    return () => {
+      active = false;
+    };
+  }, [effectiveClient, previewMode, readPermissions.canRead]);
+
   const timelineDays = useMemo(() => buildPlanningTimeline(anchorDate, viewMode), [anchorDate, viewMode]);
   const days = timelineDays;
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(timelineDays), [timelineDays]);
-  const publicationVessel = useMemo(
-    () => overview.vessels.find((vessel) => vessel.name === filters.vesselName) || null,
-    [filters.vesselName, overview.vessels],
-  );
-  const publicationVesselId = filters.vesselName ? publicationVessel?.id ?? null : null;
-  const activePublication = useMemo(
-    () => findPlanningPublication(overview.publications, range, publicationVesselId),
-    [overview.publications, publicationVesselId, range],
-  );
-  const isPeriodLocked = isPlanningPublicationLocked(activePublication);
-  const permissions = getPlanningPermissions(effectiveRoles, isPeriodLocked);
+  const permissions = getPlanningPermissions(effectiveRoles);
   const isPlanningAssistantEnabled = assistantFeatureEnabled ?? PLANNING_ASSISTANT_ENABLED;
   const isPlanningPredictionsEnabled = predictionsFeatureEnabled ?? PLANNING_PREDICTIONS_ENABLED;
   const { access: assistantAccess, isLoading: isAssistantAccessLoading } = usePlanningAssistantAccess(
@@ -414,22 +440,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     permissions.canBeAssistantPilot,
   );
   const canEditPlanning = permissions.canEditEvents;
-  const publicationTargetVesselId = activePublication ? activePublication.vesselId : publicationVesselId;
-  const captainHasVesselScope = !effectiveRoles.includes('capitaine')
-    || effectiveRoles.some((role) => role === 'admin' || role === 'direction')
-    || publicationTargetVesselId !== null;
-  const allowedPublicationActions = useMemo(() => {
-    const actions: PlanningPublicationAction[] = [];
-    if (permissions.canSubmitPublication) actions.push('submit');
-    if (permissions.canValidatePublication && captainHasVesselScope) actions.push('validate');
-    if (permissions.canPublishPublication) actions.push('publish');
-    if (permissions.canReopenPublication) actions.push('reopen');
-    if (permissions.canArchivePublication) actions.push('archive');
-    return actions;
-  }, [captainHasVesselScope, permissions.canArchivePublication, permissions.canPublishPublication, permissions.canReopenPublication, permissions.canSubmitPublication, permissions.canValidatePublication]);
-  const canManagePublication = permissions.canManagePublication
-    && allowedPublicationActions.length > 0
-    && (!filters.vesselName || publicationVessel !== null);
+  const latestRelease = overview.versions[0] || null;
+  const pendingAbsenceCount = absences.filter((absence) => absence.status === 'requested').length;
   const visibleSideTabs = useMemo(
     () => SIDE_TABS.filter((tab) => tab.key !== 'history' || permissions.canViewHistory),
     [permissions.canViewHistory],
@@ -569,45 +581,28 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     alerts: hrAlerts.length,
   };
 
-  async function handlePublicationAction(action: PlanningPublicationAction, comment: string): Promise<boolean> {
+  async function handlePublishPlanning(): Promise<void> {
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const publication = await transitionPlanningPublication(effectiveClient, {
-        action,
-        publicationId: activePublication?.id ?? null,
-        startsOn: range.start,
-        endsOn: range.end,
-        vesselId: publicationVesselId,
-        comment,
-      });
-      const [versions, history] = await Promise.all([
-        fetchPlanningVersions(effectiveClient),
-        fetchPlanningHistory(effectiveClient),
-      ]);
-      updateOverview((current) => ({
-        ...current,
-        publications: current.publications.some((item) => item.id === publication.id)
-          ? current.publications.map((item) => item.id === publication.id ? publication : item)
-          : [publication, ...current.publications],
-        versions,
-        history,
-      }));
-      const messages: Record<PlanningPublicationAction, string> = {
-        submit: 'Période soumise et verrouillée pour validation.',
-        validate: 'Planning validé. Il peut maintenant être publié.',
-        publish: `Planning publié en version ${publication.currentVersion}.`,
-        reopen: 'Période réouverte. La justification a été historisée.',
-        archive: 'Période archivée.',
-      };
-      setStatusMessage(messages[action]);
-      return true;
+      const release = await publishPlanningRelease(effectiveClient);
+      await loadPlanning();
+      setStatusMessage(`Planning diffusé en version ${release.versionNumber}.`);
     } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible de mettre à jour la publication du planning.'));
-      return false;
+      setErrorMessage(planningErrorMessage(error, 'Impossible de diffuser le planning.'));
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function openP12(options: Partial<typeof p12Launch> = {}) {
+    setP12Launch({
+      tab: options.tab || 'conflicts',
+      absenceId: options.absenceId ?? null,
+      openAbsenceForm: options.openAbsenceForm ?? false,
+      requestedOnly: options.requestedOnly ?? false,
+    });
+    setIsP12Open(true);
   }
 
   function changePerspective(next: PlanningPerspective) {
@@ -624,7 +619,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   async function assignPersonByDrop(personId: number, lane: PlanningFleetLane, watchGroup: string) {
     if (!canEditPlanning || lane.vesselId === null) {
-      setErrorMessage('Cette période est verrouillée ou ce navire ne peut pas recevoir une affectation.');
+      setErrorMessage('Votre rôle dispose d’un accès en lecture seule ou ce navire ne peut pas recevoir une affectation.');
       return;
     }
     const person = activePeople.find((item) => item.id === personId);
@@ -1094,7 +1089,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   function openAssignment(prefill?: Partial<AssignmentFormState>, quick = false) {
     if (!canEditPlanning) {
-      setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de créer une affectation.');
+      setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
     const defaultStart = range.start || anchorDate;
@@ -1113,7 +1108,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   function openFleetEvent(lane?: PlanningFleetLane, date?: string, quick = false) {
     if (!canEditPlanning) {
-      setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de créer un événement flotte.');
+      setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
     const startsOn = date || range.start || anchorDate;
@@ -1131,7 +1126,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEditPlanning) {
-      setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de créer une affectation.');
+      setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
     if (hasBlockingPlanningControls(assignmentControls)) {
@@ -1215,7 +1210,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function saveEvent(event: PlanningCrewEvent, form: EventFormState, closePanel = true) {
-    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant toute modification.');
+    if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
     if (vessel.name !== event.vessel && !window.confirm(`Déplacer ${event.person} de ${event.vessel} vers ${vessel.name} ?`)) return;
@@ -1270,7 +1265,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function removeEvent(event: PlanningCrewEvent) {
-    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant toute suppression.');
+    if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     if (event.kind === 'assignment') {
       if (!eventForm || !window.confirm('Annuler cette affectation ? Elle restera visible et historisée.')) return;
       await saveEvent(event, { ...eventForm, confirmationStatus: 'cancelled' });
@@ -1421,7 +1416,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function saveProject(form: ProjectFormState) {
-    if (!canEditPlanning) return setErrorMessage('Cette période est verrouillée. Réouvrez-la avant de modifier un événement flotte.');
+    if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
     if (selectedProject && selectedProject.primaryVesselId !== vessel.id && !window.confirm(`Déplacer ${selectedProject.title} vers ${vessel.name} ?`)) return;
@@ -1489,8 +1484,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function handleP12AuditChange() {
-    const history = await fetchPlanningHistory(effectiveClient);
-    updateOverview((current) => ({ ...current, history }));
+    const [history] = await Promise.all([
+      permissions.canViewHistory ? fetchPlanningHistory(effectiveClient) : Promise.resolve(overview.history),
+      loadAbsences(),
+    ]);
+    if (permissions.canViewHistory) updateOverview((current) => ({ ...current, history }));
   }
 
   function prepareManualReplacement(person: PlanningPerson, conflict: PlanningDetectedConflict) {
@@ -1711,10 +1709,23 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           <h1 aria-label="Planning">Planning BBTM</h1>
         </div>
         <div className="planning-command-actions">
-          <span className={canEditPlanning ? 'planning-mode-write' : isPeriodLocked ? 'planning-mode-locked' : 'planning-mode-read'}>
-            {canEditPlanning ? 'Modification' : isPeriodLocked ? 'Verrouillé' : 'Lecture seule'}
+          <span className={canEditPlanning ? 'planning-mode-write' : 'planning-mode-read'}>
+            {canEditPlanning ? 'Brouillon modifiable' : 'Dernière version diffusée'}
           </span>
-          <button aria-busy={isRefreshing} className="planning-command-button" disabled={isRefreshing} onClick={() => void loadPlanning()} type="button">
+          {permissions.canRequestAbsences ? (
+            <button className="planning-command-button" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} type="button">
+              <CalendarOff aria-hidden="true" size={18} />
+              Demander un congé
+            </button>
+          ) : null}
+          {permissions.canReviewAbsences ? (
+            <button className={`planning-command-button${pendingAbsenceCount ? ' has-alert' : ''}`} onClick={() => openP12({ tab: 'absences', requestedOnly: true })} type="button">
+              <ShieldAlert aria-hidden="true" size={18} />
+              Demandes en attente
+              {pendingAbsenceCount ? <span>{pendingAbsenceCount}</span> : null}
+            </button>
+          ) : null}
+          <button aria-busy={isRefreshing} className="planning-command-button" disabled={isRefreshing} onClick={() => void Promise.all([loadPlanning(), loadAbsences()])} type="button">
             <RefreshCw aria-hidden="true" size={18} />
             {isRefreshing ? 'Actualisation…' : 'Actualiser'}
           </button>
@@ -1731,13 +1742,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       ) : null}
 
       <PlanningPublicationPanel
-        allowedActions={allowedPublicationActions}
-        canManage={canManagePublication}
+        canPublish={permissions.canPublishPublication}
         isSaving={isSaving}
-        onAction={handlePublicationAction}
-        publication={activePublication}
-        range={range}
-        scopeLabel={publicationVessel?.name || 'Flotte complète'}
+        onPublish={handlePublishPlanning}
+        release={latestRelease}
       />
 
       <div className="planning-layout">
@@ -1792,7 +1800,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     <div className="planning-tools-group"><small>Armement</small>
                       {visibleSideTabs.filter((tab) => !['unassigned', 'certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
                       <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et décision d’effectif</button>
-                      <button onClick={() => { setIsP12Open(true); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
+                      <button onClick={() => { openP12(); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
                       {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
                       {permissions.canManageDerogations ? <button onClick={() => { setDerogationPrefill({ startsAt: localDateTime(range.start || anchorDate, '08:00'), endsAt: localDateTime(range.start || anchorDate, '20:00') }); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation</button> : null}
                     </div>
@@ -1904,6 +1912,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 };
                 return (
                   <PlanningCrewTimelineRow
+                    absences={absences}
                     conflictDatesByEvent={conflictDatesByEvent}
                     cutGridCellKeys={cutGridCellKeys}
                     dayWidth={effectiveDayWidth}
@@ -1920,6 +1929,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
                     onGridCellPointerDown={beginPlanningGridPaint}
                     onGridCellPointerEnter={extendPlanningGridPaint}
+                    onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
                     selectedId={selectedTimelineId}
@@ -1930,6 +1940,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
+                  absences={absences}
                   conflictDatesByEvent={conflictDatesByEvent}
                   dayWidth={effectiveDayWidth}
                   days={days}
@@ -1938,6 +1949,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   lane={lane}
                   onCreate={openLaneAssignment}
                   onMove={(event, date) => void moveEvent(event, date)}
+                  onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                   onOpen={openEvent}
                   onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                   onSelect={setSelectedTimelineId}
@@ -1956,7 +1968,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
-              <PlanningSideContent certificateAlerts={certificateAlerts} hrAlerts={hrAlerts} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => setIsP12Open(true)} onRevokeDerogation={(derogation) => void handleRevokeDerogation(derogation)} overview={overview} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} unbilledProjects={unbilledProjects} editable={canEditPlanning} canManageDerogations={permissions.canManageDerogations} />
+              <PlanningSideContent certificateAlerts={certificateAlerts} hrAlerts={hrAlerts} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} onRevokeDerogation={(derogation) => void handleRevokeDerogation(derogation)} overview={overview} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} unbilledProjects={unbilledProjects} editable={canEditPlanning} canManageDerogations={permissions.canManageDerogations} />
             </>
           ) : (
             <>
@@ -1996,7 +2008,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDerogation={permissions.canManageDerogations ? () => openDerogation(selectedEventControls, selectedEvent.kind === 'assignment' ? Number(selectedEvent.id.split('-').pop()) : undefined) : undefined} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
-      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} range={range} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canManageConflictCases={permissions.canManageConflictCases} canManageDerogations={permissions.canManageDerogations} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onCreateDerogation={openP12Derogation} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canExport={permissions.canExport} canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
@@ -2274,7 +2286,7 @@ function PlanningHistoryList({ overview }: { overview: ReturnType<typeof usePlan
       {overview.versions.slice(0, 10).map((version) => (
         <article className="planning-side-item planning-history-version" key={`version-${version.id}`}>
           <div>
-            <strong>{`Version publiée ${version.versionNumber}`}</strong>
+            <strong>{`Version diffusée ${version.versionNumber}`}</strong>
             <span className="planning-side-badge is-success">Immuable</span>
           </div>
           <p>{`${version.createdByName || 'Utilisateur autorisé'} · ${formatPlanningDateTime(version.createdAt)}`}</p>

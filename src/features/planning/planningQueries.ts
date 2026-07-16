@@ -30,8 +30,6 @@ const PLANNING_RULE_SELECT =
   'id, code, name, description, scope, control_level, active, effective_from, configuration, source_reference, version';
 const PLANNING_PUBLICATION_SELECT =
   'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, submitted_by, submitted_by_name, validated_at, validated_by, validated_by_name, published_at, published_by, published_by_name, locked_at, locked_by, locked_by_name, updated_at, updated_by, updated_by_name';
-const PLANNING_VERSION_SELECT =
-  'id, publication_id, version_number, comment, created_at, created_by, created_by_name';
 const PLANNING_HISTORY_SELECT =
   'id, entity_kind, entity_id, action, payload, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
 const PLANNING_HANDOVER_SELECT =
@@ -299,6 +297,24 @@ interface PlanningDerogationHistoryRow {
   payload: Record<string, unknown> | null;
   changed_by: string | null;
   changed_at: string;
+}
+
+interface PlanningReleaseHandoverRow extends PlanningHandoverRow {
+  positions?: PlanningHandoverPositionRow[];
+}
+
+interface PlanningReleaseSnapshotRow {
+  assignments?: PlanningAssignmentOverviewRow[];
+  days?: PlanningDayRow[];
+  periods?: PlanningPeriodRow[];
+  projects?: PlanningProjectRow[];
+  handovers?: PlanningReleaseHandoverRow[];
+  derogations?: PlanningDerogationRow[];
+}
+
+interface LatestPlanningReleaseRow {
+  release: PlanningVersionRow;
+  snapshot: PlanningReleaseSnapshotRow;
 }
 
 export interface PlanningVessel {
@@ -1223,11 +1239,8 @@ export async function fetchPlanningPublications(client: SupabaseClient): Promise
 }
 
 export async function fetchPlanningVersions(client: SupabaseClient): Promise<PlanningVersionRecord[]> {
-  const { data, error } = await client
-    .from('planning_versions')
-    .select(PLANNING_VERSION_SELECT)
-    .order('created_at', { ascending: false });
-  if (error) throwPlanningDataError('load-versions', 'Impossible de charger les versions publiées.', error);
+  const { data, error } = await client.rpc('planning_release_history');
+  if (error) throwPlanningDataError('load-versions', 'Impossible de charger les versions diffusées.', error);
   return mapPlanningVersionRows((data || []) as unknown as PlanningVersionRow[]);
 }
 
@@ -1274,8 +1287,67 @@ export async function fetchPlanningDerogations(client: SupabaseClient): Promise<
   };
 }
 
-export async function fetchPlanningOverview(client: SupabaseClient): Promise<PlanningOverview> {
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, publications, versions, history, handovers, derogationData] = await Promise.all([
+async function fetchLatestPlanningReleaseSnapshot(client: SupabaseClient): Promise<PlanningReleaseSnapshotRow | null> {
+  const { data, error } = await client.rpc('latest_planning_release');
+  if (error) throwPlanningDataError('load-latest-release', 'Impossible de charger la dernière version diffusée.', error);
+  if (!data) return null;
+  return (data as unknown as LatestPlanningReleaseRow).snapshot || null;
+}
+
+function mapPlanningReleaseSnapshot(snapshot: PlanningReleaseSnapshotRow | null): Pick<
+  PlanningOverview,
+  'assignments' | 'days' | 'periods' | 'projects' | 'handovers' | 'derogations'
+> {
+  const handoverRows = snapshot?.handovers || [];
+  return {
+    assignments: mapPlanningAssignmentOverviewRows(snapshot?.assignments || []),
+    days: mapPlanningDayRows(snapshot?.days || []),
+    periods: mapPlanningPeriodRows(snapshot?.periods || []),
+    projects: mapPlanningProjectRows(snapshot?.projects || []),
+    handovers: mapPlanningHandoverRows(
+      handoverRows,
+      handoverRows.flatMap((handover) => handover.positions || []),
+    ),
+    derogations: mapPlanningDerogationRows(snapshot?.derogations || []),
+  };
+}
+
+export interface FetchPlanningOverviewOptions {
+  publishedOnly?: boolean;
+}
+
+export async function fetchPlanningOverview(
+  client: SupabaseClient,
+  options: FetchPlanningOverviewOptions = {},
+): Promise<PlanningOverview> {
+  if (options.publishedOnly) {
+    const [[vessels, people, certificates, hrDocuments, rules, versions], snapshot] = await Promise.all([
+      Promise.all([
+        fetchVessels(client),
+        fetchPlanningPeople(client),
+        fetchPlanningCertificates(client),
+        fetchPlanningHrDocuments(client),
+        fetchPlanningRules(client),
+        fetchPlanningVersions(client),
+      ]),
+      fetchLatestPlanningReleaseSnapshot(client),
+    ]);
+    const releasedPlanning = mapPlanningReleaseSnapshot(snapshot);
+    return {
+      vessels,
+      people,
+      ...releasedPlanning,
+      certificates,
+      hrDocuments,
+      rules,
+      publications: [],
+      versions,
+      history: [],
+      derogationHistory: [],
+    };
+  }
+
+  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers, derogationData] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningAssignmentOverviewRows(client),
@@ -1285,7 +1357,6 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
     fetchPlanningRules(client),
-    fetchPlanningPublications(client),
     fetchPlanningVersions(client),
     fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
@@ -1302,13 +1373,22 @@ export async function fetchPlanningOverview(client: SupabaseClient): Promise<Pla
     certificates,
     hrDocuments,
     rules,
-    publications,
+    publications: [],
     versions,
     history,
     handovers,
     derogations: derogationData.derogations,
     derogationHistory: derogationData.history,
   };
+}
+
+export async function publishPlanningRelease(client: SupabaseClient): Promise<PlanningVersionRecord> {
+  const { data, error } = await client.rpc('publish_planning_release');
+  if (error) throwPlanningDataError('publish-release', 'Impossible de diffuser le planning.', error);
+  const row = (Array.isArray(data) ? data[0] : data) as PlanningVersionRow | null;
+  const release = row ? mapPlanningVersionRows([row])[0] : undefined;
+  if (!release) throw new Error('La diffusion du planning n’a pas renvoyé de version valide.');
+  return release;
 }
 
 export async function transitionPlanningPublication(

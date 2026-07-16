@@ -34,6 +34,7 @@ export function usePlanningOverview(
   client: SupabaseClient,
   enabled: boolean,
   previewOverview?: PlanningOverview,
+  publishedOnly = false,
 ) {
   const requestIdRef = useRef(0);
   const [state, setState] = useState<PlanningLoadState>({
@@ -58,7 +59,7 @@ export function usePlanningOverview(
     }));
 
     try {
-      const overview = await fetchPlanningOverview(client);
+      const overview = await fetchPlanningOverview(client, { publishedOnly });
       if (requestId !== requestIdRef.current) return false;
       setState({ overview, phase: 'ready', hasLoaded: true, errorMessage: null });
       return true;
@@ -71,7 +72,7 @@ export function usePlanningOverview(
       }));
       return false;
     }
-  }, [client, enabled, previewOverview]);
+  }, [client, enabled, previewOverview, publishedOnly]);
 
   useEffect(() => {
     if (!enabled) {

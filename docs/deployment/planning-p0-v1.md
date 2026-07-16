@@ -1,8 +1,12 @@
 # SeaPilot Planning P0 — préparation au déploiement V1
 
+> Document historique. Le circuit de validation et de publication par période décrit ci-dessous est remplacé par la diffusion globale documentée dans `planning-global-distribution-leave-workflow.md` et les migrations `202607160006` à `202607160008`.
+
 Version applicative cible : `1.9.0`
 Migrations cibles : `202607130007_planning_p04_governance_v1.sql`, puis `202607130008_planning_p04_audit_backfill_cleanup.sql`
 Périmètre : Planning P0.1 à P0.4, sans fonctionnalité P1/P2.
+
+Le correctif `202607160005_planning_reopen_archived.sql` reste dans l’historique des migrations, mais son parcours applicatif est désactivé par la diffusion globale.
 
 ## 1. Ordre des migrations
 
@@ -129,7 +133,7 @@ Sur ordinateur 15 pouces puis iPad 12,9 pouces :
 7. valider le navire avec un capitaine affecté ou la direction ;
 8. publier avec la direction ou un administrateur ;
 9. vérifier que déplacement, redimensionnement, affectation, relève et dérogation sont bloqués ;
-10. réouvrir avec un motif d’au moins dix caractères ;
+10. utiliser « Modifier à nouveau » avec un motif d’au moins dix caractères sur une période validée, publiée ou archivée ;
 11. modifier un événement et vérifier l’état « Modifié après publication » ;
 12. ouvrir l’onglet Historique et vérifier auteur, date, résumé et version immuable ;
 13. vérifier qu’un marin ne voit ni les autres marins ni un navire d’une autre entreprise.

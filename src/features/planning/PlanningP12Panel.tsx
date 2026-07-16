@@ -41,7 +41,7 @@ import {
   updatePlanningConflictCase,
 } from './planningP12Queries';
 
-type P12Tab = 'absences' | 'conflicts' | 'replacements';
+export type P12Tab = 'absences' | 'conflicts' | 'replacements';
 
 interface AbsenceFormState {
   id?: number;
@@ -122,6 +122,10 @@ export function PlanningP12Panel({
   onOpenSource,
   onCreateDerogation,
   onAuditChange,
+  initialTab = 'conflicts',
+  initialAbsenceId = null,
+  openAbsenceFormOnMount = false,
+  requestedOnly = false,
 }: {
   client: SupabaseClient;
   overview: PlanningOverview;
@@ -136,15 +140,19 @@ export function PlanningP12Panel({
   onOpenSource: (conflict: PlanningDetectedConflict) => void;
   onCreateDerogation: (conflict: PlanningDetectedConflict) => void;
   onAuditChange: () => Promise<void>;
+  initialTab?: P12Tab;
+  initialAbsenceId?: number | null;
+  openAbsenceFormOnMount?: boolean;
+  requestedOnly?: boolean;
 }) {
   const people = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
-  const [tab, setTab] = useState<P12Tab>('conflicts');
+  const [tab, setTab] = useState<P12Tab>(initialTab);
   const [data, setData] = useState<PlanningP12Data>(EMPTY_DATA);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null);
   const [absenceForm, setAbsenceForm] = useState<AbsenceFormState>(() => emptyAbsence(range, people));
-  const [isAbsenceFormOpen, setIsAbsenceFormOpen] = useState(false);
+  const [isAbsenceFormOpen, setIsAbsenceFormOpen] = useState(openAbsenceFormOnMount);
   const [reviewComments, setReviewComments] = useState<Record<number, string>>({});
   const [selectedConflictKey, setSelectedConflictKey] = useState('');
   const [conflictTypeFilter, setConflictTypeFilter] = useState('');
@@ -191,6 +199,13 @@ export function PlanningP12Panel({
     || filteredConflicts[0]
     || detectedConflicts[0];
   const selectedCase = selectedConflict ? casesByKey.get(selectedConflict.key) : undefined;
+  const displayedAbsences = useMemo(() => {
+    const filtered = requestedOnly
+      ? data.absences.filter((absence) => absence.status === 'requested')
+      : data.absences;
+    if (!initialAbsenceId) return filtered;
+    return [...filtered].sort((left, right) => Number(right.id === initialAbsenceId) - Number(left.id === initialAbsenceId));
+  }, [data.absences, initialAbsenceId, requestedOnly]);
   const [treatment, setTreatment] = useState<TreatmentFormState>(() => treatmentFromCase(undefined));
   const [treatmentKey, setTreatmentKey] = useState('');
   const effectiveTreatment = treatmentKey === selectedConflict?.key ? treatment : treatmentFromCase(selectedCase);
@@ -336,14 +351,14 @@ export function PlanningP12Panel({
                 <label>Type<select value={absenceForm.absenceType} onChange={(event) => setAbsenceForm({ ...absenceForm, absenceType: event.target.value as PlanningAbsenceType })}>{ABSENCE_TYPES.map((type) => <option key={type} value={type}>{planningAbsenceTypeLabel(type)}</option>)}</select></label>
                 <label>Début<input required type="datetime-local" value={absenceForm.startsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, startsAt: event.target.value })} /></label>
                 <label>Fin<input required type="datetime-local" value={absenceForm.endsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, endsAt: event.target.value })} /></label>
-                <label className="is-wide">Motif<textarea minLength={3} required rows={3} value={absenceForm.reason} onChange={(event) => setAbsenceForm({ ...absenceForm, reason: event.target.value })} /></label>
+                <label className="is-wide">Motif (facultatif)<textarea aria-label="Motif" maxLength={1000} rows={3} value={absenceForm.reason} onChange={(event) => setAbsenceForm({ ...absenceForm, reason: event.target.value })} /></label>
                 <footer><button className="is-secondary" onClick={() => setIsAbsenceFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">{absenceForm.id ? 'Mettre à jour' : 'Envoyer la demande'}</button></footer>
               </form> : null}
-              <div className="planning-p12-absence-list">{data.absences.length ? data.absences.map((absence) => {
+              <div className="planning-p12-absence-list">{displayedAbsences.length ? displayedAbsences.map((absence) => {
                 const person = overview.people.find((item) => item.id === absence.personId);
                 const impacts = absenceImpactedAssignments(overview, absence);
-                return <article className="planning-p12-card" key={absence.id}><header><div><strong>{person ? formatPlanningPerson(person) : `Marin #${absence.personId}`}</strong><small>{planningAbsenceTypeLabel(absence.absenceType)} · {formatPlanningDateTime(absence.startsAt)} au {formatPlanningDateTime(absence.endsAt)}</small></div><span className={`planning-p12-status is-${absence.status}`}>{ABSENCE_STATUS_LABELS[absence.status]}</span></header><p>{absence.reason}</p><div className="planning-p12-impact"><strong>{impacts.length}</strong><span>affectation(s) concernée(s){absence.status === 'approved' && impacts.length ? ` · ${impacts.length} poste(s) vacant(s)` : ''}</span></div>{absence.reviewComment ? <small>Décision · {absence.reviewComment}</small> : null}{absence.status === 'requested' ? <div className="planning-p12-review"><label>Commentaire<input aria-label={`Commentaire pour ${person ? formatPlanningPerson(person) : absence.id}`} value={reviewComments[absence.id] || ''} onChange={(event) => setReviewComments((current) => ({ ...current, [absence.id]: event.target.value }))} /></label><div>{canRequestAbsences ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}{canReviewAbsences ? <><button className="is-success" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'approve')} type="button"><Check size={15} />Valider</button><button className="is-danger" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'reject')} type="button"><Ban size={15} />Refuser</button></> : null}<button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button></div></div> : null}</article>;
-              }) : <div className="planning-calendar-empty"><CalendarOff size={24} /><p>Aucune absence dans le périmètre visible.</p></div>}</div>
+                return <article className={`planning-p12-card${absence.id === initialAbsenceId ? ' is-selected' : ''}`} key={absence.id}><header><div><strong>{person ? formatPlanningPerson(person) : `Marin #${absence.personId}`}</strong><small>{planningAbsenceTypeLabel(absence.absenceType)} · {formatPlanningDateTime(absence.startsAt)} au {formatPlanningDateTime(absence.endsAt)}</small></div><span className={`planning-p12-status is-${absence.status}`}>{ABSENCE_STATUS_LABELS[absence.status]}</span></header><p>{absence.reason || 'Aucun motif renseigné.'}</p><div className="planning-p12-impact"><strong>{impacts.length}</strong><span>affectation(s) concernée(s){absence.status === 'approved' && impacts.length ? ` · ${impacts.length} poste(s) vacant(s)` : ''}</span></div>{absence.reviewComment ? <small>Décision · {absence.reviewComment}</small> : null}{absence.status === 'requested' ? <div className="planning-p12-review"><label>Commentaire<input aria-label={`Commentaire pour ${person ? formatPlanningPerson(person) : absence.id}`} value={reviewComments[absence.id] || ''} onChange={(event) => setReviewComments((current) => ({ ...current, [absence.id]: event.target.value }))} /></label><div>{canRequestAbsences ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}{canReviewAbsences ? <><button className="is-success" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'approve')} type="button"><Check size={15} />Valider</button><button className="is-danger" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'reject')} type="button"><Ban size={15} />Refuser</button></> : null}<button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button></div></div> : null}</article>;
+              }) : <div className="planning-calendar-empty"><CalendarOff size={24} /><p>{requestedOnly ? 'Aucune demande de congé en attente.' : 'Aucune absence dans le périmètre visible.'}</p></div>}</div>
             </section>
           ) : null}
           {!isLoading && tab === 'conflicts' ? (
