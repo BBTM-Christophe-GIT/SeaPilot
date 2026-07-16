@@ -4447,7 +4447,7 @@ button:disabled {
 .planning-calendar-weeks,
 .planning-calendar-days {
   position: sticky;
-  z-index: 16;
+  z-index: 32;
   background: #ffffff;
 }
 
@@ -4470,11 +4470,18 @@ button:disabled {
 .planning-calendar-corner,
 .planning-row-label {
   position: sticky;
-  z-index: 18;
   left: 0;
   grid-column: 1;
   border-right: 1px solid #dce4ed;
   background: #ffffff;
+}
+
+.planning-calendar-corner {
+  z-index: 34;
+}
+
+.planning-row-label {
+  z-index: 30;
 }
 
 .planning-month-segment,
