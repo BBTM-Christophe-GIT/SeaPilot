@@ -493,7 +493,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
   const departedPeople = useMemo(
     () => overview.people
-      .filter((person) => Boolean(person.departedOn) && person.departedOn < todayDate)
+      .filter((person) => !person.departedOn || person.departedOn > todayDate)
       .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
     [overview.people, todayDate],
   );
@@ -2204,7 +2204,7 @@ function PlanningDepartedPeopleDialog({ state, people, existingPersonIds, isSavi
   return <div className="planning-dialog-backdrop" role="presentation">
     <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
       <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-      <p className="planning-dialog-intro">Marins dont la date de départ est antérieure à aujourd’hui. L’ajout crée une ligne vide, sans case colorée.</p>
+      <p className="planning-dialog-intro">Marins sans date de départ ou dont la date de départ est postérieure à aujourd’hui. L’ajout crée une ligne vide, sans case colorée.</p>
       {people.length ? <div className="planning-departed-people-list">{people.map((person) => {
         const isAlreadyPresent = existingPersonIds.has(person.id);
         const isPending = pendingId === `departed-person-${person.id}`;
@@ -2213,7 +2213,7 @@ function PlanningDepartedPeopleDialog({ state, people, existingPersonIds, isSavi
           <span><small>Date de départ</small><strong>{formatPlanningDate(person.departedOn)}</strong></span>
           <button aria-label={`${isAlreadyPresent ? 'Déjà présent' : 'Ajouter'} ${formatPlanningPerson(person)}`} disabled={isSaving || isAlreadyPresent} onClick={() => onAdd(person)} type="button">{isPending ? 'Ajout…' : isAlreadyPresent ? 'Déjà présent' : 'Ajouter'}</button>
         </article>;
-      })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin avec une date de départ antérieure à aujourd’hui.</p></div>}
+      })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin sans date de départ ou avec une date de départ postérieure à aujourd’hui.</p></div>}
       <footer><button className="is-secondary" onClick={onClose} type="button">Fermer</button></footer>
     </section>
   </div>;

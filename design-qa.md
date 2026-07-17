@@ -7,7 +7,7 @@
 - Rendu principal : `C:\Users\chris\.codex\visualizations\2026\07\16\019f6c63-0dac-7333-a091-a84d900ff495\planning-module-reorganized.png`
 - Comparaison référence / rendu : `C:\Users\chris\.codex\visualizations\2026\07\16\019f6c63-0dac-7333-a091-a84d900ff495\planning-reference-implementation-comparison.jpg`
 - Rendu plein écran : `C:\Users\chris\.codex\visualizations\2026\07\16\019f6c63-0dac-7333-a091-a84d900ff495\planning-fullscreen-no-side-panel.png`
-- Fenêtre des marins partis : `C:\Users\chris\.codex\visualizations\2026\07\16\019f6c63-0dac-7333-a091-a84d900ff495\planning-add-departed-sailor-dialog.png`
+- Fenêtre `Ajouter un marin` : `C:\Users\chris\.codex\visualizations\2026\07\16\019f6c63-0dac-7333-a091-a84d900ff495\planning-add-sailor-eligibility-dialog.png`
 
 ## État et viewport
 
@@ -15,7 +15,7 @@
 - Viewport CSS : 2048 × 1114, identique à la référence affichée.
 - État principal : vue Flotte, échelle Mois, arborescence dépliée.
 - État secondaire : plein écran puis fenêtre `Ajouter un marin` pour `GOURY · Bordée 2`.
-- Données : jeu de démonstration non persistant, complété avec deux profils dont la date de départ est passée et une ligne vide.
+- Données : jeu de démonstration non persistant, complété avec un profil sans date de départ, un profil avec une date future, un profil avec une date passée et une ligne vide.
 
 ## Comparaison complète
 
@@ -38,7 +38,7 @@ La référence et la capture de l’implémentation ont été normalisées au m�
 
 ## Validation fonctionnelle et visuelle
 
-- La fenêtre liste `Alain ANCIEN` et `Camille RETRAITEE`, avec leurs dates de départ.
+- La fenêtre liste `Alain ANCIEN` (date vide) et `Camille FUTURE` (date future), mais exclut `Étienne PASSÉ` (date passée).
 - Un marin déjà présent est désactivé avec le libellé `Déjà présent`.
 - Un marin absent dispose de l’action `Ajouter`.
 - La ligne persistante vide ne comporte aucune case colorée.

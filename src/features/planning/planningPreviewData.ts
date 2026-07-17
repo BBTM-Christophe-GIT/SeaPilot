@@ -36,8 +36,9 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
     previewPerson(110, 'Matthieu', 'DURAND', 'Matelot'),
     previewPerson(111, 'Sophie', 'HAMEL', 'Marin disponible'),
     previewPerson(112, 'Julien', 'LECOCQ', 'Marin disponible'),
-    previewPerson(113, 'Alain', 'ANCIEN', 'Matelot', { departedOn: '2025-12-31', active: false }),
-    previewPerson(114, 'Camille', 'RETRAITEE', 'Mecanicien', { departedOn: '2026-02-28', active: false }),
+    previewPerson(113, 'Alain', 'ANCIEN', 'Matelot', { active: false }),
+    previewPerson(114, 'Camille', 'FUTURE', 'Mecanicien', { departedOn: '2099-12-31', active: false }),
+    previewPerson(115, 'Étienne', 'PASSÉ', 'Matelot', { departedOn: '2000-01-01', active: false }),
   ];
   const firstWatchStart = addPlanningDays(anchorDate, -14);
   const firstWatchEnd = addPlanningDays(anchorDate, 14);

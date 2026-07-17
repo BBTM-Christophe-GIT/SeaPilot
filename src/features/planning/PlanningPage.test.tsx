@@ -36,7 +36,31 @@ const departedCrewRow = {
   id: 13,
   first_name: 'Alain',
   last_name: 'ANCIEN',
-  departed_on: '2025-12-31',
+  departed_on: null,
+  active: false,
+};
+const futureDepartureCrewRow = {
+  ...crewRow,
+  id: 14,
+  first_name: 'Camille',
+  last_name: 'FUTURE',
+  departed_on: '2099-12-31',
+  active: false,
+};
+const pastDepartureCrewRow = {
+  ...crewRow,
+  id: 15,
+  first_name: 'Étienne',
+  last_name: 'PASSÉ',
+  departed_on: '2000-01-01',
+  active: false,
+};
+const todayDepartureCrewRow = {
+  ...crewRow,
+  id: 16,
+  first_name: 'Aline',
+  last_name: 'AUJOURD’HUI',
+  departed_on: todayPlanningDate(),
   active: false,
 };
 const emptyBoardRow = {
@@ -992,11 +1016,11 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
-  it('adds a departed sailor as a persistent empty board row', async () => {
+  it('lists only sailors with an empty or future departure date and adds an eligible row', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
-      people: [captainRow, crewRow, departedCrewRow],
+      people: [captainRow, crewRow, departedCrewRow, futureDepartureCrewRow, pastDepartureCrewRow, todayDepartureCrewRow],
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
@@ -1004,18 +1028,21 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
     expect(within(dialog).getByText('Alain ANCIEN')).toBeInTheDocument();
-    expect(within(dialog).queryByText('Paul DURAND')).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Alain ANCIEN' }));
+    expect(within(dialog).getByText('Camille FUTURE')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Déjà présent Paul DURAND' })).toBeDisabled();
+    expect(within(dialog).queryByText('Étienne PASSÉ')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Aline AUJOURD’HUI')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Camille FUTURE' }));
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
       p_vessel_id: 1,
       p_watch_group: 'Affectation',
-      p_person_id: 13,
+      p_person_id: 14,
     }));
-    expect(await screen.findByText('Alain ANCIEN a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
+    expect(await screen.findByText('Camille FUTURE a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
   });
 
-  it('keeps a departed sailor with an existing record visible but disables adding a duplicate row', async () => {
+  it('keeps an eligible sailor with an existing record visible but disables adding a duplicate row', async () => {
     const user = userEvent.setup();
     const departedAssignment = {
       ...assignmentOverviewRow,
