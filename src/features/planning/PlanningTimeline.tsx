@@ -320,8 +320,8 @@ export function PlanningCrewTimelineRow({
   selectedId,
   selectedGridCells = EMPTY_SELECTED_GRID_CELLS,
   cutGridCellKeys = EMPTY_CUT_GRID_CELL_KEYS,
-  onGridCellPointerDown,
-  onGridCellPointerEnter,
+  onGridCellClick,
+  onEmptyGridCellDoubleClick,
   onConflictCellClick,
   absences = EMPTY_ABSENCES,
   onOpenAbsence,
@@ -341,8 +341,8 @@ export function PlanningCrewTimelineRow({
   selectedId: string | null;
   selectedGridCells?: ReadonlyMap<string, PlanningGridCell>;
   cutGridCellKeys?: ReadonlySet<string>;
-  onGridCellPointerDown?: (cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) => void;
-  onGridCellPointerEnter?: (cell: PlanningGridCell) => void;
+  onGridCellClick?: (cell: PlanningGridCell, event: React.MouseEvent<HTMLButtonElement>) => boolean;
+  onEmptyGridCellDoubleClick?: (cell: PlanningGridCell) => void;
   onConflictCellClick?: (cell: PlanningGridCell) => void;
   absences?: PlanningAbsenceRecord[];
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
@@ -436,11 +436,11 @@ export function PlanningCrewTimelineRow({
         const occupied = laneCoverage.occupiedDates.has(day.date);
         const vesselId = laneCoverage.vesselId;
         const showEmptyButton = editable && !occupied;
-        const canPaintEmpty = hierarchy && lane.personId !== null && vesselId !== null && Boolean(onGridCellPointerDown);
+        const canColorEmpty = hierarchy && lane.personId !== null && vesselId !== null && Boolean(onEmptyGridCellDoubleClick);
         const emptySelectionId = `empty-${lane.key}-${day.date}`;
         const emptyKey = planningGridCellKey(lane.key, day.date);
         const emptySelectedCell = selectedGridCells.get(emptyKey);
-        const emptySelected = Boolean(emptySelectedCell) || selectedId === emptySelectionId;
+        const emptySelected = Boolean(emptySelectedCell) || (!canColorEmpty && selectedId === emptySelectionId);
         const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR').includes('ARMEMENT');
         const emptyCell: PlanningGridCell | null = lane.personId !== null && vesselId !== null ? {
           key: emptyKey,
@@ -482,13 +482,21 @@ export function PlanningCrewTimelineRow({
         return showEmptyButton
           ? <button
               {...shared}
-              aria-label={`Sélectionner la case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ouvrir le formulaire complet.`}
+              aria-label={`Case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ${canColorEmpty ? 'colorer la case' : 'ouvrir le formulaire complet'}.`}
               data-planning-grid-cell={emptyKey}
               key={day.date}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSelect(emptySelectionId); }}
-              onDoubleClick={() => onCreate(lane, day.date)}
-              onPointerDown={(event) => { if (canPaintEmpty && emptyCell) onGridCellPointerDown?.(emptyCell, event); }}
-              onPointerEnter={() => { if (canPaintEmpty && emptyCell) onGridCellPointerEnter?.(emptyCell); }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (canColorEmpty && emptyCell) onGridCellClick?.(emptyCell, event);
+                else onSelect(emptySelectionId);
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (canColorEmpty && emptyCell) onEmptyGridCellDoubleClick?.(emptyCell);
+                else onCreate(lane, day.date);
+              }}
               type="button"
             >{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker ${armementCell ? 'is-armement' : 'is-default'} is-${planningStatusTone(emptySelectedCell?.status || emptyCell?.status || 'En Mer')}`} /> : <Plus aria-hidden="true" size={13} />}</button>
           : <span {...shared} aria-hidden="true" key={day.date} />;
@@ -612,6 +620,11 @@ export function PlanningCrewTimelineRow({
                 onClick={(noteEvent) => {
                   noteEvent.preventDefault();
                   noteEvent.stopPropagation();
+                  const gridCellHandled = onGridCellClick?.(cell, noteEvent) || false;
+                  if (gridCellHandled && (noteEvent.ctrlKey || noteEvent.metaKey || !cell.isConflict)) {
+                    onSelect(event.id);
+                    return;
+                  }
                   if (cell.isConflict && onConflictCellClick && !noteEvent.ctrlKey && !noteEvent.metaKey) {
                     onSelect(event.id);
                     scheduleConflictClick(cell);
@@ -632,8 +645,6 @@ export function PlanningCrewTimelineRow({
                   doubleClickEvent.stopPropagation();
                   onOpen(event);
                 }}
-                onPointerDown={(pointerEvent) => onGridCellPointerDown?.(cell, pointerEvent)}
-                onPointerEnter={() => onGridCellPointerEnter?.(cell)}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
                 title={cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'}
                 type="button"

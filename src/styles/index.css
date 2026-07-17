@@ -10402,6 +10402,7 @@ button.planning-p12-conflict-card {
   max-height: calc(100vh - 284px);
   overflow-x: scroll;
   overflow-y: auto;
+  cursor: grab;
   scrollbar-color: #7d8ca0 #e9eef3;
   scrollbar-gutter: stable both-edges;
   scrollbar-width: auto;
@@ -11264,6 +11265,20 @@ button.planning-p12-conflict-card {
   outline-offset: -3px;
   background: var(--planning-event-conflict-hover);
   box-shadow: 0 0 0 3px var(--planning-event-conflict-strong), 0 5px 13px var(--planning-event-conflict-shadow);
+}
+
+.planning-calendar-scroll .planning-day-cell,
+.planning-calendar-scroll .planning-assignment-note-cell,
+.planning-calendar-scroll .planning-day-heading,
+.planning-calendar-scroll .planning-month-segment,
+.planning-calendar-scroll .planning-week-segment {
+  cursor: grab;
+}
+
+.planning-calendar-scroll.is-panning,
+.planning-calendar-scroll.is-panning * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 
 /* Planning fleet visual parity: reuse the compact rhythm and bar language from the crew view. */
