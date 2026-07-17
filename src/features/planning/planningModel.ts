@@ -77,6 +77,8 @@ export interface PlanningCrewRow {
   vessel: string;
   board: string;
   functionLabel: string;
+  boardRowId: number | null;
+  hasAnyRecords: boolean;
   vesselKey: string;
   boardKey: string;
   events: PlanningCrewEvent[];
@@ -393,7 +395,8 @@ export function buildPlanningCrewRows(
   filters: PlanningFilters,
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
-  const events = getAllPlanningCrewEvents(overview).filter(
+  const allEvents = getAllPlanningCrewEvents(overview);
+  const events = allEvents.filter(
     (event) =>
       event.confirmationStatus !== 'cancelled' &&
       rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
@@ -406,7 +409,20 @@ export function buildPlanningCrewRows(
       rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end) &&
       (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName),
   );
-  const vesselNames = new Set(events.map((event) => event.vessel));
+  const boardRows = (overview.boardRows || []).flatMap((boardRow) => {
+    const vessel = overview.vessels.find((item) => item.id === boardRow.vesselId);
+    const person = overview.people.find((item) => item.id === boardRow.personId);
+    if (!vessel || !person) return [];
+    const personName = formatPlanningPerson(person);
+    if (filters.vesselName && filters.vesselName !== vessel.name) return [];
+    if (filters.personName && filters.personName !== personName) return [];
+    if (filters.eventType || filters.status || filters.responsible) return [];
+    return [{ boardRow, vessel, person, personName }];
+  });
+  const vesselNames = new Set([
+    ...events.map((event) => event.vessel),
+    ...boardRows.map((entry) => entry.vessel.name),
+  ]);
 
   const rows: PlanningCrewRow[] = [];
   [...vesselNames]
@@ -419,41 +435,53 @@ export function buildPlanningCrewRows(
     .forEach((vessel) => {
       const vesselKey = `vessel-${safeKey(vessel)}`;
       const vesselEvents = events.filter((event) => event.vessel === vessel);
+      const vesselBoardRows = boardRows.filter((entry) => entry.vessel.name === vessel);
+      const vesselRecord = overview.vessels.find((item) => item.name === vessel);
       const vesselProjects = projects.filter((project) => project.primaryVesselName === vessel || project.secondaryVesselName === vessel);
       rows.push({
         key: vesselKey,
         type: 'vessel',
         personId: null,
-        vesselId: overview.vessels.find((item) => item.name === vessel)?.id || vesselEvents[0]?.vesselId || null,
+        vesselId: vesselRecord?.id || vesselEvents[0]?.vesselId || null,
         label: vessel,
         vessel,
         board: '',
         functionLabel: '',
+        boardRowId: null,
+        hasAnyRecords: false,
         vesselKey,
         boardKey: '',
         events: [],
         projects: vesselProjects,
       });
 
-      const boards = new Map<string, PlanningCrewEvent[]>();
+      const boards = new Map<string, { events: PlanningCrewEvent[]; rows: typeof vesselBoardRows }>();
       vesselEvents.forEach((event) => {
         const defaultBoard = normalizePlanningText(vessel).includes('ARMEMENT') ? 'Armement' : 'Bordée';
         const board = event.board || defaultBoard;
-        boards.set(board, [...(boards.get(board) || []), event]);
+        const current = boards.get(board) || { events: [], rows: [] };
+        boards.set(board, { ...current, events: [...current.events, event] });
+      });
+      vesselBoardRows.forEach((entry) => {
+        const current = boards.get(entry.boardRow.watchGroup) || { events: [], rows: [] };
+        boards.set(entry.boardRow.watchGroup, { ...current, rows: [...current.rows, entry] });
       });
       [...boards.entries()]
         .sort(([left], [right]) => left.localeCompare(right, 'fr', { numeric: true }))
-        .forEach(([board, boardEvents]) => {
+        .forEach(([board, boardContent]) => {
+          const boardEvents = boardContent.events;
           const boardKey = `${vesselKey}-board-${safeKey(board)}`;
           rows.push({
             key: boardKey,
             type: 'board',
             personId: null,
-            vesselId: boardEvents[0]?.vesselId || overview.vessels.find((item) => item.name === vessel)?.id || null,
+            vesselId: boardEvents[0]?.vesselId || vesselRecord?.id || null,
             label: board,
             vessel,
             board,
             functionLabel: '',
+            boardRowId: null,
+            hasAnyRecords: false,
             vesselKey,
             boardKey,
             events: [],
@@ -461,6 +489,9 @@ export function buildPlanningCrewRows(
           });
           const people = new Map<string, PlanningCrewEvent[]>();
           boardEvents.forEach((event) => people.set(event.person, [...(people.get(event.person) || []), event]));
+          boardContent.rows.forEach((entry) => {
+            if (!people.has(entry.personName)) people.set(entry.personName, []);
+          });
           [...people.entries()]
             .sort(([leftName, leftEvents], [rightName, rightEvents]) => {
               const leftRole = leftEvents[0]?.functionLabel || overview.people.find((person) => formatPlanningPerson(person) === leftName)?.functionLabel || '';
@@ -468,15 +499,25 @@ export function buildPlanningCrewRows(
               return personRoleRank(leftRole) - personRoleRank(rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
+              const linkedPerson = overview.people.find((item) => formatPlanningPerson(item) === person);
+              const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
+              const personId = personEvents[0]?.personId || linkedPerson?.id || null;
+              const hasAnyRecords = allEvents.some((event) => (
+                event.vessel === vessel
+                && (event.board || (normalizePlanningText(vessel).includes('ARMEMENT') ? 'Armement' : 'Bordée')) === board
+                && (personId !== null ? event.personId === personId || event.person === person : event.person === person)
+              ));
               rows.push({
                 key: `${boardKey}-person-${safeKey(person)}`,
                 type: 'person',
-                personId: personEvents[0]?.personId || overview.people.find((item) => formatPlanningPerson(item) === person)?.id || null,
-                vesselId: personEvents[0]?.vesselId || overview.vessels.find((item) => item.name === vessel)?.id || null,
+                personId,
+                vesselId: personEvents[0]?.vesselId || vesselRecord?.id || null,
                 label: person,
                 vessel,
                 board,
-                functionLabel: personEvents[0]?.functionLabel || '',
+                functionLabel: personEvents[0]?.functionLabel || boardRow?.functionLabel || linkedPerson?.functionLabel || '',
+                boardRowId: boardRow?.id || null,
+                hasAnyRecords,
                 vesselKey,
                 boardKey,
                 events: personEvents.sort((left, right) => left.startsOn.localeCompare(right.startsOn)),

@@ -39,6 +39,7 @@ const PLANNING_HANDOVER_POSITION_SELECT =
 const PLANNING_DEROGATION_SELECT =
   'id, rule_id, assignment_id, person_id, vessel_id, reason, starts_at, ends_at, evidence_url, status, author_id, author_name, created_at, updated_at';
 const PLANNING_DEROGATION_HISTORY_SELECT = 'id, entity_id, action, payload, changed_by, changed_at';
+const PLANNING_BOARD_ROW_SELECT = 'id, vessel_id, person_id, watch_group, function_label, created_at';
 
 interface VesselRow {
   id: number;
@@ -64,6 +65,15 @@ interface PlanningPersonRow {
   deck_certificate_label?: string | null;
   engine_certificate_label?: string | null;
   active: boolean;
+}
+
+interface PlanningBoardRowRow {
+  id: number;
+  vessel_id: number;
+  person_id: number;
+  watch_group: string;
+  function_label: string | null;
+  created_at: string;
 }
 
 export interface PlanningAssignmentRow {
@@ -343,6 +353,15 @@ export interface PlanningPerson {
   active: boolean;
 }
 
+export interface PlanningBoardRowRecord {
+  id: number;
+  vesselId: number;
+  personId: number;
+  watchGroup: string;
+  functionLabel: string;
+  createdAt: string;
+}
+
 export interface PlanningAssignmentRecord {
   id: number;
   vesselId: number;
@@ -589,6 +608,7 @@ export interface PlanningDerogationHistoryRecord {
 export interface PlanningOverview {
   vessels: PlanningVessel[];
   people: PlanningPerson[];
+  boardRows?: PlanningBoardRowRecord[];
   assignments: PlanningAssignmentRecord[];
   days: PlanningDayRecord[];
   periods: PlanningPeriodRecord[];
@@ -734,6 +754,12 @@ export interface CreatePlanningBoardInput {
   positions: Array<{ personId: number; functionLabel: string }>;
 }
 
+export interface AddPlanningBoardRowInput {
+  vesselId: number;
+  watchGroup: string;
+  personId: number;
+}
+
 export interface SavePlanningHandoverInput {
   id?: number | null;
   vesselId: string;
@@ -811,6 +837,17 @@ export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson
     deckCertificateLabel: row.deck_certificate_label || '',
     engineCertificateLabel: row.engine_certificate_label || '',
     active: row.active,
+  }));
+}
+
+export function mapPlanningBoardRowRows(rows: PlanningBoardRowRow[]): PlanningBoardRowRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    personId: row.person_id,
+    watchGroup: row.watch_group,
+    functionLabel: row.function_label || '',
+    createdAt: row.created_at,
   }));
 }
 
@@ -1158,6 +1195,17 @@ export async function fetchPlanningPeople(client: SupabaseClient): Promise<Plann
   return mapPlanningPeopleRows((data || []) as PlanningPersonRow[]);
 }
 
+export async function fetchPlanningBoardRows(client: SupabaseClient): Promise<PlanningBoardRowRecord[]> {
+  const { data, error } = await client
+    .from('planning_board_rows')
+    .select(PLANNING_BOARD_ROW_SELECT)
+    .order('created_at', { ascending: true });
+
+  if (error) throwPlanningDataError('load-board-rows', 'Impossible de charger les lignes vides des bordées.', error);
+
+  return mapPlanningBoardRowRows((data || []) as PlanningBoardRowRow[]);
+}
+
 export async function fetchPlanningAssignmentOverviewRows(
   client: SupabaseClient,
 ): Promise<PlanningAssignmentOverviewRow[]> {
@@ -1336,6 +1384,7 @@ export async function fetchPlanningOverview(
     return {
       vessels,
       people,
+      boardRows: [],
       ...releasedPlanning,
       certificates,
       hrDocuments,
@@ -1347,9 +1396,10 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers, derogationData] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers, derogationData] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
+    fetchPlanningBoardRows(client),
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
     fetchPlanningPeriods(client),
@@ -1366,6 +1416,7 @@ export async function fetchPlanningOverview(
   return {
     vessels,
     people,
+    boardRows,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
     days,
     periods,
@@ -1650,6 +1701,30 @@ export async function createPlanningBoardAssignments(
   });
   if (error) throwPlanningDataError('create-planning-board', 'Impossible de créer cette bordée.', error);
   return Array.isArray(data) ? data.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0) : [];
+}
+
+export async function addPlanningBoardRow(
+  client: SupabaseClient,
+  input: AddPlanningBoardRowInput,
+): Promise<number> {
+  const vesselId = planningEntityId(input.vesselId, 'Le navire');
+  const personId = planningEntityId(input.personId, 'Le marin');
+  const watchGroup = requiredPlanningText(input.watchGroup, 'La bordée');
+  const { data, error } = await client.rpc('add_planning_board_row', {
+    p_vessel_id: vesselId,
+    p_watch_group: watchGroup,
+    p_person_id: personId,
+  });
+  if (error) throwPlanningDataError('add-board-row', 'Impossible d’ajouter cette ligne de marin.', error);
+  const id = Number(data);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('La ligne ajoutée n’a pas renvoyé un identifiant valide.');
+  return id;
+}
+
+export async function deletePlanningBoardRow(client: SupabaseClient, rowId: number): Promise<void> {
+  const id = planningEntityId(rowId, 'La ligne');
+  const { error } = await client.rpc('delete_planning_board_row', { p_row_id: id });
+  if (error) throwPlanningDataError('delete-board-row', 'Impossible de supprimer cette ligne vide.', error);
 }
 
 async function writeVesselChangeLog(

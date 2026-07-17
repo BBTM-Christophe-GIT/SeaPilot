@@ -31,6 +31,22 @@ const crewRow = {
   active: true,
 };
 const secondCrewRow = { ...crewRow, id: 12, first_name: 'Luc', last_name: 'MOREL', function_label: 'Mécanicien' };
+const departedCrewRow = {
+  ...crewRow,
+  id: 13,
+  first_name: 'Alain',
+  last_name: 'ANCIEN',
+  departed_on: '2025-12-31',
+  active: false,
+};
+const emptyBoardRow = {
+  id: 900,
+  vessel_id: 1,
+  person_id: 13,
+  watch_group: 'Affectation',
+  function_label: 'Matelot',
+  created_at: '2026-07-17T08:00:00Z',
+};
 const assignmentRow = {
   id: 100,
   vessel_id: 1,
@@ -185,6 +201,7 @@ function createClient(options: {
   vessels?: unknown[];
   people?: unknown[];
   assignments?: unknown[];
+  boardRows?: unknown[];
   days?: unknown[];
   periods?: unknown[];
   projects?: unknown[];
@@ -240,6 +257,9 @@ function createClient(options: {
     }
     if (table === 'planning_periods') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }) }) }) };
+    }
+    if (table === 'planning_board_rows') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.boardRows ?? [], error: null }) }) };
     }
     if (table === 'planning_projects') {
       return {
@@ -368,6 +388,12 @@ function createClient(options: {
     }
     if (functionName === 'create_planning_board_assignments') {
       return Promise.resolve({ data: [301], error: null });
+    }
+    if (functionName === 'add_planning_board_row') {
+      return Promise.resolve({ data: 901, error: null });
+    }
+    if (functionName === 'delete_planning_board_row') {
+      return Promise.resolve({ data: 900, error: null });
     }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
@@ -578,6 +604,20 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Outils' }));
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
+  });
+
+  it('places the planning actions in the horizontal bar above the calendar', async () => {
+    const { client } = createClient();
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    const actionBar = screen.getByRole('navigation', { name: 'Actions du planning' });
+    expect(within(actionBar).getByRole('button', { name: 'Outils' })).toBeInTheDocument();
+    expect(within(actionBar).getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
+    expect(within(actionBar).getByRole('button', { name: 'Demandes en attente' })).toBeInTheDocument();
+    expect(within(actionBar).getByRole('button', { name: 'Actualiser' })).toBeInTheDocument();
+    expect(actionBar.parentElement).toHaveClass('planning-command-layout');
+    expect(container.querySelector('.planning-command-layout + .planning-layout')).toBeInTheDocument();
   });
 
   it('creates a native SeaPilot assignment for administrators', async () => {
@@ -950,6 +990,67 @@ describe('PlanningPage cockpit', () => {
       p_ends_on: '2026-08-16',
       p_positions: [{ personId: 10, functionLabel: 'Capitaine' }],
     }));
+  });
+
+  it('adds a departed sailor as a persistent empty board row', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({
+      assignments: [assignmentOverviewRow],
+      people: [captainRow, crewRow, departedCrewRow],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
+    expect(within(dialog).getByText('Alain ANCIEN')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Paul DURAND')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Alain ANCIEN' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
+      p_vessel_id: 1,
+      p_watch_group: 'Affectation',
+      p_person_id: 13,
+    }));
+    expect(await screen.findByText('Alain ANCIEN a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
+  });
+
+  it('keeps a departed sailor with an existing record visible but disables adding a duplicate row', async () => {
+    const user = userEvent.setup();
+    const departedAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      crew_person_id: 13,
+      crew_name: 'Alain ANCIEN',
+    };
+    const { client } = createClient({
+      assignments: [assignmentOverviewRow, departedAssignment],
+      people: [captainRow, crewRow, departedCrewRow],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
+    expect(within(dialog).getByRole('button', { name: 'Déjà présent Alain ANCIEN' })).toBeDisabled();
+  });
+
+  it('offers row deletion only for a sailor without planning records', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { client, rpc } = createClient({
+      assignments: [assignmentOverviewRow],
+      boardRows: [emptyBoardRow],
+      people: [captainRow, crewRow, departedCrewRow],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    expect(screen.queryByRole('button', { name: 'Supprimer la ligne vide de Paul DURAND' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne vide de Alain ANCIEN' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('delete_planning_board_row', { p_row_id: 900 }));
+    expect(await screen.findByText('La ligne vide de Alain ANCIEN a été supprimée.')).toBeInTheDocument();
+    confirm.mockRestore();
   });
 
   it('selects an empty fleet cell with a green marker and opens the full form only on double-click', async () => {

@@ -64,6 +64,7 @@ import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
 import { createPlanningPreviewOverview } from './planningPreviewData';
 import {
+  addPlanningBoardRow,
   archivePlanningVessel,
   applyPlanningGridCells,
   createPlanningDerogation,
@@ -71,6 +72,7 @@ import {
   createPlanningBoardAssignments,
   createPlanningProject,
   createVessel,
+  deletePlanningBoardRow,
   deletePlanningEvent,
   fetchPlanningAssignmentOverviewRows,
   fetchPlanningDerogations,
@@ -217,6 +219,12 @@ interface PlanningBoardForm {
   positions: PlanningBoardPositionForm[];
 }
 
+interface PlanningDepartedPeopleDialogState {
+  vesselId: number;
+  vesselName: string;
+  watchGroup: string;
+}
+
 interface PlanningGridConflictForm {
   cell: PlanningGridCell;
   events: PlanningCrewEvent[];
@@ -351,6 +359,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
   const [boardForm, setBoardForm] = useState<PlanningBoardForm | null>(null);
+  const [departedPeopleDialog, setDepartedPeopleDialog] = useState<PlanningDepartedPeopleDialogState | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
@@ -482,6 +491,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   );
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const departedPeople = useMemo(
+    () => overview.people
+      .filter((person) => Boolean(person.departedOn) && person.departedOn < todayDate)
+      .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
+    [overview.people, todayDate],
+  );
   const crewListVessels = useMemo(
     () => activeVessels.filter((vessel) => availablePlanningCrewListBoards(overview, vessel.id, crewListForm.date).length > 0),
     [activeVessels, crewListForm.date, overview],
@@ -492,6 +507,17 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     crewListForm.date,
   ), [crewListForm.date, crewListForm.vesselId, overview]);
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
+  const departedDialogExistingPersonIds = useMemo(() => {
+    if (!departedPeopleDialog) return new Set<number>();
+    return new Set([
+      ...(overview.boardRows || [])
+        .filter((row) => row.vesselId === departedPeopleDialog.vesselId && row.watchGroup === departedPeopleDialog.watchGroup)
+        .map((row) => row.personId),
+      ...allPlanningCrewEvents
+        .filter((event) => event.vesselId === departedPeopleDialog.vesselId && event.board === departedPeopleDialog.watchGroup && event.personId !== null)
+        .map((event) => event.personId as number),
+    ]);
+  }, [allPlanningCrewEvents, departedPeopleDialog, overview.boardRows]);
   const conflictDatesByEvent = useMemo(() => getPlanningConflictDatesByEvent(overview), [overview]);
   const cutGridCellKeys = useMemo(
     () => new Set(gridClipboard?.mode === 'cut' ? gridClipboard.cells.map((cell) => cell.key) : []),
@@ -1005,7 +1031,51 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   function openBoardAssignment(vesselId: number | null, watchGroup: string) {
     if (vesselId === null) return;
-    openAssignment({ vesselId: String(vesselId), watchGroup }, false);
+    const vessel = overview.vessels.find((item) => item.id === vesselId);
+    if (!vessel) {
+      setErrorMessage('Ce navire est indisponible. Actualisez le planning.');
+      return;
+    }
+    setDepartedPeopleDialog({ vesselId, vesselName: vessel.name, watchGroup });
+  }
+
+  async function addDepartedPersonToBoard(person: PlanningPerson) {
+    if (!departedPeopleDialog) return;
+    setIsSaving(true);
+    setPendingMutationId(`departed-person-${person.id}`);
+    setErrorMessage(null);
+    try {
+      await addPlanningBoardRow(effectiveClient, {
+        vesselId: departedPeopleDialog.vesselId,
+        watchGroup: departedPeopleDialog.watchGroup,
+        personId: person.id,
+      });
+      await loadPlanning();
+      setDepartedPeopleDialog(null);
+      setStatusMessage(`${formatPlanningPerson(person)} a été ajouté comme ligne vide à ${departedPeopleDialog.watchGroup}.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible d’ajouter ce marin à la bordée.'));
+    } finally {
+      setPendingMutationId(null);
+      setIsSaving(false);
+    }
+  }
+
+  async function removeEmptyBoardRow(rowId: number, personName: string) {
+    if (!window.confirm(`Supprimer la ligne vide de ${personName} ?`)) return;
+    setIsSaving(true);
+    setPendingMutationId(`board-row-${rowId}`);
+    setErrorMessage(null);
+    try {
+      await deletePlanningBoardRow(effectiveClient, rowId);
+      await loadPlanning();
+      setStatusMessage(`La ligne vide de ${personName} a été supprimée.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de supprimer cette ligne vide.'));
+    } finally {
+      setPendingMutationId(null);
+      setIsSaving(false);
+    }
   }
 
   function openCrewList() {
@@ -1690,6 +1760,36 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     return () => window.removeEventListener('keydown', handleGridShortcut);
   });
 
+  const planningToolsControl = (
+    <div className="planning-tools-anchor">
+      <button aria-expanded={isSettingsOpen} className="planning-tools-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><Wrench aria-hidden="true" size={17} />Outils</button>
+      {isSettingsOpen ? (
+        <div className="planning-tools-popover">
+          <strong>Outils du planning</strong>
+          <div className="planning-tools-group"><small>Navires</small>
+            {permissions.canManageVessels ? <button onClick={() => { setIsVesselsOpen(true); setIsSettingsOpen(false); }} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
+            {permissions.canExport ? <button onClick={() => { openCrewList(); setIsSettingsOpen(false); }} type="button"><FileSpreadsheet aria-hidden="true" size={16} />Générer une crew list</button> : null}
+          </div>
+          <div className="planning-tools-group"><small>Armement</small>
+            {visibleSideTabs.filter((tab) => !['unassigned', 'certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
+            <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et décision d’effectif</button>
+            <button onClick={() => { openP12(); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
+            {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
+            {permissions.canManageDerogations ? <button onClick={() => { setDerogationPrefill({ startsAt: localDateTime(range.start || anchorDate, '08:00'), endsAt: localDateTime(range.start || anchorDate, '20:00') }); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation</button> : null}
+          </div>
+          <div className="planning-tools-group"><small>Marins</small>
+            {visibleSideTabs.filter((tab) => ['certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
+            {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); setIsSettingsOpen(false); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
+            {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
+            {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning</button> : null}
+            {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP22Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Prévisions et scénarios</button> : null}
+            {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
   if (!permissions.canRead) {
     return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
   }
@@ -1710,10 +1810,24 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           <p className="module-family">Planning</p>
           <h1 aria-label="Planning">Planning BBTM</h1>
         </div>
-        <div className="planning-command-actions">
+      </header>
+
+      {statusMessage || errorMessage || loadErrorMessage || isRefreshing ? (
+        <div className="planning-notices" aria-live="polite">
+          {isRefreshing ? <p className="admin-state">Actualisation du planning...</p> : null}
+          {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
+          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
+          {loadErrorMessage ? <p className="form-error" role="alert">{loadErrorMessage}</p> : null}
+        </div>
+      ) : null}
+
+      <div className="planning-command-layout">
+        <nav aria-label="Actions du planning" className="planning-module-toolbar">
           <span className={canEditPlanning ? 'planning-mode-write' : 'planning-mode-read'}>
             {canEditPlanning ? 'Brouillon modifiable' : 'Dernière version diffusée'}
           </span>
+          <span className="planning-module-toolbar-spacer" />
+          {planningToolsControl}
           {permissions.canRequestAbsences ? (
             <button className="planning-command-button" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} type="button">
               <CalendarOff aria-hidden="true" size={18} />
@@ -1731,24 +1845,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <RefreshCw aria-hidden="true" size={18} />
             {isRefreshing ? 'Actualisation…' : 'Actualiser'}
           </button>
-        </div>
-      </header>
-
-      {statusMessage || errorMessage || loadErrorMessage || isRefreshing ? (
-        <div className="planning-notices" aria-live="polite">
-          {isRefreshing ? <p className="admin-state">Actualisation du planning...</p> : null}
-          {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
-          {loadErrorMessage ? <p className="form-error" role="alert">{loadErrorMessage}</p> : null}
-        </div>
-      ) : null}
-
-      <PlanningPublicationPanel
-        canPublish={permissions.canPublishPublication}
-        isSaving={isSaving}
-        onPublish={handlePublishPlanning}
-        release={latestRelease}
-      />
+        </nav>
+        <PlanningPublicationPanel
+          canPublish={permissions.canPublishPublication}
+          isSaving={isSaving}
+          onPublish={handlePublishPlanning}
+          release={latestRelease}
+        />
+      </div>
 
       <div className="planning-layout">
         <section className="planning-board-card" aria-label="Calendrier des affectations">
@@ -1789,33 +1893,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <label><span>Date de référence</span><input aria-label="Date de référence" onChange={(event) => setAnchorDate(event.target.value)} type="date" value={anchorDate} /></label>
                 <button className="planning-today-button" onClick={() => setAnchorDate(todayDate)} type="button">Aujourd’hui</button>
                 <button aria-label="Période suivante" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, viewMode, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
-              </div>
-              <div className="planning-tools-anchor">
-                <button aria-expanded={isSettingsOpen} className="planning-tools-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><Wrench aria-hidden="true" size={17} />Outils</button>
-                {isSettingsOpen ? (
-                  <div className="planning-tools-popover">
-                    <strong>Outils du planning</strong>
-                    <div className="planning-tools-group"><small>Navires</small>
-                      {permissions.canManageVessels ? <button onClick={() => { setIsVesselsOpen(true); setIsSettingsOpen(false); }} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
-                      {permissions.canExport ? <button onClick={() => { openCrewList(); setIsSettingsOpen(false); }} type="button"><FileSpreadsheet aria-hidden="true" size={16} />Générer une crew list</button> : null}
-                    </div>
-                    <div className="planning-tools-group"><small>Armement</small>
-                      {visibleSideTabs.filter((tab) => !['unassigned', 'certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
-                      <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et décision d’effectif</button>
-                      <button onClick={() => { openP12(); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
-                      {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
-                      {permissions.canManageDerogations ? <button onClick={() => { setDerogationPrefill({ startsAt: localDateTime(range.start || anchorDate, '08:00'), endsAt: localDateTime(range.start || anchorDate, '20:00') }); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Créer une dérogation</button> : null}
-                    </div>
-                    <div className="planning-tools-group"><small>Marins</small>
-                      {visibleSideTabs.filter((tab) => ['certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
-                      {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); setIsSettingsOpen(false); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
-                      {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
-                      {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning</button> : null}
-                      {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP22Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Prévisions et scénarios</button> : null}
-                      {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </div>
 
@@ -1908,8 +1985,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   label: row.label,
                   detail: '',
                   personId: row.personId,
+                  vesselId: row.vesselId,
                   vessel: row.vessel,
                   watchGroup: row.board,
+                  functionLabel: row.functionLabel,
                   events: row.events,
                 };
                 return (
@@ -1931,9 +2010,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
                     onGridCellPointerDown={beginPlanningGridPaint}
                     onGridCellPointerEnter={extendPlanningGridPaint}
+                    onDeleteEmptyRow={row.boardRowId && !row.hasAnyRecords ? () => void removeEmptyBoardRow(row.boardRowId!, row.label) : undefined}
                     onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
+                    isDeletingEmptyRow={pendingMutationId === `board-row-${row.boardRowId}`}
                     selectedId={selectedTimelineId}
                     selectedGridCells={selectedGridCells}
                     viewMode={viewMode}
@@ -1985,6 +2066,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onSave={saveDayState} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
       {boardForm ? <PlanningBoardStaffingDialog form={boardForm} isSaving={isSaving} onChange={setBoardForm} onClose={() => setBoardForm(null)} onSave={saveNewBoard} /> : null}
+      {departedPeopleDialog ? <PlanningDepartedPeopleDialog existingPersonIds={departedDialogExistingPersonIds} isSaving={isSaving} onAdd={(person) => void addDepartedPersonToBoard(person)} onClose={() => setDepartedPeopleDialog(null)} pendingId={pendingMutationId} people={departedPeople} state={departedPeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
       {isAssignmentOpen ? (
@@ -2107,6 +2189,33 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onSave }: {
       <small>{form.note.length}/32</small>
       <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Appliquer{form.date ? ' à ce jour' : ' à la période'}</button></footer>
     </form>
+  </div>;
+}
+
+function PlanningDepartedPeopleDialog({ state, people, existingPersonIds, isSaving, pendingId, onAdd, onClose }: {
+  state: PlanningDepartedPeopleDialogState;
+  people: PlanningPerson[];
+  existingPersonIds: ReadonlySet<number>;
+  isSaving: boolean;
+  pendingId: string | null;
+  onAdd: (person: PlanningPerson) => void;
+  onClose: () => void;
+}) {
+  return <div className="planning-dialog-backdrop" role="presentation">
+    <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
+      <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
+      <p className="planning-dialog-intro">Marins dont la date de départ est antérieure à aujourd’hui. L’ajout crée une ligne vide, sans case colorée.</p>
+      {people.length ? <div className="planning-departed-people-list">{people.map((person) => {
+        const isAlreadyPresent = existingPersonIds.has(person.id);
+        const isPending = pendingId === `departed-person-${person.id}`;
+        return <article key={person.id}>
+          <span><strong>{formatPlanningPerson(person)}</strong><small>{[person.functionLabel || person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Marin'}</small></span>
+          <span><small>Date de départ</small><strong>{formatPlanningDate(person.departedOn)}</strong></span>
+          <button aria-label={`${isAlreadyPresent ? 'Déjà présent' : 'Ajouter'} ${formatPlanningPerson(person)}`} disabled={isSaving || isAlreadyPresent} onClick={() => onAdd(person)} type="button">{isPending ? 'Ajout…' : isAlreadyPresent ? 'Déjà présent' : 'Ajouter'}</button>
+        </article>;
+      })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin avec une date de départ antérieure à aujourd’hui.</p></div>}
+      <footer><button className="is-secondary" onClick={onClose} type="button">Fermer</button></footer>
+    </section>
   </div>;
 }
 

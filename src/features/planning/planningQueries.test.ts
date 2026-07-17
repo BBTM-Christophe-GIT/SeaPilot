@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  addPlanningBoardRow,
   applyPlanningGridCells,
   createPlanningAssignment,
   createPlanningBoardAssignments,
   createPlanningDerogation,
   createPlanningProject,
   createVessel,
+  deletePlanningBoardRow,
   fetchPlanningPeople,
   fetchPlanningOverview,
   fetchVessels,
@@ -445,6 +447,10 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'planning_board_rows') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'planning_projects') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
       }
@@ -482,6 +488,7 @@ describe('fetchPlanningOverview', () => {
     await expect(fetchPlanningOverview({ from, rpc } as never)).resolves.toEqual({
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow, crewRow]),
+      boardRows: [],
       assignments: mapPlanningAssignmentOverviewRows([assignmentOverviewRow]),
       days: mapPlanningDayRows([planningDayRow]),
       periods: mapPlanningPeriodRows([planningPeriodRow]),
@@ -558,6 +565,10 @@ describe('fetchPlanningOverview', () => {
         };
       }
 
+      if (table === 'planning_board_rows') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       if (table === 'planning_projects') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
       }
@@ -595,6 +606,7 @@ describe('fetchPlanningOverview', () => {
     await expect(fetchPlanningOverview({ from, rpc } as never)).resolves.toEqual({
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow]),
+      boardRows: [],
       assignments: [
         expect.objectContaining({
           captainName: 'Jean MARTIN',
@@ -1017,6 +1029,26 @@ describe('planning writes', () => {
       p_watch_group: 'Bordée 2',
       p_positions: [{ personId: 5, functionLabel: 'Capitaine' }, { personId: 6, functionLabel: 'Matelot' }],
     }));
+  });
+
+  it('adds and deletes a persistent empty board row through guarded RPCs', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 77, error: null })
+      .mockResolvedValueOnce({ data: 77, error: null });
+
+    await expect(addPlanningBoardRow({ rpc } as never, {
+      vesselId: 3,
+      watchGroup: 'Bordée 2',
+      personId: 8,
+    })).resolves.toBe(77);
+    expect(rpc).toHaveBeenNthCalledWith(1, 'add_planning_board_row', {
+      p_vessel_id: 3,
+      p_watch_group: 'Bordée 2',
+      p_person_id: 8,
+    });
+
+    await expect(deletePlanningBoardRow({ rpc } as never, 77)).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenNthCalledWith(2, 'delete_planning_board_row', { p_row_id: 77 });
   });
 
   it('creates an attributed and bounded derogation payload', async () => {

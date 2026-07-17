@@ -6,6 +6,7 @@ import { fetchPlanningOverview, type PlanningOverview } from './planningQueries'
 export const EMPTY_PLANNING_OVERVIEW: PlanningOverview = {
   vessels: [],
   people: [],
+  boardRows: [],
   assignments: [],
   days: [],
   periods: [],

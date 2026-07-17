@@ -38,8 +38,10 @@ export interface PlanningCrewLane {
   label: string;
   detail: string;
   personId: number | null;
+  vesselId?: number | null;
   vessel: string;
   watchGroup: string;
+  functionLabel?: string;
   events: PlanningCrewEvent[];
 }
 
@@ -211,8 +213,10 @@ export function buildPlanningCrewLanes(
         label,
         detail: detailValues.join(' · '),
         personId: grouping === 'people' ? linkedPerson?.id ?? first.personId : null,
+        vesselId: first.vesselId,
         vessel: first.vessel,
         watchGroup: first.board,
+        functionLabel: first.functionLabel,
         events: laneEvents,
       };
     })
