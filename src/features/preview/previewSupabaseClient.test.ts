@@ -21,6 +21,20 @@ describe('previewSupabaseClient', () => {
     expect(write.error).toMatchObject({ message: expect.stringContaining('ne peuvent pas être enregistrées') });
   });
 
+  it('exposes a synthetic HR file for local document workflow checks', async () => {
+    const people = await previewSupabaseClient.from('people').select('*').order('last_name');
+    const documents = await previewSupabaseClient.from('hr_documents').select('*').order('expires_on');
+
+    expect(people.error).toBeNull();
+    expect(documents.error).toBeNull();
+    expect(people.data).toEqual(expect.arrayContaining([expect.objectContaining({ last_name: 'DEMO' })]));
+    expect(documents.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Arthur DEMO - CFBS - 2029.pdf', storage_bucket: 'hr-documents' }),
+      ]),
+    );
+  });
+
   it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {
     const projects = await previewSupabaseClient.from('projects').select('*').order('id');
     const documents = await previewSupabaseClient.from('project_documents').select('*').order('id');

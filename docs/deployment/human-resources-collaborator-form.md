@@ -15,6 +15,10 @@ Les champs structurés sont enregistrés directement dans la table Supabase `pub
 
 Les fichiers de l’onglet **Documents** sont ajoutés après la création du collaborateur : ils nécessitent l’identifiant Supabase de la ligne `people` pour être rattachés dans `public.hr_documents` et stockés dans le bucket RH prévu par l’application.
 
+Depuis la fiche d’un collaborateur existant, les rôles de gestion disposent de l’action **Ajouter un document**. Le type vient du catalogue partagé `public.stcw_certificates`, la date d’échéance est obligatoire et le fichier est renommé selon la règle du Dashboard SPFx : `Collaborateur - Document - Année.extension`. Les fichiers restent dans le bucket privé `hr-documents`; un nom existant n’est jamais écrasé.
+
+La sélection par cases à cocher permet de télécharger un fichier directement ou plusieurs fichiers dans une archive ZIP datée. Le détail complet de l’audit et des règles reprises est documenté dans `docs/migration/human-resources-spfx-document-workflow.md`.
+
 L’indicateur **Sédentaires** classe un collaborateur à partir du grade, du rôle ou de la fonction. La valeur `Sédentaire` dans la colonne `grade_label` est donc comptabilisée même lorsque `role_label` n’est pas renseigné ou contient une autre valeur.
 
 Les contrôles d’administration « Paramétrer les accès » et le résumé « Visibilité par rôle — Fonctions, documents et sections » ne sont plus affichés dans l’en-tête du module RH. Les règles de lecture déjà enregistrées restent appliquées aux données chargées.
@@ -22,5 +26,5 @@ Les contrôles d’administration « Paramétrer les accès » et le résumé «
 ## Déploiement
 
 - Aucune nouvelle variable d’environnement n’est requise.
-- Aucune migration SQL n’est requise : toutes les colonnes utilisées existent déjà dans `public.people`.
+- Aucune migration SQL n’est requise : les colonnes `public.people`, `public.hr_documents`, le catalogue `public.stcw_certificates` et le bucket `hr-documents` existent déjà.
 - Exécuter la suite de tests, le lint et le build de production avant déploiement.

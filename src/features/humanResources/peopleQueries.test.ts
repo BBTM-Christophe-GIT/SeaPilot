@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildGeneratedHrDocumentFileName,
   buildHumanResourcesDashboard,
   buildHumanResourcesRosterGroups,
   buildStaffEvolution,
+  createHrDocument,
   createPerson,
   fetchHumanResourcesData,
   fetchPeople,
   getHrFunctionVisibilityKey,
   mapHrDocumentRows,
+  mapHrDocumentTypeRows,
   mapPersonRows,
   normalizeHrFunctionLabel,
   renewHrDocument,
@@ -254,6 +257,126 @@ describe('mapHrDocumentRows', () => {
         personSharePointItemId: '42',
       }),
     ]);
+  });
+});
+
+describe('HR document naming and catalogue', () => {
+  it('removes the previous collaborator and year before generating a renewed file name', () => {
+    const person = mapPersonRows([{ ...personRow, id: 31, first_name: 'Boris', last_name: 'BROT' }])[0];
+    const document = mapHrDocumentRows([
+      {
+        ...documentRow,
+        person_id: 31,
+        person_name: 'Boris BROT',
+        title: 'Boris BROT - Visite Médicale - 2028.pdf',
+      },
+    ])[0];
+
+    expect(buildGeneratedHrDocumentFileName(person, document, '2029-07-05', 'nouvelle-visite.pdf')).toBe(
+      'Boris BROT - Visite Médicale - 2029.pdf',
+    );
+  });
+
+  it('maps the shared SPFx document catalogue to SeaPilot categories and short file names', () => {
+    expect(
+      mapHrDocumentTypeRows([
+        {
+          id: 25,
+          source_item_id: 25,
+          name: 'CFBS - Certificat de Formation de Base à la Sécurité',
+          category: 'Formation de Sécurité',
+        },
+        {
+          id: 37,
+          source_item_id: 37,
+          name: "Certificat Médical d'Aptitude à la Navigation Maritime",
+          category: 'Visite Médicale',
+        },
+        {
+          id: 56,
+          source_item_id: 56,
+          name: 'Formation de base à la sécurité',
+          category: 'Formation de Sécurité',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ categoryKey: 'safety_training', fileName: 'CFBS', sourceItemId: 25 }),
+      expect.objectContaining({ categoryKey: 'safety_training', fileName: 'CFBS', sourceItemId: 56 }),
+      expect.objectContaining({ categoryKey: 'medical_visit', fileName: 'Visite Médicale', sourceItemId: 37 }),
+    ]);
+  });
+});
+
+describe('createHrDocument', () => {
+  it('uploads the renamed file then inserts its metadata in hr_documents', async () => {
+    const person = mapPersonRows([personRow])[0];
+    const documentType = mapHrDocumentTypeRows([
+      {
+        id: 25,
+        source_item_id: 25,
+        name: 'CFBS - Certificat de Formation de Base à la Sécurité',
+        category: 'Formation de Sécurité',
+      },
+    ])[0];
+    const file = new File(['certificate'], 'scan original.pdf', { type: 'application/pdf' });
+    const expectedStoragePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
+    const createdRow = {
+      ...documentRow,
+      id: 42,
+      person_id: 1,
+      person_name: 'Jean MARTIN',
+      category_key: 'safety_training',
+      title: 'Jean MARTIN - CFBS - 2030',
+      status: 'valid',
+      expires_on: '2030-06-30',
+      source_label: 'supabase',
+      file_url: null,
+      storage_bucket: 'hr-documents',
+      storage_path: expectedStoragePath,
+      file_size_bytes: file.size,
+      mime_type: 'application/pdf',
+    };
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const single = vi.fn().mockResolvedValue({ data: createdRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const insert = vi.fn().mockReturnValue({ select });
+    const storageFrom = vi.fn().mockReturnValue({ upload, remove });
+    const from = vi.fn().mockReturnValue({ insert });
+
+    await expect(
+      createHrDocument(
+        {
+          from,
+          storage: { from: storageFrom },
+        } as never,
+        {
+          documentType,
+          dueDate: '2030-06-30',
+          file,
+          medicalBridgeWatch: null,
+          medicalRestriction: '',
+          medicalUnfit: false,
+          person,
+        },
+      ),
+    ).resolves.toEqual(expect.objectContaining({ id: 42, storagePath: expectedStoragePath }));
+
+    expect(upload).toHaveBeenCalledWith(expectedStoragePath, file, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category_key: 'safety_training',
+        expires_on: '2030-06-30',
+        person_id: 1,
+        person_name: 'Jean MARTIN',
+        storage_path: expectedStoragePath,
+        title: 'Jean MARTIN - CFBS - 2030',
+      }),
+    );
+    expect(remove).not.toHaveBeenCalled();
   });
 });
 
@@ -608,10 +731,18 @@ describe('fetchHumanResourcesData', () => {
     await expect(fetchHumanResourcesData({ from } as never)).resolves.toEqual({
       people: mapPersonRows([personRow]),
       documents: mapHrDocumentRows([documentRow]),
+      documentTypes: [
+        expect.objectContaining({
+          categoryKey: 'medical_visit',
+          fileName: 'Visite medicale',
+          name: 'Visite medicale',
+        }),
+      ],
       visibilityRules: [],
     });
     expect(from).toHaveBeenCalledWith('people');
     expect(from).toHaveBeenCalledWith('hr_documents');
+    expect(from).toHaveBeenCalledWith('stcw_certificates');
   });
 });
 

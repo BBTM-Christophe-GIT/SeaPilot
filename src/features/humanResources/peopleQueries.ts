@@ -68,6 +68,8 @@ const HR_DOCUMENT_SELECT = [
   'mime_type',
 ].join(', ');
 
+const HR_DOCUMENT_TYPE_SELECT = 'id, source_item_id, name, category';
+
 export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
   administrative: 'Documents administratifs',
   certificate: 'Certificats',
@@ -187,6 +189,13 @@ interface HrDocumentRow {
   mime_type?: string | null;
 }
 
+interface HrDocumentTypeRow {
+  id: number;
+  source_item_id: number;
+  name: string;
+  category: string | null;
+}
+
 export interface PersonRecord {
   id: number;
   userId: string | null;
@@ -254,6 +263,15 @@ export interface HrDocumentRecord {
   mimeType: string;
 }
 
+export interface HrDocumentTypeOption {
+  id: number;
+  sourceItemId: number;
+  name: string;
+  fileName: string;
+  categoryKey: string;
+  categoryLabel: string;
+}
+
 export interface PersonCategorySummary {
   key: string;
   label: string;
@@ -305,6 +323,7 @@ export interface HumanResourcesDashboard {
 export interface HumanResourcesData {
   people: PersonRecord[];
   documents: HrDocumentRecord[];
+  documentTypes: HrDocumentTypeOption[];
   visibilityRules: HrVisibilityRule[];
 }
 
@@ -368,6 +387,16 @@ export type CreatePersonInput = Pick<UpdatePersonDetailsInput, CreatePersonRequi
 
 export interface RenewHrDocumentInput {
   document: HrDocumentRecord;
+  dueDate: string;
+  file: File;
+  medicalBridgeWatch?: boolean | null;
+  medicalRestriction?: string;
+  medicalUnfit?: boolean;
+  person: PersonRecord;
+}
+
+export interface CreateHrDocumentInput {
+  documentType: HrDocumentTypeOption;
   dueDate: string;
   file: File;
   medicalBridgeWatch?: boolean | null;
@@ -539,6 +568,28 @@ export function stripFileExtension(fileName: string): string {
   return (fileName || '').replace(/\.[^./\\]+$/, '');
 }
 
+function removeYearFromDocumentName(value: string): string {
+  const cleanedValue = (value || '')
+    .replace(/(?:\s*[-–—]\s*)?\b(?:19|20|21)\d{2}\b(?:\s*[-–—]\s*)?/g, ' ')
+    .replace(/^\s*[-–—]\s*/g, '')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return cleanedValue || value.trim();
+}
+
+export function getHrDocumentDisplayName(document: Pick<HrDocumentRecord, 'title'>): string {
+  const nameWithoutExtension = stripFileExtension(document.title);
+  const separatorIndex = nameWithoutExtension.indexOf(' - ');
+  const displayName =
+    separatorIndex >= 0
+      ? nameWithoutExtension.substring(separatorIndex + 3).trim() || nameWithoutExtension
+      : nameWithoutExtension;
+
+  return removeYearFromDocumentName(displayName);
+}
+
 function sanitizeFileNamePart(value: string): string {
   return (value || '')
     .replace(/[~"#%&*:<>?/\\{|}]/g, ' ')
@@ -558,9 +609,23 @@ export function buildGeneratedHrDocumentFileName(
   dueDate: string,
   originalFileName: string,
 ): string {
+  return buildGeneratedHrDocumentFileNameFromType(
+    person,
+    getHrDocumentDisplayName(document),
+    dueDate,
+    originalFileName,
+  );
+}
+
+export function buildGeneratedHrDocumentFileNameFromType(
+  person: PersonRecord,
+  documentTypeName: string,
+  dueDate: string,
+  originalFileName: string,
+): string {
   const parts = [
     sanitizeFileNamePart(formatPersonName(person)),
-    sanitizeFileNamePart(stripFileExtension(document.title)),
+    sanitizeFileNamePart(stripFileExtension(documentTypeName)),
     sanitizeFileNamePart(yearFromInputDate(dueDate)),
   ].filter(Boolean);
   const extension = getFileExtension(originalFileName);
@@ -577,6 +642,95 @@ function buildHrDocumentStoragePath(person: PersonRecord, fileName: string): str
     .trim();
 
   return `people/${person.id}/${storageFileName}`;
+}
+
+const HR_DOCUMENT_FILE_NAME_ALIASES = new Map<string, string>([
+  ['asn agent de surete du navire', 'ASN'],
+  ['caeers certificat d exploitation des embarcations et radeaux de sauvetage', 'CAEERS'],
+  ['cfbs certificat de formation de base a la securite', 'CFBS'],
+  ['cgo certificat general d operateur', 'CGO'],
+  ['cqali certificat de qualification avancee a la lutte contre l incendie', 'CQALI'],
+  ['cro certificat restreint d operateur', 'CRO'],
+  ['css certificat sensibilisation surete', 'CSS'],
+  ['ecdis cartes electroniques', 'ECDIS'],
+  ['enseignement medical de niveau i', 'EM I'],
+  ['enseignement medical de niveau ii', 'EM II'],
+  ['enseignement medical de niveau iii', 'EM III'],
+  ['formation de base a la securite', 'CFBS'],
+  ['certificat medical d aptitude a la navigation maritime', 'Visite Médicale'],
+]);
+
+function normalizeDocumentTypeName(value: string): string {
+  return normalizeSearchValue(value)
+    .replace(/[’']/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function resolveHrDocumentFileName(name: string): string {
+  return HR_DOCUMENT_FILE_NAME_ALIASES.get(normalizeDocumentTypeName(name)) || name.trim();
+}
+
+function resolveHrDocumentCategoryKey(categoryLabel: string): string {
+  const category = normalizeDocumentTypeName(categoryLabel);
+
+  if (category === 'pont') return 'deck';
+  if (category === 'machine') return 'engine';
+  if (category === 'formation de securite' || category === 'plan de formation') return 'safety_training';
+  if (category === 'visite medicale') return 'medical_visit';
+  if (category === 'ressources humaines') return 'administrative';
+  if (category === 'levage' || category === 'conduite d engin') return 'lifting';
+  if (category === 'safety induction') return 'safety_induction';
+
+  return 'certificate';
+}
+
+export function mapHrDocumentTypeRows(rows: HrDocumentTypeRow[]): HrDocumentTypeOption[] {
+  return rows
+    .map((row) => {
+      const categoryKey = resolveHrDocumentCategoryKey(nullableText(row.category));
+      return {
+        id: row.id,
+        sourceItemId: row.source_item_id,
+        name: row.name.trim(),
+        fileName: resolveHrDocumentFileName(row.name),
+        categoryKey,
+        categoryLabel: getHrDocumentCategoryLabel(categoryKey),
+      };
+    })
+    .filter((option) => Boolean(option.name))
+    .sort(
+      (left, right) =>
+        left.categoryLabel.localeCompare(right.categoryLabel, 'fr') || left.name.localeCompare(right.name, 'fr'),
+    );
+}
+
+function buildDocumentTypeFallback(documents: HrDocumentRecord[]): HrDocumentTypeOption[] {
+  const options = new Map<string, HrDocumentTypeOption>();
+
+  documents.forEach((document) => {
+    const name = getHrDocumentDisplayName(document);
+    const key = `${document.categoryKey}:${normalizeDocumentTypeName(name)}`;
+
+    if (!name || options.has(key)) {
+      return;
+    }
+
+    options.set(key, {
+      id: -(options.size + 1),
+      sourceItemId: 0,
+      name,
+      fileName: resolveHrDocumentFileName(name),
+      categoryKey: document.categoryKey,
+      categoryLabel: getHrDocumentCategoryLabel(document.categoryKey),
+    });
+  });
+
+  return Array.from(options.values()).sort(
+    (left, right) =>
+      left.categoryLabel.localeCompare(right.categoryLabel, 'fr') || left.name.localeCompare(right.name, 'fr'),
+  );
 }
 
 export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
@@ -869,6 +1023,21 @@ export async function fetchHrDocuments(client: SupabaseClient): Promise<HrDocume
   return mapHrDocumentRows((data || []) as unknown as HrDocumentRow[]);
 }
 
+export async function fetchHrDocumentTypes(client: SupabaseClient): Promise<HrDocumentTypeOption[]> {
+  const { data, error } = await client
+    .from('stcw_certificates')
+    .select(HR_DOCUMENT_TYPE_SELECT)
+    .eq('active', true)
+    .order('category', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return mapHrDocumentTypeRows((data || []) as unknown as HrDocumentTypeRow[]);
+}
+
 function mapHrVisibilityRules(rows: HrVisibilityRuleRow[]): HrVisibilityRule[] {
   return rows.map((row) => ({
     scope: row.scope,
@@ -919,13 +1088,19 @@ export async function saveHrVisibilityRules(
 }
 
 export async function fetchHumanResourcesData(client: SupabaseClient): Promise<HumanResourcesData> {
-  const [people, documents, visibilityRules] = await Promise.all([
+  const [people, documents, documentTypes, visibilityRules] = await Promise.all([
     fetchPeople(client),
     fetchHrDocuments(client),
+    fetchHrDocumentTypes(client).catch(() => []),
     fetchHrVisibilityRules(client).catch(() => []),
   ]);
 
-  return { people, documents, visibilityRules };
+  return {
+    people,
+    documents,
+    documentTypes: documentTypes.length > 0 ? documentTypes : buildDocumentTypeFallback(documents),
+    visibilityRules,
+  };
 }
 
 export async function createPerson(client: SupabaseClient, input: CreatePersonInput): Promise<PersonRecord> {
@@ -951,6 +1126,75 @@ export async function updatePersonActive(
   }
 
   return mapPersonRows([data as unknown as PersonRow])[0];
+}
+
+function isDuplicateStorageObjectError(error: { message?: string; statusCode?: string | number } | null): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const message = normalizeSearchValue(error.message || '');
+  return error.statusCode === 409 || message.includes('already exists') || message.includes('duplicate');
+}
+
+export async function createHrDocument(
+  client: SupabaseClient,
+  input: CreateHrDocumentInput,
+): Promise<HrDocumentRecord> {
+  const documentTypeName = input.documentType.fileName || input.documentType.name;
+  const fileName = buildGeneratedHrDocumentFileNameFromType(
+    input.person,
+    documentTypeName,
+    input.dueDate,
+    input.file.name,
+  );
+
+  if (!fileName) {
+    throw new Error('Le nom du nouveau document ne peut pas etre genere.');
+  }
+
+  const storagePath = buildHrDocumentStoragePath(input.person, fileName);
+  const { error: uploadError } = await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).upload(storagePath, input.file, {
+    contentType: input.file.type || undefined,
+    upsert: false,
+  });
+
+  if (uploadError) {
+    if (isDuplicateStorageObjectError(uploadError)) {
+      throw new Error(`Le fichier "${fileName}" existe deja. Modifiez le document ou la date d echeance.`);
+    }
+
+    throw uploadError;
+  }
+
+  const isMedicalVisit = input.documentType.categoryKey === 'medical_visit';
+  const payload = {
+    person_id: input.person.id,
+    person_name: formatPersonName(input.person),
+    category_key: input.documentType.categoryKey,
+    title: stripFileExtension(fileName),
+    status: statusFromDueDate(input.dueDate),
+    expires_on: input.dueDate,
+    requires_captain_validation: false,
+    source_label: 'supabase',
+    notes: null,
+    file_url: null,
+    storage_bucket: HR_DOCUMENT_STORAGE_BUCKET,
+    storage_path: storagePath,
+    file_size_bytes: input.file.size,
+    mime_type: input.file.type || null,
+    medical_restriction: isMedicalVisit ? optionalText(input.medicalRestriction) : null,
+    medical_bridge_watch: isMedicalVisit && !input.medicalUnfit ? input.medicalBridgeWatch ?? null : null,
+    medical_unfit: isMedicalVisit && input.medicalUnfit === true,
+  };
+  const { data, error } = await client.from('hr_documents').insert(payload).select(HR_DOCUMENT_SELECT).single();
+
+  if (error) {
+    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([storagePath]);
+    throw error;
+  }
+
+  return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
 }
 
 export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocumentInput): Promise<HrDocumentRecord> {
