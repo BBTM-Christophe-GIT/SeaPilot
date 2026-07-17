@@ -799,7 +799,7 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.dblClick(screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 20\/07\/2026/ }));
+    await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire complet');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
 
@@ -823,7 +823,7 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.dblClick(screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 20\/07\/2026/ }));
+    await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
     expect(screen.getByLabelText('Statut')).toHaveValue('A Terre');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({ status_label: 'A Terre' })));
@@ -1080,16 +1080,19 @@ describe('PlanningPage cockpit', () => {
     confirm.mockRestore();
   });
 
-  it('selects an empty fleet cell with a green marker and opens the full form only on double-click', async () => {
+  it('colors an empty fleet cell only on double-click without opening the full form', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
-    const emptyCell = screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 15\/07\/2026/ });
+    const emptyCell = screen.getByRole('button', { name: /Case vide de Paul DURAND le 15\/07\/2026.*Double-cliquer pour colorer la case/ });
     await user.click(emptyCell);
-    expect(emptyCell.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
+    expect(emptyCell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
     expect(screen.queryByText('Formulaire complet')).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('apply_planning_grid_cells', expect.anything());
+
+    await user.dblClick(emptyCell);
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
       p_cells: [expect.objectContaining({
         personId: 11,
@@ -1098,11 +1101,7 @@ describe('PlanningPage cockpit', () => {
         status: 'En Mer',
       })],
     }));
-
-    await user.dblClick(emptyCell);
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: 'Nouvelle affectation' })).toBeInTheDocument();
+    expect(screen.queryByText('Formulaire complet')).not.toBeInTheDocument();
     expect(container.querySelector('.planning-empty-cell-marker.is-default')).toBeInTheDocument();
   });
 
@@ -1135,28 +1134,30 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
-    const emptyCell = screen.getByRole('button', { name: /Sélectionner la case vide de Paul DURAND le 15\/07\/2026/ });
-    await user.click(emptyCell);
+    const emptyCell = screen.getByRole('button', { name: /Case vide de Paul DURAND le 15\/07\/2026/ });
+    await user.dblClick(emptyCell);
     expect(emptyCell.querySelector('.planning-empty-cell-marker.is-armement')).toBeInTheDocument();
   });
 
-  it('paints adjacent empty days and persists them in one batch on pointer release', async () => {
+  it('pans the calendar horizontally and vertically while the pointer is held', async () => {
     const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
-    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    const first = screen.getByRole('button', { name: /case vide de Paul DURAND le 15\/07\/2026/ });
-    const second = screen.getByRole('button', { name: /case vide de Paul DURAND le 16\/07\/2026/ });
+    const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
+    const emptyCell = screen.getByRole('button', { name: /Case vide de Paul DURAND le 15\/07\/2026/ });
+    calendar.scrollLeft = 120;
+    calendar.scrollTop = 40;
 
-    fireEvent.pointerDown(first, { button: 0, buttons: 1 });
-    fireEvent.pointerEnter(second, { buttons: 1 });
-    fireEvent.pointerUp(window, { button: 0 });
+    fireEvent.pointerDown(emptyCell, { button: 0, buttons: 1, pointerId: 7, clientX: 300, clientY: 260 });
+    expect(calendar).toHaveClass('is-panning');
+    fireEvent.pointerMove(window, { buttons: 1, pointerId: 7, clientX: 250, clientY: 200 });
+    expect(calendar.scrollLeft).toBe(170);
+    expect(calendar.scrollTop).toBe(100);
+    fireEvent.pointerUp(window, { button: 0, pointerId: 7, clientX: 250, clientY: 200 });
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
-      p_cells: [
-        expect.objectContaining({ workDate: '2026-07-15', status: 'En Mer' }),
-        expect.objectContaining({ workDate: '2026-07-16', status: 'En Mer' }),
-      ],
-    }));
+    expect(calendar).not.toHaveClass('is-panning');
+    expect(emptyCell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('apply_planning_grid_cells', expect.anything());
   });
 
   it('supports Ctrl+X and Ctrl+V between grid dates through the atomic move RPC', async () => {
@@ -1164,14 +1165,14 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
-    const target = screen.getByRole('button', { name: /case vide de Paul DURAND le 18\/07\/2026/ });
+    const target = screen.getByRole('button', { name: /Case vide de Paul DURAND le 18\/07\/2026/ });
 
-    fireEvent.pointerDown(source, { button: 0, ctrlKey: true });
+    fireEvent.click(source, { button: 0, ctrlKey: true });
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
     await screen.findByText(/1 case copiée/);
     fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
     await screen.findByText(/1 case coupée/);
-    fireEvent.pointerDown(target, { button: 0 });
+    fireEvent.click(target, { button: 0 });
     fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('move_planning_grid_cells', expect.objectContaining({
@@ -1187,7 +1188,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
-    fireEvent.pointerDown(source, { button: 0, ctrlKey: true });
+    fireEvent.click(source, { button: 0, ctrlKey: true });
     fireEvent.keyDown(window, { key: 'Delete' });
 
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', {
@@ -1312,7 +1313,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     const conflictCell = screen.getAllByRole('button', { name: /Conflit.*11\/07\/2026 pour Paul DURAND/ })[0];
 
-    fireEvent.pointerDown(conflictCell, { button: 0, ctrlKey: true });
+    fireEvent.click(conflictCell, { button: 0, ctrlKey: true });
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
     fireEvent.click(conflictCell, { button: 0, detail: 1 });
 

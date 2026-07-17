@@ -4,7 +4,7 @@
 
 - Les périodes historiques sans `planning_assignments.id` restent visibles avec leur couleur métier dans l’arborescence flotte. La barre n’est transparente que lorsqu’une grille quotidienne colorée la remplace réellement.
 - Le clic gauche sur une case en conflit ouvre le workflow de priorisation même après une opération copier/couper. Le clic droit, le double-clic, le déplacement et le redimensionnement restent inchangés.
-- La sélection continue au pointeur est regroupée par image d’animation afin d’éviter un nouveau rendu complet de la grille pour chaque case traversée.
+- La peinture continue au pointeur est remplacée par un double-clic unitaire sur les cases vides ; le glissement maintenu sert désormais au défilement horizontal et vertical de la grille.
 - Les calculs de couverture d’une ligne (jours occupés, navire et fonction) sont mémorisés entre les rendus.
 
 ## Catalogue STCW

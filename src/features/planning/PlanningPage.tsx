@@ -389,12 +389,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [collapsedFleetNodes, setCollapsedFleetNodes] = useState<Set<string>>(() => new Set());
   const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
   const [selectedGridCells, setSelectedGridCells] = useState<Map<string, PlanningGridCell>>(() => new Map());
+  const [isCalendarPanning, setIsCalendarPanning] = useState(false);
   const [gridClipboard, setGridClipboard] = useState<PlanningGridClipboard | null>(null);
   const [gridConflictForm, setGridConflictForm] = useState<PlanningGridConflictForm | null>(null);
   const [absences, setAbsences] = useState<PlanningAbsenceRecord[]>([]);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
-  const gridPaintRef = useRef<{ laneKey: string; cells: Map<string, PlanningGridCell> } | null>(null);
-  const gridPaintFrameRef = useRef<number | null>(null);
+  const calendarPanCleanupRef = useRef<(() => void) | null>(null);
+  const suppressCalendarClickRef = useRef(false);
+  const suppressCalendarClickTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -403,9 +405,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }, []);
 
   useEffect(() => () => {
-    if (gridPaintFrameRef.current === null) return;
-    if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(gridPaintFrameRef.current);
-    else window.clearTimeout(gridPaintFrameRef.current);
+    calendarPanCleanupRef.current?.();
+    if (suppressCalendarClickTimeoutRef.current !== null) window.clearTimeout(suppressCalendarClickTimeoutRef.current);
   }, []);
 
   const loadAbsences = useCallback(async (): Promise<boolean> => {
@@ -778,10 +779,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setGridConflictForm({ cell, events });
   }
 
-  function beginPlanningGridPaint(cell: PlanningGridCell, event: React.PointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || !canEditPlanning || isSaving) return;
-    event.preventDefault();
-    event.stopPropagation();
+  function selectPlanningGridCell(cell: PlanningGridCell, event: React.MouseEvent<HTMLButtonElement>): boolean {
+    if (!canEditPlanning || isSaving) return false;
     if (event.ctrlKey || event.metaKey) {
       setSelectedGridCells((current) => {
         const next = new Map(current);
@@ -789,59 +788,90 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         else next.set(cell.key, cell);
         return next;
       });
-      return;
+      return true;
     }
     if (gridClipboard) {
       setSelectedGridCells(new Map([[cell.key, cell]]));
       setStatusMessage("Destination sélectionnée. Utilisez Ctrl+V pour coller.");
-      return;
+      return true;
     }
-    if (cell.isConflict) return;
-    const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
-    const cells = new Map([[paintedCell.key, paintedCell]]);
-    gridPaintRef.current = { laneKey: cell.laneKey, cells };
-    setSelectedGridCells(new Map(cells));
+    return false;
+  }
+
+  async function colorPlanningGridCell(cell: PlanningGridCell) {
+    if (!canEditPlanning || isSaving || cell.isConflict) return;
+    const coloredCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
+    setSelectedGridCells(new Map([[coloredCell.key, coloredCell]]));
+    const saved = await persistPlanningGridCells([coloredCell], '1 case enregistrée.');
+    if (!saved) setSelectedGridCells(new Map());
+  }
+
+  function beginCalendarPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('.planning-day-cell, .planning-assignment-note-cell, .planning-day-heading, .planning-month-segment, .planning-week-segment')) return;
+
+    const scroller = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startScrollLeft = scroller.scrollLeft;
+    const startScrollTop = scroller.scrollTop;
+    let moved = false;
+
+    calendarPanCleanupRef.current?.();
+    suppressCalendarClickRef.current = false;
+    setIsCalendarPanning(true);
+
     const cleanup = () => {
+      window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', cancel);
+      if (calendarPanCleanupRef.current === cleanup) calendarPanCleanupRef.current = null;
     };
-    const finish = () => { cleanup(); void finishPlanningGridPaint(); };
-    const cancel = () => { cleanup(); gridPaintRef.current = null; };
-    window.addEventListener('pointerup', finish, { once: true });
-    window.addEventListener('pointercancel', cancel, { once: true });
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      const deltaX = pointerEvent.clientX - startX;
+      const deltaY = pointerEvent.clientY - startY;
+      if (!moved && Math.hypot(deltaX, deltaY) < 4) return;
+      moved = true;
+      pointerEvent.preventDefault();
+      scroller.scrollLeft = startScrollLeft - deltaX;
+      scroller.scrollTop = startScrollTop - deltaY;
+    };
+    const finish = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup();
+      setIsCalendarPanning(false);
+      if (!moved) return;
+      suppressCalendarClickRef.current = true;
+      if (suppressCalendarClickTimeoutRef.current !== null) window.clearTimeout(suppressCalendarClickTimeoutRef.current);
+      suppressCalendarClickTimeoutRef.current = window.setTimeout(() => {
+        suppressCalendarClickRef.current = false;
+        suppressCalendarClickTimeoutRef.current = null;
+      }, 0);
+    };
+    const cancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup();
+      setIsCalendarPanning(false);
+    };
+
+    calendarPanCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancel);
   }
 
-  function extendPlanningGridPaint(cell: PlanningGridCell) {
-    const paint = gridPaintRef.current;
-    if (!paint || paint.laneKey !== cell.laneKey || cell.isConflict || paint.cells.has(cell.key)) return;
-    const paintedCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
-    paint.cells.set(cell.key, paintedCell);
-    if (gridPaintFrameRef.current !== null) return;
-    const flushSelection = () => {
-      gridPaintFrameRef.current = null;
-      const currentPaint = gridPaintRef.current;
-      if (currentPaint) setSelectedGridCells(new Map(currentPaint.cells));
-    };
-    gridPaintFrameRef.current = typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame(flushSelection)
-      : window.setTimeout(flushSelection, 0);
-  }
-
-  async function finishPlanningGridPaint() {
-    const paint = gridPaintRef.current;
-    gridPaintRef.current = null;
-    if (!paint?.cells.size) return;
-    if (gridPaintFrameRef.current !== null) {
-      if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(gridPaintFrameRef.current);
-      else window.clearTimeout(gridPaintFrameRef.current);
-      gridPaintFrameRef.current = null;
-      setSelectedGridCells(new Map(paint.cells));
+  function suppressCalendarClickAfterPan(event: React.MouseEvent<HTMLDivElement>) {
+    if (!suppressCalendarClickRef.current) return;
+    suppressCalendarClickRef.current = false;
+    if (suppressCalendarClickTimeoutRef.current !== null) {
+      window.clearTimeout(suppressCalendarClickTimeoutRef.current);
+      suppressCalendarClickTimeoutRef.current = null;
     }
-    const cells = sortPlanningGridCells([...paint.cells.values()]);
-    await persistPlanningGridCells(
-      cells,
-      `${cells.length} case${cells.length > 1 ? 's' : ''} enregistrée${cells.length > 1 ? 's' : ''}.`,
-    );
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   async function deleteSelectedPlanningGridCells(reason = 'Suppression manuelle depuis la grille') {
@@ -1906,7 +1936,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             </div> : null}
           </div>
 
-          <div className="planning-calendar-scroll" data-planning-view-mode={viewMode} style={timelineStyle(effectiveDayWidth, days.length)} tabIndex={0}>
+          <div
+            className={`planning-calendar-scroll${isCalendarPanning ? ' is-panning' : ''}`}
+            data-planning-view-mode={viewMode}
+            onClickCapture={suppressCalendarClickAfterPan}
+            onPointerDown={beginCalendarPan}
+            style={timelineStyle(effectiveDayWidth, days.length)}
+            tabIndex={0}
+            title="Maintenez le clic et déplacez la souris pour parcourir le calendrier"
+          >
             <div className="planning-calendar-grid planning-calendar-months">
               <div className="planning-calendar-corner" />
               {monthSegments.map((segment) => (
@@ -2008,8 +2046,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                     onEditDayState={openDayState}
                     onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
-                    onGridCellPointerDown={beginPlanningGridPaint}
-                    onGridCellPointerEnter={extendPlanningGridPaint}
+                    onGridCellClick={selectPlanningGridCell}
+                    onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                     onDeleteEmptyRow={row.boardRowId && !row.hasAnyRecords ? () => void removeEmptyBoardRow(row.boardRowId!, row.label) : undefined}
                     onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                     onSelect={setSelectedTimelineId}
