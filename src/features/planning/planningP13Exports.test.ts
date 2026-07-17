@@ -17,7 +17,7 @@ const data: PlanningP13Data = {
 const check: PlanningWorkRestCheck = {
   id: '3:2026-08-04:rest_24h', personId: 3, personName: 'Anne MARTIN', vesselId: 2, vesselName: 'COTENTIN',
   date: '2026-08-04', policyId: 1, policyName: 'Interne', ruleCode: 'rest_24h', ruleLabel: 'Repos sur 24 heures',
-  value: 10, threshold: 11, unit: 'hours', status: 'non_compliant', detail: 'Repos insuffisant', derogationId: null, dataSource: 'test',
+  value: 10, threshold: 11, unit: 'hours', status: 'non_compliant', detail: 'Repos insuffisant', dataSource: 'test',
 };
 
 const context = { overview, data, checks: [check], startsOn: '2026-08-01', endsOn: '2026-08-31' };

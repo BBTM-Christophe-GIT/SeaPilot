@@ -771,12 +771,20 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getAllByText(/Direction BBTM/).length).toBeGreaterThan(0);
   });
 
-  it('blocks an assignment when the medical validity ends before disembarkation', async () => {
+  it('shows an expired-document icon on affected cells without blocking the assignment', async () => {
     const user = userEvent.setup();
-    const { client, insertAssignment } = createClient({ assignments: [], hrDocuments: [medicalDocumentRow] });
-    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const { client, insertAssignment } = createClient({
+      assignments: [{ ...assignmentOverviewRow, ends_on: '2026-07-26' }],
+      hrDocuments: [medicalDocumentRow],
+    });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    const expiredCell = screen.getByRole('button', { name: /Document échu : Visite médicale depuis le 15\/07\/2026.*16\/07\/2026 pour Paul DURAND/ });
+    expect(expiredCell).toHaveClass('has-expired-document');
+    expect(expiredCell.querySelector('.planning-expired-document-icon')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 15/07/2026 pour Paul DURAND' })).not.toHaveClass('has-expired-document');
+
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.click(screen.getByRole('button', { name: 'Créer une affectation' }));
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
@@ -784,11 +792,10 @@ describe('PlanningPage cockpit', () => {
     fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
     fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
 
-    expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Aptitude médicale non valide');
-    expect(screen.getByLabelText('Contrôles avant enregistrement')).toHaveTextContent('Blocage');
+    expect(screen.queryByText('Aptitude médicale non valide')).not.toBeInTheDocument();
+    expect(container.querySelector('.planning-derogation-action')).not.toBeInTheDocument();
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
-    expect(insertAssignment).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/Aptitude médicale non valide/).length).toBeGreaterThan(1);
+    await waitFor(() => expect(insertAssignment).toHaveBeenCalled());
   });
 
   it('adds a one-day sea assignment by double-clicking an empty sailor cell', async () => {

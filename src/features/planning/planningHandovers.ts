@@ -128,12 +128,7 @@ export function buildPlanningHandoverComparison(
       startsAt: incomingAssignment?.startsAt,
       endsAt: incomingAssignment?.endsAt,
     }, eventPool);
-    const documentIssues = controls.filter((control) => [
-      'expired_medical',
-      'expired_credential',
-      'credential_expires_during_assignment',
-      'pending_validation',
-    ].includes(control.code));
+    const documentIssues = controls.filter((control) => control.code === 'pending_validation');
     const qualificationIssues = controls.filter((control) => control.code === 'missing_qualification');
     const noncompliant = controls.some((control) => control.level === 'blocking' || control.level === 'warning');
     let status: PlanningHandoverComparisonStatus = 'replaced';

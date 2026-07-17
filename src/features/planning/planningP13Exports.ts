@@ -76,9 +76,9 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
   if (kind === 'work_rest') {
     return [{
       name: 'Travail et repos',
-      columns: ['Marin', 'Navire', 'Date', 'Politique', 'Contrôle', 'Valeur', 'Seuil', 'Unité', 'Résultat', 'Dérogation', 'Source'],
+      columns: ['Marin', 'Navire', 'Date', 'Politique', 'Contrôle', 'Valeur', 'Seuil', 'Unité', 'Résultat', 'Source'],
       rows: checks.filter((check) => check.date >= startsOn && check.date <= endsOn).map((check) => [
-        check.personName, check.vesselName, check.date, check.policyName, check.ruleLabel, check.value ?? '', check.threshold ?? '', check.unit, check.status, check.derogationId || '', check.dataSource,
+        check.personName, check.vesselName, check.date, check.policyName, check.ruleLabel, check.value ?? '', check.threshold ?? '', check.unit, check.status, check.dataSource,
       ]),
     }];
   }

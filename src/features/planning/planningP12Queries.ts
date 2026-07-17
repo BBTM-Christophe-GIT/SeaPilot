@@ -89,7 +89,6 @@ export interface UpdatePlanningConflictCaseInput {
   priority: PlanningConflictPriority;
   status: PlanningConflictStatus;
   comment: string;
-  derogationId: number | null;
 }
 
 function planningExclusiveEndDate(value: string): string {
@@ -254,11 +253,11 @@ export function ensurePlanningConflictCase(client: SupabaseClient, detected: Pla
 
 export function updatePlanningConflictCase(client: SupabaseClient, input: UpdatePlanningConflictCaseInput): Promise<number> {
   const comment = input.comment.trim();
-  if (['resolved', 'dismissed', 'derogated'].includes(input.status) && comment.length < 3) {
-    throw new Error('Un commentaire d’au moins 3 caractères est obligatoire pour clore un conflit.');
+  if (input.status === 'derogated') {
+    throw new Error('Le classement par dérogation n’est plus disponible.');
   }
-  if (input.status === 'derogated' && !input.derogationId) {
-    throw new Error('Sélectionnez une dérogation active avant de classer le conflit en dérogation.');
+  if (['resolved', 'dismissed'].includes(input.status) && comment.length < 3) {
+    throw new Error('Un commentaire d’au moins 3 caractères est obligatoire pour clore un conflit.');
   }
   return callRpc(client, 'update-conflict-case', 'Impossible de traiter le conflit.', 'update_planning_conflict_case', {
     p_case_id: planningEntityId(input.caseId, 'Le dossier de conflit'),
@@ -266,6 +265,6 @@ export function updatePlanningConflictCase(client: SupabaseClient, input: Update
     p_priority: input.priority,
     p_status: input.status,
     p_comment: comment || null,
-    p_derogation_id: input.status === 'derogated' ? input.derogationId : null,
+    p_derogation_id: null,
   });
 }

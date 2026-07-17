@@ -90,7 +90,7 @@ export type PlanningWorkRestRuleCode =
   | 'rest_periods'
   | 'night_work';
 
-export type PlanningWorkRestStatus = 'compliant' | 'non_compliant' | 'derogated' | 'not_evaluable';
+export type PlanningWorkRestStatus = 'compliant' | 'non_compliant' | 'not_evaluable';
 
 export interface PlanningWorkRestCheck {
   id: string;
@@ -108,7 +108,6 @@ export interface PlanningWorkRestCheck {
   unit: 'hours' | 'periods';
   status: PlanningWorkRestStatus;
   detail: string;
-  derogationId: number | null;
   dataSource: string;
 }
 
@@ -196,22 +195,6 @@ function policyForDate(
   return selected;
 }
 
-function activeDerogation(
-  overview: PlanningOverview,
-  personId: number,
-  vesselId: number | null,
-  date: string,
-  ruleCode: PlanningWorkRestRuleCode,
-) {
-  const ruleIds = new Set(overview.rules.filter((rule) => rule.code === ruleCode).map((rule) => rule.id));
-  return overview.derogations.find((derogation) => derogation.status === 'active'
-    && derogation.personId === personId
-    && (!vesselId || derogation.vesselId === vesselId)
-    && ruleIds.has(derogation.ruleId)
-    && derogation.startsAt.slice(0, 10) <= date
-    && derogation.endsAt.slice(0, 10) >= date) || null;
-}
-
 function rounded(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -234,23 +217,19 @@ function handoverHoursByPersonAndDate(overview: PlanningOverview): Map<string, n
   return result;
 }
 
-function makeCheck(input: Omit<PlanningWorkRestCheck, 'id' | 'ruleLabel' | 'status' | 'derogationId'> & {
+function makeCheck(input: Omit<PlanningWorkRestCheck, 'id' | 'ruleLabel' | 'status'> & {
   compliant: boolean | null;
-  derogationId?: number | null;
 }): PlanningWorkRestCheck {
   const status: PlanningWorkRestStatus = input.compliant === null
     ? 'not_evaluable'
     : input.compliant
       ? 'compliant'
-      : input.derogationId
-        ? 'derogated'
-        : 'non_compliant';
+      : 'non_compliant';
   return {
     ...input,
     id: `${input.personId}:${input.date}:${input.ruleCode}`,
     ruleLabel: RULE_LABELS[input.ruleCode],
     status,
-    derogationId: input.derogationId || null,
   };
 }
 
@@ -331,9 +310,6 @@ export function buildPlanningWorkRestChecks(
     ];
 
     for (const definition of definitions) {
-      const derogation = definition.compliant === false
-        ? activeDerogation(overview, personId, day.vesselId, day.workDate, definition.code)
-        : null;
       checks.push(makeCheck({
         ...base,
         ruleCode: definition.code,
@@ -342,7 +318,6 @@ export function buildPlanningWorkRestChecks(
         unit: definition.unit,
         compliant: definition.compliant,
         detail: definition.detail,
-        derogationId: derogation?.id || null,
       }));
     }
   }

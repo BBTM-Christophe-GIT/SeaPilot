@@ -13,7 +13,6 @@ describe('planning permissions', () => {
       canArchivePublication: false,
       canManageVessels: false,
       canManageHandovers: false,
-      canManageDerogations: true,
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
@@ -39,7 +38,6 @@ describe('planning permissions', () => {
       canValidatePublication: false,
       canPublishPublication: true,
       canManageHandovers: true,
-      canManageDerogations: false,
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
@@ -117,7 +115,6 @@ describe('planning permissions', () => {
       canArchivePublication: false,
       canManageVessels: true,
       canManageHandovers: true,
-      canManageDerogations: true,
       canManageRotations: true,
       canManageTemplates: true,
       canManageManning: true,
@@ -140,7 +137,6 @@ describe('planning permissions', () => {
     const permissions = getPlanningPermissions(['admin'], true);
     expect(permissions.canEditEvents).toBe(true);
     expect(permissions.canManageHandovers).toBe(true);
-    expect(permissions.canManageDerogations).toBe(true);
     expect(permissions.canManageRotations).toBe(true);
     expect(permissions.canManageTemplates).toBe(true);
     expect(permissions.canManageManning).toBe(true);

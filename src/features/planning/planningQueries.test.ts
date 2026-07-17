@@ -4,7 +4,6 @@ import {
   applyPlanningGridCells,
   createPlanningAssignment,
   createPlanningBoardAssignments,
-  createPlanningDerogation,
   createPlanningProject,
   createVessel,
   deletePlanningBoardRow,
@@ -1049,48 +1048,5 @@ describe('planning writes', () => {
 
     await expect(deletePlanningBoardRow({ rpc } as never, 77)).resolves.toBeUndefined();
     expect(rpc).toHaveBeenNthCalledWith(2, 'delete_planning_board_row', { p_row_id: 77 });
-  });
-
-  it('creates an attributed and bounded derogation payload', async () => {
-    const row = {
-      id: 88,
-      rule_id: 4,
-      assignment_id: 100,
-      person_id: 11,
-      vessel_id: 1,
-      reason: 'Dérogation validée par la direction maritime',
-      starts_at: '2026-07-20T06:00:00.000Z',
-      ends_at: '2026-07-26T18:00:00.000Z',
-      evidence_url: null,
-      status: 'active',
-      author_id: '00000000-0000-0000-0000-000000000001',
-      author_name: 'Admin SeaPilot',
-      created_at: '2026-07-13T20:00:00.000Z',
-      updated_at: '2026-07-13T20:00:00.000Z',
-    };
-    const single = vi.fn().mockResolvedValue({ data: row, error: null });
-    const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
-    const from = vi.fn().mockReturnValue({ insert });
-
-    await expect(createPlanningDerogation({ from } as never, {
-      ruleId: '4',
-      assignmentId: 100,
-      personId: '11',
-      vesselId: '1',
-      reason: ' Dérogation validée par la direction maritime ',
-      startsAt: '2026-07-20T08:00',
-      endsAt: '2026-07-26T20:00',
-    })).resolves.toEqual(expect.objectContaining({ id: 88, authorName: 'Admin SeaPilot', status: 'active' }));
-
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      rule_id: 4,
-      assignment_id: 100,
-      person_id: 11,
-      vessel_id: 1,
-      reason: 'Dérogation validée par la direction maritime',
-      starts_at: '2026-07-20T06:00:00.000Z',
-      ends_at: '2026-07-26T18:00:00.000Z',
-      status: 'active',
-    }));
   });
 });

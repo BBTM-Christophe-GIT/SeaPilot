@@ -1,4 +1,4 @@
-import { ArrowRight, ClipboardCheck, Plus, ShieldAlert, Trash2, X } from 'lucide-react';
+import { ArrowRight, ClipboardCheck, Plus, Trash2, X } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { formatPlanningDate, formatPlanningDateTime, utcToPlanningLocalDateTime } from './planningDates';
 import {
@@ -9,9 +9,7 @@ import {
 } from './planningHandovers';
 import { formatPlanningPerson } from './planningModel';
 import type {
-  CreatePlanningDerogationInput,
   PlanningAssignmentRecord,
-  PlanningDerogationRecord,
   PlanningHandoverRecord,
   PlanningHandoverStatus,
   PlanningOverview,
@@ -40,7 +38,6 @@ function assignmentPeriod(assignment: PlanningAssignmentRecord): string {
   }
   return `${formatPlanningDate(assignment.startsOn)} – ${formatPlanningDate(assignment.endsOn)}`;
 }
-
 export function PlanningAssignmentDetailView({
   mode,
   overview,
@@ -106,7 +103,6 @@ export function PlanningAssignmentDetailView({
     </div>
   );
 }
-
 const EMPTY_POSITION: SavePlanningHandoverPositionInput = {
   functionLabel: 'Équipage',
   outgoingPersonId: '',
@@ -185,7 +181,6 @@ export function PlanningHandoverDialog({ overview, handover, editable, isSaving,
     </div>
   );
 }
-
 function PlanningHandoverComparison({ rows }: { rows: ReturnType<typeof buildPlanningHandoverComparison> }) {
   return (
     <section className="planning-handover-comparison">
@@ -195,53 +190,4 @@ function PlanningHandoverComparison({ rows }: { rows: ReturnType<typeof buildPla
       </tbody></table></div>
     </section>
   );
-}
-
-export function PlanningDerogationDialog({ overview, prefill, isSaving, onClose, onSave }: {
-  overview: PlanningOverview;
-  prefill: Partial<CreatePlanningDerogationInput>;
-  isSaving: boolean;
-  onClose: () => void;
-  onSave: (input: CreatePlanningDerogationInput) => void;
-}) {
-  const [form, setForm] = useState<CreatePlanningDerogationInput>({
-    ruleId: prefill.ruleId || '',
-    assignmentId: prefill.assignmentId || null,
-    personId: prefill.personId || '',
-    vesselId: prefill.vesselId || '',
-    reason: '',
-    startsAt: prefill.startsAt || '',
-    endsAt: prefill.endsAt || '',
-    evidenceUrl: '',
-  });
-  return (
-    <div className="planning-dialog-backdrop is-side-panel" role="presentation">
-      <form aria-modal="true" className="planning-dialog is-side-panel" onSubmit={(event) => { event.preventDefault(); onSave(form); }} role="dialog">
-        <header><div><ShieldAlert aria-hidden="true" size={20} /><span><small>Exception contrôlée</small><h2>Enregistrer une dérogation</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-        <div className="planning-dialog-grid">
-          <label className="is-wide">Règle<select required value={form.ruleId} onChange={(event) => setForm((current) => ({ ...current, ruleId: event.target.value }))}><option value="">Choisir</option>{overview.rules.filter((rule) => rule.active).map((rule) => <option key={rule.id} value={rule.id}>{rule.name} · {rule.controlLevel}</option>)}</select></label>
-          <label>Marin<select required value={form.personId} onChange={(event) => setForm((current) => ({ ...current, personId: event.target.value }))}><option value="">Choisir</option>{overview.people.map((person) => <option key={person.id} value={person.id}>{formatPlanningPerson(person)}</option>)}</select></label>
-          <label>Navire<select required value={form.vesselId} onChange={(event) => setForm((current) => ({ ...current, vesselId: event.target.value }))}><option value="">Choisir</option>{overview.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
-          <label>Début<input required type="datetime-local" value={form.startsAt} onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))} /></label>
-          <label>Fin<input required type="datetime-local" value={form.endsAt} onChange={(event) => setForm((current) => ({ ...current, endsAt: event.target.value }))} /></label>
-          <label className="is-wide">Motif<textarea minLength={10} required value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} /></label>
-          <label className="is-wide">Justificatif éventuel<input placeholder="https://…" type="url" value={form.evidenceUrl} onChange={(event) => setForm((current) => ({ ...current, evidenceUrl: event.target.value }))} /></label>
-        </div>
-        <p className="planning-dialog-note">L’auteur et chaque modification sont enregistrés automatiquement côté serveur.</p>
-        <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la dérogation</button></footer>
-      </form>
-    </div>
-  );
-}
-
-export function PlanningDerogationList({ overview, editable, onRevoke }: {
-  overview: PlanningOverview;
-  editable: boolean;
-  onRevoke: (derogation: PlanningDerogationRecord) => void;
-}) {
-  return <div className="planning-side-list">{overview.derogations.length ? overview.derogations.map((derogation) => {
-    const rule = overview.rules.find((item) => item.id === derogation.ruleId);
-    const person = overview.people.find((item) => item.id === derogation.personId);
-    return <article className="planning-side-item" key={derogation.id}><div><strong>{rule?.name || `Règle #${derogation.ruleId}`}</strong><span className={`planning-side-badge is-${derogation.status === 'active' ? 'warning' : 'muted'}`}>{derogation.status === 'active' ? 'Active' : 'Révoquée'}</span></div><p>{person ? formatPlanningPerson(person) : `Marin #${derogation.personId}`} · {derogation.reason}</p><small>{derogation.authorName} · {formatPlanningDateTime(derogation.createdAt)} · {overview.derogationHistory.filter((item) => item.derogationId === derogation.id).length} entrée(s) d’historique</small>{editable && derogation.status === 'active' ? <button className="planning-text-danger" onClick={() => onRevoke(derogation)} type="button">Révoquer</button> : null}</article>;
-  }) : <p className="planning-muted-copy">Aucune dérogation enregistrée.</p>}</div>;
 }

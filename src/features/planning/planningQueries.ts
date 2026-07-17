@@ -772,17 +772,6 @@ export interface SavePlanningHandoverInput {
   positions: SavePlanningHandoverPositionInput[];
 }
 
-export interface CreatePlanningDerogationInput {
-  ruleId: string;
-  assignmentId?: number | null;
-  personId: string;
-  vesselId: string;
-  reason: string;
-  startsAt: string;
-  endsAt: string;
-  evidenceUrl?: string;
-}
-
 export function formatPlanningPersonName(person: PlanningPerson): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
 }
@@ -1396,7 +1385,7 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers, derogationData] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
@@ -1410,7 +1399,6 @@ export async function fetchPlanningOverview(
     fetchPlanningVersions(client),
     fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
-    fetchPlanningDerogations(client),
   ]);
 
   return {
@@ -1428,8 +1416,8 @@ export async function fetchPlanningOverview(
     versions,
     history,
     handovers,
-    derogations: derogationData.derogations,
-    derogationHistory: derogationData.history,
+    derogations: [],
+    derogationHistory: [],
   };
 }
 
@@ -1927,46 +1915,6 @@ export async function savePlanningHandover(client: SupabaseClient, input: SavePl
   const id = Number(data);
   if (!Number.isSafeInteger(id) || id <= 0) throw new Error('La relève enregistrée n’a pas renvoyé un identifiant valide.');
   return id;
-}
-
-export async function createPlanningDerogation(
-  client: SupabaseClient,
-  input: CreatePlanningDerogationInput,
-): Promise<PlanningDerogationRecord> {
-  const ruleId = planningEntityId(input.ruleId, 'La règle');
-  const personId = planningEntityId(input.personId, 'Le marin');
-  const vesselId = planningEntityId(input.vesselId, 'Le navire');
-  const reason = requiredPlanningText(input.reason, 'Le motif');
-  if (reason.length < 10) throw new Error('Le motif de dérogation doit contenir au moins 10 caractères.');
-  assertPlanningDateTimeRange(input.startsAt, input.endsAt);
-  const { data, error } = await client
-    .from('planning_derogations')
-    .insert({
-      rule_id: ruleId,
-      assignment_id: input.assignmentId ?? null,
-      person_id: personId,
-      vessel_id: vesselId,
-      reason,
-      starts_at: planningLocalDateTimeToUtc(input.startsAt),
-      ends_at: planningLocalDateTimeToUtc(input.endsAt),
-      evidence_url: input.evidenceUrl?.trim() || null,
-      status: 'active',
-    })
-    .select(PLANNING_DEROGATION_SELECT)
-    .single();
-  if (error) throwPlanningDataError('create-derogation', 'Impossible d’enregistrer cette dérogation.', error);
-  const derogation = mapPlanningDerogationRows([data as unknown as PlanningDerogationRow])[0];
-  if (!derogation) throw new Error('La dérogation enregistrée n’a pas pu être relue.');
-  return derogation;
-}
-
-export async function revokePlanningDerogation(client: SupabaseClient, derogationId: number): Promise<void> {
-  const id = planningEntityId(derogationId, 'La dérogation');
-  const { error } = await client
-    .from('planning_derogations')
-    .update({ status: 'revoked', updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throwPlanningDataError('revoke-derogation', 'Impossible de révoquer cette dérogation.', error);
 }
 
 export async function archivePlanningVessel(client: SupabaseClient, vesselId: number): Promise<void> {

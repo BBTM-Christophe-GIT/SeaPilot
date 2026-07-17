@@ -15,7 +15,6 @@ export interface PlanningPermissions {
   canViewHistory: boolean;
   canManageVessels: boolean;
   canManageHandovers: boolean;
-  canManageDerogations: boolean;
   canManageRotations: boolean;
   canManageTemplates: boolean;
   canManageManning: boolean;
@@ -54,7 +53,6 @@ export function getPlanningPermissions(roles: RoleKey[], legacyLockState = false
     canViewHistory: canEdit,
     canManageVessels: isAdmin,
     canManageHandovers: isAdmin || isArmement,
-    canManageDerogations: isAdmin || isDirection,
     canManageRotations: canEdit,
     canManageTemplates: canEdit,
     canManageManning: canEdit,
