@@ -1629,10 +1629,10 @@ button:disabled {
 .hr-mode-write,
 .hr-mode-read {
   display: inline-flex;
-  min-height: 30px;
+  min-height: 34px;
   align-items: center;
-  border-radius: 6px;
-  padding: 0 10px;
+  border-radius: 8px;
+  padding: 0 12px;
   font-size: 0.82rem;
   font-weight: 800;
 }
@@ -6359,11 +6359,16 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 15px 16px 10px;
+  padding: 17px 16px 12px;
 }
 
 .hr-roster-heading h2 {
-  font-size: 1.08rem;
+  font-size: 1.14rem;
+}
+
+.hr-roster-heading p {
+  margin-top: 4px;
+  font-size: 0.78rem;
 }
 
 .hr-roster-panel .hr-filter-panel {
@@ -6398,6 +6403,7 @@ button:disabled {
 .hr-group-heading {
   display: flex;
   width: 100%;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -6494,24 +6500,165 @@ button:disabled {
 
 .hr-master-detail-layout {
   display: grid;
-  grid-template-columns: minmax(290px, 1fr) minmax(0, 2fr);
+  grid-template-columns: minmax(500px, 1fr) minmax(0, 1.1fr);
   gap: 14px;
   align-items: start;
 }
 
 .hr-master-detail-layout .hr-roster-panel .hr-filter-panel {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+  gap: 11px;
+  align-items: stretch;
+  border-top: 0;
+  padding: 14px 16px 16px;
 }
 
 .hr-master-detail-layout .hr-roster-panel .hr-search-field {
-  grid-column: 1 / -1;
+  grid-column: auto;
+  gap: 0;
 }
 
-.hr-master-detail-layout .hr-roster-panel .hr-filter-collaborator {
-  grid-column: 1 / -1;
+.hr-master-detail-layout .hr-roster-panel .hr-search-field input {
+  min-height: 42px;
+  background: #ffffff;
+  font-weight: 400;
 }
 
-.hr-master-detail-layout .hr-roster-panel .hr-inline-control {
+.hr-master-detail-layout .hr-roster-panel .hr-search-field input::placeholder {
+  color: #6d7d92;
+  opacity: 1;
+}
+
+.hr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hr-filter-summary-row {
+  display: grid;
+  min-width: 0;
+  min-height: 50px;
+  grid-template-columns: minmax(0, 1fr) auto 38px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #cfe0fa;
+  border-radius: 8px;
+  background: #f7faff;
+}
+
+.hr-filter-disclosure,
+.hr-filter-chevron,
+.hr-population-shortcut {
+  min-height: 48px;
+  border: 0;
+  color: #18365f;
+  background: transparent;
+}
+
+.hr-filter-disclosure {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.hr-filter-disclosure > svg {
+  color: #1d5798;
+}
+
+.hr-filter-disclosure strong {
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.hr-filter-count {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid #b8d0f4;
+  border-radius: 6px;
+  color: #1761c5;
+  background: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.hr-filter-summary {
+  overflow: hidden;
+  padding-left: 8px;
+  color: #425675;
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-population-shortcut {
+  position: relative;
+  padding: 0 13px;
+  color: #1769e8;
+  font-size: 0.76rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.hr-population-shortcut::before {
+  position: absolute;
+  top: 11px;
+  bottom: 11px;
+  left: 0;
+  width: 1px;
+  background: #d7e4f5;
+  content: '';
+}
+
+.hr-filter-chevron {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.hr-filter-chevron svg {
+  transition: transform 160ms ease;
+}
+
+.hr-filter-chevron svg.is-open {
+  transform: rotate(180deg);
+}
+
+.hr-filter-disclosure:hover,
+.hr-filter-chevron:hover,
+.hr-population-shortcut:hover {
+  background: #eef5ff;
+}
+
+.hr-filter-disclosure:focus-visible,
+.hr-filter-chevron:focus-visible,
+.hr-population-shortcut:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid rgba(23, 105, 232, 0.2);
+  outline-offset: -3px;
+}
+
+.hr-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  border-top: 1px solid #e3eaf3;
+  padding-top: 12px;
+}
+
+.hr-filter-fields .hr-filter-collaborator {
   grid-column: 1 / -1;
 }
 
@@ -6558,8 +6705,8 @@ button:disabled {
 .hr-person-compact-row {
   display: grid;
   width: 100%;
-  min-height: 48px;
-  grid-template-columns: 30px minmax(0, 1fr) 42px 56px 16px;
+  min-height: 58px;
+  grid-template-columns: 34px minmax(0, 1fr) 42px 58px 16px;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -6586,8 +6733,8 @@ button:disabled {
 
 .hr-person-mini-avatar {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border-radius: 50%;
   color: #2164ce;
@@ -6597,38 +6744,15 @@ button:disabled {
 }
 
 .hr-person-compact-name {
-  display: flex;
+  display: block;
   min-width: 0;
-  align-items: center;
-  gap: 7px;
 }
 
 .hr-person-compact-name strong {
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.hr-person-compact-name small {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #67778f;
-  font-size: 0.62rem;
-  font-weight: 750;
-}
-
-.hr-person-compact-name small::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #1aa866;
-  content: '';
-}
-
-.hr-person-compact-name small.is-inactive::before {
-  background: #9aa7b8;
 }
 
 .hr-person-compact-metric {
@@ -7456,6 +7580,22 @@ button:disabled {
   .hr-master-detail-layout .hr-roster-panel .hr-filter-panel,
   .hr-profile-info-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hr-filter-summary {
+    display: none;
+  }
+
+  .hr-filter-disclosure {
+    grid-template-columns: auto auto auto;
+  }
+
+  .hr-filter-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-filter-fields .hr-filter-collaborator {
+    grid-column: auto;
   }
 
   .hr-person-compact-row {

@@ -47,7 +47,7 @@ const activePerson = {
   active: true,
 };
 
-const inactivePerson = {
+const formerPerson = {
   ...activePerson,
   id: 2,
   user_id: null,
@@ -57,6 +57,18 @@ const inactivePerson = {
   function_label: 'Matelot Polyvalent',
   grade_label: 'Matelot',
   sailor_number: '2011111',
+  departed_on: '2000-01-01',
+  active: true,
+};
+
+const futureDeparturePerson = {
+  ...activePerson,
+  id: 4,
+  user_id: null,
+  first_name: 'Luc',
+  last_name: 'AVENIR',
+  email: 'luc@example.test',
+  departed_on: '2999-12-31',
   active: false,
 };
 
@@ -162,7 +174,7 @@ function createDocumentsSelect(data: HrDocumentFixture[] = documents) {
   };
 }
 
-function createClient(people = [activePerson, inactivePerson], hrDocuments: HrDocumentFixture[] = documents) {
+function createClient(people: Array<Record<string, unknown>> = [activePerson, formerPerson], hrDocuments: HrDocumentFixture[] = documents) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'people') {
@@ -287,10 +299,11 @@ describe('HumanResourcesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Lea BUREAU' }));
     expect(screen.getByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Afficher les filtres' }));
     await user.selectOptions(screen.getByLabelText('Collaborateur'), '1');
-    await user.selectOptions(screen.getByLabelText('Categories'), 'medical_visit');
+    await user.selectOptions(screen.getByLabelText('Catégories'), 'medical_visit');
     await user.selectOptions(screen.getByLabelText('Statut'), 'renew_due');
-    await user.selectOptions(screen.getByLabelText('Echeances'), 'renewal_due');
+    await user.selectOptions(screen.getByLabelText('Échéances'), 'renewal_due');
 
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByText('Lea BUREAU')).not.toBeInTheDocument();
@@ -302,20 +315,25 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
   });
 
-  it('filters the RH dashboard by search and can show inactive collaborators', async () => {
+  it('uses departure dates for the roster and can switch to former collaborators', async () => {
     const user = userEvent.setup();
 
-    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+    render(<HumanResourcesPage client={createClient([activePerson, formerPerson, futureDeparturePerson]) as never} roles={['admin']} />);
 
-    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+    const currentPersonRow = await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+    expect(screen.getByRole('button', { name: 'Afficher la fiche de Luc AVENIR' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Afficher la fiche de Paul DURAND' })).not.toBeInTheDocument();
+    expect(within(currentPersonRow).queryByText('Actif')).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText('Recherche RH'), { target: { value: 'durand' } });
 
     expect(screen.queryByText('Jean MARTIN')).not.toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: 'Afficher les inactifs' }));
+    await user.click(screen.getByRole('button', { name: 'Voir les anciens' }));
 
-    expect(screen.getByText('Paul DURAND')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Afficher la fiche de Paul DURAND' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Voir les personnes en poste' })).toBeInTheDocument();
   });
 
   it('opens a structured personnel file with Dashboard sections', async () => {
