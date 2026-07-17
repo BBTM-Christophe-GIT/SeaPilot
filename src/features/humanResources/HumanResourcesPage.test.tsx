@@ -405,6 +405,7 @@ describe('HumanResourcesPage', () => {
         source_item_id: 25,
         name: 'CFBS - Certificat de Formation de Base à la Sécurité',
         category: 'Formation de Sécurité',
+        file_name: 'CFBS',
       },
     ];
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });

@@ -285,6 +285,7 @@ describe('HR document naming and catalogue', () => {
           source_item_id: 25,
           name: 'CFBS - Certificat de Formation de Base à la Sécurité',
           category: 'Formation de Sécurité',
+          file_name: 'CFBS SharePoint',
         },
         {
           id: 37,
@@ -300,7 +301,7 @@ describe('HR document naming and catalogue', () => {
         },
       ]),
     ).toEqual([
-      expect.objectContaining({ categoryKey: 'safety_training', fileName: 'CFBS', sourceItemId: 25 }),
+      expect.objectContaining({ categoryKey: 'safety_training', fileName: 'CFBS SharePoint', sourceItemId: 25 }),
       expect.objectContaining({ categoryKey: 'safety_training', fileName: 'CFBS', sourceItemId: 56 }),
       expect.objectContaining({ categoryKey: 'medical_visit', fileName: 'Visite Médicale', sourceItemId: 37 }),
     ]);

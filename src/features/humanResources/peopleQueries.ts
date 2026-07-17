@@ -68,7 +68,7 @@ const HR_DOCUMENT_SELECT = [
   'mime_type',
 ].join(', ');
 
-const HR_DOCUMENT_TYPE_SELECT = 'id, source_item_id, name, category';
+const HR_DOCUMENT_TYPE_SELECT = 'id, source_item_id, name, category, file_name';
 
 export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
   administrative: 'Documents administratifs',
@@ -194,6 +194,7 @@ interface HrDocumentTypeRow {
   source_item_id: number;
   name: string;
   category: string | null;
+  file_name?: string | null;
 }
 
 export interface PersonRecord {
@@ -694,7 +695,7 @@ export function mapHrDocumentTypeRows(rows: HrDocumentTypeRow[]): HrDocumentType
         id: row.id,
         sourceItemId: row.source_item_id,
         name: row.name.trim(),
-        fileName: resolveHrDocumentFileName(row.name),
+        fileName: nullableText(row.file_name).trim() || resolveHrDocumentFileName(row.name),
         categoryKey,
         categoryLabel: getHrDocumentCategoryLabel(categoryKey),
       };

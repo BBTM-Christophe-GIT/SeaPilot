@@ -42,7 +42,8 @@ Deux écarts restaient ouverts :
 
 - Les rôles `admin`, `direction` et `armement` disposent de l’action **Ajouter un document** dans la fiche RH.
 - Le dialogue charge tous les éléments actifs de `stcw_certificates`, y compris les documents non STCW, et les groupe selon les catégories RH SeaPilot.
-- Les noms courts historiques (`CFBS`, `CGO`, `CQALI`, `EM I`, `Visite Médicale`, etc.) sont repris pour conserver le nommage du Dashboard.
+- Les 54 types actifs de la liste SharePoint QHSE sont disponibles, y compris les catégories RH, médicales, levage et plan de formation.
+- Le champ SharePoint **Nom de Fichier** est conservé dans `stcw_certificates.file_name` et utilisé en priorité (`CFBS`, `CGO`, `CQALI`, `EM I`, `Visite Médicale`, etc.). Une table d’alias reste disponible pour les environnements qui n’ont pas encore appliqué la migration.
 - La date d’échéance et le fichier sont obligatoires. Le nom final est présenté avant l’enregistrement.
 - Un document médical permet de saisir immédiatement l’aptitude, la veille passerelle et les restrictions.
 - L’objet est d’abord chargé dans le bucket privé avec `upsert: false`, puis sa ligne est créée dans `hr_documents`. Si l’écriture SQL échoue, l’objet chargé est supprimé.
@@ -54,7 +55,7 @@ Deux écarts restaient ouverts :
 
 ## Sécurité et déploiement
 
-Aucune nouvelle variable d’environnement et aucune migration SQL ne sont nécessaires. La fonctionnalité réutilise :
+Aucune nouvelle variable d’environnement n’est nécessaire. La migration `202607170004_hr_document_catalog_file_names.sql` complète le catalogue existant avec le nom court SharePoint. La fonctionnalité réutilise :
 
 - `public.stcw_certificates` en lecture authentifiée ;
 - `public.hr_documents` avec les politiques d’entreprise existantes ;
