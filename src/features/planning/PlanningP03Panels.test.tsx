@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { PlanningDerogationDialog, PlanningHandoverDialog } from './PlanningP03Panels';
+import { PlanningHandoverDialog } from './PlanningP03Panels';
 import type { PlanningHandoverRecord, PlanningOverview } from './planningQueries';
 
 const overview: PlanningOverview = {
@@ -16,7 +16,7 @@ const overview: PlanningOverview = {
   projects: [],
   certificates: [],
   hrDocuments: [],
-  rules: [{ id: 4, code: 'expired_credential', name: 'Certificat expiré', description: '', scope: 'credential', controlLevel: 'warning', active: true, effectiveFrom: '2026-01-01', configuration: {}, sourceReference: '', version: 1 }],
+  rules: [],
   publications: [],
   versions: [],
   history: [],
@@ -71,27 +71,5 @@ describe('Planning P0.3 panels', () => {
     expect(screen.queryByRole('button', { name: 'Enregistrer la relève' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Port ou lieu')).toBeDisabled();
     expect(screen.getAllByRole('button', { name: 'Fermer' })).toHaveLength(2);
-  });
-
-  it('submits a bounded derogation while leaving attribution to the server', async () => {
-    const user = userEvent.setup();
-    const onSave = vi.fn();
-    render(<PlanningDerogationDialog isSaving={false} onClose={vi.fn()} onSave={onSave} overview={overview} prefill={{}} />);
-
-    await user.selectOptions(screen.getByLabelText('Règle'), '4');
-    await user.selectOptions(screen.getByLabelText('Marin'), '11');
-    await user.selectOptions(screen.getByLabelText('Navire'), '1');
-    fireEvent.change(screen.getByLabelText('Début'), { target: { value: '2026-07-20T08:00' } });
-    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
-    await user.type(screen.getByLabelText('Motif'), 'Décision maritime documentée');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la dérogation' }));
-
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      ruleId: '4',
-      personId: '11',
-      vesselId: '1',
-      reason: 'Décision maritime documentée',
-    }));
-    expect(screen.getByText(/auteur.*automatiquement/i)).toBeInTheDocument();
   });
 });

@@ -41,7 +41,6 @@ function overview(): PlanningOverview {
       positions: [{ id: 21, handoverId: 20, positionOrder: 0, functionLabel: 'Capitaine', outgoingPersonId: 10, incomingPersonId: null, outgoingAssignmentId: null, incomingAssignmentId: null, comments: '' }],
     }],
     rules: [{ id: 90, code: 'work_24h', name: 'Travail 24 h', description: '', scope: 'work_rest', controlLevel: 'warning', active: true, effectiveFrom: '2026-01-01', configuration: {}, sourceReference: '', version: 1 }],
-    derogations: [{ id: 91, ruleId: 90, assignmentId: null, personId: 10, vesselId: 2, reason: 'Dérogation test', startsAt: '2026-08-04T00:00:00Z', endsAt: '2026-08-04T23:59:00Z', evidenceUrl: '', status: 'active', authorId: '', authorName: '', createdAt: '', updatedAt: '' }],
   };
 }
 
@@ -51,10 +50,10 @@ const emptyData: PlanningP13Data = {
 };
 
 describe('Planning P1.3 work and rest engine', () => {
-  it('uses only the configured thresholds, includes handover time and applies a matching derogation', () => {
+  it('uses only the configured thresholds and includes handover time without exception handling', () => {
     const checks = buildPlanningWorkRestChecks(overview(), [policy], { start: '2026-08-01', end: '2026-08-07' });
     expect(checks).toHaveLength(7);
-    expect(checks.find((check) => check.ruleCode === 'work_24h')).toMatchObject({ value: 13, threshold: 12, status: 'derogated', derogationId: 91 });
+    expect(checks.find((check) => check.ruleCode === 'work_24h')).toMatchObject({ value: 13, threshold: 12, status: 'non_compliant' });
     expect(checks.find((check) => check.ruleCode === 'rest_24h')).toMatchObject({ value: 10, threshold: 11, status: 'non_compliant' });
     expect(checks.find((check) => check.ruleCode === 'work_7d')).toMatchObject({ value: 80, threshold: 72, status: 'non_compliant' });
     expect(checks.find((check) => check.ruleCode === 'rest_7d')).toMatchObject({ value: 88, threshold: 96, status: 'non_compliant' });

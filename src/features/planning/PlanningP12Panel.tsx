@@ -59,13 +59,12 @@ interface TreatmentFormState {
   priority: PlanningConflictPriority;
   status: PlanningConflictStatus;
   comment: string;
-  derogationId: string;
 }
 
 const EMPTY_DATA: PlanningP12Data = { absences: [], conflictCases: [], conflictHistory: [], matrices: [] };
 const ABSENCE_TYPES: PlanningAbsenceType[] = ['leave', 'illness', 'training', 'medical_visit', 'unavailability', 'recovery'];
 const CONFLICT_PRIORITIES: PlanningConflictPriority[] = ['low', 'normal', 'high', 'critical'];
-const CONFLICT_STATUSES: PlanningConflictStatus[] = ['open', 'in_progress', 'resolved', 'dismissed', 'derogated'];
+const CONFLICT_STATUSES: PlanningConflictStatus[] = ['open', 'in_progress', 'resolved', 'dismissed'];
 
 const ABSENCE_STATUS_LABELS: Record<PlanningAbsenceRecord['status'], string> = {
   requested: 'Demandée', approved: 'Validée', rejected: 'Refusée', cancelled: 'Annulée',
@@ -74,7 +73,7 @@ const LEAVE_STATUS_LABELS: Record<PlanningAbsenceRecord['status'], string> = {
   requested: 'Demandés', approved: 'Validés', rejected: 'Refusés', cancelled: 'Annulés',
 };
 const CONFLICT_STATUS_LABELS: Record<PlanningConflictStatus, string> = {
-  open: 'Ouvert', in_progress: 'En cours', resolved: 'Résolu', dismissed: 'Classé sans suite', derogated: 'Dérogation',
+  open: 'Ouvert', in_progress: 'En cours', resolved: 'Résolu', dismissed: 'Classé sans suite', derogated: 'Classé historiquement',
 };
 const PRIORITY_LABELS: Record<PlanningConflictPriority, string> = {
   low: 'Basse', normal: 'Normale', high: 'Haute', critical: 'Critique',
@@ -99,9 +98,8 @@ function treatmentFromCase(conflictCase: PlanningConflictCaseRecord | undefined)
   return {
     assignToMe: !conflictCase?.ownerId,
     priority: conflictCase?.priority || 'normal',
-    status: conflictCase?.status || 'open',
+    status: conflictCase?.status === 'derogated' ? 'dismissed' : conflictCase?.status || 'open',
     comment: '',
-    derogationId: conflictCase?.derogationId ? String(conflictCase.derogationId) : '',
   };
 }
 
@@ -126,11 +124,9 @@ export function PlanningP12Panel({
   canDeleteLeaves,
   canManageConflictCases,
   canPrepareReplacements,
-  canManageDerogations,
   onClose,
   onPrepareReplacement,
   onOpenSource,
-  onCreateDerogation,
   onAuditChange,
   initialTab = 'conflicts',
   initialAbsenceId = null,
@@ -145,11 +141,9 @@ export function PlanningP12Panel({
   canDeleteLeaves: boolean;
   canManageConflictCases: boolean;
   canPrepareReplacements: boolean;
-  canManageDerogations: boolean;
   onClose: () => void;
   onPrepareReplacement: (person: PlanningPerson, conflict: PlanningDetectedConflict) => void;
   onOpenSource: (conflict: PlanningDetectedConflict) => void;
-  onCreateDerogation: (conflict: PlanningDetectedConflict) => void;
   onAuditChange: () => Promise<void>;
   initialTab?: P12Tab;
   initialAbsenceId?: number | null;
@@ -325,7 +319,6 @@ export function PlanningP12Panel({
         priority: effectiveTreatment.priority,
         status: effectiveTreatment.status,
         comment: effectiveTreatment.comment,
-        derogationId: effectiveTreatment.derogationId ? Number(effectiveTreatment.derogationId) : null,
       });
       await Promise.all([load(), onAuditChange()]);
       setFeedback({ message: 'Traitement du conflit enregistré et historisé.', error: false });
@@ -421,7 +414,7 @@ export function PlanningP12Panel({
                 const conflictCase = casesByKey.get(item.key);
                 return <button className={`planning-p12-conflict-card${selectedConflict?.key === item.key ? ' is-active' : ''}`} key={item.key} onClick={() => chooseConflict(item)} type="button"><span className={`planning-p12-severity is-${item.severity}`}>{severityLabel(item.severity)}</span><strong>{item.title}</strong><p>{item.detail}</p><small>{formatPlanningDate(item.startsOn)} – {formatPlanningDate(item.endsOn)}{conflictCase ? ` · ${CONFLICT_STATUS_LABELS[conflictCase.status]}` : ' · Non pris en charge'}</small></button>;
               }) : <div className="planning-calendar-empty"><Check size={24} /><p>Aucun conflit correspondant aux filtres.</p></div>}</div>
-              <div className="planning-p12-conflict-detail">{selectedConflict ? <><header><div><small>{planningConflictTypeLabel(selectedConflict.type)}</small><h3>{selectedConflict.title}</h3></div><button onClick={() => onOpenSource(selectedConflict)} type="button"><ExternalLink size={15} />Voir l’élément</button></header><p>{selectedConflict.detail}</p><dl><div><dt>Période</dt><dd>{formatPlanningDate(selectedConflict.startsOn)} au {formatPlanningDate(selectedConflict.endsOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedCase?.ownerName || 'Non attribué'}</dd></div><div><dt>Priorité</dt><dd>{selectedCase ? PRIORITY_LABELS[selectedCase.priority] : 'Normale'}</dd></div><div><dt>Statut</dt><dd>{selectedCase ? CONFLICT_STATUS_LABELS[selectedCase.status] : 'Ouvert'}</dd></div></dl>{canManageConflictCases ? <form className="planning-p12-treatment" onSubmit={submitTreatment}><label><input checked={effectiveTreatment.assignToMe} onChange={(event) => changeTreatment({ assignToMe: event.target.checked })} type="checkbox" />Me désigner responsable</label><label>Priorité<select value={effectiveTreatment.priority} onChange={(event) => changeTreatment({ priority: event.target.value as PlanningConflictPriority })}>{CONFLICT_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label>Statut<select value={effectiveTreatment.status} onChange={(event) => changeTreatment({ status: event.target.value as PlanningConflictStatus })}>{CONFLICT_STATUSES.map((status) => <option key={status} value={status}>{CONFLICT_STATUS_LABELS[status]}</option>)}</select></label>{effectiveTreatment.status === 'derogated' ? <label>Dérogation<select required value={effectiveTreatment.derogationId} onChange={(event) => changeTreatment({ derogationId: event.target.value })}><option value="">Choisir</option>{overview.derogations.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>#{item.id} · {item.reason}</option>)}</select></label> : null}<label className="is-wide">Commentaire<textarea rows={3} value={effectiveTreatment.comment} onChange={(event) => changeTreatment({ comment: event.target.value })} /></label><footer>{canManageDerogations && selectedConflict.personId && selectedConflict.vesselId ? <button className="is-secondary" onClick={() => onCreateDerogation(selectedConflict)} type="button">Nouvelle dérogation</button> : <span />}<button disabled={isSaving} type="submit">Enregistrer le traitement</button></footer></form> : null}<div className="planning-p12-detail-actions"><button onClick={() => chooseConflict(selectedConflict, 'replacements')} type="button"><UserRoundSearch size={15} />Rechercher un remplaçant</button></div>{selectedHistory.length ? <details><summary>Historique du dossier ({selectedHistory.length})</summary><ol>{selectedHistory.map((history) => <li key={history.id}><strong>{history.changedByName || 'SeaPilot'}</strong><span>{history.action} · {formatPlanningDateTime(history.changedAt)}</span>{history.comment ? <p>{history.comment}</p> : null}</li>)}</ol></details> : null}</> : <div className="planning-calendar-empty"><AlertTriangle size={24} /><p>Sélectionnez un conflit.</p></div>}</div>
+              <div className="planning-p12-conflict-detail">{selectedConflict ? <><header><div><small>{planningConflictTypeLabel(selectedConflict.type)}</small><h3>{selectedConflict.title}</h3></div><button onClick={() => onOpenSource(selectedConflict)} type="button"><ExternalLink size={15} />Voir l’élément</button></header><p>{selectedConflict.detail}</p><dl><div><dt>Période</dt><dd>{formatPlanningDate(selectedConflict.startsOn)} au {formatPlanningDate(selectedConflict.endsOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedCase?.ownerName || 'Non attribué'}</dd></div><div><dt>Priorité</dt><dd>{selectedCase ? PRIORITY_LABELS[selectedCase.priority] : 'Normale'}</dd></div><div><dt>Statut</dt><dd>{selectedCase ? CONFLICT_STATUS_LABELS[selectedCase.status] : 'Ouvert'}</dd></div></dl>{canManageConflictCases ? <form className="planning-p12-treatment" onSubmit={submitTreatment}><label><input checked={effectiveTreatment.assignToMe} onChange={(event) => changeTreatment({ assignToMe: event.target.checked })} type="checkbox" />Me désigner responsable</label><label>Priorité<select value={effectiveTreatment.priority} onChange={(event) => changeTreatment({ priority: event.target.value as PlanningConflictPriority })}>{CONFLICT_PRIORITIES.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label><label>Statut<select value={effectiveTreatment.status} onChange={(event) => changeTreatment({ status: event.target.value as PlanningConflictStatus })}>{CONFLICT_STATUSES.map((status) => <option key={status} value={status}>{CONFLICT_STATUS_LABELS[status]}</option>)}</select></label><label className="is-wide">Commentaire<textarea rows={3} value={effectiveTreatment.comment} onChange={(event) => changeTreatment({ comment: event.target.value })} /></label><footer><span /><button disabled={isSaving} type="submit">Enregistrer le traitement</button></footer></form> : null}<div className="planning-p12-detail-actions"><button onClick={() => chooseConflict(selectedConflict, 'replacements')} type="button"><UserRoundSearch size={15} />Rechercher un remplaçant</button></div>{selectedHistory.length ? <details><summary>Historique du dossier ({selectedHistory.length})</summary><ol>{selectedHistory.map((history) => <li key={history.id}><strong>{history.changedByName || 'SeaPilot'}</strong><span>{history.action} · {formatPlanningDateTime(history.changedAt)}</span>{history.comment ? <p>{history.comment}</p> : null}</li>)}</ol></details> : null}</> : <div className="planning-calendar-empty"><AlertTriangle size={24} /><p>Sélectionnez un conflit.</p></div>}</div>
             </section>
           ) : null}
           {!isLoading && tab === 'replacements' ? (

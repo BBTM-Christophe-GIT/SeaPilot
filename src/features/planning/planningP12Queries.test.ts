@@ -94,12 +94,12 @@ describe('planning P1.2 conflict treatment contracts', () => {
     }));
   });
 
-  it('requires a comment for resolution and a linked derogation for derogated status', async () => {
+  it('requires a comment for resolution and rejects the retired exception status', async () => {
     const { client, rpc } = rpcClient(11);
-    expect(() => updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'resolved', comment: '', derogationId: null })).toThrow('commentaire');
-    expect(() => updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'derogated', comment: 'Accepté', derogationId: null })).toThrow('dérogation');
+    expect(() => updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'resolved', comment: '' })).toThrow('commentaire');
+    expect(() => updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'derogated', comment: 'Accepté' })).toThrow('plus disponible');
     expect(rpc).not.toHaveBeenCalled();
-    await updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'derogated', comment: 'Dérogation approuvée', derogationId: 7 });
-    expect(rpc).toHaveBeenCalledWith('update_planning_conflict_case', expect.objectContaining({ p_assign_to_me: true, p_derogation_id: 7 }));
+    await updatePlanningConflictCase(client, { caseId: 11, assignToMe: true, priority: 'high', status: 'resolved', comment: 'Traité' });
+    expect(rpc).toHaveBeenCalledWith('update_planning_conflict_case', expect.objectContaining({ p_assign_to_me: true, p_derogation_id: null }));
   });
 });

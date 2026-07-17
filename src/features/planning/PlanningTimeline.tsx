@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, Plus, Trash2, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -6,6 +6,7 @@ import validIcon from './assets/icone_valide.svg';
 import { addPlanningDays, daysBetween, formatPlanningDate, todayPlanningDate } from './planningDates';
 import {
   dateGridPlacement,
+  planningExpiredDocumentsForDate,
   planningStatusDisplayLabel,
   planningStatusTone,
   projectStatusTone,
@@ -13,7 +14,7 @@ import {
   type PlanningTimelineDay,
   type PlanningViewMode,
 } from './planningModel';
-import type { PlanningProjectRecord } from './planningQueries';
+import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
 import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
@@ -40,6 +41,14 @@ const EMPTY_SELECTED_GRID_CELLS: ReadonlyMap<string, PlanningGridCell> = new Map
 const EMPTY_CUT_GRID_CELL_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
 const EMPTY_ABSENCES: PlanningAbsenceRecord[] = [];
+const EMPTY_HR_DOCUMENTS: PlanningHrDocumentRecord[] = [];
+
+function expiredDocumentsLabel(documents: readonly PlanningHrDocumentRecord[]): string {
+  const prefix = documents.length > 1 ? `${documents.length} documents échus` : 'Document échu';
+  return `${prefix} : ${documents.map((document) => (
+    `${document.title}${document.expiresOn ? ` depuis le ${formatPlanningDate(document.expiresOn)}` : ''}`
+  )).join(' ; ')}`;
+}
 
 function projectStatusIcon(project: PlanningProjectRecord): string {
   const tone = projectStatusTone(project.status);
@@ -324,6 +333,7 @@ export function PlanningCrewTimelineRow({
   onEmptyGridCellDoubleClick,
   onConflictCellClick,
   absences = EMPTY_ABSENCES,
+  hrDocuments = EMPTY_HR_DOCUMENTS,
   onOpenAbsence,
   onDeleteEmptyRow,
   isDeletingEmptyRow = false,
@@ -345,6 +355,7 @@ export function PlanningCrewTimelineRow({
   onEmptyGridCellDoubleClick?: (cell: PlanningGridCell) => void;
   onConflictCellClick?: (cell: PlanningGridCell) => void;
   absences?: PlanningAbsenceRecord[];
+  hrDocuments?: readonly PlanningHrDocumentRecord[];
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
   onDeleteEmptyRow?: () => void;
   isDeletingEmptyRow?: boolean;
@@ -610,10 +621,12 @@ export function PlanningCrewTimelineRow({
             };
             const segmentStart = !planningGridCellsShareSegment(adjacentCell(addPlanningDays(day.date, -1)), cell);
             const segmentEnd = !planningGridCellsShareSegment(cell, adjacentCell(addPlanningDays(day.date, 1)));
+            const expiredDocuments = planningExpiredDocumentsForDate(hrDocuments, event.personId, day.date);
+            const documentAlert = expiredDocuments.length ? expiredDocumentsLabel(expiredDocuments) : '';
             return (
               <button
-                aria-label={`${cell.isConflict ? 'Conflit. ' : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
-                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
+                aria-label={`${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
+                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
                 data-planning-grid-cell={cellKey}
                 disabled={!editable}
                 key={`${event.id}-${day.date}`}
@@ -646,9 +659,9 @@ export function PlanningCrewTimelineRow({
                   onOpen(event);
                 }}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'}
+                title={[documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
                 type="button"
-              >{cell.note}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
+              >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
           }) : null}
           {hasDailyGrid && continuousDailyStatus && !hasVisibleDailyNotes && placement.span >= 2 ? (

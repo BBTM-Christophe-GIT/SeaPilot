@@ -54,11 +54,9 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP12P
     canDeleteLeaves: true,
     canManageConflictCases: true,
     canPrepareReplacements: true,
-    canManageDerogations: true,
     onClose: vi.fn(),
     onPrepareReplacement: vi.fn(),
     onOpenSource: vi.fn(),
-    onCreateDerogation: vi.fn(),
     onAuditChange: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -82,6 +80,8 @@ describe('Planning P1.2 panel', () => {
     const user = userEvent.setup();
     renderPanel();
     await screen.findByRole('heading', { name: 'Congés validés' });
+    expect(screen.queryByRole('option', { name: 'Dérogation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle dérogation' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /Absences/ }));
     const approvedCard = screen.getByText('Anne MARTIN').closest('article')!;
     expect(approvedCard).toHaveTextContent(/1\s*affectation\(s\) concernée\(s\) · 1 poste\(s\) vacant\(s\)/);

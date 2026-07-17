@@ -3,6 +3,7 @@ import {
   PLANNING_VESSEL_LOCATION_SOURCE,
   type PlanningAssignmentRecord,
   type PlanningDayRecord,
+  type PlanningHrDocumentRecord,
   type PlanningOverview,
   type PlanningPeriodRecord,
   type PlanningPerson,
@@ -14,8 +15,6 @@ import {
   formatPlanningDate,
   isoDate,
   parsePlanningDate,
-  isPlanningLocalDateTime,
-  planningLocalDateTimeToUtc,
   planningWeekNumber,
   rangesOverlap,
   shiftPlanningMonths,
@@ -568,9 +567,6 @@ export type PlanningControlCode =
   | 'crew_absence'
   | 'assignment_overlap'
   | 'function_mismatch'
-  | 'expired_medical'
-  | 'expired_credential'
-  | 'credential_expires_during_assignment'
   | 'missing_qualification'
   | 'medical_unfit'
   | 'medical_restriction'
@@ -607,9 +603,6 @@ const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningContr
   crew_absence: 'blocking',
   assignment_overlap: 'warning',
   function_mismatch: 'information',
-  expired_medical: 'blocking',
-  expired_credential: 'warning',
-  credential_expires_during_assignment: 'warning',
   missing_qualification: 'warning',
   medical_unfit: 'blocking',
   medical_restriction: 'warning',
@@ -618,7 +611,6 @@ const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningContr
 
 const ABSENCE_STATUS_TONES = new Set(['vacation', 'sick']);
 const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'training']);
-const CREDENTIAL_TOKENS = ['BREVET', 'CERTIFICAT', 'QUALIFICATION', 'HABILITATION', 'FORMATION', 'TRAINING'];
 const DECK_FUNCTION_TOKENS = ['CAPITAINE', 'PONT', 'MATELOT', 'BOSCO', 'OFFICIER'];
 const ENGINE_FUNCTION_TOKENS = ['MACHINE', 'MECANICIEN', 'CHEFMECANICIEN'];
 
@@ -641,14 +633,17 @@ function isSamePlanningPerson(
   return normalizePlanningText(left.person) === normalizePlanningText(right.person);
 }
 
-function isMedicalDocument(categoryKey: string, title: string): boolean {
-  const key = normalizePlanningText(`${categoryKey} ${title}`);
-  return key.includes('MEDICAL') || key.includes('VISITEMEDICALE') || key.includes('APTITUDE');
-}
-
-function isCredentialDocument(categoryKey: string, title: string): boolean {
-  const key = normalizePlanningText(`${categoryKey} ${title}`);
-  return CREDENTIAL_TOKENS.some((token) => key.includes(token));
+export function planningExpiredDocumentsForDate(
+  documents: readonly PlanningHrDocumentRecord[],
+  personId: number | null,
+  workDate: string,
+): PlanningHrDocumentRecord[] {
+  if (personId === null) return [];
+  return documents.filter((document) => {
+    if (document.personId !== personId) return false;
+    if (document.expiresOn) return document.expiresOn < workDate;
+    return normalizePlanningText(document.status).includes('EXPIRED');
+  });
 }
 
 function controlResult(
@@ -659,23 +654,6 @@ function controlResult(
 ): PlanningControlResult | null {
   const level = planningRuleLevel(overview, code, candidate.startsOn || '9999-12-31');
   if (!level) return null;
-  const rule = overview.rules.find((item) => item.code === code);
-  const vessel = overview.vessels.find((item) => normalizePlanningText(item.name) === normalizePlanningText(candidate.vessel));
-  const candidateStart = candidate.startsAt
-    ? new Date(isPlanningLocalDateTime(candidate.startsAt) ? planningLocalDateTimeToUtc(candidate.startsAt) : candidate.startsAt).getTime()
-    : new Date(planningLocalDateTimeToUtc(`${candidate.startsOn}T00:00`)).getTime();
-  const candidateEnd = candidate.endsAt
-    ? new Date(isPlanningLocalDateTime(candidate.endsAt) ? planningLocalDateTimeToUtc(candidate.endsAt) : candidate.endsAt).getTime()
-    : new Date(planningLocalDateTimeToUtc(`${candidate.endsOn}T23:59`)).getTime();
-  const coveredByDerogation = Boolean(rule && vessel && candidate.personId !== null && (overview.derogations || []).some((derogation) => (
-    derogation.status === 'active'
-    && derogation.ruleId === rule.id
-    && derogation.personId === candidate.personId
-    && derogation.vesselId === vessel.id
-    && new Date(derogation.startsAt).getTime() <= candidateStart
-    && new Date(derogation.endsAt).getTime() >= candidateEnd
-  )));
-  if (coveredByDerogation) return null;
   return { ...input, code, level, eventId: candidate.id, personId: candidate.personId };
 }
 
@@ -778,16 +756,6 @@ export function evaluatePlanningAssignment(
 
   overview.hrDocuments.filter((document) => document.personId === candidate.personId).forEach((document) => {
     const documentKey = normalizePlanningText(document.status);
-    const medical = isMedicalDocument(document.categoryKey, document.title);
-    const invalidAtStart = documentKey.includes('EXPIRED')
-      || documentKey.includes('MISSING')
-      || Boolean(document.expiresOn && document.expiresOn < candidate.startsOn);
-    const expiresDuringAssignment = Boolean(
-      document.expiresOn
-      && document.expiresOn >= candidate.startsOn
-      && document.expiresOn <= candidate.endsOn,
-    );
-    const invalidDuringAssignment = invalidAtStart || expiresDuringAssignment;
 
     if (document.medicalUnfit) {
       add(controlResult(overview, candidate, 'medical_unfit', {
@@ -803,32 +771,6 @@ export function evaluatePlanningAssignment(
         title: 'Restriction médicale',
         detail: document.medicalRestriction,
         date: candidate.startsOn,
-      }));
-    }
-    if (medical && invalidDuringAssignment) {
-      add(controlResult(overview, candidate, 'expired_medical', {
-        id: `expired-medical-${candidate.id}-${document.id}`,
-        title: 'Aptitude médicale non valide',
-        detail: document.expiresOn
-          ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
-          : `${document.title} est indiqué comme manquant ou expiré.`,
-        date: document.expiresOn || candidate.startsOn,
-      }));
-    } else if (isCredentialDocument(document.categoryKey, document.title) && invalidAtStart) {
-      add(controlResult(overview, candidate, 'expired_credential', {
-        id: `expired-credential-${candidate.id}-${document.id}`,
-        title: 'Titre ou qualification à renouveler',
-        detail: document.expiresOn
-          ? `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant la fin de l'affectation.`
-          : `${document.title} est indiqué comme manquant ou expiré.`,
-        date: document.expiresOn || candidate.startsOn,
-      }));
-    } else if (isCredentialDocument(document.categoryKey, document.title) && expiresDuringAssignment) {
-      add(controlResult(overview, candidate, 'credential_expires_during_assignment', {
-        id: `credential-expires-during-${candidate.id}-${document.id}`,
-        title: 'Titre expirant pendant l’embarquement',
-        detail: `${document.title} expire le ${formatPlanningDate(document.expiresOn)}, avant le débarquement.`,
-        date: document.expiresOn,
       }));
     }
     if (document.requiresCaptainValidation && documentKey.includes('PENDING')) {

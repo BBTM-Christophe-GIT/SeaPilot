@@ -13,6 +13,7 @@ import {
   getUnbilledPlanningProjects,
   isSedentaryPlanningFunction,
   normalizePlanningStatus,
+  planningExpiredDocumentsForDate,
   planningStatusDisplayLabel,
   planningStatusTone,
   projectStatusTone,
@@ -122,57 +123,10 @@ describe('planning timeline rules', () => {
     expect(hasBlockingPlanningControls(controls)).toBe(true);
   });
 
-  it('checks medical validity through the end of an assignment', () => {
-    const controls = evaluatePlanningAssignment(overview, {
-      id: 'new',
-      personId: 1,
-      person: 'Anne CAPITAINE',
-      vessel: 'GOURY',
-      functionLabel: 'Capitaine',
-      status: 'En Mer',
-      startsOn: '2026-08-01',
-      endsOn: '2026-08-15',
-    });
-
-    expect(controls[0]).toMatchObject({ code: 'expired_medical', level: 'blocking' });
-  });
-
-  it('uses the configurable control level delivered by Supabase', () => {
-    const configuredOverview: PlanningOverview = {
+  it('treats document expiry as a visual alert instead of an assignment control', () => {
+    const controls = evaluatePlanningAssignment({
       ...overview,
       people: overview.people.map((person) => ({ ...person, deckCertificateLabel: 'Capitaine 500' })),
-      rules: [{
-        id: 1,
-        code: 'expired_medical',
-        name: 'Aptitude médicale',
-        description: '',
-        scope: 'medical',
-        controlLevel: 'warning',
-        active: true,
-        effectiveFrom: '2026-01-01',
-        configuration: {},
-        sourceReference: 'Règle interne',
-        version: 1,
-      }],
-    };
-    const controls = evaluatePlanningAssignment(configuredOverview, {
-      id: 'new',
-      personId: 1,
-      person: 'Anne CAPITAINE',
-      vessel: 'GOURY',
-      functionLabel: 'Capitaine',
-      status: 'En Mer',
-      startsOn: '2026-08-01',
-      endsOn: '2026-08-15',
-    });
-
-    expect(controls).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'expired_medical', level: 'warning' }),
-    ]));
-    expect(hasBlockingPlanningControls(controls)).toBe(false);
-    expect(evaluatePlanningAssignment({
-      ...configuredOverview,
-      rules: configuredOverview.rules.map((rule) => ({ ...rule, active: false })),
     }, {
       id: 'new',
       personId: 1,
@@ -182,20 +136,23 @@ describe('planning timeline rules', () => {
       status: 'En Mer',
       startsOn: '2026-08-01',
       endsOn: '2026-08-15',
-    })).toEqual([]);
+    });
+
+    expect(controls).toEqual([]);
+    expect(hasBlockingPlanningControls(controls)).toBe(false);
   });
 
-  it('applies a derogation only when its exact UTC period covers the assignment', () => {
-    const rule = { id: 9, code: 'expired_medical', name: 'Aptitude médicale', description: '', scope: 'medical', controlLevel: 'blocking' as const, active: true, effectiveFrom: '2026-01-01', configuration: {}, sourceReference: '', version: 1 };
-    const candidate = { id: 'new', personId: 1, person: 'Anne CAPITAINE', vessel: 'GOURY', functionLabel: 'Capitaine', status: 'En Mer', startsOn: '2026-08-01', endsOn: '2026-08-15', startsAt: '2026-08-01T08:00', endsAt: '2026-08-15T20:00' };
-    const derogation = { id: 1, ruleId: 9, assignmentId: null, personId: 1, vesselId: 1, reason: 'Décision maritime documentée', startsAt: '2026-08-01T06:00:00.000Z', endsAt: '2026-08-15T18:00:00.000Z', evidenceUrl: '', status: 'active' as const, authorId: 'admin', authorName: 'Admin', createdAt: '2026-07-13T20:00:00.000Z', updatedAt: '2026-07-13T20:00:00.000Z' };
-
-    expect(evaluatePlanningAssignment({ ...overview, rules: [rule], derogations: [{ ...derogation, endsAt: '2026-08-15T10:00:00.000Z' }] }, candidate)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'expired_medical' }),
-    ]));
-    expect(evaluatePlanningAssignment({ ...overview, rules: [rule], derogations: [derogation] }, candidate)).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'expired_medical' }),
-    ]));
+  it('finds every expired document for a sailor and a calendar date', () => {
+    const documents = [
+      { ...overview.hrDocuments[0], id: 41, title: 'Brevet pont', expiresOn: '2026-07-31' },
+      { ...overview.hrDocuments[0], id: 42, title: 'Visite médicale', expiresOn: '2026-08-01' },
+      { ...overview.hrDocuments[0], id: 43, title: 'Document administratif', expiresOn: '', status: 'expired' },
+    ];
+    expect(planningExpiredDocumentsForDate(documents, 1, '2026-08-01').map((document) => document.title)).toEqual([
+      'Brevet pont',
+      'Document administratif',
+    ]);
+    expect(planningExpiredDocumentsForDate(documents, 1, '2026-08-02')).toHaveLength(3);
   });
 
   it('uses the shore status for the sedentary functions defined by BBTM', () => {

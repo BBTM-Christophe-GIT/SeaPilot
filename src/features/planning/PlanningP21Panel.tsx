@@ -179,7 +179,7 @@ export function PlanningP21Panel({
 
         <div className="planning-assistant-guardrail" role="note">
           <ShieldCheck aria-hidden="true" size={18} />
-          <span><strong>Aucune décision automatique.</strong> Accepter une suggestion la journalise seulement : aucune affectation, publication ou dérogation n’est créée.</span>
+          <span><strong>Aucune décision automatique.</strong> Accepter une suggestion la journalise seulement : aucune affectation ni publication n’est créée.</span>
           <small>{access.accessMode === 'administrator' ? 'Accès administrateur' : `Accès pilote${access.expiresOn ? ` jusqu’au ${formatPlanningDate(access.expiresOn)}` : ''}`}</small>
         </div>
 
