@@ -25,6 +25,12 @@ L’indicateur **Sédentaires** classe un collaborateur à partir du grade, du r
 
 Les contrôles d’administration « Paramétrer les accès » et le résumé « Visibilité par rôle — Fonctions, documents et sections » ne sont plus affichés dans l’en-tête du module RH. Les règles de lecture déjà enregistrées restent appliquées aux données chargées.
 
+## Liste des marins et date de départ
+
+La carte **Marins par fonction** n’utilise plus le booléen technique `people.active` pour déterminer la population affichée. Par défaut, elle présente les personnes dont `departed_on` est vide, égale à la date du jour ou postérieure. Une date strictement antérieure à aujourd’hui classe la personne dans **Anciens**.
+
+Le raccourci **Voir les anciens** permet de basculer immédiatement vers cette population. Le panneau repliable **Filtres** propose également les vues **En poste**, **Anciens** et **Tous**, ainsi que les filtres collaborateur, fonction, catégorie documentaire, statut et échéance. Le libellé « Actif » n’est plus répété dans les lignes de la liste.
+
 ## Déploiement
 
 - Aucune nouvelle variable d’environnement n’est requise.

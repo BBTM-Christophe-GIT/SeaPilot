@@ -14,6 +14,7 @@ import {
   IdCard,
   MapPin,
   Ruler,
+  SlidersHorizontal,
   Upload,
   Search,
   TrendingUp,
@@ -80,6 +81,8 @@ interface HrFilterState {
   dueState: string;
 }
 
+type HrRosterPopulation = 'current' | 'former' | 'all';
+
 const EMPTY_FORM: PersonFormState = {
   firstName: '',
   lastName: '',
@@ -129,6 +132,12 @@ const EMPTY_FILTERS: HrFilterState = {
   dueState: '',
 };
 
+const HR_ROSTER_POPULATION_LABELS: Record<HrRosterPopulation, string> = {
+  current: 'En poste',
+  former: 'Anciens',
+  all: 'Tous',
+};
+
 const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
   valid: 'A jour',
   renew_due: 'A renouveler',
@@ -148,9 +157,9 @@ const DOCUMENT_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
 
 const DOCUMENT_DUE_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'Toutes', value: '' },
-  { label: 'A renouveler', value: 'renewal_due' },
+  { label: 'À renouveler', value: 'renewal_due' },
   { label: 'Urgent', value: 'urgent' },
-  { label: 'Documents echus', value: 'expired' },
+  { label: 'Documents échus', value: 'expired' },
   { label: 'Documents manquants', value: 'missing' },
 ];
 
@@ -463,6 +472,45 @@ function documentDownloadFileName(document: HrDocumentRecord): string {
   return `${document.title}${extension}`;
 }
 
+function getLocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function matchesRosterPopulation(
+  person: PersonRecord,
+  population: HrRosterPopulation,
+  todayKey = getLocalDateKey(),
+): boolean {
+  if (population === 'all') {
+    return true;
+  }
+
+  const departureKey = person.departedOn.trim().slice(0, 10);
+  const isFormer = /^\d{4}-\d{2}-\d{2}$/.test(departureKey) && departureKey < todayKey;
+  return population === 'former' ? isFormer : !isFormer;
+}
+
+function getRosterFilterSummary(population: HrRosterPopulation, filters: HrFilterState): string {
+  const labels = [HR_ROSTER_POPULATION_LABELS[population]];
+  const dueLabel = DOCUMENT_DUE_OPTIONS.find((option) => option.value === filters.dueState)?.label;
+
+  if (filters.dueState && dueLabel) labels.push(dueLabel);
+  if (filters.functionKey) labels.push('Fonction filtrée');
+  if (filters.collaboratorId) labels.push('Collaborateur filtré');
+  if (filters.categoryKey) labels.push('Catégorie filtrée');
+  if (filters.status) labels.push('Statut filtré');
+
+  const visibleLabels = labels.slice(0, 2);
+  if (labels.length > visibleLabels.length) {
+    visibleLabels.push(`+${labels.length - visibleLabels.length}`);
+  }
+
+  return visibleLabels.join(' · ');
+}
+
 function saveBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -599,7 +647,8 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
   const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
-  const [showInactive, setShowInactive] = useState(false);
+  const [rosterPopulation, setRosterPopulation] = useState<HrRosterPopulation>('current');
+  const [isRosterFiltersOpen, setIsRosterFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
@@ -633,7 +682,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             (currentId) =>
               currentId ??
               buildHumanResourcesDashboard(
-                sortedPeople.filter((person) => person.active),
+                sortedPeople.filter((person) => matchesRosterPopulation(person, 'current')),
                 loadedData.documents,
               ).groups[0]?.people[0]?.id ??
               null,
@@ -687,10 +736,13 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
       }, new Map<number, HrDocumentRecord[]>()),
     [roleVisibleDocuments],
   );
+  const populationVisiblePeople = useMemo(
+    () => roleVisiblePeople.filter((person) => matchesRosterPopulation(person, rosterPopulation)),
+    [roleVisiblePeople, rosterPopulation],
+  );
   const visiblePeople = useMemo(
     () =>
-      roleVisiblePeople
-        .filter((person) => showInactive || person.active)
+      populationVisiblePeople
         .filter((person) => !filters.collaboratorId || String(person.id) === filters.collaboratorId)
         .filter(
           (person) =>
@@ -710,15 +762,15 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 
           return personTextMatches || documentTextMatches;
         }),
-    [documentsByPersonId, filters, normalizedSearchQuery, roleVisiblePeople, showInactive],
+    [documentsByPersonId, filters, normalizedSearchQuery, populationVisiblePeople],
   );
   const collaboratorOptions = useMemo(
     () =>
-      sortPeople(roleVisiblePeople).map((person) => ({
+      sortPeople(populationVisiblePeople).map((person) => ({
         label: `${formatPersonName(person)} - ${normalizeHrFunctionLabel(person.functionLabel)}`,
         value: String(person.id),
       })),
-    [roleVisiblePeople],
+    [populationVisiblePeople],
   );
   const categoryOptions = useMemo(
     () =>
@@ -772,6 +824,8 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     [visibleDocuments, visiblePeople],
   );
   const rosterGroups = useMemo(() => buildHumanResourcesRosterGroups(dashboard.groups), [dashboard.groups]);
+  const rosterFilterCount = 1 + Object.values(filters).filter(Boolean).length;
+  const rosterFilterSummary = getRosterFilterSummary(rosterPopulation, filters);
   const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
   const selectedPerson = useMemo(
     () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
@@ -905,6 +959,21 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     } finally {
       setIsDownloading(false);
     }
+  }
+
+  function updateRosterPopulation(value: HrRosterPopulation) {
+    const nextPopulationPeople = roleVisiblePeople.filter((person) => matchesRosterPopulation(person, value));
+    setRosterPopulation(value);
+    setFilters((currentFilters) => ({ ...currentFilters, collaboratorId: '' }));
+    setSelectedPersonId((currentPersonId) =>
+      currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId)
+        ? currentPersonId
+        : nextPopulationPeople[0]?.id ?? null,
+    );
+  }
+
+  function toggleFormerPeople() {
+    updateRosterPopulation(rosterPopulation === 'current' ? 'former' : 'current');
   }
 
   async function handleCreateDocument(input: {
@@ -1114,73 +1183,115 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
         </div>
         <div className="hr-filter-panel">
-        <label className="hr-search-field">
-          <span>Recherche</span>
-          <Search aria-hidden="true" size={16} />
-          <input
-            aria-label="Recherche RH"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Collaborateur, fichier, document..."
-            value={searchQuery}
-          />
-        </label>
-        <label className="hr-filter-field hr-filter-collaborator">
-          Collaborateur
-          <select onChange={(event) => updateFilterValue('collaboratorId', event.target.value)} value={filters.collaboratorId}>
-            <option value="">Tous</option>
-            {collaboratorOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="hr-filter-field">
-          Fonction
-          <select onChange={(event) => updateFilterValue('functionKey', event.target.value)} value={filters.functionKey}>
-            <option value="">Toutes</option>
-            {functionOptions.map((functionLabel) => (
-              <option key={functionLabel} value={getHrFunctionVisibilityKey(functionLabel)}>
-                {functionLabel}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="hr-filter-field">
-          Categories
-          <select onChange={(event) => updateFilterValue('categoryKey', event.target.value)} value={filters.categoryKey}>
-            <option value="">Toutes</option>
-            {categoryOptions.map((categoryKey) => (
-              <option key={categoryKey} value={categoryKey}>
-                {getHrDocumentCategoryLabel(categoryKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="hr-filter-field">
-          Statut
-          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
-            {DOCUMENT_STATUS_OPTIONS.map((option) => (
-              <option key={option.value || 'all-status'} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="hr-filter-field hr-filter-due">
-          Echeances
-          <select onChange={(event) => updateFilterValue('dueState', event.target.value)} value={filters.dueState}>
-            {DOCUMENT_DUE_OPTIONS.map((option) => (
-              <option key={option.value || 'all-due'} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="hr-inline-control">
-          <input checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} type="checkbox" />
-          Afficher les inactifs
-        </label>
+          <label className="hr-search-field">
+            <span className="hr-visually-hidden">Recherche</span>
+            <Search aria-hidden="true" size={17} />
+            <input
+              aria-label="Recherche RH"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Rechercher un collaborateur, un fichier, un document..."
+              value={searchQuery}
+            />
+          </label>
+
+          <div className="hr-filter-summary-row">
+            <button
+              aria-controls="hr-roster-filter-fields"
+              aria-expanded={isRosterFiltersOpen}
+              aria-label={isRosterFiltersOpen ? 'Masquer les filtres' : 'Afficher les filtres'}
+              className="hr-filter-disclosure"
+              onClick={() => setIsRosterFiltersOpen((isOpen) => !isOpen)}
+              type="button"
+            >
+              <SlidersHorizontal aria-hidden="true" size={19} />
+              <strong>Filtres</strong>
+              <span className="hr-filter-count">{rosterFilterCount}</span>
+              <span className="hr-filter-summary">{rosterFilterSummary}</span>
+            </button>
+            <button className="hr-population-shortcut" onClick={toggleFormerPeople} type="button">
+              {rosterPopulation === 'current' ? 'Voir les anciens' : 'Voir les personnes en poste'}
+            </button>
+            <button
+              aria-controls="hr-roster-filter-fields"
+              aria-expanded={isRosterFiltersOpen}
+              aria-label={isRosterFiltersOpen ? 'Replier les filtres' : 'Déplier les filtres'}
+              className="hr-filter-chevron"
+              onClick={() => setIsRosterFiltersOpen((isOpen) => !isOpen)}
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" className={isRosterFiltersOpen ? 'is-open' : ''} size={19} />
+            </button>
+          </div>
+
+          {isRosterFiltersOpen ? (
+            <div className="hr-filter-fields" id="hr-roster-filter-fields">
+              <label className="hr-filter-field">
+                Population
+                <select
+                  aria-label="Population"
+                  onChange={(event) => updateRosterPopulation(event.target.value as HrRosterPopulation)}
+                  value={rosterPopulation}
+                >
+                  <option value="current">En poste</option>
+                  <option value="former">Anciens</option>
+                  <option value="all">Tous</option>
+                </select>
+              </label>
+              <label className="hr-filter-field hr-filter-collaborator">
+                Collaborateur
+                <select onChange={(event) => updateFilterValue('collaboratorId', event.target.value)} value={filters.collaboratorId}>
+                  <option value="">Tous</option>
+                  {collaboratorOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="hr-filter-field">
+                Fonction
+                <select onChange={(event) => updateFilterValue('functionKey', event.target.value)} value={filters.functionKey}>
+                  <option value="">Toutes</option>
+                  {functionOptions.map((functionLabel) => (
+                    <option key={functionLabel} value={getHrFunctionVisibilityKey(functionLabel)}>
+                      {functionLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="hr-filter-field">
+                Catégories
+                <select onChange={(event) => updateFilterValue('categoryKey', event.target.value)} value={filters.categoryKey}>
+                  <option value="">Toutes</option>
+                  {categoryOptions.map((categoryKey) => (
+                    <option key={categoryKey} value={categoryKey}>
+                      {getHrDocumentCategoryLabel(categoryKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="hr-filter-field">
+                Statut
+                <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
+                  {DOCUMENT_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value || 'all-status'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="hr-filter-field hr-filter-due">
+                Échéances
+                <select onChange={(event) => updateFilterValue('dueState', event.target.value)} value={filters.dueState}>
+                  {DOCUMENT_DUE_OPTIONS.map((option) => (
+                    <option key={option.value || 'all-due'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
         </div>
 
       {selectedDocuments.length > 0 ? (
@@ -1532,7 +1643,6 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
       <span className="hr-person-mini-avatar">{getPersonInitials(person)}</span>
       <span className="hr-person-compact-name">
         <strong>{formatPersonName(person)}</strong>
-        <small className={person.active ? 'is-active' : 'is-inactive'}>{person.active ? 'Actif' : 'Inactif'}</small>
       </span>
       <span className="hr-person-compact-metric" title="Documents">
         <strong>{person.documents.length}</strong>
