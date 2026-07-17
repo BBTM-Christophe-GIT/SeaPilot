@@ -7060,8 +7060,29 @@ button:disabled {
 .hr-profile-section-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 9px;
+}
+
+.hr-profile-add-document {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  border: 1px solid #bed3ee;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #145da9;
+  background: #f3f8fe;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.hr-profile-add-document:hover:not(:disabled) {
+  border-color: #82afe2;
+  background: #eaf3fd;
 }
 
 .hr-profile-section-title > span,

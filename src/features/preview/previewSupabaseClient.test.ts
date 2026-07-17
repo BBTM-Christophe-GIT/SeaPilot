@@ -12,13 +12,30 @@ describe('previewSupabaseClient', () => {
     const write = await previewSupabaseClient.rpc('save_planning_manning_matrix', {});
 
     expect(catalog.error).toBeNull();
+    expect(catalog.data).toHaveLength(54);
     expect(catalog.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: 'Pont' }),
       expect.objectContaining({ category: 'Machine' }),
       expect.objectContaining({ category: 'Formation de Sécurité' }),
-      expect.objectContaining({ category: 'Radiocommunications' }),
+      expect.objectContaining({ category: 'Ressources Humaines' }),
+      expect.objectContaining({ file_name: 'CFBS', source_item_id: 25 }),
+      expect.objectContaining({ file_name: 'Visite Médicale', source_item_id: 37 }),
     ]));
     expect(write.error).toMatchObject({ message: expect.stringContaining('ne peuvent pas être enregistrées') });
+  });
+
+  it('exposes a synthetic HR file for local document workflow checks', async () => {
+    const people = await previewSupabaseClient.from('people').select('*').order('last_name');
+    const documents = await previewSupabaseClient.from('hr_documents').select('*').order('expires_on');
+
+    expect(people.error).toBeNull();
+    expect(documents.error).toBeNull();
+    expect(people.data).toEqual(expect.arrayContaining([expect.objectContaining({ last_name: 'DEMO' })]));
+    expect(documents.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Arthur DEMO - CFBS - 2029.pdf', storage_bucket: 'hr-documents' }),
+      ]),
+    );
   });
 
   it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {

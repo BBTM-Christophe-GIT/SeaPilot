@@ -397,6 +397,169 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
   });
 
+  it('adds a catalog document with an expiry date and the SPFx automatic file name', async () => {
+    const user = userEvent.setup();
+    const catalogRows = [
+      {
+        id: 25,
+        source_item_id: 25,
+        name: 'CFBS - Certificat de Formation de Base à la Sécurité',
+        category: 'Formation de Sécurité',
+        file_name: 'CFBS',
+      },
+    ];
+    const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
+    const storagePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
+    const createdDocument = {
+      ...documents[1],
+      id: 42,
+      category_key: 'safety_training',
+      title: 'Jean MARTIN - CFBS - 2030',
+      status: 'valid',
+      issued_on: null,
+      expires_on: '2030-06-30',
+      source_label: 'supabase',
+      notes: null,
+      file_url: null,
+      storage_bucket: 'hr-documents',
+      storage_path: storagePath,
+      file_size_bytes: file.size,
+      mime_type: 'application/pdf',
+    };
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const createdSingle = vi.fn().mockResolvedValue({ data: createdDocument, error: null });
+    const insertedSelect = vi.fn().mockReturnValue({ single: createdSingle });
+    const insert = vi.fn().mockReturnValue({ select: insertedSelect });
+    const catalogueOrderByName = vi.fn().mockResolvedValue({ data: catalogRows, error: null });
+    const catalogueOrderByCategory = vi.fn().mockReturnValue({ order: catalogueOrderByName });
+    const catalogueEq = vi.fn().mockReturnValue({ order: catalogueOrderByCategory });
+    const catalogueSelect = vi.fn().mockReturnValue({ eq: catalogueEq });
+    const client = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'people') return createOrderedSelect([activePerson]);
+        if (table === 'hr_documents') return { ...createDocumentsSelect(documents), insert };
+        if (table === 'stcw_certificates') return { select: catalogueSelect };
+        throw new Error(`Unexpected table ${table}`);
+      }),
+      storage: {
+        from: vi.fn().mockReturnValue({ upload, remove }),
+      },
+    };
+
+    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
+
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('button', { name: 'Ajouter un document' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un document pour Jean MARTIN' });
+    await user.selectOptions(within(dialog).getByLabelText('Brevet / document'), '25');
+    fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
+    await user.upload(within(dialog).getByLabelText('Fichier'), file);
+
+    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue('Jean MARTIN - CFBS - 2030.pdf');
+    expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(storagePath, file, { contentType: 'application/pdf', upsert: false }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      category_key: 'safety_training',
+      expires_on: '2030-06-30',
+      storage_path: storagePath,
+      title: 'Jean MARTIN - CFBS - 2030',
+    }));
+    expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
+    expect(within(profile).getByText('CFBS')).toBeInTheDocument();
+  });
+
+  it('downloads one selected HR document with the stored file extension', async () => {
+    const user = userEvent.setup();
+    const wordDocument: HrDocumentFixture = {
+      ...documents[1],
+      id: 43,
+      category_key: 'administrative',
+      title: 'Jean MARTIN - Contrat - 2030',
+      file_url: 'https://sharepoint.test/documents/contrat-signe.docx?download=1',
+      mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['document'])),
+      ok: true,
+    });
+    const originalFetch = globalThis.fetch;
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const createObjectURL = vi.fn(() => 'blob:document-rh');
+    const revokeObjectURL = vi.fn();
+    let downloadedFileName = '';
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloadedFileName = this.download;
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+
+    try {
+      render(<HumanResourcesPage client={createClient([activePerson], [wordDocument]) as never} roles={['admin']} />);
+
+      const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+      await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+      await user.click(within(profile).getByRole('checkbox', { name: 'Sélectionner Jean MARTIN - Contrat - 2030' }));
+      await user.click(screen.getByRole('button', { name: 'Telecharger' }));
+
+      await waitFor(() => expect(downloadedFileName).toBe('Jean MARTIN - Contrat - 2030.docx'));
+      expect(fetchMock).toHaveBeenCalledWith(wordDocument.file_url, { credentials: 'include' });
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:document-rh');
+    } finally {
+      globalThis.fetch = originalFetch;
+      Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectUrl });
+      Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectUrl });
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('downloads multiple selected HR documents as a ZIP archive', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['document'], { type: 'application/pdf' })),
+      ok: true,
+    });
+    const originalFetch = globalThis.fetch;
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const createObjectURL = vi.fn(() => 'blob:documents-rh');
+    const revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    globalThis.fetch = fetchMock as typeof fetch;
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+
+    try {
+      render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+      const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+      await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+      await user.click(within(profile).getByRole('checkbox', { name: 'Sélectionner Visite medicale' }));
+      await user.click(within(profile).getByRole('checkbox', { name: 'Sélectionner Capitaine 200' }));
+
+      const selectionBar = screen.getByRole('region', { name: 'Selection documentaire RH' });
+      expect(selectionBar).toHaveTextContent('2 document(s) selectionne(s)');
+      await user.click(within(selectionBar).getByRole('button', { name: 'Telecharger' }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Selection documentaire RH' })).not.toBeInTheDocument());
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:documents-rh');
+    } finally {
+      globalThis.fetch = originalFetch;
+      Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectUrl });
+      Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectUrl });
+      clickSpy.mockRestore();
+    }
+  });
+
   it('uses controlled dropdowns for structured personnel fields', async () => {
     const user = userEvent.setup();
 
