@@ -241,6 +241,41 @@ describe('planning hierarchy and side panels', () => {
     expect(rows[0].projects).toHaveLength(2);
   });
 
+  it('keeps a departed sailor visible as an empty deletable board row', () => {
+    const departedPerson = {
+      id: 3,
+      firstName: 'Alain',
+      lastName: 'ANCIEN',
+      functionLabel: 'Matelot',
+      gradeLabel: '',
+      roleLabel: '',
+      contractType: 'CDD',
+      hiredOn: '2020-01-01',
+      departedOn: '2025-12-31',
+      active: false,
+    };
+    const rows = buildPlanningCrewRows({
+      ...overview,
+      people: [...overview.people, departedPerson],
+      boardRows: [{
+        id: 90,
+        vesselId: 1,
+        personId: 3,
+        watchGroup: 'Bordée 2',
+        functionLabel: 'Matelot',
+        createdAt: '2026-07-17T08:00:00Z',
+      }],
+    }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
+
+    expect(rows.find((row) => row.label === 'Alain ANCIEN')).toMatchObject({
+      type: 'person',
+      board: 'Bordée 2',
+      boardRowId: 90,
+      hasAnyRecords: false,
+      events: [],
+    });
+  });
+
   it('finds active unassigned marins for the visible range', () => {
     expect(getUnassignedPlanningPeople(overview, { start: '2026-07-01', end: '2026-07-31' }, { vesselName: '', personName: '' }).map((person) => person.id)).toEqual([2]);
   });

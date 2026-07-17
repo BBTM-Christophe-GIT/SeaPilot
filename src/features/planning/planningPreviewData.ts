@@ -6,6 +6,7 @@ function previewPerson(
   firstName: string,
   lastName: string,
   functionLabel: string,
+  options: { departedOn?: string; active?: boolean } = {},
 ): PlanningPerson {
   return {
     id,
@@ -16,8 +17,8 @@ function previewPerson(
     roleLabel: 'Marin',
     contractType: 'CDI',
     hiredOn: '2024-01-01',
-    departedOn: '',
-    active: true,
+    departedOn: options.departedOn || '',
+    active: options.active ?? true,
   };
 }
 
@@ -35,6 +36,9 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
     previewPerson(110, 'Matthieu', 'DURAND', 'Matelot'),
     previewPerson(111, 'Sophie', 'HAMEL', 'Marin disponible'),
     previewPerson(112, 'Julien', 'LECOCQ', 'Marin disponible'),
+    previewPerson(113, 'Alain', 'ANCIEN', 'Matelot', { active: false }),
+    previewPerson(114, 'Camille', 'FUTURE', 'Mecanicien', { departedOn: '2099-12-31', active: false }),
+    previewPerson(115, 'Étienne', 'PASSÉ', 'Matelot', { departedOn: '2000-01-01', active: false }),
   ];
   const firstWatchStart = addPlanningDays(anchorDate, -14);
   const firstWatchEnd = addPlanningDays(anchorDate, 14);
@@ -50,6 +54,14 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
       { id: 3, name: 'NAVIRES SANS EQUIPAGE', acronym: 'VIDE', active: true },
     ],
     people,
+    boardRows: [{
+      id: 1201,
+      vesselId: 1,
+      personId: 113,
+      watchGroup: 'Bordée 2',
+      functionLabel: 'Matelot',
+      createdAt: `${anchorDate}T08:00:00Z`,
+    }],
     assignments: [
       ...[101, 102, 103, 104, 105].map((personId, index) => ({
         id: 1000 + index,

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, Plus, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -325,6 +325,8 @@ export function PlanningCrewTimelineRow({
   onConflictCellClick,
   absences = EMPTY_ABSENCES,
   onOpenAbsence,
+  onDeleteEmptyRow,
+  isDeletingEmptyRow = false,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
@@ -344,6 +346,8 @@ export function PlanningCrewTimelineRow({
   onConflictCellClick?: (cell: PlanningGridCell) => void;
   absences?: PlanningAbsenceRecord[];
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
+  onDeleteEmptyRow?: () => void;
+  isDeletingEmptyRow?: boolean;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -356,9 +360,9 @@ export function PlanningCrewTimelineRow({
     occupiedDates: new Set(days
       .filter((day) => lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date))
       .map((day) => day.date)),
-    vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || null,
-    functionLabel: lane.events[0]?.functionLabel || 'Équipage',
-  }), [days, lane.events]);
+    vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || lane.vesselId || null,
+    functionLabel: lane.events[0]?.functionLabel || lane.functionLabel || 'Équipage',
+  }), [days, lane.events, lane.functionLabel, lane.vesselId]);
   const laneAbsences = useMemo(
     () => absences.filter((absence) => (
       absence.personId === lane.personId
@@ -424,8 +428,9 @@ export function PlanningCrewTimelineRow({
 
   return (
     <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
-      <div className="planning-row-label">
+      <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span><strong>{lane.label}</strong>{hierarchy ? null : <small>{lane.detail || 'Sans détail'}</small>}</span>
+        {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
       {days.map((day, index) => {
         const occupied = laneCoverage.occupiedDates.has(day.date);
