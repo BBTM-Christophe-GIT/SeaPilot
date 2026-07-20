@@ -3,12 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningExportDialog } from './PlanningExportDialog';
+import { generateBoardingCertificate } from './planningBoardingCertificate';
 import { fetchPlanningP13Data } from './planningP13Queries';
 import { generatePlanningExport } from './planningP13Exports';
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 vi.mock('./planningP13Queries', () => ({ fetchPlanningP13Data: vi.fn() }));
 vi.mock('./planningP13Exports', () => ({ generatePlanningExport: vi.fn() }));
+vi.mock('./planningBoardingCertificate', () => ({ generateBoardingCertificate: vi.fn() }));
 
 const client = {} as SupabaseClient;
 const overview = {
@@ -27,6 +29,7 @@ describe('Planning export dialog', () => {
   beforeEach(() => {
     vi.mocked(fetchPlanningP13Data).mockResolvedValue({ policies: [], notifications: [], dependencies: [], p12: { absences: [], conflictCases: [], conflictHistory: [], matrices: [] } });
     vi.mocked(generatePlanningExport).mockResolvedValue({ blob: new Blob(['test']), fileName: 'marins.pdf' });
+    vi.mocked(generateBoardingCertificate).mockResolvedValue({ blob: new Blob(['test']), fileName: 'attestation.pdf', data: {} as never });
     vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   });
@@ -58,5 +61,28 @@ describe('Planning export dialog', () => {
       personIds: [10],
       vesselIds: [1],
     })));
+  });
+
+  it('requires one sailor and offers only Word or PDF for an Attestation d’Embarquement', async () => {
+    const user = userEvent.setup();
+    render(<PlanningExportDialog client={client} onClose={vi.fn()} overview={overview} range={{ start: '2026-07-01', end: '2026-07-31' }} />);
+
+    await user.selectOptions(await screen.findByLabelText('Contenu'), 'boarding_certificate');
+    expect(screen.getByLabelText('Format')).toHaveValue('pdf');
+    expect(screen.getByRole('option', { name: 'Word (.docx)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Excel (.xlsx)' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Générer l’export' })).toBeDisabled();
+
+    await user.click(screen.getByText('Choisir un marin'));
+    await user.click(screen.getByLabelText('Anne MARTIN'));
+    await user.selectOptions(screen.getByLabelText('Format'), 'docx');
+    await user.click(screen.getByRole('button', { name: 'Générer l’export' }));
+
+    await waitFor(() => expect(generateBoardingCertificate).toHaveBeenCalledWith('docx', overview, {
+      personId: 10,
+      vesselIds: [1, 2],
+      startsOn: '2026-07-01',
+      endsOn: '2026-07-31',
+    }));
   });
 });
