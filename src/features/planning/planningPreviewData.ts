@@ -15,9 +15,13 @@ function previewPerson(
     functionLabel,
     gradeLabel: functionLabel,
     roleLabel: 'Marin',
+    sailorNumber: `20${String(id).padStart(6, '0')}`,
     contractType: 'CDI',
     hiredOn: '2024-01-01',
     departedOn: options.departedOn || '',
+    birthDate: '1990-01-15',
+    deckCertificateLabel: /capitaine|matelot/i.test(functionLabel) ? 'Capitaine 200' : '',
+    engineCertificateLabel: /mecan/i.test(functionLabel) ? 'Mécanicien 250 kW' : '',
     active: options.active ?? true,
   };
 }
@@ -49,7 +53,7 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
 
   return {
     vessels: [
-      { id: 1, name: 'GOURY', acronym: 'GY', active: true },
+      { id: 1, name: 'GOURY', acronym: 'GY', registrationNumber: '934968', active: true },
       { id: 2, name: 'ARMEMENT - CHERBOURG', acronym: 'ARM', active: true },
       { id: 3, name: 'NAVIRES SANS EQUIPAGE', acronym: 'VIDE', active: true },
     ],

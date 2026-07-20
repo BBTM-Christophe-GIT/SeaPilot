@@ -10,9 +10,9 @@ import {
   requiredPlanningText,
 } from './planningValidation';
 
-const VESSEL_SELECT = 'id, name, acronym, active';
+const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
 const PLANNING_PERSON_SELECT =
-  'id, first_name, last_name, function_label, grade_label, role_label, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
+  'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
 const PLANNING_ASSIGNMENT_SELECT =
   'id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at, assignment_role, status_label, confirmation_status, watch_group, comments, source_label';
 const PLANNING_DAY_SELECT =
@@ -45,6 +45,7 @@ interface VesselRow {
   id: number;
   name: string;
   acronym: string | null;
+  registration_number?: string | null;
   active: boolean;
 }
 
@@ -55,6 +56,7 @@ interface PlanningPersonRow {
   function_label: string | null;
   grade_label?: string | null;
   role_label?: string | null;
+  sailor_number?: string | null;
   contract_type?: string | null;
   hired_on?: string | null;
   departed_on?: string | null;
@@ -331,6 +333,7 @@ export interface PlanningVessel {
   id: number;
   name: string;
   acronym: string;
+  registrationNumber?: string;
   active: boolean;
 }
 
@@ -341,6 +344,7 @@ export interface PlanningPerson {
   functionLabel: string;
   gradeLabel: string;
   roleLabel: string;
+  sailorNumber?: string;
   contractType: string;
   hiredOn: string;
   departedOn: string;
@@ -804,6 +808,7 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     id: row.id,
     name: row.name,
     acronym: row.acronym || '',
+    registrationNumber: row.registration_number || '',
     active: row.active,
   }));
 }
@@ -816,6 +821,7 @@ export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson
     functionLabel: row.function_label || '',
     gradeLabel: row.grade_label || '',
     roleLabel: row.role_label || '',
+    sailorNumber: row.sailor_number || '',
     contractType: row.contract_type || '',
     hiredOn: row.hired_on || '',
     departedOn: row.departed_on || '',

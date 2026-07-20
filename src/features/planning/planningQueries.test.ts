@@ -167,6 +167,7 @@ describe('planning mappers', () => {
         id: 1,
         name: 'COTENTIN',
         acronym: 'CTN',
+        registrationNumber: '',
         active: true,
       },
     ]);
@@ -188,6 +189,7 @@ describe('planning mappers', () => {
         birthPlace: '',
         identityDocumentNumber: '',
         identityDocumentType: '',
+        sailorNumber: '',
         deckCertificateLabel: '',
         engineCertificateLabel: '',
         active: true,
