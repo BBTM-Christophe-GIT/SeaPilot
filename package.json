@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.6.1",
+  "version": "3.6.2",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24.0.0"

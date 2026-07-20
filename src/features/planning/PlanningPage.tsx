@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity,
+  AlertTriangle,
+  Bell,
   CalendarOff,
   CalendarDays,
+  CalendarPlus,
   ClipboardCheck,
   ChevronDown,
   ChevronLeft,
@@ -11,11 +14,15 @@ import {
   Download,
   Expand,
   FilePenLine,
+  FileDown,
   FileSpreadsheet,
+  Gauge,
   GripVertical,
+  History,
   Minus,
   Pencil,
   Plus,
+  ReceiptText,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -29,7 +36,7 @@ import {
   X,
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { PLANNING_ASSISTANT_ENABLED, PLANNING_PREDICTIONS_ENABLED } from '../../config/featureFlags';
@@ -226,6 +233,38 @@ interface PlanningGridConflictForm {
 
 type SideTab = 'conflicts' | 'handovers' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
 
+interface PlanningRibbonButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  count?: number;
+  icon: ReactNode;
+  label: string;
+}
+
+function PlanningRibbonButton({ className = '', count = 0, icon, label, ...buttonProps }: PlanningRibbonButtonProps) {
+  return (
+    <button
+      aria-label={buttonProps['aria-label'] || `${label}${count ? ` (${Math.min(99, count)})` : ''}`}
+      className={`planning-ribbon-command${className ? ` ${className}` : ''}`}
+      type="button"
+      {...buttonProps}
+    >
+      <span className="planning-ribbon-command-icon">
+        {icon}
+        {count ? <em>{Math.min(99, count)}</em> : null}
+      </span>
+      <span className="planning-ribbon-command-label">{label}</span>
+    </button>
+  );
+}
+
+function PlanningRibbonGroup({ children, empty = false, label }: { children?: ReactNode; empty?: boolean; label: string }) {
+  return (
+    <div aria-label={label} className={`planning-ribbon-group${empty ? ' is-empty' : ''}`} role="group">
+      <div className="planning-ribbon-actions">{children}</div>
+      <span className="planning-ribbon-group-label">{label}</span>
+    </div>
+  );
+}
+
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 const EMPTY_ASSIGNMENT: AssignmentFormState = {
   vesselId: '',
@@ -358,7 +397,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
   const [exportForm, setExportForm] = useState<ExportFormState>({ personName: '', startsOn: '', endsOn: '' });
   const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -445,10 +483,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const pendingAbsenceCount = absences.filter((absence) => absence.status === 'requested').length;
-  const visibleSideTabs = useMemo(
-    () => SIDE_TABS.filter((tab) => tab.key !== 'history' || permissions.canViewHistory),
-    [permissions.canViewHistory],
-  );
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const baseDayWidths: Record<PlanningViewMode, number> = { day: 260, week: 220, fortnight: 110, month: 52, year: 22 };
@@ -630,6 +664,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       requestedOnly: options.requestedOnly ?? false,
     });
     setIsP12Open(true);
+  }
+
+  function openOperationalTab(tab: SideTab) {
+    setSideTab(tab);
+    setIsOperationalPanelOpen(true);
   }
 
   function changePerspective(next: PlanningPerspective) {
@@ -1704,35 +1743,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     return () => window.removeEventListener('keydown', handleGridShortcut);
   });
 
-  const planningToolsControl = (
-    <div className="planning-tools-anchor">
-      <button aria-expanded={isSettingsOpen} className="planning-tools-button" onClick={() => setIsSettingsOpen((value) => !value)} type="button"><Wrench aria-hidden="true" size={17} />Outils</button>
-      {isSettingsOpen ? (
-        <div className="planning-tools-popover">
-          <strong>Outils du planning</strong>
-          <div className="planning-tools-group"><small>Navires</small>
-            {permissions.canManageVessels ? <button onClick={() => { setIsVesselsOpen(true); setIsSettingsOpen(false); }} type="button"><Ship aria-hidden="true" size={16} />Gérer les navires</button> : null}
-            {permissions.canExport ? <button onClick={() => { openCrewList(); setIsSettingsOpen(false); }} type="button"><FileSpreadsheet aria-hidden="true" size={16} />Générer une crew list</button> : null}
-          </div>
-          <div className="planning-tools-group"><small>Armement</small>
-            {visibleSideTabs.filter((tab) => !['unassigned', 'certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
-            <button onClick={() => { setIsP11Open(true); setIsSettingsOpen(false); }} type="button"><CalendarDays aria-hidden="true" size={16} />Rotations et décision d’effectif</button>
-            <button onClick={() => { openP12(); setIsSettingsOpen(false); }} type="button"><ShieldAlert aria-hidden="true" size={16} />Absences et conflits</button>
-            {permissions.canManageHandovers ? <button onClick={() => { openHandover(); setIsSettingsOpen(false); }} type="button"><ClipboardCheck aria-hidden="true" size={16} />Créer une relève</button> : null}
-          </div>
-          <div className="planning-tools-group"><small>Marins</small>
-            {visibleSideTabs.filter((tab) => ['certificates', 'alerts'].includes(tab.key)).map((tab) => <button key={tab.key} onClick={() => { setSideTab(tab.key); setIsOperationalPanelOpen(true); setIsSettingsOpen(false); }} type="button">{tab.label}{tabCounts[tab.key] ? <span>{Math.min(99, tabCounts[tab.key])}</span> : null}</button>)}
-            {permissions.canExport ? <button onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); setIsSettingsOpen(false); }} type="button"><Download aria-hidden="true" size={16} />Exporter un marin</button> : null}
-            {permissions.canViewDashboard || permissions.canViewWorkRest ? <button onClick={() => { setIsP13Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Cockpit métier P1.3</button> : null}
-            {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP21Open(true); setIsSettingsOpen(false); }} type="button"><Sparkles aria-hidden="true" size={16} />Assistant Planning</button> : null}
-            {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <button onClick={() => { setIsP22Open(true); setIsSettingsOpen(false); }} type="button"><Activity aria-hidden="true" size={16} />Prévisions et scénarios</button> : null}
-            {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <button disabled type="button"><Sparkles aria-hidden="true" size={16} />Vérification de l’accès…</button> : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-
   if (!permissions.canRead) {
     return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
   }
@@ -1765,29 +1775,56 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       ) : null}
 
       <div className="planning-command-layout">
-        <nav aria-label="Actions du planning" className="planning-module-toolbar">
-          <span className={canEditPlanning ? 'planning-mode-write' : 'planning-mode-read'}>
-            {canEditPlanning ? 'Brouillon modifiable' : 'Dernière version diffusée'}
-          </span>
-          <span className="planning-module-toolbar-spacer" />
-          {planningToolsControl}
-          {permissions.canRequestAbsences ? (
-            <button className="planning-command-button" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} type="button">
-              <CalendarOff aria-hidden="true" size={18} />
-              Demander des congés
-            </button>
-          ) : null}
-          {permissions.canReviewAbsences ? (
-            <button className={`planning-command-button${pendingAbsenceCount ? ' has-alert' : ''}`} onClick={() => openP12({ tab: 'absences', requestedOnly: true })} type="button">
-              <ShieldAlert aria-hidden="true" size={18} />
-              Demandes en attente
-              {pendingAbsenceCount ? <span>{pendingAbsenceCount}</span> : null}
-            </button>
-          ) : null}
-          <button aria-busy={isRefreshing} className="planning-command-button" disabled={isRefreshing} onClick={() => void Promise.all([loadPlanning(), loadAbsences()])} type="button">
-            <RefreshCw aria-hidden="true" size={18} />
-            {isRefreshing ? 'Actualisation…' : 'Actualiser'}
-          </button>
+        <nav aria-label="Menu du planning" className="planning-module-toolbar">
+          <div className="planning-ribbon-utility">
+            <span className={canEditPlanning ? 'planning-mode-write' : 'planning-mode-read'}>
+              {canEditPlanning ? 'Brouillon modifiable' : 'Dernière version diffusée'}
+            </span>
+            <PlanningRibbonButton
+              aria-busy={isRefreshing}
+              className="is-utility"
+              disabled={isRefreshing}
+              icon={<RefreshCw aria-hidden="true" size={19} />}
+              label={isRefreshing ? 'Actualisation…' : 'Actualiser'}
+              onClick={() => void Promise.all([loadPlanning(), loadAbsences()])}
+            />
+          </div>
+
+          <div className="planning-ribbon-scroll">
+            <PlanningRibbonGroup label="ARMEMENT">
+              {permissions.canViewDashboard || permissions.canViewWorkRest ? <PlanningRibbonButton icon={<Gauge aria-hidden="true" size={22} />} label="Cockpit métier P1.3" onClick={() => setIsP13Open(true)} /> : null}
+              <PlanningRibbonButton count={tabCounts.billing} icon={<ReceiptText aria-hidden="true" size={22} />} label="Facturation" onClick={() => openOperationalTab('billing')} />
+              <PlanningRibbonButton icon={<CalendarDays aria-hidden="true" size={22} />} label="Rotations et décision d’effectif" onClick={() => setIsP11Open(true)} />
+              {permissions.canManageHandovers ? <PlanningRibbonButton icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Créer une relève" onClick={() => openHandover()} /> : null}
+              {permissions.canManageVessels ? <PlanningRibbonButton icon={<Ship aria-hidden="true" size={22} />} label="Gérer les navires" onClick={() => setIsVesselsOpen(true)} /> : null}
+              {canEditPlanning ? <PlanningRibbonButton icon={<CalendarPlus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => openFleetEvent()} /> : null}
+            </PlanningRibbonGroup>
+
+            <PlanningRibbonGroup label="MARINS">
+              {permissions.canRequestAbsences ? <PlanningRibbonButton icon={<CalendarOff aria-hidden="true" size={22} />} label="Demander des congés" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} /> : null}
+              {permissions.canReviewAbsences ? <PlanningRibbonButton count={pendingAbsenceCount} icon={<ShieldAlert aria-hidden="true" size={22} />} label="Demandes en attente" onClick={() => openP12({ tab: 'absences', requestedOnly: true })} /> : null}
+            </PlanningRibbonGroup>
+
+            <PlanningRibbonGroup empty label="NAVIRES" />
+
+            <PlanningRibbonGroup label="Aide à la décision">
+              <PlanningRibbonButton count={tabCounts.conflicts} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Conflits" onClick={() => openOperationalTab('conflicts')} />
+              {permissions.canViewHistory ? <PlanningRibbonButton count={tabCounts.history} icon={<History aria-hidden="true" size={22} />} label="Historique" onClick={() => openOperationalTab('history')} /> : null}
+              <PlanningRibbonButton icon={<ShieldAlert aria-hidden="true" size={22} />} label="Absences et conflits" onClick={() => openP12()} />
+              <PlanningRibbonButton count={tabCounts.alerts} icon={<Bell aria-hidden="true" size={22} />} label="Alertes" onClick={() => openOperationalTab('alerts')} />
+              <PlanningRibbonButton count={tabCounts.certificates} icon={<FilePenLine aria-hidden="true" size={22} />} label="Certificats" onClick={() => openOperationalTab('certificates')} />
+              <PlanningRibbonButton count={tabCounts.handovers} icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Relèves" onClick={() => openOperationalTab('handovers')} />
+              {isPlanningAssistantEnabled && assistantAccess.hasAccess ? <PlanningRibbonButton icon={<Sparkles aria-hidden="true" size={22} />} label="Assistant Planning" onClick={() => setIsP21Open(true)} /> : null}
+              {isPlanningPredictionsEnabled && assistantAccess.hasAccess ? <PlanningRibbonButton icon={<Activity aria-hidden="true" size={22} />} label="Prévisions et scénarios" onClick={() => setIsP22Open(true)} /> : null}
+              {(isPlanningAssistantEnabled || isPlanningPredictionsEnabled) && permissions.canBeAssistantPilot && isAssistantAccessLoading ? <PlanningRibbonButton disabled icon={<Sparkles aria-hidden="true" size={22} />} label="Vérification de l’accès…" /> : null}
+            </PlanningRibbonGroup>
+
+            <PlanningRibbonGroup label="Documents">
+              {permissions.canExport ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
+              {permissions.canExport ? <PlanningRibbonButton icon={<Download aria-hidden="true" size={22} />} label="Exporter un marin" onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} /> : null}
+              {permissions.canExport && (permissions.canViewDashboard || permissions.canViewWorkRest) ? <PlanningRibbonButton icon={<FileDown aria-hidden="true" size={22} />} label="Exports" onClick={() => setIsP13Open(true)} /> : null}
+            </PlanningRibbonGroup>
+          </div>
         </nav>
         <PlanningPublicationPanel
           canPublish={permissions.canPublishPublication}
@@ -1805,9 +1842,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
                 <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button>
               </div>
-              {canEditPlanning ? (
-                <button className="planning-primary-action" onClick={() => perspective === 'fleet' ? openFleetEvent() : openAssignment()} type="button">
-                  <Plus aria-hidden="true" size={17} />{perspective === 'fleet' ? 'Nouveau projet' : 'Créer une affectation'}
+              {canEditPlanning && perspective === 'crew' ? (
+                <button className="planning-primary-action" onClick={() => openAssignment()} type="button">
+                  <Plus aria-hidden="true" size={17} />Créer une affectation
                 </button>
               ) : null}
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
