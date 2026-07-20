@@ -13,14 +13,12 @@ import {
   savePlanningDependency,
   savePlanningWorkRestPolicy,
 } from './planningP13Queries';
-import { generatePlanningExport } from './planningP13Exports';
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 vi.mock('./planningP13Queries', () => ({
   deletePlanningDependency: vi.fn(), fetchPlanningP13Data: vi.fn(), markPlanningNotificationRead: vi.fn(),
   refreshPlanningNotifications: vi.fn(), savePlanningDependency: vi.fn(), savePlanningWorkRestPolicy: vi.fn(),
 }));
-vi.mock('./planningP13Exports', () => ({ generatePlanningExport: vi.fn() }));
 
 const client = {} as SupabaseClient;
 const overview: PlanningOverview = {
@@ -45,7 +43,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP13P
   const props: React.ComponentProps<typeof PlanningP13Panel> = {
     client, overview, range: { start: '2026-08-01', end: '2026-08-31' },
     canManageWorkRestPolicies: true, canViewDashboard: true, canViewWorkRest: true, canViewNotifications: true,
-    canRefreshNotifications: false, canManageDependencies: true, canExport: true,
+    canRefreshNotifications: false, canManageDependencies: true,
     onClose: vi.fn(), onAuditChange: vi.fn().mockResolvedValue(undefined), ...overrides,
   };
   render(<PlanningP13Panel {...props} />);
@@ -60,7 +58,6 @@ describe('Planning P1.3 cockpit', () => {
     vi.mocked(savePlanningDependency).mockResolvedValue(3);
     vi.mocked(deletePlanningDependency).mockResolvedValue(3);
     vi.mocked(markPlanningNotificationRead).mockResolvedValue(5);
-    vi.mocked(generatePlanningExport).mockResolvedValue({ blob: new Blob(['test']), fileName: 'planning.xlsx' });
     vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   });
@@ -74,11 +71,10 @@ describe('Planning P1.3 cockpit', () => {
   });
 
   it('limits a sailor cockpit to personal work/rest and notifications', async () => {
-    renderPanel({ canManageWorkRestPolicies: false, canViewDashboard: false, canManageDependencies: false, canExport: false });
+    renderPanel({ canManageWorkRestPolicies: false, canViewDashboard: false, canManageDependencies: false });
     expect(await screen.findByRole('tab', { name: 'Travail & repos' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: 'Tableau de bord' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Dépendances' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Exports' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouvelle politique' })).not.toBeInTheDocument();
   });
 
@@ -101,7 +97,7 @@ describe('Planning P1.3 cockpit', () => {
     await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96 })));
   });
 
-  it('marks notifications read, creates a manual dependency and generates an Excel export', async () => {
+  it('marks notifications read and creates a manual dependency', async () => {
     const user = userEvent.setup();
     renderPanel();
     await screen.findByText('Navires en opération');
@@ -116,8 +112,5 @@ describe('Planning P1.3 cockpit', () => {
     await user.click(within(dependencyEditor).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(savePlanningDependency).toHaveBeenCalledWith(client, expect.objectContaining({ predecessorId: 30, successorId: 31, dependencyType: 'maintenance_recommission' })));
 
-    await user.click(screen.getByRole('tab', { name: 'Exports' }));
-    await user.click(screen.getByRole('button', { name: 'Générer l’export' }));
-    await waitFor(() => expect(generatePlanningExport).toHaveBeenCalledWith('schedule', 'xlsx', expect.objectContaining({ startsOn: '2026-08-01', endsOn: '2026-08-31' })));
   });
 });

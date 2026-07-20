@@ -631,18 +631,23 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     const menu = screen.getByRole('navigation', { name: 'Menu du planning' });
     expect(within(menu).getByRole('group', { name: 'ARMEMENT' })).toBeInTheDocument();
-    expect(within(menu).getByRole('group', { name: 'MARINS' })).toBeInTheDocument();
-    expect(within(menu).getByRole('group', { name: 'NAVIRES' })).toBeInTheDocument();
+    expect(within(menu).getByRole('group', { name: 'Gestion des congés' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('group', { name: 'NAVIRES' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('group', { name: 'Aide à la décision' })).toBeInTheDocument();
     expect(within(menu).getByRole('group', { name: 'Documents' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Demandes en attente' })).toBeInTheDocument();
-    expect(within(menu).getByRole('button', { name: 'Actualiser' })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: 'Exports' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('button', { name: 'Exporter un marin' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Brouillon modifiable')).not.toBeInTheDocument();
     within(menu).getAllByRole('button').forEach((button) => expect(button.querySelector('svg')).toBeInTheDocument());
     const calendar = screen.getByRole('region', { name: 'Calendrier des affectations' });
     expect(within(calendar).queryByRole('button', { name: 'Nouveau projet' })).not.toBeInTheDocument();
-    expect(within(calendar).getByRole('button', { name: 'Filtres' })).toBeInTheDocument();
+    const filterButton = within(calendar).getByRole('button', { name: 'Filtres' });
+    const refreshButton = within(calendar).getByRole('button', { name: 'Actualiser' });
+    expect(filterButton.nextElementSibling).toBe(refreshButton);
     expect(menu.parentElement).toHaveClass('planning-command-layout');
     expect(container.querySelector('.planning-command-layout + .planning-layout')).toBeInTheDocument();
   });
@@ -703,7 +708,7 @@ describe('PlanningPage cockpit', () => {
 
     expect(await screen.findByText('Planning diffusé en version 1.')).toBeInTheDocument();
     expect(client.rpc).toHaveBeenCalledWith('publish_planning_release');
-    expect(screen.getByText('Brouillon modifiable')).toBeInTheDocument();
+    expect(screen.queryByText('Brouillon modifiable')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
   });
 
@@ -881,7 +886,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
-    expect(screen.getByText('Dernière version diffusée')).toBeInTheDocument();
+    expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
@@ -892,7 +897,7 @@ describe('PlanningPage cockpit', () => {
     const { client } = createClient({ periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByText('Brouillon modifiable')).toBeInTheDocument();
+    expect(screen.queryByText('Brouillon modifiable')).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Créer une affectation' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Gérer les navires' })).not.toBeInTheDocument();

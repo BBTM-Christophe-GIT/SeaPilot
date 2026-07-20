@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Download,
   Expand,
   FilePenLine,
   FileDown,
@@ -49,7 +48,6 @@ import {
   buildPlanningMonthSegments,
   buildPlanningCrewRows,
   buildPlanningTimeline,
-  buildPlanningExportRows,
   formatPlanningPerson,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
@@ -195,7 +193,6 @@ interface ProjectFormState {
   description: string;
 }
 
-interface ExportFormState { personName: string; startsOn: string; endsOn: string }
 interface CrewListFormState { vesselId: string; date: string; watchGroup: string; format: PlanningCrewListFormat }
 interface VesselFormState { id: number; name: string; acronym: string }
 interface PlanningDayStateForm {
@@ -256,9 +253,9 @@ function PlanningRibbonButton({ className = '', count = 0, icon, label, ...butto
   );
 }
 
-function PlanningRibbonGroup({ children, empty = false, label }: { children?: ReactNode; empty?: boolean; label: string }) {
+function PlanningRibbonGroup({ children, label }: { children?: ReactNode; label: string }) {
   return (
-    <div aria-label={label} className={`planning-ribbon-group${empty ? ' is-empty' : ''}`} role="group">
+    <div aria-label={label} className="planning-ribbon-group" role="group">
       <div className="planning-ribbon-actions">{children}</div>
       <span className="planning-ribbon-group-label">{label}</span>
     </div>
@@ -310,6 +307,7 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
 
 const PlanningP12Panel = lazy(() => import('./PlanningP12Panel').then((module) => ({ default: module.PlanningP12Panel })));
 const PlanningP13Panel = lazy(() => import('./PlanningP13Panel').then((module) => ({ default: module.PlanningP13Panel })));
+const PlanningExportDialog = lazy(() => import('./PlanningExportDialog').then((module) => ({ default: module.PlanningExportDialog })));
 const PlanningP21Panel = lazy(() => import('./PlanningP21Panel').then((module) => ({ default: module.PlanningP21Panel })));
 const PlanningP22Panel = lazy(() => import('./PlanningP22Panel').then((module) => ({ default: module.PlanningP22Panel })));
 
@@ -395,7 +393,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
-  const [exportForm, setExportForm] = useState<ExportFormState>({ personName: '', startsOn: '', endsOn: '' });
   const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -1672,18 +1669,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setStatusMessage('Ce conflit est lié à une exigence globale de la matrice d’armement.');
   }
 
-  function exportPlanning(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const rowsToExport = buildPlanningExportRows(overview, exportForm.personName, { start: exportForm.startsOn, end: exportForm.endsOn });
-    const headers = ['Date', 'Marin', 'Jour travaillé', 'Statut', 'Fonction', 'Navire', 'Bordée', 'Annotation', 'Source'];
-    const escape = (value: string) => `"${String(value || '').replaceAll('"', '""')}"`;
-    const csv = [headers, ...rowsToExport.map((row) => [row.date, row.person, row.worked, row.status, row.functionLabel, row.vessel, row.watchGroup, row.comments, row.source])]
-      .map((line) => line.map(escape).join(';')).join('\r\n');
-    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
-    link.download = `planning-${exportForm.personName.replaceAll(' ', '-')}-${exportForm.startsOn}-${exportForm.endsOn}.csv`; link.click(); URL.revokeObjectURL(link.href);
-    setStatusMessage(`${rowsToExport.length} journée(s) exportée(s).`); setIsExportOpen(false);
-  }
-
   function toggleFleetNode(key: string) {
     setCollapsedFleetNodes((current) => {
       const next = new Set(current);
@@ -1776,20 +1761,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       <div className="planning-command-layout">
         <nav aria-label="Menu du planning" className="planning-module-toolbar">
-          <div className="planning-ribbon-utility">
-            <span className={canEditPlanning ? 'planning-mode-write' : 'planning-mode-read'}>
-              {canEditPlanning ? 'Brouillon modifiable' : 'Dernière version diffusée'}
-            </span>
-            <PlanningRibbonButton
-              aria-busy={isRefreshing}
-              className="is-utility"
-              disabled={isRefreshing}
-              icon={<RefreshCw aria-hidden="true" size={19} />}
-              label={isRefreshing ? 'Actualisation…' : 'Actualiser'}
-              onClick={() => void Promise.all([loadPlanning(), loadAbsences()])}
-            />
-          </div>
-
           <div className="planning-ribbon-scroll">
             <PlanningRibbonGroup label="ARMEMENT">
               {permissions.canViewDashboard || permissions.canViewWorkRest ? <PlanningRibbonButton icon={<Gauge aria-hidden="true" size={22} />} label="Cockpit métier P1.3" onClick={() => setIsP13Open(true)} /> : null}
@@ -1800,12 +1771,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               {canEditPlanning ? <PlanningRibbonButton icon={<CalendarPlus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => openFleetEvent()} /> : null}
             </PlanningRibbonGroup>
 
-            <PlanningRibbonGroup label="MARINS">
+            <PlanningRibbonGroup label="Gestion des congés">
               {permissions.canRequestAbsences ? <PlanningRibbonButton icon={<CalendarOff aria-hidden="true" size={22} />} label="Demander des congés" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} /> : null}
               {permissions.canReviewAbsences ? <PlanningRibbonButton count={pendingAbsenceCount} icon={<ShieldAlert aria-hidden="true" size={22} />} label="Demandes en attente" onClick={() => openP12({ tab: 'absences', requestedOnly: true })} /> : null}
             </PlanningRibbonGroup>
-
-            <PlanningRibbonGroup empty label="NAVIRES" />
 
             <PlanningRibbonGroup label="Aide à la décision">
               <PlanningRibbonButton count={tabCounts.conflicts} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Conflits" onClick={() => openOperationalTab('conflicts')} />
@@ -1821,8 +1790,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
             <PlanningRibbonGroup label="Documents">
               {permissions.canExport ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
-              {permissions.canExport ? <PlanningRibbonButton icon={<Download aria-hidden="true" size={22} />} label="Exporter un marin" onClick={() => { setExportForm({ personName: personOptions[0] || '', startsOn: range.start, endsOn: range.end }); setIsExportOpen(true); }} /> : null}
-              {permissions.canExport && (permissions.canViewDashboard || permissions.canViewWorkRest) ? <PlanningRibbonButton icon={<FileDown aria-hidden="true" size={22} />} label="Exports" onClick={() => setIsP13Open(true)} /> : null}
+              {permissions.canExport ? <PlanningRibbonButton icon={<FileDown aria-hidden="true" size={22} />} label="Exports" onClick={() => setIsExportOpen(true)} /> : null}
             </PlanningRibbonGroup>
           </div>
         </nav>
@@ -1849,6 +1817,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               ) : null}
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
                 <SlidersHorizontal aria-hidden="true" size={17} />Filtres{activeFilterCount ? <span>{activeFilterCount}</span> : null}
+              </button>
+              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => void Promise.all([loadPlanning(), loadAbsences()])} type="button">
+                <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
               <div className="planning-toolbar-spacer" />
               <div className="planning-view-switch" aria-label="Période affichée">
@@ -2082,14 +2053,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
       {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteLeaves={permissions.canDeleteLeaves} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
-      {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canExport={permissions.canExport} canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
+      {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
       {vesselForm ? <div className="planning-dialog-backdrop" role="presentation"><form aria-label={`Fiche du navire ${vesselForm.name}`} aria-modal="true" className="planning-dialog planning-vessel-sheet" onSubmit={saveVesselEditor} role="dialog"><header><div><FilePenLine aria-hidden="true" size={20} /><span><small>Fiche navire</small><h2>{vesselForm.name}</h2></span></div><button aria-label="Fermer" onClick={() => setVesselForm(null)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Nom<input aria-label="Nom du navire" disabled={!permissions.canManageVessels} maxLength={120} onChange={(event) => setVesselForm((current) => current ? { ...current, name: event.target.value } : null)} required value={vesselForm.name} /></label><label className="is-wide">Indicatif<input aria-label="Indicatif du navire" disabled={!permissions.canManageVessels} maxLength={40} onChange={(event) => setVesselForm((current) => current ? { ...current, acronym: event.target.value } : null)} value={vesselForm.acronym} /></label></div><footer><button className="is-secondary" onClick={() => setVesselForm(null)} type="button">Fermer</button>{permissions.canManageVessels ? <button disabled={isSaving} type="submit">Enregistrer</button> : null}</footer></form></div> : null}
       {isCrewListOpen ? <div className="planning-dialog-backdrop" role="presentation"><form aria-modal="true" className="planning-dialog planning-crew-list-dialog" onSubmit={handleGenerateCrewList} role="dialog"><header><div><FileSpreadsheet aria-hidden="true" size={20} /><span><small>Document réglementaire</small><h2>Générer une crew list</h2></span></div><button aria-label="Fermer" onClick={() => setIsCrewListOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><p className="planning-dialog-intro">Le document A4 paysage reprend uniquement les affectations et profils enregistrés dans Supabase.</p><div className="planning-dialog-grid"><label>Date<input aria-label="Date de la crew list" onChange={(event) => changeCrewListDate(event.target.value)} required type="date" value={crewListForm.date} /></label><label>Navire<select aria-label="Navire de la crew list" onChange={(event) => { const vesselId = event.target.value; const boards = availablePlanningCrewListBoards(overview, Number(vesselId), crewListForm.date); setCrewListForm((current) => ({ ...current, vesselId, watchGroup: boards.length === 1 ? boards[0] : '' })); }} required value={crewListForm.vesselId}><option value="">Choisir</option>{crewListVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label><label>Bordée<select aria-label="Bordée de la crew list" disabled={!crewListBoards.length} onChange={(event) => setCrewListForm((current) => ({ ...current, watchGroup: event.target.value }))} required={crewListBoards.length > 0} value={crewListForm.watchGroup}><option value="">{crewListBoards.length ? 'Choisir' : 'Aucune bordée à cette date'}</option>{crewListBoards.map((board) => <option key={board}>{board}</option>)}</select></label><label>Format<select aria-label="Format de la crew list" onChange={(event) => setCrewListForm((current) => ({ ...current, format: event.target.value as PlanningCrewListFormat }))} value={crewListForm.format}><option value="xlsx">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select></label></div>{!crewListVessels.length ? <p className="planning-crew-list-warning" role="status">Aucune affectation active pour cette date.</p> : null}<footer><button className="is-secondary" onClick={() => setIsCrewListOpen(false)} type="button">Annuler</button><button disabled={isSaving || !crewListBoards.length || !crewListForm.watchGroup} type="submit">Générer {crewListForm.format.toUpperCase()}</button></footer></form></div> : null}
-      {isExportOpen ? <div className="planning-dialog-backdrop" role="presentation"><form className="planning-dialog" onSubmit={exportPlanning}><header><div><Download aria-hidden="true" size={20} /><h2>Exporter les données d’un marin</h2></div><button aria-label="Fermer" onClick={() => setIsExportOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Marin<select required value={exportForm.personName} onChange={(event) => setExportForm((current) => ({ ...current, personName: event.target.value }))}>{personOptions.map((person) => <option key={person}>{person}</option>)}</select></label><label>Début<input required type="date" value={exportForm.startsOn} onChange={(event) => setExportForm((current) => ({ ...current, startsOn: event.target.value }))} /></label><label>Fin<input required type="date" value={exportForm.endsOn} onChange={(event) => setExportForm((current) => ({ ...current, endsOn: event.target.value }))} /></label></div><footer><button className="is-secondary" onClick={() => setIsExportOpen(false)} type="button">Annuler</button><button type="submit">Exporter en CSV</button></footer></form></div> : null}
+      {isExportOpen ? <Suspense fallback={<div className="planning-dialog-backdrop"><div className="admin-state" role="status">Chargement des exports…</div></div>}><PlanningExportDialog client={effectiveClient} onClose={() => setIsExportOpen(false)} overview={overview} range={range} /></Suspense> : null}
     </section>
   );
 }

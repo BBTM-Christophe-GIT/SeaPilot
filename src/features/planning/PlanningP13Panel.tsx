@@ -3,7 +3,6 @@ import {
   Activity,
   Bell,
   CheckCircle2,
-  Download,
   Gauge,
   Link2,
   Plus,
@@ -36,9 +35,7 @@ import {
   savePlanningDependency,
   savePlanningWorkRestPolicy,
 } from './planningP13Queries';
-import type { PlanningExportFormat, PlanningExportKind } from './planningP13Exports';
-
-type P13Tab = 'dashboard' | 'rest' | 'notifications' | 'dependencies' | 'exports';
+type P13Tab = 'dashboard' | 'rest' | 'notifications' | 'dependencies';
 
 const EMPTY_DATA: PlanningP13Data = {
   policies: [], notifications: [], dependencies: [],
@@ -79,7 +76,6 @@ const TABS: Array<{ key: P13Tab; label: string }> = [
   { key: 'rest', label: 'Travail & repos' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'dependencies', label: 'Dépendances' },
-  { key: 'exports', label: 'Exports' },
 ];
 
 const DEPENDENCY_TYPES = Object.keys(PLANNING_DEPENDENCY_LABELS) as PlanningDependencyType[];
@@ -109,14 +105,6 @@ function splitEntity(value: string): { kind: PlanningDependencyEntityKind; id: n
   return { kind: kind as PlanningDependencyEntityKind, id: Number(id) };
 }
 
-function downloadBlob(blob: Blob, fileName: string): void {
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
 export function PlanningP13Panel({
   client,
   overview,
@@ -127,7 +115,6 @@ export function PlanningP13Panel({
   canViewNotifications,
   canRefreshNotifications,
   canManageDependencies,
-  canExport,
   onClose,
   onAuditChange,
 }: {
@@ -140,7 +127,6 @@ export function PlanningP13Panel({
   canViewNotifications: boolean;
   canRefreshNotifications: boolean;
   canManageDependencies: boolean;
-  canExport: boolean;
   onClose: () => void;
   onAuditChange: () => Promise<void>;
 }) {
@@ -152,15 +138,12 @@ export function PlanningP13Panel({
   const [policyEditor, setPolicyEditor] = useState<PolicyForm | null>(null);
   const [restFilter, setRestFilter] = useState<'all' | 'alerts' | 'missing'>('alerts');
   const [dependencyForm, setDependencyForm] = useState<DependencyForm | null>(null);
-  const [exportKind, setExportKind] = useState<PlanningExportKind>('schedule');
-  const [exportFormat, setExportFormat] = useState<PlanningExportFormat>('xlsx');
   const availableTabs = useMemo(() => TABS.filter((item) => {
     if (item.key === 'dashboard') return canViewDashboard;
     if (item.key === 'rest') return canViewWorkRest;
     if (item.key === 'notifications') return canViewNotifications;
-    if (item.key === 'dependencies') return canManageDependencies;
-    return canExport;
-  }), [canExport, canManageDependencies, canViewDashboard, canViewNotifications, canViewWorkRest]);
+    return canManageDependencies;
+  }), [canManageDependencies, canViewDashboard, canViewNotifications, canViewWorkRest]);
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
@@ -273,21 +256,6 @@ export function PlanningP13Panel({
     }
   }
 
-  async function runExport(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      const { generatePlanningExport } = await import('./planningP13Exports');
-      const result = await generatePlanningExport(exportKind, exportFormat, { overview, data, checks, startsOn: range.start, endsOn: range.end });
-      downloadBlob(result.blob, result.fileName);
-      setFeedback({ text: `Export ${exportFormat.toUpperCase()} généré.`, error: false });
-    } catch (error) {
-      setFeedback({ text: planningErrorMessage(error, 'Impossible de générer l’export.'), error: true });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return <div className="planning-dialog-backdrop is-side-panel" role="presentation">
     <section aria-modal="true" className="planning-dialog planning-p13-panel" role="dialog">
       <header><div><Gauge aria-hidden="true" size={21} /><div><h2>Cockpit Planning P1.3</h2><small>Repos, notifications, indicateurs, exports et dépendances</small></div></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></header>
@@ -325,8 +293,6 @@ export function PlanningP13Panel({
         <div className="planning-p13-toolbar"><div><strong>Dépendances opérationnelles</strong><small>La cible doit commencer après la source et le délai configuré.</small></div>{canManageDependencies && entities.length > 1 ? <button onClick={() => setDependencyForm({ dependencyType: 'operation_sequence', predecessor: entities[0].value, successor: entities[1].value, lagMinutes: '0', notes: '' })} type="button"><Plus size={16} />Nouvelle dépendance</button> : null}</div>
         <div className="planning-p13-dependencies">{dependencyResults.length ? dependencyResults.map((result) => <article className={result.violated ? 'is-violated' : 'is-valid'} key={result.dependency.id}><Activity size={18} /><div><span><strong>{PLANNING_DEPENDENCY_LABELS[result.dependency.dependencyType]}</strong><em>{result.violated ? 'Non respectée' : 'Respectée'}</em></span><p>{result.predecessorLabel} → {result.successorLabel}</p><small>{result.detail}</small></div>{canManageDependencies ? <button aria-label={`Supprimer la dépendance ${result.dependency.id}`} disabled={saving} onClick={() => void removeDependency(result.dependency.id)} type="button"><Trash2 size={16} /></button> : null}</article>) : <div className="admin-empty"><Link2 size={20} /><p>Aucune dépendance configurée.</p></div>}</div>
       </div> : null}
-
-      {!loading && tab === 'exports' ? <div className="planning-p13-content"><form className="planning-p13-export" onSubmit={runExport}><Download size={28} /><div><h3>Exports métier</h3><p>La période active du Planning est utilisée : {formatPlanningDate(range.start)} – {formatPlanningDate(range.end)}.</p></div><label>Contenu<select value={exportKind} onChange={(event) => setExportKind(event.target.value as PlanningExportKind)}><option value="schedule">Planning complet</option><option value="crew_list">Liste d’équipage</option><option value="handover_sheet">Feuille de relève</option><option value="anomalies">Anomalies</option><option value="work_rest">Travail et repos</option></select></label><label>Format<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as PlanningExportFormat)}><option value="xlsx">Excel (.xlsx)</option><option value="pdf">PDF</option><option value="ics">Calendrier (.ics)</option></select></label><button disabled={!canExport || saving} type="submit">{saving ? 'Génération…' : 'Générer l’export'}</button>{!canExport ? <small>Votre rôle ne permet pas les exports globaux.</small> : null}</form></div> : null}
 
       {policyEditor ? <form className="planning-p13-inline-editor" onSubmit={submitPolicy}><header><div><Settings2 size={18} /><h3>{policyEditor.id ? 'Modifier la politique' : 'Nouvelle politique'}</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setPolicyEditor(null)} type="button"><X size={16} /></button></header><div className="planning-p13-form-grid"><label className="is-wide">Nom<input required minLength={2} value={policyEditor.name} onChange={(event) => setPolicyEditor({ ...policyEditor, name: event.target.value })} /></label><label>Portée<select value={policyEditor.scope} onChange={(event) => setPolicyEditor({ ...policyEditor, scope: event.target.value as PolicyForm['scope'], vesselId: '' })}><option value="company">Entreprise</option><option value="vessel">Navire</option></select></label>{policyEditor.scope === 'vessel' ? <label>Navire<select required value={policyEditor.vesselId} onChange={(event) => setPolicyEditor({ ...policyEditor, vesselId: event.target.value })}><option value="">Sélectionner</option>{overview.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label> : null}<label>Applicable du<input required type="date" value={policyEditor.effectiveFrom} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveFrom: event.target.value })} /></label><label>Au<input min={policyEditor.effectiveFrom} type="date" value={policyEditor.effectiveTo} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveTo: event.target.value })} /></label><label>Travail max / 24 h<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork24h: event.target.value })} /></label><label>Repos min / 24 h<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minRest24h} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest24h: event.target.value })} /></label><label>Travail max / 7 j<input max="168" min="0" required step="0.25" type="number" value={policyEditor.maxWork7d} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork7d: event.target.value })} /></label><label>Repos min / 7 j<input max="168" min="0" required step="0.25" type="number" value={policyEditor.minRest7d} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest7d: event.target.value })} /></label><label>Repos consécutif min<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minConsecutiveRestHours} onChange={(event) => setPolicyEditor({ ...policyEditor, minConsecutiveRestHours: event.target.value })} /></label><label>Périodes de repos max<input max="24" min="1" required type="number" value={policyEditor.maxRestPeriods24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxRestPeriods24h: event.target.value })} /></label><label>Début de nuit<input required type="time" value={policyEditor.nightStartsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightStartsAt: event.target.value })} /></label><label>Fin de nuit<input required type="time" value={policyEditor.nightEndsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightEndsAt: event.target.value })} /></label><label>Travail de nuit max<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxNightWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxNightWork24h: event.target.value })} /></label><label className="is-checkbox"><input checked={policyEditor.includeHandover} onChange={(event) => setPolicyEditor({ ...policyEditor, includeHandover: event.target.checked })} type="checkbox" />Inclure la passation</label><label className="is-checkbox"><input checked={policyEditor.active} onChange={(event) => setPolicyEditor({ ...policyEditor, active: event.target.checked })} type="checkbox" />Politique active</label><label className="is-wide">Notes<textarea value={policyEditor.notes} onChange={(event) => setPolicyEditor({ ...policyEditor, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setPolicyEditor(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
 
