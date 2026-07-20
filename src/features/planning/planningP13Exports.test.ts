@@ -6,6 +6,8 @@ import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 const overview = {
   ...EMPTY_PLANNING_OVERVIEW,
+  people: [{ id: 3, firstName: 'Anne', lastName: 'MARTIN', functionLabel: 'Capitaine', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '', departedOn: '', active: true }],
+  vessels: [{ id: 2, name: 'COTENTIN', acronym: 'CTN', active: true }],
   assignments: [{ id: 1, vesselId: 2, vesselName: 'COTENTIN', captainPersonId: null, captainName: '', crewPersonId: 3, crewName: 'Anne MARTIN', startsOn: '2026-08-01', endsOn: '2026-08-10', startsAt: '2026-08-01T06:00:00Z', endsAt: '2026-08-10T18:00:00Z', assignmentRole: 'Capitaine', statusLabel: 'En mer', confirmationStatus: 'confirmed' as const, watchGroup: 'A', comments: 'Test', sourceLabel: 'test' }],
 };
 
@@ -37,6 +39,13 @@ describe('Planning P1.3 exports', () => {
     expect(content).toContain('BEGIN:VCALENDAR');
     expect(content).toContain('UID:assignment-1@seapilot');
     expect(content).toContain('SUMMARY:Anne MARTIN · COTENTIN');
+  });
+
+  it('adds the sailor export and applies sailor and vessel filters', async () => {
+    const result = await generatePlanningExport('sailor', 'xlsx', { ...context, personIds: [3], vesselIds: [2] });
+    expect(result.fileName).toBe('marins-2026-08-01-2026-08-31.xlsx');
+    const archive = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    await expect(archive.file('xl/worksheets/sheet1.xml')!.async('string')).resolves.toContain('Anne MARTIN');
   });
 
   it('creates a PDF anomaly/work-rest report', async () => {

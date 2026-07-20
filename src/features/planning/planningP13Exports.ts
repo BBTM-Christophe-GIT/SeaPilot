@@ -1,8 +1,9 @@
 import type { PlanningOverview } from './planningQueries';
 import type { PlanningP13Data, PlanningWorkRestCheck } from './planningP13';
+import { buildPlanningExportRows, formatPlanningPerson } from './planningModel';
 
 export type PlanningExportFormat = 'xlsx' | 'pdf' | 'ics';
-export type PlanningExportKind = 'schedule' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
+export type PlanningExportKind = 'schedule' | 'sailor' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
 
 export interface PlanningExportContext {
   overview: PlanningOverview;
@@ -10,6 +11,8 @@ export interface PlanningExportContext {
   checks: PlanningWorkRestCheck[];
   startsOn: string;
   endsOn: string;
+  personIds?: number[];
+  vesselIds?: number[];
 }
 
 interface PlanningExportTable {
@@ -25,6 +28,7 @@ export interface PlanningGeneratedExport {
 
 const EXPORT_LABELS: Record<PlanningExportKind, string> = {
   schedule: 'planning',
+  sailor: 'marins',
   crew_list: 'liste-equipage',
   handover_sheet: 'feuille-releve',
   anomalies: 'anomalies',
@@ -35,14 +39,36 @@ function within(startsOn: string, endsOn: string, rangeStart: string, rangeEnd: 
   return startsOn <= rangeEnd && endsOn >= rangeStart;
 }
 
+function selected(id: number | null, ids?: number[]): boolean {
+  return !ids || ids.length === 0 || (id !== null && ids.includes(id));
+}
+
+function filteredAssignments(context: PlanningExportContext) {
+  return context.overview.assignments.filter((assignment) => selected(assignment.crewPersonId, context.personIds)
+    && selected(assignment.vesselId, context.vesselIds)
+    && within(assignment.startsOn, assignment.endsOn, context.startsOn, context.endsOn));
+}
+
 function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): PlanningExportTable[] {
   const { overview, data, checks, startsOn, endsOn } = context;
+  if (kind === 'sailor') {
+    const selectedVesselNames = new Set(overview.vessels.filter((vessel) => selected(vessel.id, context.vesselIds)).map((vessel) => vessel.name));
+    const rows = overview.people
+      .filter((person) => selected(person.id, context.personIds))
+      .flatMap((person) => buildPlanningExportRows(overview, formatPlanningPerson(person), { start: startsOn, end: endsOn }))
+      .filter((row) => !context.vesselIds || context.vesselIds.length === 0 || selectedVesselNames.has(row.vessel));
+    return [{
+      name: 'Marins',
+      columns: ['Date', 'Marin', 'Jour travaillé', 'Statut', 'Fonction', 'Navire', 'Bordée', 'Annotation', 'Source'],
+      rows: rows.map((row) => [row.date, row.person, row.worked, row.status, row.functionLabel, row.vessel, row.watchGroup, row.comments, row.source]),
+    }];
+  }
   if (kind === 'crew_list') {
     return [{
       name: 'Équipage',
       columns: ['Navire', 'Marin', 'Fonction', 'Début', 'Fin', 'Statut', 'Bordée'],
-      rows: overview.assignments
-        .filter((assignment) => assignment.confirmationStatus !== 'cancelled' && within(assignment.startsOn, assignment.endsOn, startsOn, endsOn))
+      rows: filteredAssignments(context)
+        .filter((assignment) => assignment.confirmationStatus !== 'cancelled')
         .map((assignment) => [assignment.vesselName, assignment.crewName, assignment.assignmentRole, assignment.startsOn, assignment.endsOn, assignment.confirmationStatus, assignment.watchGroup]),
     }];
   }
@@ -50,8 +76,9 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     return [{
       name: 'Relèves',
       columns: ['Navire', 'Date', 'Lieu', 'Fonction', 'Sortant', 'Entrant', 'Durée (min)', 'Statut', 'Commentaires'],
-      rows: overview.handovers.filter((handover) => handover.handoverAt.slice(0, 10) >= startsOn && handover.handoverAt.slice(0, 10) <= endsOn)
-        .flatMap((handover) => handover.positions.map((position) => [
+      rows: overview.handovers.filter((handover) => selected(handover.vesselId, context.vesselIds)
+        && handover.handoverAt.slice(0, 10) >= startsOn && handover.handoverAt.slice(0, 10) <= endsOn)
+        .flatMap((handover) => handover.positions.filter((position) => selected(position.outgoingPersonId, context.personIds) || selected(position.incomingPersonId, context.personIds)).map((position) => [
           overview.vessels.find((vessel) => vessel.id === handover.vesselId)?.name || `Navire #${handover.vesselId}`,
           handover.handoverAt,
           handover.location,
@@ -68,7 +95,8 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     return [{
       name: 'Anomalies',
       columns: ['Type', 'Sévérité', 'Titre', 'Description', 'Début', 'Fin', 'Priorité', 'Statut', 'Responsable'],
-      rows: data.p12.conflictCases.filter((item) => within(item.startsOn, item.endsOn, startsOn, endsOn)).map((item) => [
+      rows: data.p12.conflictCases.filter((item) => selected(item.personId, context.personIds) && selected(item.vesselId, context.vesselIds)
+        && within(item.startsOn, item.endsOn, startsOn, endsOn)).map((item) => [
         item.conflictType, item.severity, item.title, item.description, item.startsOn, item.endsOn, item.priority, item.status, item.ownerName,
       ]),
     }];
@@ -77,7 +105,8 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     return [{
       name: 'Travail et repos',
       columns: ['Marin', 'Navire', 'Date', 'Politique', 'Contrôle', 'Valeur', 'Seuil', 'Unité', 'Résultat', 'Source'],
-      rows: checks.filter((check) => check.date >= startsOn && check.date <= endsOn).map((check) => [
+      rows: checks.filter((check) => selected(check.personId, context.personIds) && selected(check.vesselId, context.vesselIds)
+        && check.date >= startsOn && check.date <= endsOn).map((check) => [
         check.personName, check.vesselName, check.date, check.policyName, check.ruleLabel, check.value ?? '', check.threshold ?? '', check.unit, check.status, check.dataSource,
       ]),
     }];
@@ -86,14 +115,15 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     {
       name: 'Affectations',
       columns: ['Navire', 'Marin', 'Fonction', 'Début', 'Fin', 'Statut', 'Responsable'],
-      rows: overview.assignments.filter((assignment) => within(assignment.startsOn, assignment.endsOn, startsOn, endsOn)).map((assignment) => [
+      rows: filteredAssignments(context).map((assignment) => [
         assignment.vesselName, assignment.crewName, assignment.assignmentRole, assignment.startsAt || assignment.startsOn, assignment.endsAt || assignment.endsOn, assignment.confirmationStatus, assignment.captainName,
       ]),
     },
     {
       name: 'Opérations',
       columns: ['Titre', 'Type', 'Navire', 'Début', 'Fin', 'Statut', 'Responsable'],
-      rows: overview.projects.filter((project) => within(project.startsOn, project.endsOn, startsOn, endsOn)).map((project) => [
+      rows: overview.projects.filter((project) => selected(project.primaryVesselId, context.vesselIds)
+        && within(project.startsOn, project.endsOn, startsOn, endsOn)).map((project) => [
         project.title, project.eventType, project.primaryVesselName, project.startsOn, project.endsOn, project.status, project.responsibleName,
       ]),
     },
@@ -180,22 +210,26 @@ function icsDate(value: string, end = false): string {
 function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob {
   const events: Array<{ uid: string; title: string; description: string; start: string; end: string }> = [];
   if (kind === 'handover_sheet' || kind === 'schedule') {
-    for (const handover of context.overview.handovers.filter((item) => item.handoverAt.slice(0, 10) >= context.startsOn && item.handoverAt.slice(0, 10) <= context.endsOn)) {
+    for (const handover of context.overview.handovers.filter((item) => selected(item.vesselId, context.vesselIds)
+      && item.handoverAt.slice(0, 10) >= context.startsOn && item.handoverAt.slice(0, 10) <= context.endsOn
+      && item.positions.some((position) => selected(position.outgoingPersonId, context.personIds) || selected(position.incomingPersonId, context.personIds)))) {
       events.push({ uid: `handover-${handover.id}@seapilot`, title: `Relève · ${handover.location}`, description: handover.comments, start: handover.handoverAt, end: new Date(Date.parse(handover.handoverAt) + handover.durationMinutes * 60_000).toISOString() });
     }
   }
-  if (kind === 'crew_list' || kind === 'schedule') {
-    for (const assignment of context.overview.assignments.filter((item) => within(item.startsOn, item.endsOn, context.startsOn, context.endsOn))) {
+  if (kind === 'crew_list' || kind === 'schedule' || kind === 'sailor') {
+    for (const assignment of filteredAssignments(context)) {
       events.push({ uid: `assignment-${assignment.id}@seapilot`, title: `${assignment.crewName} · ${assignment.vesselName}`, description: `${assignment.assignmentRole} · ${assignment.comments}`, start: assignment.startsAt || assignment.startsOn, end: assignment.endsAt || assignment.endsOn });
     }
   }
   if (kind === 'anomalies') {
-    for (const conflict of context.data.p12.conflictCases.filter((item) => within(item.startsOn, item.endsOn, context.startsOn, context.endsOn))) {
+    for (const conflict of context.data.p12.conflictCases.filter((item) => selected(item.personId, context.personIds)
+      && selected(item.vesselId, context.vesselIds) && within(item.startsOn, item.endsOn, context.startsOn, context.endsOn))) {
       events.push({ uid: `conflict-${conflict.id}@seapilot`, title: conflict.title, description: conflict.description, start: conflict.startsOn, end: conflict.endsOn });
     }
   }
   if (kind === 'work_rest') {
-    for (const check of context.checks.filter((item) => item.status !== 'compliant' && item.date >= context.startsOn && item.date <= context.endsOn)) {
+    for (const check of context.checks.filter((item) => selected(item.personId, context.personIds)
+      && selected(item.vesselId, context.vesselIds) && item.status !== 'compliant' && item.date >= context.startsOn && item.date <= context.endsOn)) {
       events.push({ uid: `rest-${check.id}@seapilot`, title: `${check.ruleLabel} · ${check.personName}`, description: check.detail, start: check.date, end: check.date });
     }
   }

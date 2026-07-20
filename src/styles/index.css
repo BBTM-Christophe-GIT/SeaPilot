@@ -12311,8 +12311,8 @@ button.planning-p12-conflict-card {
 /* Planning menu ribbon: Excel source grouping with icon-and-text commands. */
 .planning-module-toolbar {
   display: grid;
-  min-height: 196px;
-  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 154px;
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
   overflow: hidden;
@@ -12501,20 +12501,214 @@ button.planning-p12-conflict-card {
 
 @media (max-width: 900px) {
   .planning-module-toolbar {
-    min-height: 196px;
+    min-height: 154px;
+  }
+}
+
+.planning-refresh-button[aria-busy="true"] svg {
+  animation: planning-spin .8s linear infinite;
+}
+
+@keyframes planning-spin {
+  to { transform: rotate(360deg); }
+}
+
+.planning-export-dialog {
+  position: relative;
+  width: min(1180px, 100%);
+  gap: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.planning-export-dialog > form {
+  display: grid;
+  gap: 18px;
+  padding: 25px 22px 22px;
+}
+
+.planning-export-dialog .planning-export-close {
+  display: grid;
+  position: absolute;
+  z-index: 2;
+  top: 15px;
+  right: 15px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: #5c6a7e;
+  background: #f1f4f7;
+}
+
+.planning-export-intro {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: #102743;
+}
+
+.planning-export-intro > svg {
+  flex: 0 0 auto;
+}
+
+.planning-export-intro h2,
+.planning-export-intro p {
+  margin: 0;
+}
+
+.planning-export-intro h2 {
+  color: #061b38;
+  font-size: 1.05rem;
+}
+
+.planning-export-intro p {
+  margin-top: 5px;
+  color: #60718a;
+  font-size: .8rem;
+}
+
+.planning-export-grid {
+  display: grid;
+  grid-template-columns: 135px 135px minmax(180px, 1fr) minmax(180px, 1fr) minmax(185px, 1fr) 160px;
+  align-items: end;
+  gap: 12px;
+}
+
+.planning-export-grid > label,
+.planning-export-multiselect {
+  min-width: 0;
+}
+
+.planning-export-multiselect {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.planning-export-multiselect legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: #495a71;
+  font-size: .76rem;
+  font-weight: 780;
+}
+
+.planning-export-multiselect details {
+  position: relative;
+}
+
+.planning-export-multiselect summary {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #ccd7e3;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #18263c;
+  background: #fbfcfe;
+  font-size: .76rem;
+  font-weight: 720;
+  cursor: pointer;
+  list-style: none;
+}
+
+.planning-export-multiselect summary::after {
+  content: "⌄";
+  color: #60718a;
+  font-size: 1rem;
+}
+
+.planning-export-multiselect summary::-webkit-details-marker {
+  display: none;
+}
+
+.planning-export-multiselect details > div {
+  display: grid;
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 220px;
+  gap: 0;
+  overflow-y: auto;
+  border: 1px solid #ccd7e3;
+  border-radius: 9px;
+  padding: 5px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgb(15 35 58 / 18%);
+}
+
+.planning-export-multiselect details label {
+  display: flex;
+  min-height: 34px;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.planning-export-multiselect details label:hover {
+  background: #edf5ff;
+}
+
+.planning-export-multiselect details label.is-all {
+  border-bottom: 1px solid #e3e9f0;
+  border-radius: 0;
+  margin-bottom: 3px;
+  color: #0f57b7;
+}
+
+.planning-export-multiselect input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: #1769dc;
+}
+
+.planning-export-feedback {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: #17603a;
+  font-size: .76rem;
+  font-weight: 720;
+}
+
+.planning-export-feedback.is-error {
+  color: #b4233a;
+}
+
+.planning-export-dialog footer button:last-child {
+  background: #0c6d7d;
+}
+
+@media (max-width: 1100px) {
+  .planning-export-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 600px) {
-  .planning-ribbon-utility {
-    align-items: stretch;
+  .planning-export-dialog {
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
   }
 
-  .planning-ribbon-utility .planning-mode-write,
-  .planning-ribbon-utility .planning-mode-read {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .planning-export-dialog > header,
+  .planning-export-dialog > form {
+    padding: 15px;
+  }
+
+  .planning-export-grid {
+    grid-template-columns: 1fr;
   }
 }
