@@ -27,7 +27,7 @@ Il est interdit de créer un bucket Supabase Storage, de copier un binaire dans 
 - fenêtre de gel des modifications des listes `BBTM - Projets` et `BBTM - Clients` décidée avec le métier ;
 - aucune clé service, session Microsoft 365, sauvegarde ou export dans le dépôt.
 
-Les sources attendues sont `list-bbtm-clients`, `list-bbtm-flotte`, `list-bbtm-projets`, `library-documents-projets` et `library-documents-contractuels`.
+Les sources attendues sont `list-bbtm-clients`, `list-bbtm-flotte`, `list-remorque`, `list-bbtm-projets`, `library-documents-projets` et `library-documents-contractuels`.
 
 ## 1. Authentifier et vérifier les cibles
 
@@ -63,6 +63,7 @@ Protéger ce fichier comme une donnée métier sensible. Ne jamais le joindre à
 npm run export:sharepoint:list -- `
   --source-key list-bbtm-clients `
   --source-key list-bbtm-flotte `
+  --source-key list-remorque `
   --source-key list-bbtm-projets `
   --source-key library-documents-projets `
   --source-key library-documents-contractuels `
@@ -77,7 +78,7 @@ Le fichier `.data/sharepoint-projects-cutover.json` peut contenir des données m
 npm run import:sharepoint -- --file .data/sharepoint-projects-cutover.json --dry-run
 ```
 
-Le dry-run doit reconnaître cinq sources. Arrêter en présence d’un mapping inconnu, d’un identifiant SharePoint de liste/item/drive/drive-item manquant, d’un dossier interprété comme fichier, ou d’un volume inattendu.
+Le dry-run doit reconnaître six sources. Arrêter en présence d’un mapping inconnu, d’un identifiant SharePoint de liste/item/drive/drive-item manquant, d’un dossier interprété comme fichier, ou d’un volume inattendu.
 
 ## 5. Import contrôlé et rejeu
 
@@ -93,6 +94,12 @@ npm run import:sharepoint -- `
 ```
 
 Le bundle place les clients et la flotte avant les projets, puis les documents. L’import effectue des upserts fondés sur les identifiants SharePoint stables. Il ne purge, ne prune et ne supprime aucune ligne.
+
+Sans clé service locale, l’import lié approuvé est équivalent et exécute dans la même transaction les upserts, la résolution client/navires, la création des contrats typés, le relèvement monotone du compteur et la résolution documentaire :
+
+```powershell
+npm run import:sharepoint:linked -- --file .data/sharepoint-projects-live.json
+```
 
 Rejouer exactement la même commande. Les volumes et nombres de doublons doivent rester identiques. Une variation sans changement de source, un nouveau doublon ou une suppression est un No-Go. Ne pas appeler `--resolve-planning-links` pour rapprocher les lignes historiques : seul le lien explicite créé par `projects_create_planning_occurrence` est autorisé.
 

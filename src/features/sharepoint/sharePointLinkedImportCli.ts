@@ -2,10 +2,11 @@ import {
   buildSharePointImportBatchesFromExport,
   buildSharePointImportReport,
   type SharePointExportBundle,
+  type SharePointImportValue,
   type SharePointUpsertBatch,
 } from './sharePointImport.ts';
 
-type SqlValue = string | number | boolean | null;
+type SqlValue = SharePointImportValue;
 
 interface CommandResult {
   exitCode: number;
@@ -36,6 +37,11 @@ function sqlLiteral(value: SqlValue): string {
 
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
+  }
+
+  if (typeof value === 'object') {
+    const json = JSON.stringify(value).replaceAll('\u0000', '').replaceAll("'", "''");
+    return `'${json}'::jsonb`;
   }
 
   return `'${value.replaceAll('\u0000', '').replaceAll("'", "''")}'`;
@@ -88,7 +94,27 @@ export function buildSharePointImportSqlFromExport(bundle: SharePointExportBundl
     return '-- No rows to import.\n';
   }
 
-  return `begin;\n\n${statements.join('\n\n')}\n\ncommit;\n`;
+  const sourceKeys = new Set(bundle.sources.map((source) => source.sourceKey));
+  const reconciliationStatements: string[] = [];
+
+  if (sourceKeys.has('list-bbtm-projets')) {
+    reconciliationStatements.push(
+      'perform public.resolve_sharepoint_project_links();',
+      'perform public.sync_sharepoint_project_contracts();',
+    );
+  }
+
+  if (sourceKeys.has('library-documents-projets') || sourceKeys.has('library-documents-contractuels')) {
+    reconciliationStatements.push('perform public.resolve_sharepoint_project_document_links();');
+  }
+
+  const body = [...statements, ...reconciliationStatements]
+    .join('\n\n')
+    .split('\n')
+    .map((line) => `  ${line}`)
+    .join('\n');
+
+  return `do $sharepoint_import$\nbegin\n${body}\nend\n$sharepoint_import$;\n`;
 }
 
 function parseArgs(args: string[]): { filePath: string | null } {

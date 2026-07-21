@@ -32,10 +32,28 @@ describe('buildSharePointUpsertSql', () => {
       ].join('\n'),
     );
   });
+
+  it('serializes source payload objects as escaped jsonb', () => {
+    const sql = buildSharePointUpsertSql({
+      sourceKey: 'list-bbtm-clients',
+      targetTable: 'clients',
+      conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
+      rows: [
+        {
+          name: 'Client test',
+          sharepoint_list_id: 'clients',
+          sharepoint_item_id: '1',
+          source_payload: { Contact: "O'NEIL" },
+        },
+      ],
+    });
+
+    expect(sql).toContain(`'{"Contact":"O''NEIL"}'::jsonb`);
+  });
 });
 
 describe('buildSharePointImportSqlFromExport', () => {
-  it('maps an export bundle and wraps the SQL import in a transaction', () => {
+  it('maps an export bundle into one atomic database statement', () => {
     const sql = buildSharePointImportSqlFromExport({
       exportedAt: '2026-07-03T12:00:00.000Z',
       sources: [
@@ -54,11 +72,26 @@ describe('buildSharePointImportSqlFromExport', () => {
       ],
     });
 
-    expect(sql).toContain('begin;');
+    expect(sql).toContain('do $sharepoint_import$');
+    expect(sql).toContain('begin');
     expect(sql).toContain('insert into public."people"');
     expect(sql).toContain("'Julien'");
     expect(sql).toContain("'LECOCQ'");
-    expect(sql).toContain('commit;');
+    expect(sql).toContain('$sharepoint_import$;');
+  });
+
+  it('reconciles projects, contracts and documents inside the import transaction', () => {
+    const sql = buildSharePointImportSqlFromExport({
+      sources: [
+        { sourceKey: 'list-bbtm-projets', items: [{ ID: '54', Title: 'P260 - Remorquage DENVER' }] },
+        { sourceKey: 'library-documents-contractuels', items: [] },
+      ],
+    });
+
+    expect(sql).toContain('perform public.resolve_sharepoint_project_links();');
+    expect(sql).toContain('perform public.sync_sharepoint_project_contracts();');
+    expect(sql).toContain('perform public.resolve_sharepoint_project_document_links();');
+    expect(sql.indexOf('sync_sharepoint_project_contracts')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
   });
 });
 
