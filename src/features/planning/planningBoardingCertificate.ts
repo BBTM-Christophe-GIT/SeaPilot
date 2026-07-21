@@ -15,8 +15,8 @@ export type BoardingCertificateFormat = 'docx' | 'pdf';
 export interface BoardingCertificateInput {
   personId: number;
   vesselIds: number[];
-  startsOn: string;
-  endsOn: string;
+  startsOn?: string;
+  endsOn?: string;
   generatedOn?: string;
 }
 
@@ -63,6 +63,7 @@ const TEMPLATE_ROOT = '/templates';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const PDF_MIME = 'application/pdf';
 const PDF_MAX_PERIODS = 18;
+const CERTIFICATE_CATEGORY_ORDER = new Map([['deck', 0], ['engine', 1]]);
 
 function distinctLabels(values: Array<string | undefined>): string {
   const seen = new Set<string>();
@@ -79,18 +80,19 @@ function distinctLabels(values: Array<string | undefined>): string {
 
 function serviceDays(overview: PlanningOverview, input: BoardingCertificateInput): DatedService[] {
   const selectedVessels = new Set(input.vesselIds);
+  const hasDateRange = Boolean(input.startsOn && input.endsOn);
   const byKey = new Map<string, DatedService>();
   getAllPlanningCrewEvents(overview)
     .filter((event) => event.personId === input.personId
       && event.vesselId !== null
       && selectedVessels.has(event.vesselId)
       && event.confirmationStatus !== 'cancelled'
-      && rangesOverlap(event.startsOn, event.endsOn, input.startsOn, input.endsOn))
+      && (!hasDateRange || rangesOverlap(event.startsOn, event.endsOn, input.startsOn!, input.endsOn!)))
     .forEach((event) => {
       const vessel = overview.vessels.find((item) => item.id === event.vesselId);
       if (!vessel) return;
-      const start = event.startsOn < input.startsOn ? input.startsOn : event.startsOn;
-      const end = event.endsOn > input.endsOn ? input.endsOn : event.endsOn;
+      const start = input.startsOn && event.startsOn < input.startsOn ? input.startsOn : event.startsOn;
+      const end = input.endsOn && event.endsOn > input.endsOn ? input.endsOn : event.endsOn;
       for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
         const status = event.dailyStatuses?.[date] || event.status;
         if (normalizePlanningStatus(status) !== 'En Mer') continue;
@@ -151,7 +153,14 @@ export function buildBoardingCertificateData(
   if (!person) throw new Error('Le marin sélectionné est introuvable.');
   if (!input.vesselIds.length) throw new Error('Sélectionnez au moins un navire.');
   const periods = mergeServicePeriods(serviceDays(overview, input));
-  const certificates = distinctLabels([person.deckCertificateLabel, person.engineCertificateLabel]);
+  const hrCertificates = overview.hrDocuments
+    .filter((document) => document.personId === person.id && ['deck', 'engine'].includes(document.categoryKey.toLocaleLowerCase('fr-FR')))
+    .sort((left, right) => (CERTIFICATE_CATEGORY_ORDER.get(left.categoryKey.toLocaleLowerCase('fr-FR')) || 0)
+      - (CERTIFICATE_CATEGORY_ORDER.get(right.categoryKey.toLocaleLowerCase('fr-FR')) || 0))
+    .map((document) => document.title);
+  const certificates = distinctLabels(hrCertificates.length
+    ? hrCertificates
+    : [person.deckCertificateLabel, person.engineCertificateLabel]);
   const missing = [
     !person.sailorNumber ? 'numéro de marin' : '',
     !person.birthDate ? 'date de naissance' : '',

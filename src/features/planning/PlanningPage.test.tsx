@@ -631,7 +631,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     const menu = screen.getByRole('navigation', { name: 'Menu du planning' });
     expect(within(menu).getByRole('group', { name: 'ARMEMENT' })).toBeInTheDocument();
-    expect(within(menu).getByRole('group', { name: 'Gestion des congés' })).toBeInTheDocument();
+    expect(within(menu).getByRole('group', { name: 'Gestion des congés' })).toHaveClass('is-centered');
     expect(within(menu).queryByRole('group', { name: 'NAVIRES' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('group', { name: 'Aide à la décision' })).toBeInTheDocument();
     expect(within(menu).getByRole('group', { name: 'Documents' })).toBeInTheDocument();
@@ -639,6 +639,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(menu).getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Demandes en attente' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Exports' })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: "Attestation d'armement" })).toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Exporter un marin' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
     expect(screen.queryByText('Brouillon modifiable')).not.toBeInTheDocument();
