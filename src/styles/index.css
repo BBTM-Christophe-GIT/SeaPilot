@@ -12385,6 +12385,10 @@ button.planning-p12-conflict-card {
   grid-auto-columns: 68px;
 }
 
+.planning-ribbon-group.is-centered .planning-ribbon-actions {
+  justify-content: center;
+}
+
 .planning-ribbon-group-label {
   align-self: end;
   overflow: hidden;
@@ -12574,6 +12578,10 @@ button.planning-p12-conflict-card {
   grid-template-columns: 135px 135px minmax(180px, 1fr) minmax(180px, 1fr) minmax(185px, 1fr) 160px;
   align-items: end;
   gap: 12px;
+}
+
+.planning-boarding-certificate-grid {
+  grid-template-columns: minmax(240px, 1.2fr) minmax(240px, 1fr) 180px;
 }
 
 .planning-export-grid > label,

@@ -23,8 +23,8 @@ const overview = {
     hiredOn: '',
     departedOn: '',
     birthDate: '1995-12-02',
-    deckCertificateLabel: 'Capitaine 200, Chef de Quart 500',
-    engineCertificateLabel: 'Mécanicien 250 kW',
+    deckCertificateLabel: '10598177',
+    engineCertificateLabel: '',
     active: true,
   }],
   vessels: [
@@ -35,6 +35,10 @@ const overview = {
     { id: 1, vesselId: 2, vesselName: 'GOURY', captainPersonId: null, captainName: '', crewPersonId: 10, crewName: 'Adrien BOIS', startsOn: '2026-07-28', endsOn: '2026-08-11', startsAt: '', endsAt: '', assignmentRole: '2nd Capitaine', statusLabel: 'En Mer', confirmationStatus: 'confirmed' as const, watchGroup: 'A', comments: '', sourceLabel: 'test' },
     { id: 2, vesselId: 2, vesselName: 'GOURY', captainPersonId: null, captainName: '', crewPersonId: 10, crewName: 'Adrien BOIS', startsOn: '2026-07-01', endsOn: '2026-07-05', startsAt: '', endsAt: '', assignmentRole: '2nd Capitaine', statusLabel: 'En Mer', confirmationStatus: 'confirmed' as const, watchGroup: 'A', comments: '', sourceLabel: 'test' },
     { id: 3, vesselId: 3, vesselName: 'COTENTIN', captainPersonId: null, captainName: '', crewPersonId: 10, crewName: 'Adrien BOIS', startsOn: '2026-06-01', endsOn: '2026-06-03', startsAt: '', endsAt: '', assignmentRole: 'Lieutenant', statusLabel: 'En Mer', confirmationStatus: 'confirmed' as const, watchGroup: 'B', comments: '', sourceLabel: 'test' },
+  ],
+  hrDocuments: [
+    { id: 41, personId: 10, personName: 'Adrien BOIS', categoryKey: 'deck', title: 'Capitaine 200, Chef de Quart 500', status: 'valid', expiresOn: '', requiresCaptainValidation: false, medicalRestriction: '', medicalUnfit: false, fileUrl: '' },
+    { id: 42, personId: 10, personName: 'Adrien BOIS', categoryKey: 'engine', title: 'Mécanicien 250 kW', status: 'valid', expiresOn: '', requiresCaptainValidation: false, medicalRestriction: '', medicalUnfit: false, fileUrl: '' },
   ],
 };
 
@@ -84,6 +88,34 @@ describe('Attestation d’Embarquement', () => {
       expect.objectContaining({ startsOn: '2026-07-01', endsOn: '2026-07-05', vesselName: 'GOURY', dayCount: 5 }),
       expect.objectContaining({ startsOn: '2026-07-02', endsOn: '2026-07-03', vesselName: 'COTENTIN', dayCount: 2 }),
     ]);
+  });
+
+  it('uses every recorded En Mer period when no date range is provided', () => {
+    const data = buildBoardingCertificateData(overview, {
+      personId: 10,
+      vesselIds: [2, 3],
+      generatedOn: '2026-12-31',
+    });
+
+    expect(data.totalDays).toBe(23);
+    expect(data.periods).toEqual([
+      expect.objectContaining({ startsOn: '2026-07-28', endsOn: '2026-08-11', vesselName: 'GOURY', dayCount: 15 }),
+      expect.objectContaining({ startsOn: '2026-07-01', endsOn: '2026-07-05', vesselName: 'GOURY', dayCount: 5 }),
+      expect.objectContaining({ startsOn: '2026-06-01', endsOn: '2026-06-03', vesselName: 'COTENTIN', dayCount: 3 }),
+    ]);
+  });
+
+  it('uses the Pont and Machine document titles instead of a numeric legacy certificate value', () => {
+    const arnaudOverview = {
+      ...overview,
+      people: [{ ...overview.people[0], firstName: 'Arnaud', lastName: 'HAUTEMANIERE' }],
+      hrDocuments: [
+        { ...overview.hrDocuments[1], title: 'Mécanicien 750 kW' },
+        { ...overview.hrDocuments[0], title: 'Capitaine 200' },
+      ],
+    };
+
+    expect(buildBoardingCertificateData(arnaudOverview, input).certificates).toBe('Capitaine 200, Mécanicien 750 kW');
   });
 
   it('patches the retained Word template while preserving its header, footer and images', async () => {
