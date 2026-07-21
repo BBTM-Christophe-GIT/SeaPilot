@@ -1,18 +1,25 @@
-import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
+import JSZip from 'jszip';
+import type {
+  ClientRecord,
+  ProjectContractRecord,
+  ProjectPlanningOccurrenceRecord,
+  ProjectRecord,
+} from './projectQueries';
+import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
 import supplytimePage01Url from './assets/supplytime-page-01.png';
 import supplytimePage02Url from './assets/supplytime-page-02.png';
 
-export type ProjectGeneratedDocumentKind = 'offer' | 'contract';
-
 export interface GeneratedProjectDocument {
   blob: Blob;
   fileName: string;
+  mimeType: string;
 }
 
 export interface ProjectDocumentGenerationInput {
   client?: ClientRecord;
   contract?: ProjectContractRecord;
+  occurrence?: ProjectPlanningOccurrenceRecord;
   project: ProjectRecord;
 }
 
@@ -145,9 +152,14 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
     .replace(/[<>:"/\\|?*]+/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
-  return kind === 'offer'
-    ? `${reference} - Offre - R1.pdf`
-    : `${reference} - Contrat SUPPLYTIME 2017.pdf`;
+  const suffixes: Record<ProjectGeneratedDocumentKind, string> = {
+    offer: 'Offre - R1.pdf',
+    bimco_supplytime: 'BIMCO SUPPLYTIME 2017 - R1.pdf',
+    towage_contract: 'Contrat de remorquage - R1.docx',
+    bareboat_charter: 'Contrat affretement coque nue - R1.docx',
+    intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
+  };
+  return `${reference} - ${suffixes[kind]}`;
 }
 
 async function loadAssetBytes(url: string): Promise<Uint8Array> {
@@ -160,6 +172,14 @@ export async function generateProjectDocument(
   kind: ProjectGeneratedDocumentKind,
   input: ProjectDocumentGenerationInput,
 ): Promise<GeneratedProjectDocument> {
+  if (kind === 'bareboat_charter' || kind === 'intellectual_service') {
+    throw new Error('Le modèle de ce contrat doit encore être fourni avant sa génération.');
+  }
+
+  if (kind === 'towage_contract') {
+    return generateTowageContract(input);
+  }
+
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const title = projectReference(input.project);
@@ -232,9 +252,118 @@ export async function generateProjectDocument(
     });
   }
 
+  if (kind === 'bimco_supplytime') {
+    const [{ PDFDocument }, partTwoBytes] = await Promise.all([
+      import('pdf-lib'),
+      loadAssetBytes('/templates/supplytime-2017-part-ii.pdf'),
+    ]);
+    const partOne = await PDFDocument.load(pdf.output('arraybuffer'));
+    const partTwo = await PDFDocument.load(partTwoBytes);
+    const merged = await PDFDocument.create();
+    const partOnePages = await merged.copyPages(partOne, partOne.getPageIndices());
+    const partTwoPages = await merged.copyPages(partTwo, partTwo.getPageIndices());
+    [...partOnePages, ...partTwoPages].forEach((page) => merged.addPage(page));
+    const bytes = await merged.save({ useObjectStreams: true });
+    return {
+      blob: new Blob([bytes as BlobPart], { type: 'application/pdf' }),
+      fileName: buildGeneratedDocumentFileName(kind, input.project),
+      mimeType: 'application/pdf',
+    };
+  }
+
   return {
     blob: pdf.output('blob'),
     fileName: buildGeneratedDocumentFileName(kind, input.project),
+    mimeType: 'application/pdf',
+  };
+}
+
+function formatDateLong(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(date);
+}
+
+function formatDateShort(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR').format(date);
+}
+
+function escapeWordXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\r?\n/g, '</w:t><w:br/><w:t xml:space="preserve">');
+}
+
+export function buildTowageTemplateFields({
+  client,
+  contract,
+  occurrence,
+  project,
+}: ProjectDocumentGenerationInput): Record<string, string> {
+  const supplytime = contract?.supplytimeData || {};
+  const startsOn = occurrence?.startsOn || project.deliveryAt || project.startsOn;
+  const endsOn = occurrence?.endsOn || project.redeliveryAt || project.endsOn;
+  const vesselName = occurrence?.primaryVesselName || project.primaryVesselName;
+  const owner = contract?.ownerIdentity || 'BBTM\n15, impasse du Pou\n50340 Le Rozel';
+  return {
+    CONTRACT_DATE_LONG: formatDateLong(startsOn || new Date().toISOString()),
+    CONTRACT_DATE_SHORT: formatDateShort(startsOn || new Date().toISOString()),
+    DOCUMENT_CODE: '-',
+    PROJECT_CODE: project.projectCode,
+    CHARTERER: client ? [client.name, client.address, [client.city, client.country].filter(Boolean).join(' ')].filter(Boolean).join('\n') : project.clientName,
+    OWNER: owner,
+    TOWED_VESSEL: supplytime.towed_vessel || project.description || project.title,
+    TUG: vesselName,
+    TOWED_CONDITIONS: supplytime.towed_conditions || project.description,
+    PICKUP_PLACE: project.deliveryPort,
+    DEPARTURE_WINDOW: startsOn ? formatDateLong(startsOn) : '',
+    DESTINATION_PLACE: project.redeliveryPort,
+    ARRIVAL_WINDOW: endsOn ? formatDateLong(endsOn) : '',
+    CONNECTION_TIME: supplytime.connection_time || '',
+    DISCONNECTION_TIME: supplytime.disconnection_time || '',
+    FIXED_PRICE: formatMoney(contract?.charterHire, contract?.hireCurrency || contract?.feeCurrency || 'EUR', contract?.hireUnit),
+    OPTIONAL_COSTS: supplytime.optional_costs || '',
+    PAYMENT_TERMS: supplytime.box23_payment || '',
+    ADDITIONAL_CHARGES: supplytime.additional_charges || '',
+    SPECIAL_CONDITIONS: supplytime.special_conditions || '',
+    CHARTERER_SIGNATORY: supplytime.charterer_signatory || '',
+    OWNER_SIGNATORY: supplytime.owner_signatory || 'Benjamin BON - Président',
+    SIGNATURE_DATE: '',
+  };
+}
+
+async function generateTowageContract(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
+  const templateBytes = await loadAssetBytes('/templates/contrat-remorquage-bbtm.docx');
+  const zip = await JSZip.loadAsync(templateBytes);
+  const values = buildTowageTemplateFields(input);
+  const xmlEntries = Object.keys(zip.files).filter((name) => name.startsWith('word/') && name.endsWith('.xml'));
+
+  await Promise.all(xmlEntries.map(async (entryName) => {
+    const entry = zip.file(entryName);
+    if (!entry) return;
+    let xml = await entry.async('string');
+    Object.entries(values).forEach(([key, value]) => {
+      xml = xml.replaceAll(`{{${key}}}`, escapeWordXml(value || ''));
+    });
+    zip.file(entryName, xml);
+  }));
+
+  const unresolved = await Promise.all(xmlEntries.map(async (entryName) => (await zip.file(entryName)?.async('string')) || ''));
+  if (unresolved.some((xml) => /\{\{[A-Z0-9_]+\}\}/.test(xml))) {
+    throw new Error('Le modèle de remorquage contient une zone non renseignée par SeaPilot.');
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return {
+    blob,
+    fileName: buildGeneratedDocumentFileName('towage_contract', input.project),
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   };
 }
 

@@ -2885,6 +2885,432 @@ button:disabled {
   background: var(--surface);
 }
 
+.project-editor.is-project-assistant {
+  width: min(1740px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  border-radius: 18px;
+  background: #f3f6fa;
+}
+
+.project-editor.is-project-assistant > header {
+  min-height: 78px;
+  padding: 18px 28px;
+  background: #fff;
+}
+
+.project-editor.is-project-assistant > header span,
+.project-assistant-layout > aside > span {
+  color: #677287;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.project-editor.is-project-assistant form {
+  padding: 0;
+  overflow: hidden;
+}
+
+.project-assistant-layout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-assistant-layout > aside {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 26px 20px;
+  overflow-y: auto;
+  background: #111b2b;
+  color: #dbe4f2;
+}
+
+.project-assistant-layout > aside > strong {
+  margin: -4px 0 10px;
+  color: #fff;
+  font-size: 1.7rem;
+}
+
+.project-assistant-layout > aside a {
+  display: grid;
+  grid-template-columns: 22px 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid #263247;
+  border-radius: 11px;
+  color: #c7d1df;
+  text-decoration: none;
+}
+
+.project-assistant-layout > aside a.is-active {
+  border-color: #2e6de9;
+  background: #2e6de9;
+  color: #fff;
+}
+
+.project-assistant-layout > aside a > b {
+  text-align: center;
+}
+
+.project-assistant-layout > aside a > span {
+  display: grid;
+  gap: 4px;
+  font-weight: 800;
+}
+
+.project-assistant-layout > aside a small {
+  color: #94a4bb;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.project-assistant-layout > aside a.is-active small {
+  color: #cfe0ff;
+}
+
+.project-assistant-layout > main {
+  display: grid;
+  gap: 18px;
+  padding: 24px 28px 40px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.project-editor.is-project-assistant fieldset {
+  margin: 0;
+  border-color: #e2e8f1;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.project-editor.is-project-assistant legend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 1.05rem;
+}
+
+.project-editor.is-project-assistant legend > span {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: #2e6de9;
+  color: #fff;
+}
+
+.project-editor.is-project-assistant legend > small {
+  color: #727f93;
+  font-size: 0.9rem;
+}
+
+.project-code-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 18px;
+  color: #6c7789;
+}
+
+.project-code-preview strong {
+  color: #2e6de9;
+}
+
+.project-code-preview small {
+  flex-basis: 100%;
+}
+
+.project-editor.is-project-assistant form > footer {
+  flex: 0 0 auto;
+  background: #fff;
+}
+
+@media (max-width: 900px) {
+  .project-editor.is-project-assistant {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+
+  .project-assistant-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .project-assistant-layout > aside {
+    display: none;
+  }
+}
+
+.project-document-occurrence-select {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 18px;
+  color: #5d697b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.project-document-occurrence-select select {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d8e0eb;
+  border-radius: 9px;
+  background: #fff;
+  color: #172238;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.project-document-factory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.project-document-factory-grid article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #dfe7f1;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.project-document-factory-grid article.is-pending {
+  opacity: 0.7;
+}
+
+.project-document-factory-grid article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-document-factory-grid article strong {
+  color: #142139;
+}
+
+.project-document-factory-grid article span {
+  color: #667489;
+  font-size: 0.78rem;
+}
+
+.project-document-factory-grid article small {
+  width: max-content;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e6eefb;
+  color: #2e60ae;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.project-document-factory-grid button,
+.project-stored-document-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #2e6de9;
+  border-radius: 8px;
+  background: #2e6de9;
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.project-document-factory-grid button:disabled {
+  border-color: #ced6e1;
+  background: #e8edf3;
+  color: #718096;
+}
+
+.project-stored-document-link {
+  width: max-content;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1100px) {
+  .project-document-factory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .project-document-factory-grid article {
+    grid-template-columns: auto 1fr;
+  }
+
+  .project-document-factory-grid button {
+    grid-column: 1 / -1;
+  }
+}
+
+.projects-page {
+  width: 100%;
+  max-width: none;
+}
+
+.projects-header-subtitle {
+  margin: 4px 0 0;
+  color: #6a788d;
+  font-size: 0.86rem;
+}
+
+.projects-read-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-list-panel {
+  position: static;
+}
+
+.project-catalog-list,
+.project-catalog-occurrences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-catalog-list > li {
+  border-top: 1px solid #e8edf3;
+  background: #fff;
+}
+
+.project-catalog-list > li.is-selected {
+  background: #f7faff;
+  box-shadow: inset 4px 0 0 #2e6de9;
+}
+
+.project-catalog-row {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 18px;
+}
+
+.project-catalog-row .project-select-button {
+  gap: 5px;
+}
+
+.project-catalog-row .project-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: #172238;
+  font-weight: 850;
+}
+
+.project-catalog-row .project-select-button small {
+  padding-left: 24px;
+  color: #737f90;
+}
+
+.project-catalog-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.project-catalog-actions > button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #c9d8ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #2362ce;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.project-catalog-actions > span:not(.project-status-chip) {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f0f3f7;
+  color: #596779;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-catalog-actions > strong {
+  min-width: 24px;
+  text-align: center;
+}
+
+.project-catalog-occurrences {
+  display: grid;
+  gap: 7px;
+  padding: 0 20px 12px 58px;
+}
+
+.project-catalog-occurrences li {
+  display: grid;
+  grid-template-columns: auto minmax(160px, auto) minmax(160px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  color: #6a7686;
+  font-size: 0.76rem;
+}
+
+.project-catalog-occurrences svg {
+  color: #22a378;
+}
+
+.project-catalog-occurrences strong {
+  margin-left: 5px;
+  color: #38475b;
+}
+
+.project-catalog-occurrences small {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #2867d5;
+  font-weight: 800;
+}
+
+.project-catalog-empty {
+  margin: 0;
+  padding: 0 20px 14px 58px;
+  color: #8a94a3;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 860px) {
+  .project-catalog-row {
+    grid-template-columns: 1fr;
+  }
+
+  .project-catalog-actions {
+    flex-wrap: wrap;
+    padding-left: 24px;
+  }
+
+  .project-catalog-occurrences {
+    padding-left: 42px;
+  }
+
+  .project-catalog-occurrences li {
+    grid-template-columns: auto 1fr;
+  }
+}
+
 .project-editor > header {
   top: 0;
   border-bottom: 1px solid var(--line);
