@@ -9,9 +9,25 @@ const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
 }));
 
+const dprQueriesMock = vi.hoisted(() => ({
+  fetchDashboard: vi.fn(), fetchDetail: vi.fn(), fetchDiagnostic: vi.fn(), save: vi.fn(),
+  transition: vi.fn(), upload: vi.fn(), remove: vi.fn(), signedUrl: vi.fn(),
+}));
+
 vi.mock('./lib/supabaseClient', () => ({
   getSupabaseClient: vi.fn(() => supabaseMock),
   supabase: supabaseMock,
+}));
+
+vi.mock('./features/dpr/dprQueries.ts', () => ({
+  fetchDprDashboard: dprQueriesMock.fetchDashboard,
+  fetchDprDetail: dprQueriesMock.fetchDetail,
+  fetchDprDiagnostic: dprQueriesMock.fetchDiagnostic,
+  saveDprPayload: dprQueriesMock.save,
+  runDprTransition: dprQueriesMock.transition,
+  uploadDprFile: dprQueriesMock.upload,
+  removeDprFile: dprQueriesMock.remove,
+  createDprSignedUrl: dprQueriesMock.signedUrl,
 }));
 
 function createAuthClient(session: { user: { id: string } } | null = null) {
@@ -246,6 +262,22 @@ describe('App', () => {
 
   it('renders the daily progress report module with imported DPR data', async () => {
     vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    dprQueriesMock.fetchDashboard.mockResolvedValue({
+      currentUserId: 'user-1',
+      currentUserName: 'Administrateur',
+      references: {
+        projects: [{ id: 880, code: 'P-2026-014', title: 'Campagne Atlantique 2026' }],
+        vessels: [{ id: 12, name: 'COTENTIN' }],
+        people: [], exerciseTypes: [], portReasons: [],
+      },
+      reports: [{
+        id: 1200, number: 1200, status: 'validated', reportDate: '2026-07-01', projectId: 880,
+        projectCode: 'P-2026-014', projectTitle: 'Campagne Atlantique 2026', unlistedProjectName: '',
+        vesselId: 12, vesselName: 'COTENTIN', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures',
+        qhseNote: 'RAS', createdBy: 'user-1', updatedAt: '2026-07-01T18:30:00Z', fuelConsumedLiters: 1250.5,
+        files: [{ id: 1201, dprId: 1200, kind: 'pdf', bucket: 'dpr-pdfs', path: 'company/1/dpr/1200/file.pdf', filename: 'DPR-1200.pdf', mimeType: 'application/pdf', sizeBytes: 1000, sha256: 'a'.repeat(64), isCurrent: true, status: 'ready' }],
+      }],
+    });
     supabaseMock.from.mockReset();
     supabaseMock.from.mockImplementation((table: string) => {
       if (table === 'user_roles') {
@@ -358,16 +390,12 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Daily Progress Report' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Rapports DPR')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Archives DPR importees')).toHaveTextContent('1');
-    expect(screen.getAllByText('Campagne Atlantique 2026').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
-    expect(screen.getByText('Transit et mesures')).toBeInTheDocument();
-    expect(screen.getByText('MGO juillet 2026')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Ouvrir le fichier DPR P-2026-014 2026-07-01.pdf' })).toHaveAttribute(
-      'href',
-      'https://sharepoint.test/dpr.pdf',
-    );
+    expect(await screen.findByText('DPR-1200')).toBeInTheDocument();
+    expect(screen.getByText(/DPR affiché/)).toHaveTextContent('1');
+    expect(screen.getByRole('option', { name: 'P-2026-014 — Campagne Atlantique 2026' })).toBeInTheDocument();
+    expect(screen.getByText('P-2026-014')).toBeInTheDocument();
+    expect(screen.getByText(/SharePoint reste actif/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Télécharger le PDF/ })).toBeDisabled();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
