@@ -10,7 +10,6 @@ import {
   FileText,
   Download,
   ExternalLink,
-  History,
   Info,
   Pencil,
   Plus,
@@ -164,37 +163,72 @@ function canManageProjects(roles: RoleKey[]): boolean {
   return roles.includes('admin') || roles.includes('direction');
 }
 
+const PROJECT_DETAIL_TABS = [
+  { id: 'contract', label: 'Contrat' },
+  { id: 'operations', label: 'Opérations' },
+  { id: 'documents', label: 'Génération documentaire' },
+  { id: 'commercial', label: 'Offre commerciale' },
+  { id: 'planning', label: 'Planning' },
+  { id: 'identification', label: 'Identification' },
+] as const;
+
+type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]['id'];
+
+function ProjectDetailTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: ProjectDetailTab;
+  onChange: (tab: ProjectDetailTab) => void;
+}) {
+  function moveFocus(currentTab: ProjectDetailTab, direction: -1 | 1) {
+    const currentIndex = PROJECT_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
+    const nextIndex = (currentIndex + direction + PROJECT_DETAIL_TABS.length) % PROJECT_DETAIL_TABS.length;
+    const nextTab = PROJECT_DETAIL_TABS[nextIndex];
+    onChange(nextTab.id);
+    window.requestAnimationFrame(() => document.getElementById(`project-tab-${nextTab.id}`)?.focus());
+  }
+
+  return (
+    <div aria-label="Sections du projet" className="project-detail-tabs" role="tablist">
+      {PROJECT_DETAIL_TABS.map((tab) => (
+        <button
+          aria-controls="project-detail-panel"
+          aria-selected={activeTab === tab.id}
+          id={`project-tab-${tab.id}`}
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              moveFocus(tab.id, 1);
+            } else if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              moveFocus(tab.id, -1);
+            } else if (event.key === 'Home' || event.key === 'End') {
+              event.preventDefault();
+              const target = event.key === 'Home' ? PROJECT_DETAIL_TABS[0] : PROJECT_DETAIL_TABS.at(-1)!;
+              onChange(target.id);
+              window.requestAnimationFrame(() => document.getElementById(`project-tab-${target.id}`)?.focus());
+            }
+          }}
+          role="tab"
+          tabIndex={activeTab === tab.id ? 0 : -1}
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DetailField({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
   return (
     <div className={wide ? 'project-detail-field is-wide' : 'project-detail-field'}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
-  );
-}
-
-function ProvenanceNotice({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
-  const historicalSource = [project.sourceLabel, project.sharePointListTitle, project.sharePointItemId]
-    .filter(Boolean)
-    .join(' · ');
-  const contractSource = contract
-    ? [contract.sourceLabel, contract.sharePointListTitle, contract.sharePointItemId].filter(Boolean).join(' · ')
-    : '';
-
-  if (!historicalSource && !contractSource) {
-    return null;
-  }
-
-  return (
-    <aside className="project-provenance" aria-label="Provenance historique">
-      <History aria-hidden="true" size={18} />
-      <div>
-        <strong>Données structurées consultées dans Supabase</strong>
-        {historicalSource ? <span>{`Projet repris depuis ${historicalSource}.`}</span> : null}
-        {project.sourceModifiedAt ? <span>{`Dernière modification source : ${formatDate(project.sourceModifiedAt)}.`}</span> : null}
-        {contractSource && contractSource !== historicalSource ? <span>{`Contrat repris depuis ${contractSource}.`}</span> : null}
-      </div>
-    </aside>
   );
 }
 
@@ -304,7 +338,6 @@ function ProjectDetail({
   contractDocumentsUnavailable,
   generatingDocument,
   isManager,
-  onAddPlanningOccurrence,
   onGenerateDocument,
   planningOccurrences,
 }: {
@@ -318,10 +351,10 @@ function ProjectDetail({
   contractDocumentsUnavailable: boolean;
   generatingDocument: ProjectGeneratedDocumentKind | null;
   isManager: boolean;
-  onAddPlanningOccurrence: () => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('contract');
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
   useEffect(() => {
     setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
@@ -340,25 +373,7 @@ function ProjectDetail({
     .join(' · ');
 
   return (
-    <article className="project-detail" aria-labelledby="selected-project-title">
-      <header className="project-detail-header">
-        <div>
-          <p>{project.projectCode || 'Projet sans numéro'}</p>
-          <h2 id="selected-project-title">{project.title}</h2>
-          {project.description ? <span>{project.description}</span> : null}
-        </div>
-        <div className="project-detail-header-actions">
-          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-          {isManager ? (
-            <button disabled={Boolean(project.archivedAt)} onClick={onAddPlanningOccurrence} type="button">
-              <CalendarPlus aria-hidden="true" size={16} /> Nouvelle opération
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <ProvenanceNotice contract={contract} project={project} />
-
+    <article className="project-detail" aria-label={`Détails du projet ${project.projectCode || project.title}`}>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
@@ -369,8 +384,18 @@ function ProjectDetail({
         </p>
       ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-identification-title">
-        <h3 id="project-identification-title">Identification</h3>
+      <div className="project-detail-tabs-shell">
+        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />
+        <div
+          aria-labelledby={`project-tab-${activeTab}`}
+          className="project-detail-tab-panel"
+          id="project-detail-panel"
+          role="tabpanel"
+          tabIndex={0}
+        >
+
+      {activeTab === 'identification' ? (
+      <section aria-label="Identification" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Numéro" value={displayText(project.projectCode)} />
           <DetailField label="Statut" value={displayText(project.status)} />
@@ -391,10 +416,12 @@ function ProjectDetail({
           ) : null}
         </dl>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-planning-title">
+      {activeTab === 'planning' ? (
+      <section aria-label="Planning" className="project-detail-section">
         <div className="project-section-heading">
-          <h3 id="project-planning-title">Planning</h3>
+          <strong>Planning du projet</strong>
           <span>{planningOccurrences.length} opération(s)</span>
         </div>
         <dl className="project-detail-grid">
@@ -427,11 +454,10 @@ function ProjectDetail({
           <p className="project-section-empty">Aucune opération planning associée.</p>
         )}
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-commercial-title">
-        <div className="project-section-heading">
-          <h3 id="project-commercial-title">Offre commerciale</h3>
-        </div>
+      {activeTab === 'commercial' ? (
+      <section aria-label="Offre commerciale" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Forfait mobilisation" value={formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || '')} />
           <DetailField label="Forfait démobilisation" value={formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || '')} />
@@ -445,11 +471,13 @@ function ProjectDetail({
           </a>
         </div>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-document-factory-title">
+      {activeTab === 'documents' ? (
+      <section aria-label="Génération documentaire" className="project-detail-section">
         <div className="project-section-heading">
           <div>
-            <h3 id="project-document-factory-title">Génération documentaire</h3>
+            <strong>Documents du projet</strong>
             <span>Chaque document validé est classé dans SharePoint · Documents Projets.</span>
           </div>
           <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
@@ -493,9 +521,10 @@ function ProjectDetail({
           ))}
         </div>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-operations-title">
-        <h3 id="project-operations-title">Opérations</h3>
+      {activeTab === 'operations' ? (
+      <section aria-label="Opérations" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Zone d’opération" value={displayText(project.operationArea)} wide />
           <DetailField label="Période maximale d’audit" value={displayText(contract?.maxAuditPeriod)} />
@@ -511,11 +540,10 @@ function ProjectDetail({
           <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Projets
         </a>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-contract-title">
-        <div className="project-section-heading">
-          <h3 id="project-contract-title">Contrat</h3>
-        </div>
+      {activeTab === 'contract' ? (
+      <section aria-label="Contrat" className="project-detail-section">
         {!contractUnavailable ? <SupplytimePreview contract={contract} project={project} /> : null}
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (
@@ -527,6 +555,9 @@ function ProjectDetail({
           Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni. Les fichiers générés sont classés dans SharePoint ; Supabase ne conserve que leurs métadonnées.
         </p>
       </section>
+      ) : null}
+        </div>
+      </div>
     </article>
   );
 }
@@ -904,9 +935,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </button>
       </div>
 
-      <div className="planning-toolbar">
-        <span className="planning-mode-read">Source structurée · Supabase</span>
-        {isManager ? (
+      {isManager ? (
+        <div className="planning-toolbar">
           <div className="project-write-actions">
             <button onClick={() => openClientEditor()} type="button"><Users aria-hidden="true" size={16} /> Nouveau client</button>
             <button onClick={() => openProjectEditor()} type="button"><Plus aria-hidden="true" size={16} /> Nouveau projet</button>
@@ -914,8 +944,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             <button disabled={!selectedClient} onClick={() => selectedClient && openClientEditor(selectedClient)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le client</button>
             <button className="is-danger" disabled={!selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} onClick={archiveSelectedProject} type="button"><Archive aria-hidden="true" size={16} /> Archiver</button>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
       {lastStoredDocument ? (
@@ -1023,7 +1053,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
               generatingDocument={generatingDocument}
               isManager={isManager}
-              onAddPlanningOccurrence={() => setPlanningEditorOpen(true)}
               onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}

@@ -3448,7 +3448,6 @@ button:disabled {
   border-top: 1px solid var(--line);
 }
 
-.project-detail-header-actions,
 .project-section-heading,
 .project-generated-document-note,
 .project-sharepoint-folder-link {
@@ -3457,12 +3456,6 @@ button:disabled {
   gap: 10px;
 }
 
-.project-detail-header-actions {
-  align-items: flex-end;
-  flex-direction: column;
-}
-
-.project-detail-header-actions button,
 .project-section-heading button {
   display: inline-flex;
   align-items: center;
@@ -3482,8 +3475,20 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.project-section-heading h3 {
-  margin: 0;
+.project-section-heading > strong,
+.project-section-heading > div > strong {
+  color: #172033;
+  font-size: 0.96rem;
+}
+
+.project-section-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-section-heading > div > span {
+  color: #617381;
+  font-size: 0.8rem;
 }
 
 .project-section-heading > span {
@@ -3698,64 +3703,77 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.project-detail-header,
 .project-detail-section {
   min-width: 0;
-  border: 1px solid #dbe3ed;
-  border-radius: 8px;
   background: #ffffff;
 }
 
-.project-detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px;
-}
-
-.project-detail-header p,
-.project-detail-header h2,
-.project-detail-header span,
-.project-detail-section h3,
 .project-detail-section h4,
 .project-supplytime-heading p,
 .project-supplytime-heading h4 {
   margin: 0;
 }
 
-.project-detail-header p {
-  color: #0c66b7;
+.project-detail-tabs-shell {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.project-detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-bottom: 1px solid #dbe3ed;
+  background: #f6f8fb;
+}
+
+.project-detail-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 54px;
+  padding: 10px 8px;
+  color: #596a7d;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #e1e7ef;
+  font: inherit;
   font-size: 0.78rem;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
 }
 
-.project-detail-header h2 {
-  margin-top: 4px;
-  color: #172033;
-  font-size: 1.45rem;
+.project-detail-tabs button:last-child {
+  border-right: 0;
 }
 
-.project-detail-header > div > span {
-  display: block;
-  margin-top: 8px;
-  color: #536276;
-  line-height: 1.5;
+.project-detail-tabs button:hover {
+  color: #0c5793;
+  background: #eef5fc;
+}
+
+.project-detail-tabs button[aria-selected='true'] {
+  color: #0c66b7;
+  background: #ffffff;
+  box-shadow: inset 0 -3px #2476e5;
+}
+
+.project-detail-tabs button:focus-visible {
+  z-index: 1;
+  outline: 3px solid rgba(36, 118, 229, 0.28);
+  outline-offset: -3px;
+}
+
+.project-detail-tab-panel {
+  min-width: 0;
 }
 
 .project-detail-section {
   display: grid;
   gap: 14px;
   padding: 20px;
-}
-
-.project-detail-section h3 {
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e3e9f0;
-  color: #172033;
-  font-size: 1.08rem;
 }
 
 .project-detail-section h4 {
@@ -3813,7 +3831,6 @@ button:disabled {
   font-weight: 700;
 }
 
-.project-provenance,
 .project-partial-state,
 .project-document-state,
 .project-error-state {
@@ -3822,23 +3839,6 @@ button:disabled {
   gap: 12px;
   border-radius: 8px;
   padding: 14px 16px;
-}
-
-.project-provenance {
-  border: 1px solid #cfe1f2;
-  color: #0c3f78;
-  background: #eef6fd;
-}
-
-.project-provenance div,
-.project-provenance span {
-  display: grid;
-  gap: 3px;
-}
-
-.project-provenance span {
-  color: #45627e;
-  font-size: 0.82rem;
 }
 
 .project-partial-state {
@@ -4022,7 +4022,6 @@ button:disabled {
 }
 
 @media (max-width: 720px) {
-  .project-detail-header,
   .project-supplytime-heading,
   .project-pagination {
     align-items: flex-start;
@@ -4042,6 +4041,20 @@ button:disabled {
   .project-document-list a,
   .project-missing-link {
     grid-column: 2;
+  }
+
+  .project-detail-tabs {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .project-detail-tabs button {
+    flex: 0 0 auto;
+    min-width: 132px;
+    padding-inline: 14px;
+    white-space: nowrap;
   }
 }
 
