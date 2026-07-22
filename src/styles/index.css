@@ -2616,12 +2616,6 @@ button:disabled {
     minmax(130px, 160px) auto;
 }
 
-.projects-filter-panel {
-  grid-template-columns:
-    minmax(220px, 1.1fr) minmax(150px, 180px) minmax(150px, 190px) minmax(150px, 190px)
-    minmax(130px, 160px) minmax(130px, 160px) auto;
-}
-
 .purchase-filter-panel {
   grid-template-columns:
     minmax(220px, 1.1fr) minmax(150px, 180px) minmax(150px, 190px) minmax(170px, 220px)
@@ -3605,6 +3599,8 @@ button:disabled {
   position: sticky;
   top: 16px;
   min-width: 0;
+  container-name: project-list;
+  container-type: inline-size;
 }
 
 .project-list-panel .admin-table {
@@ -3619,6 +3615,22 @@ button:disabled {
 .project-list-panel .projects-table tbody tr.is-selected {
   background: #eef6fd;
   box-shadow: inset 4px 0 0 #0c66b7;
+}
+
+@container project-list (max-width: 720px) {
+  .project-catalog-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-catalog-actions {
+    flex-wrap: wrap;
+    padding-left: 24px;
+  }
+
+  .project-catalog-actions > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
 .project-select-button {
@@ -4248,6 +4260,12 @@ button:disabled {
   color: #0c3f78;
   background: #ffffff;
   font-weight: 800;
+}
+
+.projects-filter-panel {
+  grid-template-columns:
+    minmax(220px, 1.1fr) minmax(150px, 180px) minmax(150px, 190px) minmax(150px, 190px)
+    minmax(130px, 160px) minmax(130px, 160px) auto;
 }
 
 .planning-mode-write,
