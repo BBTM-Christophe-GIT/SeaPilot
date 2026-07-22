@@ -44,6 +44,16 @@ from (
 cross join public.companies company
 where company.code = 'bbtm';
 
+insert into public.vessels (company_id, name, acronym)
+select id, 'DPR TEST VESSEL', 'DTV'
+from public.companies where code = 'bbtm';
+
+select set_config(
+  'test.dpr_vessel_id',
+  (select id::text from public.vessels where name = 'DPR TEST VESSEL'),
+  false
+);
+
 insert into public.user_roles (user_id, company_id, role_key)
 select '70000000-0000-0000-0000-000000000006', id, 'admin'
 from public.companies where code = 'dpr-other';
@@ -81,6 +91,8 @@ select lives_ok(
   $$select public.dpr_update_draft(
       (select id from public.dpr_reports where description = 'Marin draft'),
       current_date,
+      target_unlisted_project_name => 'DPR test project',
+      target_vessel_id => current_setting('test.dpr_vessel_id')::bigint,
       target_description => 'Marin updated draft'
     )$$,
   'marin can update own draft'

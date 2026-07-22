@@ -93,6 +93,7 @@ const PREVIEW_STCW_CERTIFICATES = PREVIEW_STCW_SOURCE_ROWS.map(
 );
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration' }],
   people: [
     {
       id: 9301,
@@ -472,6 +473,40 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9201, name: 'M/V Démonstration', acronym: 'MVD', active: true, fleet_exit_on: null, sharepoint_item_id: 'preview-vessel-1' },
     { id: 9202, name: 'Support Démonstration', acronym: 'SD', active: true, fleet_exit_on: null, sharepoint_item_id: 'preview-vessel-2' },
   ],
+  dpr_reports: [
+    {
+      id: 9901, dpr_number: 1056, status: 'validated', report_date: '2026-07-21',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Transit et opérations de démonstration.',
+      qhse_note: 'RAS', created_by: 'preview-user', updated_at: '2026-07-21T18:00:00Z', deleted_at: null,
+    },
+    {
+      id: 9902, dpr_number: 1055, status: 'submitted', report_date: '2026-07-20',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Maintenance et attente météo.',
+      qhse_note: 'Brief sécurité réalisé.', created_by: 'preview-user', updated_at: '2026-07-20T18:00:00Z', deleted_at: null,
+    },
+  ],
+  dpr_daily_metrics: [
+    { dpr_id: 9901, fuel_consumed_liters: 650, fuel_on_board_liters: 8200 },
+    { dpr_id: 9902, fuel_consumed_liters: 800, fuel_on_board_liters: 7550 },
+  ],
+  dpr_files: [
+    { id: 9951, dpr_id: 9901, file_kind: 'pdf', bucket_name: 'dpr-pdfs', object_path: 'preview/DPR-1056.pdf', display_filename: 'DPR-1056 - M-V-Demonstration - 21-07-2026.pdf', mime_type: 'application/pdf', size_bytes: 84000, sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', is_current: true, status: 'ready', deleted_at: null },
+  ],
+  emergency_exercise_types: [
+    { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 10, active: true },
+    { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 20, active: true },
+    { key: 'sea-rescue', label: 'Sauvetage en mer', display_order: 30, active: true },
+  ],
+  port_call_reason_types: [
+    { key: 'crew-change', label: 'Crew Change', display_order: 10, active: true },
+    { key: 'weather-standby', label: 'Stand-by météo', display_order: 20, active: true },
+    { key: 'breakdown', label: 'Avarie', display_order: 30, active: true },
+    { key: 'standby', label: 'Stand-by', display_order: 40, active: true },
+  ],
+  dpr_crew_members: [], dpr_other_people: [], dpr_incidents: [], dpr_hse_actions: [],
+  dpr_emergency_exercises: [], dpr_port_calls: [], dpr_supplies: [], dpr_waste_records: [],
   planning_rotation_series: [],
   planning_rotation_occurrences: [],
   planning_templates: [],
@@ -500,4 +535,7 @@ export const previewSupabaseClient = {
     ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null })
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: () => createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
+  auth: {
+    getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
+  },
 } as unknown as SupabaseClient;

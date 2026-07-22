@@ -1,373 +1,229 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type {
+  CrewFunction,
+  DprFileKind,
+  DprFormPayload,
+  DprStatus,
+  IncidentCategory,
+  IncidentLevel,
+} from './dprFormModel.ts';
 
-const DPR_ITEM_SELECT = [
-  'id',
-  'title',
-  'project_id',
-  'project_sharepoint_item_id',
-  'project_code',
-  'project_title',
-  'vessel_id',
-  'vessel_sharepoint_item_id',
-  'vessel_name',
-  'report_date',
-  'report_time',
-  'description',
-  'fuel_consumption_l',
-  'mgo_refueling_m3',
-  'qhse_note',
-  'radio_contact',
-  'environment_incident_count',
-  'person_accident_count',
-  'dangerous_situation_count',
-  'source_label',
-].join(', ');
-
-const DPR_ARCHIVE_SELECT = [
-  'id',
-  'dpr_item_id',
-  'dpr_sharepoint_item_id',
-  'project_id',
-  'project_sharepoint_item_id',
-  'project_code',
-  'project_title',
-  'report_date',
-  'title',
-  'source_label',
-  'source_sharepoint_id',
-  'file_url',
-  'notes',
-].join(', ');
-
-const MGO_PRICE_SELECT = [
-  'id',
-  'price_date',
-  'price_ht',
-  'currency',
-  'supplier_name',
-  'title',
-  'notes',
-  'source_label',
-].join(', ');
-
-interface DprItemRow {
+export interface DprProjectOption { id: number; code: string; title: string }
+export interface DprVesselOption { id: number; name: string }
+export interface DprPersonOption {
   id: number;
-  title: string | null;
-  project_id: number | null;
-  project_sharepoint_item_id: string | null;
-  project_code: string | null;
-  project_title: string | null;
-  vessel_id: number | null;
-  vessel_sharepoint_item_id: string | null;
-  vessel_name: string | null;
-  report_date: string | null;
-  report_time: string | null;
-  description: string | null;
-  fuel_consumption_l: number | string | null;
-  mgo_refueling_m3: number | string | null;
-  qhse_note: string | null;
-  radio_contact: boolean | null;
-  environment_incident_count: number | string | null;
-  person_accident_count: number | string | null;
-  dangerous_situation_count: number | string | null;
-  source_label: string | null;
+  name: string;
+  functionLabel: string;
+  crewFunction: CrewFunction;
 }
-
-interface DprArchiveRow {
-  id: number;
-  dpr_item_id: number | null;
-  dpr_sharepoint_item_id: string | null;
-  project_id: number | null;
-  project_sharepoint_item_id: string | null;
-  project_code: string | null;
-  project_title: string | null;
-  report_date: string | null;
-  title: string;
-  source_label: string | null;
-  source_sharepoint_id: string | null;
-  file_url: string | null;
-  notes: string | null;
+export interface DprReferenceData {
+  projects: DprProjectOption[];
+  vessels: DprVesselOption[];
+  people: DprPersonOption[];
+  exerciseTypes: Array<{ key: string; label: string }>;
+  portReasons: Array<{ key: string; label: string }>;
 }
-
-interface MgoPriceRow {
+export interface DprFileRecord {
   id: number;
-  price_date: string | null;
-  price_ht: number | string | null;
-  currency: string | null;
-  supplier_name: string | null;
-  title: string | null;
-  notes: string | null;
-  source_label: string | null;
+  dprId: number;
+  kind: DprFileKind;
+  bucket: string;
+  path: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  isCurrent: boolean;
+  status: string;
 }
-
-export interface DprItemRecord {
+export interface DprReportRecord {
   id: number;
-  title: string;
+  number: number | null;
+  status: DprStatus;
+  reportDate: string;
   projectId: number | null;
-  projectSharePointItemId: string;
   projectCode: string;
   projectTitle: string;
+  unlistedProjectName: string;
   vesselId: number | null;
-  vesselSharePointItemId: string;
   vesselName: string;
-  reportDate: string;
-  reportTime: string;
+  issuerName: string;
   description: string;
-  fuelConsumptionL: number;
-  mgoRefuelingM3: number;
   qhseNote: string;
-  radioContact: boolean;
-  environmentIncidentCount: number;
-  personAccidentCount: number;
-  dangerousSituationCount: number;
-  sourceLabel: string;
+  createdBy: string | null;
+  updatedAt: string;
+  fuelConsumedLiters: number;
+  files: DprFileRecord[];
+}
+export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string }
+export interface DprDetail { report: DprReportRecord; payload: DprFormPayload; files: DprFileRecord[] }
+
+function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
+function scalarText(value: unknown): string {
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+function numberOrNull(value: unknown): number | null { const parsed = Number(value); return value === null || value === undefined || !Number.isFinite(parsed) ? null : parsed; }
+function crewFunction(functionLabel: string, gradeLabel: string): CrewFunction {
+  const label = `${functionLabel} ${gradeLabel}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (label.includes('chef mecanicien')) return 'chief-engineer';
+  if (label.includes('second capitaine') || label.includes('2nd capitaine')) return 'second-captain';
+  if (label.includes('capitaine')) return 'captain';
+  return 'execution';
 }
 
-export interface DprArchiveRecord {
-  id: number;
-  dprItemId: number | null;
-  dprSharePointItemId: string;
-  projectId: number | null;
-  projectSharePointItemId: string;
-  projectCode: string;
-  projectTitle: string;
-  reportDate: string;
-  title: string;
-  sourceLabel: string;
-  sourceSharePointId: string;
-  fileUrl: string;
-  notes: string;
-}
-
-export interface MgoPriceRecord {
-  id: number;
-  priceDate: string;
-  priceHt: number;
-  currency: string;
-  supplierName: string;
-  title: string;
-  notes: string;
-  sourceLabel: string;
-}
-
-export interface DprData {
-  reports: DprItemRecord[];
-  archives: DprArchiveRecord[];
-  mgoPrices: MgoPriceRecord[];
-}
-
-export interface DprMetrics {
-  reportCount: number;
-  archiveCount: number;
-  fuelConsumptionL: number;
-  mgoRefuelingM3: number;
-  qhseEventCount: number;
-}
-
-export interface CreateDprItemInput {
-  title: string;
-  projectId: number | null;
-  projectCode: string;
-  projectTitle: string;
-  vesselName: string;
-  reportDate: string;
-  reportTime: string;
-  description: string;
-  fuelConsumptionL: string;
-  mgoRefuelingM3: string;
-  qhseNote: string;
-  radioContact: boolean;
-}
-
-function nullableText(value: string | number | null | undefined): string {
-  return value === null || value === undefined ? '' : String(value);
-}
-
-function optionalText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
-function normalizeNumber(value: number | string | null | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const parsed = Number(value.replace(',', '.'));
-
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return 0;
-}
-
-function optionalNumber(value: string): number | null {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  const parsed = Number(trimmed.replace(',', '.'));
-
-  if (!Number.isFinite(parsed)) {
-    throw new Error('La valeur numerique DPR est invalide.');
-  }
-
-  return parsed;
-}
-
-export function mapDprItemRows(rows: DprItemRow[]): DprItemRecord[] {
-  return rows.map((row) => ({
-    id: row.id,
-    title: nullableText(row.title),
-    projectId: row.project_id,
-    projectSharePointItemId: nullableText(row.project_sharepoint_item_id),
-    projectCode: nullableText(row.project_code),
-    projectTitle: nullableText(row.project_title),
-    vesselId: row.vessel_id,
-    vesselSharePointItemId: nullableText(row.vessel_sharepoint_item_id),
-    vesselName: nullableText(row.vessel_name),
-    reportDate: nullableText(row.report_date),
-    reportTime: nullableText(row.report_time),
-    description: nullableText(row.description),
-    fuelConsumptionL: normalizeNumber(row.fuel_consumption_l),
-    mgoRefuelingM3: normalizeNumber(row.mgo_refueling_m3),
-    qhseNote: nullableText(row.qhse_note),
-    radioContact: Boolean(row.radio_contact),
-    environmentIncidentCount: normalizeNumber(row.environment_incident_count),
-    personAccidentCount: normalizeNumber(row.person_accident_count),
-    dangerousSituationCount: normalizeNumber(row.dangerous_situation_count),
-    sourceLabel: nullableText(row.source_label),
-  }));
-}
-
-export function mapDprArchiveRows(rows: DprArchiveRow[]): DprArchiveRecord[] {
-  return rows.map((row) => ({
-    id: row.id,
-    dprItemId: row.dpr_item_id,
-    dprSharePointItemId: nullableText(row.dpr_sharepoint_item_id),
-    projectId: row.project_id,
-    projectSharePointItemId: nullableText(row.project_sharepoint_item_id),
-    projectCode: nullableText(row.project_code),
-    projectTitle: nullableText(row.project_title),
-    reportDate: nullableText(row.report_date),
-    title: row.title,
-    sourceLabel: nullableText(row.source_label),
-    sourceSharePointId: nullableText(row.source_sharepoint_id),
-    fileUrl: nullableText(row.file_url),
-    notes: nullableText(row.notes),
-  }));
-}
-
-export function mapMgoPriceRows(rows: MgoPriceRow[]): MgoPriceRecord[] {
-  return rows.map((row) => ({
-    id: row.id,
-    priceDate: nullableText(row.price_date),
-    priceHt: normalizeNumber(row.price_ht),
-    currency: nullableText(row.currency),
-    supplierName: nullableText(row.supplier_name),
-    title: nullableText(row.title),
-    notes: nullableText(row.notes),
-    sourceLabel: nullableText(row.source_label),
-  }));
-}
-
-export function buildDprMetrics(reports: DprItemRecord[], archives: DprArchiveRecord[]): DprMetrics {
+function mapFile(row: Record<string, unknown>): DprFileRecord {
   return {
-    archiveCount: archives.length,
-    fuelConsumptionL: reports.reduce((total, report) => total + report.fuelConsumptionL, 0),
-    mgoRefuelingM3: reports.reduce((total, report) => total + report.mgoRefuelingM3, 0),
-    qhseEventCount: reports.reduce(
-      (total, report) =>
-        total + report.environmentIncidentCount + report.personAccidentCount + report.dangerousSituationCount,
-      0,
-    ),
-    reportCount: reports.length,
+    id: Number(row.id), dprId: Number(row.dpr_id), kind: row.file_kind as DprFileKind,
+    bucket: text(row.bucket_name), path: text(row.object_path), filename: text(row.display_filename),
+    mimeType: text(row.mime_type), sizeBytes: Number(row.size_bytes || 0), sha256: text(row.sha256),
+    isCurrent: Boolean(row.is_current), status: text(row.status),
   };
 }
 
-export async function fetchDprItems(client: SupabaseClient): Promise<DprItemRecord[]> {
-  const { data, error } = await client
-    .from('dpr_items')
-    .select(DPR_ITEM_SELECT)
-    .order('report_date', { ascending: false, nullsFirst: false })
-    .order('report_time', { ascending: false, nullsFirst: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return mapDprItemRows((data || []) as unknown as DprItemRow[]);
+async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; name: string }> {
+  const { data: authData } = await client.auth.getUser();
+  const userId = authData.user?.id || null;
+  if (!userId) return { id: null, name: 'Utilisateur SeaPilot' };
+  const { data } = await client.from('profiles').select('display_name').eq('id', userId).maybeSingle();
+  return { id: userId, name: text(data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot' };
 }
 
-export async function fetchDprArchives(client: SupabaseClient): Promise<DprArchiveRecord[]> {
-  const { data, error } = await client
-    .from('dpr_archives')
-    .select(DPR_ARCHIVE_SELECT)
-    .order('report_date', { ascending: false, nullsFirst: false })
-    .order('title', { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  return mapDprArchiveRows((data || []) as unknown as DprArchiveRow[]);
-}
-
-export async function fetchMgoPrices(client: SupabaseClient): Promise<MgoPriceRecord[]> {
-  const { data, error } = await client
-    .from('mgo_prices')
-    .select(MGO_PRICE_SELECT)
-    .order('price_date', { ascending: false, nullsFirst: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return mapMgoPriceRows((data || []) as unknown as MgoPriceRow[]);
-}
-
-export async function fetchDprData(client: SupabaseClient): Promise<DprData> {
-  const [reports, archives, mgoPrices] = await Promise.all([
-    fetchDprItems(client),
-    fetchDprArchives(client),
-    fetchMgoPrices(client),
+export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDashboardData> {
+  const [reportResult, metricResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult, profile] = await Promise.all([
+    client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(2000),
+    client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters'),
+    client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,display_filename,mime_type,size_bytes,sha256,is_current,status').eq('status', 'ready').is('deleted_at', null).limit(5000),
+    client.from('projects').select('id,project_code,title').order('project_code'),
+    client.from('vessels').select('id,name').order('name'),
+    client.from('people').select('id,first_name,last_name,function_label,grade_label').eq('active', true).order('last_name').limit(5000),
+    client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
+    client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
+    loadCurrentProfile(client),
   ]);
-
-  return { reports, archives, mgoPrices };
+  const firstError = [reportResult, metricResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
+  if (firstError) throw firstError;
+  const projects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
+  const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) }));
+  const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
+  const filesByReport = new Map<number, DprFileRecord[]>();
+  (fileResult.data || []).map((row) => mapFile(row as Record<string, unknown>)).forEach((file) => filesByReport.set(file.dprId, [...(filesByReport.get(file.dprId) || []), file]));
+  const projectMap = new Map(projects.map((project) => [project.id, project]));
+  const vesselMap = new Map(vessels.map((vessel) => [vessel.id, vessel]));
+  const reports = (reportResult.data || []).map((row) => {
+    const projectId = numberOrNull(row.project_id); const vesselId = numberOrNull(row.vessel_id);
+    return {
+      id: Number(row.id), number: numberOrNull(row.dpr_number), status: row.status as DprStatus,
+      reportDate: text(row.report_date), projectId, projectCode: projectId ? projectMap.get(projectId)?.code || '' : '',
+      projectTitle: projectId ? projectMap.get(projectId)?.title || '' : '', unlistedProjectName: text(row.unlisted_project_name),
+      vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '', issuerName: text(row.issuer_name_snapshot),
+      description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
+      updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
+    } satisfies DprReportRecord;
+  });
+  const people = (peopleResult.data || []).map((row) => {
+    const functionLabel = text(row.function_label); const gradeLabel = text(row.grade_label);
+    return { id: Number(row.id), name: `${text(row.first_name)} ${text(row.last_name)}`.trim(), functionLabel: functionLabel || gradeLabel, crewFunction: crewFunction(functionLabel, gradeLabel) };
+  });
+  return {
+    reports, currentUserId: profile.id, currentUserName: profile.name,
+    references: {
+      projects, vessels, people,
+      exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
+      portReasons: (reasonResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
+    },
+  };
 }
 
-export async function createDprItem(client: SupabaseClient, input: CreateDprItemInput): Promise<DprItemRecord> {
-  const title = input.title.trim() || `DPR ${input.reportDate || ''}`.trim();
-
-  if (!title) {
-    throw new Error('Le titre du DPR est obligatoire.');
-  }
-
-  const payload = {
-    title,
-    project_id: input.projectId,
-    project_code: optionalText(input.projectCode),
-    project_title: optionalText(input.projectTitle),
-    vessel_name: optionalText(input.vesselName),
-    report_date: optionalText(input.reportDate),
-    report_time: optionalText(input.reportTime),
-    description: optionalText(input.description),
-    fuel_consumption_l: optionalNumber(input.fuelConsumptionL),
-    mgo_refueling_m3: optionalNumber(input.mgoRefuelingM3),
-    qhse_note: optionalText(input.qhseNote),
-    radio_contact: input.radioContact,
-    source_label: 'seapilot',
+export async function fetchDprDetail(client: SupabaseClient, baseReport: DprReportRecord): Promise<DprDetail> {
+  const id = baseReport.id;
+  const [metric, crew, others, incidents, hse, exercises, calls, supplies, waste, files] = await Promise.all([
+    client.from('dpr_daily_metrics').select('*').eq('dpr_id', id).maybeSingle(),
+    client.from('dpr_crew_members').select('*').eq('dpr_id', id).order('display_order'),
+    client.from('dpr_other_people').select('*').eq('dpr_id', id).order('display_order'),
+    client.from('dpr_incidents').select('*').eq('dpr_id', id),
+    client.from('dpr_hse_actions').select('*').eq('dpr_id', id).maybeSingle(),
+    client.from('dpr_emergency_exercises').select('*').eq('dpr_id', id),
+    client.from('dpr_port_calls').select('*,dpr_port_call_reasons(reason_type_key)').eq('dpr_id', id).order('display_order'),
+    client.from('dpr_supplies').select('*').eq('dpr_id', id).maybeSingle(),
+    client.from('dpr_waste_records').select('*').eq('dpr_id', id),
+    client.from('dpr_files').select('*').eq('dpr_id', id).is('deleted_at', null).order('display_order'),
+  ]);
+  const results = [metric, crew, others, incidents, hse, exercises, calls, supplies, waste, files];
+  const error = results.find((result) => result.error)?.error;
+  if (error) throw error;
+  const incidentRows = (incidents.data || []) as Array<Record<string, unknown>>;
+  const hseRow = (hse.data || {}) as Record<string, unknown>;
+  const supplyRow = (supplies.data || {}) as Record<string, unknown>;
+  const wasteRows = (waste.data || []) as Array<Record<string, unknown>>;
+  const metricRow = (metric.data || {}) as Record<string, unknown>;
+  const payload: DprFormPayload = {
+    reportDate: baseReport.reportDate, projectId: baseReport.projectId, unlistedProjectName: baseReport.unlistedProjectName,
+    vesselId: baseReport.vesselId, description: baseReport.description, qhseNote: baseReport.qhseNote,
+    metrics: { fuelConsumedLiters: scalarText(metricRow.fuel_consumed_liters), fuelOnBoardLiters: scalarText(metricRow.fuel_on_board_liters) },
+    crewMembers: ((crew.data || []) as Array<Record<string, unknown>>).map((row) => ({ personId: Number(row.person_id), crewFunction: row.crew_function as CrewFunction, rosterGroup: text(row.roster_group), displayName: text(row.display_name_snapshot), displayOrder: Number(row.display_order || 0) })),
+    otherPeople: ((others.data || []) as Array<Record<string, unknown>>).map((row) => ({ personId: numberOrNull(row.person_id), displayName: text(row.display_name_snapshot), displayOrder: Number(row.display_order || 0) })),
+    incidents: (['person', 'equipment', 'environment'] as IncidentCategory[]).map((category) => { const row = incidentRows.find((candidate) => candidate.category === category); return { category, level: (row?.level || 'T0') as IncidentLevel, notes: text(row?.notes) }; }),
+    hseActions: { tbtPerformed: Boolean(hseRow.tbt_performed), tbtTheme: text(hseRow.tbt_theme), hseVisitPerformed: Boolean(hseRow.hse_visit_performed), hseAuditPerformed: Boolean(hseRow.hse_audit_performed), goodPracticesCount: scalarText(hseRow.good_practices_count ?? '0'), dangerousSituationsCount: scalarText(hseRow.dangerous_situations_count ?? '0'), stopWorkCount: scalarText(hseRow.stop_work_count ?? '0') },
+    emergencyExercises: ((exercises.data || []) as Array<Record<string, unknown>>).map((row) => ({ key: text(row.exercise_type_key), notes: text(row.notes) })),
+    portCalls: ((calls.data || []) as Array<Record<string, unknown>>).map((row) => ({ portName: text(row.port_name), arrivalAt: text(row.arrival_at).slice(0, 16), departureAt: text(row.departure_at).slice(0, 16), displayOrder: Number(row.display_order || 0), reasons: ((row.dpr_port_call_reasons || []) as Array<Record<string, unknown>>).map((reason) => text(reason.reason_type_key)) })),
+    supplies: { fuelM3: scalarText(supplyRow.fuel_m3), oilLiters: scalarText(supplyRow.oil_liters), waterM3: scalarText(supplyRow.water_m3) },
+    wasteRecords: [
+      { key: 'black-bin', unit: 'kg' as const }, { key: 'recyclable', unit: 'kg' as const },
+      { key: 'bilge-water-oil', unit: 'l' as const }, { key: 'wastewater', unit: 'l' as const },
+    ].map((definition) => ({ ...definition, quantity: scalarText(wasteRows.find((row) => row.waste_type_key === definition.key)?.quantity) })),
   };
-  const { data, error } = await client.from('dpr_items').insert(payload).select(DPR_ITEM_SELECT).single();
+  if (!payload.portCalls.length) payload.portCalls = [{ portName: '', arrivalAt: '', departureAt: '', displayOrder: 0, reasons: [] }];
+  return { report: baseReport, payload, files: ((files.data || []) as Array<Record<string, unknown>>).map(mapFile) };
+}
 
-  if (error) {
-    throw error;
-  }
+export async function saveDprPayload(client: SupabaseClient, dprId: number | null, payload: DprFormPayload): Promise<number> {
+  const { data, error } = await client.rpc('dpr_save_payload', { target_dpr_id: dprId, target_payload: payload });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row?.id) throw new Error("Supabase n'a retourné aucun DPR.");
+  return Number(row.id);
+}
 
-  return mapDprItemRows([data as unknown as DprItemRow])[0];
+export async function runDprTransition(client: SupabaseClient, transition: 'submit' | 'validate' | 'reopen' | 'delete', dprId: number, reason = ''): Promise<void> {
+  const functions = { submit: 'dpr_submit', validate: 'dpr_validate', reopen: 'dpr_reopen', delete: 'dpr_soft_delete' } as const;
+  const args = transition === 'reopen' || transition === 'delete' ? { target_dpr_id: dprId, target_reason: reason } : { target_dpr_id: dprId };
+  const { error } = await client.rpc(functions[transition], args);
+  if (error) throw error;
+}
+
+async function sha256(file: Blob): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+export async function uploadDprFile(client: SupabaseClient, dprId: number, kind: DprFileKind, file: File | Blob, filename: string, displayOrder = 0): Promise<DprFileRecord> {
+  const mimeType = file.type || 'application/octet-stream';
+  const checksum = await sha256(file);
+  const { data: prepared, error: prepareError } = await client.rpc('dpr_prepare_file_upload', {
+    target_dpr_id: dprId, target_file_kind: kind, target_filename: filename,
+    target_mime_type: mimeType, target_size_bytes: file.size, target_sha256: checksum, target_display_order: displayOrder,
+  });
+  if (prepareError) throw prepareError;
+  const metadata = (Array.isArray(prepared) ? prepared[0] : prepared) as Record<string, unknown>;
+  const bucket = text(metadata.bucket_name); const path = text(metadata.object_path);
+  const { error: uploadError } = await client.storage.from(bucket).upload(path, file, { contentType: mimeType, upsert: false });
+  if (uploadError) throw uploadError;
+  const { data: completed, error: completeError } = await client.rpc('dpr_complete_file_upload', { target_file_id: Number(metadata.id) });
+  if (completeError) throw completeError;
+  return mapFile((Array.isArray(completed) ? completed[0] : completed) as Record<string, unknown>);
+}
+
+export async function removeDprFile(client: SupabaseClient, fileId: number): Promise<void> {
+  const { error } = await client.rpc('dpr_remove_file', { target_file_id: fileId }); if (error) throw error;
+}
+
+export async function createDprSignedUrl(client: SupabaseClient, file: DprFileRecord): Promise<string> {
+  const { error: auditError } = await client.rpc('dpr_record_signed_url', { target_file_id: file.id }); if (auditError) throw auditError;
+  const { data, error } = await client.storage.from(file.bucket).createSignedUrl(file.path, 300); if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function fetchDprDiagnostic(client: SupabaseClient): Promise<Record<string, number>> {
+  const { data, error } = await client.rpc('dpr_admin_diagnostic'); if (error) throw error;
+  return (data || {}) as Record<string, number>;
 }
