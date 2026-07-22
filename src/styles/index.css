@@ -3724,7 +3724,7 @@ button:disabled {
 
 .project-detail-tabs {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-bottom: 1px solid #dbe3ed;
   background: #f6f8fb;
 }
@@ -3745,8 +3745,12 @@ button:disabled {
   text-align: center;
 }
 
-.project-detail-tabs button:last-child {
+.project-detail-tabs button:nth-child(3n) {
   border-right: 0;
+}
+
+.project-detail-tabs button:nth-child(-n + 3) {
+  border-bottom: 1px solid #e1e7ef;
 }
 
 .project-detail-tabs button:hover {
@@ -4055,6 +4059,10 @@ button:disabled {
     min-width: 132px;
     padding-inline: 14px;
     white-space: nowrap;
+  }
+
+  .project-detail-tabs button:nth-child(-n + 3) {
+    border-bottom: 0;
   }
 }
 
