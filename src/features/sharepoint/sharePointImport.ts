@@ -4,7 +4,8 @@ type SharePointPrimitive = string | number | boolean | null;
 type SharePointFieldObject = Record<string, unknown>;
 type SharePointFieldValue = SharePointPrimitive | SharePointFieldObject | SharePointFieldValue[];
 type SharePointFields = Record<string, SharePointFieldValue | undefined>;
-type SharePointImportRow = Record<string, string | number | boolean | null>;
+export type SharePointImportValue = SharePointPrimitive | SharePointFieldObject | SharePointFieldValue[];
+type SharePointImportRow = Record<string, SharePointImportValue>;
 
 export interface SharePointListItem {
   id?: string | number;
@@ -191,6 +192,7 @@ const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'library-vehicules': mapGenericDocumentPayload,
   'list-audit': mapActionItemPayload,
   'list-bbtm-clients': mapClientPayload,
+  'list-remorque': mapTowageOptionPayload,
   'list-rh-personnel-bbtm': mapPersonPayload,
   'list-bbtm-projets': mapProjectPayload,
   'list-bbtm-flotte': mapVesselPayload,
@@ -206,6 +208,7 @@ const SOURCE_ROW_VALIDATORS: Partial<Record<string, SourceRowValidator>> = {
   'library-documents-contractuels': (row) => row.is_folder !== true,
   'library-documents-projets': (row) => row.is_folder !== true,
   'list-bbtm-flotte': (row) => Boolean(row.name),
+  'list-remorque': (row) => Boolean(row.name),
   'list-kpi-projets-planning': (row) => Boolean(row.title),
   'list-smtr-journees-planning': (row) => Boolean(row.crew_name && row.work_date),
   'list-smtr-planning-periodes': (row) => Boolean(row.crew_name && row.starts_on && row.ends_on),
@@ -213,6 +216,36 @@ const SOURCE_ROW_VALIDATORS: Partial<Record<string, SourceRowValidator>> = {
 
 function fieldsFor(item: SharePointListItem): SharePointFields {
   return item.fields || item;
+}
+
+function sourcePayload(item: SharePointListItem): SharePointFieldObject {
+  const fields = fieldsFor(item);
+  const payload = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+
+  if (item.id !== undefined && payload.id === undefined) {
+    payload.id = item.id;
+  }
+  if (item.webUrl && payload.webUrl === undefined) {
+    payload.webUrl = item.webUrl;
+  }
+
+  return payload;
+}
+
+function splitProjectReference(value: string, itemId: string | null): { projectCode: string; title: string } {
+  const match = value.match(/^\s*(P\d+)\s*[-\u2013\u2014]\s*(.+?)\s*$/i);
+
+  if (match) {
+    return {
+      projectCode: match[1].toUpperCase(),
+      title: match[2].trim(),
+    };
+  }
+
+  return {
+    projectCode: `SP-${itemId || 'UNKNOWN'}`,
+    title: value.trim(),
+  };
 }
 
 function fieldValue(item: SharePointListItem, aliases: string[]): SharePointFieldValue | undefined {
@@ -859,14 +892,31 @@ function mapVesselPayload(item: SharePointListItem, source: SharePointMigrationS
 function mapClientPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   return withReconciliation(item, source, {
     name: requiredText(item, ['Title', 'Nom', 'ClientName'], ''),
-    code: text(item, ['CodeClient', 'Code', 'ClientCode']),
-    email: text(item, ['Email', 'Mail']),
+    code: text(item, ['Num_x00e9_rodeClient', 'CodeClient', 'Code', 'ClientCode']),
+    email: text(item, ['e_x002d_mail', 'Email', 'Mail']),
     phone: text(item, ['Telephone', 'T_x00e9_l_x00e9_phone', 'Phone']),
-    address: text(item, ['Adresse', 'Address']),
+    address: text(item, ['AdressePostale', 'Adresse', 'Address']),
     city: text(item, ['Ville', 'City']),
     country: text(item, ['Pays', 'Country']),
     active: booleanValue(item, ['Actif', 'Active'], true),
+    final_customer: text(item, ['ClientFinal']),
+    is_broker: nullableBooleanValue(item, ['Interm_x00e9_diaire_x003f_']),
+    contact_name: text(item, ['Contact']),
+    siret: text(item, ['SIRET']),
+    vat_number: text(item, ['TVAIntracommunautaire']),
+    charterer_operation_location: text(item, ['_x0033_Affr_x00e9_teur_x002d_lie']),
+    representative_name: text(item, ['Repr_x00e9_sentant']),
     source_label: 'sharepoint',
+    source_payload: sourcePayload(item),
+  });
+}
+
+function mapTowageOptionPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
+  return withReconciliation(item, source, {
+    name: requiredText(item, ['Title'], ''),
+    description: text(item, ['Remorqu_x00e9_', 'Description']),
+    source_label: 'sharepoint',
+    source_payload: sourcePayload(item),
   });
 }
 
@@ -916,11 +966,20 @@ function mapPlanningPeriodPayload(item: SharePointListItem, source: SharePointMi
 }
 
 function mapProjectPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
+  const itemId = sourceItemId(item);
+  const reference = splitProjectReference(requiredText(item, ['Title'], ''), itemId);
+
   return withReconciliation(item, source, {
-    title: requiredText(item, ['Title'], ''),
-    project_code: text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']),
+    title: reference.title,
+    project_code:
+      text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']) || reference.projectCode,
     client_id: null,
-    client_sharepoint_item_id: text(item, ['ClientId', 'ClientLookupId']),
+    client_sharepoint_item_id: text(item, [
+      '_x0033__x002e_Affr_x00e9_teurId',
+      '_x0033__x002e_Affr_x00e9_teur',
+      'ClientId',
+      'ClientLookupId',
+    ]),
     client_name: text(item, ['Client', 'ClientLookupValue', 'NomClient']),
     primary_vessel_id: null,
     primary_vessel_sharepoint_item_id: text(item, ['NavireId', 'NavireLookupId', 'PrimaryVesselId']),
@@ -928,11 +987,28 @@ function mapProjectPayload(item: SharePointListItem, source: SharePointMigration
     secondary_vessel_id: null,
     secondary_vessel_sharepoint_item_id: text(item, ['Navire_x0020_2Id', 'Navire2Id', 'SecondaryVesselId']),
     secondary_vessel_name: text(item, ['Navire_x0020_2', 'Navire2', 'SecondaryVesselName']),
-    starts_on: dateOnly(item, ['Dated_x00e9_but', 'DateDebut', 'StartsOn']),
-    ends_on: dateOnly(item, ['Datefin', 'DateFin', 'EndsOn']),
+    starts_on: dateOnly(item, [
+      '_x0039__x002e_1Dated_x00e9_butAf',
+      'DateD_x00e9_butContrat',
+      'Dated_x00e9_but',
+      'DateDebut',
+      'StartsOn',
+    ]),
+    ends_on: dateOnly(item, ['Dated_x00e9_mobilisation', 'Datefin', 'DateFin', 'EndsOn']),
+    delivery_at: text(item, ['DateD_x00e9_butContrat']),
+    redelivery_at: text(item, ['Dated_x00e9_mobilisation']),
+    charter_starts_at: text(item, ['_x0039__x002e_1Dated_x00e9_butAf']),
+    charter_ends_at: text(item, ['Dated_x00e9_mobilisation']),
+    delivery_port: text(item, ['D_x00e9_butContrat_x002d_Lieuarr']),
+    redelivery_port: text(item, ['LieuD_x00e9_mobilisation']),
+    contract_type: text(item, ['Contrat']),
+    operation_area: text(item, ['_x0031_6_x002e_Zonedop_x00e9_rat']),
+    is_rov_support: booleanValue(item, ['_x0031_8_x002e_1Indiquersilenavi'], false),
+    is_diving_support: booleanValue(item, ['_x0031_8_x002e_2Naviresupportdep'], false),
     status: text(item, ['Statut', 'Status']),
-    description: text(item, ['Description', 'Commentaires']),
+    description: text(item, ['Description']),
     source_label: 'sharepoint',
+    source_payload: sourcePayload(item),
   });
 }
 
@@ -944,12 +1020,16 @@ function projectDocumentPayload(
   const itemId = sourceItemId(item);
   const title = requiredText(item, ['FileLeafRef', 'Title'], `Document projet SharePoint ${itemId || ''}`.trim());
   const fileRef = text(item, ['FileRef', 'ServerRelativeUrl']);
+  const projectReference = text(item, ['Projet', 'Project', 'ProjetLookupValue', 'ProjectTitle', 'Title']);
+  const parsedReference = projectReference ? splitProjectReference(projectReference, null) : null;
 
   return withReconciliation(item, source, {
     project_id: null,
     project_sharepoint_item_id: text(item, ['ProjetId', 'ProjectId', 'ProjetLookupId']),
-    project_code: text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']),
-    project_title: text(item, ['Projet', 'Project', 'ProjetLookupValue', 'ProjectTitle']),
+    project_code:
+      text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']) ||
+      (parsedReference?.projectCode.startsWith('P') ? parsedReference.projectCode : null),
+    project_title: parsedReference?.title || projectReference,
     category_key: categoryKey,
     title,
     source_label: 'sharepoint',
@@ -967,6 +1047,7 @@ function projectDocumentPayload(
     is_folder: isSharePointFolder(item),
     file_url: buildSharePointDocumentUrl(item, source, ['FileLeafRef', 'Title']),
     notes: fileRef,
+    source_payload: sourcePayload(item),
   });
 }
 

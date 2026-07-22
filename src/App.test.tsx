@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -483,11 +483,13 @@ describe('App', () => {
     expect(screen.getByLabelText('Documents projets')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents contractuels')).toHaveTextContent('1');
     expect(screen.getAllByText('Campagne Atlantique 2026').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Campagne Atlantique 2026P-2026-014/ })).toHaveTextContent('P-2026-014');
     expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
-    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
     expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Opérations' }));
+    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
       'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',

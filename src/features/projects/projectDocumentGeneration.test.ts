@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import JSZip from 'jszip';
+import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
 import {
   buildGeneratedDocumentFileName,
   buildProjectOfferRows,
   buildProjectSupplytimePdfFields,
+  generateProjectDocument,
 } from './projectDocumentGeneration';
 
 const project: ProjectRecord = {
@@ -102,8 +106,47 @@ describe('projectDocumentGeneration', () => {
 
   it('creates safe and explicit offer and contract filenames', () => {
     expect(buildGeneratedDocumentFileName('offer', project)).toBe('P1107 - Offre - R1.pdf');
-    expect(buildGeneratedDocumentFileName('contract', { ...project, projectCode: '' })).toBe(
-      'Campagne - Atlantique - Contrat SUPPLYTIME 2017.pdf',
+    expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
+      'Campagne - Atlantique - BIMCO SUPPLYTIME 2017 - R1.pdf',
     );
+  });
+
+  it('fills every towage placeholder with project and mission data', async () => {
+    const template = await readFile(resolve('public/templates/contrat-remorquage-bbtm.docx'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(template, {
+        headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        status: 200,
+      }),
+    );
+
+    try {
+      const generated = await generateProjectDocument('towage_contract', {
+        client,
+        contract,
+        occurrence: {
+          id: 44,
+          projectId: project.id,
+          primaryVesselId: 12,
+          primaryVesselName: 'LE ROZEL',
+          startsOn: '2026-08-03',
+          endsOn: '2026-08-07',
+          status: 'Planifié',
+          description: 'Remorquage de test',
+          sourceLabel: 'seapilot',
+          createdAt: '2026-07-21T12:00:00Z',
+        },
+        project,
+      });
+      const zip = await JSZip.loadAsync(await generated.blob.arrayBuffer());
+      const xml = await zip.file('word/document.xml')?.async('string');
+
+      expect(generated.fileName).toBe('P1107 - Contrat de remorquage - R1.docx');
+      expect(xml).toContain('LE ROZEL');
+      expect(xml).toContain('Ifremer');
+      expect(xml).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

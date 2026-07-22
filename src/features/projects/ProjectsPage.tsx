@@ -10,12 +10,10 @@ import {
   FileText,
   Download,
   ExternalLink,
-  History,
   Info,
   Pencil,
   Plus,
   RefreshCw,
-  Ship,
   Users,
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
@@ -24,7 +22,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
-import type { ProjectGeneratedDocumentKind } from './projectDocumentGeneration';
+import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import {
@@ -165,37 +163,72 @@ function canManageProjects(roles: RoleKey[]): boolean {
   return roles.includes('admin') || roles.includes('direction');
 }
 
+const PROJECT_DETAIL_TABS = [
+  { id: 'contract', label: 'Contrat' },
+  { id: 'operations', label: 'Opérations' },
+  { id: 'documents', label: 'Génération documentaire' },
+  { id: 'commercial', label: 'Offre commerciale' },
+  { id: 'planning', label: 'Planning' },
+  { id: 'identification', label: 'Identification' },
+] as const;
+
+type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]['id'];
+
+function ProjectDetailTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: ProjectDetailTab;
+  onChange: (tab: ProjectDetailTab) => void;
+}) {
+  function moveFocus(currentTab: ProjectDetailTab, direction: -1 | 1) {
+    const currentIndex = PROJECT_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
+    const nextIndex = (currentIndex + direction + PROJECT_DETAIL_TABS.length) % PROJECT_DETAIL_TABS.length;
+    const nextTab = PROJECT_DETAIL_TABS[nextIndex];
+    onChange(nextTab.id);
+    window.requestAnimationFrame(() => document.getElementById(`project-tab-${nextTab.id}`)?.focus());
+  }
+
+  return (
+    <div aria-label="Sections du projet" className="project-detail-tabs" role="tablist">
+      {PROJECT_DETAIL_TABS.map((tab) => (
+        <button
+          aria-controls="project-detail-panel"
+          aria-selected={activeTab === tab.id}
+          id={`project-tab-${tab.id}`}
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              moveFocus(tab.id, 1);
+            } else if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              moveFocus(tab.id, -1);
+            } else if (event.key === 'Home' || event.key === 'End') {
+              event.preventDefault();
+              const target = event.key === 'Home' ? PROJECT_DETAIL_TABS[0] : PROJECT_DETAIL_TABS.at(-1)!;
+              onChange(target.id);
+              window.requestAnimationFrame(() => document.getElementById(`project-tab-${target.id}`)?.focus());
+            }
+          }}
+          role="tab"
+          tabIndex={activeTab === tab.id ? 0 : -1}
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DetailField({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
   return (
     <div className={wide ? 'project-detail-field is-wide' : 'project-detail-field'}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
-  );
-}
-
-function ProvenanceNotice({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
-  const historicalSource = [project.sourceLabel, project.sharePointListTitle, project.sharePointItemId]
-    .filter(Boolean)
-    .join(' · ');
-  const contractSource = contract
-    ? [contract.sourceLabel, contract.sharePointListTitle, contract.sharePointItemId].filter(Boolean).join(' · ')
-    : '';
-
-  if (!historicalSource && !contractSource) {
-    return null;
-  }
-
-  return (
-    <aside className="project-provenance" aria-label="Provenance historique">
-      <History aria-hidden="true" size={18} />
-      <div>
-        <strong>Données structurées consultées dans Supabase</strong>
-        {historicalSource ? <span>{`Projet repris depuis ${historicalSource}.`}</span> : null}
-        {project.sourceModifiedAt ? <span>{`Dernière modification source : ${formatDate(project.sourceModifiedAt)}.`}</span> : null}
-        {contractSource && contractSource !== historicalSource ? <span>{`Contrat repris depuis ${contractSource}.`}</span> : null}
-      </div>
-    </aside>
   );
 }
 
@@ -305,7 +338,6 @@ function ProjectDetail({
   contractDocumentsUnavailable,
   generatingDocument,
   isManager,
-  onAddPlanningOccurrence,
   onGenerateDocument,
   planningOccurrences,
 }: {
@@ -319,10 +351,14 @@ function ProjectDetail({
   contractDocumentsUnavailable: boolean;
   generatingDocument: ProjectGeneratedDocumentKind | null;
   isManager: boolean;
-  onAddPlanningOccurrence: () => void;
-  onGenerateDocument: (kind: ProjectGeneratedDocumentKind) => void;
+  onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('contract');
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
+  useEffect(() => {
+    setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
+  }, [planningOccurrences, project.id]);
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
   const extension = [
@@ -337,25 +373,7 @@ function ProjectDetail({
     .join(' · ');
 
   return (
-    <article className="project-detail" aria-labelledby="selected-project-title">
-      <header className="project-detail-header">
-        <div>
-          <p>{project.projectCode || 'Projet sans numéro'}</p>
-          <h2 id="selected-project-title">{project.title}</h2>
-          {project.description ? <span>{project.description}</span> : null}
-        </div>
-        <div className="project-detail-header-actions">
-          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-          {isManager ? (
-            <button disabled={Boolean(project.archivedAt)} onClick={onAddPlanningOccurrence} type="button">
-              <CalendarPlus aria-hidden="true" size={16} /> Nouvelle opération
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <ProvenanceNotice contract={contract} project={project} />
-
+    <article className="project-detail" aria-label={`Détails du projet ${project.projectCode || project.title}`}>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
@@ -366,8 +384,18 @@ function ProjectDetail({
         </p>
       ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-identification-title">
-        <h3 id="project-identification-title">Identification</h3>
+      <div className="project-detail-tabs-shell">
+        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />
+        <div
+          aria-labelledby={`project-tab-${activeTab}`}
+          className="project-detail-tab-panel"
+          id="project-detail-panel"
+          role="tabpanel"
+          tabIndex={0}
+        >
+
+      {activeTab === 'identification' ? (
+      <section aria-label="Identification" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Numéro" value={displayText(project.projectCode)} />
           <DetailField label="Statut" value={displayText(project.status)} />
@@ -388,10 +416,12 @@ function ProjectDetail({
           ) : null}
         </dl>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-planning-title">
+      {activeTab === 'planning' ? (
+      <section aria-label="Planning" className="project-detail-section">
         <div className="project-section-heading">
-          <h3 id="project-planning-title">Planning</h3>
+          <strong>Planning du projet</strong>
           <span>{planningOccurrences.length} opération(s)</span>
         </div>
         <dl className="project-detail-grid">
@@ -424,17 +454,10 @@ function ProjectDetail({
           <p className="project-section-empty">Aucune opération planning associée.</p>
         )}
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-commercial-title">
-        <div className="project-section-heading">
-          <h3 id="project-commercial-title">Offre commerciale</h3>
-          {isManager ? (
-            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('offer')} type="button">
-              <Download aria-hidden="true" size={16} />
-              {generatingDocument === 'offer' ? 'Génération…' : "Générer l'offre PDF"}
-            </button>
-          ) : null}
-        </div>
+      {activeTab === 'commercial' ? (
+      <section aria-label="Offre commerciale" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Forfait mobilisation" value={formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || '')} />
           <DetailField label="Forfait démobilisation" value={formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || '')} />
@@ -448,9 +471,60 @@ function ProjectDetail({
           </a>
         </div>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-operations-title">
-        <h3 id="project-operations-title">Opérations</h3>
+      {activeTab === 'documents' ? (
+      <section aria-label="Génération documentaire" className="project-detail-section">
+        <div className="project-section-heading">
+          <div>
+            <strong>Documents du projet</strong>
+            <span>Chaque document validé est classé dans SharePoint · Documents Projets.</span>
+          </div>
+          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
+          </a>
+        </div>
+        <label className="project-document-occurrence-select">
+          Mission / occurrence à reprendre dans le document
+          <select
+            onChange={(event) => setSelectedOccurrenceId(event.target.value ? Number(event.target.value) : null)}
+            value={selectedOccurrenceId ?? ''}
+          >
+            <option value="">Période générale du projet</option>
+            {planningOccurrences.map((occurrence) => (
+              <option key={occurrence.id} value={occurrence.id}>
+                {formatPeriod(occurrence.startsOn, occurrence.endsOn)} · {displayText(occurrence.primaryVesselName)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="project-document-factory-grid">
+          {PROJECT_DOCUMENT_TYPES.map((definition) => (
+            <article className={definition.available ? '' : 'is-pending'} key={definition.kind}>
+              <FileText aria-hidden="true" size={22} />
+              <div>
+                <strong>{definition.label}</strong>
+                <span>{definition.description}</span>
+                <small>{definition.extension.toUpperCase()}</small>
+              </div>
+              {isManager ? (
+                <button
+                  disabled={!definition.available || generatingDocument !== null}
+                  onClick={() => onGenerateDocument(definition.kind, selectedOccurrenceId)}
+                  type="button"
+                >
+                  <Download aria-hidden="true" size={15} />
+                  {generatingDocument === definition.kind ? 'Génération et classement…' : definition.available ? 'Générer et classer' : 'Modèle attendu'}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </section>
+      ) : null}
+
+      {activeTab === 'operations' ? (
+      <section aria-label="Opérations" className="project-detail-section">
         <dl className="project-detail-grid">
           <DetailField label="Zone d’opération" value={displayText(project.operationArea)} wide />
           <DetailField label="Période maximale d’audit" value={displayText(contract?.maxAuditPeriod)} />
@@ -466,17 +540,10 @@ function ProjectDetail({
           <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Projets
         </a>
       </section>
+      ) : null}
 
-      <section className="project-detail-section" aria-labelledby="project-contract-title">
-        <div className="project-section-heading">
-          <h3 id="project-contract-title">Contrat</h3>
-          {isManager ? (
-            <button disabled={generatingDocument !== null} onClick={() => onGenerateDocument('contract')} type="button">
-              <Download aria-hidden="true" size={16} />
-              {generatingDocument === 'contract' ? 'Génération…' : 'Générer le contrat PDF'}
-            </button>
-          ) : null}
-        </div>
+      {activeTab === 'contract' ? (
+      <section aria-label="Contrat" className="project-detail-section">
         {!contractUnavailable ? <SupplytimePreview contract={contract} project={project} /> : null}
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (
@@ -485,9 +552,12 @@ function ProjectDetail({
           <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <p className="project-document-help">
-          Le contrat utilise les deux fonds SUPPLYTIME 2017 et les positions des 36 zones du module SPFx. Aucun binaire n'est envoyé vers Supabase ou Vercel.
+          Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni. Les fichiers générés sont classés dans SharePoint ; Supabase ne conserve que leurs métadonnées.
         </p>
       </section>
+      ) : null}
+        </div>
+      </div>
     </article>
   );
 }
@@ -511,6 +581,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
+  const [lastStoredDocument, setLastStoredDocument] = useState<{ fileName: string; webUrl: string } | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
@@ -676,20 +747,40 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     }
   }
 
-  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind) {
+  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
     if (!selectedProject) return;
     setMutationError('');
     setMutationMessage('');
+    setLastStoredDocument(null);
     setGeneratingDocument(kind);
     try {
       const { downloadGeneratedProjectDocument, generateProjectDocument } = await import('./projectDocumentGeneration');
+      const occurrence = planningOccurrenceId
+        ? selectedPlanningOccurrences.find((item) => item.id === planningOccurrenceId)
+        : undefined;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
         contract: selectedContract,
+        occurrence,
         project: selectedProject,
       });
-      downloadGeneratedProjectDocument(generated);
-      setMutationMessage(`${generated.fileName} généré. Après validation, déposez-le dans SharePoint.`);
+      try {
+        const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');
+        const stored = await storeGeneratedProjectDocument(effectiveClient, {
+          document: generated,
+          documentType: kind,
+          planningOccurrenceId,
+          projectId: selectedProject.id,
+          revision: 1,
+        });
+        setLastStoredDocument({ fileName: stored.fileName, webUrl: stored.webUrl });
+        setMutationMessage(`${stored.fileName} généré et classé automatiquement dans SharePoint.`);
+        setLoadAttempt((attempt) => attempt + 1);
+      } catch (storageError) {
+        downloadGeneratedProjectDocument(generated);
+        setMutationMessage(`${generated.fileName} généré et téléchargé localement.`);
+        setMutationError(storageError instanceof Error ? storageError.message : 'Le classement SharePoint a échoué.');
+      }
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
     } finally {
@@ -733,8 +824,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     <section className="projects-page">
       <div className="admin-header">
         <div>
-          <p className="module-family">Opérations</p>
+          <p className="module-family">MODULE</p>
           <h1>Projets</h1>
+          <p className="projects-header-subtitle">Liste BBTM · projets, missions, offres et contrats.</p>
         </div>
         <div className="projects-summary-grid">
           <div className="planning-summary" aria-label="Projets actifs">
@@ -843,9 +935,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </button>
       </div>
 
-      <div className="planning-toolbar">
-        <span className="planning-mode-read">Source structurée · Supabase</span>
-        {isManager ? (
+      {isManager ? (
+        <div className="planning-toolbar">
           <div className="project-write-actions">
             <button onClick={() => openClientEditor()} type="button"><Users aria-hidden="true" size={16} /> Nouveau client</button>
             <button onClick={() => openProjectEditor()} type="button"><Plus aria-hidden="true" size={16} /> Nouveau projet</button>
@@ -853,10 +944,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             <button disabled={!selectedClient} onClick={() => selectedClient && openClientEditor(selectedClient)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le client</button>
             <button className="is-danger" disabled={!selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} onClick={archiveSelectedProject} type="button"><Archive aria-hidden="true" size={16} /> Archiver</button>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
+      {lastStoredDocument ? (
+        <a className="project-stored-document-link" href={lastStoredDocument.webUrl} rel="noreferrer" target="_blank">
+          <ExternalLink aria-hidden="true" size={15} /> Ouvrir {lastStoredDocument.fileName} dans SharePoint
+        </a>
+      ) : null}
       {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
       {projectsData.projects.length === 0 ? (
@@ -877,52 +973,62 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               <h2 id="projects-list-title">Portefeuille projets</h2>
               <span>{filteredProjects.length} projet(s)</span>
             </div>
-            <div className="admin-table-wrap">
-              <table className="admin-table projects-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Projet</th>
-                    <th scope="col">Client / navire</th>
-                    <th scope="col">Période</th>
-                    <th scope="col">Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleProjects.map((project) => {
-                    const isSelected = selectedProject?.id === project.id;
-                    return (
-                      <tr className={isSelected ? 'is-selected' : undefined} key={project.id}>
-                        <th scope="row">
+            <ul className="project-catalog-list">
+              {visibleProjects.map((project) => {
+                const isSelected = selectedProject?.id === project.id;
+                const occurrences = projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === project.id);
+                return (
+                  <li className={isSelected ? 'is-selected' : undefined} key={project.id}>
+                    <div className="project-catalog-row">
+                      <button
+                        aria-label={`${project.title}${project.projectCode}`}
+                        aria-pressed={isSelected}
+                        className="project-select-button"
+                        onClick={() => setSelectedProjectId(project.id)}
+                        type="button"
+                      >
+                        <span className="project-title">
+                          <Briefcase aria-hidden="true" size={16} />
+                          {project.projectCode ? `${project.projectCode} - ` : ''}{project.title}
+                        </span>
+                        <small>Détail de la mission : {project.description || 'Non renseigné'}</small>
+                      </button>
+                      <div className="project-catalog-actions">
+                        {isManager ? (
                           <button
-                            aria-pressed={isSelected}
-                            className="project-select-button"
-                            onClick={() => setSelectedProjectId(project.id)}
+                            aria-label={`Nouvelle opération ${project.projectCode || project.title}`}
+                            onClick={() => {
+                              setSelectedProjectId(project.id);
+                              setPlanningEditorOpen(true);
+                            }}
                             type="button"
                           >
-                            <span className="project-title">
-                              <Briefcase aria-hidden="true" size={16} />
-                              {project.title}
-                            </span>
-                            <small>{project.projectCode || 'Sans numéro'}</small>
+                            <CalendarPlus aria-hidden="true" size={15} /> Nouvelle opération
                           </button>
-                        </th>
-                        <td>
-                          {displayText(project.clientName)}
-                          <span className="project-vessel">
-                            <Ship aria-hidden="true" size={14} />
-                            {displayText(project.primaryVesselName)}
-                          </span>
-                        </td>
-                        <td>{formatPeriod(project.deliveryAt || project.startsOn, project.redeliveryAt || project.endsOn)}</td>
-                        <td>
-                          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        ) : null}
+                        <span>{displayText(project.clientName)}</span>
+                        <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+                        <strong>{occurrences.length}</strong>
+                      </div>
+                    </div>
+                    {occurrences.length > 0 ? (
+                      <ul className="project-catalog-occurrences">
+                        {occurrences.map((occurrence) => (
+                          <li key={occurrence.id}>
+                            <CalendarDays aria-hidden="true" size={16} />
+                            <span>Date de début <strong>{formatDate(occurrence.startsOn)}</strong></span>
+                            <span>Navire <strong>{displayText(occurrence.primaryVesselName)}</strong></span>
+                            <small>{displayText(occurrence.status)}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="project-catalog-empty">Aucun enregistrement planning associé.</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
             {pageCount > 1 ? (
               <nav className="project-pagination" aria-label="Pagination des projets">
                 <button disabled={safePage === 0} onClick={() => setCurrentPage(safePage - 1)} type="button">
@@ -947,8 +1053,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
               generatingDocument={generatingDocument}
               isManager={isManager}
-              onAddPlanningOccurrence={() => setPlanningEditorOpen(true)}
-              onGenerateDocument={(kind) => void generateSelectedProjectDocument(kind)}
+              onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}

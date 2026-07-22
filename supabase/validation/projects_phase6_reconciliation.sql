@@ -20,6 +20,10 @@ with checks as (
   union all
   select 'volume', 'contract_documents.total', count(*), null, 'info' from public.contract_documents
   union all
+  select 'volume', 'project_contracts.total', count(*), null, 'info' from public.project_contracts
+  union all
+  select 'volume', 'towage_options.total', count(*), null, 'info' from public.towage_options
+  union all
   select 'volume', 'planning_projects.total', count(*), null, 'info' from public.planning_projects
 
   union all
@@ -30,6 +34,11 @@ with checks as (
   union all
   select 'provenance', 'clients.sharepoint_identity_missing', count(*), 0, 'critical'
   from public.clients
+  where lower(trim(source_label)) = 'sharepoint'
+    and (nullif(trim(sharepoint_list_id), '') is null or nullif(trim(sharepoint_item_id), '') is null)
+  union all
+  select 'provenance', 'towage_options.sharepoint_identity_missing', count(*), 0, 'critical'
+  from public.towage_options
   where lower(trim(source_label)) = 'sharepoint'
     and (nullif(trim(sharepoint_list_id), '') is null or nullif(trim(sharepoint_item_id), '') is null)
   union all
@@ -103,6 +112,9 @@ with checks as (
   union all
   select 'validity', 'clients.name_missing', count(*), 0, 'critical'
   from public.clients where nullif(trim(name), '') is null
+  union all
+  select 'validity', 'towage_options.name_missing', count(*), 0, 'critical'
+  from public.towage_options where nullif(trim(name), '') is null
   union all
   select 'validity', 'project_documents.folder_rows', count(*), 0, 'high'
   from public.project_documents where is_folder

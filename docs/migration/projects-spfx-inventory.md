@@ -1116,3 +1116,20 @@ Le besoin métier confirmé le 16 juillet 2026 lève l'ambiguïté sur la relati
 L'absence de modèle d'offre vierge dans le dépôt SPFx est documentée dans `docs/migration/projects-offers-planning.md`. L'offre générée reprend les rubriques d'un document historique de la bibliothèque contractuelle sans embarquer ce document ni ses données dans Git.
 
 Le NO-GO de réconciliation live de la section 21 n'est pas annulé par ce complément : les fonctionnalités peuvent être déployées, mais la migration des données historiques reste à réconcilier avant de déclarer la bascule métier complète.
+
+## 23. Audit live et reprise du 21 juillet 2026
+
+Une session Microsoft 365 authentifiée a permis de lever les inconnues de la phase 0. L’audit porte sur le site `https://bbtm668.sharepoint.com/sites/QHSE/` et sur le schéma Supabase lié.
+
+| Source | Identifiant live | Volume exporté | Cible Supabase |
+|---|---|---:|---|
+| `BBTM - Clients` | `eacbc0c3-1028-44bf-975b-ed50f762943d` | 7 | `clients` |
+| `BBTM - Flotte` | `543b9f00-aed2-489a-808a-7b64cc835a83` | 15, dont 1 ligne vide | `vessels` : 14 lignes importables |
+| `Remorqué` | `585151b0-190c-4634-b534-74aac6cd8400` | 1 | `towage_options` |
+| `BBTM - Projets` | `6abf8928-acfd-47ec-a848-29e4071249fc` | 28 | `projects` et `project_contracts` |
+| `Documents Projets` | liste `7559dfae-5ab9-4616-bb63-97819c606365` | 0 | `project_documents` |
+| `Documents Contractuels` | liste `27475196-8f56-4c61-893f-cb49d17ddca5` | 16 fichiers | `contract_documents` |
+
+Constats de schéma : les tables principales et leurs colonnes canoniques existaient, mais sept champs clients observés en production n’étaient pas typés et la table de lookup `towage_options` n’existait pas. Les deux identifiants de drive documentaires versionnés avaient aussi perdu le segment `ywF`. La migration `202607210001_projects_sharepoint_live_import.sql` corrige ces écarts, enregistre les identités live et conserve chaque ligne source complète dans `source_payload`.
+
+Les titres historiques `Pnnn - Libellé` sont séparés en code et libellé. Les onze projets sans code historique reçoivent un code de traçabilité `SP-<SharePoint ID>` ; ils ne consomment pas la séquence `P`. Le compteur `P` est relevé automatiquement au-dessus du plus grand code historique valide pendant la synchronisation des contrats.

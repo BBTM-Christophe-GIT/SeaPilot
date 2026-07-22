@@ -122,7 +122,7 @@ describe('buildMicrosoft365ListItemsCommand', () => {
     });
   });
 
-  it('targets a document library by title when its list id is not configured', () => {
+  it('targets a document library by its verified live list id', () => {
     expect(
       buildMicrosoft365ListItemsCommand('library-documents-projets', {
         camlQuery: '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
@@ -138,8 +138,8 @@ describe('buildMicrosoft365ListItemsCommand', () => {
         'list',
         '--webUrl',
         'https://bbtm668.sharepoint.com/sites/QHSE',
-        '--listTitle',
-        'Documents Projets',
+        '--listId',
+        '7559dfae-5ab9-4616-bb63-97819c606365',
         '--camlQuery',
         '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
         '--output',
@@ -241,8 +241,8 @@ describe('runSharePointListExportCli', () => {
     expect(runCommand).toHaveBeenCalledWith('pnpm', expect.arrayContaining([
       'listitem',
       'list',
-      '--listTitle',
-      'Documents Projets',
+      '--listId',
+      '7559dfae-5ab9-4616-bb63-97819c606365',
       '--camlQuery',
       '<View Scope="RecursiveAll"><Query></Query><RowLimit Paged="TRUE">5000</RowLimit></View>',
     ]));

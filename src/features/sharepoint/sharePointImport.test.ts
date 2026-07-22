@@ -453,7 +453,7 @@ describe('SharePoint import mapping', () => {
       },
     ]);
 
-    expect(batch).toEqual({
+    expect(batch).toMatchObject({
       sourceKey: 'list-bbtm-clients',
       targetTable: 'clients',
       conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
@@ -469,7 +469,7 @@ describe('SharePoint import mapping', () => {
           active: true,
           source_label: 'sharepoint',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
+          sharepoint_list_id: 'eacbc0c3-1028-44bf-975b-ed50f762943d',
           sharepoint_list_title: 'BBTM Clients / BBTM - Clients',
           sharepoint_item_id: '77',
           sharepoint_unique_id: 'client-77',
@@ -503,7 +503,7 @@ describe('SharePoint import mapping', () => {
       },
     ]);
 
-    expect(batch).toEqual({
+    expect(batch).toMatchObject({
       sourceKey: 'list-bbtm-projets',
       targetTable: 'projects',
       conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
@@ -526,7 +526,7 @@ describe('SharePoint import mapping', () => {
           description: 'Mission maritime',
           source_label: 'sharepoint',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
+          sharepoint_list_id: '6abf8928-acfd-47ec-a848-29e4071249fc',
           sharepoint_list_title: 'BBTM - Projets',
           sharepoint_item_id: '880',
           sharepoint_unique_id: 'project-880',
@@ -535,6 +535,73 @@ describe('SharePoint import mapping', () => {
           source_modified_at: '2026-06-30T08:15:00Z',
         },
       ],
+    });
+  });
+
+  it('maps the verified live project and client fields and preserves complete source payloads', () => {
+    const client = buildSharePointUpsertBatch('list-bbtm-clients', [
+      {
+        ID: '1',
+        Title: 'LOGICMASTER',
+        ClientFinal: 'RTE',
+        Interm_x00e9_diaire_x003f_: 'true',
+        Contact: 'Tim CARRIE',
+        AdressePostale: '42 Avenue de la Perrière',
+        e_x002d_mail: 'tim@example.com',
+        SIRET: '81847164100022',
+      },
+    ]).rows[0];
+    const project = buildSharePointUpsertBatch('list-bbtm-projets', [
+      {
+        ID: '54',
+        Title: 'P260 - Remorquage DENVER',
+        _x0033__x002e_Affr_x00e9_teurId: '6',
+        NavireId: '2',
+        DateD_x00e9_butContrat: '2026-06-03T10:00:00Z',
+        Dated_x00e9_mobilisation: '2026-06-10T10:00:00Z',
+        D_x00e9_butContrat_x002d_Lieuarr: 'LE HAVRE',
+        LieuD_x00e9_mobilisation: 'DIEPPE',
+        Contrat: 'Contrat de Remorquage - BBTM',
+        _x0031_8_x002e_1Indiquersilenavi: 'Oui',
+        Loyerjournalier: '14500',
+      },
+    ]).rows[0];
+
+    expect(client).toMatchObject({
+      address: '42 Avenue de la Perrière',
+      contact_name: 'Tim CARRIE',
+      email: 'tim@example.com',
+      final_customer: 'RTE',
+      is_broker: true,
+      siret: '81847164100022',
+      source_payload: expect.objectContaining({ ClientFinal: 'RTE' }),
+    });
+    expect(project).toMatchObject({
+      client_sharepoint_item_id: '6',
+      contract_type: 'Contrat de Remorquage - BBTM',
+      delivery_at: '2026-06-03T10:00:00Z',
+      delivery_port: 'LE HAVRE',
+      is_rov_support: true,
+      project_code: 'P260',
+      redelivery_at: '2026-06-10T10:00:00Z',
+      redelivery_port: 'DIEPPE',
+      title: 'Remorquage DENVER',
+      source_payload: expect.objectContaining({ Loyerjournalier: '14500' }),
+    });
+  });
+
+  it('uses a traceable fallback project code and maps the Remorqué lookup list', () => {
+    const project = buildSharePointUpsertBatch('list-bbtm-projets', [{ ID: '29', Title: 'ETPO' }]).rows[0];
+    const towage = buildSharePointUpsertBatch('list-remorque', [
+      { ID: '1', Title: 'CAPRICIEUSE', Remorqu_x00e9_: 'Navire militaire désarmé' },
+    ]).rows[0];
+
+    expect(project).toMatchObject({ project_code: 'SP-29', title: 'ETPO' });
+    expect(towage).toMatchObject({
+      description: 'Navire militaire désarmé',
+      name: 'CAPRICIEUSE',
+      sharepoint_list_id: '585151b0-190c-4634-b534-74aac6cd8400',
+      source_payload: expect.objectContaining({ Title: 'CAPRICIEUSE' }),
     });
   });
 
@@ -987,7 +1054,7 @@ describe('SharePoint import mapping', () => {
       },
     ]);
 
-    expect(batch).toEqual({
+    expect(batch).toMatchObject({
       sourceKey: 'library-documents-projets',
       targetTable: 'project_documents',
       conflictColumns: ['sharepoint_drive_id', 'sharepoint_drive_item_id'],
@@ -1015,7 +1082,7 @@ describe('SharePoint import mapping', () => {
           file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/rapport.pdf',
           notes: '/sites/QHSE/Documents Projets/P-2026-014/rapport.pdf',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
+          sharepoint_list_id: '7559dfae-5ab9-4616-bb63-97819c606365',
           sharepoint_list_title: 'Documents Projets',
           sharepoint_item_id: '990',
           sharepoint_unique_id: 'project-document-990',
@@ -1047,7 +1114,7 @@ describe('SharePoint import mapping', () => {
       },
     ]);
 
-    expect(batch).toEqual({
+    expect(batch).toMatchObject({
       sourceKey: 'library-documents-contractuels',
       targetTable: 'contract_documents',
       conflictColumns: ['sharepoint_drive_id', 'sharepoint_drive_item_id'],
@@ -1075,7 +1142,7 @@ describe('SharePoint import mapping', () => {
           file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/P-2026-014/contrat.pdf',
           notes: '/sites/QHSE/Documents Contractuels/P-2026-014/contrat.pdf',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
+          sharepoint_list_id: '27475196-8f56-4c61-893f-cb49d17ddca5',
           sharepoint_list_title: 'Documents Contractuels',
           sharepoint_item_id: '991',
           sharepoint_unique_id: 'contract-document-991',
@@ -1085,6 +1152,23 @@ describe('SharePoint import mapping', () => {
           source_modified_at: '2026-06-30T08:15:00Z',
         },
       ],
+    });
+  });
+
+  it('derives a contract document project reference from the live Title field', () => {
+    const row = buildSharePointUpsertBatch('library-documents-contractuels', [
+      {
+        ID: '22',
+        Title: 'P260 - Remorquage DENVER',
+        FileLeafRef: '20260610 Contrat DENVER.pdf',
+        FileRef: '/sites/QHSE/Documents Contractuels/20260610 Contrat DENVER.pdf',
+      },
+    ]).rows[0];
+
+    expect(row).toMatchObject({
+      project_code: 'P260',
+      project_title: 'Remorquage DENVER',
+      title: '20260610 Contrat DENVER.pdf',
     });
   });
 

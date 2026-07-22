@@ -1,5 +1,5 @@
-import { X } from 'lucide-react';
-import { useState } from 'react';
+import { CalendarDays, CreditCard, FileText, FolderOpen, ReceiptText, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   createProjectPlanningOccurrence,
@@ -129,9 +129,24 @@ export function ProjectEditor({
   const [form, setForm] = useState(() => projectToWriteInput(project, contract));
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [nextProjectCode, setNextProjectCode] = useState(project?.projectCode || 'P…');
   const eligibleVessels = vessels.filter(
     (vessel) => vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId,
   );
+
+  useEffect(() => {
+    if (project?.projectCode) {
+      setNextProjectCode(project.projectCode);
+      return;
+    }
+    let active = true;
+    client.rpc('projects_peek_next_code', { target_prefix: 'P' }).then(({ data }) => {
+      if (active && typeof data === 'string' && data) setNextProjectCode(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, [client, project?.projectCode]);
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -152,20 +167,33 @@ export function ProjectEditor({
 
   return (
     <div className="project-editor-backdrop">
-      <section aria-labelledby="project-editor-title" aria-modal="true" className="project-editor" role="dialog">
+      <section aria-label={project ? 'Modifier le projet' : 'Créer un projet'} aria-modal="true" className="project-editor is-project-assistant" role="dialog">
         <header>
           <div>
-            <span>{project?.projectCode || 'Numéro attribué par Supabase à la création'}</span>
-            <h2 id="project-editor-title">{project ? 'Modifier le projet' : 'Créer un projet'}</h2>
+            <span>{project ? 'MODIFICATION' : 'CRÉATION'}</span>
+            <h2 id="project-editor-title">{project ? 'Projet' : 'Offre'}</h2>
           </div>
           <button aria-label="Fermer le formulaire projet" disabled={isSaving} onClick={onClose} type="button">
             <X aria-hidden="true" size={20} />
           </button>
         </header>
         <form onSubmit={submit}>
-          <fieldset>
-            <legend>Identification</legend>
+          <div className="project-assistant-layout">
+            <aside aria-label="Étapes de création du projet">
+              <span>ASSISTANT</span>
+              <strong>Projet</strong>
+              <a className="is-active" href="#project-step-identification"><b>1</b><FolderOpen size={20} /><span>Identification<small>Nom du projet, navire et client</small></span></a>
+              <a href="#project-step-planning"><b>2</b><CalendarDays size={20} /><span>Planning<small>Prise en charge et arrivée</small></span></a>
+              <a href="#project-step-offer"><b>3</b><ReceiptText size={20} /><span>Offre commerciale<small>Tarifs et conditions</small></span></a>
+              <a href="#project-step-billing"><b>4</b><CreditCard size={20} /><span>Facturation<small>Frais et paiement</small></span></a>
+              <a href="#project-step-documents"><b>5</b><FileText size={20} /><span>Documents<small>Contrats et procédures</small></span></a>
+            </aside>
+            <main>
+          <fieldset id="project-step-identification">
+            <legend><span>1</span> Identification <small>8 champs</small></legend>
+            <p className="project-code-preview">Nom final : <strong>{nextProjectCode} - {form.title || '…'}</strong><small>Le numéro affiché est un aperçu ; Supabase l’attribue atomiquement à l’enregistrement.</small></p>
             <div className="project-editor-grid">
+              <Field label="Code projet"><input disabled value={nextProjectCode} /></Field>
               <Field label="Nom du projet *" wide>
                 <input autoFocus onChange={(event) => update('title', event.target.value)} required value={form.title} />
               </Field>
@@ -187,8 +215,8 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend>Planning</legend>
+          <fieldset id="project-step-planning">
+            <legend><span>2</span> Planning</legend>
             <div className="project-editor-grid">
               <Field label="Début du projet"><input onChange={(event) => update('startsOn', event.target.value)} type="date" value={form.startsOn} /></Field>
               <Field label="Fin du projet"><input onChange={(event) => update('endsOn', event.target.value)} type="date" value={form.endsOn} /></Field>
@@ -201,8 +229,8 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend>Offre commerciale</legend>
+          <fieldset id="project-step-offer">
+            <legend><span>3</span> Offre commerciale</legend>
             <div className="project-editor-grid">
               <Field label="Type de contrat">
                 <input list="project-contract-values" onChange={(event) => update('contractType', event.target.value)} value={form.contractType} />
@@ -219,8 +247,8 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend>Opérations</legend>
+          <fieldset id="project-step-billing">
+            <legend><span>4</span> Mission et facturation</legend>
             <div className="project-editor-grid">
               <Field label="Navire principal">
                 <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
@@ -240,8 +268,8 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend>Contrat SUPPLYTIME</legend>
+          <fieldset id="project-step-documents">
+            <legend><span>5</span> Documents · BIMCO SUPPLYTIME</legend>
             <div className="project-editor-grid">
               <Field label="Limite d’affectation navire"><input onChange={(event) => update('vesselAssignmentLimit', event.target.value)} value={form.vesselAssignmentLimit} /></Field>
               <Field label="Nombre de prolongations"><input min="1" onChange={(event) => update('extensionCount', optionalNumber(event.target.value))} step="1" type="number" value={form.extensionCount ?? ''} /></Field>
@@ -268,10 +296,13 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
+            </main>
+          </div>
+
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer dans Supabase'}</button>
+            <button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer le projet'}</button>
           </footer>
         </form>
       </section>
