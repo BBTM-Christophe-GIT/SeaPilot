@@ -3,6 +3,7 @@ import {
   BBTM_IMPORT_SOURCE_LABEL,
   buildBbtmImportSql,
   cleanBbtmPersonName,
+  classifyBbtmCellValue,
   classifyBbtmValue,
   normalizePersonKey,
   type BbtmImportPreview,
@@ -38,6 +39,25 @@ describe('BBTM planning import rules', () => {
 
   it.each(['DK', 'SPA', 'BR', 'FLA', 'OR', 'SEANERGY'])('excludes %s', (source) => {
     expect(classifyBbtmValue(source).kind).toBe('excluded');
+  });
+
+  it('applies the validated cell-by-cell decisions from the review sheets', () => {
+    expect(classifyBbtmCellValue('2026', 'AU', 30, 'Carnaval')).toMatchObject({
+      kind: 'status',
+      sailorStatus: 'Vacance',
+      comment: 'Carnaval',
+    });
+    expect(classifyBbtmCellValue('2026', 'CW', 36, 'Essais Océlian Port en Bessin')).toMatchObject({
+      kind: 'status',
+      sailorStatus: 'En Mer',
+      comment: 'Essais Océlian Port en Bessin',
+    });
+    expect(classifyBbtmCellValue('2026', 'EJ', 28, 'SEANERGY')).toMatchObject({
+      kind: 'status',
+      sailorStatus: 'A Terre',
+      comment: 'SEANERGY',
+    });
+    expect(classifyBbtmCellValue('2027', 'A', 1, 'SEANERGY')).toMatchObject({ kind: 'excluded' });
   });
 
   it('keeps unapproved free text for review', () => {

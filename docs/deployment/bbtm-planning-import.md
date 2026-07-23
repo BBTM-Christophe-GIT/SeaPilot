@@ -14,7 +14,14 @@ ne modifie jamais la production.
 - L'alias `KIKI` est remplacé par `CHRISTOPHE BINET`.
 - Les affectations, statuts, exclusions et commentaires suivent les règles
   documentées dans l'onglet `Règles` du classeur de prévisualisation.
-- Les textes libres non validés restent dans `À vérifier` et ne sont pas importés.
+- Les 131 cellules initialement placées dans `À vérifier` ont reçu une décision
+  ciblée : 113 journées `Vacance`, 16 journées `A Terre` et 2 journées `En Mer`.
+- Les 17 cellules initialement exclues ont reçu une décision ciblée `A Terre`.
+  La valeur Excel d'origine est conservée comme commentaire pour ces 148
+  décisions afin de garder la justification visible dans SeaPilot.
+- Ces décisions sont identifiées par onglet et adresse de cellule. Les mêmes
+  codes ou textes libres rencontrés ailleurs restent soumis aux règles générales
+  et ne sont pas importés automatiquement.
 - Une bordée n'est proposée que lorsque deux marins ou plus ont au moins trois
   jours communs, un recouvrement d'au moins 60 % et des débuts distants de trois
   jours au maximum. Il ne peut y avoir que `Bordée 1` et `Bordée 2` par navire ;
@@ -50,7 +57,8 @@ Elle n'exécute aucun des scripts SQL.
 Avant d'appliquer l'import :
 
 1. valider les correspondances de l'onglet `Personnes` ;
-2. décider du traitement des lignes `À vérifier` ;
+2. contrôler que `À vérifier` et `Exclus` sont vides après application des
+   décisions ciblées ;
 3. valider les propositions de l'onglet `Bordées` ;
 4. régénérer l'aperçu après toute modification de règle ;
 5. contrôler que le nombre attendu dans le script SQL correspond au nombre de

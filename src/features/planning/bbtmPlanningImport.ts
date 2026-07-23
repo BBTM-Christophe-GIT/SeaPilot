@@ -152,6 +152,28 @@ const vesselCodeMap = new Map<string, string>([
 ]);
 
 const excludedCodes = new Set(['DK', 'SPA', 'BR', 'FLA', 'OR', 'SEANERGY']);
+const manualVacanceCells = new Set(`
+2026:AU30 2026:BJ30 2026:FO31 2026:CU32 2026:FG32 2026:FO33 2026:FV36 2026:BR38 2026:FJ40
+2026:P42 2026:AR42 2026:BE46 2026:AW49 2026:I52 2026:J52 2026:CQ52 2026:DI52 2026:BV53
+2025:AA25 2025:AB25 2025:AG25 2025:AH25 2025:AI25 2025:AJ25 2025:AM25 2025:AN25 2025:AO25
+2025:AP25 2025:AQ25 2025:AU25 2025:AV25 2025:AW25 2025:AX25 2025:BA25 2025:BB25 2025:BC25
+2025:BD25 2025:BE25 2025:BH25 2025:BX25 2025:BY25 2025:AK26 2025:BE26 2025:BT26 2025:CU26
+2025:DJ26 2025:I27 2025:AK27 2025:AT27 2025:BX27 2025:U28 2025:AY28 2025:AB29 2025:AL29
+2025:CT29 2025:AD33 2025:AG33 2025:AH33 2025:AI33 2025:AJ33 2025:AM33 2025:AN33 2025:AO33
+2025:AP33 2025:AQ33 2025:AR33 2025:BX33 2025:BY33 2025:CJ33 2025:AA34 2025:AB34 2025:AW34
+2025:BX34 2025:BY34 2025:BO35 2025:DM35 2025:I36 2025:J36 2025:K36 2025:L36 2025:M36
+2025:N36 2025:O36 2025:P36 2025:CC42 2025:CL42 2025:ED42 2025:U44 2025:AF44 2025:AK44
+2025:AL44 2025:AU44 2025:AV44 2025:AW44 2025:AX44 2025:BA44 2025:BB44 2025:BD44 2025:BE44
+2025:BM44 2025:BN44 2025:CM44 2025:CN44 2025:P45 2025:W45 2025:AO45 2025:AR45 2025:BL45
+2025:CO45 2025:DC45 2025:FJ45 2025:C46 2025:FY51
+`.trim().split(/\s+/));
+const manualShoreCells = new Set(`
+2026:DX52 2026:DX53 2026:EJ28 2026:EK28 2026:EL28 2026:CI52 2026:EJ52 2026:EK52 2026:EL52
+2026:EJ53 2026:EK53 2026:EL53 2026:EJ54 2026:EK54 2026:EL54
+2025:EX45 2025:EY45 2025:FA45 2025:FB45 2025:FC45 2025:D46 2025:E46 2025:BJ46 2025:BL46
+2025:DN46 2025:DP46 2025:DW46 2025:FB51 2025:FB52 2025:ET33 2025:CX45 2025:CY45 2025:EG45
+`.trim().split(/\s+/));
+const manualSeaCells = new Set(['2026:CW36', '2025:GO34']);
 const ARMEMENT_CHERBOURG = 'ARMEMENT CHERBOURG';
 const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
 const personAliases = new Map([['KIKI', 'CHRISTOPHE BINET']]);
@@ -263,6 +285,30 @@ export function classifyBbtmValue(value: string): Omit<BbtmDailyCell, 'sheet' | 
     sailorStatus: '',
     comment: '',
     reason: 'Texte libre ou code sans règle validée',
+  };
+}
+
+export function classifyBbtmCellValue(
+  sheet: string,
+  column: string,
+  row: number,
+  value: string,
+): Omit<BbtmDailyCell, 'sheet' | 'row' | 'column' | 'date' | 'person' | 'personKey' | 'category' | 'rawValue'> {
+  const key = `${sheet}:${column}${row}`;
+  const sailorStatus = manualVacanceCells.has(key)
+    ? 'Vacance'
+    : manualShoreCells.has(key)
+      ? 'A Terre'
+      : manualSeaCells.has(key)
+        ? 'En Mer'
+        : '';
+  if (!sailorStatus) return classifyBbtmValue(value);
+  return {
+    kind: 'status',
+    vesselName: '',
+    sailorStatus,
+    comment: value,
+    reason: 'Décision manuelle validée',
   };
 }
 
@@ -402,7 +448,7 @@ function extractDailyCells(sheets: ParsedSheet[], cutoffDate: string): BbtmDaily
           personKey,
           category: categoryForRow(sheet.name, row),
           rawValue,
-          ...classifyBbtmValue(rawValue),
+          ...classifyBbtmCellValue(sheet.name, column, row, rawValue),
         });
       }
     }
@@ -794,5 +840,10 @@ commit;
 export const bbtmImportRules = {
   vesselCodeMap: [...vesselCodeMap.entries()],
   excludedCodes: [...excludedCodes],
+  manualDecisionCells: {
+    vacance: manualVacanceCells.size,
+    shore: manualShoreCells.size,
+    sea: manualSeaCells.size,
+  },
   cutoffInterpretation: 'Le 31 juin 2026 est interprété comme le 30 juin 2026.',
 };
