@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
-  buildBbtmImportPreview,
+  buildBbtmImportPreviewFromSources,
   buildBbtmImportSql,
   type BbtmCatalog,
   type BbtmCatalogPerson,
@@ -14,7 +14,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 interface CliOptions {
-  source: string;
+  sources: string[];
   cutoff: string;
   output: string;
   supabaseWorkdir: string;
@@ -23,21 +23,23 @@ interface CliOptions {
 
 function parseArgs(args: string[]): CliOptions {
   const values = new Map<string, string>();
+  const sources: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const key = args[index];
     if (!key.startsWith('--')) continue;
-    values.set(key, args[index + 1] || '');
+    const value = args[index + 1] || '';
+    if (key === '--source') sources.push(resolve(value));
+    else values.set(key, value);
     index += 1;
   }
-  const source = values.get('--source');
   const output = values.get('--output');
   const cutoff = values.get('--cutoff') || '2026-06-30';
-  if (!source || !output) {
-    throw new Error('Usage: --source <classeur.xlsx> --output <preview.json> [--cutoff 2026-06-30]');
+  if (!sources.length || !output) {
+    throw new Error('Usage: --source <classeur.xlsx> [--source <autre.xlsx>] --output <preview.json> [--cutoff 2026-06-30]');
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) throw new Error('La date limite doit être au format AAAA-MM-JJ.');
   return {
-    source: resolve(source),
+    sources,
     output: resolve(output),
     cutoff,
     supabaseWorkdir: resolve(values.get('--supabase-workdir') || process.cwd()),
@@ -91,12 +93,14 @@ async function main() {
   const catalogPromise = options.catalogPath
     ? readFile(options.catalogPath, 'utf8').then((content) => JSON.parse(content) as BbtmCatalog)
     : fetchSeaPilotCatalog(options.supabaseWorkdir);
-  const [source, catalog] = await Promise.all([readFile(options.source), catalogPromise]);
+  const [sources, catalog] = await Promise.all([
+    Promise.all(options.sources.map(async (sourceFile) => ({ sourceFile, buffer: await readFile(sourceFile) }))),
+    catalogPromise,
+  ]);
   console.log(`Catalogue chargé : ${catalog.people.length} personnes, ${catalog.vessels.length} navires/lieux.`);
   console.log('Reconstruction des périodes et proposition des bordées…');
-  const preview = await buildBbtmImportPreview(source, catalog, {
+  const preview = await buildBbtmImportPreviewFromSources(sources, catalog, {
     cutoffDate: options.cutoff,
-    sourceFile: options.source,
   });
   console.log('Prévisualisation calculée, écriture du manifeste…');
   await mkdir(dirname(options.output), { recursive: true });

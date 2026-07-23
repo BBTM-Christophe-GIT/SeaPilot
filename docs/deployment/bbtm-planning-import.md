@@ -1,11 +1,16 @@
 # Import du planning BBTM
 
-Ce flux transforme `BBTM PLANNING.xlsx` en périodes historiques SeaPilot. Il sépare
+Ce flux transforme les classeurs `BBTM - PLANNING 2024.xlsx` et
+`BBTM PLANNING.xlsx` en périodes historiques SeaPilot. Il sépare
 volontairement la prévisualisation de l'écriture en base : la commande applicative
 ne modifie jamais la production.
 
 ## Périmètre validé
 
+- L'onglet `PLANNING GENERAL` du classeur 2024 est lu du 1er janvier au
+  31 décembre 2024. L'onglet `AT GOURY`, consacré au détail des travaux, est
+  exclu pour éviter de dupliquer les affectations déjà présentes dans le planning
+  général.
 - Les onglets `2025` et `2026` sont lus jusqu'au 30 juin 2026 inclus. La demande
   « 31 juin 2026 » est interprétée comme le 30 juin, le 31 juin n'existant pas.
 - Seul le personnel est traité, y compris Office, Extra et Stagiaires.
@@ -38,13 +43,14 @@ l'audit ou être lu en mode consultation depuis le projet Supabase lié.
 
 ```powershell
 npm run import:bbtm:preview -- `
+  --source "$env:USERPROFILE\Downloads\BBTM - PLANNING 2024.xlsx" `
   --source "$env:USERPROFILE\Downloads\BBTM PLANNING.xlsx" `
   --cutoff 2026-06-30 `
   --output ".data\bbtm-planning-preview.json" `
   --supabase-workdir "$PWD"
 ```
 
-La commande produit trois fichiers :
+L'option `--source` peut être répétée. La commande produit trois fichiers :
 
 - `bbtm-planning-preview.json` : détail de l'audit ;
 - `bbtm-planning-preview.apply.sql` : import transactionnel préparé ;

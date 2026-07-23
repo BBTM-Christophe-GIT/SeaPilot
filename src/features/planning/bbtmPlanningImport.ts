@@ -128,9 +128,10 @@ const xmlParser = new XMLParser({
   trimValues: false,
 });
 
-const personnelRanges: Record<string, { startRow: number; endRow: number; startDate: string }> = {
-  '2025': { startRow: 25, endRow: 52, startDate: '2025-06-01' },
-  '2026': { startRow: 28, endRow: 64, startDate: '2026-01-01' },
+const personnelRanges: Record<string, { startRow: number; endRow: number; startDate: string; year: string }> = {
+  'PLANNING GENERAL': { startRow: 18, endRow: 48, startDate: '2024-01-01', year: '2024' },
+  '2025': { startRow: 25, endRow: 52, startDate: '2025-06-01', year: '2025' },
+  '2026': { startRow: 28, endRow: 64, startDate: '2026-01-01', year: '2026' },
 };
 
 const vesselCodeMap = new Map<string, string>([
@@ -143,6 +144,7 @@ const vesselCodeMap = new Map<string, string>([
   ['KD', 'KROKDUR'],
   ['KDR', 'KROKDUR'],
   ['GRY', 'GOURY'],
+  ['GOURY', 'GOURY'],
   ['HIR', 'HIRONDELLE DE LA MANCHE'],
   ['HM', 'HIRONDELLE DE LA MANCHE'],
   ['LDM', 'LANDEMER'],
@@ -176,7 +178,10 @@ const manualShoreCells = new Set(`
 const manualSeaCells = new Set(['2026:CW36', '2025:GO34']);
 const ARMEMENT_CHERBOURG = 'ARMEMENT CHERBOURG';
 const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
-const personAliases = new Map([['KIKI', 'CHRISTOPHE BINET']]);
+const personAliases = new Map([
+  ['KIKI', 'CHRISTOPHE BINET'],
+  ['JARY LUCAS', 'LUCAS JARY'],
+]);
 
 function arrayify<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -412,6 +417,7 @@ async function parseWorkbook(buffer: Uint8Array): Promise<ParsedSheet[]> {
 }
 
 function categoryForRow(sheet: string, row: number): BbtmPersonnelCategory {
+  if (sheet === '2024') return row === 48 ? 'Office' : 'Équipage';
   if (sheet === '2025') {
     if (row >= 50) return 'Stagiaire';
     if (row >= 48) return 'Extra';
@@ -435,20 +441,20 @@ function extractDailyCells(sheets: ParsedSheet[], cutoffDate: string): BbtmDaily
       const personKey = normalizePersonKey(person);
       for (let columnNumber = columnToNumber('C'); ; columnNumber += 1) {
         const date = addDays(config.startDate, columnNumber - columnToNumber('C'));
-        if (date > cutoffDate || date.slice(0, 4) !== sheet.name) break;
+        if (date > cutoffDate || date.slice(0, 4) !== config.year) break;
         const column = numberToColumn(columnNumber);
         const rawValue = normalizeWhitespace(sheet.cells.get(`${column}${row}`) || '');
         if (!rawValue) continue;
         result.push({
-          sheet: sheet.name,
+          sheet: config.year,
           row,
           column,
           date,
           person,
           personKey,
-          category: categoryForRow(sheet.name, row),
+          category: categoryForRow(config.year, row),
           rawValue,
-          ...classifyBbtmCellValue(sheet.name, column, row, rawValue),
+          ...classifyBbtmCellValue(config.year, column, row, rawValue),
         });
       }
     }
@@ -698,7 +704,20 @@ export async function buildBbtmImportPreview(
   catalog: BbtmCatalog,
   options: ExtractOptions,
 ): Promise<BbtmImportPreview> {
-  const sheets = await parseWorkbook(buffer);
+  return buildBbtmImportPreviewFromSources(
+    [{ buffer, sourceFile: options.sourceFile }],
+    catalog,
+    options,
+  );
+}
+
+export async function buildBbtmImportPreviewFromSources(
+  sources: Array<{ buffer: Uint8Array; sourceFile: string }>,
+  catalog: BbtmCatalog,
+  options: Omit<ExtractOptions, 'sourceFile'> & { sourceFile?: string },
+): Promise<BbtmImportPreview> {
+  if (!sources.length) throw new Error('Au moins un classeur BBTM est requis.');
+  const sheets = (await Promise.all(sources.map((source) => parseWorkbook(source.buffer)))).flat();
   const cells = extractDailyCells(sheets, options.cutoffDate);
   const periods = coalescePeriods(cells, catalog);
   const boards = inferBoards(periods);
@@ -707,7 +726,7 @@ export async function buildBbtmImportPreview(
   const excludedCells = cells.filter((cell) => cell.kind === 'excluded');
   return {
     sourceLabel: BBTM_IMPORT_SOURCE_LABEL,
-    sourceFile: options.sourceFile,
+    sourceFile: options.sourceFile || sources.map((source) => source.sourceFile).join(' + '),
     cutoffDate: options.cutoffDate,
     generatedAt: options.generatedAt || new Date().toISOString(),
     periods,
@@ -738,7 +757,10 @@ function sqlNullableText(value: string): string {
 }
 
 function sourceFileName(sourceFile: string): string {
-  return sourceFile.split(/[\\/]/).at(-1) || sourceFile;
+  return sourceFile
+    .split(' + ')
+    .map((source) => source.split(/[\\/]/).at(-1) || source)
+    .join(' + ');
 }
 
 export function buildBbtmImportSql(preview: BbtmImportPreview): BbtmImportSqlBundle {

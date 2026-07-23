@@ -18,6 +18,7 @@ describe('BBTM planning import rules', () => {
     ['KD', 'KROKDUR'],
     ['KDR', 'KROKDUR'],
     ['GRY', 'GOURY'],
+    ['GOURY', 'GOURY'],
     ['HIR', 'HIRONDELLE DE LA MANCHE'],
     ['LDM', 'LANDEMER'],
     ['HE', 'HOLENN EUSA'],
@@ -74,6 +75,7 @@ describe('BBTM planning import rules', () => {
     expect(cleanBbtmPersonName('JULIEN LECOCQ ❤️')).toBe('JULIEN LECOCQ');
     expect(cleanBbtmPersonName('GABIN GIOVANNON 07 87 54 39 16')).toBe('GABIN GIOVANNON');
     expect(cleanBbtmPersonName('KIKI')).toBe('CHRISTOPHE BINET');
+    expect(cleanBbtmPersonName('JARY LUCAS')).toBe('LUCAS JARY');
   });
 
   it('builds an atomic, source-scoped import and rollback bundle', () => {
