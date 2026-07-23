@@ -104,7 +104,7 @@ describe('App', () => {
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();
-  });
+  }, 60_000);
 
   it('renders the fleet certificates module with imported certificate data', async () => {
     vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');

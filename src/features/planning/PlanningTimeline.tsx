@@ -12,7 +12,6 @@ import {
   projectStatusTone,
   type PlanningCrewEvent,
   type PlanningTimelineDay,
-  type PlanningViewMode,
 } from './planningModel';
 import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
 import { planningVisitTypeLabel, type PlanningVesselVisit } from './planningVisitQueries';
@@ -35,7 +34,6 @@ interface TimelineBaseProps {
   days: PlanningTimelineDay[];
   editable: boolean;
   pendingId: string | null;
-  viewMode: PlanningViewMode;
 }
 
 const EMPTY_SELECTED_GRID_CELLS: ReadonlyMap<string, PlanningGridCell> = new Map();
@@ -173,7 +171,7 @@ export function PlanningFleetTimelineRow({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}`} data-vessel={lane.vessel} style={maxVisitStack ? { minHeight: 52 + maxVisitStack * 25 } : undefined}>
+    <div className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}`} data-vessel={lane.vessel} style={maxVisitStack ? { minHeight: 76 + maxVisitStack * 25 } : undefined}>
       <div
         className={`planning-row-label planning-tree-row is-vessel${personDropOver || touchPersonOver ? ' is-person-drop-target' : ''}`}
         data-planning-person-drop-vessel-id={canDropPerson ? lane.vesselId || undefined : undefined}
@@ -183,14 +181,16 @@ export function PlanningFleetTimelineRow({
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
       >
-        <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
-        {editable ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
-        {editable ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
         <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
         </button>
+        <div aria-label={`Actions pour ${lane.label}`} className="planning-vessel-actions" role="group">
+          <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
+          {editable ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
+        </div>
       </div>
       {days.map((day, index) => {
         const mouseDragOver = dragOver === day.date;
@@ -354,7 +354,6 @@ export function PlanningCrewTimelineRow({
   days,
   editable,
   pendingId,
-  viewMode,
   conflictDatesByEvent,
   dayWidth,
   onCreate,
@@ -430,10 +429,11 @@ export function PlanningCrewTimelineRow({
     conflictClickTimerRef.current = null;
   }
 
-  function scheduleConflictClick(cell: PlanningGridCell) {
+  function scheduleConflictClick(cell: PlanningGridCell, eventId: string) {
     cancelPendingConflictClick();
     conflictClickTimerRef.current = window.setTimeout(() => {
       conflictClickTimerRef.current = null;
+      onSelect(eventId);
       onConflictCellClick?.(cell);
     }, 220);
   }
@@ -572,7 +572,7 @@ export function PlanningCrewTimelineRow({
         const conflictDates = conflictDatesByEvent.get(event.id) || EMPTY_CONFLICT_DATES;
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
-        const hasDailyGrid = hierarchy && Boolean(event.assignmentId) && viewMode !== 'year';
+        const hasDailyGrid = hierarchy && Boolean(event.assignmentId);
         const visibleDailyStates = hasDailyGrid
           ? days.flatMap((day) => {
               if (day.date < event.startsOn || day.date > event.endsOn) return [];
@@ -628,7 +628,7 @@ export function PlanningCrewTimelineRow({
             type="button"
           >
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
-            {viewMode !== 'year' && placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
+            {placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
@@ -686,8 +686,7 @@ export function PlanningCrewTimelineRow({
                     return;
                   }
                   if (cell.isConflict && onConflictCellClick && !noteEvent.ctrlKey && !noteEvent.metaKey) {
-                    onSelect(event.id);
-                    scheduleConflictClick(cell);
+                    scheduleConflictClick(cell, event.id);
                     return;
                   }
                   onSelect(event.id);

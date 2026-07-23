@@ -446,14 +446,15 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByRole('button', { name: /Prévisions et scénarios/ })).toBeInTheDocument();
   });
 
-  it('renders the monthly crew view and the imported assignment', async () => {
+  it('renders the annual crew view and the imported assignment', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    expect(screen.getByRole('button', { name: 'Mois' })).toHaveClass('is-active');
+    expect(screen.getByLabelText('Année à afficher')).toHaveValue(todayPlanningDate().slice(0, 4));
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: 'Équipages' })).toHaveAttribute('aria-selected', 'true');
@@ -523,7 +524,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(calendarBody).queryByText('SUROIT')).not.toBeInTheDocument();
   });
 
-  it('switches between fleet and crew lanes with all P0.2 time scales', async () => {
+  it('switches between fleet and crew lanes without period presets', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ vessels: [vesselRow, secondVesselRow], periods: [planningPeriodRow], projects: [planningProjectRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -543,11 +544,10 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Déplier COTENTIN' }));
     for (const label of ['Jour', 'Semaine', '2 sem.', 'Mois', 'An']) {
-      const scaleButton = screen.getByRole('button', { name: label });
-      expect(scaleButton).toBeInTheDocument();
-      await user.click(scaleButton);
-      expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode');
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
+    expect(screen.getByLabelText('Année à afficher')).toBeInTheDocument();
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Marins' })).toHaveClass('is-active');
     await user.click(screen.getByRole('button', { name: 'Équipes' }));
@@ -621,14 +621,18 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('switches to the yearly view and exposes zoom/fullscreen controls', async () => {
+  it('uses a selected year with two months of context and exposes zoom/fullscreen controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: 'An' }));
-    expect(screen.getByRole('button', { name: 'An' })).toHaveClass('is-active');
+    await user.selectOptions(screen.getByLabelText('Année à afficher'), '2025');
+    const calendar = document.querySelector('.planning-calendar-scroll');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2024-11-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2026-02-28');
+    expect(screen.queryByRole('button', { name: 'Période précédente' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Période suivante' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
@@ -938,8 +942,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
       vessel_id: 1,
       crew_person_id: 11,
-      starts_on: '2026-06-29',
-      ends_on: '2026-08-16',
+      starts_on: '2026-01-01',
+      ends_on: '2026-12-31',
       confirmation_status: 'provisional',
       watch_group: 'Bordée 1',
     })));
@@ -1032,8 +1036,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', {
       p_vessel_id: 1,
       p_watch_group: 'Bordée 1',
-      p_starts_on: '2026-06-29',
-      p_ends_on: '2026-08-16',
+      p_starts_on: '2026-01-01',
+      p_ends_on: '2026-12-31',
       p_positions: [{ personId: 10, functionLabel: 'Capitaine' }],
     }));
   });

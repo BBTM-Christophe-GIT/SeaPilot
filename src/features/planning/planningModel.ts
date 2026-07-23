@@ -150,8 +150,8 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
   const anchor = parsePlanningDate(anchorDate);
   if (mode === 'year') {
     const year = anchor.getUTCFullYear();
-    const start = `${year}-01-01`;
-    const end = `${year}-12-31`;
+    const start = `${year - 1}-11-01`;
+    const end = addPlanningDays(`${year + 1}-03-01`, -1);
     return buildDays(start, daysBetween(start, end) + 1);
   }
   if (mode === 'day') return buildDays(addPlanningDays(anchorDate, -3), 7);

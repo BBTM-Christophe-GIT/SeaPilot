@@ -44,7 +44,7 @@ describe('Planning timeline visit and leave rendering', () => {
   it('stacks multiple visits on the vessel row and opens provider details', async () => {
     const user = userEvent.setup();
     const onOpenVisit = vi.fn();
-    render(<PlanningFleetTimelineRow
+    const { container } = render(<PlanningFleetTimelineRow
       crewCount={4}
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
@@ -65,7 +65,6 @@ describe('Planning timeline visit and leave rendering', () => {
       pendingId={null}
       selectedId={null}
       touchDropTarget={null}
-      viewMode="week"
       visits={visits}
     />);
 
@@ -74,6 +73,10 @@ describe('Planning timeline visit and leave rendering', () => {
     await user.click(visitButtons[1]);
     expect(onOpenVisit).toHaveBeenCalledWith(visits[0]);
     expect(screen.getByRole('button', { name: 'Ajouter une visite ou un audit à GOURY' })).toBeInTheDocument();
+    const vesselActions = screen.getByRole('group', { name: 'Actions pour GOURY' });
+    expect(vesselActions).toHaveClass('planning-vessel-actions');
+    expect(vesselActions.querySelectorAll('button')).toHaveLength(3);
+    expect(vesselActions.parentElement).toBe(container.querySelector('.planning-tree-row.is-vessel'));
   });
 
   it('renders approved leave as a black Vacances bar and lets an administrator move it', () => {
@@ -110,7 +113,6 @@ describe('Planning timeline visit and leave rendering', () => {
       onSelect={vi.fn()}
       pendingId={null}
       selectedId={null}
-      viewMode="week"
     />);
 
     expect(screen.getByText('Vacances')).toBeInTheDocument();
