@@ -152,7 +152,8 @@ const vesselCodeMap = new Map<string, string>([
 ]);
 
 const excludedCodes = new Set(['DK', 'SPA', 'BR', 'FLA', 'OR', 'SEANERGY']);
-const nonBoardVessels = new Set(['ARMEMENT CHERBOURG', 'YARD - LE HAVRE']);
+const ARMEMENT_CHERBOURG = 'ARMEMENT CHERBOURG';
+const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
 
 function arrayify<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -179,9 +180,16 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-export function normalizePersonKey(value: string): string {
+export function cleanBbtmPersonName(value: string): string {
   return normalizeWhitespace(value)
     .replace(/\b(?:0\d(?:[ .-]?\d{2}){4})\b/g, '')
+    .replace(/[^\p{L}'’ -]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function normalizePersonKey(value: string): string {
+  return cleanBbtmPersonName(value)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z -]/g, '')
@@ -374,7 +382,7 @@ function extractDailyCells(sheets: ParsedSheet[], cutoffDate: string): BbtmDaily
     const config = personnelRanges[sheet.name];
     if (!config) continue;
     for (let row = config.startRow; row <= config.endRow; row += 1) {
-      const person = normalizeWhitespace(sheet.cells.get(`B${row}`) || '');
+      const person = cleanBbtmPersonName(sheet.cells.get(`B${row}`) || '');
       if (!person) continue;
       const personKey = normalizePersonKey(person);
       for (let columnNumber = columnToNumber('C'); ; columnNumber += 1) {
@@ -482,10 +490,24 @@ function intersectionCount(left: Set<string>, right: Set<string>): number {
 }
 
 function inferBoards(periods: BbtmImportPeriod[]): BbtmBoardPreview[] {
+  const armementPeriods = periods.filter((period) => period.vesselName === ARMEMENT_CHERBOURG);
+  for (const period of armementPeriods) period.watchGroup = 'Armement';
+
   const assignmentPeriods = periods.filter(
     (period) => period.vesselName && !nonBoardVessels.has(period.vesselName) && period.sailorStatus === 'En Mer',
   );
   const boards: BbtmBoardPreview[] = [];
+  if (armementPeriods.length) {
+    boards.push({
+      vesselName: ARMEMENT_CHERBOURG,
+      watchGroup: 'Armement',
+      members: [...new Set(armementPeriods.map((period) => period.person))].sort((left, right) => left.localeCompare(right)),
+      firstDate: armementPeriods.map((period) => period.startsOn).sort()[0],
+      lastDate: armementPeriods.map((period) => period.endsOn).sort().at(-1)!,
+      sharedDayScore: 1,
+      confidence: 'Forte',
+    });
+  }
   const byVessel = new Map<string, BbtmImportPeriod[]>();
   for (const period of assignmentPeriods) byVessel.set(period.vesselName, [...(byVessel.get(period.vesselName) || []), period]);
 
@@ -533,36 +555,51 @@ function inferBoards(periods: BbtmImportPeriod[]): BbtmBoardPreview[] {
       if (component.length >= 2) components.push(component);
     }
 
-    components
-      .sort((left, right) => {
-        const leftFirst = Math.min(...left.flatMap((key) => byPerson.get(key)!.map((period) => Date.parse(period.startsOn))));
-        const rightFirst = Math.min(...right.flatMap((key) => byPerson.get(key)!.map((period) => Date.parse(period.startsOn))));
-        return leftFirst - rightFirst;
-      })
-      .forEach((component, index) => {
-        const watchGroup = `Bordée ${String.fromCharCode(65 + index)}`;
-        const componentPeriods = component.flatMap((key) => byPerson.get(key)!);
-        const memberNames = component.map((key) => byPerson.get(key)![0].person).sort((a, b) => a.localeCompare(b));
-        const sharedScores: number[] = [];
-        for (let left = 0; left < component.length; left += 1) {
-          for (let right = left + 1; right < component.length; right += 1) {
-            const leftDates = personDates.get(component[left])!;
-            const rightDates = personDates.get(component[right])!;
-            sharedScores.push(intersectionCount(leftDates, rightDates) / Math.max(1, Math.min(leftDates.size, rightDates.size)));
-          }
+    const sortedComponents = components.sort((left, right) => {
+      const leftFirst = Math.min(...left.flatMap((key) => byPerson.get(key)!.map((period) => Date.parse(period.startsOn))));
+      const rightFirst = Math.min(...right.flatMap((key) => byPerson.get(key)!.map((period) => Date.parse(period.startsOn))));
+      return leftFirst - rightFirst;
+    });
+    const boardCount = Math.min(2, sortedComponents.length);
+    const boardBuckets = Array.from({ length: boardCount }, () => ({
+      periods: [] as BbtmImportPeriod[],
+      members: new Set<string>(),
+      scores: [] as number[],
+    }));
+
+    sortedComponents.forEach((component, index) => {
+      const boardIndex = index % boardCount;
+      const watchGroup = `Bordée ${boardIndex + 1}`;
+      const componentPeriods = component.flatMap((key) => byPerson.get(key)!);
+      const sharedScores: number[] = [];
+      for (let left = 0; left < component.length; left += 1) {
+        for (let right = left + 1; right < component.length; right += 1) {
+          const leftDates = personDates.get(component[left])!;
+          const rightDates = personDates.get(component[right])!;
+          sharedScores.push(intersectionCount(leftDates, rightDates) / Math.max(1, Math.min(leftDates.size, rightDates.size)));
         }
-        const score = sharedScores.length ? sharedScores.reduce((sum, value) => sum + value, 0) / sharedScores.length : 0;
-        boards.push({
-          vesselName,
-          watchGroup,
-          members: memberNames,
-          firstDate: componentPeriods.map((period) => period.startsOn).sort()[0],
-          lastDate: componentPeriods.map((period) => period.endsOn).sort().at(-1)!,
-          sharedDayScore: score,
-          confidence: score >= 0.8 ? 'Forte' : score >= 0.65 ? 'Moyenne' : 'Faible',
-        });
-        for (const period of componentPeriods) period.watchGroup = watchGroup;
+      }
+      const bucket = boardBuckets[boardIndex];
+      bucket.periods.push(...componentPeriods);
+      for (const key of component) bucket.members.add(byPerson.get(key)![0].person);
+      bucket.scores.push(...sharedScores);
+      for (const period of componentPeriods) period.watchGroup = watchGroup;
+    });
+
+    boardBuckets.forEach((bucket, index) => {
+      const score = bucket.scores.length
+        ? bucket.scores.reduce((sum, value) => sum + value, 0) / bucket.scores.length
+        : 0;
+      boards.push({
+        vesselName,
+        watchGroup: `Bordée ${index + 1}`,
+        members: [...bucket.members].sort((left, right) => left.localeCompare(right)),
+        firstDate: bucket.periods.map((period) => period.startsOn).sort()[0],
+        lastDate: bucket.periods.map((period) => period.endsOn).sort().at(-1)!,
+        sharedDayScore: score,
+        confidence: score >= 0.8 ? 'Forte' : score >= 0.65 ? 'Moyenne' : 'Faible',
       });
+    });
   }
   return boards;
 }

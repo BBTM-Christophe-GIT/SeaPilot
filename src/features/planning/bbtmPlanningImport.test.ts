@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BBTM_IMPORT_SOURCE_LABEL,
   buildBbtmImportSql,
+  cleanBbtmPersonName,
   classifyBbtmValue,
   normalizePersonKey,
   type BbtmImportPreview,
@@ -46,6 +47,12 @@ describe('BBTM planning import rules', () => {
   it('normalizes emojis, accents and phone numbers for person matching', () => {
     expect(normalizePersonKey('JÉRÉMI TIPHAIGNE 🍕')).toBe('JEREMI TIPHAIGNE');
     expect(normalizePersonKey('AMAURY DEHOUL 07 66 03 22 13')).toBe('AMAURY DEHOUL');
+  });
+
+  it('removes icons and phone numbers from displayed person names', () => {
+    expect(cleanBbtmPersonName('ADRIEN BOIS 🙀')).toBe('ADRIEN BOIS');
+    expect(cleanBbtmPersonName('JULIEN LECOCQ ❤️')).toBe('JULIEN LECOCQ');
+    expect(cleanBbtmPersonName('GABIN GIOVANNON 07 87 54 39 16')).toBe('GABIN GIOVANNON');
   });
 
   it('builds an atomic, source-scoped import and rollback bundle', () => {

@@ -9,12 +9,17 @@ ne modifie jamais la production.
 - Les onglets `2025` et `2026` sont lus jusqu'au 30 juin 2026 inclus. La demande
   « 31 juin 2026 » est interprétée comme le 30 juin, le 31 juin n'existant pas.
 - Seul le personnel est traité, y compris Office, Extra et Stagiaires.
+- Les pictogrammes et numéros de téléphone placés après les noms sont supprimés
+  avant le rapprochement et dans les fichiers de prévisualisation.
 - Les affectations, statuts, exclusions et commentaires suivent les règles
   documentées dans l'onglet `Règles` du classeur de prévisualisation.
 - Les textes libres non validés restent dans `À vérifier` et ne sont pas importés.
 - Une bordée n'est proposée que lorsque deux marins ou plus ont au moins trois
   jours communs, un recouvrement d'au moins 60 % et des débuts distants de trois
-  jours au maximum. Les cas isolés restent `Affectation`.
+  jours au maximum. Il ne peut y avoir que `Bordée 1` et `Bordée 2` par navire ;
+  les groupes supplémentaires sont répartis alternativement entre ces deux
+  bordées. Les cas isolés restent `Affectation`.
+- Toutes les affectations à Armement Cherbourg utilisent la bordée `Armement`.
 
 ## Générer la prévisualisation
 
