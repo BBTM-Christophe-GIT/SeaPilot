@@ -53,6 +53,7 @@ describe('BBTM planning import rules', () => {
     expect(cleanBbtmPersonName('ADRIEN BOIS 🙀')).toBe('ADRIEN BOIS');
     expect(cleanBbtmPersonName('JULIEN LECOCQ ❤️')).toBe('JULIEN LECOCQ');
     expect(cleanBbtmPersonName('GABIN GIOVANNON 07 87 54 39 16')).toBe('GABIN GIOVANNON');
+    expect(cleanBbtmPersonName('KIKI')).toBe('CHRISTOPHE BINET');
   });
 
   it('builds an atomic, source-scoped import and rollback bundle', () => {
@@ -73,7 +74,7 @@ describe('BBTM planning import rules', () => {
           vesselName: 'SUROIT',
           vesselId: 4,
           sailorStatus: 'En Mer',
-          watchGroup: 'Bordée A',
+          watchGroup: 'Bordée 1',
           startsOn: '2026-01-01',
           endsOn: '2026-01-07',
           dayCount: 7,
@@ -137,6 +138,8 @@ describe('BBTM planning import rules', () => {
     expect(bundle.applySql).toContain("'Jean Darmore'");
     expect(bundle.applySql).not.toContain("Jean D''Armor");
     expect(bundle.applySql).toContain("BBTM l''été.xlsx");
+    expect(bundle.applySql).toContain("'Bordée 1'");
+    expect(bundle.applySql).not.toContain("'Affectation'");
     expect(bundle.applySql).toContain('if inserted_count <> 1');
     expect(bundle.applySql).not.toContain("'Inconnu'");
     expect(bundle.rollbackSql).toContain(`source_label = '${BBTM_IMPORT_SOURCE_LABEL}'`);

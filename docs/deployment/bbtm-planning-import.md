@@ -11,6 +11,7 @@ ne modifie jamais la production.
 - Seul le personnel est traité, y compris Office, Extra et Stagiaires.
 - Les pictogrammes et numéros de téléphone placés après les noms sont supprimés
   avant le rapprochement et dans les fichiers de prévisualisation.
+- L'alias `KIKI` est remplacé par `CHRISTOPHE BINET`.
 - Les affectations, statuts, exclusions et commentaires suivent les règles
   documentées dans l'onglet `Règles` du classeur de prévisualisation.
 - Les textes libres non validés restent dans `À vérifier` et ne sont pas importés.
@@ -18,7 +19,8 @@ ne modifie jamais la production.
   jours communs, un recouvrement d'au moins 60 % et des débuts distants de trois
   jours au maximum. Il ne peut y avoir que `Bordée 1` et `Bordée 2` par navire ;
   les groupes supplémentaires sont répartis alternativement entre ces deux
-  bordées. Les cas isolés restent `Affectation`.
+  bordées. Les affectations isolées sont réparties entre ces mêmes bordées :
+  aucune période en mer ne conserve la valeur `Affectation`.
 - Toutes les affectations à Armement Cherbourg utilisent la bordée `Armement`.
 
 ## Générer la prévisualisation

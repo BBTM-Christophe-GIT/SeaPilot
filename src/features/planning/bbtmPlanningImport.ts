@@ -154,6 +154,7 @@ const vesselCodeMap = new Map<string, string>([
 const excludedCodes = new Set(['DK', 'SPA', 'BR', 'FLA', 'OR', 'SEANERGY']);
 const ARMEMENT_CHERBOURG = 'ARMEMENT CHERBOURG';
 const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
+const personAliases = new Map([['KIKI', 'CHRISTOPHE BINET']]);
 
 function arrayify<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -181,11 +182,12 @@ function normalizeWhitespace(value: string): string {
 }
 
 export function cleanBbtmPersonName(value: string): string {
-  return normalizeWhitespace(value)
+  const cleaned = normalizeWhitespace(value)
     .replace(/\b(?:0\d(?:[ .-]?\d{2}){4})\b/g, '')
     .replace(/[^\p{L}'’ -]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  return personAliases.get(cleaned.toUpperCase()) || cleaned;
 }
 
 export function normalizePersonKey(value: string): string {
@@ -560,7 +562,13 @@ function inferBoards(periods: BbtmImportPeriod[]): BbtmBoardPreview[] {
       const rightFirst = Math.min(...right.flatMap((key) => byPerson.get(key)!.map((period) => Date.parse(period.startsOn))));
       return leftFirst - rightFirst;
     });
-    const boardCount = Math.min(2, sortedComponents.length);
+    const componentKeys = new Set(sortedComponents.flat());
+    const standaloneKeys = keys
+      .filter((key) => !componentKeys.has(key))
+      .sort((left, right) => byPerson.get(left)![0].person.localeCompare(byPerson.get(right)![0].person));
+    let boardCount = Math.min(2, sortedComponents.length);
+    if (boardCount === 0) boardCount = Math.min(2, keys.length);
+    else if (boardCount === 1 && standaloneKeys.length > 0) boardCount = 2;
     const boardBuckets = Array.from({ length: boardCount }, () => ({
       periods: [] as BbtmImportPeriod[],
       members: new Set<string>(),
@@ -585,6 +593,17 @@ function inferBoards(periods: BbtmImportPeriod[]): BbtmBoardPreview[] {
       bucket.scores.push(...sharedScores);
       for (const period of componentPeriods) period.watchGroup = watchGroup;
     });
+
+    for (const key of standaloneKeys) {
+      const boardIndex = boardBuckets
+        .map((bucket, index) => ({ index, memberCount: bucket.members.size }))
+        .sort((left, right) => left.memberCount - right.memberCount || left.index - right.index)[0].index;
+      const watchGroup = `Bordée ${boardIndex + 1}`;
+      const personPeriods = byPerson.get(key)!;
+      boardBuckets[boardIndex].periods.push(...personPeriods);
+      boardBuckets[boardIndex].members.add(personPeriods[0].person);
+      for (const period of personPeriods) period.watchGroup = watchGroup;
+    }
 
     boardBuckets.forEach((bucket, index) => {
       const score = bucket.scores.length
@@ -685,9 +704,10 @@ export function buildBbtmImportSql(preview: BbtmImportPreview): BbtmImportSqlBun
   );
   const values = periods.map((period) => {
     if (period.personId === null) throw new Error(`Période importable sans personne SeaPilot : ${period.sourceKey}`);
-    const watchGroup = period.watchGroup || (
-      period.vesselName && period.sailorStatus === 'En Mer' ? 'Affectation' : ''
-    );
+    if (period.vesselName && period.sailorStatus === 'En Mer' && !period.watchGroup) {
+      throw new Error(`Affectation en mer sans bordée : ${period.sourceKey}`);
+    }
+    const watchGroup = period.watchGroup;
     const columns = [
       'target_company_id',
       String(period.personId),
