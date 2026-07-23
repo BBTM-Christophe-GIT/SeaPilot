@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  deletePlanningLeave,
+  deletePlanningAbsence,
   ensurePlanningConflictCase,
   mapPlanningAbsenceRows,
   reviewPlanningAbsence,
@@ -68,10 +68,10 @@ describe('planning P1.2 absence query contracts', () => {
     expect(rpc).toHaveBeenNthCalledWith(3, 'review_planning_absence', expect.objectContaining({ p_action: 'cancel' }));
   });
 
-  it('uses the administrator-only RPC to delete leave', async () => {
+  it('uses the administrator-only RPC to delete any absence request', async () => {
     const { client, rpc } = rpcClient(9);
-    await expect(deletePlanningLeave(client, 9)).resolves.toBe(9);
-    expect(rpc).toHaveBeenCalledWith('delete_planning_leave', { p_absence_id: 9 });
+    await expect(deletePlanningAbsence(client, 9)).resolves.toBe(9);
+    expect(rpc).toHaveBeenCalledWith('delete_planning_absence', { p_absence_id: 9 });
   });
 });
 

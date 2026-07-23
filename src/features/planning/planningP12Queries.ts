@@ -227,9 +227,9 @@ export function reviewPlanningAbsence(
   });
 }
 
-export function deletePlanningLeave(client: SupabaseClient, absenceId: number): Promise<number> {
-  return callRpc(client, 'delete-leave', 'Impossible de supprimer les congés.', 'delete_planning_leave', {
-    p_absence_id: planningEntityId(absenceId, 'La demande de congés'),
+export function deletePlanningAbsence(client: SupabaseClient, absenceId: number): Promise<number> {
+  return callRpc(client, 'delete-absence', 'Impossible de supprimer la demande d’absence.', 'delete_planning_absence', {
+    p_absence_id: planningEntityId(absenceId, 'La demande d’absence'),
   });
 }
 

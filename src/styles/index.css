@@ -8994,7 +8994,16 @@ button:disabled {
 }
 
 .planning-p12-card-actions button.is-danger {
+  border-color: #b42318;
+  color: #fff;
   background: #b42318;
+}
+
+.planning-p12-card-actions button.is-danger:hover,
+.planning-p12-card-actions button.is-danger:focus-visible {
+  border-color: #8f1710;
+  color: #fff;
+  background: #8f1710;
 }
 
 .planning-p12-conflict-layout {
@@ -11575,6 +11584,13 @@ button.planning-p12-conflict-card {
   box-shadow: 0 2px 5px rgba(13, 86, 58, .16);
 }
 
+.planning-absence-bar.is-approved.is-leave {
+  border-color: #000;
+  color: #fff;
+  background: #000;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .24);
+}
+
 .planning-absence-bar svg {
   flex: 0 0 auto;
 }
@@ -11590,6 +11606,311 @@ button.planning-p12-conflict-card {
   outline: 2px solid #fff;
   outline-offset: -3px;
   filter: brightness(.98) saturate(1.08);
+}
+
+.planning-tree-row .planning-tree-action.is-visit {
+  border-color: #c9b8f3;
+  color: #6542b5;
+  background: #f8f4ff;
+}
+
+.planning-tree-row .planning-tree-action.is-visit:hover,
+.planning-tree-row .planning-tree-action.is-visit:focus-visible {
+  border-color: #8463d5;
+  color: #4c2c99;
+  background: #eee7ff;
+  box-shadow: 0 0 0 2px #e1d6ff;
+}
+
+.planning-timeline-row.is-fleet.has-visits .planning-project-bar {
+  align-self: start;
+  margin-top: 7px;
+}
+
+.planning-visit-bar {
+  display: flex;
+  z-index: 23;
+  min-width: 0;
+  height: 21px;
+  align-self: start;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  margin-inline: 2px;
+  border: 1px solid #7654c4;
+  border-radius: 6px;
+  padding: 0 5px;
+  color: #fff;
+  background: #7654c4;
+  box-shadow: 0 2px 5px rgba(73, 42, 143, .24);
+  font-size: .57rem;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.planning-visit-bar svg {
+  flex: 0 0 auto;
+}
+
+.planning-visit-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planning-visit-bar:hover,
+.planning-visit-bar:focus-visible {
+  z-index: 25;
+  border-color: #4e2d9d;
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+  background: #6542b5;
+}
+
+.planning-dialog.planning-visits-panel {
+  width: min(720px, 96vw);
+}
+
+.planning-visits-vessel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 18px 0;
+  border: 1px solid #dce7ec;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #17534e;
+  background: #f2faf8;
+}
+
+.planning-visits-vessel > span {
+  display: grid;
+  gap: 2px;
+}
+
+.planning-visits-vessel small {
+  color: #657b78;
+  font-size: .63rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.planning-visits-form,
+.planning-visits-detail {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.planning-visits-form > label {
+  display: grid;
+  gap: 6px;
+  color: #485e6a;
+  font-size: .72rem;
+  font-weight: 780;
+}
+
+.planning-visits-form select,
+.planning-visits-form input,
+.planning-visits-form textarea {
+  width: 100%;
+}
+
+.planning-visits-dates {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #dce5ee;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.planning-visits-dates legend {
+  padding: 0 5px;
+  color: #485e6a;
+  font-size: .72rem;
+  font-weight: 780;
+}
+
+.planning-visits-dates > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.planning-visits-dates > div button {
+  width: 39px;
+  padding: 0;
+}
+
+.planning-visits-add-date {
+  justify-self: start;
+}
+
+.planning-visits-file {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px dashed #a9bdca;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fbfd;
+}
+
+.planning-visits-file > span {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-visits-file small {
+  color: #71828d;
+  font-weight: 600;
+}
+
+.planning-visits-file input {
+  grid-column: 1 / -1;
+}
+
+.planning-visits-pending-files {
+  display: grid;
+  gap: 5px;
+  margin: -7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-visits-pending-files li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #536975;
+  font-size: .68rem;
+}
+
+.planning-visits-form > footer,
+.planning-visits-detail > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #e2eaef;
+  padding-top: 14px;
+}
+
+.planning-visits-detail > section {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-visits-detail h3 {
+  margin: 0;
+  color: #283d48;
+  font-size: .78rem;
+}
+
+.planning-visits-detail ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-visits-detail ol li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #5d3eaa;
+  background: #f3effd;
+  font-size: .72rem;
+}
+
+.planning-visits-provider-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dce5ee;
+  border-radius: 11px;
+  padding: 13px;
+  background: #fff;
+}
+
+.planning-visits-provider-card > strong {
+  color: #233b47;
+  font-size: .88rem;
+}
+
+.planning-visits-provider-card > small {
+  color: #6c7f89;
+}
+
+.planning-visits-provider-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 8px 0 0;
+}
+
+.planning-visits-provider-card dl > div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.planning-visits-provider-card dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #73838c;
+  font-size: .62rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.planning-visits-provider-card dd {
+  margin: 0;
+  color: #354f5b;
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
+.planning-visits-provider-card a {
+  color: #1769aa;
+}
+
+.planning-visits-attachments {
+  display: grid;
+  gap: 7px;
+}
+
+.planning-visits-attachments button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border-color: #d8e3e9;
+  color: #36515e;
+  background: #f8fbfc;
+  text-align: left;
+}
+
+.planning-visits-attachments button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planning-visits-detail > footer button.is-danger {
+  margin-right: auto;
+  border-color: #b42318;
+  color: #fff;
+  background: #b42318;
+}
+
+@media (max-width: 640px) {
+  .planning-visits-provider-card dl {
+    grid-template-columns: 1fr;
+  }
 }
 
 .planning-p12-card.is-selected {

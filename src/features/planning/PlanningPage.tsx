@@ -127,8 +127,15 @@ import {
 } from './PlanningP03Panels';
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
+import { PlanningVisitsPanel } from './PlanningVisitsPanel';
 import type { PlanningAbsenceRecord, PlanningDetectedConflict } from './planningP12';
 import { fetchPlanningAbsences } from './planningP12Queries';
+import {
+  fetchPlanningServiceProviders,
+  fetchPlanningVesselVisits,
+  type PlanningServiceProvider,
+  type PlanningVesselVisit,
+} from './planningVisitQueries';
 import { PlanningCrewTimelineRow, PlanningFleetBoardTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
 import {
   buildPlanningCrewLanes,
@@ -346,6 +353,60 @@ function timelineStyle(dayWidth: number, dayCount: number) {
   } as React.CSSProperties;
 }
 
+function createPreviewAbsences(anchorDate: string): PlanningAbsenceRecord[] {
+  const startsOn = addPlanningDays(anchorDate, 5);
+  const endsOn = addPlanningDays(anchorDate, 9);
+  return [{
+    id: 9001,
+    personId: 104,
+    absenceType: 'leave',
+    startsAt: `${startsOn}T06:00:00Z`,
+    endsAt: `${addPlanningDays(endsOn, 1)}T00:00:00Z`,
+    startsOn,
+    endsOn,
+    reason: 'Congés validés',
+    status: 'approved',
+    requestedBy: 'preview',
+    reviewedBy: 'preview-admin',
+    reviewedAt: `${anchorDate}T08:00:00Z`,
+    reviewComment: 'Validé',
+    createdAt: `${anchorDate}T07:00:00Z`,
+    updatedAt: `${anchorDate}T08:00:00Z`,
+  }];
+}
+
+function createPreviewVisitData(anchorDate: string): {
+  providers: PlanningServiceProvider[];
+  visits: PlanningVesselVisit[];
+} {
+  const providers: PlanningServiceProvider[] = [
+    { id: 28, name: 'APAVE', category: 'Prestataire de Service', serviceType: 'Visite Grue / Bossoir', activity: '', address: '235 Route du Mesnil', city: '76290 Montivilliers', phone: '02 32 79 56 46', companyEmail: '', contactName: 'Clément NOEL', contactRole: 'Inspecteur', contactPhone: '', contactEmail: 'clement.noel@apave.com' },
+    { id: 11, name: 'Agence Nationale des Fréquences (ANFR)', category: 'Prestataire de Service', serviceType: 'Visite ANFR', activity: '', address: '', city: '', phone: '', companyEmail: '', contactName: 'Eric PHELIPPEAU', contactRole: 'Contrôleur de conformité', contactPhone: '06 07 31 90 76', contactEmail: 'eric.phelippeau@anfr.fr' },
+    { id: 33, name: 'AgroQual', category: 'Prestataire de Service', serviceType: 'Analyse Eau', activity: '', address: 'Site Normandial, 8 Av. du Pays de Caen', city: '14460 Colombelles', phone: '02 31 38 24 24', companyEmail: '', contactName: 'Delphine DEBRAY', contactRole: '', contactPhone: '06 03 10 07 53', contactEmail: 'delphine.debray@agroqual.fr' },
+  ];
+  const scheduledOn = addPlanningDays(anchorDate, 7);
+  const visitDefinitions: Array<{ id: number; provider: PlanningServiceProvider; type: PlanningVesselVisit['visitType']; hour: string }> = [
+    { id: 9101, provider: providers[0], type: 'crane_visit', hour: '07:00:00Z' },
+    { id: 9102, provider: providers[1], type: 'anfr_visit', hour: '11:00:00Z' },
+    { id: 9103, provider: providers[2], type: 'water_analysis', hour: '14:00:00Z' },
+  ];
+  return {
+    providers,
+    visits: visitDefinitions.map((definition, index) => ({
+      id: definition.id,
+      vesselId: 1,
+      visitType: definition.type,
+      providerId: definition.provider.id,
+      provider: definition.provider,
+      comments: index === 0 ? 'Préparer le registre de levage.' : '',
+      occurrences: [{ id: 9201 + index, scheduledAt: `${scheduledOn}T${definition.hour}`, scheduledOn }],
+      attachments: [],
+      createdAt: `${anchorDate}T08:00:00Z`,
+      updatedAt: `${anchorDate}T08:00:00Z`,
+    })),
+  };
+}
+
 export function PlanningPage({ client, roles, assistantFeatureEnabled, predictionsFeatureEnabled }: PlanningPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -359,6 +420,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => previewMode ? createPlanningPreviewOverview(initialAnchorDate) : undefined,
     [initialAnchorDate, previewMode],
   );
+  const previewAbsences = useMemo(() => createPreviewAbsences(initialAnchorDate), [initialAnchorDate]);
+  const previewVisitData = useMemo(() => createPreviewVisitData(initialAnchorDate), [initialAnchorDate]);
   const {
     overview,
     updateOverview,
@@ -422,7 +485,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isCalendarPanning, setIsCalendarPanning] = useState(false);
   const [gridClipboard, setGridClipboard] = useState<PlanningGridClipboard | null>(null);
   const [gridConflictForm, setGridConflictForm] = useState<PlanningGridConflictForm | null>(null);
-  const [absences, setAbsences] = useState<PlanningAbsenceRecord[]>([]);
+  const [absences, setAbsences] = useState<PlanningAbsenceRecord[]>(() => previewMode ? previewAbsences : []);
+  const [serviceProviders, setServiceProviders] = useState<PlanningServiceProvider[]>(() => previewMode ? previewVisitData.providers : []);
+  const [vesselVisits, setVesselVisits] = useState<PlanningVesselVisit[]>(() => previewMode ? previewVisitData.visits : []);
+  const [visitDialog, setVisitDialog] = useState<{ vessel: PlanningVessel; visit: PlanningVesselVisit | null } | null>(null);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
   const calendarPanCleanupRef = useRef<(() => void) | null>(null);
   const suppressCalendarClickRef = useRef(false);
@@ -441,7 +507,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   const loadAbsences = useCallback(async (): Promise<boolean> => {
     if (!readPermissions.canRead || previewMode) {
-      setAbsences([]);
+      setAbsences(previewMode ? previewAbsences : []);
       return true;
     }
     try {
@@ -451,6 +517,46 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
       return false;
     }
+  }, [effectiveClient, previewAbsences, previewMode, readPermissions.canRead]);
+
+  const loadVesselVisits = useCallback(async (): Promise<boolean> => {
+    if (!readPermissions.canRead || previewMode) {
+      setServiceProviders(previewMode ? previewVisitData.providers : []);
+      setVesselVisits(previewMode ? previewVisitData.visits : []);
+      return true;
+    }
+    try {
+      const [providers, visits] = await Promise.all([
+        fetchPlanningServiceProviders(effectiveClient),
+        fetchPlanningVesselVisits(effectiveClient),
+      ]);
+      setServiceProviders(providers);
+      setVesselVisits(visits);
+      return true;
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de charger les visites, audits et prestataires.'));
+      return false;
+    }
+  }, [effectiveClient, previewMode, previewVisitData, readPermissions.canRead]);
+
+  useEffect(() => {
+    if (!readPermissions.canRead || previewMode) return undefined;
+    let active = true;
+    void Promise.all([
+      fetchPlanningServiceProviders(effectiveClient),
+      fetchPlanningVesselVisits(effectiveClient),
+    ])
+      .then(([providers, visits]) => {
+        if (!active) return;
+        setServiceProviders(providers);
+        setVesselVisits(visits);
+      })
+      .catch((error) => {
+        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les visites, audits et prestataires.'));
+      });
+    return () => {
+      active = false;
+    };
   }, [effectiveClient, previewMode, readPermissions.canRead]);
 
   useEffect(() => {
@@ -1022,6 +1128,24 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       return;
     }
     setVesselForm({ id: vessel.id, name: vessel.name, acronym: vessel.acronym });
+  }
+
+  function openNewVesselVisit(lane: PlanningFleetLane) {
+    const vessel = overview.vessels.find((item) => item.id === lane.vesselId);
+    if (!vessel) {
+      setErrorMessage('Le navire de cette visite est indisponible. Actualisez le planning.');
+      return;
+    }
+    setVisitDialog({ vessel, visit: null });
+  }
+
+  function openVesselVisit(visit: PlanningVesselVisit) {
+    const vessel = overview.vessels.find((item) => item.id === visit.vesselId);
+    if (!vessel) {
+      setErrorMessage('Le navire de cette visite est indisponible. Actualisez le planning.');
+      return;
+    }
+    setVisitDialog({ vessel, visit });
   }
 
   async function saveVesselEditor(event: FormEvent<HTMLFormElement>) {
@@ -1910,7 +2034,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       onAddBoard={openNewBoard}
                       onAssignPerson={(personId, targetLane, watchGroup) => void assignPersonByDrop(personId, targetLane, watchGroup)}
                       onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
+                      onCreateVisit={openNewVesselVisit}
                       onOpen={openProjectEditor}
+                      onOpenVisit={openVesselVisit}
                       onOpenVessel={openVesselEditor}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
                       onSelect={setSelectedTimelineId}
@@ -1918,6 +2044,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       pendingId={pendingMutationId}
                       selectedId={selectedTimelineId}
                       touchDropTarget={touchDropTarget}
+                      visits={lane.vesselId === null ? [] : vesselVisits.filter((visit) => visit.vesselId === lane.vesselId)}
                       viewMode={viewMode}
                     />
                   );
@@ -2056,7 +2183,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
-      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteLeaves={permissions.canDeleteLeaves} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
