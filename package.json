@@ -26,6 +26,7 @@
     "import:sharepoint": "node --experimental-strip-types scripts/import-sharepoint-export.ts",
     "import:sharepoint:linked": "node --experimental-strip-types scripts/import-sharepoint-linked.ts",
     "import:sharepoint:planning": "node --experimental-strip-types scripts/import-sharepoint-linked.ts --file .data/sharepoint-planning-historical.json",
+    "import:bbtm:preview": "node --experimental-strip-types scripts/bbtm-planning-preview.ts",
     "refresh:sharepoint:project-documents": "node --experimental-strip-types scripts/refresh-sharepoint-project-documents.ts",
     "preview": "vite preview",
     "test": "vitest run",
