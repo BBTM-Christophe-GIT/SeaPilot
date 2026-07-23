@@ -538,6 +538,44 @@ describe('SharePoint import mapping', () => {
     });
   });
 
+  it('maps the verified provider catalog used by vessel visits and audits', () => {
+    const batch = buildSharePointUpsertBatch('list-administration-prestataires-fournisseurs', [
+      {
+        fields: {
+          ID: 9,
+          Title: 'APAVE',
+          Cat_x00e9_gorie: 'Prestataire',
+          FOU_x002d_TypedeService: 'Visite Grue / Bossoir',
+          Activit_x00e9_: 'Contrôle réglementaire',
+          FOU_x002d_Adresse: '235 Route du Mesnil',
+          City: '76290 Montivilliers',
+          FOU_x002d_T_x00e9_l_x00e9_phone: '02 32 79 56 46',
+          FOU_x002d_Mail: 'contact@apave.example',
+          Pr_x00e9_nomNOM: 'Clément NOEL',
+          Contact1_x002d_Fonction: 'Inspecteur',
+          Contact1_x002d_Mail: 'clement.noel@apave.example',
+        },
+      },
+    ]);
+
+    expect(batch).toMatchObject({
+      sourceKey: 'list-administration-prestataires-fournisseurs',
+      targetTable: 'service_providers',
+      conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
+    });
+    expect(batch.rows[0]).toEqual(expect.objectContaining({
+      name: 'APAVE',
+      service_type: 'Visite Grue / Bossoir',
+      activity: 'Contrôle réglementaire',
+      address: '235 Route du Mesnil',
+      city: '76290 Montivilliers',
+      phone: '02 32 79 56 46',
+      contact_name: 'Clément NOEL',
+      contact_email: 'clement.noel@apave.example',
+      sharepoint_item_id: '9',
+    }));
+  });
+
   it('maps the verified live project and client fields and preserves complete source payloads', () => {
     const client = buildSharePointUpsertBatch('list-bbtm-clients', [
       {

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -15,6 +15,7 @@ import {
   type PlanningViewMode,
 } from './planningModel';
 import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
+import { planningVisitTypeLabel, type PlanningVesselVisit } from './planningVisitQueries';
 import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
@@ -75,6 +76,9 @@ export function PlanningFleetTimelineRow({
   onResize,
   onAddBoard,
   onOpenVessel,
+  visits,
+  onCreateVisit,
+  onOpenVisit,
   selectedId,
   onSelect,
   onToggle,
@@ -91,6 +95,9 @@ export function PlanningFleetTimelineRow({
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
   onAddBoard: (lane: PlanningFleetLane) => void;
   onOpenVessel: (lane: PlanningFleetLane) => void;
+  visits: PlanningVesselVisit[];
+  onCreateVisit: (lane: PlanningFleetLane) => void;
+  onOpenVisit: (visit: PlanningVesselVisit) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onToggle: () => void;
@@ -104,6 +111,17 @@ export function PlanningFleetTimelineRow({
   const watchGroup = 'Bordée 1';
   const canDropPerson = editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
+  const visibleVisitOccurrences = visits
+    .flatMap((visit) => visit.occurrences.map((occurrence) => ({ visit, occurrence })))
+    .filter(({ occurrence }) => dateGridPlacement(occurrence.scheduledOn, occurrence.scheduledOn, days))
+    .sort((left, right) => left.occurrence.scheduledAt.localeCompare(right.occurrence.scheduledAt));
+  const visitStackByDate = new Map<string, number>();
+  const stackedVisitOccurrences = visibleVisitOccurrences.map((item) => {
+    const stack = visitStackByDate.get(item.occurrence.scheduledOn) || 0;
+    visitStackByDate.set(item.occurrence.scheduledOn, stack + 1);
+    return { ...item, stack };
+  });
+  const maxVisitStack = Math.max(0, ...visitStackByDate.values());
 
   function dropPerson(event: React.DragEvent) {
     if (!canDropPerson) return;
@@ -155,7 +173,7 @@ export function PlanningFleetTimelineRow({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
   return (
-    <div className="planning-calendar-grid planning-timeline-row is-fleet" data-vessel={lane.vessel}>
+    <div className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}`} data-vessel={lane.vessel} style={maxVisitStack ? { minHeight: 52 + maxVisitStack * 25 } : undefined}>
       <div
         className={`planning-row-label planning-tree-row is-vessel${personDropOver || touchPersonOver ? ' is-person-drop-target' : ''}`}
         data-planning-person-drop-vessel-id={canDropPerson ? lane.vesselId || undefined : undefined}
@@ -167,6 +185,7 @@ export function PlanningFleetTimelineRow({
       >
         <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
         {editable ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+        {editable ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
         <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
@@ -236,6 +255,24 @@ export function PlanningFleetTimelineRow({
             <small>{planningFleetEventTypeLabel(project.eventType)}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
+          </button>
+        );
+      })}
+      {stackedVisitOccurrences.map(({ visit, occurrence, stack }) => {
+        const placement = dateGridPlacement(occurrence.scheduledOn, occurrence.scheduledOn, days);
+        if (!placement) return null;
+        return (
+          <button
+            aria-label={`${planningVisitTypeLabel(visit.visitType)} avec ${visit.provider.name}, ${formatPlanningDate(occurrence.scheduledOn)}`}
+            className="planning-visit-bar"
+            key={`${visit.id}-${occurrence.id}`}
+            onClick={() => onOpenVisit(visit)}
+            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1, marginTop: 35 + stack * 25 }}
+            title={`${planningVisitTypeLabel(visit.visitType)}\n${visit.provider.name}\n${formatPlanningDate(occurrence.scheduledOn)}`}
+            type="button"
+          >
+            <CalendarCheck2 aria-hidden="true" size={12} />
+            <span>{planningVisitTypeLabel(visit.visitType)}</span>
           </button>
         );
       })}
@@ -685,7 +722,7 @@ export function PlanningCrewTimelineRow({
         return (
           <button
             aria-label={`${planningAbsenceTypeLabel(absence.absenceType)} ${statusLabel.toLocaleLowerCase('fr-FR')} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)}`}
-            className={`planning-absence-bar is-${absence.status}`}
+            className={`planning-absence-bar is-${absence.status} is-${absence.absenceType}`}
             key={`absence-${absence.id}`}
             onClick={() => onOpenAbsence?.(absence)}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
@@ -693,7 +730,7 @@ export function PlanningCrewTimelineRow({
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />
-            <span>{planningAbsenceTypeLabel(absence.absenceType)}</span>
+            <span>{absence.status === 'approved' && absence.absenceType === 'leave' ? 'Vacances' : planningAbsenceTypeLabel(absence.absenceType)}</span>
           </button>
         );
       })}

@@ -62,11 +62,18 @@ describe('SharePoint migration inventory', () => {
         targetTable: 'planning_periods',
       }),
     );
+    expect(getSharePointSourceByKey('list-administration-prestataires-fournisseurs')).toEqual(
+      expect.objectContaining({
+        listId: '5e29f7db-a85e-4147-9c54-b00f0e588f7e',
+        targetTable: 'service_providers',
+      }),
+    );
   });
 
   it('groups sources by module for migration work queues', () => {
     expect(getSharePointSourcesByModule('planning').map((source) => source.key)).toEqual([
       'list-bbtm-flotte',
+      'list-administration-prestataires-fournisseurs',
       'list-rh-personnel-bbtm',
       'list-kpi-projets-planning',
       'list-smtr-journees-planning',
