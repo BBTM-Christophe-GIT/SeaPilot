@@ -11591,6 +11591,15 @@ button.planning-p12-conflict-card {
   box-shadow: 0 2px 5px rgba(0, 0, 0, .24);
 }
 
+.planning-absence-bar.is-approved.is-leave.is-editable {
+  cursor: grab;
+}
+
+.planning-absence-bar.is-approved.is-leave.is-dragging {
+  cursor: grabbing;
+  opacity: .58;
+}
+
 .planning-absence-bar svg {
   flex: 0 0 auto;
 }
@@ -12948,7 +12957,62 @@ button.planning-p12-conflict-card {
 }
 
 .planning-workspace.is-fullscreen .planning-calendar-scroll {
-  max-height: calc(100vh - 210px);
+  max-height: none;
+}
+
+.planning-workspace.is-fullscreen {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.planning-workspace.is-fullscreen .planning-command-layout {
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-fullscreen .planning-layout {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.planning-workspace.is-fullscreen .planning-board-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.planning-workspace.is-fullscreen .planning-board-toolbar {
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-fullscreen .planning-calendar-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.planning-inline-delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #efb8c1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #8f1730;
+  background: #fff5f6;
+}
+
+.planning-inline-delete-confirm p {
+  margin: 0;
+  font-size: .76rem;
+  font-weight: 760;
+}
+
+.planning-inline-delete-confirm > span {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .planning-row-label.has-empty-row-action {

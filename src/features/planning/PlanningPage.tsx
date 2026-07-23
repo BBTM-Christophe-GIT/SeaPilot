@@ -107,6 +107,7 @@ import {
 } from './planningQueries';
 import {
   buildPlanningGridPaste,
+  normalizePlanningGridStatus,
   planningGridCellKey,
   planningGridDefaultStatus,
   sortPlanningGridCells,
@@ -129,7 +130,7 @@ import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
 import { PlanningVisitsPanel } from './PlanningVisitsPanel';
 import type { PlanningAbsenceRecord, PlanningDetectedConflict } from './planningP12';
-import { fetchPlanningAbsences } from './planningP12Queries';
+import { fetchPlanningAbsences, movePlanningApprovedAbsence } from './planningP12Queries';
 import {
   fetchPlanningServiceProviders,
   fetchPlanningVesselVisits,
@@ -877,6 +878,50 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
+  async function deleteDayState() {
+    if (!dayStateForm?.event.assignmentId) return;
+    const assignmentId = dayStateForm.event.assignmentId;
+    const dates: string[] = [];
+    if (dayStateForm.date) dates.push(dayStateForm.date);
+    else {
+      for (let date = dayStateForm.event.startsOn; date <= dayStateForm.event.endsOn; date = addPlanningDays(date, 1)) dates.push(date);
+    }
+    const event = dayStateForm.event;
+    const cells: PlanningGridCell[] = dates.map((workDate) => ({
+      key: planningGridCellKey(`assignment-${assignmentId}`, workDate),
+      laneKey: `assignment-${assignmentId}`,
+      workDate,
+      personId: event.personId!,
+      person: event.person,
+      vesselId: event.vesselId!,
+      vessel: event.vessel,
+      watchGroup: event.board,
+      functionLabel: event.functionLabel,
+      assignmentId,
+      eventId: event.id,
+      status: normalizePlanningGridStatus(event.dailyStatuses?.[workDate] || event.status, event.vessel),
+      note: event.dailyNotes?.[workDate] || '',
+      isConflict: false,
+    }));
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await removePlanningGridCells(
+        effectiveClient,
+        planningGridMutationCells(cells),
+        dayStateForm.date ? 'Suppression depuis le menu contextuel d’une case' : 'Suppression depuis le menu contextuel d’un groupe',
+      );
+      await refreshPlanningGridData();
+      setDayStateForm(null);
+      setSelectedGridCells(new Map());
+      setStatusMessage(dayStateForm.date ? 'Case supprimée ; les périodes adjacentes ont été conservées.' : 'Groupe de cases supprimé du planning.');
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, dayStateForm.date ? 'Impossible de supprimer cette case.' : 'Impossible de supprimer ce groupe de cases.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function refreshPlanningGridData(cells: PlanningGridCell[] = []): Promise<PlanningGridCell[]> {
     const [assignmentRows, planningDays, history] = await Promise.all([
       fetchPlanningAssignmentOverviewRows(effectiveClient),
@@ -1531,11 +1576,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   async function removeEvent(event: PlanningCrewEvent) {
     if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     if (event.kind === 'assignment') {
-      if (!eventForm || !window.confirm('Annuler cette affectation ? Elle restera visible et historisée.')) return;
+      if (!eventForm) return;
       await saveEvent(event, { ...eventForm, confirmationStatus: 'cancelled' });
       return;
     }
-    if (!window.confirm('Supprimer cette donnée importée du planning ?')) return;
     const previous = overview;
     updateOverview(removePlanningEvent(previous, event));
     setPendingMutationId(event.id);
@@ -1561,6 +1605,26 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       functionLabel: event.functionLabel, watchGroup: event.board, comments: event.comments,
     };
     await saveEvent(event, form);
+  }
+
+  async function moveApprovedAbsence(absence: PlanningAbsenceRecord, startsOn: string) {
+    if (!permissions.canMoveApprovedAbsences || absence.status !== 'approved' || absence.absenceType !== 'leave') return;
+    const endsOn = addPlanningDays(startsOn, daysBetween(absence.startsOn, absence.endsOn));
+    setPendingMutationId(`absence-${absence.id}`);
+    setErrorMessage(null);
+    try {
+      await movePlanningApprovedAbsence(effectiveClient, {
+        absenceId: absence.id,
+        startsAt: localDateTime(startsOn, utcToPlanningLocalDateTime(absence.startsAt).slice(11)),
+        endsAt: localDateTime(endsOn, utcToPlanningLocalDateTime(absence.endsAt).slice(11)),
+      });
+      await loadAbsences();
+      setStatusMessage(`Vacances validées déplacées du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de déplacer ces vacances validées.'));
+    } finally {
+      setPendingMutationId(null);
+    }
   }
 
   async function resizeEvent(event: PlanningCrewEvent, edge: 'start' | 'end', delta: number) {
@@ -2103,6 +2167,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                     onDeleteEmptyRow={row.boardRowId && !row.hasAnyRecords ? () => void removeEmptyBoardRow(row.boardRowId!, row.label) : undefined}
                     onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
+                    canMoveApprovedAbsences={permissions.canMoveApprovedAbsences}
+                    onMoveAbsence={(absence, date) => void moveApprovedAbsence(absence, date)}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
                     isDeletingEmptyRow={pendingMutationId === `board-row-${row.boardRowId}`}
@@ -2124,7 +2190,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   hrDocuments={lane.personId === null ? undefined : hrDocumentsByPerson.get(lane.personId)}
                   onCreate={openLaneAssignment}
                   onMove={(event, date) => void moveEvent(event, date)}
-                  onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
+                   onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
+                  canMoveApprovedAbsences={permissions.canMoveApprovedAbsences}
+                  onMoveAbsence={(absence, date) => void moveApprovedAbsence(absence, date)}
                   onOpen={openEvent}
                   onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                   onSelect={setSelectedTimelineId}
@@ -2155,7 +2223,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </aside> : null}
       </div>
 
-      {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onSave={saveDayState} /> : null}
+      {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
       {boardForm ? <PlanningBoardStaffingDialog form={boardForm} isSaving={isSaving} onChange={setBoardForm} onClose={() => setBoardForm(null)} onSave={saveNewBoard} /> : null}
       {departedPeopleDialog ? <PlanningDepartedPeopleDialog existingPersonIds={departedDialogExistingPersonIds} isSaving={isSaving} onAdd={(person) => void addDepartedPersonToBoard(person)} onClose={() => setDepartedPeopleDialog(null)} pendingId={pendingMutationId} people={departedPeople} state={departedPeopleDialog} /> : null}
@@ -2258,13 +2326,15 @@ function PlanningGridConflictDialog({ form, isSaving, onClose, onResolve }: {
   </div>;
 }
 
-function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onSave }: {
+function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, onSave }: {
   form: PlanningDayStateForm;
   isSaving: boolean;
   onChange: (value: PlanningDayStateForm | null) => void;
   onClose: () => void;
+  onDelete: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const options = [
     ['En Mer', 'En mer', 'sea'],
     ['A Terre', 'À terre', 'shore'],
@@ -2275,11 +2345,12 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onSave }: {
     <form aria-label="Statut et commentaire" aria-modal="true" className="planning-dialog planning-day-state-dialog" onSubmit={onSave} role="dialog">
       <header><div><Pencil aria-hidden="true" size={20} /><span><small>{form.date ? formatPlanningDate(form.date) : 'Période complète'}</small><h2>{form.event.person}</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
       <p className="planning-dialog-intro">Choisissez l’état visible dans la grille et, si besoin, un commentaire court.</p>
-      <fieldset className="planning-day-scope-options"><legend>Appliquer à</legend><button className={form.date ? 'is-active' : ''} onClick={() => onChange({ ...form, date: form.selectedDate })} type="button">Ce jour</button><button className={form.date ? '' : 'is-active'} onClick={() => onChange({ ...form, date: null })} type="button">Tout le groupe de cases</button></fieldset>
+      <fieldset className="planning-day-scope-options"><legend>Appliquer à</legend><button className={form.date ? 'is-active' : ''} onClick={() => { setIsDeleteConfirming(false); onChange({ ...form, date: form.selectedDate }); }} type="button">Ce jour</button><button className={form.date ? '' : 'is-active'} onClick={() => { setIsDeleteConfirming(false); onChange({ ...form, date: null }); }} type="button">Tout le groupe de cases</button></fieldset>
       <fieldset className="planning-day-status-options"><legend>Statut</legend>{options.map(([value, label, tone]) => <label className={`is-${tone}`} key={value}><input checked={form.status === value} name="daily-status" onChange={() => onChange({ ...form, status: value })} type="radio" /><span>{label}</span></label>)}</fieldset>
       <label className="planning-day-comment">Commentaire<input autoFocus maxLength={32} onChange={(event) => onChange({ ...form, note: event.target.value })} placeholder="Texte court affiché dans la case" value={form.note} /></label>
       <small>{form.note.length}/32</small>
-      <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Appliquer{form.date ? ' à ce jour' : ' à la période'}</button></footer>
+      {isDeleteConfirming ? <div className="planning-inline-delete-confirm" role="alert"><p>{form.date ? 'Supprimer uniquement cette case ?' : 'Supprimer tout le groupe de cases ?'}</p><span><button className="is-secondary" onClick={() => setIsDeleteConfirming(false)} type="button">Conserver</button><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={15} />Confirmer la suppression</button></span></div> : null}
+      <footer className="planning-dialog-footer-split"><span><button className="is-danger" disabled={isSaving} onClick={() => setIsDeleteConfirming(true)} type="button"><Trash2 aria-hidden="true" size={15} />{form.date ? 'Supprimer cette case' : 'Supprimer le groupe'}</button></span><span><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">Appliquer{form.date ? ' à ce jour' : ' à la période'}</button></span></footer>
     </form>
   </div>;
 }
@@ -2422,6 +2493,7 @@ function PlanningEmptySide({ text }: { text: string }) {
 }
 
 function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, controls, editable, isSaving, onChange, onClose, onSave, onDelete, onDuplicate }: { event: PlanningCrewEvent; form: EventFormState; activeVessels: PlanningVessel[]; watchGroupOptions: string[]; controls: PlanningControlResult[]; editable: boolean; isSaving: boolean; onChange: (form: EventFormState) => void; onClose: () => void; onSave: () => void; onDelete: () => void; onDuplicate: () => void }) {
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   if (!editable) {
     return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-modal="true" className="planning-dialog is-side-panel is-detail" role="dialog"><header><div><CalendarDays aria-hidden="true" size={20} /><h2>{event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Navire</dt><dd>{event.vessel}</dd></div><div><dt>Bordée</dt><dd>{event.board || 'Non renseignée'}</dd></div><div><dt>Période</dt><dd>{event.startsAt && event.endsAt ? `${formatPlanningDateTime(event.startsAt)} au ${formatPlanningDateTime(event.endsAt)}` : `${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}`}</dd></div><div><dt>Statut</dt><dd>{planningStatusDisplayLabel(event.status)}</dd></div><div><dt>Confirmation</dt><dd>{planningConfirmationLabel(event.confirmationStatus)}</dd></div><div><dt>Fonction</dt><dd>{event.functionLabel || 'Équipage'}</dd></div><div><dt>Annotation</dt><dd>{event.comments || 'Aucune annotation'}</dd></div><div><dt>Source</dt><dd>{event.sourceLabel}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
   }
@@ -2441,7 +2513,8 @@ function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, co
         </div>
         <p className="planning-dialog-source">Source · {event.sourceLabel}</p>
         <PlanningControlSummary results={controls} />
-        <footer className="planning-dialog-footer-split"><span><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={16} />{event.kind === 'assignment' ? 'Annuler l’affectation' : 'Supprimer'}</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span><span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span></footer>
+        {isDeleteConfirming ? <div className="planning-inline-delete-confirm" role="alert"><p>{event.kind === 'assignment' ? 'Annuler cette affectation ? Elle restera visible et historisée.' : 'Supprimer définitivement cette donnée importée du planning ?'}</p><span><button className="is-secondary" onClick={() => setIsDeleteConfirming(false)} type="button">Conserver</button><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={15} />Confirmer</button></span></div> : null}
+        <footer className="planning-dialog-footer-split"><span><button className="is-danger" disabled={isSaving} onClick={() => setIsDeleteConfirming(true)} type="button"><Trash2 aria-hidden="true" size={16} />{event.kind === 'assignment' ? 'Annuler l’affectation' : 'Supprimer'}</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span><span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span></footer>
       </form>
     </div>
   );

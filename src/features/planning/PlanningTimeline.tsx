@@ -372,6 +372,8 @@ export function PlanningCrewTimelineRow({
   absences = EMPTY_ABSENCES,
   hrDocuments = EMPTY_HR_DOCUMENTS,
   onOpenAbsence,
+  canMoveApprovedAbsences = false,
+  onMoveAbsence,
   onDeleteEmptyRow,
   isDeletingEmptyRow = false,
   hierarchy = false,
@@ -394,6 +396,8 @@ export function PlanningCrewTimelineRow({
   absences?: PlanningAbsenceRecord[];
   hrDocuments?: readonly PlanningHrDocumentRecord[];
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
+  canMoveApprovedAbsences?: boolean;
+  onMoveAbsence?: (absence: PlanningAbsenceRecord, startsOn: string) => void;
   onDeleteEmptyRow?: () => void;
   isDeletingEmptyRow?: boolean;
   hierarchy?: boolean;
@@ -401,6 +405,7 @@ export function PlanningCrewTimelineRow({
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draggingAbsenceId, setDraggingAbsenceId] = useState<number | null>(null);
   const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const conflictClickTimerRef = useRef<number | null>(null);
@@ -515,7 +520,9 @@ export function PlanningCrewTimelineRow({
             dragEvent.preventDefault();
             dragEvent.dataTransfer.dropEffect = 'move';
             const item = lane.events.find((candidate) => candidate.id === draggingId);
+            const absence = laneAbsences.find((candidate) => candidate.id === draggingAbsenceId);
             if (item) setMovePreview({ startsOn: day.date, endsOn: addPlanningDays(day.date, daysBetween(item.startsOn, item.endsOn)) });
+            else if (absence) setMovePreview({ startsOn: day.date, endsOn: addPlanningDays(day.date, daysBetween(absence.startsOn, absence.endsOn)) });
           } : undefined,
           onDrop: editable ? (event: React.DragEvent) => {
             event.preventDefault();
@@ -523,7 +530,10 @@ export function PlanningCrewTimelineRow({
             setMovePreview(null);
             const id = event.dataTransfer.getData('application/x-seapilot-event');
             const crewEvent = lane.events.find((item) => item.id === id);
+            const absenceId = Number(event.dataTransfer.getData('application/x-seapilot-approved-absence'));
+            const absence = laneAbsences.find((item) => item.id === absenceId);
             if (crewEvent) onMove(crewEvent, day.date);
+            else if (absence && canMoveApprovedAbsences) onMoveAbsence?.(absence, day.date);
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
         };
@@ -716,17 +726,38 @@ export function PlanningCrewTimelineRow({
       {laneAbsences.map((absence) => {
         const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);
         if (!placement) return null;
+        const movable = canMoveApprovedAbsences && absence.status === 'approved' && absence.absenceType === 'leave';
         const statusLabel = absence.status === 'approved'
           ? absence.absenceType === 'leave' ? 'Validés' : 'Validée'
           : 'À valider';
         return (
           <button
             aria-label={`${planningAbsenceTypeLabel(absence.absenceType)} ${statusLabel.toLocaleLowerCase('fr-FR')} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)}`}
-            className={`planning-absence-bar is-${absence.status} is-${absence.absenceType}`}
+            aria-busy={pendingId === `absence-${absence.id}`}
+            className={`planning-absence-bar is-${absence.status} is-${absence.absenceType}${movable ? ' is-editable' : ''}${draggingAbsenceId === absence.id ? ' is-dragging' : ''}${pendingId === `absence-${absence.id}` ? ' is-pending' : ''}`}
+            draggable={movable && pendingId !== `absence-${absence.id}`}
             key={`absence-${absence.id}`}
-            onClick={() => onOpenAbsence?.(absence)}
+            onClick={(clickEvent) => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                clickEvent.preventDefault();
+                return;
+              }
+              onOpenAbsence?.(absence);
+            }}
+            onDragEnd={() => {
+              setDraggingAbsenceId(null);
+              setMovePreview(null);
+              window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+            }}
+            onDragStart={(dragEvent) => {
+              suppressClickRef.current = true;
+              setDraggingAbsenceId(absence.id);
+              dragEvent.dataTransfer.effectAllowed = 'move';
+              dragEvent.dataTransfer.setData('application/x-seapilot-approved-absence', String(absence.id));
+            }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}`}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces vacances validées.' : ''}`}
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />

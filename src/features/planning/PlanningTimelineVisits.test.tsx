@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { buildPlanningTimeline } from './planningModel';
@@ -76,7 +76,8 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(screen.getByRole('button', { name: 'Ajouter une visite ou un audit à GOURY' })).toBeInTheDocument();
   });
 
-  it('renders approved leave as a black Vacances bar', () => {
+  it('renders approved leave as a black Vacances bar and lets an administrator move it', () => {
+    const onMoveAbsence = vi.fn();
     const { container } = render(<PlanningCrewTimelineRow
       absences={[{
         id: 7,
@@ -96,12 +97,14 @@ describe('Planning timeline visit and leave rendering', () => {
         updatedAt: '',
       }]}
       conflictDatesByEvent={new Map()}
+      canMoveApprovedAbsences
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
-      editable={false}
+      editable
       lane={{ key: 'person-10', label: 'Anne MARTIN', detail: '', personId: 10, vesselId: 2, vessel: 'GOURY', watchGroup: 'Bordée 1', events: [] }}
       onCreate={vi.fn()}
       onMove={vi.fn()}
+      onMoveAbsence={onMoveAbsence}
       onOpen={vi.fn()}
       onResize={vi.fn()}
       onSelect={vi.fn()}
@@ -111,6 +114,24 @@ describe('Planning timeline visit and leave rendering', () => {
     />);
 
     expect(screen.getByText('Vacances')).toBeInTheDocument();
-    expect(container.querySelector('.planning-absence-bar.is-approved.is-leave')).toBeInTheDocument();
+    const vacation = container.querySelector<HTMLButtonElement>('.planning-absence-bar.is-approved.is-leave')!;
+    expect(vacation).toHaveAttribute('draggable', 'true');
+
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: 'move',
+      effectAllowed: 'move',
+      types: [] as string[],
+      getData: (type: string) => values.get(type) || '',
+      setData: (type: string, value: string) => {
+        values.set(type, value);
+        dataTransfer.types = [...values.keys()];
+      },
+    };
+    fireEvent.dragStart(vacation, { dataTransfer });
+    const target = container.querySelector<HTMLElement>('[data-planning-drop-date="2026-08-13"]')!;
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+    expect(onMoveAbsence).toHaveBeenCalledWith(expect.objectContaining({ id: 7, status: 'approved' }), '2026-08-13');
   });
 });
