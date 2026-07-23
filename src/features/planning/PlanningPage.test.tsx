@@ -195,6 +195,15 @@ const requestedLeaveRow = {
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-01T08:00:00Z',
 };
+const approvedLeaveRow = {
+  ...requestedLeaveRow,
+  id: 701,
+  starts_at: '2026-07-06T06:00:00Z',
+  ends_at: '2026-07-09T16:00:00Z',
+  status: 'approved',
+  reviewed_by: 'user-admin',
+  reviewed_at: '2026-07-02T08:00:00Z',
+};
 const publicationRow = {
   id: 500,
   vessel_id: null,
@@ -377,7 +386,7 @@ function createClient(options: {
         error: null,
       });
     }
-    if (functionName === 'review_planning_absence' || functionName === 'save_planning_absence') {
+    if (functionName === 'review_planning_absence' || functionName === 'save_planning_absence' || functionName === 'move_planning_approved_absence') {
       return Promise.resolve({ data: 1, error: null });
     }
     if (functionName === 'transition_planning_publication') {
@@ -437,14 +446,15 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByRole('button', { name: /Prévisions et scénarios/ })).toBeInTheDocument();
   });
 
-  it('renders the monthly crew view and the imported assignment', async () => {
+  it('renders the annual crew view and the imported assignment', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    expect(screen.getByRole('button', { name: 'Mois' })).toHaveClass('is-active');
+    expect(screen.getByLabelText('Année à afficher')).toHaveValue(todayPlanningDate().slice(0, 4));
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: 'Équipages' })).toHaveAttribute('aria-selected', 'true');
@@ -514,7 +524,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(calendarBody).queryByText('SUROIT')).not.toBeInTheDocument();
   });
 
-  it('switches between fleet and crew lanes with all P0.2 time scales', async () => {
+  it('switches between fleet and crew lanes without period presets', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ vessels: [vesselRow, secondVesselRow], periods: [planningPeriodRow], projects: [planningProjectRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -534,11 +544,10 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Déplier COTENTIN' }));
     for (const label of ['Jour', 'Semaine', '2 sem.', 'Mois', 'An']) {
-      const scaleButton = screen.getByRole('button', { name: label });
-      expect(scaleButton).toBeInTheDocument();
-      await user.click(scaleButton);
-      expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode');
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
+    expect(screen.getByLabelText('Année à afficher')).toBeInTheDocument();
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Marins' })).toHaveClass('is-active');
     await user.click(screen.getByRole('button', { name: 'Équipes' }));
@@ -612,14 +621,18 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('switches to the yearly view and exposes zoom/fullscreen controls', async () => {
+  it('uses a selected year with two months of context and exposes zoom/fullscreen controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: 'An' }));
-    expect(screen.getByRole('button', { name: 'An' })).toHaveClass('is-active');
+    await user.selectOptions(screen.getByLabelText('Année à afficher'), '2025');
+    const calendar = document.querySelector('.planning-calendar-scroll');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2024-11-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2026-02-28');
+    expect(screen.queryByRole('button', { name: 'Période précédente' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Période suivante' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
@@ -929,8 +942,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
       vessel_id: 1,
       crew_person_id: 11,
-      starts_on: '2026-06-29',
-      ends_on: '2026-08-16',
+      starts_on: '2026-01-01',
+      ends_on: '2026-12-31',
       confirmation_status: 'provisional',
       watch_group: 'Bordée 1',
     })));
@@ -1023,8 +1036,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', {
       p_vessel_id: 1,
       p_watch_group: 'Bordée 1',
-      p_starts_on: '2026-06-29',
-      p_ends_on: '2026-08-16',
+      p_starts_on: '2026-01-01',
+      p_ends_on: '2026-12-31',
       p_positions: [{ personId: 10, functionLabel: 'Capitaine' }],
     }));
   });
@@ -1210,6 +1223,83 @@ describe('PlanningPage cockpit', () => {
     }));
     expect(confirm).toHaveBeenCalledOnce();
     confirm.mockRestore();
+  });
+
+  it('deletes one case or its group from the contextual menu without a native confirmation', async () => {
+    const user = userEvent.setup();
+    const nativeConfirm = vi.spyOn(window, 'confirm');
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+
+    fireEvent.contextMenu(source);
+    const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    expect(within(dialog).getByRole('button', { name: 'Supprimer cette case' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
+    expect(within(dialog).getByRole('button', { name: 'Supprimer le groupe' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ce jour' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer cette case' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmer la suppression' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('remove_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ assignmentId: 100, workDate: '2026-07-14' })],
+      p_reason: 'Suppression depuis le menu contextuel d’une case',
+    }));
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    nativeConfirm.mockRestore();
+  });
+
+  it('keeps fullscreen active when an assignment is cancelled from its form', async () => {
+    const user = userEvent.setup();
+    const nativeConfirm = vi.spyOn(window, 'confirm');
+    const { client, updateAssignment } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const workspace = container.querySelector<HTMLElement>('.planning-workspace')!;
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: workspace });
+    fireEvent(document, new Event('fullscreenchange'));
+
+    await user.dblClick(container.querySelector<HTMLButtonElement>('.planning-crew-bar')!);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler l’affectation' }));
+    expect(within(dialog).getByText(/Elle restera visible et historisée/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmer' }));
+
+    await waitFor(() => expect(updateAssignment).toHaveBeenCalled());
+    expect(workspace).toHaveClass('is-fullscreen');
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+    nativeConfirm.mockRestore();
+  });
+
+  it('lets only administrators drag approved vacations to a new date', async () => {
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], absences: [approvedLeaveRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const vacation = await screen.findByRole('button', { name: /Congés validés du 06\/07\/2026 au 09\/07\/2026/ });
+    expect(vacation).toHaveAttribute('draggable', 'true');
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: 'move',
+      effectAllowed: 'move',
+      types: [] as string[],
+      getData: (type: string) => values.get(type) || '',
+      setData: (type: string, value: string) => {
+        values.set(type, value);
+        dataTransfer.types = [...values.keys()];
+      },
+    };
+    fireEvent.dragStart(vacation, { dataTransfer });
+    const target = vacation.closest('.planning-timeline-row')!.querySelector<HTMLElement>('[data-planning-drop-date="2026-07-16"]')!;
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('move_planning_approved_absence', {
+      p_absence_id: 701,
+      p_starts_at: '2026-07-16T06:00:00.000Z',
+      p_ends_at: '2026-07-19T16:00:00.000Z',
+    }));
   });
 
   it('resolves a visible conflict by removing only the overlap after confirmation', async () => {

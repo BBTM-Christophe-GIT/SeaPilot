@@ -21,6 +21,7 @@ export interface PlanningPermissions {
   canRequestAbsences: boolean;
   canReviewAbsences: boolean;
   canDeleteAbsences: boolean;
+  canMoveApprovedAbsences: boolean;
   canManageConflictCases: boolean;
   canPrepareReplacements: boolean;
   canManageWorkRestPolicies: boolean;
@@ -59,6 +60,7 @@ export function getPlanningPermissions(roles: RoleKey[], legacyLockState = false
     canRequestAbsences: roles.some((role) => PLANNING_READ_ROLES.has(role)),
     canReviewAbsences: isAdmin || isDirection || isArmement,
     canDeleteAbsences: isAdmin,
+    canMoveApprovedAbsences: isAdmin,
     canManageConflictCases: canEdit,
     canPrepareReplacements: canEdit,
     canManageWorkRestPolicies: isAdmin,
