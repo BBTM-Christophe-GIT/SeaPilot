@@ -148,6 +148,18 @@ const HR_ROSTER_POPULATION_LABELS: Record<HrRosterPopulation, string> = {
   all: 'Tous',
 };
 
+const DEPARTURE_REASON_OPTIONS = [
+  'Autres',
+  'Décès',
+  'Démission',
+  'Fin de contrat',
+  "Fin Période d'essai",
+  'Licenciement économique',
+  'Licenciement individuel',
+  'Retraite',
+  'Rupture conventionnelle',
+];
+
 const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
   valid: 'A jour',
   renew_due: 'A renouveler',
@@ -564,6 +576,7 @@ function DetailsGrid({ children, isEditing }: { children: ReactNode; isEditing: 
 }
 
 function EditableField({
+  emptyOptionLabel = 'Sélectionner',
   field,
   form,
   label,
@@ -573,6 +586,7 @@ function EditableField({
   required = false,
   type = 'text',
 }: {
+  emptyOptionLabel?: string;
   field: keyof UpdatePersonDetailsInput;
   form: UpdatePersonDetailsInput;
   label: string;
@@ -591,7 +605,7 @@ function EditableField({
         <textarea onChange={(event) => onUpdate(field, event.target.value)} required={required} rows={3} value={form[field]} />
       ) : selectOptions ? (
         <select onChange={(event) => onUpdate(field, event.target.value)} required={required} value={form[field]}>
-          <option value="">Sélectionner</option>
+          <option value="">{emptyOptionLabel}</option>
           {selectOptions.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -2270,7 +2284,14 @@ function CreatePersonDialog({
               />
               <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={onUpdate} type="date" />
               <EditableField field="departedOn" form={form} label="Date départ" onUpdate={onUpdate} type="date" />
-              <EditableField field="departureReason" form={form} label="Cause départ" onUpdate={onUpdate} />
+              <EditableField
+                emptyOptionLabel="Non renseigné"
+                field="departureReason"
+                form={form}
+                label="Cause départ"
+                onUpdate={onUpdate}
+                options={DEPARTURE_REASON_OPTIONS}
+              />
               <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={onUpdate} type="date" />
               <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={onUpdate} />
             </DetailsGrid>
@@ -2574,7 +2595,14 @@ function PersonDetailsPanel({
                   />
                   <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={updateFormValue} type="date" />
                   <EditableField field="departedOn" form={form} label="Date depart" onUpdate={updateFormValue} type="date" />
-                  <EditableField field="departureReason" form={form} label="Cause depart" onUpdate={updateFormValue} />
+                  <EditableField
+                    emptyOptionLabel="Non renseigné"
+                    field="departureReason"
+                    form={form}
+                    label="Cause depart"
+                    onUpdate={updateFormValue}
+                    options={DEPARTURE_REASON_OPTIONS}
+                  />
                   <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={updateFormValue} type="date" />
                   <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={updateFormValue} />
                 </>
