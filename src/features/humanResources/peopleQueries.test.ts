@@ -3,7 +3,9 @@ import {
   buildGeneratedHrDocumentFileName,
   buildHumanResourcesDashboard,
   buildHumanResourcesRosterGroups,
+  buildMonthlyStaffEvolution,
   buildStaffEvolution,
+  buildWorkforceTurnover,
   createHrDocument,
   createPerson,
   fetchHumanResourcesData,
@@ -632,20 +634,61 @@ describe('buildHumanResourcesDashboard', () => {
 });
 
 describe('buildStaffEvolution', () => {
-  it('builds cumulative active staff counts for the RH evolution chart', () => {
+  it('builds year-end staff counts from hire and departure dates', () => {
     const people = mapPersonRows([
       { ...personRow, id: 1, hired_on: '2021-06-01', active: true },
-      { ...personRow, id: 2, hired_on: '2023-01-10', active: true },
+      { ...personRow, id: 2, hired_on: '2023-01-10', departed_on: '2024-06-15', active: true },
       { ...personRow, id: 3, hired_on: null, active: true },
-      { ...personRow, id: 4, hired_on: '2022-03-01', active: false },
+      { ...personRow, id: 4, hired_on: '2022-03-01', departed_on: '2022-12-31', active: false },
     ]);
 
-    expect(buildStaffEvolution(people, [2020, 2021, 2022, 2023])).toEqual([
+    expect(buildStaffEvolution(people, [2020, 2021, 2022, 2023, 2024], '2024-07-24')).toEqual([
       { year: 2020, count: 0 },
       { year: 2021, count: 1 },
       { year: 2022, count: 1 },
-      { year: 2023, count: 3 },
+      { year: 2023, count: 2 },
+      { year: 2024, count: 1 },
     ]);
+  });
+
+  it('builds a monthly curve for one year and updates headcount after departures', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2025-01-01', departed_on: null },
+      { ...personRow, id: 2, hired_on: '2025-03-15', departed_on: '2025-08-01' },
+    ]);
+
+    expect(buildMonthlyStaffEvolution(people, 2025, '2026-07-24')).toEqual([
+      { year: 2025, month: 1, label: 'Jan', count: 1 },
+      { year: 2025, month: 2, label: 'Fév', count: 1 },
+      { year: 2025, month: 3, label: 'Mars', count: 2 },
+      { year: 2025, month: 4, label: 'Avr', count: 2 },
+      { year: 2025, month: 5, label: 'Mai', count: 2 },
+      { year: 2025, month: 6, label: 'Juin', count: 2 },
+      { year: 2025, month: 7, label: 'Juil', count: 2 },
+      { year: 2025, month: 8, label: 'Août', count: 1 },
+      { year: 2025, month: 9, label: 'Sept', count: 1 },
+      { year: 2025, month: 10, label: 'Oct', count: 1 },
+      { year: 2025, month: 11, label: 'Nov', count: 1 },
+      { year: 2025, month: 12, label: 'Déc', count: 1 },
+    ]);
+  });
+
+  it('calculates turnover from departures and the average opening/closing headcount', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2020-01-01', departed_on: null },
+      { ...personRow, id: 2, hired_on: '2020-01-01', departed_on: '2026-06-15' },
+      { ...personRow, id: 3, hired_on: '2020-01-01', departed_on: null },
+    ]);
+
+    expect(buildWorkforceTurnover(people, '2026-12-31', '2025-12-31')).toEqual({
+      rate: 40,
+      departures: 1,
+      averageHeadcount: 2.5,
+      headcountStart: 3,
+      headcountEnd: 2,
+      startsOn: '2025-12-31',
+      endsOn: '2026-12-31',
+    });
   });
 });
 

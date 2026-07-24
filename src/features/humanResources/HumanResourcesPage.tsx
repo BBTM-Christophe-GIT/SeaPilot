@@ -32,6 +32,8 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import {
   buildStaffEvolution,
+  buildMonthlyStaffEvolution,
+  buildWorkforceTurnover,
   buildHumanResourcesDashboard,
   buildHumanResourcesRosterGroups,
   buildGeneratedHrDocumentFileName,
@@ -63,6 +65,7 @@ import {
   type PersonRecord,
   type UpdateHrDocumentMedicalInput,
   type UpdatePersonDetailsInput,
+  type WorkforceTurnoverMetric,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 
@@ -82,6 +85,13 @@ interface HrFilterState {
 }
 
 type HrRosterPopulation = 'current' | 'former' | 'all';
+type StaffEvolutionYearFilter = 'all' | `${number}`;
+
+interface StaffEvolutionChartPoint {
+  key: string;
+  label: string;
+  count: number;
+}
 
 const EMPTY_FORM: PersonFormState = {
   firstName: '',
@@ -648,6 +658,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
   const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
   const [rosterPopulation, setRosterPopulation] = useState<HrRosterPopulation>('current');
+  const [staffEvolutionYear, setStaffEvolutionYear] = useState<StaffEvolutionYearFilter>('all');
   const [isRosterFiltersOpen, setIsRosterFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
@@ -826,7 +837,56 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const rosterGroups = useMemo(() => buildHumanResourcesRosterGroups(dashboard.groups), [dashboard.groups]);
   const rosterFilterCount = 1 + Object.values(filters).filter(Boolean).length;
   const rosterFilterSummary = getRosterFilterSummary(rosterPopulation, filters);
-  const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
+  const analyticsToday = useMemo(() => getLocalDateKey(), []);
+  const analyticsCurrentYear = Number(analyticsToday.slice(0, 4));
+  const staffEvolutionYears = useMemo(
+    () => Array.from({ length: Math.max(1, analyticsCurrentYear - 2020 + 1) }, (_, index) => 2020 + index),
+    [analyticsCurrentYear],
+  );
+  const selectedStaffEvolutionYear =
+    staffEvolutionYear !== 'all' && staffEvolutionYears.includes(Number(staffEvolutionYear))
+      ? Number(staffEvolutionYear)
+      : null;
+  const staffEvolution = useMemo<StaffEvolutionChartPoint[]>(
+    () =>
+      selectedStaffEvolutionYear === null
+        ? buildStaffEvolution(roleVisiblePeople, staffEvolutionYears, analyticsToday).map((point) => ({
+            key: String(point.year),
+            label: String(point.year),
+            count: point.count,
+          }))
+        : buildMonthlyStaffEvolution(roleVisiblePeople, selectedStaffEvolutionYear, analyticsToday).map((point) => ({
+            key: `${point.year}-${String(point.month).padStart(2, '0')}`,
+            label: point.label,
+            count: point.count,
+          })),
+    [analyticsToday, roleVisiblePeople, selectedStaffEvolutionYear, staffEvolutionYears],
+  );
+  const trailingWorkforceTurnover = useMemo(
+    () => buildWorkforceTurnover(roleVisiblePeople, analyticsToday),
+    [analyticsToday, roleVisiblePeople],
+  );
+  const workforceTurnover = useMemo(() => {
+    if (selectedStaffEvolutionYear === null) {
+      return trailingWorkforceTurnover;
+    }
+
+    const endsOn =
+      selectedStaffEvolutionYear === analyticsCurrentYear
+        ? analyticsToday
+        : `${selectedStaffEvolutionYear}-12-31`;
+    return buildWorkforceTurnover(
+      roleVisiblePeople,
+      endsOn,
+      `${selectedStaffEvolutionYear - 1}-12-31`,
+    );
+  }, [
+    analyticsCurrentYear,
+    analyticsToday,
+    roleVisiblePeople,
+    selectedStaffEvolutionYear,
+    trailingWorkforceTurnover,
+  ]);
   const selectedPerson = useMemo(
     () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
     [selectedPersonId, visiblePeople],
@@ -1156,13 +1216,20 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             { ariaLabel: 'Documents manquants', label: 'Documents manquants', value: dashboard.metrics.missing },
           ]}
         />
-        <StrategicMetric label="Turnover 12 mois" suffix="%" value={dashboard.metrics.turnoverRate} />
+        <StrategicMetric label="Turnover 12 mois" suffix="%" value={trailingWorkforceTurnover.rate} />
         <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
         <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
       </div>
 
       <div className="hr-analytics-grid">
-        <StaffEvolutionChart points={staffEvolution} turnoverRate={dashboard.metrics.turnoverRate} />
+        <StaffEvolutionChart
+          onYearChange={setStaffEvolutionYear}
+          points={staffEvolution}
+          selectedYear={selectedStaffEvolutionYear}
+          turnover={workforceTurnover}
+          yearFilter={staffEvolutionYear}
+          years={staffEvolutionYears}
+        />
         <FunctionDistribution groups={dashboard.groups} />
       </div>
 
@@ -1375,11 +1442,19 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 }
 
 function StaffEvolutionChart({
+  onYearChange,
   points,
-  turnoverRate,
+  selectedYear,
+  turnover,
+  yearFilter,
+  years,
 }: {
-  points: Array<{ count: number; year: number }>;
-  turnoverRate: number;
+  onYearChange: (year: StaffEvolutionYearFilter) => void;
+  points: StaffEvolutionChartPoint[];
+  selectedYear: number | null;
+  turnover: WorkforceTurnoverMetric;
+  yearFilter: StaffEvolutionYearFilter;
+  years: number[];
 }) {
   const maxCount = Math.max(1, ...points.map((point) => point.count));
   const chartPoints = points.map((point, index) => {
@@ -1389,6 +1464,10 @@ function StaffEvolutionChart({
     return { ...point, x, y };
   });
   const polylinePoints = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+  const periodLabel = selectedYear === null
+    ? `${years[0]} – ${years[years.length - 1]}`
+    : `Janvier – ${points[points.length - 1]?.label || 'Décembre'} ${selectedYear}`;
+  const turnoverLabel = selectedYear === null ? 'Turnover 12 mois' : `Turnover ${selectedYear}`;
 
   return (
     <section aria-label="Evolution des effectifs" className="hr-evolution-card">
@@ -1397,28 +1476,41 @@ function StaffEvolutionChart({
           <BarChart3 aria-hidden="true" size={18} />
           Évolution des effectifs
         </span>
-        <small>2020 – 2026</small>
+        <div className="hr-evolution-controls">
+          <label>
+            <span className="hr-visually-hidden">Période du graphe des effectifs</span>
+            <select
+              aria-label="Période du graphe des effectifs"
+              onChange={(event) => onYearChange(event.target.value as StaffEvolutionYearFilter)}
+              value={yearFilter}
+            >
+              <option value="all">Toutes les années</option>
+              {years.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <small>{periodLabel}</small>
+        </div>
       </div>
       <div className="hr-evolution-content">
         <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
           <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
           <polyline className="hr-evolution-line" points={polylinePoints} />
           {chartPoints.map((point) => (
-            <g key={point.year}>
+            <g key={point.key}>
               <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
               <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
                 {point.count}
               </text>
               <text className="hr-evolution-year" x={point.x} y="93">
-                {point.year}
+                {point.label}
               </text>
             </g>
           ))}
         </svg>
         <aside className="hr-turnover-panel" aria-label="Turnover sur 12 mois">
-          <small>Turnover 12 mois</small>
-          <strong>{formatMetric(turnoverRate)} %</strong>
-          <span>Départs sur effectif moyen</span>
+          <small>{turnoverLabel}</small>
+          <strong>{formatMetric(turnover.rate)} %</strong>
+          <span>{turnover.departures} départ{turnover.departures > 1 ? 's' : ''} · effectif moyen {formatMetric(turnover.averageHeadcount)}</span>
         </aside>
       </div>
     </section>

@@ -340,6 +340,23 @@ export interface StaffEvolutionPoint {
   count: number;
 }
 
+export interface MonthlyStaffEvolutionPoint {
+  year: number;
+  month: number;
+  label: string;
+  count: number;
+}
+
+export interface WorkforceTurnoverMetric {
+  rate: number;
+  departures: number;
+  averageHeadcount: number;
+  headcountStart: number;
+  headcountEnd: number;
+  startsOn: string;
+  endsOn: string;
+}
+
 export interface UpdatePersonDetailsInput {
   firstName: string;
   lastName: string;
@@ -834,6 +851,35 @@ function parseIsoDate(value: string): Date | null {
   return date && Number.isFinite(date.getTime()) ? date : null;
 }
 
+function getLocalIsoDate(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeIsoDateKey(value: string): string {
+  const key = value.trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) && parseIsoDate(key) ? key : '';
+}
+
+function isPersonEmployedOn(person: PersonRecord, dateKey: string): boolean {
+  const hiredOn = normalizeIsoDateKey(person.hiredOn);
+  const departedOn = normalizeIsoDateKey(person.departedOn);
+  return Boolean(hiredOn && hiredOn <= dateKey && (!departedOn || departedOn > dateKey));
+}
+
+function countPeopleEmployedOn(people: PersonRecord[], dateKey: string): number {
+  return people.filter((person) => isPersonEmployedOn(person, dateKey)).length;
+}
+
+function shiftIsoYear(dateKey: string, years: number): string {
+  const date = parseIsoDate(dateKey);
+  if (!date) return dateKey;
+  date.setFullYear(date.getFullYear() + years);
+  return getLocalIsoDate(date);
+}
+
 function roundMetric(value: number, digits = 1): number {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
@@ -845,18 +891,7 @@ function buildStrategicMetrics(
   documentsByPersonId: Map<number, HrDocumentRecord[]>,
 ) {
   const today = new Date();
-  const twelveMonthsAgo = new Date(today);
-  twelveMonthsAgo.setFullYear(today.getFullYear() - 1);
-  const departuresLastTwelveMonths = people.filter((person) => {
-    const departedOn = parseIsoDate(person.departedOn);
-    return departedOn && departedOn >= twelveMonthsAgo && departedOn <= today;
-  }).length;
-  const headcountAtPeriodStart = people.filter((person) => {
-    const hiredOn = parseIsoDate(person.hiredOn);
-    const departedOn = parseIsoDate(person.departedOn);
-    return (!hiredOn || hiredOn <= twelveMonthsAgo) && (!departedOn || departedOn > twelveMonthsAgo);
-  }).length;
-  const averageHeadcount = (headcountAtPeriodStart + activePeople.length) / 2;
+  const turnover = buildWorkforceTurnover(people, getLocalIsoDate(today));
   const tenureYears = activePeople.flatMap((person) => {
     const hiredOn = parseIsoDate(person.hiredOn);
     return hiredOn ? [(today.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)] : [];
@@ -872,7 +907,7 @@ function buildStrategicMetrics(
   ).length;
 
   return {
-    turnoverRate: averageHeadcount > 0 ? roundMetric((departuresLastTwelveMonths / averageHeadcount) * 100) : 0,
+    turnoverRate: turnover.rate,
     averageTenureYears:
       tenureYears.length > 0 ? roundMetric(tenureYears.reduce((total, value) => total + value, 0) / tenureYears.length) : 0,
     medicalComplianceRate:
@@ -974,27 +1009,64 @@ export function buildHumanResourcesDashboard(
 export function buildStaffEvolution(
   people: PersonRecord[],
   years: number[] = [2020, 2021, 2022, 2023, 2024, 2025, 2026],
+  asOf = getLocalIsoDate(),
 ): StaffEvolutionPoint[] {
-  const activePeople = people.filter((person) => person.active);
   const sortedYears = [...years].sort((left, right) => left - right);
-  const latestYear = sortedYears[sortedYears.length - 1];
+  const asOfYear = Number(asOf.slice(0, 4));
 
   return sortedYears.map((year) => ({
     year,
-    count: activePeople.filter((person) => {
-      if (!person.hiredOn) {
-        return year === latestYear;
-      }
-
-      const hiredYear = Number(person.hiredOn.slice(0, 4));
-
-      if (!Number.isFinite(hiredYear)) {
-        return year === latestYear;
-      }
-
-      return hiredYear <= year;
-    }).length,
+    count: countPeopleEmployedOn(people, year === asOfYear ? asOf : `${year}-12-31`),
   }));
+}
+
+const STAFF_MONTH_LABELS = ['Jan', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+
+export function buildMonthlyStaffEvolution(
+  people: PersonRecord[],
+  year: number,
+  asOf = getLocalIsoDate(),
+): MonthlyStaffEvolutionPoint[] {
+  const asOfYear = Number(asOf.slice(0, 4));
+  const asOfMonth = Number(asOf.slice(5, 7));
+  const lastMonth = year === asOfYear ? asOfMonth : 12;
+
+  return Array.from({ length: lastMonth }, (_, index) => {
+    const month = index + 1;
+    const monthEnd = new Date(year, month, 0);
+    const monthEndKey = year === asOfYear && month === asOfMonth ? asOf : getLocalIsoDate(monthEnd);
+
+    return {
+      year,
+      month,
+      label: STAFF_MONTH_LABELS[index],
+      count: countPeopleEmployedOn(people, monthEndKey),
+    };
+  });
+}
+
+export function buildWorkforceTurnover(
+  people: PersonRecord[],
+  endsOn = getLocalIsoDate(),
+  startsOn = shiftIsoYear(endsOn, -1),
+): WorkforceTurnoverMetric {
+  const departures = people.filter((person) => {
+    const departedOn = normalizeIsoDateKey(person.departedOn);
+    return Boolean(departedOn && departedOn > startsOn && departedOn <= endsOn);
+  }).length;
+  const headcountStart = countPeopleEmployedOn(people, startsOn);
+  const headcountEnd = countPeopleEmployedOn(people, endsOn);
+  const averageHeadcount = (headcountStart + headcountEnd) / 2;
+
+  return {
+    rate: averageHeadcount > 0 ? roundMetric((departures / averageHeadcount) * 100) : 0,
+    departures,
+    averageHeadcount: roundMetric(averageHeadcount),
+    headcountStart,
+    headcountEnd,
+    startsOn,
+    endsOn,
+  };
 }
 
 export async function fetchPeople(client: SupabaseClient): Promise<PersonRecord[]> {
