@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
 import { todayPlanningDate } from './planningDates';
+import { buildPlanningTimeline, timelineRange } from './planningModel';
 
 const vesselRow = { id: 1, name: 'COTENTIN', acronym: 'CTN', active: true };
 const secondVesselRow = { id: 2, name: 'SUROIT', acronym: 'SRT', active: true };
@@ -922,6 +923,7 @@ describe('PlanningPage cockpit', () => {
   });
 
   it('assigns an unassigned sailor by dropping the card on a board without reloading', async () => {
+    const visibleRange = timelineRange(buildPlanningTimeline(todayPlanningDate(), 'month'));
     const existingCaptainPeriod = { ...planningPeriodRow, id: 302, crew_name: 'Jean MARTIN', function_label: 'Capitaine' };
     const { client, insertAssignment, vesselOrder } = createClient({ assignments: [], people: [captainRow, crewRow], periods: [existingCaptainPeriod] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -946,8 +948,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
       vessel_id: 1,
       crew_person_id: 11,
-      starts_on: '2026-01-01',
-      ends_on: '2026-12-31',
+      starts_on: visibleRange.start,
+      ends_on: visibleRange.end,
       confirmation_status: 'provisional',
       watch_group: 'Bordée 1',
     })));
@@ -1023,6 +1025,7 @@ describe('PlanningPage cockpit', () => {
 
   it('creates a board from the vessel staffing decision and proposes compatible available sailors', async () => {
     const user = userEvent.setup();
+    const visibleRange = timelineRange(buildPlanningTimeline(todayPlanningDate(), 'month'));
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
       matrices: [{ id: 5, vessel_id: 1, name: 'Situation 1', effective_from: '2026-01-01', effective_to: null, status: 'active', notes: null, version: 1 }],
@@ -1040,8 +1043,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', {
       p_vessel_id: 1,
       p_watch_group: 'Bordée 1',
-      p_starts_on: '2026-01-01',
-      p_ends_on: '2026-12-31',
+      p_starts_on: visibleRange.start,
+      p_ends_on: visibleRange.end,
       p_positions: [{ personId: 10, functionLabel: 'Capitaine' }],
     }));
   });
