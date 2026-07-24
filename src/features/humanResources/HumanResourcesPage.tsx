@@ -1159,6 +1159,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
       documents: roleVisibleDocuments,
+      indicatorYear: selectedStaffEvolutionYear,
       people: roleVisiblePeople,
     });
 
