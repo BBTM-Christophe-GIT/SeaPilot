@@ -6706,6 +6706,25 @@ button:disabled {
   color: #1465d8;
 }
 
+.hr-evolution-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hr-evolution-controls select {
+  min-height: 32px;
+  border: 1px solid #cfd9e6;
+  border-radius: 6px;
+  padding: 5px 28px 5px 9px;
+  color: #263a59;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
 .hr-analytics-title small {
   border: 1px solid #dbe3ed;
   border-radius: 6px;
@@ -8001,10 +8020,16 @@ button:disabled {
 
   .hr-command-header,
   .hr-command-actions,
+  .hr-analytics-title,
   .hr-roster-heading,
   .hr-visibility-scope-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hr-evolution-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .hr-command-actions {

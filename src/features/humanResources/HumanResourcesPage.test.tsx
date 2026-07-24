@@ -217,6 +217,44 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('2009574')).toBeInTheDocument();
   });
 
+  it('filters the workforce curve by year and calculates turnover from departure dates', async () => {
+    const user = userEvent.setup();
+    const analyticsPeople = [
+      { ...activePerson, hired_on: '2020-01-01', departed_on: null },
+      {
+        ...formerPerson,
+        id: 20,
+        hired_on: '2020-01-01',
+        departed_on: '2024-06-15',
+        active: false,
+      },
+      {
+        ...activePerson,
+        id: 21,
+        first_name: 'Alice',
+        last_name: 'NOUVELLE',
+        hired_on: '2024-03-01',
+        departed_on: null,
+      },
+    ];
+
+    render(<HumanResourcesPage client={createClient(analyticsPeople, []) as never} roles={['admin']} />);
+
+    const chart = await screen.findByRole('region', { name: 'Evolution des effectifs' });
+    const periodFilter = within(chart).getByLabelText('Période du graphe des effectifs');
+    expect(periodFilter).toHaveValue('all');
+    expect(within(periodFilter).getByRole('option', { name: 'Toutes les années' })).toBeInTheDocument();
+
+    await user.selectOptions(periodFilter, '2024');
+
+    expect(within(chart).getByText('Janvier – Déc 2024')).toBeInTheDocument();
+    const turnover = within(chart).getByLabelText('Turnover sur 12 mois');
+    expect(turnover).toHaveTextContent('Turnover 2024');
+    expect(turnover).toHaveTextContent('50 %');
+    expect(turnover).toHaveTextContent('1 départ · effectif moyen 2');
+    expect(within(chart).getAllByText('3').length).toBeGreaterThan(0);
+  });
+
   it('groups sedentary functions into one distribution row', async () => {
     const sedentaryFunctions = [
       'Directeur QHSE / Chef de Projet',
