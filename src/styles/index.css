@@ -10931,6 +10931,14 @@ button.planning-p12-conflict-card {
   padding-left: 0;
 }
 
+.planning-period-controls input[type='month'] {
+  min-width: 132px;
+  color: #20344f;
+  background: transparent;
+  font-size: .75rem;
+  font-weight: 850;
+}
+
 .planning-period-controls select {
   min-width: 78px;
   padding-right: 28px;

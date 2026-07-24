@@ -8,6 +8,8 @@ import {
   CalendarPlus,
   ClipboardCheck,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Expand,
   FilePenLine,
@@ -55,6 +57,7 @@ import {
   hasBlockingPlanningControls,
   isSedentaryPlanningFunction,
   planningStatusDisplayLabel,
+  shiftPlanningAnchor,
   timelineRange,
   type PlanningCrewEvent,
   type PlanningControlResult,
@@ -268,7 +271,7 @@ function PlanningRibbonGroup({ children, className = '', label }: { children?: R
 }
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
-const PLANNING_VIEW_MODE = 'year' as const;
+const PLANNING_VIEW_MODE = 'month' as const;
 const EMPTY_ASSIGNMENT: AssignmentFormState = {
   vesselId: '',
   captainPersonId: '',
@@ -588,37 +591,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const pendingAbsenceCount = absences.filter((absence) => absence.status === 'requested').length;
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
-  const effectiveDayWidth = Math.round(22 * zoomLevel / 100);
-  const selectedYear = Number(anchorDate.slice(0, 4));
-  const selectedYearStart = `${selectedYear}-01-01`;
-  const selectedYearEnd = `${selectedYear}-12-31`;
-  const yearOptions = useMemo(() => {
-    const recordYears = [
-      ...overview.assignments.flatMap((item) => [item.startsOn, item.endsOn]),
-      ...overview.periods.flatMap((item) => [item.startsOn, item.endsOn]),
-      ...overview.days.map((item) => item.workDate),
-      ...overview.projects.flatMap((item) => [item.startsOn, item.endsOn]),
-      ...overview.handovers.map((item) => item.handoverAt),
-      ...absences.flatMap((item) => [item.startsOn, item.endsOn]),
-      ...vesselVisits.flatMap((item) => item.occurrences.map((occurrence) => occurrence.scheduledOn)),
-    ]
-      .map((value) => Number(value?.slice(0, 4)))
-      .filter((value) => Number.isSafeInteger(value) && value >= 1900 && value <= 2200);
-    const todayYear = Number(todayDate.slice(0, 4));
-    const firstYear = Math.min(selectedYear, todayYear - 5, ...recordYears);
-    const lastYear = Math.max(selectedYear, todayYear + 5, ...recordYears);
-    return Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
-  }, [
-    absences,
-    overview.assignments,
-    overview.days,
-    overview.handovers,
-    overview.periods,
-    overview.projects,
-    selectedYear,
-    todayDate,
-    vesselVisits,
-  ]);
+  const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
   const fleetLanes = useMemo(() => buildPlanningFleetLanes(overview, range, filters), [filters, overview, range]);
   const fleetRows = useMemo(() => buildPlanningCrewRows(overview, timelineDays, filters), [filters, overview, timelineDays]);
   const fleetLanesByVessel = useMemo(
@@ -829,10 +802,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       ...EMPTY_ASSIGNMENT,
       vesselId: String(lane.vesselId),
       crewPersonId: String(person.id),
-      startsOn: selectedYearStart,
-      endsOn: selectedYearEnd,
-      startsAt: localDateTime(selectedYearStart, '08:00'),
-      endsAt: localDateTime(selectedYearEnd, '20:00'),
+      startsOn: range.start,
+      endsOn: range.end,
+      startsAt: localDateTime(range.start, '08:00'),
+      endsAt: localDateTime(range.end, '20:00'),
       assignmentRole: person.functionLabel || 'Équipage',
       confirmationStatus: 'provisional',
       watchGroup,
@@ -844,8 +817,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       vessel: lane.vessel,
       functionLabel: input.assignmentRole,
       status: input.statusLabel,
-      startsOn: selectedYearStart,
-      endsOn: selectedYearEnd,
+      startsOn: range.start,
+      endsOn: range.end,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
     }, allPlanningCrewEvents);
@@ -860,7 +833,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       const row = await createPlanningAssignment(effectiveClient, input);
       const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
       updateOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
-      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label}, ${watchGroup}, du ${formatPlanningDate(selectedYearStart)} au ${formatPlanningDate(selectedYearEnd)}.`);
+      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label}, ${watchGroup}, du ${formatPlanningDate(range.start)} au ${formatPlanningDate(range.end)}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, "Impossible d'affecter ce marin par glisser-déposer."));
     } finally {
@@ -1253,18 +1226,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       const available = activePeople.filter((person) => !overview.assignments.some((assignment) =>
         assignment.crewPersonId === person.id
         && assignment.confirmationStatus !== 'cancelled'
-        && assignment.startsOn <= selectedYearEnd
-        && assignment.endsOn >= selectedYearStart));
+        && assignment.startsOn <= range.end
+        && assignment.endsOn >= range.start));
       const positions = matrix.requirements.flatMap((requirement) => Array.from(
         { length: Math.max(1, requirement.minimumCount) },
         (_, index): PlanningBoardPositionForm => ({
           key: `${requirement.id || requirement.displayOrder}-${index}`,
           requirement,
           personId: '',
-          candidates: available.filter((person) => !missingManningRequirementTerms(overview, person.id, requirement, selectedYearEnd).length),
+          candidates: available.filter((person) => !missingManningRequirementTerms(overview, person.id, requirement, range.end).length),
         }),
       ));
-      setBoardForm({ vesselId: lane.vesselId, vesselName: lane.label, watchGroup, startsOn: selectedYearStart, endsOn: selectedYearEnd, positions });
+      setBoardForm({ vesselId: lane.vesselId, vesselName: lane.label, watchGroup, startsOn: range.start, endsOn: range.end, positions });
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible de préparer cette bordée.'));
     }
@@ -1426,7 +1399,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
-    const defaultStart = selectedYearStart;
+    const defaultStart = range.start || anchorDate;
     const defaultEnd = addPlanningDays(defaultStart, 6);
     setAssignmentForm({
       ...EMPTY_ASSIGNMENT,
@@ -1445,7 +1418,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
-    const startsOn = date || selectedYearStart;
+    const startsOn = date || range.start || anchorDate;
     setSelectedProject(null);
     setProjectForm({
       ...EMPTY_PROJECT_FORM,
@@ -2050,12 +2023,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               </div>
               <button aria-label={isFullscreen ? 'Quitter le plein écran' : 'Afficher le planning en plein écran'} className="planning-icon-button" onClick={() => void toggleFullscreen()} title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'} type="button"><Expand aria-hidden="true" size={17} /></button>
               <div className="planning-period-controls">
+                <button aria-label="Mois précédent" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, PLANNING_VIEW_MODE, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
                 <label>
-                  <span>Année à afficher</span>
-                  <select aria-label="Année à afficher" onChange={(event) => setAnchorDate(`${event.target.value}-01-01`)} value={selectedYear}>
-                    {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
-                  </select>
+                  <span>Mois de référence</span>
+                  <input aria-label="Mois de référence" onChange={(event) => event.target.value && setAnchorDate(`${event.target.value}-01`)} type="month" value={anchorDate.slice(0, 7)} />
                 </label>
+                <button aria-label="Mois suivant" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, PLANNING_VIEW_MODE, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
                 <button className="planning-today-button" onClick={() => setAnchorDate(todayDate)} type="button">Aujourd’hui</button>
               </div>
             </div>

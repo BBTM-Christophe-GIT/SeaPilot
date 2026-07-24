@@ -446,15 +446,15 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByRole('button', { name: /Prévisions et scénarios/ })).toBeInTheDocument();
   });
 
-  it('renders the annual crew view and the imported assignment', async () => {
+  it('renders the monthly crew view and the imported assignment', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    expect(screen.getByLabelText('Année à afficher')).toHaveValue(todayPlanningDate().slice(0, 4));
-    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
+    expect(screen.getByLabelText('Mois de référence')).toHaveValue(todayPlanningDate().slice(0, 7));
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'month');
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: 'Équipages' })).toHaveAttribute('aria-selected', 'true');
@@ -546,8 +546,8 @@ describe('PlanningPage cockpit', () => {
     for (const label of ['Jour', 'Semaine', '2 sem.', 'Mois', 'An']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
-    expect(screen.getByLabelText('Année à afficher')).toBeInTheDocument();
-    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'year');
+    expect(screen.getByLabelText('Mois de référence')).toBeInTheDocument();
+    expect(document.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-view-mode', 'month');
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getByRole('button', { name: 'Marins' })).toHaveClass('is-active');
     await user.click(screen.getByRole('button', { name: 'Équipes' }));
@@ -621,18 +621,22 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('uses a selected year with two months of context and exposes zoom/fullscreen controls', async () => {
+  it('uses a selected month with one week of context on each side and exposes navigation controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.selectOptions(screen.getByLabelText('Année à afficher'), '2025');
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-07' } });
     const calendar = document.querySelector('.planning-calendar-scroll');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2024-11-01');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2026-02-28');
-    expect(screen.queryByRole('button', { name: 'Période précédente' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Période suivante' })).not.toBeInTheDocument();
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-06-24');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-08-07');
+    await user.click(screen.getByRole('button', { name: 'Mois suivant' }));
+    expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-08');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-07-25');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-09-07');
+    await user.click(screen.getByRole('button', { name: 'Mois précédent' }));
+    expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-07');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
