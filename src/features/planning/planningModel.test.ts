@@ -64,7 +64,15 @@ describe('planning timeline rules', () => {
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'day'))).toEqual({ start: '2026-07-09', end: '2026-07-15' });
     expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
     expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
-    expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(49);
+    expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(45);
+    expect(timelineRange(buildPlanningTimeline('2026-07-12', 'month'))).toEqual({
+      start: '2026-06-24',
+      end: '2026-08-07',
+    });
+    expect(timelineRange(buildPlanningTimeline('2026-02-12', 'month'))).toEqual({
+      start: '2026-01-25',
+      end: '2026-03-07',
+    });
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'year'))).toEqual({
       start: '2025-11-01',
       end: '2027-02-28',
