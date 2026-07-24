@@ -6,6 +6,7 @@ import { planningErrorMessage, reportPlanningTechnicalError } from './planningEr
 import {
   buildManningMatrixComparison,
   buildRotationPreview,
+  PLANNING_FUNCTION_GROUPS,
   rotationPatternDays,
   rotationPreviewHasOverlaps,
   type PlanningManningMatrix,
@@ -44,38 +45,6 @@ const TEMPLATE_LABELS: Record<PlanningTemplateKind, string> = {
 const PATTERN_LABELS: Record<PlanningRotationPattern, string> = {
   '7_7': '7 / 7', '10_10': '10 / 10', '14_14': '14 / 14', custom: 'Personnalisée',
 };
-const MANNING_FUNCTION_GROUPS = [
-  {
-    label: 'Pont',
-    functions: [
-      'Capitaine',
-      '2nd Capitaine',
-      'Lieutenant pont',
-      'Officier chef de quart passerelle',
-      'Officier chargé de la sécurité',
-      'Officier chargé de la sûreté du navire – SSO',
-      'Officier chargé des opérations cargo',
-      'Officier de positionnement dynamique – DPO',
-      'Maître d’équipage',
-      'Matelot qualifié pont',
-      'Matelot',
-      'Matelot de quart',
-      'Matelot polyvalent pont/machine',
-    ],
-  },
-  {
-    label: 'Machine',
-    functions: [
-      'Chef mécanicien',
-      '2nd Mécanicien',
-      'Officier chef de quart machine',
-      'Officier électrotechnicien – ETO',
-      'Maître machine',
-      'Matelot machine',
-      'Matelot polyvalent pont/machine',
-    ],
-  },
-] as const;
 const MANNING_CERTIFICATE_CATEGORIES = ['Pont', 'Machine', 'Formation de Sécurité'] as const;
 const MANNING_CERTIFICATE_CATEGORY_SET = new Set<string>(MANNING_CERTIFICATE_CATEGORIES);
 
@@ -398,7 +367,7 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
           <legend>Poste {index + 1}</legend>
           <label>Fonction<select required value={requirement.functionLabel} onChange={(event) => updateRequirement(index, { functionLabel: event.target.value })}>
             <option value="">Sélectionner une fonction</option>
-            {MANNING_FUNCTION_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.functions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</optgroup>)}
+            {PLANNING_FUNCTION_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.functions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</optgroup>)}
           </select></label>
           <PlanningCertificateMultiSelect
             ariaLabel={`Brevets requis pour ${requirement.functionLabel || `le poste ${index + 1}`}`}

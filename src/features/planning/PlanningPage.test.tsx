@@ -685,7 +685,8 @@ describe('PlanningPage cockpit', () => {
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
     fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
     fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
-    fireEvent.change(screen.getByLabelText('Fonction'), { target: { value: 'Quart' } });
+    expect(screen.getByLabelText('Fonction').tagName).toBe('SELECT');
+    await user.selectOptions(screen.getByLabelText('Fonction'), 'Matelot de quart');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
 
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith({
@@ -696,14 +697,14 @@ describe('PlanningPage cockpit', () => {
       ends_on: '2026-07-26',
       starts_at: '2026-07-20T06:00:00.000Z',
       ends_at: '2026-07-26T18:00:00.000Z',
-      assignment_role: 'Quart',
+      assignment_role: 'Matelot de quart',
       status_label: 'En Mer',
       confirmation_status: 'confirmed',
       watch_group: 'Affectation',
       comments: null,
       source_label: 'seapilot',
     }));
-    expect(await screen.findByText('Affectation ajoutée au planning.')).toBeInTheDocument();
+    expect(await screen.findByText(/Affectation ajoutée au planning\./)).toBeInTheDocument();
   });
 
   it('diffuses the current planning globally without locking office editing', async () => {
@@ -1464,7 +1465,8 @@ describe('PlanningPage cockpit', () => {
 
   it('opens daily status on right-click and the full assignment form only on double-click', async () => {
     const user = userEvent.setup();
-    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const historicalAssignment = { ...assignmentOverviewRow, assignment_role: 'Chef de pont historique' };
+    const { client } = createClient({ assignments: [historicalAssignment], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     const bar = container.querySelector<HTMLButtonElement>('.planning-crew-bar')!;
@@ -1481,6 +1483,12 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
+    const functionSelect = within(dialog).getByLabelText('Fonction');
+    expect(functionSelect.tagName).toBe('SELECT');
+    expect(functionSelect).toHaveValue('Chef de pont historique');
+    expect(within(functionSelect).getByRole('option', { name: '2nd Capitaine' })).toBeInTheDocument();
+    await user.selectOptions(functionSelect, '2nd Capitaine');
+    expect(functionSelect).toHaveValue('2nd Capitaine');
   });
 
   it('offers a date, vessel, board and Excel/PDF format for the crew list', async () => {

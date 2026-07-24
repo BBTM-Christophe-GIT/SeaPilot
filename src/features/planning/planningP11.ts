@@ -123,6 +123,43 @@ export interface PlanningManningComparisonRow {
   restrictions: string[];
 }
 
+export const PLANNING_FUNCTION_GROUPS = [
+  {
+    label: 'Pont',
+    functions: [
+      'Capitaine',
+      '2nd Capitaine',
+      'Lieutenant pont',
+      'Officier chef de quart passerelle',
+      'Officier chargé de la sécurité',
+      'Officier chargé de la sûreté du navire – SSO',
+      'Officier chargé des opérations cargo',
+      'Officier de positionnement dynamique – DPO',
+      'Maître d’équipage',
+      'Matelot qualifié pont',
+      'Matelot',
+      'Matelot de quart',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+  {
+    label: 'Machine',
+    functions: [
+      'Chef mécanicien',
+      '2nd Mécanicien',
+      'Officier chef de quart machine',
+      'Officier électrotechnicien – ETO',
+      'Maître machine',
+      'Matelot machine',
+      'Matelot polyvalent pont/machine',
+    ],
+  },
+] as const;
+
+export const PLANNING_FUNCTION_OPTIONS = [
+  ...new Set(PLANNING_FUNCTION_GROUPS.flatMap((group) => group.functions)),
+];
+
 const DAY_MS = 86_400_000;
 
 function addDays(date: string, days: number): string {
