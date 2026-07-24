@@ -616,13 +616,32 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it('uses controlled dropdowns for structured personnel fields', async () => {
+  it('uses controlled dropdowns for structured personnel fields and departure reasons', async () => {
     const user = userEvent.setup();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+
+    const departureReason = within(profile).getByLabelText('Cause depart');
+    expect(departureReason).toHaveRole('combobox');
+    expect(within(departureReason).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Non renseigné',
+      'Autres',
+      'Décès',
+      'Démission',
+      'Fin de contrat',
+      "Fin Période d'essai",
+      'Licenciement économique',
+      'Licenciement individuel',
+      'Retraite',
+      'Rupture conventionnelle',
+    ]);
+    await user.selectOptions(departureReason, 'Retraite');
+    expect(departureReason).toHaveValue('Retraite');
+
     await user.click(within(profile).getByRole('button', { name: 'Documents administratifs' }));
 
     expect(within(profile).getByLabelText('Type document identite')).toHaveRole('combobox');
@@ -723,6 +742,7 @@ describe('HumanResourcesPage', () => {
       phone: '+33 6 11 22 33 44',
       postal_address: '3 quai BBTM, 76600 Le Havre',
       contract_type: 'CDD',
+      departure_reason: 'Retraite',
       waist_size: 90,
     };
     const single = vi.fn().mockResolvedValue({ data: updatedPerson, error: null });
@@ -759,6 +779,7 @@ describe('HumanResourcesPage', () => {
     });
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
     fireEvent.change(within(profile).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
+    await user.selectOptions(within(profile).getByLabelText('Cause depart'), 'Retraite');
     await user.click(within(profile).getByRole('button', { name: 'Tenues et mensurations' }));
     fireEvent.change(within(profile).getByLabelText('Tour de taille'), { target: { value: '90' } });
     await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
@@ -769,6 +790,7 @@ describe('HumanResourcesPage', () => {
           phone: '+33 6 11 22 33 44',
           postal_address: '3 quai BBTM, 76600 Le Havre',
           contract_type: 'CDD',
+          departure_reason: 'Retraite',
           waist_size: 90,
         }),
       ),
@@ -779,6 +801,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
     expect(within(profile).getByText('CDD')).toBeInTheDocument();
+    expect(within(profile).getByText('Retraite')).toBeInTheDocument();
   });
 
   it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {
