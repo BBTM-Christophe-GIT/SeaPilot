@@ -57,6 +57,7 @@ const formerPerson = {
   function_label: 'Matelot Polyvalent',
   grade_label: 'Matelot',
   sailor_number: '2011111',
+  hired_on: '1999-01-01',
   departed_on: '2000-01-01',
   active: true,
 };
@@ -248,10 +249,15 @@ describe('HumanResourcesPage', () => {
     await user.selectOptions(periodFilter, '2024');
 
     expect(within(chart).getByText('Janvier – Déc 2024')).toBeInTheDocument();
-    const turnover = within(chart).getByLabelText('Turnover sur 12 mois');
-    expect(turnover).toHaveTextContent('Turnover 2024');
-    expect(turnover).toHaveTextContent('50 %');
-    expect(turnover).toHaveTextContent('1 départ · effectif moyen 2');
+    const exitIndicators = within(chart).getByLabelText('Indicateurs de sorties');
+    expect(exitIndicators).toHaveTextContent('Turnover CDI 2024');
+    expect(exitIndicators).toHaveTextContent('43,7 %');
+    expect(exitIndicators).toHaveTextContent('1 départ CDI · effectif moyen 2,29');
+    expect(exitIndicators).toHaveTextContent('Sorties tous contrats 2024');
+    expect(exitIndicators).toHaveTextContent('1 sortie · effectif moyen 2,29');
+    await user.click(within(exitIndicators).getByText('Voir le détail'));
+    expect(exitIndicators).toHaveTextContent('Par contrat');
+    expect(exitIndicators).toHaveTextContent('Par cause');
     expect(within(chart).getAllByText('3').length).toBeGreaterThan(0);
   });
 
