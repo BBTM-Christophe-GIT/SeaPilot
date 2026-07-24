@@ -5,6 +5,16 @@ import { PlanningPage } from './PlanningPage';
 import { todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, timelineRange } from './planningModel';
 
+const assignmentFunctionOptions = [
+  'Capitaine',
+  'Chef Mécanicien',
+  '2nd Capitaine',
+  "Maître d'Equipage",
+  'Matelot polyvalent',
+  'Matelot Qualifié',
+  'Stagiaire',
+];
+
 const vesselRow = { id: 1, name: 'COTENTIN', acronym: 'CTN', active: true };
 const secondVesselRow = { id: 2, name: 'SUROIT', acronym: 'SRT', active: true };
 const captainRow = {
@@ -685,8 +695,10 @@ describe('PlanningPage cockpit', () => {
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
     fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2026-07-20T08:00' } });
     fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-07-26T20:00' } });
-    expect(screen.getByLabelText('Fonction').tagName).toBe('SELECT');
-    await user.selectOptions(screen.getByLabelText('Fonction'), 'Matelot de quart');
+    const functionSelect = screen.getByLabelText<HTMLSelectElement>('Fonction');
+    expect(functionSelect.tagName).toBe('SELECT');
+    expect(Array.from(functionSelect.options).filter((option) => !option.hidden).map((option) => option.value)).toEqual(assignmentFunctionOptions);
+    await user.selectOptions(functionSelect, 'Matelot polyvalent');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
 
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith({
@@ -697,7 +709,7 @@ describe('PlanningPage cockpit', () => {
       ends_on: '2026-07-26',
       starts_at: '2026-07-20T06:00:00.000Z',
       ends_at: '2026-07-26T18:00:00.000Z',
-      assignment_role: 'Matelot de quart',
+      assignment_role: 'Matelot polyvalent',
       status_label: 'En Mer',
       confirmation_status: 'confirmed',
       watch_group: 'Affectation',
@@ -1465,7 +1477,7 @@ describe('PlanningPage cockpit', () => {
 
   it('opens daily status on right-click and the full assignment form only on double-click', async () => {
     const user = userEvent.setup();
-    const historicalAssignment = { ...assignmentOverviewRow, assignment_role: 'Chef de pont historique' };
+    const historicalAssignment = { ...assignmentOverviewRow, assignment_role: 'Second capitaine' };
     const { client } = createClient({ assignments: [historicalAssignment], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
@@ -1483,12 +1495,12 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
-    const functionSelect = within(dialog).getByLabelText('Fonction');
+    const functionSelect = within(dialog).getByLabelText<HTMLSelectElement>('Fonction');
     expect(functionSelect.tagName).toBe('SELECT');
-    expect(functionSelect).toHaveValue('Chef de pont historique');
-    expect(within(functionSelect).getByRole('option', { name: '2nd Capitaine' })).toBeInTheDocument();
-    await user.selectOptions(functionSelect, '2nd Capitaine');
     expect(functionSelect).toHaveValue('2nd Capitaine');
+    expect(Array.from(functionSelect.options).filter((option) => !option.hidden).map((option) => option.value)).toEqual(assignmentFunctionOptions);
+    await user.selectOptions(functionSelect, 'Stagiaire');
+    expect(functionSelect).toHaveValue('Stagiaire');
   });
 
   it('offers a date, vessel, board and Excel/PDF format for the crew list', async () => {
