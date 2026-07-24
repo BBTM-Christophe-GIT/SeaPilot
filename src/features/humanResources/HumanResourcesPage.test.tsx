@@ -2,6 +2,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { HumanResourcesPage } from './HumanResourcesPage';
+import { openTrainingPlanReport } from './trainingPlanReport';
+
+vi.mock('./trainingPlanReport', async () => {
+  const actual = await vi.importActual<typeof import('./trainingPlanReport')>('./trainingPlanReport');
+  return {
+    ...actual,
+    openTrainingPlanReport: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const activePerson = {
   id: 1,
@@ -216,6 +225,22 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
     expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
     expect(within(profile).getByText('2009574')).toBeInTheDocument();
+  });
+
+  it('uses the selected workforce year in the training plan PDF indicators', async () => {
+    const user = userEvent.setup();
+    const openReport = vi.mocked(openTrainingPlanReport);
+    openReport.mockClear();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    await user.selectOptions(screen.getByLabelText('Période du graphe des effectifs'), '2024');
+    await user.click(screen.getByRole('button', { name: 'Plan de Formation' }));
+
+    await waitFor(() => expect(openReport).toHaveBeenCalledTimes(1));
+    expect(openReport.mock.calls[0][0].indicatorYear).toBe(2024);
+    expect(openReport.mock.calls[0][0].annualIndicators.at(-1)?.year).toBe(2024);
   });
 
   it('filters the workforce curve by year and calculates turnover from departure dates', async () => {
