@@ -56,6 +56,7 @@ import {
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   isSedentaryPlanningFunction,
+  normalizePlanningText,
   planningStatusDisplayLabel,
   shiftPlanningAnchor,
   timelineRange,
@@ -113,7 +114,7 @@ import {
   type PlanningGridCell,
   type PlanningGridClipboard,
 } from './planningGrid';
-import { missingManningRequirementTerms, PLANNING_FUNCTION_OPTIONS, type PlanningManningRequirement } from './planningP11';
+import { missingManningRequirementTerms, type PlanningManningRequirement } from './planningP11';
 import { fetchPlanningManningMatrices } from './planningP11Queries';
 import {
   availablePlanningCrewListBoards,
@@ -272,6 +273,26 @@ function PlanningRibbonGroup({ children, className = '', label }: { children?: R
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 const PLANNING_VIEW_MODE = 'month' as const;
+const PLANNING_ASSIGNMENT_FUNCTIONS = [
+  'Capitaine',
+  'Chef Mécanicien',
+  '2nd Capitaine',
+  "Maître d'Equipage",
+  'Matelot polyvalent',
+  'Matelot Qualifié',
+  'Stagiaire',
+] as const;
+const PLANNING_ASSIGNMENT_FUNCTION_ALIASES = new Map<string, (typeof PLANNING_ASSIGNMENT_FUNCTIONS)[number]>([
+  ...PLANNING_ASSIGNMENT_FUNCTIONS.map((functionLabel) => [normalizePlanningText(functionLabel), functionLabel] as const),
+  [normalizePlanningText('Second capitaine'), '2nd Capitaine'],
+  [normalizePlanningText('Matelot polyvalent pont/machine'), 'Matelot polyvalent'],
+  [normalizePlanningText('Matelot qualifié pont'), 'Matelot Qualifié'],
+]);
+
+function planningAssignmentFunction(value: string): string {
+  return PLANNING_ASSIGNMENT_FUNCTION_ALIASES.get(normalizePlanningText(value)) || '';
+}
+
 const EMPTY_ASSIGNMENT: AssignmentFormState = {
   vesselId: '',
   captainPersonId: '',
@@ -280,7 +301,7 @@ const EMPTY_ASSIGNMENT: AssignmentFormState = {
   endsOn: '',
   startsAt: '',
   endsAt: '',
-  assignmentRole: 'Équipage',
+  assignmentRole: '',
   statusLabel: 'En Mer',
   confirmationStatus: 'confirmed',
   watchGroup: 'Affectation',
@@ -623,22 +644,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   );
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
-  const assignmentFunctionOptions = useMemo(() => uniqueSorted([
-    ...PLANNING_FUNCTION_OPTIONS,
-    ...overview.people.map((person) => person.functionLabel),
-    ...overview.assignments.map((assignment) => assignment.assignmentRole),
-    ...overview.periods.map((period) => period.functionLabel),
-    ...overview.days.map((day) => day.functionLabel),
-    assignmentForm.assignmentRole,
-    eventForm?.functionLabel || '',
-  ]), [
-    assignmentForm.assignmentRole,
-    eventForm?.functionLabel,
-    overview.assignments,
-    overview.days,
-    overview.people,
-    overview.periods,
-  ]);
   const departedPeople = useMemo(
     () => overview.people
       .filter((person) => !person.departedOn || person.departedOn > todayDate)
@@ -1424,6 +1429,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       startsAt: localDateTime(defaultStart, '08:00'),
       endsAt: localDateTime(defaultEnd, '20:00'),
       ...prefill,
+      assignmentRole: planningAssignmentFunction(prefill?.assignmentRole || ''),
     });
     setIsAssignmentQuick(quick);
     setIsAssignmentOpen(true);
@@ -1528,7 +1534,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       startsAt: event.startsAt ? utcToPlanningLocalDateTime(event.startsAt) : localDateTime(event.startsOn, '08:00'),
       endsAt: event.endsAt ? utcToPlanningLocalDateTime(event.endsAt) : localDateTime(event.endsOn, '20:00'),
       statusLabel: event.status, confirmationStatus: event.confirmationStatus,
-      functionLabel: event.functionLabel, watchGroup: event.board, comments: event.comments,
+      functionLabel: planningAssignmentFunction(event.functionLabel), watchGroup: event.board, comments: event.comments,
     });
   }
 
@@ -2249,7 +2255,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <label>Fin<input aria-label="Fin" onChange={(event) => setAssignmentForm((current) => ({ ...current, endsAt: event.target.value, endsOn: event.target.value.slice(0, 10) }))} required type="datetime-local" value={assignmentForm.endsAt} /></label>
               <label>Statut<select aria-label="Statut" onChange={(event) => setAssignmentForm((current) => ({ ...current, statusLabel: event.target.value }))} value={assignmentForm.statusLabel}>{PLANNING_STATUSES.map((status) => <option key={status} value={status}>{planningStatusDisplayLabel(status)}</option>)}</select></label>
               <label>Confirmation<select aria-label="Confirmation" onChange={(event) => setAssignmentForm((current) => ({ ...current, confirmationStatus: event.target.value as PlanningConfirmationStatus }))} value={assignmentForm.confirmationStatus}><option value="provisional">Provisoire</option><option value="confirmed">Confirmée</option></select></label>
-              {!isAssignmentQuick ? <><label>Capitaine<select aria-label="Capitaine" onChange={(event) => setAssignmentForm((current) => ({ ...current, captainPersonId: event.target.value }))} value={assignmentForm.captainPersonId}><option value="">Aucun</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label><label>Fonction<select aria-label="Fonction" onChange={(event) => setAssignmentForm((current) => ({ ...current, assignmentRole: event.target.value }))} required value={assignmentForm.assignmentRole}><option value="">Choisir</option>{assignmentFunctionOptions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label><label>Bordée / groupe<select aria-label="Bordée" onChange={(event) => setAssignmentForm((current) => ({ ...current, watchGroup: event.target.value }))} value={assignmentForm.watchGroup}>{uniqueSorted([...watchGroupOptions, assignmentForm.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea aria-label="Annotation" onChange={(event) => setAssignmentForm((current) => ({ ...current, comments: event.target.value }))} value={assignmentForm.comments} /></label></> : null}
+              {!isAssignmentQuick ? <><label>Capitaine<select aria-label="Capitaine" onChange={(event) => setAssignmentForm((current) => ({ ...current, captainPersonId: event.target.value }))} value={assignmentForm.captainPersonId}><option value="">Aucun</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label><label>Fonction<select aria-label="Fonction" onChange={(event) => setAssignmentForm((current) => ({ ...current, assignmentRole: event.target.value }))} value={assignmentForm.assignmentRole}><option disabled hidden value="">Choisir</option>{PLANNING_ASSIGNMENT_FUNCTIONS.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label><label>Bordée / groupe<select aria-label="Bordée" onChange={(event) => setAssignmentForm((current) => ({ ...current, watchGroup: event.target.value }))} value={assignmentForm.watchGroup}>{uniqueSorted([...watchGroupOptions, assignmentForm.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea aria-label="Annotation" onChange={(event) => setAssignmentForm((current) => ({ ...current, comments: event.target.value }))} value={assignmentForm.comments} /></label></> : null}
             </div>
             <PlanningControlSummary results={assignmentControls} />
             <footer>{isAssignmentQuick ? <button className="is-secondary" onClick={() => { setIsAssignmentQuick(false); setAssignmentForm((current) => ({ ...current, endsOn: current.endsOn || current.startsOn })); }} type="button">Formulaire complet</button> : <span />}<span><button className="is-secondary" onClick={() => setIsAssignmentOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter</button></span></footer>
@@ -2257,7 +2263,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       ) : null}
 
-      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={assignmentFunctionOptions} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
+      {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={PLANNING_ASSIGNMENT_FUNCTIONS} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
       {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
@@ -2501,7 +2507,7 @@ function PlanningEmptySide({ text }: { text: string }) {
   return <div className="planning-side-empty"><CalendarDays aria-hidden="true" size={24} /><p>{text}</p></div>;
 }
 
-function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, functionOptions, controls, editable, isSaving, onChange, onClose, onSave, onDelete, onDuplicate }: { event: PlanningCrewEvent; form: EventFormState; activeVessels: PlanningVessel[]; watchGroupOptions: string[]; functionOptions: string[]; controls: PlanningControlResult[]; editable: boolean; isSaving: boolean; onChange: (form: EventFormState) => void; onClose: () => void; onSave: () => void; onDelete: () => void; onDuplicate: () => void }) {
+function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, functionOptions, controls, editable, isSaving, onChange, onClose, onSave, onDelete, onDuplicate }: { event: PlanningCrewEvent; form: EventFormState; activeVessels: PlanningVessel[]; watchGroupOptions: string[]; functionOptions: readonly string[]; controls: PlanningControlResult[]; editable: boolean; isSaving: boolean; onChange: (form: EventFormState) => void; onClose: () => void; onSave: () => void; onDelete: () => void; onDuplicate: () => void }) {
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   if (!editable) {
     return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-modal="true" className="planning-dialog is-side-panel is-detail" role="dialog"><header><div><CalendarDays aria-hidden="true" size={20} /><h2>{event.person}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Navire</dt><dd>{event.vessel}</dd></div><div><dt>Bordée</dt><dd>{event.board || 'Non renseignée'}</dd></div><div><dt>Période</dt><dd>{event.startsAt && event.endsAt ? `${formatPlanningDateTime(event.startsAt)} au ${formatPlanningDateTime(event.endsAt)}` : `${formatPlanningDate(event.startsOn)} au ${formatPlanningDate(event.endsOn)}`}</dd></div><div><dt>Statut</dt><dd>{planningStatusDisplayLabel(event.status)}</dd></div><div><dt>Confirmation</dt><dd>{planningConfirmationLabel(event.confirmationStatus)}</dd></div><div><dt>Fonction</dt><dd>{event.functionLabel || 'Équipage'}</dd></div><div><dt>Annotation</dt><dd>{event.comments || 'Aucune annotation'}</dd></div><div><dt>Source</dt><dd>{event.sourceLabel}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
@@ -2516,7 +2522,7 @@ function PlanningEventDialog({ event, form, activeVessels, watchGroupOptions, fu
           <label>Fin<input disabled={event.kind === 'day'} required type={event.kind === 'assignment' ? 'datetime-local' : 'date'} value={event.kind === 'assignment' ? form.endsAt : form.endsOn} onChange={(changeEvent) => onChange({ ...form, endsAt: event.kind === 'assignment' ? changeEvent.target.value : form.endsAt, endsOn: changeEvent.target.value.slice(0, 10) })} /></label>
           <label>Statut<select value={form.statusLabel} onChange={(changeEvent) => onChange({ ...form, statusLabel: changeEvent.target.value })}>{PLANNING_STATUSES.map((status) => <option key={status} value={status}>{planningStatusDisplayLabel(status)}</option>)}</select></label>
           {event.kind === 'assignment' ? <label>Confirmation<select value={form.confirmationStatus} onChange={(changeEvent) => onChange({ ...form, confirmationStatus: changeEvent.target.value as PlanningConfirmationStatus })}><option value="provisional">Provisoire</option><option value="confirmed">Confirmée</option><option value="cancelled">Annulée</option></select></label> : null}
-          <label>Fonction<select aria-label="Fonction" required value={form.functionLabel} onChange={(changeEvent) => onChange({ ...form, functionLabel: changeEvent.target.value })}><option value="">Choisir</option>{functionOptions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label>
+          <label>Fonction<select aria-label="Fonction" value={form.functionLabel} onChange={(changeEvent) => onChange({ ...form, functionLabel: changeEvent.target.value })}><option disabled hidden value="">Choisir</option>{functionOptions.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label>
           <label className="is-wide">Bordée / groupe<select value={form.watchGroup} onChange={(changeEvent) => onChange({ ...form, watchGroup: changeEvent.target.value })}>{uniqueSorted([...watchGroupOptions, form.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label>
           <label className="is-wide">Annotation<textarea rows={4} value={form.comments} onChange={(changeEvent) => onChange({ ...form, comments: changeEvent.target.value })} /></label>
         </div>
