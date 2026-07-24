@@ -38,6 +38,8 @@ import {
   buildHumanResourcesRosterGroups,
   buildGeneratedHrDocumentFileName,
   buildGeneratedHrDocumentFileNameFromType,
+  buildPermanentWorkforceTurnover,
+  buildWorkforceExitBreakdown,
   compareHrFunctionLabels,
   createHrDocument,
   createPerson,
@@ -52,6 +54,8 @@ import {
   HR_PRIMARY_FUNCTIONS,
   HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
+  isPersonEmployedOn,
+  isPersonFormerOn,
   normalizeHrFunctionLabel,
   renewHrDocument,
   updateHrDocumentMedicalDetails,
@@ -66,6 +70,7 @@ import {
   type UpdateHrDocumentMedicalInput,
   type UpdatePersonDetailsInput,
   type WorkforceTurnoverMetric,
+  type WorkforceExitBreakdown,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 
@@ -510,9 +515,9 @@ function matchesRosterPopulation(
     return true;
   }
 
-  const departureKey = person.departedOn.trim().slice(0, 10);
-  const isFormer = /^\d{4}-\d{2}-\d{2}$/.test(departureKey) && departureKey < todayKey;
-  return population === 'former' ? isFormer : !isFormer;
+  return population === 'former'
+    ? isPersonFormerOn(person, todayKey)
+    : isPersonEmployedOn(person, todayKey);
 }
 
 function getRosterFilterSummary(population: HrRosterPopulation, filters: HrFilterState): string {
@@ -876,30 +881,36 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           })),
     [analyticsToday, roleVisiblePeople, selectedStaffEvolutionYear, staffEvolutionYears],
   );
-  const trailingWorkforceTurnover = useMemo(
-    () => buildWorkforceTurnover(roleVisiblePeople, analyticsToday),
+  const trailingWorkforceMetrics = useMemo(
+    () => ({
+      exitBreakdown: buildWorkforceExitBreakdown(roleVisiblePeople, analyticsToday),
+      exitRate: buildWorkforceTurnover(roleVisiblePeople, analyticsToday),
+      permanentTurnover: buildPermanentWorkforceTurnover(roleVisiblePeople, analyticsToday),
+    }),
     [analyticsToday, roleVisiblePeople],
   );
-  const workforceTurnover = useMemo(() => {
+  const workforcePeriodMetrics = useMemo(() => {
     if (selectedStaffEvolutionYear === null) {
-      return trailingWorkforceTurnover;
+      return trailingWorkforceMetrics;
     }
 
     const endsOn =
       selectedStaffEvolutionYear === analyticsCurrentYear
         ? analyticsToday
         : `${selectedStaffEvolutionYear}-12-31`;
-    return buildWorkforceTurnover(
-      roleVisiblePeople,
-      endsOn,
-      `${selectedStaffEvolutionYear - 1}-12-31`,
-    );
+    const startsOn = `${selectedStaffEvolutionYear - 1}-12-31`;
+
+    return {
+      exitBreakdown: buildWorkforceExitBreakdown(roleVisiblePeople, endsOn, startsOn),
+      exitRate: buildWorkforceTurnover(roleVisiblePeople, endsOn, startsOn),
+      permanentTurnover: buildPermanentWorkforceTurnover(roleVisiblePeople, endsOn, startsOn),
+    };
   }, [
     analyticsCurrentYear,
     analyticsToday,
     roleVisiblePeople,
     selectedStaffEvolutionYear,
-    trailingWorkforceTurnover,
+    trailingWorkforceMetrics,
   ]);
   const selectedPerson = useMemo(
     () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
@@ -1230,7 +1241,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             { ariaLabel: 'Documents manquants', label: 'Documents manquants', value: dashboard.metrics.missing },
           ]}
         />
-        <StrategicMetric label="Turnover 12 mois" suffix="%" value={trailingWorkforceTurnover.rate} />
+        <StrategicMetric label="Turnover CDI 12 mois" suffix="%" value={trailingWorkforceMetrics.permanentTurnover.rate} />
         <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
         <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
       </div>
@@ -1240,7 +1251,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           onYearChange={setStaffEvolutionYear}
           points={staffEvolution}
           selectedYear={selectedStaffEvolutionYear}
-          turnover={workforceTurnover}
+          exitBreakdown={workforcePeriodMetrics.exitBreakdown}
+          exitRate={workforcePeriodMetrics.exitRate}
+          permanentTurnover={workforcePeriodMetrics.permanentTurnover}
           yearFilter={staffEvolutionYear}
           years={staffEvolutionYears}
         />
@@ -1456,17 +1469,21 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 }
 
 function StaffEvolutionChart({
+  exitBreakdown,
+  exitRate,
   onYearChange,
+  permanentTurnover,
   points,
   selectedYear,
-  turnover,
   yearFilter,
   years,
 }: {
+  exitBreakdown: WorkforceExitBreakdown;
+  exitRate: WorkforceTurnoverMetric;
   onYearChange: (year: StaffEvolutionYearFilter) => void;
+  permanentTurnover: WorkforceTurnoverMetric;
   points: StaffEvolutionChartPoint[];
   selectedYear: number | null;
-  turnover: WorkforceTurnoverMetric;
   yearFilter: StaffEvolutionYearFilter;
   years: number[];
 }) {
@@ -1481,7 +1498,8 @@ function StaffEvolutionChart({
   const periodLabel = selectedYear === null
     ? `${years[0]} – ${years[years.length - 1]}`
     : `Janvier – ${points[points.length - 1]?.label || 'Décembre'} ${selectedYear}`;
-  const turnoverLabel = selectedYear === null ? 'Turnover 12 mois' : `Turnover ${selectedYear}`;
+  const permanentTurnoverLabel = selectedYear === null ? 'Turnover CDI 12 mois' : `Turnover CDI ${selectedYear}`;
+  const exitRateLabel = selectedYear === null ? 'Sorties tous contrats 12 mois' : `Sorties tous contrats ${selectedYear}`;
 
   return (
     <section aria-label="Evolution des effectifs" className="hr-evolution-card">
@@ -1521,18 +1539,72 @@ function StaffEvolutionChart({
             </g>
           ))}
         </svg>
-        <aside className="hr-turnover-panel" aria-label="Turnover sur 12 mois">
-          <small>{turnoverLabel}</small>
-          <strong>{formatMetric(turnover.rate)} %</strong>
-          <span>{turnover.departures} départ{turnover.departures > 1 ? 's' : ''} · effectif moyen {formatMetric(turnover.averageHeadcount)}</span>
+        <aside className="hr-turnover-panel" aria-label="Indicateurs de sorties">
+          <div className="hr-turnover-stat">
+            <small>{permanentTurnoverLabel}</small>
+            <strong>{formatMetric(permanentTurnover.rate)} %</strong>
+            <span>
+              {permanentTurnover.departures} départ{permanentTurnover.departures > 1 ? 's' : ''} CDI · effectif moyen{' '}
+              {formatMetric(permanentTurnover.averageHeadcount, 2)}
+            </span>
+          </div>
+          <div className="hr-turnover-stat hr-turnover-stat-secondary">
+            <small>{exitRateLabel}</small>
+            <strong>{formatMetric(exitRate.rate)} %</strong>
+            <span>
+              {exitRate.departures} sortie{exitRate.departures > 1 ? 's' : ''} · effectif moyen{' '}
+              {formatMetric(exitRate.averageHeadcount, 2)}
+            </span>
+          </div>
+          <details className="hr-turnover-details">
+            <summary>Voir le détail</summary>
+            <div className="hr-turnover-breakdown">
+              <TurnoverBreakdownList items={exitBreakdown.byContract} title="Par contrat" />
+              <TurnoverBreakdownList items={exitBreakdown.byReason} title="Par cause" />
+              {exitBreakdown.missingContractPeople > 0 ? (
+                <p>
+                  {exitBreakdown.missingContractPeople} fiche{exitBreakdown.missingContractPeople > 1 ? 's' : ''} sans type de contrat
+                  sur {exitBreakdown.populationSize}.
+                </p>
+              ) : null}
+            </div>
+          </details>
         </aside>
       </div>
     </section>
   );
 }
 
-function formatMetric(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+function TurnoverBreakdownList({
+  items,
+  title,
+}: {
+  items: WorkforceExitBreakdown['byContract'];
+  title: string;
+}) {
+  return (
+    <section>
+      <h4>{title}</h4>
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.count}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>Aucune sortie sur la période.</p>
+      )}
+    </section>
+  );
+}
+
+function formatMetric(value: number, maximumFractionDigits = 1): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('fr-FR', { maximumFractionDigits });
 }
 
 function StrategicMetric({

@@ -6736,7 +6736,7 @@ button:disabled {
 
 .hr-evolution-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 250px);
   gap: 14px;
   align-items: stretch;
   min-height: 0;
@@ -6749,24 +6749,97 @@ button:disabled {
 
 .hr-turnover-panel {
   display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 8px;
+  align-content: start;
+  gap: 10px;
   margin-top: 16px;
   border-left: 1px solid #e1e8f0;
+  padding-left: 14px;
   text-align: center;
 }
 
-.hr-turnover-panel small,
-.hr-turnover-panel span {
+.hr-turnover-stat {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.hr-turnover-stat-secondary {
+  border-top: 1px solid #e8edf3;
+  padding-top: 10px;
+}
+
+.hr-turnover-stat small,
+.hr-turnover-stat span {
   color: #60718a;
   font-size: 0.72rem;
   font-weight: 750;
 }
 
-.hr-turnover-panel strong {
+.hr-turnover-stat strong {
   color: #102d5c;
   font-size: 1.7rem;
+}
+
+.hr-turnover-stat-secondary strong {
+  color: #7a4f12;
+  font-size: 1.35rem;
+}
+
+.hr-turnover-details {
+  width: 100%;
+  border-top: 1px solid #e8edf3;
+  padding-top: 8px;
+  text-align: left;
+}
+
+.hr-turnover-details summary {
+  cursor: pointer;
+  color: #155fc1;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.hr-turnover-breakdown {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f7f9fc;
+}
+
+.hr-turnover-breakdown h4 {
+  margin: 0 0 5px;
+  color: #354967;
+  font-size: 0.7rem;
+}
+
+.hr-turnover-breakdown ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-turnover-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #5b6c84;
+  font-size: 0.68rem;
+}
+
+.hr-turnover-breakdown li strong {
+  color: #213a5e;
+}
+
+.hr-turnover-breakdown p {
+  margin: 0;
+  color: #7b5b1d;
+  font-size: 0.66rem;
+  font-weight: 700;
 }
 
 .hr-function-distribution {
@@ -8119,6 +8192,7 @@ button:disabled {
     border-top: 1px solid #e1e8f0;
     border-left: 0;
     padding-top: 12px;
+    padding-left: 0;
   }
 
   .hr-function-bar-row {
