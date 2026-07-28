@@ -34,6 +34,7 @@ describe('Planning P1.3 exports', () => {
     expect(result.fileName).toBe('liste-equipage-2026-08-01-2026-08-31.xlsx');
     const archive = await JSZip.loadAsync(await result.blob.arrayBuffer());
     expect(archive.file('xl/workbook.xml')).not.toBeNull();
+    await expect(archive.file('xl/worksheets/sheet1.xml')!.async('string')).resolves.toContain('<cols>');
     await expect(archive.file('xl/worksheets/sheet1.xml')!.async('string')).resolves.toContain('Anne MARTIN');
     await expect(archive.file('xl/worksheets/sheet1.xml')!.async('string')).resolves.toContain('Pierre DURAND');
   });

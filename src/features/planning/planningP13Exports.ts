@@ -152,13 +152,19 @@ function excelColumn(index: number): string {
 
 function worksheetXml(table: PlanningExportTable): string {
   const rows = [table.columns, ...table.rows];
+  const widths = table.columns.map((column, columnIndex) => Math.min(45, Math.max(
+    10,
+    column.length + 2,
+    ...table.rows.map((row) => String(row[columnIndex] ?? '').length + 2),
+  )));
+  const columns = `<cols>${widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('')}</cols>`;
   const body = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((cell, columnIndex) => {
     const reference = `${excelColumn(columnIndex)}${rowIndex + 1}`;
     return typeof cell === 'number'
       ? `<c r="${reference}"><v>${cell}</v></c>`
       : `<c r="${reference}" t="inlineStr"><is><t>${xmlEscape(cell)}</t></is></c>`;
   }).join('')}</row>`).join('');
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${columns}<sheetData>${body}</sheetData></worksheet>`;
 }
 
 async function xlsxBlob(tables: PlanningExportTable[]): Promise<Blob> {
