@@ -11,7 +11,7 @@ import {
 } from './planningValidation';
 
 const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
-const PLANNING_READ_PAGE_SIZE = 500;
+const PLANNING_READ_PAGE_SIZE = 1_000;
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
 const PLANNING_ASSIGNMENT_SELECT =

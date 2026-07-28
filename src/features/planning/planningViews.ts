@@ -131,6 +131,7 @@ export function buildPlanningFleetLanes(
   overview: PlanningOverview,
   range: PlanningDateRange,
   filters: PlanningFilters,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningFleetLane[] {
   const projects = overview.projects.filter((project) => (
     project.startsOn
@@ -153,7 +154,7 @@ export function buildPlanningFleetLanes(
     && (!filters.vesselName || day.vesselName === filters.vesselName)
   ));
   const vesselNames = new Set(
-    getAllPlanningCrewEvents(overview)
+    eventPool
       .filter((event) => (
         event.confirmationStatus !== 'cancelled'
         && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
@@ -163,11 +164,12 @@ export function buildPlanningFleetLanes(
       .map((event) => event.vessel)
       .filter(Boolean),
   );
+  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
 
   return [...vesselNames]
     .sort((left, right) => left.localeCompare(right, 'fr'))
     .map((vesselName) => {
-      const vessel = overview.vessels.find((item) => item.name === vesselName);
+      const vessel = vesselsByName.get(vesselName);
       return {
         key: `fleet-${vessel?.id || normalizePlanningText(vesselName)}`,
         vesselId: vessel?.id || null,
@@ -186,14 +188,22 @@ export function buildPlanningCrewLanes(
   range: PlanningDateRange,
   filters: PlanningFilters,
   grouping: PlanningCrewGrouping,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningCrewLane[] {
-  const events = getAllPlanningCrewEvents(overview).filter((event) => (
+  const events = eventPool.filter((event) => (
     rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
     && crewEventMatchesFilters(event, filters)
   ));
+  const peopleById = new Map(overview.people.map((person) => [person.id, person]));
+  const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
+  const linkedPersonForEvent = (event: PlanningCrewEvent) => (
+    event.personId === null
+      ? peopleByName.get(normalizePlanningText(event.person))
+      : peopleById.get(event.personId) || peopleByName.get(normalizePlanningText(event.person))
+  );
   const grouped = new Map<string, PlanningCrewEvent[]>();
   events.forEach((event) => {
-    const linkedPerson = overview.people.find((person) => person.id === event.personId || normalizedEquals(formatPlanningPerson(person), event.person));
+    const linkedPerson = linkedPersonForEvent(event);
     const key = grouping === 'people'
       ? linkedPerson ? `person-${linkedPerson.id}` : event.personId === null ? `person-name-${normalizePlanningText(event.person)}` : `person-${event.personId}`
       : `team-${normalizePlanningText(event.board || 'Sans équipe')}`;
@@ -203,7 +213,7 @@ export function buildPlanningCrewLanes(
   return [...grouped.entries()]
     .map(([key, laneEvents]) => {
       const first = laneEvents[0];
-      const linkedPerson = overview.people.find((person) => person.id === first.personId || normalizedEquals(formatPlanningPerson(person), first.person));
+      const linkedPerson = linkedPersonForEvent(first);
       const label = grouping === 'people' ? first.person : first.board || 'Sans équipe';
       const detailValues = grouping === 'people'
         ? [...new Set(laneEvents.flatMap((event) => [event.functionLabel, event.vessel]).filter(Boolean))]

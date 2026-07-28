@@ -210,6 +210,32 @@ describe('planning hierarchy and side panels', () => {
     expect(rows[0].projects).toHaveLength(2);
   });
 
+  it('uses the catalog vessel label to merge historical Armement spellings', () => {
+    const armementOverview: PlanningOverview = {
+      ...overview,
+      vessels: [{ id: 13, name: 'Armement - Cherbourg', acronym: 'ARM', active: true }],
+      periods: [{
+        ...overview.periods[0],
+        vesselId: 13,
+        vesselName: 'ARMEMENT CHERBOURG',
+        watchGroup: 'Armement',
+      }],
+      projects: [],
+    };
+    const events = getAllPlanningCrewEvents(armementOverview);
+    const rows = buildPlanningCrewRows(
+      armementOverview,
+      buildPlanningTimeline('2026-07-12', 'month'),
+      { vesselName: '', personName: '' },
+      events,
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({ vesselId: 13, vessel: 'Armement - Cherbourg', board: 'Armement' }),
+    ]);
+    expect(rows.filter((row) => row.type === 'vessel').map((row) => row.label)).toEqual(['Armement - Cherbourg']);
+  });
+
   it('keeps a departed sailor visible as an empty deletable board row', () => {
     const departedPerson = {
       id: 3,

@@ -24,7 +24,7 @@ describe('BBTM planning import rules', () => {
     ['LDM', 'LANDEMER'],
     ['HE', 'HOLENN EUSA'],
     ['LH', 'YARD - LE HAVRE'],
-    ['CH', 'ARMEMENT CHERBOURG'],
+    ['CH', 'Armement - Cherbourg'],
   ])('maps %s to %s', (source, expected) => {
     expect(classifyBbtmValue(source)).toMatchObject({ kind: 'assignment', vesselName: expected });
   });

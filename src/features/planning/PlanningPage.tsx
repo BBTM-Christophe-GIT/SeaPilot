@@ -613,8 +613,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
-  const fleetLanes = useMemo(() => buildPlanningFleetLanes(overview, range, filters), [filters, overview, range]);
-  const fleetRows = useMemo(() => buildPlanningCrewRows(overview, timelineDays, filters), [filters, overview, timelineDays]);
+  const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
+  const fleetLanes = useMemo(
+    () => buildPlanningFleetLanes(overview, range, filters, allPlanningCrewEvents),
+    [allPlanningCrewEvents, filters, overview, range],
+  );
+  const fleetRows = useMemo(
+    () => buildPlanningCrewRows(overview, timelineDays, filters, allPlanningCrewEvents),
+    [allPlanningCrewEvents, filters, overview, timelineDays],
+  );
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
     [fleetLanes],
@@ -631,13 +638,29 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return new Map([...peopleByNode].map(([key, people]) => [key, people.size]));
   }, [fleetRows]);
+  const fleetVesselIdsWithBoards = useMemo(
+    () => new Set(fleetRows.filter((row) => row.type === 'board' && row.vesselId !== null).map((row) => row.vesselId)),
+    [fleetRows],
+  );
+  const vesselVisitsByVessel = useMemo(() => {
+    const indexed = new Map<number, PlanningVesselVisit[]>();
+    vesselVisits.forEach((visit) => {
+      const vesselVisits = indexed.get(visit.vesselId);
+      if (vesselVisits) vesselVisits.push(visit);
+      else indexed.set(visit.vesselId, [visit]);
+    });
+    return indexed;
+  }, [vesselVisits]);
   const crewLanes = useMemo(
-    () => buildPlanningCrewLanes(overview, range, filters, crewGrouping),
-    [crewGrouping, filters, overview, range],
+    () => buildPlanningCrewLanes(overview, range, filters, crewGrouping, allPlanningCrewEvents),
+    [allPlanningCrewEvents, crewGrouping, filters, overview, range],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(overview, todayDate), [overview, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(overview, todayDate), [overview, todayDate]);
-  const unassignedPeople = useMemo(() => getUnassignedPlanningPeople(overview, range, filters), [filters, overview, range]);
+  const unassignedPeople = useMemo(
+    () => getUnassignedPlanningPeople(overview, range, filters, allPlanningCrewEvents),
+    [allPlanningCrewEvents, filters, overview, range],
+  );
   const unbilledProjects = useMemo(
     () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
     [anchorDate, overview],
@@ -659,7 +682,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     Number(crewListForm.vesselId),
     crewListForm.date,
   ), [crewListForm.date, crewListForm.vesselId, overview]);
-  const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
   const departedDialogExistingPersonIds = useMemo(() => {
     if (!departedPeopleDialog) return new Set<number>();
     return new Set([
@@ -671,7 +693,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         .map((event) => event.personId as number),
     ]);
   }, [allPlanningCrewEvents, departedPeopleDialog, overview.boardRows]);
-  const conflictDatesByEvent = useMemo(() => getPlanningConflictDatesByEvent(overview), [overview]);
+  const conflictDatesByEvent = useMemo(
+    () => getPlanningConflictDatesByEvent(overview, allPlanningCrewEvents),
+    [allPlanningCrewEvents, overview],
+  );
   const cutGridCellKeys = useMemo(
     () => new Set(gridClipboard?.mode === 'cut' ? gridClipboard.cells.map((cell) => cell.key) : []),
     [gridClipboard],
@@ -2110,7 +2135,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       days={days}
                       editable={canEditPlanning}
                       expanded={!collapsedFleetNodes.has(row.key)}
-                      hasBoards={fleetRows.some((item) => item.type === 'board' && item.vesselId === lane.vesselId)}
+                      hasBoards={lane.vesselId !== null && fleetVesselIdsWithBoards.has(lane.vesselId)}
                       key={row.key}
                       lane={lane}
                       onAddBoard={openNewBoard}
@@ -2126,7 +2151,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       pendingId={pendingMutationId}
                       selectedId={selectedTimelineId}
                       touchDropTarget={touchDropTarget}
-                      visits={lane.vesselId === null ? [] : vesselVisits.filter((visit) => visit.vesselId === lane.vesselId)}
+                      visits={lane.vesselId === null ? [] : vesselVisitsByVessel.get(lane.vesselId) || []}
                     />
                   );
                 }

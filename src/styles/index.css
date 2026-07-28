@@ -5045,10 +5045,13 @@ button:disabled {
   position: relative;
   min-height: 38px;
   border-bottom: 1px solid #e7ecf2;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
 }
 
 .planning-timeline-row.is-fleet {
   min-height: 58px;
+  contain-intrinsic-size: auto 76px;
 }
 
 .planning-timeline-row.is-crew {
