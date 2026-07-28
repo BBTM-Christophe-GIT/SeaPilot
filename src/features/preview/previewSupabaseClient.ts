@@ -530,11 +530,125 @@ function createPreviewQuery(result: PreviewResult): object {
   return query;
 }
 
+function previewRows(table: string): Array<Record<string, unknown>> {
+  return (PREVIEW_ROWS[table] || []) as Array<Record<string, unknown>>;
+}
+
+function nextPreviewId(table: string, fallback: number): number {
+  return Math.max(fallback, ...previewRows(table).map((row) => Number(row.id) || 0)) + 1;
+}
+
+function previewVessel(vesselId: number): { id: number; name: string } {
+  const stored = previewRows('vessels').find((row) => Number(row.id) === vesselId);
+  if (stored) return { id: vesselId, name: String(stored.name || `Navire ${vesselId}`) };
+  if (vesselId === 1) return { id: 1, name: 'GOURY' };
+  return { id: vesselId, name: `Navire ${vesselId}` };
+}
+
+function schedulePreviewProject(args: Record<string, unknown>): PreviewResult {
+  const project = previewRows('projects').find((row) => Number(row.id) === Number(args.target_project_id));
+  if (!project) return { data: null, error: { message: 'Projet de démonstration introuvable.' } };
+  const vessel = previewVessel(Number(args.target_primary_vessel_id));
+  const startsOn = String(args.target_starts_on || '');
+  const row = {
+    id: nextPreviewId('planning_projects', 9602),
+    catalog_project_id: Number(project.id),
+    title: `${String(project.project_code || 'Projet')} - ${String(project.title || '')}`,
+    starts_on: startsOn,
+    ends_on: String(args.target_ends_on || startsOn),
+    description: String(args.target_description || project.description || ''),
+    client_name: String(project.client_name || ''),
+    primary_vessel_id: vessel.id,
+    primary_vessel_name: vessel.name,
+    secondary_vessel_id: null,
+    secondary_vessel_name: null,
+    event_type: 'operation',
+    responsible_name: null,
+    status: String(args.target_status || 'A planifier'),
+    source_label: 'seapilot-planning-preview',
+    created_at: new Date().toISOString(),
+  };
+  PREVIEW_ROWS.planning_projects.push(row);
+  return { data: [row], error: null };
+}
+
+function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'planning_project_catalog') {
+    return createPreviewQuery({
+      data: previewRows('projects').map((project) => ({
+        id: project.id,
+        project_code: project.project_code,
+        title: project.title,
+        client_name: project.client_name,
+        status: project.status,
+        description: project.description,
+        starts_on: project.starts_on,
+        ends_on: project.ends_on,
+      })),
+      error: null,
+    });
+  }
+  if (functionName === 'planning_project_clients') {
+    return createPreviewQuery({
+      data: previewRows('clients').map((client) => ({ id: client.id, name: client.name, active: client.active })),
+      error: null,
+    });
+  }
+  if (functionName === 'planning_schedule_catalog_project') {
+    return createPreviewQuery(schedulePreviewProject(args));
+  }
+  if (functionName === 'planning_create_and_schedule_project') {
+    const vessel = previewVessel(Number(args.target_primary_vessel_id));
+    const client = previewRows('clients').find((row) => Number(row.id) === Number(args.target_client_id));
+    const projectId = nextPreviewId('projects', 9002);
+    const project = {
+      id: projectId,
+      project_code: `P${projectId - 8100}`,
+      title: String(args.target_title || ''),
+      client_id: client?.id || null,
+      client_name: String(client?.name || ''),
+      primary_vessel_id: vessel.id,
+      primary_vessel_name: vessel.name,
+      starts_on: String(args.target_starts_on || ''),
+      ends_on: String(args.target_starts_on || ''),
+      status: String(args.target_status || 'A planifier'),
+      description: String(args.target_description || ''),
+      source_label: 'seapilot-planning-preview',
+      archived_at: null,
+      updated_at: new Date().toISOString(),
+    };
+    PREVIEW_ROWS.projects.push(project);
+    return createPreviewQuery(schedulePreviewProject({
+      ...args,
+      target_project_id: projectId,
+      target_ends_on: args.target_starts_on,
+    }));
+  }
+  if (functionName === 'planning_create_project_client') {
+    const client = {
+      id: nextPreviewId('clients', 9102),
+      name: String(args.target_name || ''),
+      code: String(args.target_code || ''),
+      email: String(args.target_email || ''),
+      phone: String(args.target_phone || ''),
+      city: String(args.target_city || ''),
+      country: String(args.target_country || ''),
+      active: true,
+      source_label: 'seapilot-planning-preview',
+      archived_at: null,
+      updated_at: new Date().toISOString(),
+    };
+    PREVIEW_ROWS.clients.push(client);
+    return createPreviewQuery({ data: [client], error: null });
+  }
+  return createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
+}
+
 export const previewSupabaseClient = {
   from: (table: string) => table in PREVIEW_ROWS
     ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null })
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
-  rpc: () => createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
+  rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
   },

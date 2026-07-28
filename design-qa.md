@@ -1,65 +1,62 @@
-# Design QA — carte « Marins par fonction »
+# Design QA — empilement des projets sur une ligne navire
 
 ## Sources et état comparé
 
-- Vérité visuelle : `C:\Users\chris\Downloads\Image générée 2.png`
-- Capture navigateur finale : `C:\Users\chris\AppData\Local\Temp\seapilot-hr-roster-qa-final-desktop.png`
-- Carte finale recadrée : `C:\Users\chris\AppData\Local\Temp\seapilot-hr-roster-card-final.png`
-- Comparaison complète : `C:\Users\chris\AppData\Local\Temp\seapilot-hr-roster-compare-final.png`
-- Comparaison ciblée en-tête et filtres : `C:\Users\chris\AppData\Local\Temp\seapilot-hr-roster-compare-focus-final.png`
-- Route locale : `http://127.0.0.1:4173/modules/humanResources?preview=1`
-- Viewport bureau : `1440 × 1024`; carte rendue à `519 × 316` avec le panneau de filtres replié et la population **En poste**.
-- Viewport mobile : override `390 × 844` (zone de contenu navigateur de 375 px), filtres contrôlés dans leurs états fermé et ouvert.
+- Vérité visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-5e879b3e-c7c7-4300-b62f-18daaaaa1dff.png`
+- Capture navigateur : `C:\CODEX\SeaPilot\.design-qa\planning-project-stacks-full.png`
+- Comparaison combinée : `C:\CODEX\SeaPilot\.design-qa\planning-project-stacks-comparison.png`
+- Route locale : `http://127.0.0.1:4173/modules/planning?preview=1`
+- Viewport : `1672 × 941` CSS px, densité 1.
+- Dimensions : source `1818 × 280` px ; capture complète `1672 × 941` px ; région d’implémentation comparée `1672 × 260` px.
+- État : profil Admin de démonstration, vue Flotte, ligne GOURY, projet long « AFFECTATION NAVIRE GOURY » et projet P901 planifié le 28/07/2026.
 
-La référence contient sept marins et un filtre d’échéance actif. La prévisualisation locale contient un marin et aucun filtre documentaire actif. Ces différences relèvent des données dynamiques ; les zones ont été normalisées à la même largeur pour comparer la structure, la densité, les contrôles et les styles sans les interpréter comme un écart visuel.
+La vérité visuelle montre l’anomalie à corriger, avec deux projets placés sur la même hauteur. La capture navigateur montre le résultat demandé : les deux blocs restent sur la ligne GOURY mais occupent deux sous-lignes distinctes.
 
-## Comparaison complète
+## Findings
 
-La comparaison côte à côte confirme la même hiérarchie : en-tête, recherche, résumé repliable, groupes puis lignes compactes. Les lignes de production reprennent la hauteur, les séparateurs, les avatars, les deux métriques et les chevrons de la cible. L’absence de sept lignes dans la capture locale est couverte par les fixtures de test et n’affecte pas le composant.
+Aucun écart P0, P1 ou P2 ne subsiste.
 
-## Comparaison ciblée
+- Le premier projet occupe la sous-ligne `0`, de `top = 570` à `bottom = 593`.
+- Le second projet occupe la sous-ligne `1`, de `top = 597` à `bottom = 620`.
+- Les rectangles ne se chevauchent plus et conservent un espacement vertical de 4 px.
+- La ligne déclare `data-project-stack-count="2"` et s’agrandit pour contenir les projets et les visites existantes.
 
-La comparaison focalisée était nécessaire pour lire précisément la typographie, les espacements, les bordures, les icônes et la copie de la zone de filtres. Après normalisation à 524 px de large :
+## Comparaison complète et focalisée
 
-- le titre, le sous-titre et l’action **Modification** suivent la même hiérarchie ;
-- le champ de recherche reprend la hauteur, la bordure, le rayon et la copie de la cible ;
-- le résumé utilise la même surface bleu pâle, un compteur, le libellé de population, le raccourci **Voir les anciens** et un chevron ;
-- le compteur et le résumé sont dynamiques : `1 · En poste` sans filtre documentaire, contre `2 · En poste · À renouveler` dans la référence ;
-- aucun libellé « Actif » ni pastille verte n’est rendu dans les lignes de la carte.
+La comparaison combinée réunit la capture fournie et la région GOURY rendue dans le navigateur. Une comparaison focalisée suffit ici : le changement ne concerne ni la navigation, ni l’en-tête, ni les autres lignes du Planning. La capture complète reste conservée pour vérifier le contexte, la hauteur de ligne et l’absence de collision avec la bordée suivante.
 
 ## Surfaces de fidélité
 
-- **Polices et typographie** : famille sans-serif existante de SeaPilot conservée ; poids, tailles, hauteurs de ligne et troncature correspondent à la densité de la cible.
-- **Espacement et rythme** : colonne de liste portée à environ 519 px sur le viewport de contrôle ; en-tête sur une ligne, filtres compacts et lignes de 58 px.
-- **Couleurs et tokens** : bleu SeaPilot, texte marine, surfaces blanches/bleu pâle et séparateurs existants réutilisés.
-- **Images et ressources** : la cible ne contient aucune image raster. Les icônes utilisent la bibliothèque déjà installée par SeaPilot ; aucun SVG artisanal, dessin CSS ou substitut n’a été ajouté.
-- **Copie et contenu** : recherche, population, raccourci des anciens, catégories et échéances utilisent une copie française cohérente et accentuée.
+- **Polices et typographie** : la famille, les poids, les tailles, la troncature et le contraste des libellés de projets existants sont inchangés.
+- **Espacement et rythme** : les projets sont séparés par 4 px ; chaque sous-ligne supplémentaire ajoute 27 px. La ligne navire s’étend automatiquement et les visites sont repoussées sous l’ensemble des projets.
+- **Couleurs et tokens** : les bleus de statut, fonds, bordures, anneaux de sélection et états du Planning utilisent les tokens existants sans dérive.
+- **Images et ressources** : aucune image n’est concernée et aucun actif de substitution n’a été ajouté. Les poignées et icônes existantes restent intactes.
+- **Copie et contenu** : les codes, titres, statuts, dates et libellés accessibles restent issus des données Planning.
 
-## Interactions et accessibilité
+## Interactions, accessibilité et résilience
 
-- Ouverture et fermeture du panneau testées avec les attributs `aria-expanded` et `aria-controls`.
-- Sélection **En poste / Anciens / Tous** testée via le champ Population.
-- Raccourci **Voir les anciens** et retour **Voir les personnes en poste** testés.
-- La sélection de la première personne disponible est restaurée lors du changement de population.
-- Carte mobile : `clientWidth = scrollWidth` pour le panneau fermé (`321 px`) et les champs ouverts (`323 px`) ; aucun débordement propre à la carte.
-- Aucun log navigateur de niveau warning ou error.
+- Double-clic sur la case GOURY du 28/07/2026, sélection de P901 et ajout au Planning testés dans le navigateur.
+- Les blocs empilés conservent leurs boutons, libellés accessibles, poignées d’extension et comportement de déplacement.
+- L’algorithme réutilise la première sous-ligne disponible lorsqu’un projet suivant ne chevauche plus les précédents.
+- Les visites navire sont décalées sous toutes les sous-lignes projet.
+- Aucun log navigateur de niveau `error`.
 
 ## Historique de comparaison
 
 ### Itération 1 — bloquée
 
-- [P2] La colonne liste mesurait environ 452 px : le sous-titre passait sur deux lignes et le résumé **En poste** était tronqué.
-- Correction : grille maître/détail rééquilibrée avec une colonne liste minimale de 500 px, recherche allégée, en-tête et bouton **Modification** recalibrés.
-- Preuve post-correction : `seapilot-hr-roster-compare-final.png` montre le sous-titre sur une ligne et le résumé sans compression.
+- [P1] Deux projets se chevauchaient sur la même ligne visuelle, masquant une partie des blocs et leurs interactions.
+- Correction : calcul d’intervalles visibles, attribution automatique de la première sous-ligne libre, hauteur dynamique de la ligne, aperçu de déplacement aligné et décalage des visites.
 
 ### Itération 2 — passée
 
-Aucun écart P0, P1 ou P2 restant. Les différences de noms, de volumes et de compteur de filtres sont les états de données attendus. Le léger écart optique entre l’icône de réglage générée et l’icône Lucide existante est classé P3 et ne justifie pas l’introduction d’une nouvelle famille d’icônes.
+La comparaison post-correction montre deux projets lisibles sur des sous-lignes distinctes. Aucun écart P0, P1 ou P2 restant.
 
 ## Vérifications automatisées
 
-- `npm test` : 65 fichiers, 462 tests réussis.
-- Test RH ciblé : 18 tests réussis.
+- Test ciblé de l’algorithme : empilement de deux intervalles chevauchants et réutilisation d’une sous-ligne libérée.
+- Test ciblé du rendu : sous-lignes `0` et `1`, marges verticales `7 px` et `34 px`, hauteur de ligne dynamique.
+- `npm test -- --run` : 76 fichiers, 521 tests réussis.
 - `npm run lint` : réussi.
 - `npm run build` : réussi.
 

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
-import { todayPlanningDate } from './planningDates';
+import { formatPlanningDate, todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, timelineRange } from './planningModel';
 
 const assignmentFunctionOptions = [
@@ -449,6 +449,24 @@ function createClient(options: {
     if (functionName === 'delete_planning_board_row') {
       return Promise.resolve({ data: 900, error: null });
     }
+    if (functionName === 'planning_project_catalog') {
+      return Promise.resolve({
+        data: [{
+          id: 701,
+          project_code: 'P267',
+          title: 'Remorquage Cherbourg',
+          client_name: 'Cherbourg Port',
+          status: 'Confirmé',
+          description: 'Mission portuaire',
+          starts_on: '2026-07-18',
+          ends_on: '2026-07-19',
+        }],
+        error: null,
+      });
+    }
+    if (functionName === 'planning_project_clients') {
+      return Promise.resolve({ data: [{ id: 50, name: 'Cherbourg Port', active: true }], error: null });
+    }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
   return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, updateAssignment, vesselOrder };
@@ -591,6 +609,22 @@ describe('PlanningPage cockpit', () => {
 
     await user.dblClick(projectButton);
     expect(await screen.findByRole('heading', { name: 'Modifier l’événement' })).toBeInTheDocument();
+  });
+
+  it('opens the searchable project catalog by double-clicking a vessel cell', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    const date = todayPlanningDate();
+    await user.dblClick(screen.getByRole('button', {
+      name: `Planifier un projet pour COTENTIN le ${formatPlanningDate(date)}`,
+    }));
+
+    expect(await screen.findByRole('dialog', { name: 'Planifier un projet' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Rechercher un projet par mot-clé')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /P267.*Remorquage Cherbourg/ })).toBeInTheDocument();
   });
 
   it('creates a fleet event from the complete side panel', async () => {

@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { buildPlanningTimeline } from './planningModel';
-import { PlanningCrewTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
+import { buildPlanningProjectStack, PlanningCrewTimelineRow, PlanningFleetTimelineRow } from './PlanningTimeline';
+import type { PlanningProjectRecord } from './planningQueries';
 import type { PlanningServiceProvider, PlanningVesselVisit } from './planningVisitQueries';
 
 const provider: PlanningServiceProvider = {
@@ -41,6 +42,85 @@ const visits: PlanningVesselVisit[] = [
 ];
 
 describe('Planning timeline visit and leave rendering', () => {
+  it('stacks overlapping vessel projects and reuses a free sub-row', () => {
+    const days = buildPlanningTimeline('2026-08-11', 'week');
+    const projects = [
+      { id: 1, startsOn: '2026-08-11', endsOn: '2026-08-13' },
+      { id: 2, startsOn: '2026-08-12', endsOn: '2026-08-14' },
+      { id: 3, startsOn: '2026-08-15', endsOn: '2026-08-16' },
+    ];
+
+    const stack = buildPlanningProjectStack(projects, days);
+
+    expect(stack.count).toBe(2);
+    expect(stack.stackById.get(1)).toBe(0);
+    expect(stack.stackById.get(2)).toBe(1);
+    expect(stack.stackById.get(3)).toBe(0);
+  });
+
+  it('renders overlapping vessel projects on separate visual sub-rows', () => {
+    const project = (id: number, title: string, startsOn: string, endsOn: string): PlanningProjectRecord => ({
+      id,
+      title,
+      startsOn,
+      endsOn,
+      description: '',
+      clientName: '',
+      primaryVesselId: 2,
+      primaryVesselName: 'GOURY',
+      secondaryVesselId: null,
+      secondaryVesselName: '',
+      eventType: 'operation',
+      responsibleName: '',
+      status: 'A planifier',
+      sourceLabel: 'test',
+    });
+    const { container } = render(<PlanningFleetTimelineRow
+      crewCount={4}
+      dayWidth={110}
+      days={buildPlanningTimeline('2026-08-11', 'week')}
+      editable
+      expanded
+      hasBoards
+      lane={{
+        key: 'vessel-2',
+        vesselId: 2,
+        label: 'GOURY',
+        detail: 'GRY',
+        vessel: 'GOURY',
+        projects: [
+          project(1, 'Campagne Atlantique', '2026-08-11', '2026-08-13'),
+          project(2, 'Inspection côtière', '2026-08-12', '2026-08-14'),
+        ],
+        assignments: [],
+        locations: [],
+      }}
+      onAddBoard={vi.fn()}
+      onAssignPerson={vi.fn()}
+      onCreateVisit={vi.fn()}
+      onMove={vi.fn()}
+      onOpen={vi.fn()}
+      onOpenCell={vi.fn()}
+      onOpenVessel={vi.fn()}
+      onOpenVisit={vi.fn()}
+      onResize={vi.fn()}
+      onSelect={vi.fn()}
+      onToggle={vi.fn()}
+      pendingId={null}
+      selectedId={null}
+      touchDropTarget={null}
+      visits={[]}
+    />);
+
+    const row = container.querySelector<HTMLElement>('.planning-timeline-row.is-fleet')!;
+    const bars = Array.from(container.querySelectorAll<HTMLElement>('.planning-project-bar'));
+    expect(row).toHaveClass('has-project-stacks');
+    expect(row).toHaveAttribute('data-project-stack-count', '2');
+    expect(row.style.minHeight).toBe('101px');
+    expect(bars.map((bar) => bar.dataset.projectStack)).toEqual(['0', '1']);
+    expect(bars.map((bar) => bar.style.marginTop)).toEqual(['7px', '34px']);
+  });
+
   it('stacks multiple visits on the vessel row and opens provider details', async () => {
     const user = userEvent.setup();
     const onOpenVisit = vi.fn();
@@ -57,6 +137,7 @@ describe('Planning timeline visit and leave rendering', () => {
       onCreateVisit={vi.fn()}
       onMove={vi.fn()}
       onOpen={vi.fn()}
+      onOpenCell={vi.fn()}
       onOpenVessel={vi.fn()}
       onOpenVisit={onOpenVisit}
       onResize={vi.fn()}
