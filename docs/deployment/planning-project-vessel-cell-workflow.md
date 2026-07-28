@@ -10,6 +10,7 @@ Date : 28 juillet 2026.
 - Le bouton `Créer un nouveau projet` affiche uniquement la carte `1 Identification`.
 - La création rapide enregistre atomiquement le projet catalogue et sa première occurrence Planning.
 - La carte Identification peut être repliée et dépliée. Les blocs Planning produits conservent le déplacement par glisser-déposer, les poignées d’extension et le repli des lignes navire déjà en place.
+- Lorsque plusieurs projets se chevauchent sur une même ligne navire, le Planning les répartit automatiquement sur des sous-lignes successives. Une sous-ligne libérée est réutilisée pour le projet suivant et les visites navire restent affichées sous l’ensemble des projets.
 
 ## Permissions
 
@@ -43,5 +44,6 @@ Les tests couvrent :
 - la recherche et la sélection d’un projet ;
 - la création avec la seule carte Identification ;
 - le repli et le dépliage de la carte ;
+- l’empilement vertical des projets qui se chevauchent et la réutilisation d’une sous-ligne libre ;
 - le mode lecture seule ;
 - les contrats d’appel des RPC et la mise à jour immédiate du Planning.

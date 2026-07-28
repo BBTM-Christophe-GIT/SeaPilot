@@ -12388,7 +12388,8 @@ button.planning-p12-conflict-card {
   box-shadow: 0 0 0 2px #e1d6ff;
 }
 
-.planning-timeline-row.is-fleet.has-visits .planning-project-bar {
+.planning-timeline-row.is-fleet.has-visits .planning-project-bar,
+.planning-timeline-row.is-fleet.has-project-stacks .planning-project-bar {
   align-self: start;
   margin-top: 7px;
 }
@@ -12939,6 +12940,11 @@ button.planning-p12-conflict-card {
   height: 31px;
   border-color: #057a58;
   background: repeating-linear-gradient(135deg, rgba(12, 151, 96, .35) 0 10px, rgba(95, 214, 164, .14) 10px 20px);
+}
+
+.planning-move-preview.is-project {
+  height: 23px;
+  align-self: start;
 }
 
 .planning-crew-bar.is-selected {

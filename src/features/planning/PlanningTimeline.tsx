@@ -58,6 +58,29 @@ function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOve
   return `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === todayPlanningDate() ? ' is-today' : ''}${options.drop ? ' is-drop-target' : ''}${options.create ? ' is-quick-create' : ''}${options.dragOver ? ' is-drag-over' : ''}`;
 }
 
+export function buildPlanningProjectStack(
+  projects: Array<Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>>,
+  days: PlanningTimelineDay[],
+): { count: number; stackById: Map<number, number> } {
+  const visibleProjects = projects
+    .flatMap((project) => {
+      const placement = dateGridPlacement(project.startsOn, project.endsOn, days);
+      return placement ? [{ id: project.id, start: placement.start, end: placement.start + placement.span - 1 }] : [];
+    })
+    .sort((left, right) => left.start - right.start || left.end - right.end || left.id - right.id);
+  const stackEnds: number[] = [];
+  const stackById = new Map<number, number>();
+
+  visibleProjects.forEach((project) => {
+    const reusableStack = stackEnds.findIndex((end) => end < project.start);
+    const stack = reusableStack === -1 ? stackEnds.length : reusableStack;
+    stackEnds[stack] = project.end;
+    stackById.set(project.id, stack);
+  });
+
+  return { count: stackEnds.length, stackById };
+}
+
 export function PlanningFleetTimelineRow({
   lane,
   days,
@@ -111,6 +134,14 @@ export function PlanningFleetTimelineRow({
   const watchGroup = 'Bordée 1';
   const canDropPerson = editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
+  const projectStack = buildPlanningProjectStack(lane.projects.map((project) => {
+    const preview = resizePreview?.id === project.id ? resizePreview : null;
+    return {
+      id: project.id,
+      startsOn: preview?.startsOn || project.startsOn,
+      endsOn: preview?.endsOn || project.endsOn,
+    };
+  }), days);
   const visibleVisitOccurrences = visits
     .flatMap((visit) => visit.occurrences.map((occurrence) => ({ visit, occurrence })))
     .filter(({ occurrence }) => dateGridPlacement(occurrence.scheduledOn, occurrence.scheduledOn, days))
@@ -122,6 +153,12 @@ export function PlanningFleetTimelineRow({
     return { ...item, stack };
   });
   const maxVisitStack = Math.max(0, ...visitStackByDate.values());
+  const additionalProjectStacks = Math.max(0, projectStack.count - 1);
+  const rowMinHeight = maxVisitStack
+    ? 76 + additionalProjectStacks * 27 + maxVisitStack * 25
+    : projectStack.count > 1
+      ? 74 + additionalProjectStacks * 27
+      : undefined;
 
   function dropPerson(event: React.DragEvent) {
     if (!canDropPerson) return;
@@ -173,7 +210,12 @@ export function PlanningFleetTimelineRow({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}`} data-vessel={lane.vessel} style={maxVisitStack ? { minHeight: 76 + maxVisitStack * 25 } : undefined}>
+    <div
+      className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
+      data-project-stack-count={projectStack.count}
+      data-vessel={lane.vessel}
+      style={rowMinHeight ? { minHeight: rowMinHeight } : undefined}
+    >
       <div
         className={`planning-row-label planning-tree-row is-vessel${personDropOver || touchPersonOver ? ' is-person-drop-target' : ''}`}
         data-planning-person-drop-vessel-id={canDropPerson ? lane.vesselId || undefined : undefined}
@@ -228,7 +270,24 @@ export function PlanningFleetTimelineRow({
       })}
       {movePreview ? (() => {
         const placement = dateGridPlacement(movePreview.startsOn, movePreview.endsOn, days);
-        return placement ? <span aria-hidden="true" className="planning-move-preview" style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }} /> : null;
+        const prospectiveStack = draggingId === null
+          ? 0
+          : buildPlanningProjectStack(lane.projects.map((project) => ({
+              id: project.id,
+              startsOn: project.id === draggingId ? movePreview.startsOn : project.startsOn,
+              endsOn: project.id === draggingId ? movePreview.endsOn : project.endsOn,
+            })), days).stackById.get(draggingId) || 0;
+        return placement ? (
+          <span
+            aria-hidden="true"
+            className="planning-move-preview is-project"
+            style={{
+              gridColumn: `${placement.start + 1} / span ${placement.span}`,
+              gridRow: 1,
+              marginTop: 7 + prospectiveStack * 27,
+            }}
+          />
+        ) : null;
       })() : null}
       {lane.projects.map((project) => {
         const preview = resizePreview?.id === project.id ? resizePreview : null;
@@ -237,11 +296,13 @@ export function PlanningFleetTimelineRow({
         const placement = dateGridPlacement(startsOn, endsOn, days);
         if (!placement) return null;
         const isPending = pendingId === `project-${project.id}`;
+        const stack = projectStack.stackById.get(project.id) || 0;
         return (
           <button
             aria-busy={isPending}
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
             className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
+            data-project-stack={stack}
             draggable={editable && !isPending && !preview}
             key={project.id}
             onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
@@ -252,7 +313,11 @@ export function PlanningFleetTimelineRow({
               event.dataTransfer.effectAllowed = 'move';
               event.dataTransfer.setData('application/x-seapilot-project', String(project.id));
             }}
-            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
+            style={{
+              gridColumn: `${placement.start + 1} / span ${placement.span}`,
+              gridRow: 1,
+              ...((projectStack.count > 1 || maxVisitStack) ? { marginTop: 7 + stack * 27 } : {}),
+            }}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
@@ -273,7 +338,11 @@ export function PlanningFleetTimelineRow({
             className="planning-visit-bar"
             key={`${visit.id}-${occurrence.id}`}
             onClick={() => onOpenVisit(visit)}
-            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1, marginTop: 35 + stack * 25 }}
+            style={{
+              gridColumn: `${placement.start + 1} / span ${placement.span}`,
+              gridRow: 1,
+              marginTop: 35 + additionalProjectStacks * 27 + stack * 25,
+            }}
             title={`${planningVisitTypeLabel(visit.visitType)}\n${visit.provider.name}\n${formatPlanningDate(occurrence.scheduledOn)}`}
             type="button"
           >
