@@ -1,6 +1,6 @@
 import type { PlanningOverview } from './planningQueries';
 import type { PlanningP13Data, PlanningWorkRestCheck } from './planningP13';
-import { buildPlanningExportRows, formatPlanningPerson } from './planningModel';
+import { buildPlanningExportRows, formatPlanningPerson, getAllPlanningCrewEvents } from './planningModel';
 
 export type PlanningExportFormat = 'xlsx' | 'pdf' | 'ics';
 export type PlanningExportKind = 'schedule' | 'sailor' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
@@ -43,10 +43,11 @@ function selected(id: number | null, ids?: number[]): boolean {
   return !ids || ids.length === 0 || (id !== null && ids.includes(id));
 }
 
-function filteredAssignments(context: PlanningExportContext) {
-  return context.overview.assignments.filter((assignment) => selected(assignment.crewPersonId, context.personIds)
-    && selected(assignment.vesselId, context.vesselIds)
-    && within(assignment.startsOn, assignment.endsOn, context.startsOn, context.endsOn));
+function filteredCrewEvents(context: PlanningExportContext) {
+  return getAllPlanningCrewEvents(context.overview).filter((event) => selected(event.personId, context.personIds)
+    && selected(event.vesselId, context.vesselIds)
+    && event.confirmationStatus !== 'cancelled'
+    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn));
 }
 
 function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): PlanningExportTable[] {
@@ -67,9 +68,8 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     return [{
       name: 'Équipage',
       columns: ['Navire', 'Marin', 'Fonction', 'Début', 'Fin', 'Statut', 'Bordée'],
-      rows: filteredAssignments(context)
-        .filter((assignment) => assignment.confirmationStatus !== 'cancelled')
-        .map((assignment) => [assignment.vesselName, assignment.crewName, assignment.assignmentRole, assignment.startsOn, assignment.endsOn, assignment.confirmationStatus, assignment.watchGroup]),
+      rows: filteredCrewEvents(context)
+        .map((event) => [event.vessel, event.person, event.functionLabel, event.startsOn, event.endsOn, event.confirmationStatus, event.board]),
     }];
   }
   if (kind === 'handover_sheet') {
@@ -115,8 +115,8 @@ function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): Pl
     {
       name: 'Affectations',
       columns: ['Navire', 'Marin', 'Fonction', 'Début', 'Fin', 'Statut', 'Responsable'],
-      rows: filteredAssignments(context).map((assignment) => [
-        assignment.vesselName, assignment.crewName, assignment.assignmentRole, assignment.startsAt || assignment.startsOn, assignment.endsAt || assignment.endsOn, assignment.confirmationStatus, assignment.captainName,
+      rows: filteredCrewEvents(context).map((event) => [
+        event.vessel, event.person, event.functionLabel, event.startsAt || event.startsOn, event.endsAt || event.endsOn, event.confirmationStatus, event.responsible,
       ]),
     },
     {
@@ -152,13 +152,19 @@ function excelColumn(index: number): string {
 
 function worksheetXml(table: PlanningExportTable): string {
   const rows = [table.columns, ...table.rows];
+  const widths = table.columns.map((column, columnIndex) => Math.min(45, Math.max(
+    10,
+    column.length + 2,
+    ...table.rows.map((row) => String(row[columnIndex] ?? '').length + 2),
+  )));
+  const columns = `<cols>${widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('')}</cols>`;
   const body = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((cell, columnIndex) => {
     const reference = `${excelColumn(columnIndex)}${rowIndex + 1}`;
     return typeof cell === 'number'
       ? `<c r="${reference}"><v>${cell}</v></c>`
       : `<c r="${reference}" t="inlineStr"><is><t>${xmlEscape(cell)}</t></is></c>`;
   }).join('')}</row>`).join('');
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${columns}<sheetData>${body}</sheetData></worksheet>`;
 }
 
 async function xlsxBlob(tables: PlanningExportTable[]): Promise<Blob> {
@@ -217,8 +223,8 @@ function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob
     }
   }
   if (kind === 'crew_list' || kind === 'schedule' || kind === 'sailor') {
-    for (const assignment of filteredAssignments(context)) {
-      events.push({ uid: `assignment-${assignment.id}@seapilot`, title: `${assignment.crewName} · ${assignment.vesselName}`, description: `${assignment.assignmentRole} · ${assignment.comments}`, start: assignment.startsAt || assignment.startsOn, end: assignment.endsAt || assignment.endsOn });
+    for (const event of filteredCrewEvents(context)) {
+      events.push({ uid: `${event.id}@seapilot`, title: `${event.person} · ${event.vessel}`, description: `${event.functionLabel} · ${event.comments}`, start: event.startsAt || event.startsOn, end: event.endsAt || event.endsOn });
     }
   }
   if (kind === 'anomalies') {
