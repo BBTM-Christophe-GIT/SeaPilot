@@ -5,6 +5,7 @@ import {
   EMPTY_PROJECT_FILTERS,
   projectMatchesFilters,
   resolveSelectedProject,
+  sortProjects,
 } from './projectReadModel';
 
 function makeProject(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
@@ -79,6 +80,22 @@ function makeContract(overrides: Partial<ProjectContractRecord> = {}): ProjectCo
 }
 
 describe('projectReadModel', () => {
+  it('sorts the portfolio by descending project number across prefixes', () => {
+    const projects = [
+      makeProject({ id: 1, projectCode: 'SP-52', title: 'Hors Projet' }),
+      makeProject({ id: 2, projectCode: 'P266', title: 'Remorquage' }),
+      makeProject({ id: 3, projectCode: 'P265', title: 'Affrètement' }),
+      makeProject({ id: 4, projectCode: 'SP-49', title: 'Arrêt technique' }),
+    ];
+
+    expect(sortProjects(projects).map((project) => project.projectCode)).toEqual([
+      'P266',
+      'P265',
+      'SP-52',
+      'SP-49',
+    ]);
+  });
+
   it('applies accent-insensitive text, structured and overlapping-period filters', () => {
     const project = makeProject();
 

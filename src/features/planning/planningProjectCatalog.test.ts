@@ -25,31 +25,55 @@ const planningRow = {
 };
 
 describe('planning project catalog API', () => {
-  it('maps the minimal read-only catalog', async () => {
+  it('maps the minimal read-only catalog in descending project-number order', async () => {
     const rpc = vi.fn().mockResolvedValue({
-      data: [{
-        id: 41,
-        project_code: 'P267',
-        title: 'Remorquage Cherbourg',
-        client_name: 'Cherbourg Port',
-        status: 'Confirmé',
-        description: 'Mission',
-        starts_on: '2026-07-18',
-        ends_on: '2026-07-19',
-      }],
+      data: [
+        {
+          id: 42,
+          project_code: 'SP-52',
+          title: 'Hors Projet',
+          client_name: '',
+          status: 'A planifier',
+          description: '',
+          starts_on: '',
+          ends_on: '',
+        },
+        {
+          id: 41,
+          project_code: 'P267',
+          title: 'Remorquage Cherbourg',
+          client_name: 'Cherbourg Port',
+          status: 'Confirmé',
+          description: 'Mission',
+          starts_on: '2026-07-18',
+          ends_on: '2026-07-19',
+        },
+      ],
       error: null,
     });
 
-    await expect(fetchPlanningProjectCatalog({ rpc } as never)).resolves.toEqual([{
-      id: 41,
-      projectCode: 'P267',
-      title: 'Remorquage Cherbourg',
-      clientName: 'Cherbourg Port',
-      status: 'Confirmé',
-      description: 'Mission',
-      startsOn: '2026-07-18',
-      endsOn: '2026-07-19',
-    }]);
+    await expect(fetchPlanningProjectCatalog({ rpc } as never)).resolves.toEqual([
+      {
+        id: 41,
+        projectCode: 'P267',
+        title: 'Remorquage Cherbourg',
+        clientName: 'Cherbourg Port',
+        status: 'Confirmé',
+        description: 'Mission',
+        startsOn: '2026-07-18',
+        endsOn: '2026-07-19',
+      },
+      {
+        id: 42,
+        projectCode: 'SP-52',
+        title: 'Hors Projet',
+        clientName: '',
+        status: 'A planifier',
+        description: '',
+        startsOn: '',
+        endsOn: '',
+      },
+    ]);
   });
 
   it('uses the vessel cell date for existing and newly created occurrences', async () => {

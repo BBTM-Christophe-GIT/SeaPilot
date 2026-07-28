@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 import { mapPlanningProjectRows, type PlanningProjectRecord } from './planningQueries';
 
 export interface PlanningProjectCatalogRecord {
@@ -65,7 +66,10 @@ export async function fetchPlanningProjectCatalog(
   if (error) throw rpcError(error, 'Impossible de charger le catalogue projets.');
   return ((data || []) as Array<Record<string, unknown>>)
     .map(mapCatalogRow)
-    .filter((project) => Number.isSafeInteger(project.id) && project.id > 0 && project.title);
+    .filter((project) => Number.isSafeInteger(project.id) && project.id > 0 && project.title)
+    .sort((left, right) =>
+      compareProjectCodesNewestFirst(left.projectCode, right.projectCode) ||
+      left.title.localeCompare(right.title, 'fr'));
 }
 
 export async function fetchPlanningProjectClients(
