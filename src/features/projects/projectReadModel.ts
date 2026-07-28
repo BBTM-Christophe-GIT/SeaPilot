@@ -3,6 +3,7 @@ import type {
   ProjectDocumentRecord,
   ProjectRecord,
 } from './projectQueries';
+import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 
 export interface ProjectFilterState {
   search: string;
@@ -146,8 +147,7 @@ export function uniqueSorted(values: string[]): string[] {
 export function sortProjects(projects: ProjectRecord[]): ProjectRecord[] {
   return [...projects].sort(
     (left, right) =>
-      (right.deliveryAt || right.startsOn).localeCompare(left.deliveryAt || left.startsOn) ||
-      left.projectCode.localeCompare(right.projectCode, 'fr') ||
+      compareProjectCodesNewestFirst(left.projectCode, right.projectCode) ||
       left.title.localeCompare(right.title, 'fr'),
   );
 }

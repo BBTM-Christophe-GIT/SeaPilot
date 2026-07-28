@@ -6,6 +6,7 @@ Date : 28 juillet 2026.
 
 - Un double-clic sur une case de la ligne d’un navire ouvre le catalogue des projets.
 - Le catalogue accepte une recherche par code, titre, client, statut ou description.
+- Le catalogue et le portefeuille Projets classent les codes par leur partie numérique, du numéro le plus élevé en haut au plus petit en bas, indépendamment du préfixe (`P`, `SP`, etc.).
 - La sélection d’un projet crée une occurrence opérationnelle d’un jour, liée au projet catalogue et positionnée sur le navire et la date choisis.
 - Le bouton `Créer un nouveau projet` affiche uniquement la carte `1 Identification`.
 - La création rapide enregistre atomiquement le projet catalogue et sa première occurrence Planning.
@@ -26,7 +27,7 @@ Les contrôles sont appliqués dans l’interface et dans les fonctions Supabase
 
 ## Migration Supabase
 
-La migration `202607280002_planning_project_cell_workflow.sql` ajoute cinq RPC limitées à la société active :
+La migration `202607280002_planning_project_cell_workflow.sql` ajoute cinq RPC limitées à la société active. La migration `202607280003_project_catalog_numeric_order.sql` aligne ensuite l’ordre serveur du catalogue sur la partie numérique décroissante des codes :
 
 - `planning_project_catalog`
 - `planning_project_clients`
@@ -42,6 +43,7 @@ Les tests couvrent :
 
 - l’ouverture du sélecteur depuis une case navire ;
 - la recherche et la sélection d’un projet ;
+- l’ordre numérique décroissant avec des préfixes de projet différents ;
 - la création avec la seule carte Identification ;
 - le repli et le dépliage de la carte ;
 - l’empilement vertical des projets qui se chevauchent et la réutilisation d’une sous-ligne libre ;

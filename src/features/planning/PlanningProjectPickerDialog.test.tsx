@@ -28,6 +28,16 @@ function createClient() {
       return Promise.resolve({
         data: [
           {
+            id: 703,
+            project_code: 'SP-52',
+            title: 'Hors Projet',
+            client_name: '',
+            status: 'A planifier',
+            description: '',
+            starts_on: '',
+            ends_on: '',
+          },
+          {
             id: 701,
             project_code: 'P267',
             title: 'Remorquage Cherbourg',
@@ -79,6 +89,27 @@ function createClient() {
 }
 
 describe('PlanningProjectPickerDialog', () => {
+  it('shows the highest numeric project code first across different prefixes', async () => {
+    const { client } = createClient();
+    render(
+      <PlanningProjectPickerDialog
+        client={client as never}
+        date="2026-07-18"
+        editable
+        onClose={vi.fn()}
+        onScheduled={vi.fn()}
+        vessel={vessel}
+      />,
+    );
+
+    await screen.findByRole('option', { name: /P267.*Remorquage Cherbourg/ });
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      expect.stringContaining('P267'),
+      expect.stringContaining('P266'),
+      expect.stringContaining('SP-52'),
+    ]);
+  });
+
   it('searches the catalog and schedules the selected project on the vessel cell', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient();
