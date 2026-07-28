@@ -2,6 +2,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { HumanResourcesPage } from './HumanResourcesPage';
+import { openTrainingPlanReport } from './trainingPlanReport';
+
+vi.mock('./trainingPlanReport', async () => {
+  const actual = await vi.importActual<typeof import('./trainingPlanReport')>('./trainingPlanReport');
+  return {
+    ...actual,
+    openTrainingPlanReport: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const activePerson = {
   id: 1,
@@ -57,6 +66,7 @@ const formerPerson = {
   function_label: 'Matelot Polyvalent',
   grade_label: 'Matelot',
   sailor_number: '2011111',
+  hired_on: '1999-01-01',
   departed_on: '2000-01-01',
   active: true,
 };
@@ -215,6 +225,65 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
     expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
     expect(within(profile).getByText('2009574')).toBeInTheDocument();
+  });
+
+  it('uses the selected workforce year in the training plan PDF indicators', async () => {
+    const user = userEvent.setup();
+    const openReport = vi.mocked(openTrainingPlanReport);
+    openReport.mockClear();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    await user.selectOptions(screen.getByLabelText('Période du graphe des effectifs'), '2024');
+    await user.click(screen.getByRole('button', { name: 'Plan de Formation' }));
+
+    await waitFor(() => expect(openReport).toHaveBeenCalledTimes(1));
+    expect(openReport.mock.calls[0][0].indicatorYear).toBe(2024);
+    expect(openReport.mock.calls[0][0].annualIndicators.at(-1)?.year).toBe(2024);
+  });
+
+  it('filters the workforce curve by year and calculates turnover from departure dates', async () => {
+    const user = userEvent.setup();
+    const analyticsPeople = [
+      { ...activePerson, hired_on: '2020-01-01', departed_on: null },
+      {
+        ...formerPerson,
+        id: 20,
+        hired_on: '2020-01-01',
+        departed_on: '2024-06-15',
+        active: false,
+      },
+      {
+        ...activePerson,
+        id: 21,
+        first_name: 'Alice',
+        last_name: 'NOUVELLE',
+        hired_on: '2024-03-01',
+        departed_on: null,
+      },
+    ];
+
+    render(<HumanResourcesPage client={createClient(analyticsPeople, []) as never} roles={['admin']} />);
+
+    const chart = await screen.findByRole('region', { name: 'Evolution des effectifs' });
+    const periodFilter = within(chart).getByLabelText('Période du graphe des effectifs');
+    expect(periodFilter).toHaveValue('all');
+    expect(within(periodFilter).getByRole('option', { name: 'Toutes les années' })).toBeInTheDocument();
+
+    await user.selectOptions(periodFilter, '2024');
+
+    expect(within(chart).getByText('Janvier – Déc 2024')).toBeInTheDocument();
+    const exitIndicators = within(chart).getByLabelText('Indicateurs de sorties');
+    expect(exitIndicators).toHaveTextContent('Turnover CDI 2024');
+    expect(exitIndicators).toHaveTextContent('43,7 %');
+    expect(exitIndicators).toHaveTextContent('1 départ CDI · effectif moyen 2,29');
+    expect(exitIndicators).toHaveTextContent('Sorties tous contrats 2024');
+    expect(exitIndicators).toHaveTextContent('1 sortie · effectif moyen 2,29');
+    await user.click(within(exitIndicators).getByText('Voir le détail'));
+    expect(exitIndicators).toHaveTextContent('Par contrat');
+    expect(exitIndicators).toHaveTextContent('Par cause');
+    expect(within(chart).getAllByText('3').length).toBeGreaterThan(0);
   });
 
   it('groups sedentary functions into one distribution row', async () => {
@@ -578,13 +647,32 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it('uses controlled dropdowns for structured personnel fields', async () => {
+  it('uses controlled dropdowns for structured personnel fields and departure reasons', async () => {
     const user = userEvent.setup();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+
+    const departureReason = within(profile).getByLabelText('Cause depart');
+    expect(departureReason).toHaveRole('combobox');
+    expect(within(departureReason).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Non renseigné',
+      'Autres',
+      'Décès',
+      'Démission',
+      'Fin de contrat',
+      "Fin Période d'essai",
+      'Licenciement économique',
+      'Licenciement individuel',
+      'Retraite',
+      'Rupture conventionnelle',
+    ]);
+    await user.selectOptions(departureReason, 'Retraite');
+    expect(departureReason).toHaveValue('Retraite');
+
     await user.click(within(profile).getByRole('button', { name: 'Documents administratifs' }));
 
     expect(within(profile).getByLabelText('Type document identite')).toHaveRole('combobox');
@@ -685,6 +773,7 @@ describe('HumanResourcesPage', () => {
       phone: '+33 6 11 22 33 44',
       postal_address: '3 quai BBTM, 76600 Le Havre',
       contract_type: 'CDD',
+      departure_reason: 'Retraite',
       waist_size: 90,
     };
     const single = vi.fn().mockResolvedValue({ data: updatedPerson, error: null });
@@ -721,6 +810,7 @@ describe('HumanResourcesPage', () => {
     });
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
     fireEvent.change(within(profile).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
+    await user.selectOptions(within(profile).getByLabelText('Cause depart'), 'Retraite');
     await user.click(within(profile).getByRole('button', { name: 'Tenues et mensurations' }));
     fireEvent.change(within(profile).getByLabelText('Tour de taille'), { target: { value: '90' } });
     await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
@@ -731,6 +821,7 @@ describe('HumanResourcesPage', () => {
           phone: '+33 6 11 22 33 44',
           postal_address: '3 quai BBTM, 76600 Le Havre',
           contract_type: 'CDD',
+          departure_reason: 'Retraite',
           waist_size: 90,
         }),
       ),
@@ -741,6 +832,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
     expect(within(profile).getByText('CDD')).toBeInTheDocument();
+    expect(within(profile).getByText('Retraite')).toBeInTheDocument();
   });
 
   it('shows imported HR documents waiting for collaborator reconciliation to office roles', async () => {

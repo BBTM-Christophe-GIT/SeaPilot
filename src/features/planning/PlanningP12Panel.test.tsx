@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP12Panel } from './PlanningP12Panel';
 import type { PlanningOverview } from './planningQueries';
 import {
-  deletePlanningLeave,
+  deletePlanningAbsence,
   ensurePlanningConflictCase,
   fetchPlanningP12Data,
   reviewPlanningAbsence,
@@ -15,7 +15,7 @@ import {
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 vi.mock('./planningP12Queries', () => ({
-  deletePlanningLeave: vi.fn(),
+  deletePlanningAbsence: vi.fn(),
   ensurePlanningConflictCase: vi.fn(),
   fetchPlanningP12Data: vi.fn(),
   reviewPlanningAbsence: vi.fn(),
@@ -51,7 +51,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP12P
     range: { start: '2026-08-01', end: '2026-08-31' },
     canRequestAbsences: true,
     canReviewAbsences: true,
-    canDeleteLeaves: true,
+    canDeleteAbsences: true,
     canManageConflictCases: true,
     canPrepareReplacements: true,
     onClose: vi.fn(),
@@ -69,7 +69,7 @@ describe('Planning P1.2 panel', () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.mocked(fetchPlanningP12Data).mockResolvedValue(data);
-    vi.mocked(deletePlanningLeave).mockResolvedValue(30);
+    vi.mocked(deletePlanningAbsence).mockResolvedValue(30);
     vi.mocked(savePlanningAbsence).mockResolvedValue(32);
     vi.mocked(reviewPlanningAbsence).mockResolvedValue(31);
     vi.mocked(ensurePlanningConflictCase).mockResolvedValue(40);
@@ -116,18 +116,18 @@ describe('Planning P1.2 panel', () => {
     expect(onPrepareReplacement).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }), expect.objectContaining({ assignmentId: 20 }));
   });
 
-  it('lets administrators permanently delete leave after confirmation', async () => {
+  it('lets administrators permanently delete any absence after confirmation', async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const props = renderPanel({ initialTab: 'absences' });
 
     await screen.findByText('Congés familiaux');
-    await user.click(screen.getByRole('button', { name: 'Supprimer les congés de Anne MARTIN' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer la demande de Anne MARTIN' }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Supprimer les congés de Anne MARTIN'));
-    await waitFor(() => expect(deletePlanningLeave).toHaveBeenCalledWith(client, 30));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Supprimer la demande « Congés » de Anne MARTIN'));
+    await waitFor(() => expect(deletePlanningAbsence).toHaveBeenCalledWith(client, 30));
     expect(props.onAuditChange).toHaveBeenCalled();
-    expect(await screen.findByText('Congés supprimés. Les impacts ont été recalculés.')).toBeInTheDocument();
+    expect(await screen.findByText('Demande supprimée. Les impacts ont été recalculés.')).toBeInTheDocument();
   });
 
   it('keeps leave when the administrator cancels confirmation', async () => {
@@ -136,14 +136,14 @@ describe('Planning P1.2 panel', () => {
     renderPanel({ initialTab: 'absences' });
 
     await screen.findByText('Congés familiaux');
-    await user.click(screen.getByRole('button', { name: 'Supprimer les congés de Anne MARTIN' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer la demande de Anne MARTIN' }));
 
-    expect(deletePlanningLeave).not.toHaveBeenCalled();
+    expect(deletePlanningAbsence).not.toHaveBeenCalled();
   });
 
-  it('does not expose leave deletion to non-administrators', async () => {
-    renderPanel({ canDeleteLeaves: false, initialTab: 'absences' });
+  it('does not expose absence deletion to non-administrators', async () => {
+    renderPanel({ canDeleteAbsences: false, initialTab: 'absences' });
     await screen.findByText('Congés familiaux');
-    expect(screen.queryByRole('button', { name: /Supprimer les congés/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Supprimer la demande/ })).not.toBeInTheDocument();
   });
 });

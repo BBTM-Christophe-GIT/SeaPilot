@@ -10,7 +10,17 @@ function person(
   hiredOn = '2024-01-01',
   departedOn = '',
 ): PersonRecord {
-  return { active, departedOn, firstName, hiredOn, id, lastName } as PersonRecord;
+  return {
+    active,
+    contractType: 'CDI',
+    departedOn,
+    firstName,
+    functionLabel: 'Capitaine',
+    hiredOn,
+    id,
+    lastName,
+    roleLabel: 'Navigant',
+  } as PersonRecord;
 }
 
 function document(
@@ -66,7 +76,7 @@ describe('buildTrainingPlanReport', () => {
     expect(report.annualIndicators.at(-1)?.year).toBe(2026);
   });
 
-  it('calculates annual turnover and average tenure from the first hire year', () => {
+  it('calculates annual CDI turnover, all-contract exits and tenure from the first hire year', () => {
     const indicators = buildAnnualHrIndicators(
       [
         person(1, 'Alice', 'ACTIVE', true, '2020-01-01'),
@@ -77,14 +87,62 @@ describe('buildTrainingPlanReport', () => {
 
     expect(indicators.map((indicator) => indicator.year)).toEqual([2020, 2021, 2022, 2023]);
     expect(indicators[2]).toMatchObject({
-      averageHeadcount: 1.5,
-      departures: 1,
+      exitAverageHeadcount: 1.49,
+      exitDepartures: 1,
+      exitRate: 66.9,
       headcountEnd: 1,
       headcountStart: 2,
-      turnoverRate: 66.7,
+      permanentAverageHeadcount: 1.49,
+      permanentDepartures: 1,
+      permanentTurnoverRate: 66.9,
     });
     expect(indicators[3].peopleWithTenure).toBe(1);
     expect(indicators[3].averageTenureYears).toBe(3.5);
+  });
+
+  it('ends the indicator series at the year selected in the workforce filter', () => {
+    const report = buildTrainingPlanReport({
+      documents: [],
+      generatedOn: new Date('2026-07-12T12:00:00'),
+      indicatorYear: 2022,
+      people: [
+        person(1, 'Alice', 'ACTIVE', true, '2020-01-01'),
+        person(2, 'Bob', 'DEPARTED', false, '2021-01-01', '2022-06-30'),
+      ],
+    });
+
+    expect(report.indicatorYear).toBe(2022);
+    expect(report.annualIndicators.map((indicator) => indicator.year)).toEqual([2020, 2021, 2022]);
+    expect(report.headlineIndicator.year).toBe(2022);
+    expect(report.annualIndicators.at(-1)).toMatchObject({
+      exitDepartures: 1,
+      permanentDepartures: 1,
+      year: 2022,
+    });
+  });
+
+  it('uses a trailing twelve-month headline when all years are selected', () => {
+    const report = buildTrainingPlanReport({
+      documents: [],
+      generatedOn: new Date('2026-07-24T12:00:00'),
+      people: [
+        person(1, 'Alice', 'ACTIVE', true, '2020-01-01'),
+        person(2, 'Bob', 'DEPARTED', false, '2021-01-01', '2025-09-30'),
+      ],
+    });
+
+    expect(report.indicatorYear).toBeNull();
+    expect(report.headlineIndicator).toMatchObject({
+      endsOn: '2026-07-24',
+      exitDepartures: 1,
+      permanentDepartures: 1,
+      startsOn: '2025-07-24',
+    });
+    expect(report.annualIndicators.at(-1)).toMatchObject({
+      exitDepartures: 0,
+      permanentDepartures: 0,
+      year: 2026,
+    });
   });
 
   it('reports a blocked popup without attempting to generate the PDF', async () => {

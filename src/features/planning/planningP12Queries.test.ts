@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  deletePlanningLeave,
+  deletePlanningAbsence,
   ensurePlanningConflictCase,
   mapPlanningAbsenceRows,
+  movePlanningApprovedAbsence,
   reviewPlanningAbsence,
   savePlanningAbsence,
   updatePlanningConflictCase,
@@ -68,10 +69,24 @@ describe('planning P1.2 absence query contracts', () => {
     expect(rpc).toHaveBeenNthCalledWith(3, 'review_planning_absence', expect.objectContaining({ p_action: 'cancel' }));
   });
 
-  it('uses the administrator-only RPC to delete leave', async () => {
+  it('uses the administrator-only RPC to delete any absence request', async () => {
     const { client, rpc } = rpcClient(9);
-    await expect(deletePlanningLeave(client, 9)).resolves.toBe(9);
-    expect(rpc).toHaveBeenCalledWith('delete_planning_leave', { p_absence_id: 9 });
+    await expect(deletePlanningAbsence(client, 9)).resolves.toBe(9);
+    expect(rpc).toHaveBeenCalledWith('delete_planning_absence', { p_absence_id: 9 });
+  });
+
+  it('moves approved leave through the administrator-only RPC while preserving local hours', async () => {
+    const { client, rpc } = rpcClient(12);
+    await expect(movePlanningApprovedAbsence(client, {
+      absenceId: 12,
+      startsAt: '2026-08-17T08:00',
+      endsAt: '2026-08-20T18:00',
+    })).resolves.toBe(12);
+    expect(rpc).toHaveBeenCalledWith('move_planning_approved_absence', {
+      p_absence_id: 12,
+      p_starts_at: '2026-08-17T06:00:00.000Z',
+      p_ends_at: '2026-08-20T16:00:00.000Z',
+    });
   });
 });
 

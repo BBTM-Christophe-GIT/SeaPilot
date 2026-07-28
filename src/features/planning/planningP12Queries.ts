@@ -81,6 +81,12 @@ export interface SavePlanningAbsenceInput {
   reason: string;
 }
 
+export interface MovePlanningApprovedAbsenceInput {
+  absenceId: number;
+  startsAt: string;
+  endsAt: string;
+}
+
 export type ReviewPlanningAbsenceAction = 'approve' | 'reject' | 'cancel';
 
 export interface UpdatePlanningConflictCaseInput {
@@ -227,9 +233,21 @@ export function reviewPlanningAbsence(
   });
 }
 
-export function deletePlanningLeave(client: SupabaseClient, absenceId: number): Promise<number> {
-  return callRpc(client, 'delete-leave', 'Impossible de supprimer les congés.', 'delete_planning_leave', {
-    p_absence_id: planningEntityId(absenceId, 'La demande de congés'),
+export function deletePlanningAbsence(client: SupabaseClient, absenceId: number): Promise<number> {
+  return callRpc(client, 'delete-absence', 'Impossible de supprimer la demande d’absence.', 'delete_planning_absence', {
+    p_absence_id: planningEntityId(absenceId, 'La demande d’absence'),
+  });
+}
+
+export function movePlanningApprovedAbsence(
+  client: SupabaseClient,
+  input: MovePlanningApprovedAbsenceInput,
+): Promise<number> {
+  assertPlanningDateTimeRange(input.startsAt, input.endsAt);
+  return callRpc(client, 'move-approved-absence', 'Impossible de déplacer ces vacances validées.', 'move_planning_approved_absence', {
+    p_absence_id: planningEntityId(input.absenceId, 'La demande d’absence'),
+    p_starts_at: planningLocalDateTimeToUtc(input.startsAt),
+    p_ends_at: planningLocalDateTimeToUtc(input.endsAt),
   });
 }
 

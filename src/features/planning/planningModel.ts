@@ -150,8 +150,8 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
   const anchor = parsePlanningDate(anchorDate);
   if (mode === 'year') {
     const year = anchor.getUTCFullYear();
-    const start = `${year}-01-01`;
-    const end = `${year}-12-31`;
+    const start = `${year - 1}-11-01`;
+    const end = addPlanningDays(`${year + 1}-03-01`, -1);
     return buildDays(start, daysBetween(start, end) + 1);
   }
   if (mode === 'day') return buildDays(addPlanningDays(anchorDate, -3), 7);
@@ -159,7 +159,9 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
   if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
   const monthStart = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}-01`;
-  return buildDays(startOfPlanningWeek(monthStart), 49);
+  const rangeStart = addPlanningDays(monthStart, -7);
+  const rangeEnd = addPlanningDays(shiftPlanningMonths(monthStart, 1), 6);
+  return buildDays(rangeStart, daysBetween(rangeStart, rangeEnd) + 1);
 }
 
 export function buildPlanningMonthSegments(days: PlanningTimelineDay[]): PlanningMonthSegment[] {

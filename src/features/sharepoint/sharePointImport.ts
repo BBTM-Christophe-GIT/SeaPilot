@@ -191,6 +191,7 @@ const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'library-suivi-temps-travail': mapGenericDocumentPayload,
   'library-vehicules': mapGenericDocumentPayload,
   'list-audit': mapActionItemPayload,
+  'list-administration-prestataires-fournisseurs': mapServiceProviderPayload,
   'list-bbtm-clients': mapClientPayload,
   'list-remorque': mapTowageOptionPayload,
   'list-rh-personnel-bbtm': mapPersonPayload,
@@ -208,6 +209,7 @@ const SOURCE_ROW_VALIDATORS: Partial<Record<string, SourceRowValidator>> = {
   'library-documents-contractuels': (row) => row.is_folder !== true,
   'library-documents-projets': (row) => row.is_folder !== true,
   'list-bbtm-flotte': (row) => Boolean(row.name),
+  'list-administration-prestataires-fournisseurs': (row) => Boolean(row.name),
   'list-remorque': (row) => Boolean(row.name),
   'list-kpi-projets-planning': (row) => Boolean(row.title),
   'list-smtr-journees-planning': (row) => Boolean(row.crew_name && row.work_date),
@@ -908,6 +910,28 @@ function mapClientPayload(item: SharePointListItem, source: SharePointMigrationS
     representative_name: text(item, ['Repr_x00e9_sentant']),
     source_label: 'sharepoint',
     source_payload: sourcePayload(item),
+  });
+}
+
+function mapServiceProviderPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
+  return withReconciliation(item, source, {
+    name: requiredText(item, ['Title', 'Société', 'Societe', 'Soci_x00e9_t_x00e9_'], ''),
+    category: text(item, ['Catégorie', 'Categorie', 'Cat_x00e9_gorie']),
+    service_type: text(item, ['Type de Service', 'FOU_x002d_TypedeService', 'TypedeService', 'Type_x0020_de_x0020_Service']),
+    activity: text(item, ['FOU-Activité', 'FOU-Activite', 'Activit_x00e9_', 'FOU_x002d_Activit_x00e9_']),
+    address: text(item, ['FOU-Adresse', 'FOU_x002d_Adresse']),
+    city: text(item, ['FOU-Adresse : Ville', 'FOU-Adresse:Ville', 'City', 'FOU_x002d_Adresse_x003a_Ville']),
+    phone: text(item, ['FOU-Téléphone', 'FOU-Telephone', 'FOU_x002d_T_x00e9_l_x00e9_phone']),
+    legal_form: text(item, ['FOU-Forme Juridique', 'FOU_x002d_FormeJuridique', 'FOU_x002d_Forme_x0020_Juridique']),
+    accounting_email: text(item, ['FOU-email Comptable', 'FOU_x002d_emailComptable', 'FOU_x002d_email_x0020_Comptable']),
+    company_email: text(item, ['FOU-Mail', 'FOU_x002d_Mail']),
+    contact_name: text(item, ['Contact 1 - Prénom NOM', 'Contact 1 - Prenom NOM', 'Pr_x00e9_nomNOM', 'Contact1_x002d_Pr_x00e9_nomNOM']),
+    contact_role: text(item, ['Contact 1 - Fonction', 'Contact1_x002d_Fonction']),
+    contact_phone: text(item, ['Contact 1 - Téléphone', 'Contact 1 - Telephone', 'Contact1_x002d_T_x00e9_l_x00e9_p', 'Contact1_x002d_T_x00e9_l_x00e9_']),
+    contact_email: text(item, ['Contact 1 - Mail', 'Contact1_x002d_Mail']),
+    supplies: text(item, ['Matériel - Equipement - EPI - Fournitures', 'Materiel - Equipement - EPI - Fournitures']),
+    evaluation: text(item, ['Evaluation Générale', 'Evaluation Generale', 'EvaluationG_x00e9_n_x00e9_rale']),
+    active: booleanValue(item, ['Actif', 'Active'], true),
   });
 }
 

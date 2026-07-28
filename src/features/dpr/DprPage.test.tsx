@@ -87,7 +87,9 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: /Ajouter un fichier/ })).toBeInTheDocument();
     expect(screen.getByDisplayValue('Camille Marin')).toBeDisabled();
 
-    fireEvent.change(screen.getByDisplayValue(new Date().toISOString().slice(0, 10)), { target: { value: '2026-07-23' } });
+    const currentDate = new Date().toISOString().slice(0, 10);
+    const changedDate = currentDate === '2026-07-23' ? '2026-07-24' : '2026-07-23';
+    fireEvent.change(screen.getByDisplayValue(currentDate), { target: { value: changedDate } });
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
   });
 

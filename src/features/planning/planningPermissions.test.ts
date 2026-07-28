@@ -18,7 +18,8 @@ describe('planning permissions', () => {
       canManageManning: true,
       canRequestAbsences: true,
       canReviewAbsences: true,
-      canDeleteLeaves: false,
+      canDeleteAbsences: false,
+      canMoveApprovedAbsences: false,
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
@@ -43,7 +44,8 @@ describe('planning permissions', () => {
       canManageManning: true,
       canRequestAbsences: true,
       canReviewAbsences: true,
-      canDeleteLeaves: false,
+      canDeleteAbsences: false,
+      canMoveApprovedAbsences: false,
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
@@ -67,7 +69,8 @@ describe('planning permissions', () => {
       canManageManning: false,
       canRequestAbsences: true,
       canReviewAbsences: false,
-      canDeleteLeaves: false,
+      canDeleteAbsences: false,
+      canMoveApprovedAbsences: false,
       canManageConflictCases: false,
       canPrepareReplacements: false,
       canViewHistory: false,
@@ -92,7 +95,8 @@ describe('planning permissions', () => {
       canManageManning: false,
       canRequestAbsences: true,
       canReviewAbsences: false,
-      canDeleteLeaves: false,
+      canDeleteAbsences: false,
+      canMoveApprovedAbsences: false,
       canManageConflictCases: false,
       canPrepareReplacements: false,
       canManageWorkRestPolicies: false,
@@ -120,7 +124,8 @@ describe('planning permissions', () => {
       canManageManning: true,
       canRequestAbsences: true,
       canReviewAbsences: true,
-      canDeleteLeaves: true,
+      canDeleteAbsences: true,
+      canMoveApprovedAbsences: true,
       canManageConflictCases: true,
       canPrepareReplacements: true,
       canViewHistory: true,
@@ -145,7 +150,8 @@ describe('planning permissions', () => {
     expect(permissions.canManageWorkRestPolicies).toBe(true);
     expect(permissions.canRequestAbsences).toBe(true);
     expect(permissions.canReviewAbsences).toBe(true);
-    expect(permissions.canDeleteLeaves).toBe(true);
+    expect(permissions.canDeleteAbsences).toBe(true);
+    expect(permissions.canMoveApprovedAbsences).toBe(true);
     expect(permissions.canManageConflictCases).toBe(true);
     expect(permissions.canManagePublication).toBe(true);
     expect(permissions.canPublishPublication).toBe(true);

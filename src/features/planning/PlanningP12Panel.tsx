@@ -35,7 +35,7 @@ import {
   type PlanningReplacementFilters,
 } from './planningP12';
 import {
-  deletePlanningLeave,
+  deletePlanningAbsence,
   ensurePlanningConflictCase,
   fetchPlanningP12Data,
   reviewPlanningAbsence,
@@ -121,7 +121,7 @@ export function PlanningP12Panel({
   range,
   canRequestAbsences,
   canReviewAbsences,
-  canDeleteLeaves,
+  canDeleteAbsences,
   canManageConflictCases,
   canPrepareReplacements,
   onClose,
@@ -138,7 +138,7 @@ export function PlanningP12Panel({
   range: PlanningDateRange;
   canRequestAbsences: boolean;
   canReviewAbsences: boolean;
-  canDeleteLeaves: boolean;
+  canDeleteAbsences: boolean;
   canManageConflictCases: boolean;
   canPrepareReplacements: boolean;
   onClose: () => void;
@@ -274,9 +274,10 @@ export function PlanningP12Panel({
     }
   }
 
-  async function removeLeave(absence: PlanningAbsenceRecord, personName: string) {
+  async function removeAbsence(absence: PlanningAbsenceRecord, personName: string) {
+    const absenceLabel = planningAbsenceTypeLabel(absence.absenceType);
     const confirmed = window.confirm(
-      `Supprimer les congés de ${personName} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)} ?\n\n`
+      `Supprimer la demande « ${absenceLabel} » de ${personName} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)} ?\n\n`
       + 'Cette action est définitive et sera enregistrée dans l’historique Planning.',
     );
     if (!confirmed) return;
@@ -284,11 +285,11 @@ export function PlanningP12Panel({
     setIsSaving(true);
     setFeedback(null);
     try {
-      await deletePlanningLeave(client, absence.id);
+      await deletePlanningAbsence(client, absence.id);
       await Promise.all([load(), onAuditChange()]);
-      setFeedback({ message: 'Congés supprimés. Les impacts ont été recalculés.', error: false });
+      setFeedback({ message: 'Demande supprimée. Les impacts ont été recalculés.', error: false });
     } catch (error) {
-      setFeedback({ message: planningErrorMessage(error, 'Impossible de supprimer les congés.'), error: true });
+      setFeedback({ message: planningErrorMessage(error, 'Impossible de supprimer la demande.'), error: true });
     } finally {
       setIsSaving(false);
     }
@@ -401,8 +402,8 @@ export function PlanningP12Panel({
                       <button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button>
                     </div>
                   </div> : null}
-                  {canDeleteLeaves && absence.absenceType === 'leave' ? <div className="planning-p12-card-actions">
-                    <button aria-label={`Supprimer les congés de ${personName}`} className="is-danger" disabled={isSaving} onClick={() => void removeLeave(absence, personName)} type="button"><Trash2 aria-hidden="true" size={15} />Supprimer les congés</button>
+                  {canDeleteAbsences ? <div className="planning-p12-card-actions">
+                    <button aria-label={`Supprimer la demande de ${personName}`} className="is-danger" disabled={isSaving} onClick={() => void removeAbsence(absence, personName)} type="button"><Trash2 aria-hidden="true" size={15} />Supprimer</button>
                   </div> : null}
                 </article>;
               }) : <div className="planning-calendar-empty"><CalendarOff size={24} /><p>{requestedOnly ? 'Aucune demande de congés en attente.' : 'Aucune absence dans le périmètre visible.'}</p></div>}</div>

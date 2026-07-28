@@ -3,12 +3,18 @@ import {
   buildGeneratedHrDocumentFileName,
   buildHumanResourcesDashboard,
   buildHumanResourcesRosterGroups,
+  buildMonthlyStaffEvolution,
+  buildPermanentWorkforceTurnover,
   buildStaffEvolution,
+  buildWorkforceExitBreakdown,
+  buildWorkforceTurnover,
   createHrDocument,
   createPerson,
   fetchHumanResourcesData,
   fetchPeople,
   getHrFunctionVisibilityKey,
+  isPersonEmployedOn,
+  isPersonFormerOn,
   mapHrDocumentRows,
   mapHrDocumentTypeRows,
   mapPersonRows,
@@ -558,6 +564,70 @@ describe('HR function ordering', () => {
 });
 
 describe('buildHumanResourcesDashboard', () => {
+  it('uses employment dates consistently and keeps workforce categories mutually exclusive', () => {
+    const people = mapPersonRows([
+      {
+        ...personRow,
+        id: 1,
+        function_label: 'Capitaine',
+        grade_label: 'Capitaine 200',
+        role_label: 'Navigant',
+        hired_on: '2020-01-01',
+        departed_on: null,
+        active: false,
+      },
+      {
+        ...personRow,
+        id: 2,
+        function_label: 'Responsable administratif',
+        grade_label: 'S\u00e9dentaire',
+        role_label: 'Direction',
+        hired_on: '2021-01-01',
+        departed_on: null,
+      },
+      {
+        ...personRow,
+        id: 3,
+        function_label: 'Stagiaire administratif',
+        grade_label: 'S\u00e9dentaire',
+        role_label: 'Stagiaire',
+        hired_on: '2026-01-01',
+        departed_on: null,
+      },
+      {
+        ...personRow,
+        id: 4,
+        hired_on: '2026-07-28',
+        departed_on: null,
+        active: true,
+      },
+      {
+        ...personRow,
+        id: 5,
+        hired_on: null,
+        departed_on: null,
+        active: true,
+      },
+      {
+        ...personRow,
+        id: 6,
+        hired_on: '2020-01-01',
+        departed_on: '2026-07-24',
+        active: true,
+      },
+    ]);
+
+    const dashboard = buildHumanResourcesDashboard(people, [], '2026-07-24');
+
+    expect(dashboard.metrics.activePeople).toBe(3);
+    expect(dashboard.metrics.sedentaryPeople).toBe(1);
+    expect(dashboard.metrics.seafarerPeople).toBe(1);
+    expect(dashboard.metrics.trainees).toBe(1);
+    expect(
+      dashboard.metrics.sedentaryPeople + dashboard.metrics.seafarerPeople + dashboard.metrics.trainees,
+    ).toBe(dashboard.metrics.activePeople);
+  });
+
   it('computes RH metrics, grouped collaborators and document alerts', () => {
     const people = mapPersonRows([
       personRow,
@@ -632,20 +702,159 @@ describe('buildHumanResourcesDashboard', () => {
 });
 
 describe('buildStaffEvolution', () => {
-  it('builds cumulative active staff counts for the RH evolution chart', () => {
+  it('builds year-end staff counts from hire and departure dates', () => {
     const people = mapPersonRows([
       { ...personRow, id: 1, hired_on: '2021-06-01', active: true },
-      { ...personRow, id: 2, hired_on: '2023-01-10', active: true },
+      { ...personRow, id: 2, hired_on: '2023-01-10', departed_on: '2024-06-15', active: true },
       { ...personRow, id: 3, hired_on: null, active: true },
-      { ...personRow, id: 4, hired_on: '2022-03-01', active: false },
+      { ...personRow, id: 4, hired_on: '2022-03-01', departed_on: '2022-12-31', active: false },
     ]);
 
-    expect(buildStaffEvolution(people, [2020, 2021, 2022, 2023])).toEqual([
+    expect(buildStaffEvolution(people, [2020, 2021, 2022, 2023, 2024], '2024-07-24')).toEqual([
       { year: 2020, count: 0 },
       { year: 2021, count: 1 },
       { year: 2022, count: 1 },
-      { year: 2023, count: 3 },
+      { year: 2023, count: 2 },
+      { year: 2024, count: 1 },
     ]);
+  });
+
+  it('builds a monthly curve for one year and updates headcount after departures', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2025-01-01', departed_on: null },
+      { ...personRow, id: 2, hired_on: '2025-03-15', departed_on: '2025-08-01' },
+    ]);
+
+    expect(buildMonthlyStaffEvolution(people, 2025, '2026-07-24')).toEqual([
+      { year: 2025, month: 1, label: 'Jan', count: 1 },
+      { year: 2025, month: 2, label: 'Fév', count: 1 },
+      { year: 2025, month: 3, label: 'Mars', count: 2 },
+      { year: 2025, month: 4, label: 'Avr', count: 2 },
+      { year: 2025, month: 5, label: 'Mai', count: 2 },
+      { year: 2025, month: 6, label: 'Juin', count: 2 },
+      { year: 2025, month: 7, label: 'Juil', count: 2 },
+      { year: 2025, month: 8, label: 'Août', count: 1 },
+      { year: 2025, month: 9, label: 'Sept', count: 1 },
+      { year: 2025, month: 10, label: 'Oct', count: 1 },
+      { year: 2025, month: 11, label: 'Nov', count: 1 },
+      { year: 2025, month: 12, label: 'Déc', count: 1 },
+    ]);
+  });
+
+  it('calculates turnover from departures and the average daily headcount', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2020-01-01', departed_on: null },
+      { ...personRow, id: 2, hired_on: '2020-01-01', departed_on: '2026-06-15' },
+      { ...personRow, id: 3, hired_on: '2020-01-01', departed_on: null },
+    ]);
+
+    expect(buildWorkforceTurnover(people, '2026-12-31', '2025-12-31')).toEqual({
+      rate: 40.8,
+      departures: 1,
+      averageHeadcount: 2.45,
+      headcountStart: 3,
+      headcountEnd: 2,
+      startsOn: '2025-12-31',
+      endsOn: '2026-12-31',
+    });
+  });
+
+  it('separates permanent CDI turnover from all-contract exits', () => {
+    const people = mapPersonRows([
+      { ...personRow, id: 1, contract_type: 'CDI', hired_on: '2020-01-01', departed_on: null },
+      { ...personRow, id: 2, contract_type: 'CDI', hired_on: '2020-01-01', departed_on: '2026-01-03' },
+      {
+        ...personRow,
+        id: 3,
+        contract_type: 'Stage',
+        function_label: 'Stagiaire',
+        hired_on: '2020-01-01',
+        departed_on: '2026-01-02',
+      },
+      { ...personRow, id: 4, contract_type: 'CDD', hired_on: '2020-01-01', departed_on: '2026-01-02' },
+    ]);
+
+    expect(buildPermanentWorkforceTurnover(people, '2026-01-03', '2026-01-01')).toEqual({
+      rate: 60,
+      departures: 1,
+      averageHeadcount: 1.67,
+      headcountStart: 2,
+      headcountEnd: 1,
+      startsOn: '2026-01-01',
+      endsOn: '2026-01-03',
+    });
+    expect(buildWorkforceTurnover(people, '2026-01-03', '2026-01-01')).toMatchObject({
+      departures: 3,
+      averageHeadcount: 2.33,
+      rate: 128.6,
+    });
+  });
+
+  it('builds exit breakdowns and merges legacy departure reason labels', () => {
+    const people = mapPersonRows([
+      {
+        ...personRow,
+        id: 1,
+        contract_type: 'CDD',
+        departure_reason: 'Fin de contrat',
+        departed_on: '2026-06-01',
+      },
+      {
+        ...personRow,
+        id: 2,
+        contract_type: 'CDI',
+        departure_reason: 'Démissions',
+        departed_on: '2026-06-02',
+      },
+      {
+        ...personRow,
+        id: 3,
+        contract_type: null,
+        departure_reason: 'Démission',
+        departed_on: '2026-06-03',
+      },
+      { ...personRow, id: 4, contract_type: null, departure_reason: null, departed_on: null },
+      {
+        ...personRow,
+        id: 5,
+        contract_type: 'CDD',
+        hired_on: null,
+        departure_reason: 'Fin de contrat',
+        departed_on: '2026-06-04',
+      },
+    ]);
+
+    expect(buildWorkforceExitBreakdown(people, '2026-12-31', '2025-12-31')).toEqual({
+      departures: 3,
+      byContract: [
+        { label: 'CDI', count: 1 },
+        { label: 'CDD', count: 1 },
+        { label: 'Non renseigné', count: 1 },
+      ],
+      byReason: [
+        { label: 'Fin de contrat', count: 1 },
+        { label: 'Démission', count: 2 },
+      ],
+      missingContractPeople: 2,
+      populationSize: 5,
+    });
+  });
+});
+
+describe('employment date status', () => {
+  it('uses hire and departure dates consistently for current and former people', () => {
+    const [current, future, former, incomplete] = mapPersonRows([
+      { ...personRow, id: 1, hired_on: '2026-07-24', departed_on: null },
+      { ...personRow, id: 2, hired_on: '2026-07-25', departed_on: null },
+      { ...personRow, id: 3, hired_on: '2020-01-01', departed_on: '2026-07-24' },
+      { ...personRow, id: 4, hired_on: null, departed_on: '2026-07-24' },
+    ]);
+
+    expect(isPersonEmployedOn(current, '2026-07-24')).toBe(true);
+    expect(isPersonEmployedOn(future, '2026-07-24')).toBe(false);
+    expect(isPersonEmployedOn(former, '2026-07-24')).toBe(false);
+    expect(isPersonFormerOn(former, '2026-07-24')).toBe(true);
+    expect(isPersonFormerOn(incomplete, '2026-07-24')).toBe(false);
   });
 });
 

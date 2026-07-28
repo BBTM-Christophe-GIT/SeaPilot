@@ -32,10 +32,14 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import {
   buildStaffEvolution,
+  buildMonthlyStaffEvolution,
+  buildWorkforceTurnover,
   buildHumanResourcesDashboard,
   buildHumanResourcesRosterGroups,
   buildGeneratedHrDocumentFileName,
   buildGeneratedHrDocumentFileNameFromType,
+  buildPermanentWorkforceTurnover,
+  buildWorkforceExitBreakdown,
   compareHrFunctionLabels,
   createHrDocument,
   createPerson,
@@ -50,6 +54,8 @@ import {
   HR_PRIMARY_FUNCTIONS,
   HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
+  isPersonEmployedOn,
+  isPersonFormerOn,
   normalizeHrFunctionLabel,
   renewHrDocument,
   updateHrDocumentMedicalDetails,
@@ -63,6 +69,8 @@ import {
   type PersonRecord,
   type UpdateHrDocumentMedicalInput,
   type UpdatePersonDetailsInput,
+  type WorkforceTurnoverMetric,
+  type WorkforceExitBreakdown,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 
@@ -82,6 +90,13 @@ interface HrFilterState {
 }
 
 type HrRosterPopulation = 'current' | 'former' | 'all';
+type StaffEvolutionYearFilter = 'all' | `${number}`;
+
+interface StaffEvolutionChartPoint {
+  key: string;
+  label: string;
+  count: number;
+}
 
 const EMPTY_FORM: PersonFormState = {
   firstName: '',
@@ -137,6 +152,18 @@ const HR_ROSTER_POPULATION_LABELS: Record<HrRosterPopulation, string> = {
   former: 'Anciens',
   all: 'Tous',
 };
+
+const DEPARTURE_REASON_OPTIONS = [
+  'Autres',
+  'Décès',
+  'Démission',
+  'Fin de contrat',
+  "Fin Période d'essai",
+  'Licenciement économique',
+  'Licenciement individuel',
+  'Retraite',
+  'Rupture conventionnelle',
+];
 
 const DOCUMENT_STATUS_LABELS: Record<HrDocumentRecord['status'], string> = {
   valid: 'A jour',
@@ -488,9 +515,9 @@ function matchesRosterPopulation(
     return true;
   }
 
-  const departureKey = person.departedOn.trim().slice(0, 10);
-  const isFormer = /^\d{4}-\d{2}-\d{2}$/.test(departureKey) && departureKey < todayKey;
-  return population === 'former' ? isFormer : !isFormer;
+  return population === 'former'
+    ? isPersonFormerOn(person, todayKey)
+    : isPersonEmployedOn(person, todayKey);
 }
 
 function getRosterFilterSummary(population: HrRosterPopulation, filters: HrFilterState): string {
@@ -554,6 +581,7 @@ function DetailsGrid({ children, isEditing }: { children: ReactNode; isEditing: 
 }
 
 function EditableField({
+  emptyOptionLabel = 'Sélectionner',
   field,
   form,
   label,
@@ -563,6 +591,7 @@ function EditableField({
   required = false,
   type = 'text',
 }: {
+  emptyOptionLabel?: string;
   field: keyof UpdatePersonDetailsInput;
   form: UpdatePersonDetailsInput;
   label: string;
@@ -581,7 +610,7 @@ function EditableField({
         <textarea onChange={(event) => onUpdate(field, event.target.value)} required={required} rows={3} value={form[field]} />
       ) : selectOptions ? (
         <select onChange={(event) => onUpdate(field, event.target.value)} required={required} value={form[field]}>
-          <option value="">Sélectionner</option>
+          <option value="">{emptyOptionLabel}</option>
           {selectOptions.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -648,6 +677,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
   const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
   const [rosterPopulation, setRosterPopulation] = useState<HrRosterPopulation>('current');
+  const [staffEvolutionYear, setStaffEvolutionYear] = useState<StaffEvolutionYearFilter>('all');
   const [isRosterFiltersOpen, setIsRosterFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
@@ -826,7 +856,62 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const rosterGroups = useMemo(() => buildHumanResourcesRosterGroups(dashboard.groups), [dashboard.groups]);
   const rosterFilterCount = 1 + Object.values(filters).filter(Boolean).length;
   const rosterFilterSummary = getRosterFilterSummary(rosterPopulation, filters);
-  const staffEvolution = useMemo(() => buildStaffEvolution(roleVisiblePeople), [roleVisiblePeople]);
+  const analyticsToday = useMemo(() => getLocalDateKey(), []);
+  const analyticsCurrentYear = Number(analyticsToday.slice(0, 4));
+  const staffEvolutionYears = useMemo(
+    () => Array.from({ length: Math.max(1, analyticsCurrentYear - 2020 + 1) }, (_, index) => 2020 + index),
+    [analyticsCurrentYear],
+  );
+  const selectedStaffEvolutionYear =
+    staffEvolutionYear !== 'all' && staffEvolutionYears.includes(Number(staffEvolutionYear))
+      ? Number(staffEvolutionYear)
+      : null;
+  const staffEvolution = useMemo<StaffEvolutionChartPoint[]>(
+    () =>
+      selectedStaffEvolutionYear === null
+        ? buildStaffEvolution(roleVisiblePeople, staffEvolutionYears, analyticsToday).map((point) => ({
+            key: String(point.year),
+            label: String(point.year),
+            count: point.count,
+          }))
+        : buildMonthlyStaffEvolution(roleVisiblePeople, selectedStaffEvolutionYear, analyticsToday).map((point) => ({
+            key: `${point.year}-${String(point.month).padStart(2, '0')}`,
+            label: point.label,
+            count: point.count,
+          })),
+    [analyticsToday, roleVisiblePeople, selectedStaffEvolutionYear, staffEvolutionYears],
+  );
+  const trailingWorkforceMetrics = useMemo(
+    () => ({
+      exitBreakdown: buildWorkforceExitBreakdown(roleVisiblePeople, analyticsToday),
+      exitRate: buildWorkforceTurnover(roleVisiblePeople, analyticsToday),
+      permanentTurnover: buildPermanentWorkforceTurnover(roleVisiblePeople, analyticsToday),
+    }),
+    [analyticsToday, roleVisiblePeople],
+  );
+  const workforcePeriodMetrics = useMemo(() => {
+    if (selectedStaffEvolutionYear === null) {
+      return trailingWorkforceMetrics;
+    }
+
+    const endsOn =
+      selectedStaffEvolutionYear === analyticsCurrentYear
+        ? analyticsToday
+        : `${selectedStaffEvolutionYear}-12-31`;
+    const startsOn = `${selectedStaffEvolutionYear - 1}-12-31`;
+
+    return {
+      exitBreakdown: buildWorkforceExitBreakdown(roleVisiblePeople, endsOn, startsOn),
+      exitRate: buildWorkforceTurnover(roleVisiblePeople, endsOn, startsOn),
+      permanentTurnover: buildPermanentWorkforceTurnover(roleVisiblePeople, endsOn, startsOn),
+    };
+  }, [
+    analyticsCurrentYear,
+    analyticsToday,
+    roleVisiblePeople,
+    selectedStaffEvolutionYear,
+    trailingWorkforceMetrics,
+  ]);
   const selectedPerson = useMemo(
     () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
     [selectedPersonId, visiblePeople],
@@ -1074,6 +1159,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
       documents: roleVisibleDocuments,
+      indicatorYear: selectedStaffEvolutionYear,
       people: roleVisiblePeople,
     });
 
@@ -1156,13 +1242,22 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             { ariaLabel: 'Documents manquants', label: 'Documents manquants', value: dashboard.metrics.missing },
           ]}
         />
-        <StrategicMetric label="Turnover 12 mois" suffix="%" value={dashboard.metrics.turnoverRate} />
+        <StrategicMetric label="Turnover CDI 12 mois" suffix="%" value={trailingWorkforceMetrics.permanentTurnover.rate} />
         <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
         <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
       </div>
 
       <div className="hr-analytics-grid">
-        <StaffEvolutionChart points={staffEvolution} turnoverRate={dashboard.metrics.turnoverRate} />
+        <StaffEvolutionChart
+          onYearChange={setStaffEvolutionYear}
+          points={staffEvolution}
+          selectedYear={selectedStaffEvolutionYear}
+          exitBreakdown={workforcePeriodMetrics.exitBreakdown}
+          exitRate={workforcePeriodMetrics.exitRate}
+          permanentTurnover={workforcePeriodMetrics.permanentTurnover}
+          yearFilter={staffEvolutionYear}
+          years={staffEvolutionYears}
+        />
         <FunctionDistribution groups={dashboard.groups} />
       </div>
 
@@ -1375,11 +1470,23 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
 }
 
 function StaffEvolutionChart({
+  exitBreakdown,
+  exitRate,
+  onYearChange,
+  permanentTurnover,
   points,
-  turnoverRate,
+  selectedYear,
+  yearFilter,
+  years,
 }: {
-  points: Array<{ count: number; year: number }>;
-  turnoverRate: number;
+  exitBreakdown: WorkforceExitBreakdown;
+  exitRate: WorkforceTurnoverMetric;
+  onYearChange: (year: StaffEvolutionYearFilter) => void;
+  permanentTurnover: WorkforceTurnoverMetric;
+  points: StaffEvolutionChartPoint[];
+  selectedYear: number | null;
+  yearFilter: StaffEvolutionYearFilter;
+  years: number[];
 }) {
   const maxCount = Math.max(1, ...points.map((point) => point.count));
   const chartPoints = points.map((point, index) => {
@@ -1389,6 +1496,11 @@ function StaffEvolutionChart({
     return { ...point, x, y };
   });
   const polylinePoints = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+  const periodLabel = selectedYear === null
+    ? `${years[0]} – ${years[years.length - 1]}`
+    : `Janvier – ${points[points.length - 1]?.label || 'Décembre'} ${selectedYear}`;
+  const permanentTurnoverLabel = selectedYear === null ? 'Turnover CDI 12 mois' : `Turnover CDI ${selectedYear}`;
+  const exitRateLabel = selectedYear === null ? 'Sorties tous contrats 12 mois' : `Sorties tous contrats ${selectedYear}`;
 
   return (
     <section aria-label="Evolution des effectifs" className="hr-evolution-card">
@@ -1397,36 +1509,103 @@ function StaffEvolutionChart({
           <BarChart3 aria-hidden="true" size={18} />
           Évolution des effectifs
         </span>
-        <small>2020 – 2026</small>
+        <div className="hr-evolution-controls">
+          <label>
+            <span className="hr-visually-hidden">Période du graphe des effectifs</span>
+            <select
+              aria-label="Période du graphe des effectifs"
+              onChange={(event) => onYearChange(event.target.value as StaffEvolutionYearFilter)}
+              value={yearFilter}
+            >
+              <option value="all">Toutes les années</option>
+              {years.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <small>{periodLabel}</small>
+        </div>
       </div>
       <div className="hr-evolution-content">
         <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
           <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
           <polyline className="hr-evolution-line" points={polylinePoints} />
           {chartPoints.map((point) => (
-            <g key={point.year}>
+            <g key={point.key}>
               <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
               <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
                 {point.count}
               </text>
               <text className="hr-evolution-year" x={point.x} y="93">
-                {point.year}
+                {point.label}
               </text>
             </g>
           ))}
         </svg>
-        <aside className="hr-turnover-panel" aria-label="Turnover sur 12 mois">
-          <small>Turnover 12 mois</small>
-          <strong>{formatMetric(turnoverRate)} %</strong>
-          <span>Départs sur effectif moyen</span>
+        <aside className="hr-turnover-panel" aria-label="Indicateurs de sorties">
+          <div className="hr-turnover-stat">
+            <small>{permanentTurnoverLabel}</small>
+            <strong>{formatMetric(permanentTurnover.rate)} %</strong>
+            <span>
+              {permanentTurnover.departures} départ{permanentTurnover.departures > 1 ? 's' : ''} CDI · effectif moyen{' '}
+              {formatMetric(permanentTurnover.averageHeadcount, 2)}
+            </span>
+          </div>
+          <div className="hr-turnover-stat hr-turnover-stat-secondary">
+            <small>{exitRateLabel}</small>
+            <strong>{formatMetric(exitRate.rate)} %</strong>
+            <span>
+              {exitRate.departures} sortie{exitRate.departures > 1 ? 's' : ''} · effectif moyen{' '}
+              {formatMetric(exitRate.averageHeadcount, 2)}
+            </span>
+          </div>
+          <details className="hr-turnover-details">
+            <summary>Voir le détail</summary>
+            <div className="hr-turnover-breakdown">
+              <TurnoverBreakdownList items={exitBreakdown.byContract} title="Par contrat" />
+              <TurnoverBreakdownList items={exitBreakdown.byReason} title="Par cause" />
+              {exitBreakdown.missingContractPeople > 0 ? (
+                <p>
+                  {exitBreakdown.missingContractPeople} fiche{exitBreakdown.missingContractPeople > 1 ? 's' : ''} sans type de contrat
+                  sur {exitBreakdown.populationSize}.
+                </p>
+              ) : null}
+            </div>
+          </details>
         </aside>
       </div>
     </section>
   );
 }
 
-function formatMetric(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+function TurnoverBreakdownList({
+  items,
+  title,
+}: {
+  items: WorkforceExitBreakdown['byContract'];
+  title: string;
+}) {
+  return (
+    <section>
+      <h4>{title}</h4>
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.count}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>Aucune sortie sur la période.</p>
+      )}
+    </section>
+  );
+}
+
+function formatMetric(value: number, maximumFractionDigits = 1): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('fr-FR', { maximumFractionDigits });
 }
 
 function StrategicMetric({
@@ -2178,7 +2357,14 @@ function CreatePersonDialog({
               />
               <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={onUpdate} type="date" />
               <EditableField field="departedOn" form={form} label="Date départ" onUpdate={onUpdate} type="date" />
-              <EditableField field="departureReason" form={form} label="Cause départ" onUpdate={onUpdate} />
+              <EditableField
+                emptyOptionLabel="Non renseigné"
+                field="departureReason"
+                form={form}
+                label="Cause départ"
+                onUpdate={onUpdate}
+                options={DEPARTURE_REASON_OPTIONS}
+              />
               <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={onUpdate} type="date" />
               <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={onUpdate} />
             </DetailsGrid>
@@ -2482,7 +2668,14 @@ function PersonDetailsPanel({
                   />
                   <EditableField field="hiredOn" form={form} label="Date embauche" onUpdate={updateFormValue} type="date" />
                   <EditableField field="departedOn" form={form} label="Date depart" onUpdate={updateFormValue} type="date" />
-                  <EditableField field="departureReason" form={form} label="Cause depart" onUpdate={updateFormValue} />
+                  <EditableField
+                    emptyOptionLabel="Non renseigné"
+                    field="departureReason"
+                    form={form}
+                    label="Cause depart"
+                    onUpdate={updateFormValue}
+                    options={DEPARTURE_REASON_OPTIONS}
+                  />
                   <EditableField field="birthDate" form={form} label="Date naissance" onUpdate={updateFormValue} type="date" />
                   <EditableField field="birthPlace" form={form} label="Lieu naissance" onUpdate={updateFormValue} />
                 </>

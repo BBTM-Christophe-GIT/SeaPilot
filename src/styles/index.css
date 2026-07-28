@@ -2928,42 +2928,49 @@ button:disabled {
   font-size: 1.7rem;
 }
 
-.project-assistant-layout > aside a {
+.project-assistant-layout > aside button {
   display: grid;
   grid-template-columns: 22px 30px 1fr;
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-height: 68px;
   padding: 12px 14px;
   border: 1px solid #263247;
   border-radius: 11px;
+  background: transparent;
   color: #c7d1df;
-  text-decoration: none;
+  text-align: left;
 }
 
-.project-assistant-layout > aside a.is-active {
+.project-assistant-layout > aside button:hover {
+  border-color: #4b5b73;
+  color: #fff;
+}
+
+.project-assistant-layout > aside button.is-active {
   border-color: #2e6de9;
   background: #2e6de9;
   color: #fff;
 }
 
-.project-assistant-layout > aside a > b {
+.project-assistant-layout > aside button > b {
   text-align: center;
 }
 
-.project-assistant-layout > aside a > span {
+.project-assistant-layout > aside button > span {
   display: grid;
   gap: 4px;
   font-weight: 800;
 }
 
-.project-assistant-layout > aside a small {
+.project-assistant-layout > aside button small {
   color: #94a4bb;
   font-size: 0.72rem;
   font-weight: 600;
 }
 
-.project-assistant-layout > aside a.is-active small {
+.project-assistant-layout > aside button.is-active small {
   color: #cfe0ff;
 }
 
@@ -3037,7 +3044,27 @@ button:disabled {
   }
 
   .project-assistant-layout > aside {
+    display: grid;
+    grid-auto-columns: minmax(190px, 1fr);
+    grid-auto-flow: column;
+    gap: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .project-assistant-layout > aside > span,
+  .project-assistant-layout > aside > strong {
     display: none;
+  }
+
+  .project-assistant-layout > aside button {
+    min-height: 60px;
+    padding: 9px 10px;
+  }
+
+  .project-assistant-layout > main {
+    padding: 18px 14px 28px;
   }
 }
 
@@ -3363,12 +3390,40 @@ button:disabled {
 }
 
 .project-editor-grid label,
+.project-editor-client-field,
 .project-supplytime-editor label {
   display: grid;
   gap: 5px;
   color: var(--muted-text);
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.project-editor-field-label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.project-editor-field-label button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 8px;
+  color: #205fc9;
+  background: #eef4ff;
+  border: 1px solid #bfd2f6;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-editor-field-label button:hover {
+  background: #dfeaff;
+  border-color: #8eafea;
 }
 
 .project-editor-grid label.is-wide,
@@ -4433,7 +4488,6 @@ button:disabled {
 .planning-command-actions,
 .planning-board-toolbar,
 .planning-perspective-switch,
-.planning-view-switch,
 .planning-grouping-switch,
 .planning-zoom-controls,
 .planning-period-controls,
@@ -4777,30 +4831,6 @@ button:disabled {
 .planning-grouping-switch button.is-active {
   color: #075e5b;
   background: #ddf4f2;
-}
-
-.planning-view-switch {
-  gap: 2px;
-  border: 1px solid #e3e9f0;
-  border-radius: 11px;
-  padding: 2px;
-  background: #f4f7fa;
-}
-
-.planning-view-switch button {
-  min-width: 56px;
-  min-height: 34px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.planning-view-switch button.is-active {
-  color: #0f57b7;
-  background: #e3efff;
-  box-shadow: inset 0 0 0 1px #c9dcfb;
 }
 
 .planning-select-control {
@@ -6069,7 +6099,6 @@ button:disabled {
     align-items: stretch;
   }
 
-  .planning-view-switch,
   .planning-perspective-switch,
   .planning-grouping-switch,
   .planning-select-control,
@@ -6077,7 +6106,6 @@ button:disabled {
     width: 100%;
   }
 
-  .planning-view-switch button,
   .planning-select-control select {
     flex: 1;
   }
@@ -6088,7 +6116,8 @@ button:disabled {
   }
 
   .planning-period-controls label,
-  .planning-period-controls input {
+  .planning-period-controls input,
+  .planning-period-controls select {
     flex: 1;
   }
 
@@ -6732,6 +6761,25 @@ button:disabled {
   color: #1465d8;
 }
 
+.hr-evolution-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hr-evolution-controls select {
+  min-height: 32px;
+  border: 1px solid #cfd9e6;
+  border-radius: 6px;
+  padding: 5px 28px 5px 9px;
+  color: #263a59;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
 .hr-analytics-title small {
   border: 1px solid #dbe3ed;
   border-radius: 6px;
@@ -6743,7 +6791,7 @@ button:disabled {
 
 .hr-evolution-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 250px);
   gap: 14px;
   align-items: stretch;
   min-height: 0;
@@ -6756,24 +6804,97 @@ button:disabled {
 
 .hr-turnover-panel {
   display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 8px;
+  align-content: start;
+  gap: 10px;
   margin-top: 16px;
   border-left: 1px solid #e1e8f0;
+  padding-left: 14px;
   text-align: center;
 }
 
-.hr-turnover-panel small,
-.hr-turnover-panel span {
+.hr-turnover-stat {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.hr-turnover-stat-secondary {
+  border-top: 1px solid #e8edf3;
+  padding-top: 10px;
+}
+
+.hr-turnover-stat small,
+.hr-turnover-stat span {
   color: #60718a;
   font-size: 0.72rem;
   font-weight: 750;
 }
 
-.hr-turnover-panel strong {
+.hr-turnover-stat strong {
   color: #102d5c;
   font-size: 1.7rem;
+}
+
+.hr-turnover-stat-secondary strong {
+  color: #7a4f12;
+  font-size: 1.35rem;
+}
+
+.hr-turnover-details {
+  width: 100%;
+  border-top: 1px solid #e8edf3;
+  padding-top: 8px;
+  text-align: left;
+}
+
+.hr-turnover-details summary {
+  cursor: pointer;
+  color: #155fc1;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.hr-turnover-breakdown {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f7f9fc;
+}
+
+.hr-turnover-breakdown h4 {
+  margin: 0 0 5px;
+  color: #354967;
+  font-size: 0.7rem;
+}
+
+.hr-turnover-breakdown ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-turnover-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #5b6c84;
+  font-size: 0.68rem;
+}
+
+.hr-turnover-breakdown li strong {
+  color: #213a5e;
+}
+
+.hr-turnover-breakdown p {
+  margin: 0;
+  color: #7b5b1d;
+  font-size: 0.66rem;
+  font-weight: 700;
 }
 
 .hr-function-distribution {
@@ -8027,10 +8148,16 @@ button:disabled {
 
   .hr-command-header,
   .hr-command-actions,
+  .hr-analytics-title,
   .hr-roster-heading,
   .hr-visibility-scope-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hr-evolution-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .hr-command-actions {
@@ -8120,6 +8247,7 @@ button:disabled {
     border-top: 1px solid #e1e8f0;
     border-left: 0;
     padding-top: 12px;
+    padding-left: 0;
   }
 
   .hr-function-bar-row {
@@ -8994,7 +9122,16 @@ button:disabled {
 }
 
 .planning-p12-card-actions button.is-danger {
+  border-color: #b42318;
+  color: #fff;
   background: #b42318;
+}
+
+.planning-p12-card-actions button.is-danger:hover,
+.planning-p12-card-actions button.is-danger:focus-visible {
+  border-color: #8f1710;
+  color: #fff;
+  background: #8f1710;
 }
 
 .planning-p12-conflict-layout {
@@ -10941,10 +11078,28 @@ button.planning-p12-conflict-card {
   white-space: nowrap;
 }
 
-.planning-period-controls input {
+.planning-period-controls input,
+.planning-period-controls select {
   min-height: 38px;
   border: 0;
   padding-left: 0;
+}
+
+.planning-period-controls input[type='month'] {
+  min-width: 132px;
+  color: #20344f;
+  background: transparent;
+  font-size: .75rem;
+  font-weight: 850;
+}
+
+.planning-period-controls select {
+  min-width: 78px;
+  padding-right: 28px;
+  color: #20344f;
+  background-color: transparent;
+  font-size: .75rem;
+  font-weight: 850;
 }
 
 .planning-tools-anchor {
@@ -11575,6 +11730,22 @@ button.planning-p12-conflict-card {
   box-shadow: 0 2px 5px rgba(13, 86, 58, .16);
 }
 
+.planning-absence-bar.is-approved.is-leave {
+  border-color: #000;
+  color: #fff;
+  background: #000;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .24);
+}
+
+.planning-absence-bar.is-approved.is-leave.is-editable {
+  cursor: grab;
+}
+
+.planning-absence-bar.is-approved.is-leave.is-dragging {
+  cursor: grabbing;
+  opacity: .58;
+}
+
 .planning-absence-bar svg {
   flex: 0 0 auto;
 }
@@ -11590,6 +11761,311 @@ button.planning-p12-conflict-card {
   outline: 2px solid #fff;
   outline-offset: -3px;
   filter: brightness(.98) saturate(1.08);
+}
+
+.planning-tree-row .planning-tree-action.is-visit {
+  border-color: #c9b8f3;
+  color: #6542b5;
+  background: #f8f4ff;
+}
+
+.planning-tree-row .planning-tree-action.is-visit:hover,
+.planning-tree-row .planning-tree-action.is-visit:focus-visible {
+  border-color: #8463d5;
+  color: #4c2c99;
+  background: #eee7ff;
+  box-shadow: 0 0 0 2px #e1d6ff;
+}
+
+.planning-timeline-row.is-fleet.has-visits .planning-project-bar {
+  align-self: start;
+  margin-top: 7px;
+}
+
+.planning-visit-bar {
+  display: flex;
+  z-index: 23;
+  min-width: 0;
+  height: 21px;
+  align-self: start;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  margin-inline: 2px;
+  border: 1px solid #7654c4;
+  border-radius: 6px;
+  padding: 0 5px;
+  color: #fff;
+  background: #7654c4;
+  box-shadow: 0 2px 5px rgba(73, 42, 143, .24);
+  font-size: .57rem;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.planning-visit-bar svg {
+  flex: 0 0 auto;
+}
+
+.planning-visit-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planning-visit-bar:hover,
+.planning-visit-bar:focus-visible {
+  z-index: 25;
+  border-color: #4e2d9d;
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+  background: #6542b5;
+}
+
+.planning-dialog.planning-visits-panel {
+  width: min(720px, 96vw);
+}
+
+.planning-visits-vessel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 18px 0;
+  border: 1px solid #dce7ec;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #17534e;
+  background: #f2faf8;
+}
+
+.planning-visits-vessel > span {
+  display: grid;
+  gap: 2px;
+}
+
+.planning-visits-vessel small {
+  color: #657b78;
+  font-size: .63rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.planning-visits-form,
+.planning-visits-detail {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.planning-visits-form > label {
+  display: grid;
+  gap: 6px;
+  color: #485e6a;
+  font-size: .72rem;
+  font-weight: 780;
+}
+
+.planning-visits-form select,
+.planning-visits-form input,
+.planning-visits-form textarea {
+  width: 100%;
+}
+
+.planning-visits-dates {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #dce5ee;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.planning-visits-dates legend {
+  padding: 0 5px;
+  color: #485e6a;
+  font-size: .72rem;
+  font-weight: 780;
+}
+
+.planning-visits-dates > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.planning-visits-dates > div button {
+  width: 39px;
+  padding: 0;
+}
+
+.planning-visits-add-date {
+  justify-self: start;
+}
+
+.planning-visits-file {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px dashed #a9bdca;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fbfd;
+}
+
+.planning-visits-file > span {
+  display: grid;
+  gap: 3px;
+}
+
+.planning-visits-file small {
+  color: #71828d;
+  font-weight: 600;
+}
+
+.planning-visits-file input {
+  grid-column: 1 / -1;
+}
+
+.planning-visits-pending-files {
+  display: grid;
+  gap: 5px;
+  margin: -7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-visits-pending-files li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #536975;
+  font-size: .68rem;
+}
+
+.planning-visits-form > footer,
+.planning-visits-detail > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #e2eaef;
+  padding-top: 14px;
+}
+
+.planning-visits-detail > section {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-visits-detail h3 {
+  margin: 0;
+  color: #283d48;
+  font-size: .78rem;
+}
+
+.planning-visits-detail ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-visits-detail ol li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #5d3eaa;
+  background: #f3effd;
+  font-size: .72rem;
+}
+
+.planning-visits-provider-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dce5ee;
+  border-radius: 11px;
+  padding: 13px;
+  background: #fff;
+}
+
+.planning-visits-provider-card > strong {
+  color: #233b47;
+  font-size: .88rem;
+}
+
+.planning-visits-provider-card > small {
+  color: #6c7f89;
+}
+
+.planning-visits-provider-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 8px 0 0;
+}
+
+.planning-visits-provider-card dl > div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.planning-visits-provider-card dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #73838c;
+  font-size: .62rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.planning-visits-provider-card dd {
+  margin: 0;
+  color: #354f5b;
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
+.planning-visits-provider-card a {
+  color: #1769aa;
+}
+
+.planning-visits-attachments {
+  display: grid;
+  gap: 7px;
+}
+
+.planning-visits-attachments button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border-color: #d8e3e9;
+  color: #36515e;
+  background: #f8fbfc;
+  text-align: left;
+}
+
+.planning-visits-attachments button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planning-visits-detail > footer button.is-danger {
+  margin-right: auto;
+  border-color: #b42318;
+  color: #fff;
+  background: #b42318;
+}
+
+@media (max-width: 640px) {
+  .planning-visits-provider-card dl {
+    grid-template-columns: 1fr;
+  }
 }
 
 .planning-p12-card.is-selected {
@@ -11923,7 +12399,7 @@ button.planning-p12-conflict-card {
 
 /* Planning fleet visual parity: reuse the compact rhythm and bar language from the crew view. */
 .planning-timeline-row.is-fleet {
-  min-height: 50px;
+  min-height: 76px;
   grid-auto-rows: 1fr;
   transition: background-color 140ms ease;
 }
@@ -11966,6 +12442,14 @@ button.planning-p12-conflict-card {
 .planning-tree-row {
   gap: 5px;
   padding-inline: 8px;
+}
+
+.planning-tree-row.is-vessel {
+  display: grid;
+  grid-template-rows: minmax(28px, auto) 28px;
+  align-content: center;
+  gap: 6px;
+  padding-block: 7px;
 }
 
 .planning-tree-row.is-board {
@@ -12061,6 +12545,26 @@ button.planning-p12-conflict-card {
   outline: 0;
   background: #eaf7f4;
   box-shadow: 0 0 0 2px #ccebe5;
+}
+
+.planning-tree-row.is-vessel .planning-tree-toggle {
+  width: 100%;
+  min-height: 28px;
+  align-self: center;
+  padding: 0 2px;
+}
+
+.planning-vessel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 2px;
+}
+
+.planning-vessel-actions .planning-tree-action {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
 }
 
 .planning-tree-row.is-person-drop-target {
@@ -12627,7 +13131,62 @@ button.planning-p12-conflict-card {
 }
 
 .planning-workspace.is-fullscreen .planning-calendar-scroll {
-  max-height: calc(100vh - 210px);
+  max-height: none;
+}
+
+.planning-workspace.is-fullscreen {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.planning-workspace.is-fullscreen .planning-command-layout {
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-fullscreen .planning-layout {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.planning-workspace.is-fullscreen .planning-board-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.planning-workspace.is-fullscreen .planning-board-toolbar {
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-fullscreen .planning-calendar-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.planning-inline-delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #efb8c1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #8f1730;
+  background: #fff5f6;
+}
+
+.planning-inline-delete-confirm p {
+  margin: 0;
+  font-size: .76rem;
+  font-weight: 760;
+}
+
+.planning-inline-delete-confirm > span {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .planning-row-label.has-empty-row-action {

@@ -266,6 +266,20 @@ const DOCUMENT_LIBRARY_SOURCES: SharePointMigrationSource[] = [
 
 const CRITICAL_APPLICATION_SOURCES: SharePointMigrationSource[] = [
   {
+    key: 'list-administration-prestataires-fournisseurs',
+    title: 'Administration - Prestataires - Fournisseurs',
+    sourceType: 'list',
+    moduleKey: 'planning',
+    relatedModuleKeys: ['administration'],
+    siteUrl: SHAREPOINT_SITE_URL,
+    listId: '5e29f7db-a85e-4147-9c54-b00f0e588f7e',
+    serverRelativeUrl: '/sites/QHSE/Lists/Fournisseurs',
+    browserUrl: 'https://bbtm668.sharepoint.com/sites/QHSE/Lists/Fournisseurs/AllItems.aspx',
+    targetTable: 'service_providers',
+    importPriority: 12,
+    notes: 'Source IQY vérifiée le 23/07/2026 ; importer toutes les lignes, y compris les catégories non renseignées.',
+  },
+  {
     key: 'list-kpi-definitions',
     title: 'Dashboard - KPI Definitions',
     sourceType: 'list',
@@ -442,7 +456,7 @@ export const SHAREPOINT_IMPORT_ORDER: readonly SharePointImportStep[] = [
   {
     key: 'planning',
     label: 'Planning',
-    targetTables: ['planning_assignments', 'planning_days', 'planning_periods', 'planning_projects'],
+    targetTables: ['service_providers', 'planning_assignments', 'planning_days', 'planning_periods', 'planning_projects'],
   },
   {
     key: 'hr-documents-certificates',

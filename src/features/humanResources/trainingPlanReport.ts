@@ -1,4 +1,11 @@
-import { formatPersonName, type HrDocumentRecord, type PersonRecord } from './peopleQueries';
+import {
+  buildPermanentWorkforceTurnover,
+  buildWorkforceTurnover,
+  formatPersonName,
+  isPersonEmployedOn,
+  type HrDocumentRecord,
+  type PersonRecord,
+} from './peopleQueries';
 
 type PdfDocument = import('jspdf').jsPDF;
 type Rgb = [number, number, number];
@@ -28,19 +35,25 @@ interface MedicalCertificateAction {
 }
 
 export interface AnnualHrIndicator {
-  averageHeadcount: number;
   averageTenureYears: number;
-  departures: number;
+  endsOn: string;
+  exitAverageHeadcount: number;
+  exitDepartures: number;
+  exitRate: number;
   headcountEnd: number;
   headcountStart: number;
   peopleWithTenure: number;
-  turnoverRate: number;
+  permanentAverageHeadcount: number;
+  permanentDepartures: number;
+  permanentTurnoverRate: number;
+  startsOn: string;
   year: number;
 }
 
 export interface TrainingPlanReportInput {
   documents: HrDocumentRecord[];
   generatedOn?: Date;
+  indicatorYear?: number | null;
   people: PersonRecord[];
   targetYear?: number;
 }
@@ -49,6 +62,8 @@ export interface TrainingPlanReport {
   annualIndicators: AnnualHrIndicator[];
   fileName: string;
   generatedOn: Date;
+  headlineIndicator: AnnualHrIndicator;
+  indicatorYear: number | null;
   medicalCertificateCount: number;
   medicalCertificates: MedicalCertificateAction[];
   targetYear: number;
@@ -130,61 +145,93 @@ function formatMoney(value: number): string {
     .replace(/[\u00a0\u202f]/g, ' ');
 }
 
-function formatMetric(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+function formatMetric(value: number, maximumFractionDigits = 1): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('fr-FR', { maximumFractionDigits });
 }
 
-function isEmployedAt(person: PersonRecord, referenceDate: Date): boolean {
-  const hiredOn = parseDate(person.hiredOn);
-  const departedOn = parseDate(person.departedOn);
-  return Boolean(hiredOn && hiredOn <= referenceDate && (!departedOn || departedOn > referenceDate));
+function getLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-export function buildAnnualHrIndicators(people: PersonRecord[], generatedOn: Date): AnnualHrIndicator[] {
-  const reportYear = generatedOn.getFullYear();
+function buildHrIndicator(
+  people: PersonRecord[],
+  referenceDate: Date,
+  startsOn: string,
+  year: number,
+): AnnualHrIndicator {
+  const endsOn = getLocalDateKey(referenceDate);
+  const exitMetric = buildWorkforceTurnover(people, endsOn, startsOn);
+  const permanentMetric = buildPermanentWorkforceTurnover(people, endsOn, startsOn);
+  const tenureValues = people.flatMap((person) => {
+    const hiredOn = parseDate(person.hiredOn);
+    return hiredOn && isPersonEmployedOn(person, endsOn)
+      ? [(referenceDate.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)]
+      : [];
+  });
+
+  return {
+    averageTenureYears:
+      tenureValues.length > 0
+        ? roundMetric(tenureValues.reduce((total, value) => total + value, 0) / tenureValues.length)
+        : 0,
+    endsOn,
+    exitAverageHeadcount: exitMetric.averageHeadcount,
+    exitDepartures: exitMetric.departures,
+    exitRate: exitMetric.rate,
+    headcountEnd: exitMetric.headcountEnd,
+    headcountStart: exitMetric.headcountStart,
+    peopleWithTenure: tenureValues.length,
+    permanentAverageHeadcount: permanentMetric.averageHeadcount,
+    permanentDepartures: permanentMetric.departures,
+    permanentTurnoverRate: permanentMetric.rate,
+    startsOn,
+    year,
+  };
+}
+
+export function buildAnnualHrIndicators(
+  people: PersonRecord[],
+  generatedOn: Date,
+  indicatorYear: number | null = null,
+): AnnualHrIndicator[] {
+  const currentYear = generatedOn.getFullYear();
+  const reportYear = indicatorYear ?? currentYear;
   const hires = people.flatMap((person) => {
     const hiredOn = parseDate(person.hiredOn);
     return hiredOn ? [hiredOn] : [];
   });
-  const firstHireYear = hires.length > 0 ? Math.min(...hires.map((date) => date.getFullYear())) : reportYear;
+  const firstHireYear =
+    hires.length > 0 ? Math.min(reportYear, ...hires.map((date) => date.getFullYear())) : reportYear;
 
   return Array.from({ length: reportYear - firstHireYear + 1 }, (_, index) => {
     const year = firstHireYear + index;
-    const periodStart = new Date(year, 0, 1);
-    const referenceDate = year === reportYear ? generatedOn : endOfYear(year);
-    const headcountStart = people.filter((person) => isEmployedAt(person, periodStart)).length;
-    const headcountEnd = people.filter((person) => isEmployedAt(person, referenceDate)).length;
-    const departures = people.filter((person) => {
-      const departedOn = parseDate(person.departedOn);
-      return Boolean(departedOn && departedOn >= periodStart && departedOn <= referenceDate);
-    }).length;
-    const averageHeadcount = (headcountStart + headcountEnd) / 2;
-    const tenureValues = people.flatMap((person) => {
-      const hiredOn = parseDate(person.hiredOn);
-      return hiredOn && isEmployedAt(person, referenceDate)
-        ? [(referenceDate.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)]
-        : [];
-    });
-
-    return {
-      averageHeadcount,
-      averageTenureYears:
-        tenureValues.length > 0
-          ? roundMetric(tenureValues.reduce((total, value) => total + value, 0) / tenureValues.length)
-          : 0,
-      departures,
-      headcountEnd,
-      headcountStart,
-      peopleWithTenure: tenureValues.length,
-      turnoverRate: averageHeadcount > 0 ? roundMetric((departures / averageHeadcount) * 100) : 0,
-      year,
-    };
+    const referenceDate = year === currentYear ? generatedOn : endOfYear(year);
+    const startsOn = `${year - 1}-12-31`;
+    return buildHrIndicator(people, referenceDate, startsOn, year);
   });
 }
 
 export function buildTrainingPlanReport(input: TrainingPlanReportInput): TrainingPlanReport {
   const generatedOn = input.generatedOn || new Date();
   const targetYear = input.targetYear || generatedOn.getFullYear() + 1;
+  const indicatorYear = input.indicatorYear ?? null;
+  const annualIndicators = buildAnnualHrIndicators(input.people, generatedOn, indicatorYear);
+  const trailingPeriodStart = new Date(generatedOn);
+  trailingPeriodStart.setFullYear(trailingPeriodStart.getFullYear() - 1);
+  const headlineIndicator =
+    indicatorYear === null
+      ? buildHrIndicator(
+          input.people,
+          generatedOn,
+          getLocalDateKey(trailingPeriodStart),
+          generatedOn.getFullYear(),
+        )
+      : annualIndicators[annualIndicators.length - 1];
   const activePeople = new Map(input.people.filter((person) => person.active).map((person) => [person.id, person]));
   const expiringDocuments = input.documents.filter((document) => {
     const expiresOn = parseDate(document.expiresOn);
@@ -213,9 +260,11 @@ export function buildTrainingPlanReport(input: TrainingPlanReportInput): Trainin
     .sort((left, right) => left.personName.localeCompare(right.personName, 'fr'));
 
   return {
-    annualIndicators: buildAnnualHrIndicators(input.people, generatedOn),
+    annualIndicators,
     fileName: `Plan-de-Formation-${targetYear}.pdf`,
     generatedOn,
+    headlineIndicator,
+    indicatorYear,
     medicalCertificateCount: medicalCertificates.length,
     medicalCertificates,
     targetYear,
@@ -446,7 +495,8 @@ function drawCostChart(doc: PdfDocument, report: TrainingPlanReport, y: number):
 }
 
 function drawFormulaSection(doc: PdfDocument, y: number, report: TrainingPlanReport): void {
-  const lastIndicator = report.annualIndicators[report.annualIndicators.length - 1];
+  const lastIndicator = report.headlineIndicator;
+  const periodLabel = report.indicatorYear === null ? '12 mois' : String(lastIndicator.year);
   drawSectionTitle(doc, '3', 'Méthodes de calcul des indicateurs', y);
   const boxY = y + 5;
   const boxHeight = 42;
@@ -477,12 +527,12 @@ function drawFormulaSection(doc: PdfDocument, y: number, report: TrainingPlanRep
 
   drawFormulaBox(
     10,
-    'Turnover annuel',
-    'Turnover N (%) = Départs pendant N / ((Effectif au 1er janvier N + effectif à la date de référence) / 2) x 100',
+    'Turnover CDI et sorties',
+    'Taux N (%) = départs de la population / effectif moyen quotidien de la même population x 100',
     [
-      `Pour ${lastIndicator.year}: ${lastIndicator.departures} départ(s), effectifs ${lastIndicator.headcountStart} et ${lastIndicator.headcountEnd}.`,
-      `Effectif moyen retenu: ${formatMetric(lastIndicator.averageHeadcount)} salarié(s).`,
-      "Pour l'année d'édition, la date de référence est la date du rapport; sinon le 31 décembre.",
+      `Turnover CDI ${periodLabel}: ${lastIndicator.permanentDepartures} départ(s) / ${formatMetric(lastIndicator.permanentAverageHeadcount, 2)} CDI moyens, soit ${formatMetric(lastIndicator.permanentTurnoverRate)} %.`,
+      `Sorties tous contrats: ${lastIndicator.exitDepartures} / ${formatMetric(lastIndicator.exitAverageHeadcount, 2)} salariés moyens, soit ${formatMetric(lastIndicator.exitRate)} %.`,
+      "Moyenne calculée chaque jour; stagiaires exclus du turnover CDI.",
     ],
   );
   drawFormulaBox(
@@ -520,7 +570,8 @@ export async function generateTrainingPlanPdf(report: TrainingPlanReport): Promi
   const doc = new jsPDF({ compress: true, format: 'a4', orientation: 'portrait', unit: 'mm' });
   const logo = await loadLogoDataUrl();
   const title = `Plan de Formation ${report.targetYear}`;
-  const currentIndicator = report.annualIndicators[report.annualIndicators.length - 1];
+  const currentIndicator = report.headlineIndicator;
+  const metricPeriodLabel = report.indicatorYear === null ? '12 mois' : String(currentIndicator.year);
   doc.setProperties({
     author: 'SeaPilot - BBTM',
     creator: 'SeaPilot',
@@ -532,8 +583,12 @@ export async function generateTrainingPlanPdf(report: TrainingPlanReport): Promi
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.2);
   doc.setTextColor(...SLATE);
+  const indicatorPeriod =
+    report.indicatorYear === null
+      ? `12 mois glissants; courbes annuelles jusqu'en ${currentIndicator.year}`
+      : `année ${currentIndicator.year} (filtre sélectionné)`;
   doc.text(
-    `Rapport généré le ${formatDate(report.generatedOn)}. Formations et certificats arrivant à échéance en ${report.targetYear}.`,
+    `Rapport généré le ${formatDate(report.generatedOn)}. Indicateurs: ${indicatorPeriod}. Échéances du plan: ${report.targetYear}.`,
     10,
     46,
   );
@@ -541,32 +596,40 @@ export async function generateTrainingPlanPdf(report: TrainingPlanReport): Promi
     doc,
     10,
     50,
-    92,
-    `Turnover annuel ${currentIndicator.year}`,
-    `${formatMetric(currentIndicator.turnoverRate)} %`,
+    60,
+    `Turnover CDI ${metricPeriodLabel}`,
+    `${formatMetric(currentIndicator.permanentTurnoverRate)} %`,
   );
   drawMetricCard(
     doc,
-    108,
+    75,
     50,
-    92,
+    60,
+    `Sorties tous contrats ${metricPeriodLabel}`,
+    `${formatMetric(currentIndicator.exitRate)} %`,
+  );
+  drawMetricCard(
+    doc,
+    140,
+    50,
+    60,
     `Ancienneté moyenne ${currentIndicator.year}`,
     `${formatMetric(currentIndicator.averageTenureYears)} ans`,
   );
   drawLineChart(doc, {
     color: BLUE,
-    points: report.annualIndicators.map((indicator) => ({ value: indicator.turnoverRate, year: indicator.year })),
+    points: report.annualIndicators.map((indicator) => ({ value: indicator.permanentTurnoverRate, year: indicator.year })),
     suffix: ' %',
-    title: 'Évolution annuelle du turnover',
+    title: 'Évolution annuelle du turnover CDI',
     width: 92,
     x: 10,
     y: 68,
   });
   drawLineChart(doc, {
     color: BLUE_ALT,
-    points: report.annualIndicators.map((indicator) => ({ value: indicator.averageTenureYears, year: indicator.year })),
-    suffix: ' ans',
-    title: "Évolution de l'ancienneté moyenne",
+    points: report.annualIndicators.map((indicator) => ({ value: indicator.exitRate, year: indicator.year })),
+    suffix: ' %',
+    title: 'Évolution annuelle des sorties tous contrats',
     width: 92,
     x: 108,
     y: 68,
