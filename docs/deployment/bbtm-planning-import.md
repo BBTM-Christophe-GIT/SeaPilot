@@ -45,10 +45,15 @@ l'audit ou être lu en mode consultation depuis le projet Supabase lié.
 npm run import:bbtm:preview -- `
   --source "$env:USERPROFILE\Downloads\BBTM - PLANNING 2024.xlsx" `
   --source "$env:USERPROFILE\Downloads\BBTM PLANNING.xlsx" `
+  --decisions ".\outputs\BBTM_Planning_2024_2026 corrigé.xlsx" `
   --cutoff 2026-06-30 `
   --output ".data\bbtm-planning-preview.json" `
   --supabase-workdir "$PWD"
 ```
+
+L'option facultative `--decisions` lit les colonnes `Statut` et `Navire` de
+l'onglet `À vérifier`. Une ligne sans décision est exclue de l'import. Une
+affectation `En Mer` sans navire reste à vérifier et n'est pas importée.
 
 L'option `--source` peut être répétée. La commande produit trois fichiers :
 
@@ -63,8 +68,8 @@ Elle n'exécute aucun des scripts SQL.
 Avant d'appliquer l'import :
 
 1. valider les correspondances de l'onglet `Personnes` ;
-2. contrôler que `À vérifier` et `Exclus` sont vides après application des
-   décisions ciblées ;
+2. contrôler les lignes restantes dans `À vérifier` et confirmer les lignes
+   volontairement ignorées dans `Exclus` ;
 3. valider les propositions de l'onglet `Bordées` ;
 4. régénérer l'aperçu après toute modification de règle ;
 5. contrôler que le nombre attendu dans le script SQL correspond au nombre de

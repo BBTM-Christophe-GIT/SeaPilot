@@ -4,6 +4,7 @@ import {
   buildBbtmImportSql,
   cleanBbtmPersonName,
   classifyBbtmCellValue,
+  classifyBbtmReviewDecision,
   classifyBbtmValue,
   normalizePersonKey,
   type BbtmImportPreview,
@@ -63,6 +64,33 @@ describe('BBTM planning import rules', () => {
 
   it('keeps unapproved free text for review', () => {
     expect(classifyBbtmValue('Hellfest')).toMatchObject({ kind: 'unmapped' });
+  });
+
+  it('applies only complete decisions from the corrected review sheet', () => {
+    expect(classifyBbtmReviewDecision('Vacances', '', 'Rdv')).toMatchObject({
+      kind: 'status',
+      sailorStatus: 'Vacance',
+      comment: '',
+    });
+    expect(classifyBbtmReviewDecision('Formation', '', 'REV MEDICAL')).toMatchObject({
+      kind: 'status',
+      sailorStatus: 'A Terre',
+      comment: 'En formation',
+    });
+    expect(classifyBbtmReviewDecision('En Mer', 'Holenn Eusa', 'NOY')).toMatchObject({
+      kind: 'assignment',
+      sailorStatus: 'En Mer',
+      vesselName: 'HOLENN EUSA',
+      comment: 'NOY',
+    });
+    expect(classifyBbtmReviewDecision('', '', 'COMB')).toMatchObject({
+      kind: 'excluded',
+      reason: 'Décision laissée vide dans le classeur corrigé',
+    });
+    expect(classifyBbtmReviewDecision('En Mer', '', 'EQA')).toMatchObject({
+      kind: 'unmapped',
+      reason: 'Navire requis pour le statut En Mer',
+    });
   });
 
   it('normalizes emojis, accents and phone numbers for person matching', () => {

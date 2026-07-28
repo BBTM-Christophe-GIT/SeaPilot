@@ -19,6 +19,7 @@ interface CliOptions {
   output: string;
   supabaseWorkdir: string;
   catalogPath: string;
+  correctionPath: string;
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -35,7 +36,7 @@ function parseArgs(args: string[]): CliOptions {
   const output = values.get('--output');
   const cutoff = values.get('--cutoff') || '2026-06-30';
   if (!sources.length || !output) {
-    throw new Error('Usage: --source <classeur.xlsx> [--source <autre.xlsx>] --output <preview.json> [--cutoff 2026-06-30]');
+    throw new Error('Usage: --source <classeur.xlsx> [--source <autre.xlsx>] [--decisions <aperçu-corrigé.xlsx>] --output <preview.json> [--cutoff 2026-06-30]');
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) throw new Error('La date limite doit être au format AAAA-MM-JJ.');
   return {
@@ -44,6 +45,7 @@ function parseArgs(args: string[]): CliOptions {
     cutoff,
     supabaseWorkdir: resolve(values.get('--supabase-workdir') || process.cwd()),
     catalogPath: values.get('--catalog') ? resolve(values.get('--catalog')!) : '',
+    correctionPath: values.get('--decisions') ? resolve(values.get('--decisions')!) : '',
   };
 }
 
@@ -93,14 +95,17 @@ async function main() {
   const catalogPromise = options.catalogPath
     ? readFile(options.catalogPath, 'utf8').then((content) => JSON.parse(content) as BbtmCatalog)
     : fetchSeaPilotCatalog(options.supabaseWorkdir);
-  const [sources, catalog] = await Promise.all([
+  const [sources, catalog, correctionBuffer] = await Promise.all([
     Promise.all(options.sources.map(async (sourceFile) => ({ sourceFile, buffer: await readFile(sourceFile) }))),
     catalogPromise,
+    options.correctionPath ? readFile(options.correctionPath) : Promise.resolve(undefined),
   ]);
   console.log(`Catalogue chargé : ${catalog.people.length} personnes, ${catalog.vessels.length} navires/lieux.`);
   console.log('Reconstruction des périodes et proposition des bordées…');
   const preview = await buildBbtmImportPreviewFromSources(sources, catalog, {
     cutoffDate: options.cutoff,
+    correctionBuffer,
+    correctionSourceFile: options.correctionPath || undefined,
   });
   console.log('Prévisualisation calculée, écriture du manifeste…');
   await mkdir(dirname(options.output), { recursive: true });

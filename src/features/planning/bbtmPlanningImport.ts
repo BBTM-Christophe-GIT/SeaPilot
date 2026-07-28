@@ -83,6 +83,7 @@ export interface BbtmPersonPreview {
 export interface BbtmImportPreview {
   sourceLabel: string;
   sourceFile: string;
+  correctionSourceFile?: string;
   cutoffDate: string;
   generatedAt: string;
   periods: BbtmImportPeriod[];
@@ -101,6 +102,11 @@ export interface BbtmImportPreview {
     excludedCells: number;
     inferredBoards: number;
   };
+  correctionSummary?: {
+    appliedCells: number;
+    ignoredCells: number;
+    incompleteCells: number;
+  };
 }
 
 export interface BbtmImportSqlBundle {
@@ -118,6 +124,8 @@ interface ParsedSheet {
 interface ExtractOptions {
   cutoffDate: string;
   sourceFile: string;
+  correctionBuffer?: Uint8Array;
+  correctionSourceFile?: string;
   generatedAt?: string;
 }
 
@@ -181,6 +189,14 @@ const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
 const personAliases = new Map([
   ['KIKI', 'CHRISTOPHE BINET'],
   ['JARY LUCAS', 'LUCAS JARY'],
+]);
+const reviewVesselNames = new Map([
+  ['HOLENNEUSA', 'HOLENN EUSA'],
+  ['GOURY', 'GOURY'],
+  ['SUROIT', 'SUROIT'],
+  ['LEROZEL', 'LE ROZEL'],
+  ['ARMEMENTCHERBOURG', ARMEMENT_CHERBOURG],
+  ['YARDLEHAVRE', 'YARD - LE HAVRE'],
 ]);
 
 function arrayify<T>(value: T | T[] | undefined): T[] {
@@ -298,8 +314,11 @@ export function classifyBbtmCellValue(
   column: string,
   row: number,
   value: string,
+  reviewDecisions: ReadonlyMap<string, ReturnType<typeof classifyBbtmValue>> = new Map(),
 ): Omit<BbtmDailyCell, 'sheet' | 'row' | 'column' | 'date' | 'person' | 'personKey' | 'category' | 'rawValue'> {
   const key = `${sheet}:${column}${row}`;
+  const reviewDecision = reviewDecisions.get(key);
+  if (reviewDecision) return reviewDecision;
   const sailorStatus = manualVacanceCells.has(key)
     ? 'Vacance'
     : manualShoreCells.has(key)
@@ -314,6 +333,83 @@ export function classifyBbtmCellValue(
     sailorStatus,
     comment: value,
     reason: 'Décision manuelle validée',
+  };
+}
+
+function canonicalizeReviewVessel(value: string): string {
+  const normalized = normalizeCode(value);
+  return vesselCodeMap.get(normalized)
+    || reviewVesselNames.get(normalized.replace(/[^A-Z0-9]/g, ''))
+    || normalizeWhitespace(value).toUpperCase();
+}
+
+export function classifyBbtmReviewDecision(
+  status: string,
+  vessel: string,
+  rawValue: string,
+): ReturnType<typeof classifyBbtmValue> {
+  const normalizedStatus = normalizeCode(status);
+  const vesselName = vessel ? canonicalizeReviewVessel(vessel) : '';
+  if (!normalizedStatus && !vesselName) {
+    return {
+      kind: 'excluded',
+      vesselName: '',
+      sailorStatus: '',
+      comment: '',
+      reason: 'Décision laissée vide dans le classeur corrigé',
+    };
+  }
+  if (normalizedStatus === 'VACANCE' || normalizedStatus === 'VACANCES') {
+    return {
+      kind: 'status',
+      vesselName: '',
+      sailorStatus: 'Vacance',
+      comment: '',
+      reason: 'Décision saisie dans le classeur corrigé',
+    };
+  }
+  if (normalizedStatus === 'FORMATION') {
+    return {
+      kind: 'status',
+      vesselName: '',
+      sailorStatus: 'A Terre',
+      comment: 'En formation',
+      reason: 'Décision saisie dans le classeur corrigé',
+    };
+  }
+  if (normalizedStatus === 'A TERRE') {
+    return {
+      kind: vesselName ? 'assignment' : 'status',
+      vesselName,
+      sailorStatus: 'A Terre',
+      comment: rawValue,
+      reason: 'Décision saisie dans le classeur corrigé',
+    };
+  }
+  if (normalizedStatus === 'EN MER') {
+    if (!vesselName) {
+      return {
+        kind: 'unmapped',
+        vesselName: '',
+        sailorStatus: '',
+        comment: '',
+        reason: 'Navire requis pour le statut En Mer',
+      };
+    }
+    return {
+      kind: 'assignment',
+      vesselName,
+      sailorStatus: 'En Mer',
+      comment: rawValue,
+      reason: 'Décision saisie dans le classeur corrigé',
+    };
+  }
+  return {
+    kind: 'unmapped',
+    vesselName: '',
+    sailorStatus: '',
+    comment: '',
+    reason: `Statut corrigé non reconnu : ${status || '(vide)'}`,
   };
 }
 
@@ -430,7 +526,11 @@ function categoryForRow(sheet: string, row: number): BbtmPersonnelCategory {
   return 'Équipage';
 }
 
-function extractDailyCells(sheets: ParsedSheet[], cutoffDate: string): BbtmDailyCell[] {
+function extractDailyCells(
+  sheets: ParsedSheet[],
+  cutoffDate: string,
+  reviewDecisions: ReadonlyMap<string, ReturnType<typeof classifyBbtmValue>> = new Map(),
+): BbtmDailyCell[] {
   const result: BbtmDailyCell[] = [];
   for (const sheet of sheets) {
     const config = personnelRanges[sheet.name];
@@ -454,12 +554,59 @@ function extractDailyCells(sheets: ParsedSheet[], cutoffDate: string): BbtmDaily
           personKey,
           category: categoryForRow(config.year, row),
           rawValue,
-          ...classifyBbtmCellValue(config.year, column, row, rawValue),
+          ...classifyBbtmCellValue(config.year, column, row, rawValue, reviewDecisions),
         });
       }
     }
   }
   return result;
+}
+
+async function parseBbtmReviewDecisions(buffer: Uint8Array): Promise<{
+  decisions: Map<string, ReturnType<typeof classifyBbtmValue>>;
+  appliedCells: number;
+  ignoredCells: number;
+  incompleteCells: number;
+}> {
+  const reviewSheet = (await parseWorkbook(buffer)).find((sheet) => normalizeCode(sheet.name) === 'A VERIFIER');
+  if (!reviewSheet) throw new Error('Le classeur corrigé ne contient pas d’onglet « À vérifier ».');
+  const headerColumns = new Map<string, string>();
+  for (const [address, value] of reviewSheet.cells) {
+    const match = address.match(/^([A-Z]+)1$/);
+    if (match) headerColumns.set(normalizeCode(value), match[1]);
+  }
+  const sourceColumn = headerColumns.get('ONGLET SOURCE');
+  const cellColumn = headerColumns.get('CELLULE');
+  const valueColumn = headerColumns.get('VALEUR EXCEL');
+  const statusColumn = headerColumns.get('STATUT') || headerColumns.get('STATUS');
+  const vesselColumn = headerColumns.get('NAVIRE');
+  if (!sourceColumn || !cellColumn || !statusColumn || !vesselColumn) {
+    throw new Error('Les colonnes « Onglet source », « Cellule », « Statut » et « Navire » sont requises.');
+  }
+  const rowNumbers = [...reviewSheet.cells.keys()]
+    .map((address) => Number(address.match(/\d+$/)?.[0] || 0))
+    .filter((row) => row >= 2);
+  const maxRow = Math.max(1, ...rowNumbers);
+  const decisions = new Map<string, ReturnType<typeof classifyBbtmValue>>();
+  let appliedCells = 0;
+  let ignoredCells = 0;
+  let incompleteCells = 0;
+  for (let row = 2; row <= maxRow; row += 1) {
+    const sourceSheet = normalizeWhitespace(reviewSheet.cells.get(`${sourceColumn}${row}`) || '');
+    const sourceCell = normalizeWhitespace(reviewSheet.cells.get(`${cellColumn}${row}`) || '').toUpperCase();
+    if (!sourceSheet || !sourceCell) continue;
+    const status = normalizeWhitespace(reviewSheet.cells.get(`${statusColumn}${row}`) || '');
+    const vessel = normalizeWhitespace(reviewSheet.cells.get(`${vesselColumn}${row}`) || '');
+    const rawValue = normalizeWhitespace(reviewSheet.cells.get(`${valueColumn || ''}${row}`) || '');
+    const decision = classifyBbtmReviewDecision(status, vessel, rawValue);
+    const key = `${sourceSheet}:${sourceCell}`;
+    if (decisions.has(key)) throw new Error(`Décision corrigée dupliquée pour ${key}.`);
+    decisions.set(key, decision);
+    if (decision.kind === 'excluded') ignoredCells += 1;
+    else if (decision.kind === 'unmapped') incompleteCells += 1;
+    else appliedCells += 1;
+  }
+  return { decisions, appliedCells, ignoredCells, incompleteCells };
 }
 
 function normalizeVesselKey(value: string): string {
@@ -718,7 +865,10 @@ export async function buildBbtmImportPreviewFromSources(
 ): Promise<BbtmImportPreview> {
   if (!sources.length) throw new Error('Au moins un classeur BBTM est requis.');
   const sheets = (await Promise.all(sources.map((source) => parseWorkbook(source.buffer)))).flat();
-  const cells = extractDailyCells(sheets, options.cutoffDate);
+  const correction = options.correctionBuffer
+    ? await parseBbtmReviewDecisions(options.correctionBuffer)
+    : { decisions: new Map<string, ReturnType<typeof classifyBbtmValue>>(), appliedCells: 0, ignoredCells: 0, incompleteCells: 0 };
+  const cells = extractDailyCells(sheets, options.cutoffDate, correction.decisions);
   const periods = coalescePeriods(cells, catalog);
   const boards = inferBoards(periods);
   const people = buildPeoplePreview(cells, catalog);
@@ -727,6 +877,7 @@ export async function buildBbtmImportPreviewFromSources(
   return {
     sourceLabel: BBTM_IMPORT_SOURCE_LABEL,
     sourceFile: options.sourceFile || sources.map((source) => source.sourceFile).join(' + '),
+    correctionSourceFile: options.correctionSourceFile,
     cutoffDate: options.cutoffDate,
     generatedAt: options.generatedAt || new Date().toISOString(),
     periods,
@@ -745,6 +896,13 @@ export async function buildBbtmImportPreviewFromSources(
       excludedCells: excludedCells.length,
       inferredBoards: boards.length,
     },
+    correctionSummary: options.correctionBuffer
+      ? {
+          appliedCells: correction.appliedCells,
+          ignoredCells: correction.ignoredCells,
+          incompleteCells: correction.incompleteCells,
+        }
+      : undefined,
   };
 }
 
@@ -806,7 +964,11 @@ export function buildBbtmImportSql(preview: BbtmImportPreview): BbtmImportSqlBun
 ${valueSql};`
     : '    raise exception \'BBTM_IMPORT_EMPTY: aucune période importable.\';';
 
+  const correctionSourceNote = preview.correctionSourceFile
+    ? `-- Décisions lues depuis ${sourceFileName(preview.correctionSourceFile)}.\n`
+    : '';
   const applySql = `-- Préparé depuis ${sourceFileName(preview.sourceFile)}.
+${correctionSourceNote}-- Les lignes sans décision et les décisions incomplètes ne sont pas importées.
 -- Périmètre : planning du personnel jusqu'au ${preview.cutoffDate} inclus.
 -- Ce script est transactionnel : toute erreur annule la totalité de l'import.
 begin;
