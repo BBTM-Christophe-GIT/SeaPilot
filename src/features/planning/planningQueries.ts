@@ -11,6 +11,7 @@ import {
 } from './planningValidation';
 
 const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
+const PLANNING_READ_PAGE_SIZE = 500;
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
 const PLANNING_ASSIGNMENT_SELECT =
@@ -1224,15 +1225,26 @@ export async function fetchPlanningDays(client: SupabaseClient): Promise<Plannin
 }
 
 export async function fetchPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {
-  const { data, error } = await client
-    .from('planning_periods')
-    .select(PLANNING_PERIOD_SELECT)
-    .order('starts_on', { ascending: true })
-    .order('crew_name', { ascending: true });
+  const rows: PlanningPeriodRow[] = [];
 
-  if (error) throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
+  for (let pageStart = 0; ; pageStart += PLANNING_READ_PAGE_SIZE) {
+    const { data, error } = await client
+      .from('planning_periods')
+      .select(PLANNING_PERIOD_SELECT)
+      .order('starts_on', { ascending: true })
+      .order('crew_name', { ascending: true })
+      .order('id', { ascending: true })
+      .range(pageStart, pageStart + PLANNING_READ_PAGE_SIZE - 1);
 
-  return mapPlanningPeriodRows((data || []) as PlanningPeriodRow[]);
+    if (error) throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
+
+    const page = (data || []) as PlanningPeriodRow[];
+    rows.push(...page);
+
+    if (page.length < PLANNING_READ_PAGE_SIZE) {
+      return mapPlanningPeriodRows(rows);
+    }
+  }
 }
 
 export async function fetchPlanningProjects(client: SupabaseClient): Promise<PlanningProjectRecord[]> {
