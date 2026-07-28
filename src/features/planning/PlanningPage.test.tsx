@@ -300,7 +300,17 @@ function createClient(options: {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) };
     }
     if (table === 'planning_periods') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }) }) }) };
+      return {
+        select: vi.fn().mockReturnValue({
+          order: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                range: vi.fn().mockResolvedValue({ data: options.periods ?? [], error: null }),
+              }),
+            }),
+          }),
+        }),
+      };
     }
     if (table === 'planning_board_rows') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.boardRows ?? [], error: null }) }) };

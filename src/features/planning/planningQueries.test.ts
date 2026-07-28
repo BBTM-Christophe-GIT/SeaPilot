@@ -8,6 +8,7 @@ import {
   createVessel,
   deletePlanningBoardRow,
   fetchPlanningPeople,
+  fetchPlanningPeriods,
   fetchPlanningOverview,
   fetchVessels,
   mapPlanningDayRows,
@@ -413,7 +414,9 @@ describe('fetchPlanningOverview', () => {
     const peopleOrderByLastName = vi.fn().mockReturnValue({ order: peopleOrderByFirstName });
     const daysOrderByCrew = vi.fn().mockResolvedValue({ data: [planningDayRow], error: null });
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
-    const periodsOrderByCrew = vi.fn().mockResolvedValue({ data: [planningPeriodRow], error: null });
+    const periodsRange = vi.fn().mockResolvedValue({ data: [planningPeriodRow], error: null });
+    const periodsOrderById = vi.fn().mockReturnValue({ range: periodsRange });
+    const periodsOrderByCrew = vi.fn().mockReturnValue({ order: periodsOrderById });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
       data: name === 'planning_assignment_overview' ? [assignmentOverviewRow] : [],
@@ -516,6 +519,29 @@ describe('fetchPlanningOverview', () => {
     expect(daysOrderByCrew).toHaveBeenCalledWith('crew_name', { ascending: true });
     expect(periodsOrderByStart).toHaveBeenCalledWith('starts_on', { ascending: true });
     expect(periodsOrderByCrew).toHaveBeenCalledWith('crew_name', { ascending: true });
+    expect(periodsOrderById).toHaveBeenCalledWith('id', { ascending: true });
+    expect(periodsRange).toHaveBeenCalledWith(0, 499);
+  });
+
+  it('loads every planning period beyond the Supabase response limit', async () => {
+    const firstPage = Array.from({ length: 500 }, (_, index) => ({
+      ...planningPeriodRow,
+      id: index + 1,
+    }));
+    const finalRow = { ...planningPeriodRow, id: 501 };
+    const range = vi.fn()
+      .mockResolvedValueOnce({ data: firstPage, error: null })
+      .mockResolvedValueOnce({ data: [finalRow], error: null });
+    const orderById = vi.fn().mockReturnValue({ range });
+    const orderByCrew = vi.fn().mockReturnValue({ order: orderById });
+    const orderByStart = vi.fn().mockReturnValue({ order: orderByCrew });
+    const from = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({ order: orderByStart }),
+    });
+
+    await expect(fetchPlanningPeriods({ from } as never)).resolves.toHaveLength(501);
+    expect(range).toHaveBeenNthCalledWith(1, 0, 499);
+    expect(range).toHaveBeenNthCalledWith(2, 500, 999);
   });
 
   it('keeps inactive people available when resolving historical assignment labels', async () => {
@@ -531,7 +557,9 @@ describe('fetchPlanningOverview', () => {
     const peopleOrderByLastName = vi.fn().mockReturnValue({ order: peopleOrderByFirstName });
     const daysOrderByCrew = vi.fn().mockResolvedValue({ data: [], error: null });
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
-    const periodsOrderByCrew = vi.fn().mockResolvedValue({ data: [], error: null });
+    const periodsRange = vi.fn().mockResolvedValue({ data: [], error: null });
+    const periodsOrderById = vi.fn().mockReturnValue({ range: periodsRange });
+    const periodsOrderByCrew = vi.fn().mockReturnValue({ order: periodsOrderById });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
       data: name === 'planning_assignment_overview' ? [inactiveAssignmentOverviewRow] : [],
