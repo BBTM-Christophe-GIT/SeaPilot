@@ -1,4 +1,4 @@
-import { CalendarDays, CreditCard, FileText, FolderOpen, ReceiptText, X } from 'lucide-react';
+import { CalendarDays, CreditCard, FileText, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
@@ -17,6 +17,7 @@ import type {
   VesselRecord,
 } from './projectQueries';
 import { SUPPLYTIME_GROUPS } from './projectReadModel';
+import { formatProjectPort, PROJECT_PORT_GROUPS } from './projectPorts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface ProjectEditorProps {
@@ -35,7 +36,7 @@ interface ClientEditorProps {
   client: SupabaseClient;
   clientRecord?: ClientRecord;
   onClose: () => void;
-  onSaved: (clientId: number) => void;
+  onSaved: (clientId: number, savedClient: ClientWriteInput) => void;
 }
 
 interface ProjectPlanningEditorProps {
@@ -115,6 +116,49 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   );
 }
 
+type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'documents';
+
+const PROJECT_ASSISTANT_STEPS: {
+  description: string;
+  icon: typeof FolderOpen;
+  id: ProjectAssistantStep;
+  label: string;
+}[] = [
+  { description: 'Nom du projet, navire et client', icon: FolderOpen, id: 'identification', label: 'Identification' },
+  { description: 'Prise en charge et arrivée', icon: CalendarDays, id: 'planning', label: 'Planning' },
+  { description: 'Tarifs et conditions', icon: ReceiptText, id: 'offer', label: 'Offre commerciale' },
+  { description: 'Frais et paiement', icon: CreditCard, id: 'billing', label: 'Facturation' },
+  { description: 'Contrats et procédures', icon: FileText, id: 'documents', label: 'Documents' },
+];
+
+function PortSelect({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const knownValue = PROJECT_PORT_GROUPS.some((group) => group.ports.some((port) => port.port === value));
+
+  return (
+    <Field label={label}>
+      <select onChange={(event) => onChange(event.target.value)} value={value}>
+        <option value="">Non renseigné</option>
+        {value && !knownValue ? <option value={value}>{value} (valeur actuelle)</option> : null}
+        {PROJECT_PORT_GROUPS.map((group) => (
+          <optgroup key={group.department} label={group.department}>
+            {group.ports.map((port) => (
+              <option key={port.locode} value={port.port}>{formatProjectPort(port)}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 export function ProjectEditor({
   client,
   clients,
@@ -127,6 +171,11 @@ export function ProjectEditor({
   vessels,
 }: ProjectEditorProps) {
   const [form, setForm] = useState(() => projectToWriteInput(project, contract));
+  const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
+  const [availableClients, setAvailableClients] = useState<
+    Pick<ClientRecord, 'active' | 'id' | 'name'>[]
+  >(() => clients);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [nextProjectCode, setNextProjectCode] = useState(project?.projectCode || 'P…');
@@ -148,6 +197,13 @@ export function ProjectEditor({
     };
   }, [client, project?.projectCode]);
 
+  useEffect(() => {
+    setAvailableClients((current) => {
+      const localClients = current.filter((item) => !clients.some((clientRecord) => clientRecord.id === item.id));
+      return [...clients, ...localClients];
+    });
+  }, [clients]);
+
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
@@ -163,6 +219,15 @@ export function ProjectEditor({
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handleClientSaved(clientId: number, savedClient: ClientWriteInput) {
+    setAvailableClients((current) => [
+      ...current.filter((item) => item.id !== clientId),
+      { active: savedClient.active, id: clientId, name: savedClient.name.trim() },
+    ]);
+    update('clientId', clientId);
+    setClientEditorOpen(false);
   }
 
   return (
@@ -182,14 +247,27 @@ export function ProjectEditor({
             <aside aria-label="Étapes de création du projet">
               <span>ASSISTANT</span>
               <strong>Projet</strong>
-              <a className="is-active" href="#project-step-identification"><b>1</b><FolderOpen size={20} /><span>Identification<small>Nom du projet, navire et client</small></span></a>
-              <a href="#project-step-planning"><b>2</b><CalendarDays size={20} /><span>Planning<small>Prise en charge et arrivée</small></span></a>
-              <a href="#project-step-offer"><b>3</b><ReceiptText size={20} /><span>Offre commerciale<small>Tarifs et conditions</small></span></a>
-              <a href="#project-step-billing"><b>4</b><CreditCard size={20} /><span>Facturation<small>Frais et paiement</small></span></a>
-              <a href="#project-step-documents"><b>5</b><FileText size={20} /><span>Documents<small>Contrats et procédures</small></span></a>
+              {PROJECT_ASSISTANT_STEPS.map((step, index) => {
+                const Icon = step.icon;
+                const isActive = activeStep === step.id;
+                return (
+                  <button
+                    aria-controls={`project-step-${step.id}`}
+                    aria-current={isActive ? 'step' : undefined}
+                    className={isActive ? 'is-active' : undefined}
+                    key={step.id}
+                    onClick={() => setActiveStep(step.id)}
+                    type="button"
+                  >
+                    <b>{index + 1}</b>
+                    <Icon aria-hidden="true" size={20} />
+                    <span>{step.label}<small>{step.description}</small></span>
+                  </button>
+                );
+              })}
             </aside>
             <main>
-          <fieldset id="project-step-identification">
+          <fieldset hidden={activeStep !== 'identification'} id="project-step-identification">
             <legend><span>1</span> Identification <small>8 champs</small></legend>
             <p className="project-code-preview">Nom final : <strong>{nextProjectCode} - {form.title || '…'}</strong><small>Le numéro affiché est un aperçu ; Supabase l’attribue atomiquement à l’enregistrement.</small></p>
             <div className="project-editor-grid">
@@ -197,14 +275,21 @@ export function ProjectEditor({
               <Field label="Nom du projet *" wide>
                 <input autoFocus onChange={(event) => update('title', event.target.value)} required value={form.title} />
               </Field>
-              <Field label="Client / affréteur">
-                <select onChange={(event) => update('clientId', optionalNumber(event.target.value))} value={form.clientId ?? ''}>
+              <div className="project-editor-client-field">
+                <div className="project-editor-field-label">
+                  <span>Client / affréteur</span>
+                  <button aria-label="Ajouter un client ou affréteur" onClick={() => setClientEditorOpen(true)} type="button">
+                    <Plus aria-hidden="true" size={15} />
+                    Ajouter
+                  </button>
+                </div>
+                <select aria-label="Client / affréteur" onChange={(event) => update('clientId', optionalNumber(event.target.value))} value={form.clientId ?? ''}>
                   <option value="">Non renseigné</option>
-                  {clients.filter((item) => item.active || item.id === project?.clientId).map((item) => (
+                  {availableClients.filter((item) => item.active || item.id === project?.clientId).map((item) => (
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
-              </Field>
+              </div>
               <Field label="Statut">
                 <input list="project-status-values" onChange={(event) => update('status', event.target.value)} value={form.status} />
                 <datalist id="project-status-values">{statuses.map((status) => <option key={status} value={status} />)}</datalist>
@@ -215,7 +300,7 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset id="project-step-planning">
+          <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>2</span> Planning</legend>
             <div className="project-editor-grid">
               <Field label="Début du projet"><input onChange={(event) => update('startsOn', event.target.value)} type="date" value={form.startsOn} /></Field>
@@ -224,12 +309,12 @@ export function ProjectEditor({
               <Field label="Restitution"><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
               <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
               <Field label="Fin d’affrètement"><input onChange={(event) => update('charterEndsAt', event.target.value)} type="datetime-local" value={form.charterEndsAt} /></Field>
-              <Field label="Port de livraison"><input onChange={(event) => update('deliveryPort', event.target.value)} value={form.deliveryPort} /></Field>
-              <Field label="Port de restitution"><input onChange={(event) => update('redeliveryPort', event.target.value)} value={form.redeliveryPort} /></Field>
+              <PortSelect label="Port de livraison" onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
+              <PortSelect label="Port de restitution" onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
             </div>
           </fieldset>
 
-          <fieldset id="project-step-offer">
+          <fieldset hidden={activeStep !== 'offer'} id="project-step-offer">
             <legend><span>3</span> Offre commerciale</legend>
             <div className="project-editor-grid">
               <Field label="Type de contrat">
@@ -247,7 +332,7 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset id="project-step-billing">
+          <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
             <legend><span>4</span> Mission et facturation</legend>
             <div className="project-editor-grid">
               <Field label="Navire principal">
@@ -268,7 +353,7 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset id="project-step-documents">
+          <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
             <legend><span>5</span> Documents · BIMCO SUPPLYTIME</legend>
             <div className="project-editor-grid">
               <Field label="Limite d’affectation navire"><input onChange={(event) => update('vesselAssignmentLimit', event.target.value)} value={form.vesselAssignmentLimit} /></Field>
@@ -306,6 +391,13 @@ export function ProjectEditor({
           </footer>
         </form>
       </section>
+      {clientEditorOpen ? (
+        <ClientEditor
+          client={client}
+          onClose={() => setClientEditorOpen(false)}
+          onSaved={handleClientSaved}
+        />
+      ) : null}
     </div>
   );
 }
@@ -335,7 +427,7 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     setErrorMessage('');
     setIsSaving(true);
     try {
-      onSaved(await saveClient(client, form));
+      onSaved(await saveClient(client, form), form);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible d’enregistrer le client.");
     } finally {
