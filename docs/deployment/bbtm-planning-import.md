@@ -37,8 +37,9 @@ ne modifie jamais la production.
 
 ## Générer la prévisualisation
 
-Le catalogue JSON contient deux tableaux `people` et `vessels`, avec pour chaque
-entrée `id`, `name` et `active`. Il peut être fourni explicitement pour figer
+Le catalogue JSON contient deux tableaux `people` et `vessels`. Les personnes
+exposent `id`, `name`, `active`, `functionLabel` et `gradeLabel`; les navires
+exposent `id`, `name` et `active`. Il peut être fourni explicitement pour figer
 l'audit ou être lu en mode consultation depuis le projet Supabase lié.
 
 ```powershell
@@ -51,9 +52,16 @@ npm run import:bbtm:preview -- `
   --supabase-workdir "$PWD"
 ```
 
-L'option facultative `--decisions` lit les colonnes `Statut` et `Navire` de
-l'onglet `À vérifier`. Une ligne sans décision est exclue de l'import. Une
-affectation `En Mer` sans navire reste à vérifier et n'est pas importée.
+L'option facultative `--decisions` lit les colonnes `Statut`, `Navire` et, si
+elle contient une fonction maritime précise, `Catégorie` de l'onglet
+`À vérifier`. Une ligne sans décision est exclue de l'import. Une affectation
+`En Mer` sans navire reste à vérifier et n'est pas importée.
+
+La fonction enregistrée dans `planning_periods.function_label` est résolue dans
+l'ordre suivant : fonction corrigée dans le classeur, fonction du profil RH,
+grade du profil RH, puis catégorie générique en dernier recours. Les crew lists
+et attestations utilisent ainsi la fonction maritime disponible au lieu du
+libellé générique `Équipage`.
 
 L'option `--source` peut être répétée. La commande produit trois fichiers :
 
@@ -74,6 +82,22 @@ Avant d'appliquer l'import :
 4. régénérer l'aperçu après toute modification de règle ;
 5. contrôler que le nombre attendu dans le script SQL correspond au nombre de
    périodes importables affiché dans `Synthèse`.
+
+### Validation des documents issus de l'import
+
+Les périodes historiques importées sont consommées par les trois parcours :
+
+- la crew list réglementaire, filtrée par date, navire et bordée ;
+- l'attestation d'armement, pour les périodes `En Mer` du marin et des navires
+  sélectionnés ;
+- les exports Planning, Liste d'équipage, Marin et calendrier.
+
+Avant la mise en production, générer au moins un exemple de chaque document.
+Une crew list complète exige la date et le lieu de naissance ainsi que le type
+et le numéro de pièce d'identité de chaque marin. Une attestation exige le
+numéro de marin, la date de naissance, un brevet Pont ou Machine, la fonction
+à bord et l'immatriculation du navire. L'import du planning ne complète pas ces
+données RH ou flotte manquantes.
 
 ## Application et retour arrière
 

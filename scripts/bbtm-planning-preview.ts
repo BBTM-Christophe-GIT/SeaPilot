@@ -52,7 +52,7 @@ function parseArgs(args: string[]): CliOptions {
 async function fetchSeaPilotCatalog(supabaseWorkdir: string): Promise<BbtmCatalog> {
   const sql = [
     "select 'people' as kind,",
-    "json_agg(json_build_object('id', id, 'name', trim(concat_ws(' ', first_name, last_name)), 'active', active) order by last_name, first_name) as rows",
+    "json_agg(json_build_object('id', id, 'name', trim(concat_ws(' ', first_name, last_name)), 'active', active, 'functionLabel', nullif(trim(function_label), ''), 'gradeLabel', nullif(trim(grade_label), '')) order by last_name, first_name) as rows",
     'from public.people',
     'union all',
     "select 'vessels', json_agg(json_build_object('id', id, 'name', name, 'active', active) order by name)",

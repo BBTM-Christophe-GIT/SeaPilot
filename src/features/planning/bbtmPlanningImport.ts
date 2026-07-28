@@ -10,6 +10,8 @@ export interface BbtmCatalogPerson {
   id: number;
   name: string;
   active: boolean;
+  functionLabel?: string;
+  gradeLabel?: string;
 }
 
 export interface BbtmCatalogVessel {
@@ -31,6 +33,7 @@ export interface BbtmDailyCell {
   person: string;
   personKey: string;
   category: BbtmPersonnelCategory;
+  functionLabel?: string;
   rawValue: string;
   kind: BbtmDecisionKind;
   vesselName: string;
@@ -47,6 +50,7 @@ export interface BbtmImportPeriod {
   personId: number | null;
   personActive: boolean | null;
   category: BbtmPersonnelCategory;
+  functionLabel: string;
   vesselName: string;
   vesselId: number | null;
   sailorStatus: string;
@@ -530,6 +534,7 @@ function extractDailyCells(
   sheets: ParsedSheet[],
   cutoffDate: string,
   reviewDecisions: ReadonlyMap<string, ReturnType<typeof classifyBbtmValue>> = new Map(),
+  reviewFunctionLabels: ReadonlyMap<string, string> = new Map(),
 ): BbtmDailyCell[] {
   const result: BbtmDailyCell[] = [];
   for (const sheet of sheets) {
@@ -545,6 +550,7 @@ function extractDailyCells(
         const column = numberToColumn(columnNumber);
         const rawValue = normalizeWhitespace(sheet.cells.get(`${column}${row}`) || '');
         if (!rawValue) continue;
+        const sourceCellKey = `${config.year}:${column}${row}`;
         result.push({
           sheet: config.year,
           row,
@@ -553,6 +559,7 @@ function extractDailyCells(
           person,
           personKey,
           category: categoryForRow(config.year, row),
+          functionLabel: reviewFunctionLabels.get(sourceCellKey) || '',
           rawValue,
           ...classifyBbtmCellValue(config.year, column, row, rawValue, reviewDecisions),
         });
@@ -564,6 +571,7 @@ function extractDailyCells(
 
 async function parseBbtmReviewDecisions(buffer: Uint8Array): Promise<{
   decisions: Map<string, ReturnType<typeof classifyBbtmValue>>;
+  functionLabels: Map<string, string>;
   appliedCells: number;
   ignoredCells: number;
   incompleteCells: number;
@@ -578,6 +586,7 @@ async function parseBbtmReviewDecisions(buffer: Uint8Array): Promise<{
   const sourceColumn = headerColumns.get('ONGLET SOURCE');
   const cellColumn = headerColumns.get('CELLULE');
   const valueColumn = headerColumns.get('VALEUR EXCEL');
+  const categoryColumn = headerColumns.get('CATEGORIE');
   const statusColumn = headerColumns.get('STATUT') || headerColumns.get('STATUS');
   const vesselColumn = headerColumns.get('NAVIRE');
   if (!sourceColumn || !cellColumn || !statusColumn || !vesselColumn) {
@@ -588,6 +597,7 @@ async function parseBbtmReviewDecisions(buffer: Uint8Array): Promise<{
     .filter((row) => row >= 2);
   const maxRow = Math.max(1, ...rowNumbers);
   const decisions = new Map<string, ReturnType<typeof classifyBbtmValue>>();
+  const functionLabels = new Map<string, string>();
   let appliedCells = 0;
   let ignoredCells = 0;
   let incompleteCells = 0;
@@ -597,16 +607,20 @@ async function parseBbtmReviewDecisions(buffer: Uint8Array): Promise<{
     if (!sourceSheet || !sourceCell) continue;
     const status = normalizeWhitespace(reviewSheet.cells.get(`${statusColumn}${row}`) || '');
     const vessel = normalizeWhitespace(reviewSheet.cells.get(`${vesselColumn}${row}`) || '');
+    const category = normalizeWhitespace(reviewSheet.cells.get(`${categoryColumn || ''}${row}`) || '');
     const rawValue = normalizeWhitespace(reviewSheet.cells.get(`${valueColumn || ''}${row}`) || '');
     const decision = classifyBbtmReviewDecision(status, vessel, rawValue);
     const key = `${sourceSheet}:${sourceCell}`;
     if (decisions.has(key)) throw new Error(`Décision corrigée dupliquée pour ${key}.`);
     decisions.set(key, decision);
+    if (category && !['EQUIPAGE', 'OFFICE', 'EXTRA', 'STAGIAIRE'].includes(normalizeCode(category))) {
+      functionLabels.set(key, category);
+    }
     if (decision.kind === 'excluded') ignoredCells += 1;
     else if (decision.kind === 'unmapped') incompleteCells += 1;
     else appliedCells += 1;
   }
-  return { decisions, appliedCells, ignoredCells, incompleteCells };
+  return { decisions, functionLabels, appliedCells, ignoredCells, incompleteCells };
 }
 
 function normalizeVesselKey(value: string): string {
@@ -625,19 +639,21 @@ function coalescePeriods(cells: BbtmDailyCell[], catalog: BbtmCatalog): BbtmImpo
   const usable = cells
     .filter((cell) => cell.kind === 'assignment' || cell.kind === 'status')
     .sort((left, right) =>
-      [left.sheet, left.personKey, left.vesselName, left.sailorStatus, left.comment, left.date].join('|').localeCompare(
-        [right.sheet, right.personKey, right.vesselName, right.sailorStatus, right.comment, right.date].join('|'),
+      [left.sheet, left.personKey, left.functionLabel, left.vesselName, left.sailorStatus, left.comment, left.date].join('|').localeCompare(
+        [right.sheet, right.personKey, right.functionLabel, right.vesselName, right.sailorStatus, right.comment, right.date].join('|'),
       ),
     );
   const periods: BbtmImportPeriod[] = [];
   for (const cell of usable) {
     const person = resolveCatalogPerson(cell.personKey, catalog);
     const vessel = cell.vesselName ? resolveCatalogVessel(cell.vesselName, catalog) : null;
+    const functionLabel = cell.functionLabel || person?.functionLabel || person?.gradeLabel || cell.category;
     const previous = periods.at(-1);
     const sameRun =
       previous &&
       previous.sheet === cell.sheet &&
       previous.personKey === cell.personKey &&
+      previous.functionLabel === functionLabel &&
       previous.vesselName === cell.vesselName &&
       previous.sailorStatus === cell.sailorStatus &&
       previous.comment === cell.comment &&
@@ -661,6 +677,7 @@ function coalescePeriods(cells: BbtmDailyCell[], catalog: BbtmCatalog): BbtmImpo
       personId: person?.id ?? null,
       personActive: person?.active ?? null,
       category: cell.category,
+      functionLabel,
       vesselName: cell.vesselName,
       vesselId: vessel?.id ?? null,
       sailorStatus: cell.sailorStatus,
@@ -867,8 +884,14 @@ export async function buildBbtmImportPreviewFromSources(
   const sheets = (await Promise.all(sources.map((source) => parseWorkbook(source.buffer)))).flat();
   const correction = options.correctionBuffer
     ? await parseBbtmReviewDecisions(options.correctionBuffer)
-    : { decisions: new Map<string, ReturnType<typeof classifyBbtmValue>>(), appliedCells: 0, ignoredCells: 0, incompleteCells: 0 };
-  const cells = extractDailyCells(sheets, options.cutoffDate, correction.decisions);
+    : {
+        decisions: new Map<string, ReturnType<typeof classifyBbtmValue>>(),
+        functionLabels: new Map<string, string>(),
+        appliedCells: 0,
+        ignoredCells: 0,
+        incompleteCells: 0,
+      };
+  const cells = extractDailyCells(sheets, options.cutoffDate, correction.decisions, correction.functionLabels);
   const periods = coalescePeriods(cells, catalog);
   const boards = inferBoards(periods);
   const people = buildPeoplePreview(cells, catalog);
@@ -941,7 +964,7 @@ export function buildBbtmImportSql(preview: BbtmImportPreview): BbtmImportSqlBun
       sqlLiteral(matchedNameByPersonKey.get(period.personKey) || period.person),
       sqlNullableText(period.vesselName),
       sqlNullableText(watchGroup),
-      sqlLiteral(period.category),
+      sqlLiteral(period.functionLabel),
       sqlLiteral(period.sailorStatus),
       sqlLiteral(period.startsOn),
       sqlLiteral(period.endsOn),

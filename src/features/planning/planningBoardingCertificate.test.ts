@@ -105,6 +105,46 @@ describe('Attestation d’Embarquement', () => {
     ]);
   });
 
+  it('uses imported BBTM periods for the attestation', () => {
+    const importedOverview = {
+      ...overview,
+      assignments: [],
+      periods: [{
+        id: 71,
+        personId: 10,
+        vesselId: 2,
+        crewName: 'Adrien BOIS',
+        vesselName: 'GOURY',
+        watchGroup: 'Bordée 1',
+        functionLabel: '2nd Capitaine',
+        sailorStatus: 'En Mer',
+        startsOn: '2024-04-10',
+        endsOn: '2024-04-15',
+        yearNumber: 2024,
+        comments: 'Import BBTM',
+        slot365SourceId: 'BBTM - PLANNING 2024.xlsx',
+        slot365SourceKey: 'bbtm:71',
+        sourceLabel: 'bbtm-planning-xlsx-v1',
+      }],
+    };
+
+    expect(buildBoardingCertificateData(importedOverview, {
+      personId: 10,
+      vesselIds: [2],
+      startsOn: '2024-01-01',
+      endsOn: '2024-12-31',
+      generatedOn: '2026-12-31',
+    })).toMatchObject({
+      totalDays: 6,
+      periods: [expect.objectContaining({
+        startsOn: '2024-04-10',
+        endsOn: '2024-04-15',
+        functionLabel: '2nd Capitaine',
+        vesselName: 'GOURY',
+      })],
+    });
+  });
+
   it('uses the Pont and Machine document titles instead of a numeric legacy certificate value', () => {
     const arnaudOverview = {
       ...overview,
