@@ -2928,42 +2928,49 @@ button:disabled {
   font-size: 1.7rem;
 }
 
-.project-assistant-layout > aside a {
+.project-assistant-layout > aside button {
   display: grid;
   grid-template-columns: 22px 30px 1fr;
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-height: 68px;
   padding: 12px 14px;
   border: 1px solid #263247;
   border-radius: 11px;
+  background: transparent;
   color: #c7d1df;
-  text-decoration: none;
+  text-align: left;
 }
 
-.project-assistant-layout > aside a.is-active {
+.project-assistant-layout > aside button:hover {
+  border-color: #4b5b73;
+  color: #fff;
+}
+
+.project-assistant-layout > aside button.is-active {
   border-color: #2e6de9;
   background: #2e6de9;
   color: #fff;
 }
 
-.project-assistant-layout > aside a > b {
+.project-assistant-layout > aside button > b {
   text-align: center;
 }
 
-.project-assistant-layout > aside a > span {
+.project-assistant-layout > aside button > span {
   display: grid;
   gap: 4px;
   font-weight: 800;
 }
 
-.project-assistant-layout > aside a small {
+.project-assistant-layout > aside button small {
   color: #94a4bb;
   font-size: 0.72rem;
   font-weight: 600;
 }
 
-.project-assistant-layout > aside a.is-active small {
+.project-assistant-layout > aside button.is-active small {
   color: #cfe0ff;
 }
 
@@ -3037,7 +3044,27 @@ button:disabled {
   }
 
   .project-assistant-layout > aside {
+    display: grid;
+    grid-auto-columns: minmax(190px, 1fr);
+    grid-auto-flow: column;
+    gap: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .project-assistant-layout > aside > span,
+  .project-assistant-layout > aside > strong {
     display: none;
+  }
+
+  .project-assistant-layout > aside button {
+    min-height: 60px;
+    padding: 9px 10px;
+  }
+
+  .project-assistant-layout > main {
+    padding: 18px 14px 28px;
   }
 }
 
@@ -3363,12 +3390,40 @@ button:disabled {
 }
 
 .project-editor-grid label,
+.project-editor-client-field,
 .project-supplytime-editor label {
   display: grid;
   gap: 5px;
   color: var(--muted-text);
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.project-editor-field-label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.project-editor-field-label button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 8px;
+  color: #205fc9;
+  background: #eef4ff;
+  border: 1px solid #bfd2f6;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-editor-field-label button:hover {
+  background: #dfeaff;
+  border-color: #8eafea;
 }
 
 .project-editor-grid label.is-wide,

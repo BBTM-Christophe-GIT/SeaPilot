@@ -440,17 +440,57 @@ describe('ProjectsPage', () => {
 
     await screen.findByRole('heading', { name: 'Projets' });
     await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    expect(screen.getByRole('group', { name: /Identification/ })).toBeVisible();
+    expect(screen.getByLabelText('Début du projet')).not.toBeVisible();
     await user.type(screen.getByLabelText('Nom du projet *'), 'Projet SeaPilot');
     await user.selectOptions(screen.getByLabelText('Client / affréteur'), '50');
+    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    const deliveryPort = screen.getByLabelText('Port de livraison');
+    const finistere = deliveryPort.querySelector('optgroup[label="Finistère"]');
+    expect(finistere).toHaveTextContent('Brest – FRBES');
+    await user.selectOptions(deliveryPort, 'Brest');
+    await user.selectOptions(screen.getByLabelText('Port de restitution'), 'Cherbourg');
+    await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
     expect(await screen.findByText('P1196 enregistré dans Supabase.')).toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+      target_delivery_port: 'Brest',
       target_project_id: null,
       target_title: 'Projet SeaPilot',
       target_client_id: 50,
       target_primary_vessel_id: 12,
+      target_redelivery_port: 'Cherbourg',
+    }));
+  });
+
+  it('creates a client from the project identification step and selects it immediately', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'clients_save') return { data: { id: 77 }, error: null };
+      if (functionName === 'projects_peek_next_code') return { data: 'P1196', error: null };
+      return {
+        data: { id: 990, project_code: 'P1196', title: 'Projet SeaPilot', updated_at: '2026-07-16T08:00:00Z' },
+        error: null,
+      };
+    });
+
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Projets' });
+    await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un client ou affréteur' }));
+    await user.type(screen.getByLabelText('Nom du client *'), 'Nouveau Affréteur');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Créer un client' })).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Client / affréteur')).toHaveValue('77');
+    expect(screen.getByRole('option', { name: 'Nouveau Affréteur' })).toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
+      target_client_id: null,
+      target_name: 'Nouveau Affréteur',
     }));
   });
 

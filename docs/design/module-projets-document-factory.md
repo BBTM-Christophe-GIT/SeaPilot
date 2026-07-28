@@ -11,6 +11,14 @@ Un projet catalogue peut être lié à zéro, une ou plusieurs lignes `planning_
 
 La numérotation reste pilotée par `project_number_counters`. `projects_peek_next_code()` ne fournit qu'un aperçu à l'assistant (P265 attendu après l'import P264) ; le trigger `projects_assign_code` et `allocate_next_project_code()` réalisent l'attribution atomique lors de l'insertion.
 
+## Assistant de création
+
+Les cinq entrées de la navigation latérale sont de vraies étapes : une seule carte est affichée à la fois et les valeurs déjà saisies sont conservées lors du passage d'une étape à l'autre.
+
+L'étape Identification permet de créer un client ou affréteur avec la RPC `clients_save`. Le nouveau client est ajouté à la liste et sélectionné dans le projet sans fermer l'assistant.
+
+Les ports de livraison et de restitution utilisent le référentiel SharePoint `LOCODE` du site QHSE (liste `20e7b5db-85f2-4e7f-ad8d-64d75b396414`). Les 53 lignes validées sont versionnées dans `projectPorts.ts`, groupées par département et affichées sous la forme `Port – LOCODE`. La valeur persistée dans les champs historiques `delivery_port` et `redelivery_port` reste le nom du port afin de préserver la compatibilité avec les projets existants et la génération documentaire.
+
 ## Documents disponibles
 
 | Type | Format | État | Source des valeurs |
