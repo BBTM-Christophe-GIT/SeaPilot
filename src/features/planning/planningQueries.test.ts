@@ -520,15 +520,15 @@ describe('fetchPlanningOverview', () => {
     expect(periodsOrderByStart).toHaveBeenCalledWith('starts_on', { ascending: true });
     expect(periodsOrderByCrew).toHaveBeenCalledWith('crew_name', { ascending: true });
     expect(periodsOrderById).toHaveBeenCalledWith('id', { ascending: true });
-    expect(periodsRange).toHaveBeenCalledWith(0, 499);
+    expect(periodsRange).toHaveBeenCalledWith(0, 999);
   });
 
   it('loads every planning period beyond the Supabase response limit', async () => {
-    const firstPage = Array.from({ length: 500 }, (_, index) => ({
+    const firstPage = Array.from({ length: 1_000 }, (_, index) => ({
       ...planningPeriodRow,
       id: index + 1,
     }));
-    const finalRow = { ...planningPeriodRow, id: 501 };
+    const finalRow = { ...planningPeriodRow, id: 1_001 };
     const range = vi.fn()
       .mockResolvedValueOnce({ data: firstPage, error: null })
       .mockResolvedValueOnce({ data: [finalRow], error: null });
@@ -539,9 +539,9 @@ describe('fetchPlanningOverview', () => {
       select: vi.fn().mockReturnValue({ order: orderByStart }),
     });
 
-    await expect(fetchPlanningPeriods({ from } as never)).resolves.toHaveLength(501);
-    expect(range).toHaveBeenNthCalledWith(1, 0, 499);
-    expect(range).toHaveBeenNthCalledWith(2, 500, 999);
+    await expect(fetchPlanningPeriods({ from } as never)).resolves.toHaveLength(1_001);
+    expect(range).toHaveBeenNthCalledWith(1, 0, 999);
+    expect(range).toHaveBeenNthCalledWith(2, 1_000, 1_999);
   });
 
   it('keeps inactive people available when resolving historical assignment labels', async () => {

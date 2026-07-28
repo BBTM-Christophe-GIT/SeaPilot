@@ -271,14 +271,14 @@ function personRoleRank(value: string): number {
   return rank === -1 ? 99 : rank;
 }
 
-function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
+function crewEventFromPeriod(period: PlanningPeriodRecord, vesselName = period.vesselName): PlanningCrewEvent {
   return {
     id: `period-${period.id}`,
     kind: 'period',
     personId: period.personId,
     vesselId: period.vesselId,
     person: period.crewName,
-    vessel: period.vesselName,
+    vessel: vesselName,
     board: period.watchGroup,
     functionLabel: period.functionLabel,
     status: normalizePlanningStatus(period.sailorStatus),
@@ -294,14 +294,14 @@ function crewEventFromPeriod(period: PlanningPeriodRecord): PlanningCrewEvent {
   };
 }
 
-function crewEventFromAssignment(assignment: PlanningAssignmentRecord): PlanningCrewEvent {
+function crewEventFromAssignment(assignment: PlanningAssignmentRecord, vesselName = assignment.vesselName): PlanningCrewEvent {
   return {
     id: `assignment-${assignment.id}`,
     kind: 'assignment',
     personId: assignment.crewPersonId,
     vesselId: assignment.vesselId,
     person: assignment.crewName,
-    vessel: assignment.vesselName,
+    vessel: vesselName,
     board: assignment.watchGroup || 'Affectation',
     functionLabel: assignment.assignmentRole,
     status: normalizePlanningStatus(assignment.statusLabel),
@@ -318,14 +318,14 @@ function crewEventFromAssignment(assignment: PlanningAssignmentRecord): Planning
   };
 }
 
-function crewEventFromDay(day: PlanningDayRecord): PlanningCrewEvent {
+function crewEventFromDay(day: PlanningDayRecord, vesselName = day.vesselName): PlanningCrewEvent {
   return {
     id: `day-${day.id}`,
     kind: 'day',
     personId: day.personId,
     vesselId: day.vesselId,
     person: day.crewName,
-    vessel: day.vesselName,
+    vessel: vesselName,
     board: day.watchGroup,
     functionLabel: day.functionLabel,
     status: normalizePlanningStatus(day.sailorStatus || day.dayStatus),
@@ -346,7 +346,15 @@ function eventKey(event: PlanningCrewEvent): string {
 }
 
 export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCrewEvent[] {
-  const events = overview.periods.map(crewEventFromPeriod);
+  const vesselNamesById = new Map(overview.vessels.map((vessel) => [vessel.id, vessel.name]));
+  const canonicalVesselName = (vesselId: number | null, fallback: string) => (
+    vesselId === null ? fallback : vesselNamesById.get(vesselId) || fallback
+  );
+  const events = overview.periods.map((period) => crewEventFromPeriod(
+    period,
+    canonicalVesselName(period.vesselId, period.vesselName),
+  ));
+  const eventIndexesByKey = new Map(events.map((event, index) => [eventKey(event), index]));
   const notesByAssignment = new Map<number, Record<string, string>>();
   const statusesByAssignment = new Map<number, Record<string, string>>();
   overview.days.forEach((day) => {
@@ -360,28 +368,55 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     statuses[day.workDate] = normalizePlanningStatus(day.sailorStatus);
     statusesByAssignment.set(assignmentId, statuses);
   });
-  overview.assignments.map(crewEventFromAssignment).forEach((event) => {
+  overview.assignments.map((assignment) => crewEventFromAssignment(
+    assignment,
+    canonicalVesselName(assignment.vesselId, assignment.vesselName),
+  )).forEach((event) => {
     const enriched = {
       ...event,
       dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {},
       dailyStatuses: statusesByAssignment.get(event.assignmentId || 0) || {},
     };
-    const existingIndex = events.findIndex((current) => eventKey(current) === eventKey(event));
-    if (existingIndex === -1) events.push(enriched);
-    else events[existingIndex] = { ...events[existingIndex], assignmentId: event.assignmentId, dailyNotes: enriched.dailyNotes, dailyStatuses: enriched.dailyStatuses };
+    const key = eventKey(event);
+    const existingIndex = eventIndexesByKey.get(key);
+    if (existingIndex === undefined) {
+      eventIndexesByKey.set(key, events.length);
+      events.push(enriched);
+    } else {
+      events[existingIndex] = {
+        ...events[existingIndex],
+        assignmentId: event.assignmentId,
+        dailyNotes: enriched.dailyNotes,
+        dailyStatuses: enriched.dailyStatuses,
+      };
+    }
+  });
+  const eventsByPersonVessel = new Map<string, PlanningCrewEvent[]>();
+  const coverageKey = (event: PlanningCrewEvent) => (
+    `${normalizePlanningText(event.person)}|${normalizePlanningText(event.vessel)}`
+  );
+  events.forEach((event) => {
+    const key = coverageKey(event);
+    const groupedEvents = eventsByPersonVessel.get(key);
+    if (groupedEvents) groupedEvents.push(event);
+    else eventsByPersonVessel.set(key, [event]);
   });
   overview.days
     .filter((day) => day.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE && day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE)
-    .map(crewEventFromDay)
+    .map((day) => crewEventFromDay(day, canonicalVesselName(day.vesselId, day.vesselName)))
     .forEach((event) => {
-      const covered = events.some(
+      const key = coverageKey(event);
+      const covered = (eventsByPersonVessel.get(key) || []).some(
         (current) =>
-          normalizePlanningText(current.person) === normalizePlanningText(event.person) &&
-          normalizePlanningText(current.vessel) === normalizePlanningText(event.vessel) &&
           current.startsOn <= event.startsOn &&
           current.endsOn >= event.endsOn,
       );
-      if (!covered) events.push(event);
+      if (!covered) {
+        events.push(event);
+        const groupedEvents = eventsByPersonVessel.get(key);
+        if (groupedEvents) groupedEvents.push(event);
+        else eventsByPersonVessel.set(key, [event]);
+      }
     });
   return events;
 }
@@ -394,9 +429,10 @@ export function buildPlanningCrewRows(
   overview: PlanningOverview,
   days: PlanningTimelineDay[],
   filters: PlanningFilters,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
-  const allEvents = getAllPlanningCrewEvents(overview);
+  const allEvents = eventPool;
   const events = allEvents.filter(
     (event) =>
       event.confirmationStatus !== 'cancelled' &&
@@ -410,9 +446,20 @@ export function buildPlanningCrewRows(
       rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end) &&
       (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName),
   );
+  const vesselsById = new Map(overview.vessels.map((vessel) => [vessel.id, vessel]));
+  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
+  const peopleById = new Map(overview.people.map((person) => [person.id, person]));
+  const peopleByName = new Map(overview.people.map((person) => [formatPlanningPerson(person), person]));
+  const allEventRecordKeys = new Set<string>();
+  allEvents.forEach((event) => {
+    const board = event.board || (normalizePlanningText(event.vessel).includes('ARMEMENT') ? 'Armement' : 'Bordée');
+    const prefix = `${event.vessel}|${board}|`;
+    allEventRecordKeys.add(`${prefix}name:${event.person}`);
+    if (event.personId !== null) allEventRecordKeys.add(`${prefix}id:${event.personId}`);
+  });
   const boardRows = (overview.boardRows || []).flatMap((boardRow) => {
-    const vessel = overview.vessels.find((item) => item.id === boardRow.vesselId);
-    const person = overview.people.find((item) => item.id === boardRow.personId);
+    const vessel = vesselsById.get(boardRow.vesselId);
+    const person = peopleById.get(boardRow.personId);
     if (!vessel || !person) return [];
     const personName = formatPlanningPerson(person);
     if (filters.vesselName && filters.vesselName !== vessel.name) return [];
@@ -437,7 +484,7 @@ export function buildPlanningCrewRows(
       const vesselKey = `vessel-${safeKey(vessel)}`;
       const vesselEvents = events.filter((event) => event.vessel === vessel);
       const vesselBoardRows = boardRows.filter((entry) => entry.vessel.name === vessel);
-      const vesselRecord = overview.vessels.find((item) => item.name === vessel);
+      const vesselRecord = vesselsByName.get(vessel);
       const vesselProjects = projects.filter((project) => project.primaryVesselName === vessel || project.secondaryVesselName === vessel);
       rows.push({
         key: vesselKey,
@@ -489,25 +536,29 @@ export function buildPlanningCrewRows(
             projects: [],
           });
           const people = new Map<string, PlanningCrewEvent[]>();
-          boardEvents.forEach((event) => people.set(event.person, [...(people.get(event.person) || []), event]));
+          boardEvents.forEach((event) => {
+            const personEvents = people.get(event.person);
+            if (personEvents) personEvents.push(event);
+            else people.set(event.person, [event]);
+          });
           boardContent.rows.forEach((entry) => {
             if (!people.has(entry.personName)) people.set(entry.personName, []);
           });
           [...people.entries()]
             .sort(([leftName, leftEvents], [rightName, rightEvents]) => {
-              const leftRole = leftEvents[0]?.functionLabel || overview.people.find((person) => formatPlanningPerson(person) === leftName)?.functionLabel || '';
-              const rightRole = rightEvents[0]?.functionLabel || overview.people.find((person) => formatPlanningPerson(person) === rightName)?.functionLabel || '';
+              const leftRole = leftEvents[0]?.functionLabel || peopleByName.get(leftName)?.functionLabel || '';
+              const rightRole = rightEvents[0]?.functionLabel || peopleByName.get(rightName)?.functionLabel || '';
               return personRoleRank(leftRole) - personRoleRank(rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
-              const linkedPerson = overview.people.find((item) => formatPlanningPerson(item) === person);
+              const linkedPerson = peopleByName.get(person);
               const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
               const personId = personEvents[0]?.personId || linkedPerson?.id || null;
-              const hasAnyRecords = allEvents.some((event) => (
-                event.vessel === vessel
-                && (event.board || (normalizePlanningText(vessel).includes('ARMEMENT') ? 'Armement' : 'Bordée')) === board
-                && (personId !== null ? event.personId === personId || event.person === person : event.person === person)
-              ));
+              const recordPrefix = `${vessel}|${board}|`;
+              const hasAnyRecords = (
+                (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))
+                || allEventRecordKeys.has(`${recordPrefix}name:${person}`)
+              );
               rows.push({
                 key: `${boardKey}-person-${safeKey(person)}`,
                 type: 'person',
@@ -538,9 +589,10 @@ export function getUnassignedPlanningPeople(
   overview: PlanningOverview,
   range: PlanningDateRange,
   filters: PlanningFilters,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningPerson[] {
   const assigned = new Set(
-    getAllPlanningCrewEvents(overview)
+    eventPool
       .filter(
         (event) =>
           rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&

@@ -146,6 +146,7 @@ const personnelRanges: Record<string, { startRow: number; endRow: number; startD
   '2026': { startRow: 28, endRow: 64, startDate: '2026-01-01', year: '2026' },
 };
 
+const ARMEMENT_CHERBOURG = 'Armement - Cherbourg';
 const vesselCodeMap = new Map<string, string>([
   ['LR', 'LE ROZEL'],
   ['RZL', 'LE ROZEL'],
@@ -162,7 +163,7 @@ const vesselCodeMap = new Map<string, string>([
   ['LDM', 'LANDEMER'],
   ['HE', 'HOLENN EUSA'],
   ['LH', 'YARD - LE HAVRE'],
-  ['CH', 'ARMEMENT CHERBOURG'],
+  ['CH', ARMEMENT_CHERBOURG],
 ]);
 
 const excludedCodes = new Set(['DK', 'SPA', 'BR', 'FLA', 'OR', 'SEANERGY']);
@@ -188,7 +189,6 @@ const manualShoreCells = new Set(`
 2025:DN46 2025:DP46 2025:DW46 2025:FB51 2025:FB52 2025:ET33 2025:CX45 2025:CY45 2025:EG45
 `.trim().split(/\s+/));
 const manualSeaCells = new Set(['2026:CW36', '2025:GO34']);
-const ARMEMENT_CHERBOURG = 'ARMEMENT CHERBOURG';
 const nonBoardVessels = new Set([ARMEMENT_CHERBOURG, 'YARD - LE HAVRE']);
 const personAliases = new Map([
   ['KIKI', 'CHRISTOPHE BINET'],

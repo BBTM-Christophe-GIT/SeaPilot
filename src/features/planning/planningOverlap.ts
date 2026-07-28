@@ -30,9 +30,12 @@ export function getPlanningConflictEventIds(overview: PlanningOverview): Set<str
   return new Set(getPlanningConflictDatesByEvent(overview).keys());
 }
 
-export function getPlanningConflictDatesByEvent(overview: PlanningOverview): Map<string, Set<string>> {
+export function getPlanningConflictDatesByEvent(
+  overview: PlanningOverview,
+  eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+): Map<string, Set<string>> {
   const eventsByPerson = new Map<string, PlanningCrewEvent[]>();
-  getAllPlanningCrewEvents(overview).forEach((event) => {
+  eventPool.forEach((event) => {
     const key = planningPersonKey(event);
     eventsByPerson.set(key, [...(eventsByPerson.get(key) || []), event]);
   });
