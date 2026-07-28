@@ -69,6 +69,7 @@ export function PlanningFleetTimelineRow({
   hasBoards,
   touchDropTarget,
   onAssignPerson,
+  onOpenCell,
   onMove,
   onOpen,
   onResize,
@@ -88,6 +89,7 @@ export function PlanningFleetTimelineRow({
   hasBoards: boolean;
   touchDropTarget: { vesselId: number; watchGroup: string } | null;
   onAssignPerson: (personId: number, lane: PlanningFleetLane, watchGroup: string) => void;
+  onOpenCell: (lane: PlanningFleetLane, date: string) => void;
   onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
@@ -195,9 +197,11 @@ export function PlanningFleetTimelineRow({
       {days.map((day, index) => {
         const mouseDragOver = dragOver === day.date;
         const shared = {
-          className: cellClass(day, { create: false, dragOver: mouseDragOver, drop: editable }),
+          'aria-label': `Planifier un projet pour ${lane.label} le ${formatPlanningDate(day.date)}`,
+          className: cellClass(day, { create: true, dragOver: mouseDragOver, drop: editable }),
           'data-planning-drop-date': day.date,
           'data-planning-drop-vessel': lane.vessel,
+          onDoubleClick: () => onOpenCell(lane, day.date),
           onDragEnter: editable ? (event: React.DragEvent) => { if (!event.dataTransfer.types.includes('application/x-seapilot-planning')) setDragOver(day.date); } : undefined,
           onDragLeave: editable ? () => setDragOver((current) => current === day.date ? null : current) : undefined,
           onDragOver: editable ? (event: React.DragEvent) => {
@@ -217,8 +221,10 @@ export function PlanningFleetTimelineRow({
             if (Number.isSafeInteger(id) && id > 0) onMove(id, lane, day.date);
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
+          title: `Double-cliquer pour planifier un projet sur ${lane.label}`,
+          type: 'button' as const,
         };
-        return <div {...shared} key={day.date} />;
+        return <button {...shared} key={day.date} />;
       })}
       {movePreview ? (() => {
         const placement = dateGridPlacement(movePreview.startsOn, movePreview.endsOn, days);

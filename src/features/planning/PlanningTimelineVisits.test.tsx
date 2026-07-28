@@ -57,6 +57,7 @@ describe('Planning timeline visit and leave rendering', () => {
       onCreateVisit={vi.fn()}
       onMove={vi.fn()}
       onOpen={vi.fn()}
+      onOpenCell={vi.fn()}
       onOpenVessel={vi.fn()}
       onOpenVisit={onOpenVisit}
       onResize={vi.fn()}
