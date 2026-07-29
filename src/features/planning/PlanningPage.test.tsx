@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
-import { formatPlanningDate, todayPlanningDate } from './planningDates';
+import { formatPlanningDate, startOfPlanningWeek, todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, timelineRange } from './planningModel';
 
 const assignmentFunctionOptions = [
@@ -694,6 +694,19 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-07');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
+  });
+
+  it('opens the current month with the current week’s Monday at the left edge of the calendar', async () => {
+    const { client } = createClient();
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
+    const days = buildPlanningTimeline(todayPlanningDate(), 'month');
+    const mondayIndex = days.findIndex((day) => day.date === startOfPlanningWeek(todayPlanningDate()));
+
+    expect(mondayIndex).toBeGreaterThanOrEqual(0);
+    expect(calendar.scrollLeft).toBe(mondayIndex * 52);
   });
 
   it('organizes the menu as icon-and-text ribbon groups without changing the calendar controls', async () => {
