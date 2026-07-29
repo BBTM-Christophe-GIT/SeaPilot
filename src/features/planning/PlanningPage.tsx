@@ -35,7 +35,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -64,7 +64,7 @@ import {
   type PlanningControlResult,
   type PlanningFilters,
 } from './planningModel';
-import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, startOfPlanningWeek, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
+import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
@@ -438,8 +438,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const readPermissions = getPlanningPermissions(effectiveRoles, false);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const workspaceRef = useRef<HTMLElement>(null);
-  const calendarScrollRef = useRef<HTMLDivElement>(null);
-  const hasPositionedInitialCalendarRef = useRef(false);
   const initialAnchorDate = useMemo(() => todayPlanningDate(), []);
   const previewOverview = useMemo(
     () => previewMode ? createPlanningPreviewOverview(initialAnchorDate) : undefined,
@@ -617,17 +615,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
-
-  useLayoutEffect(() => {
-    if (hasPositionedInitialCalendarRef.current) return;
-    const mondayIndex = days.findIndex((day) => day.date === startOfPlanningWeek(initialAnchorDate));
-    if (mondayIndex < 0) return;
-
-    const calendar = calendarScrollRef.current;
-    if (!calendar) return;
-    calendar.scrollLeft = mondayIndex * effectiveDayWidth;
-    hasPositionedInitialCalendarRef.current = true;
-  }, [days, effectiveDayWidth, hasLoaded, initialAnchorDate]);
 
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
   const fleetLanes = useMemo(
@@ -2124,7 +2111,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
           <div
             className={`planning-calendar-scroll${isCalendarPanning ? ' is-panning' : ''}`}
-            ref={calendarScrollRef}
             data-planning-range-end={range.end}
             data-planning-range-start={range.start}
             data-planning-view-mode={PLANNING_VIEW_MODE}

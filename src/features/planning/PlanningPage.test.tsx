@@ -5,6 +5,11 @@ import { PlanningPage } from './PlanningPage';
 import { formatPlanningDate, startOfPlanningWeek, todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, timelineRange } from './planningModel';
 
+vi.mock('./planningDates', async (importOriginal) => ({
+  ...await importOriginal(),
+  todayPlanningDate: () => '2026-06-29',
+}));
+
 const assignmentFunctionOptions = [
   'Capitaine',
   'Chef Mécanicien',
@@ -676,7 +681,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('uses a selected month with one week of context on each side and exposes navigation controls', async () => {
+  it('uses a rolling seven-week window from the selected month’s Monday and exposes navigation controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -684,29 +689,26 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-07' } });
     const calendar = document.querySelector('.planning-calendar-scroll');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-06-24');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-08-07');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-06-30');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-08-17');
     await user.click(screen.getByRole('button', { name: 'Mois suivant' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-08');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-07-25');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-09-07');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-07-28');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-09-14');
     await user.click(screen.getByRole('button', { name: 'Mois précédent' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-07');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
 
-  it('opens the current month with the current week’s Monday in view', async () => {
+  it('opens the rolling month on the current week’s Monday', async () => {
     const { client } = createClient();
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
     const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
-    const days = buildPlanningTimeline(todayPlanningDate(), 'month');
-    const mondayIndex = days.findIndex((day) => day.date === startOfPlanningWeek(todayPlanningDate()));
-
-    expect(mondayIndex).toBeGreaterThanOrEqual(0);
-    expect(calendar.scrollLeft).toBe(mondayIndex * 52);
+    expect(calendar).toHaveAttribute('data-planning-range-start', startOfPlanningWeek(todayPlanningDate()));
+    expect(calendar.scrollLeft).toBe(0);
   });
 
   it('organizes the menu as icon-and-text ribbon groups without changing the calendar controls', async () => {
