@@ -12,9 +12,11 @@ import {
   ChevronRight,
   Copy,
   Expand,
+  ExternalLink,
   FilePenLine,
   FileDown,
   FileSpreadsheet,
+  FileText,
   Gauge,
   GripVertical,
   History,
@@ -84,6 +86,7 @@ import {
   fetchPlanningHistory,
   fetchPlanningDays,
   fetchPlanningProjects,
+  fetchPlanningOperationDocuments,
   mapPlanningAssignmentOverviewRows,
   mapPlanningAssignmentRows,
   movePlanningGridCells,
@@ -102,6 +105,7 @@ import {
   type PlanningHistoryRecord,
   type PlanningHrDocumentRecord,
   type PlanningProjectRecord,
+  type PlanningOperationDocumentRecord,
   type PlanningVessel,
   type SavePlanningHandoverInput,
 } from './planningQueries';
@@ -464,6 +468,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<PlanningCrewEvent | null>(null);
   const [selectedProject, setSelectedProject] = useState<PlanningProjectRecord | null>(null);
+  const [selectedProjectDocuments, setSelectedProjectDocuments] = useState<PlanningOperationDocumentRecord[]>([]);
+  const [selectedProjectDocumentsError, setSelectedProjectDocumentsError] = useState('');
   const [selectedHandover, setSelectedHandover] = useState<PlanningHandoverRecord | null>(null);
   const [eventForm, setEventForm] = useState<EventFormState | null>(null);
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(EMPTY_ASSIGNMENT);
@@ -516,12 +522,69 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const calendarPanCleanupRef = useRef<(() => void) | null>(null);
   const suppressCalendarClickRef = useRef(false);
   const suppressCalendarClickTimeoutRef = useRef<number | null>(null);
+  const requestedPlanningOccurrenceIdRef = useRef<number | null>((() => {
+    const occurrenceId = Number(new URLSearchParams(window.location.search).get('planningOccurrenceId'));
+    return Number.isInteger(occurrenceId) && occurrenceId > 0 ? occurrenceId : null;
+  })());
+
+  useEffect(() => {
+    const occurrenceId = requestedPlanningOccurrenceIdRef.current;
+    if (occurrenceId === null) return;
+    const project = overview.projects.find((item) => item.id === occurrenceId);
+    if (!project) return;
+
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      requestedPlanningOccurrenceIdRef.current = null;
+      setSelectedProjectDocuments([]);
+      setSelectedProjectDocumentsError('');
+      setSelectedTimelineId(`project-${project.id}`);
+      setSelectedProject(project);
+      setProjectForm({
+        title: project.title,
+        startsOn: project.startsOn,
+        endsOn: project.endsOn,
+        status: project.status,
+        eventType: project.eventType,
+        vesselId: String(project.primaryVesselId || ''),
+        responsibleName: project.responsibleName,
+        clientName: project.clientName,
+        description: project.description,
+      });
+      setIsProjectQuick(false);
+      setIsProjectOpen(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [overview.projects]);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
     document.addEventListener('fullscreenchange', handleFullscreen);
     return () => document.removeEventListener('fullscreenchange', handleFullscreen);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedProject) return () => { active = false; };
+
+    fetchPlanningOperationDocuments(effectiveClient, selectedProject.id)
+      .then((documents) => {
+        if (active) setSelectedProjectDocuments(documents);
+      })
+      .catch((error) => {
+        if (active) {
+          setSelectedProjectDocumentsError(
+            planningErrorMessage(error, 'Impossible de charger les documents de cette opération.'),
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [effectiveClient, selectedProject]);
 
   useEffect(() => () => {
     calendarPanCleanupRef.current?.();
@@ -1708,6 +1771,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function openProjectEditor(project: PlanningProjectRecord) {
+    setSelectedProjectDocuments([]);
+    setSelectedProjectDocumentsError('');
     setSelectedTimelineId(`project-${project.id}`);
     setSelectedProject(project);
     setProjectForm({
@@ -2316,7 +2381,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
-      {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
+      {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} documents={selectedProjectDocuments} documentsError={selectedProjectDocumentsError} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {projectCellContext ? (
         <PlanningProjectPickerDialog
           client={effectiveClient}
@@ -2647,8 +2712,29 @@ function PlanningHistoryList({ overview }: { overview: ReturnType<typeof usePlan
   );
 }
 
-function PlanningProjectDialog({ project, form, activeVessels, editable, isQuick, isSaving, onChange, onClose, onSave, onExpand, onDuplicate, onCancel }: { project: PlanningProjectRecord | null; form: ProjectFormState; activeVessels: PlanningVessel[]; editable: boolean; isQuick: boolean; isSaving: boolean; onChange: (form: ProjectFormState) => void; onClose: () => void; onSave: () => void; onExpand: () => void; onDuplicate: () => void; onCancel: () => void }) {
-  if (project && !editable) return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-modal="true" className="planning-dialog is-side-panel is-detail" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>{project.title}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Type</dt><dd>{planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
+function PlanningOperationDocuments({ documents, error }: { documents: PlanningOperationDocumentRecord[]; error: string }) {
+  if (error) return <p className="planning-operation-documents-error" role="status">{error}</p>;
+  if (documents.length === 0) return null;
+  return (
+    <section className="planning-operation-documents" aria-label="Documents de l’opération">
+      <strong>Documents de l’opération</strong>
+      <ul>
+        {documents.map((document) => (
+          <li key={document.id}>
+            <a href={document.sharePointWebUrl} rel="noreferrer" target="_blank">
+              <FileText aria-hidden="true" size={15} />
+              {document.fileName}
+              <ExternalLink aria-hidden="true" size={13} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PlanningProjectDialog({ project, form, activeVessels, documents, documentsError, editable, isQuick, isSaving, onChange, onClose, onSave, onExpand, onDuplicate, onCancel }: { project: PlanningProjectRecord | null; form: ProjectFormState; activeVessels: PlanningVessel[]; documents: PlanningOperationDocumentRecord[]; documentsError: string; editable: boolean; isQuick: boolean; isSaving: boolean; onChange: (form: ProjectFormState) => void; onClose: () => void; onSave: () => void; onExpand: () => void; onDuplicate: () => void; onCancel: () => void }) {
+  if (project && !editable) return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-modal="true" className="planning-dialog is-side-panel is-detail" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>{project.title}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Type</dt><dd>{planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl><PlanningOperationDocuments documents={documents} error={documentsError} /><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
   return (
     <div className="planning-dialog-backdrop is-side-panel" role="presentation">
       <form aria-modal="true" className="planning-dialog is-side-panel" onSubmit={(event) => { event.preventDefault(); onSave(); }} role="dialog">
@@ -2661,6 +2747,7 @@ function PlanningProjectDialog({ project, form, activeVessels, editable, isQuick
           <label>Statut<select value={form.status} onChange={(event) => onChange({ ...form, status: event.target.value })}>{PROJECT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
           {!isQuick ? <><label>Fin<input required type="date" value={form.endsOn} onChange={(event) => onChange({ ...form, endsOn: event.target.value })} /></label><label>Responsable<input value={form.responsibleName} onChange={(event) => onChange({ ...form, responsibleName: event.target.value })} /></label><label className="is-wide">Client<input value={form.clientName} onChange={(event) => onChange({ ...form, clientName: event.target.value })} /></label><label className="is-wide">Description<textarea rows={4} value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} /></label></> : null}
         </div>
+        {project ? <PlanningOperationDocuments documents={documents} error={documentsError} /> : null}
         <footer className="planning-dialog-footer-split">
           {project ? <span><button className="is-danger" disabled={isSaving || project.status === 'Annulé'} onClick={onCancel} type="button">Annuler l’événement</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span> : isQuick ? <button className="is-secondary" onClick={onExpand} type="button">Formulaire complet</button> : <span />}
           <span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span>

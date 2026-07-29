@@ -110,6 +110,7 @@ describe('projectQueries', () => {
       contract_documents: { data: [], error: null },
       project_contracts: { data: null, error: new Error('contracts unavailable') },
       project_documents: { data: [], error: null },
+      project_generated_documents: { data: [], error: null },
       planning_projects: { data: [], error: null },
       projects: { data: [projectRow], error: null },
       vessels: { data: [], error: null },
@@ -130,6 +131,7 @@ describe('projectQueries', () => {
       contract_documents: { data: [], error: null },
       project_contracts: { data: [], error: null },
       project_documents: { data: [], error: null },
+      project_generated_documents: { data: [], error: null },
       planning_projects: { data: [], error: null },
       projects: { data: null, error: new Error('projects unavailable') },
       vessels: { data: [], error: null },
@@ -149,6 +151,9 @@ describe('projectQueries', () => {
         primary_vessel_name: 'COTENTIN',
         status: 'Validé',
         description: 'Rotation 1',
+        charter_hire: '18000',
+        hire_currency: 'EUR',
+        hire_unit: 'jour',
         source_label: 'seapilot-projects',
         created_at: '2026-07-16T08:00:00Z',
       },
@@ -161,11 +166,21 @@ describe('projectQueries', () => {
         primary_vessel_name: 'COTENTIN',
         status: 'Validé',
         description: 'Événement planning indépendant',
+        charter_hire: null,
+        hire_currency: null,
+        hire_unit: null,
         source_label: 'seapilot-admin',
         created_at: '2026-07-16T08:00:00Z',
       },
     ] as never)).toEqual([
-      expect.objectContaining({ id: 1, projectId: 880, primaryVesselName: 'COTENTIN' }),
+      expect.objectContaining({
+        charterHire: 18000,
+        hireCurrency: 'EUR',
+        hireUnit: 'jour',
+        id: 1,
+        projectId: 880,
+        primaryVesselName: 'COTENTIN',
+      }),
     ]);
   });
 });

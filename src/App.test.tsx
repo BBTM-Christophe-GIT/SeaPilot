@@ -507,16 +507,13 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Projets actifs')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Documents projets')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Documents contractuels')).toHaveTextContent('1');
-    expect(screen.getAllByText('Campagne Atlantique 2026').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /Campagne Atlantique 2026P-2026-014/ })).toHaveTextContent('P-2026-014');
+    expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*actifs/);
+    expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*contrats/);
+    expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*documents projets/);
+    expect(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ })).toHaveTextContent('P-2026-014');
     expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
     expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Opérations' }));
     expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',

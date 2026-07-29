@@ -24,6 +24,8 @@ const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
   'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
+const PLANNING_OPERATION_DOCUMENT_SELECT =
+  'id, planning_occurrence_id, file_name, mime_type, file_size_bytes, sharepoint_web_url, created_at';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
 const PLANNING_HR_DOCUMENT_SELECT =
   'id, person_id, person_name, category_key, title, status, expires_on, requires_captain_validation, medical_restriction, medical_unfit, file_url';
@@ -451,6 +453,16 @@ export interface PlanningProjectRecord {
   responsibleName: string;
   status: string;
   sourceLabel: string;
+}
+
+export interface PlanningOperationDocumentRecord {
+  id: number;
+  planningOccurrenceId: number;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  sharePointWebUrl: string;
+  createdAt: string;
 }
 
 export interface PlanningCertificateRecord {
@@ -1255,6 +1267,31 @@ export async function fetchPlanningProjects(client: SupabaseClient): Promise<Pla
     .order('title', { ascending: true });
   if (error) throwPlanningDataError('load-projects', 'Impossible de charger les projets du planning.', error);
   return mapPlanningProjectRows((data || []) as unknown as PlanningProjectRow[]);
+}
+
+export async function fetchPlanningOperationDocuments(
+  client: SupabaseClient,
+  planningOccurrenceId: number,
+): Promise<PlanningOperationDocumentRecord[]> {
+  const { data, error } = await client
+    .from('project_generated_documents')
+    .select(PLANNING_OPERATION_DOCUMENT_SELECT)
+    .eq('planning_occurrence_id', planningOccurrenceId)
+    .order('created_at', { ascending: false });
+  if (error) throwPlanningDataError(
+    'load-project-operation-documents',
+    'Impossible de charger les documents de cette opération.',
+    error,
+  );
+  return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
+    id: Number(row.id),
+    planningOccurrenceId: Number(row.planning_occurrence_id),
+    fileName: String(row.file_name || ''),
+    mimeType: String(row.mime_type || ''),
+    fileSizeBytes: Number(row.file_size_bytes) || 0,
+    sharePointWebUrl: String(row.sharepoint_web_url || ''),
+    createdAt: String(row.created_at || ''),
+  }));
 }
 
 export async function fetchPlanningCertificates(client: SupabaseClient): Promise<PlanningCertificateRecord[]> {
