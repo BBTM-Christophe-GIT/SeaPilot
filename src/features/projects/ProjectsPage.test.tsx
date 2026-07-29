@@ -544,6 +544,33 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText('Opération ajoutée au Planning.')).toBeInTheDocument();
   });
 
+  it('confirms and removes a planning operation while preserving its SharePoint documents', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'projects_delete_planning_occurrence') {
+        return { data: 1201, error: null };
+      }
+      return { data: null, error: null };
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    const operationRow = screen.getByText('Rotation 1').closest('tr');
+    await user.click(within(operationRow as HTMLElement).getByRole('button', { name: /Supprimer l’opération Rotation 1/ }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Les documents déjà classés resteront conservés dans SharePoint'));
+    expect(rpc).toHaveBeenCalledWith('projects_delete_planning_occurrence', {
+      target_occurrence_id: 1201,
+      target_project_id: 880,
+    });
+    expect(await screen.findByText(/Opération supprimée du Planning/)).toBeInTheDocument();
+    expect(screen.queryByText('Rotation 1')).not.toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
   it('generates offer and BIMCO documents then stores them in SharePoint', async () => {
     const user = userEvent.setup();
     const { client, from, rpc } = createClient();
