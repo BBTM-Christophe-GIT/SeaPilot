@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Rows3,
   Share2,
+  Trash2,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -28,7 +29,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
-import { archiveProject } from './projectMutations';
+import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import {
   buildProjectMetrics,
@@ -373,6 +374,8 @@ function ProjectDetail({
   contractDocumentsUnavailable,
   generatingDocument,
   isManager,
+  deletingOccurrenceId,
+  onDeleteOccurrence,
   onEditOccurrence,
   onGenerateDocument,
   onOpenPlanning,
@@ -388,6 +391,8 @@ function ProjectDetail({
   contractDocumentsUnavailable: boolean;
   generatingDocument: ProjectGeneratedDocumentKind | null;
   isManager: boolean;
+  deletingOccurrenceId: number | null;
+  onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
@@ -610,9 +615,25 @@ function ProjectDetail({
                       <td>
                         <div className="project-operation-actions">
                           {isManager ? (
-                            <button onClick={() => onEditOccurrence(occurrence)} type="button">
-                              <Pencil aria-hidden="true" size={14} /> Modifier
-                            </button>
+                            <>
+                              <button
+                                disabled={deletingOccurrenceId === occurrence.id}
+                                onClick={() => onEditOccurrence(occurrence)}
+                                type="button"
+                              >
+                                <Pencil aria-hidden="true" size={14} /> Modifier
+                              </button>
+                              <button
+                                aria-label={`Supprimer l’opération ${occurrence.description || `#${occurrence.id}`}`}
+                                className="is-danger"
+                                disabled={deletingOccurrenceId !== null}
+                                onClick={() => onDeleteOccurrence(occurrence)}
+                                type="button"
+                              >
+                                <Trash2 aria-hidden="true" size={14} />
+                                {deletingOccurrenceId === occurrence.id ? 'Suppression…' : 'Supprimer'}
+                              </button>
+                            </>
                           ) : null}
                           <button onClick={() => onOpenPlanning(occurrence)} type="button">
                             <CalendarDays aria-hidden="true" size={14} /> Ouvrir dans le planning
@@ -675,6 +696,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [mutationError, setMutationError] = useState('');
   const [lastStoredDocument, setLastStoredDocument] = useState<{ fileName: string; webUrl: string } | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
 
@@ -848,6 +870,44 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
     } finally {
       setIsArchiving(false);
+    }
+  }
+
+  async function deletePlanningOccurrence(occurrence: ProjectPlanningOccurrenceRecord) {
+    if (!selectedProject) return;
+    const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
+    const confirmed = window.confirm(
+      `Supprimer définitivement l’opération « ${operationLabel} » du Planning ?\n\n`
+      + 'Les documents déjà classés resteront conservés dans SharePoint « Documents Projets » au niveau du contrat.',
+    );
+    if (!confirmed) return;
+
+    setMutationError('');
+    setMutationMessage('');
+    setDeletingOccurrenceId(occurrence.id);
+    try {
+      await deleteProjectPlanningOccurrence(effectiveClient, {
+        occurrenceId: occurrence.id,
+        projectId: selectedProject.id,
+      });
+      setProjectsData((currentData) => ({
+        ...currentData,
+        operationDocuments: currentData.operationDocuments.filter(
+          (document) => document.planningOccurrenceId !== occurrence.id,
+        ),
+        planningOccurrences: currentData.planningOccurrences.filter((item) => item.id !== occurrence.id),
+      }));
+      if (editingOccurrence?.id === occurrence.id) {
+        setPlanningEditorOpen(false);
+        setEditingOccurrence(undefined);
+      }
+      setMutationMessage(
+        'Opération supprimée du Planning. Ses documents restent conservés dans SharePoint « Documents Projets ».',
+      );
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : "Impossible de supprimer l’opération.");
+    } finally {
+      setDeletingOccurrenceId(null);
     }
   }
 
@@ -1128,8 +1188,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               contractDocuments={selectedContractDocuments}
               contractDocumentsUnavailable={warningIsPresent(projectsData, 'contractDocuments')}
               contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
+              deletingOccurrenceId={deletingOccurrenceId}
               generatingDocument={generatingDocument}
               isManager={isManager}
+              onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
               onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}

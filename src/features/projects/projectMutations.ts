@@ -300,6 +300,29 @@ export async function saveProjectPlanningOccurrence(
   return Number(row.id);
 }
 
+export async function deleteProjectPlanningOccurrence(
+  client: SupabaseClient,
+  input: { occurrenceId: number; projectId: number },
+): Promise<number> {
+  if (!Number.isInteger(input.occurrenceId) || input.occurrenceId <= 0) {
+    throw new Error("L'opération à supprimer est invalide.");
+  }
+  if (!Number.isInteger(input.projectId) || input.projectId <= 0) {
+    throw new Error('Le projet de cette opération est invalide.');
+  }
+
+  const { data, error } = await client.rpc('projects_delete_planning_occurrence', {
+    target_occurrence_id: input.occurrenceId,
+    target_project_id: input.projectId,
+  });
+  if (error) throw mutationError(error, "Impossible de supprimer cette opération du planning.");
+  const deletedOccurrenceId = Number(data);
+  if (!Number.isInteger(deletedOccurrenceId) || deletedOccurrenceId <= 0) {
+    throw new Error("Supabase n'a confirmé aucune suppression d'opération.");
+  }
+  return deletedOccurrenceId;
+}
+
 export async function fetchProjectCatalogOptions(client: SupabaseClient): Promise<ProjectCatalogOption[]> {
   const { data, error } = await client.rpc('projects_catalog_options');
   if (error) throw mutationError(error, 'Impossible de charger le catalogue projets.');

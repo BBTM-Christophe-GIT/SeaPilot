@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   archiveProject,
+  deleteProjectPlanningOccurrence,
   saveProjectPlanningOccurrence,
   fetchProjectCatalogOptions,
   saveClient,
@@ -143,6 +144,33 @@ describe('projectMutations', () => {
     };
     expect(validateProjectPlanningOccurrenceInput(input)).toHaveLength(2);
     await expect(saveProjectPlanningOccurrence({ rpc } as never, input)).rejects.toThrow("fin de l'opération");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('deletes one project planning occurrence through the secured RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 1201, error: null });
+
+    await expect(deleteProjectPlanningOccurrence({ rpc } as never, {
+      occurrenceId: 1201,
+      projectId: 901,
+    })).resolves.toBe(1201);
+    expect(rpc).toHaveBeenCalledWith('projects_delete_planning_occurrence', {
+      target_occurrence_id: 1201,
+      target_project_id: 901,
+    });
+  });
+
+  it('rejects invalid project operation identifiers before deletion', async () => {
+    const rpc = vi.fn();
+
+    await expect(deleteProjectPlanningOccurrence({ rpc } as never, {
+      occurrenceId: 0,
+      projectId: 901,
+    })).rejects.toThrow("opération à supprimer est invalide");
+    await expect(deleteProjectPlanningOccurrence({ rpc } as never, {
+      occurrenceId: 1201,
+      projectId: -1,
+    })).rejects.toThrow('projet de cette opération est invalide');
     expect(rpc).not.toHaveBeenCalled();
   });
 });

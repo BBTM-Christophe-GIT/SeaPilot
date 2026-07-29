@@ -608,6 +608,25 @@ function schedulePreviewProject(args: Record<string, unknown>): PreviewResult {
   return { data: [row], error: null };
 }
 
+function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewResult {
+  const occurrenceId = Number(args.target_occurrence_id);
+  const projectId = Number(args.target_project_id);
+  const occurrenceIndex = previewRows('planning_projects').findIndex(
+    (row) => Number(row.id) === occurrenceId && Number(row.catalog_project_id) === projectId,
+  );
+  if (occurrenceIndex < 0) {
+    return { data: null, error: { message: 'Opération de démonstration introuvable.' } };
+  }
+
+  PREVIEW_ROWS.planning_projects.splice(occurrenceIndex, 1);
+  previewRows('project_generated_documents').forEach((document) => {
+    if (Number(document.planning_occurrence_id) === occurrenceId) {
+      document.planning_occurrence_id = null;
+    }
+  });
+  return { data: [occurrenceId], error: null };
+}
+
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
   if (functionName === 'planning_project_catalog') {
     return createPreviewQuery({
@@ -676,6 +695,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     };
     PREVIEW_ROWS.clients.push(client);
     return createPreviewQuery({ data: [client], error: null });
+  }
+  if (functionName === 'projects_delete_planning_occurrence') {
+    return createPreviewQuery(deletePreviewProjectOperation(args));
   }
   return createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
 }

@@ -14449,6 +14449,15 @@ button.planning-p12-conflict-card {
   text-decoration: underline;
 }
 
+.project-operation-actions button.is-danger {
+  color: #b42318;
+}
+
+.project-operation-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .project-operation-files {
   display: grid;
   gap: 7px;
