@@ -7,6 +7,7 @@ const ALLOWED_DOCUMENT_TYPES = new Set([
   'towage_contract',
   'bareboat_charter',
   'intellectual_service',
+  'operation_attachment',
 ]);
 const MAX_FILE_BYTES = 18 * 1024 * 1024;
 
@@ -95,6 +96,9 @@ function parseInput(body: UploadRequest) {
   ) {
     throw new Error('INVALID_INPUT');
   }
+  if (documentType === 'operation_attachment' && planningOccurrenceId === null) {
+    throw new Error('INVALID_INPUT');
+  }
 
   const bytes = Uint8Array.from(atob(base64Content), (character) => character.charCodeAt(0));
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES) throw new Error('INVALID_INPUT');
@@ -163,7 +167,7 @@ Deno.serve(async (request) => {
   try {
     input = parseInput(await request.json() as UploadRequest);
   } catch {
-    return json(request, 400, { code: 'INVALID_INPUT', message: 'Le document généré est invalide ou trop volumineux.' });
+    return json(request, 400, { code: 'INVALID_INPUT', message: 'Le document est invalide, trop volumineux ou sans opération associée.' });
   }
 
   const { data: project } = await serviceClient
@@ -179,7 +183,7 @@ Deno.serve(async (request) => {
     serviceClient.from('user_roles').select('role_key, company_id').eq('company_id', project.company_id).eq('user_id', authData.user.id),
   ]);
   if (!membership || !roleRows?.some((row) => row.role_key === 'admin' || row.role_key === 'direction')) {
-    return json(request, 403, { code: 'FORBIDDEN', message: 'Seuls la direction et les administrateurs de cette société peuvent générer un document.' });
+    return json(request, 403, { code: 'FORBIDDEN', message: 'Seuls la direction et les administrateurs de cette société peuvent classer un document projet.' });
   }
 
   if (input.planningOccurrenceId) {
@@ -207,7 +211,13 @@ Deno.serve(async (request) => {
     const projectFolder = cleanFolderSegment([project.project_code, project.title].filter(Boolean).join(' - '));
     await ensureFolder(tokenPayload.access_token, driveId, '', rootFolder);
     await ensureFolder(tokenPayload.access_token, driveId, rootFolder, projectFolder);
-    const folderPath = `${rootFolder}/${projectFolder}`;
+    let folderPath = `${rootFolder}/${projectFolder}`;
+    if (input.planningOccurrenceId) {
+      await ensureFolder(tokenPayload.access_token, driveId, folderPath, 'Operations');
+      const operationFolder = `OP-${input.planningOccurrenceId}`;
+      await ensureFolder(tokenPayload.access_token, driveId, `${folderPath}/Operations`, operationFolder);
+      folderPath = `${folderPath}/Operations/${operationFolder}`;
+    }
     const uploadUrl = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root:/${folderPath.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(input.fileName)}:/content`;
     const item = await graphRequest<GraphDriveItem>(tokenPayload.access_token, uploadUrl, {
       method: 'PUT',
@@ -236,6 +246,6 @@ Deno.serve(async (request) => {
     return json(request, 201, { document: { id: stored.id, fileName: item.name, webUrl: item.webUrl, folderPath } });
   } catch (error) {
     console.error('project-document-upload: SharePoint upload failed', { message: error instanceof Error ? error.message : 'unknown', projectId: input.projectId });
-    return json(request, 502, { code: 'SHAREPOINT_UPLOAD_FAILED', message: 'Le document a été généré mais son enregistrement SharePoint a échoué.' });
+    return json(request, 502, { code: 'SHAREPOINT_UPLOAD_FAILED', message: 'Le classement du document dans SharePoint a échoué.' });
   }
 });

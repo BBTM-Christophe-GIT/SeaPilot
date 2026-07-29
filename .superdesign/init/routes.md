@@ -1,0 +1,101 @@
+# SeaPilot routes
+
+Router: React Router 7, configured in `src/App.tsx`.
+
+| URL | Component | Layout |
+| --- | --- | --- |
+| `/login` | `src/features/auth/LoginPage.tsx` | standalone |
+| `/auth/update-password` | `src/features/auth/PasswordUpdatePage.tsx` | standalone |
+| `/` | `src/features/modules/ModulePage.tsx` | `AppShell` |
+| `/modules/planning` | `src/features/planning/PlanningPage.tsx` | `AppShell` |
+| `/modules/projects` | `src/features/projects/ProjectsPage.tsx` | `AppShell` |
+| `/modules/dpr` | `src/features/dpr/DprPage.tsx` | `AppShell` |
+| `/modules/actionPlan` | `src/features/actionPlan/ActionPlanPage.tsx` | `AppShell` |
+| `/modules/certificates` | `src/features/fleetCertificates/FleetCertificatesPage.tsx` | `AppShell` |
+| `/modules/humanResources` | `src/features/humanResources/HumanResourcesPage.tsx` | `AppShell` |
+| `/modules/procedures` | `src/features/procedures/ProceduresPage.tsx` | `AppShell` |
+| `/modules/purchaseRequests` | `src/features/purchaseRequests/PurchaseRequestsPage.tsx` | `AppShell` |
+| `/modules/qhse` | `src/features/qhseDocuments/QhseDocumentsPage.tsx` | `AppShell` |
+| `/modules/admin` | `src/features/admin/AdminPage.tsx` | `AppShell` |
+
+## Full router configuration
+
+```tsx
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { ActionPlanPage } from './features/actionPlan/ActionPlanPage';
+import { AdminPage } from './features/admin/AdminPage';
+import { LoginPage } from './features/auth/LoginPage';
+import { PasswordUpdatePage } from './features/auth/PasswordUpdatePage';
+import { RequireAuth } from './features/auth/RequireAuth';
+import { DprPage } from './features/dpr/DprPage';
+import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
+import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
+import { ModulePage } from './features/modules/ModulePage';
+import { APP_MODULES } from './features/permissions/moduleAccess';
+import { PlanningPage } from './features/planning/PlanningPage';
+import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
+import { previewSupabaseClient } from './features/preview/previewSupabaseClient';
+import { ProceduresPage } from './features/procedures/ProceduresPage';
+import { ProjectsPage } from './features/projects/ProjectsPage';
+import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
+import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
+import { AppShell } from './features/shell/AppShell';
+import type { RoleKey } from './features/permissions/roles';
+
+interface AppProps {
+  previewModeOverride?: boolean;
+}
+
+export default function App({ previewModeOverride }: AppProps) {
+  const homeModule = APP_MODULES.find((module) => module.key === 'home');
+  const previewMode = previewModeOverride ?? isSeaPilotPreviewDeployment();
+  const previewRoles: RoleKey[] | undefined = previewMode ? ['admin'] : undefined;
+
+  if (!homeModule) {
+    throw new Error('Home module is missing');
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={previewMode ? <Navigate to="/modules/planning" replace /> : <LoginPage />} />
+      <Route
+        path="/auth/update-password"
+        element={previewMode ? <Navigate to="/modules/planning" replace /> : <PasswordUpdatePage />}
+      />
+      <Route element={<RequireAuth allowPreview={previewMode} />}>
+        <Route
+          element={
+            <AppShell
+              client={previewMode ? previewSupabaseClient : undefined}
+              previewMode={previewMode}
+              rolesOverride={previewRoles}
+            />
+          }
+        >
+          <Route index element={<ModulePage module={homeModule} />} />
+          {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
+            <Route
+              key={module.key}
+              path={`modules/${module.key}`}
+              element={
+                module.key === 'admin' ? <AdminPage /> :
+                module.key === 'actionPlan' ? <ActionPlanPage /> :
+                module.key === 'dpr' ? <DprPage /> :
+                module.key === 'certificates' ? <FleetCertificatesPage /> :
+                module.key === 'planning' ? <PlanningPage /> :
+                module.key === 'humanResources' ? <HumanResourcesPage /> :
+                module.key === 'procedures' ? <ProceduresPage /> :
+                module.key === 'projects' ? <ProjectsPage /> :
+                module.key === 'purchaseRequests' ? <PurchaseRequestsPage /> :
+                module.key === 'qhse' ? <QhseDocumentsPage /> :
+                <ModulePage module={module} />
+              }
+            />
+          ))}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
+```

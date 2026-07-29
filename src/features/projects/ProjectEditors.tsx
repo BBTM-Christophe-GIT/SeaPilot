@@ -1,8 +1,8 @@
-import { CalendarDays, CreditCard, FileText, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
+import { CalendarDays, CreditCard, ExternalLink, FileText, FileUp, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
-  createProjectPlanningOccurrence,
+  saveProjectPlanningOccurrence,
   saveClient,
   saveProject,
   type ClientWriteInput,
@@ -10,9 +10,12 @@ import {
   type ProjectPlanningOccurrenceWriteInput,
   type ProjectWriteInput,
 } from './projectMutations';
+import { storeOperationDocuments, type OperationDocumentUploadResult } from './projectDocumentStorage';
 import type {
   ClientRecord,
   ProjectContractRecord,
+  ProjectOperationDocumentRecord,
+  ProjectPlanningOccurrenceRecord,
   ProjectRecord,
   VesselRecord,
 } from './projectQueries';
@@ -41,8 +44,11 @@ interface ClientEditorProps {
 
 interface ProjectPlanningEditorProps {
   client: SupabaseClient;
+  contract?: ProjectContractRecord;
   onClose: () => void;
-  onSaved: (occurrenceId: number) => void;
+  onSaved: (occurrenceId: number, uploads: OperationDocumentUploadResult) => void;
+  occurrence?: ProjectPlanningOccurrenceRecord;
+  operationDocuments?: ProjectOperationDocumentRecord[];
   project: ProjectRecord;
   vessels: VesselRecord[];
 }
@@ -470,19 +476,27 @@ function dateOnly(value: string): string {
 
 export function ProjectPlanningEditor({
   client,
+  contract,
   onClose,
   onSaved,
+  occurrence,
+  operationDocuments = [],
   project,
   vessels,
 }: ProjectPlanningEditorProps) {
   const [form, setForm] = useState<ProjectPlanningOccurrenceWriteInput>({
+    occurrenceId: occurrence?.id ?? null,
     projectId: project.id,
-    startsOn: dateOnly(project.deliveryAt || project.charterStartsAt || project.startsOn),
-    endsOn: dateOnly(project.redeliveryAt || project.charterEndsAt || project.endsOn),
-    primaryVesselId: project.primaryVesselId,
-    status: 'A planifier',
-    description: project.description,
+    startsOn: dateOnly(occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn),
+    endsOn: dateOnly(occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
+    primaryVesselId: occurrence?.primaryVesselId ?? project.primaryVesselId,
+    status: occurrence?.status || 'A planifier',
+    description: occurrence?.description || project.description,
+    charterHire: occurrence?.charterHire ?? contract?.charterHire ?? null,
+    hireCurrency: occurrence?.hireCurrency || contract?.hireCurrency || 'EUR',
+    hireUnit: occurrence?.hireUnit || contract?.hireUnit || 'jour',
   });
+  const [files, setFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const eligibleVessels = vessels.filter((vessel) => vessel.active || vessel.id === project.primaryVesselId);
@@ -499,7 +513,15 @@ export function ProjectPlanningEditor({
     setErrorMessage('');
     setIsSaving(true);
     try {
-      onSaved(await createProjectPlanningOccurrence(client, form));
+      const occurrenceId = await saveProjectPlanningOccurrence(client, form);
+      const uploads = files.length > 0
+        ? await storeOperationDocuments(client, {
+            files,
+            planningOccurrenceId: occurrenceId,
+            projectId: project.id,
+          })
+        : { failed: [], stored: [] };
+      onSaved(occurrenceId, uploads);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter cette op\u00e9ration au planning.");
     } finally {
@@ -513,7 +535,7 @@ export function ProjectPlanningEditor({
         <header>
           <div>
             <span>{project.projectCode || 'Projet catalogue'}</span>
-            <h2 id="project-planning-editor-title">Nouvelle opération</h2>
+            <h2 id="project-planning-editor-title">{occurrence ? 'Modifier l’opération' : 'Nouvelle opération'}</h2>
           </div>
           <button aria-label="Fermer le formulaire opération" disabled={isSaving} onClick={onClose} type="button">
             <X aria-hidden="true" size={20} />
@@ -532,12 +554,49 @@ export function ProjectPlanningEditor({
             </Field>
             <Field label="Statut"><input onChange={(event) => update('status', event.target.value)} value={form.status} /></Field>
             <Field label="Description / mission" wide><textarea onChange={(event) => update('description', event.target.value)} value={form.description} /></Field>
+            <Field label="Loyer d’affrètement">
+              <input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} />
+            </Field>
+            <Field label="Devise">
+              <input maxLength={3} onChange={(event) => update('hireCurrency', event.target.value.toUpperCase())} value={form.hireCurrency} />
+            </Field>
+            <Field label="Unité">
+              <input onChange={(event) => update('hireUnit', event.target.value)} placeholder="jour" value={form.hireUnit} />
+            </Field>
+            <label className="project-operation-files is-wide">
+              <span>Documents de l’opération</span>
+              <span className="project-operation-file-picker">
+                <FileUp aria-hidden="true" size={18} />
+                <input
+                  multiple
+                  onChange={(event) => setFiles(Array.from(event.target.files || []))}
+                  type="file"
+                />
+                <strong>{files.length > 0 ? `${files.length} fichier(s) sélectionné(s)` : 'Ajouter un ou plusieurs documents'}</strong>
+              </span>
+            </label>
           </div>
-          <p className="project-editor-note">Chaque enregistrement est une occurrence indépendante dans le Planning. Le projet catalogue reste inchangé.</p>
+          {operationDocuments.length > 0 ? (
+            <ul className="project-operation-existing-documents" aria-label="Documents déjà rattachés à l’opération">
+              {operationDocuments.map((document) => (
+                <li key={document.id}>
+                  <FileText aria-hidden="true" size={16} />
+                  <a href={document.sharePointWebUrl} rel="noreferrer" target="_blank">
+                    {document.fileName}<ExternalLink aria-hidden="true" size={13} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="project-editor-note">
+            Le loyer du contrat est recopié lors de la création puis reste propre à cette opération. Les documents sont classés dans SharePoint · Documents Projets.
+          </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} type="submit">{isSaving ? 'Ajout en cours\u2026' : 'Ajouter au planning'}</button>
+            <button disabled={isSaving} type="submit">
+              {isSaving ? 'Enregistrement…' : occurrence ? 'Enregistrer les modifications' : 'Ajouter au planning'}
+            </button>
           </footer>
         </form>
       </section>

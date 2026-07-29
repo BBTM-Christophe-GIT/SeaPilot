@@ -10,6 +10,7 @@ const documentGenerationMocks = vi.hoisted(() => ({
 
 const documentStorageMocks = vi.hoisted(() => ({
   storeGeneratedProjectDocument: vi.fn(),
+  storeOperationDocuments: vi.fn(),
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
@@ -187,6 +188,9 @@ const atlantiquePlanningOccurrenceRows = [
     catalog_project_id: 880,
     created_at: '2026-06-01T08:00:00Z',
     description: 'Rotation 1',
+    charter_hire: 12000,
+    hire_currency: 'EUR',
+    hire_unit: 'jour',
     ends_on: '2026-07-03',
     id: 1201,
     primary_vessel_id: 12,
@@ -199,6 +203,9 @@ const atlantiquePlanningOccurrenceRows = [
     catalog_project_id: 880,
     created_at: '2026-06-05T08:00:00Z',
     description: 'Rotation 2',
+    charter_hire: 13500,
+    hire_currency: 'EUR',
+    hire_unit: 'jour',
     ends_on: '2026-07-10',
     id: 1202,
     primary_vessel_id: 12,
@@ -227,6 +234,7 @@ function createClient(
     planning_projects: { data: atlantiquePlanningOccurrenceRows, error: null },
     project_contracts: { data: [atlantiqueContractRow], error: null },
     project_documents: { data: [atlantiqueProjectDocumentRow, mancheProjectDocumentRow], error: null },
+    project_generated_documents: { data: [], error: null },
     projects: { data: [atlantiqueProjectRow, mancheProjectRow], error: null },
     vessels: {
       data: [
@@ -265,6 +273,7 @@ describe('ProjectsPage', () => {
       id: 1,
       webUrl: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086-Offre.pdf',
     });
+    documentStorageMocks.storeOperationDocuments.mockResolvedValue({ failed: [], stored: [] });
   });
 
   it('filters projects and associated indicators by status, client, vessel, period and search', async () => {
@@ -274,18 +283,17 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre statut projet'), 'Contrat signé');
     await user.selectOptions(screen.getByLabelText('Filtre client projet'), 'Ifremer');
     await user.selectOptions(screen.getByLabelText('Filtre navire projet'), 'COTENTIN');
     fireEvent.change(screen.getByLabelText('Projet depuis'), { target: { value: '2026-07-01' } });
     fireEvent.change(screen.getByLabelText('Projet jusqu’au'), { target: { value: '2026-07-31' } });
-    await user.type(screen.getByLabelText('Recherche projets'), 'bathymetrie');
+    await user.type(screen.getByLabelText('Rechercher un contrat'), 'bathymetrie');
 
     await waitFor(() => expect(screen.queryByText('Préparation dragage')).not.toBeInTheDocument());
-    expect(screen.getByLabelText('Projets actifs')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Documents projets')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Documents contractuels')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Clients représentés')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent('1 actifs');
+    expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent('1 contrats');
   });
 
   it('selects a project and exposes its six read-only sections as accessible tabs', async () => {
@@ -295,41 +303,40 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Projets' });
-    const projectButton = screen.getByRole('button', { name: /Campagne Atlantique 2026P1086/ });
+    const projectButton = screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ });
     await user.click(projectButton);
 
     expect(projectButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Contrat',
       'Opérations',
-      'Génération documentaire',
+      'Contrat / SUPPLYTIME',
       'Offre commerciale',
-      'Planning',
+      'Documents contractuels',
       'Identification',
     ]);
-    expect(screen.getByRole('tab', { name: 'Contrat' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Rotation 1')).toBeInTheDocument();
+    expect(screen.getAllByText(/12.000 EUR \/ jour/).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('tab', { name: 'Contrat / SUPPLYTIME' }));
     expect(screen.getByText('Clauses particulières Atlantique')).toBeInTheDocument();
     expect(screen.queryByText('Données structurées consultées dans Supabase')).not.toBeInTheDocument();
     expect(screen.queryByText('Source structurée · Supabase')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouvelle opération' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Identification' }));
     expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
     expect(screen.queryByText('Clauses particulières Atlantique')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Planning' }));
-    expect(screen.getByText('2 opération(s)')).toBeInTheDocument();
-    expect(screen.getByText('Rotation 1')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
       'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',
     );
     screen.getByRole('tab', { name: 'Opérations' }).focus();
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('tab', { name: 'Génération documentaire' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Contrat / SUPPLYTIME' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
     expect(from.mock.calls.map(([table]) => table)).toEqual(
       expect.arrayContaining([
@@ -337,6 +344,7 @@ describe('ProjectsPage', () => {
         'project_contracts',
         'project_documents',
         'contract_documents',
+        'project_generated_documents',
         'clients',
         'planning_projects',
       ]),
@@ -362,7 +370,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} />);
 
     expect(await screen.findByText(/Consultation partielle/)).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Contrat' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(/informations contractuelles et SUPPLYTIME sont temporairement indisponibles/)).toBeInTheDocument();
   });
 
@@ -381,12 +389,12 @@ describe('ProjectsPage', () => {
 
     render(<ProjectsPage client={client as never} />);
 
-    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
-    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
     expect(await screen.findByText('URL SharePoint invalide ou non autorisée')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Plan projet Atlantique.pdf/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Contrat' }));
+    await user.click(screen.getByRole('tab', { name: 'Contrat / SUPPLYTIME' }));
     expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
     expect(screen.getByText(/Microsoft 365 demande une connexion/)).toBeInTheDocument();
     expect(screen.getByText(/déplacé ou supprimé/)).toBeInTheDocument();
@@ -419,8 +427,8 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText('Métadonnées documentaires à contrôler')).toBeInTheDocument();
     expect(screen.getByText('1 document(s) sans rattachement Supabase résolu.')).toBeInTheDocument();
     expect(screen.getByText('1 doublon(s) de métadonnées masqué(s) dans la consultation.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
-    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    await user.click(screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
     expect(screen.getAllByText('Plan projet Atlantique.pdf')).toHaveLength(1);
   });
 
@@ -513,23 +521,27 @@ describe('ProjectsPage', () => {
     const { client, rpc } = createClient({}, { data: [{ id: 1301 }], error: null });
     render(<ProjectsPage client={client as never} roles={['direction']} />);
 
-    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
-    await user.click(screen.getByRole('button', { name: 'Nouvelle opération P1086' }));
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle opération' }));
     fireEvent.change(screen.getByLabelText('Début *'), { target: { value: '2026-09-01' } });
     fireEvent.change(screen.getByLabelText('Fin *'), { target: { value: '2026-09-05' } });
     await user.clear(screen.getByLabelText('Description / mission'));
     await user.type(screen.getByLabelText('Description / mission'), 'Rotation septembre');
     await user.click(screen.getByRole('button', { name: 'Ajouter au planning' }));
 
-    expect(rpc).toHaveBeenCalledWith('projects_create_planning_occurrence', {
+    expect(rpc).toHaveBeenCalledWith('projects_save_planning_occurrence', {
+      target_occurrence_id: null,
+      target_charter_hire: 12000,
       target_description: 'Rotation septembre',
       target_ends_on: '2026-09-05',
+      target_hire_currency: 'EUR',
+      target_hire_unit: 'jour',
       target_primary_vessel_id: 12,
       target_project_id: 880,
       target_starts_on: '2026-09-01',
       target_status: 'A planifier',
     });
-    expect(await screen.findByText('Opération ajoutée au Planning Supabase.')).toBeInTheDocument();
+    expect(await screen.findByText('Opération ajoutée au Planning.')).toBeInTheDocument();
   });
 
   it('generates offer and BIMCO documents then stores them in SharePoint', async () => {
@@ -537,8 +549,8 @@ describe('ProjectsPage', () => {
     const { client, from, rpc } = createClient();
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
-    await user.click(await screen.findByRole('button', { name: /Campagne Atlantique 2026P1086/ }));
-    await user.click(screen.getByRole('tab', { name: 'Génération documentaire' }));
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
     const offerCard = screen.getByText('Offre commerciale', { selector: 'strong' }).closest('article');
     await user.click(within(offerCard as HTMLElement).getByRole('button', { name: 'Générer et classer' }));
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(

@@ -14,12 +14,16 @@ export interface ProjectCatalogOption {
 }
 
 export interface ProjectPlanningOccurrenceWriteInput {
+  occurrenceId: number | null;
   projectId: number;
   startsOn: string;
   endsOn: string;
   primaryVesselId: number | null;
   status: string;
   description: string;
+  charterHire: number | null;
+  hireCurrency: string;
+  hireUnit: string;
 }
 
 export interface ProjectWriteInput {
@@ -257,25 +261,38 @@ export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOcc
   if (input.primaryVesselId === null || !Number.isInteger(input.primaryVesselId) || input.primaryVesselId <= 0) {
     errors.push("Le navire de l'op\u00e9ration est obligatoire.");
   }
+  if (input.charterHire !== null && input.charterHire < 0) {
+    errors.push("Le loyer d’affrètement de l’opération ne peut pas être négatif.");
+  }
+  if (input.charterHire !== null && !/^[A-Za-z]{3}$/.test(input.hireCurrency.trim())) {
+    errors.push("Une devise à trois lettres est obligatoire pour le loyer de l’opération.");
+  }
+  if (input.charterHire !== null && !input.hireUnit.trim()) {
+    errors.push("L’unité du loyer de l’opération est obligatoire.");
+  }
   return errors;
 }
 
-export async function createProjectPlanningOccurrence(
+export async function saveProjectPlanningOccurrence(
   client: SupabaseClient,
   input: ProjectPlanningOccurrenceWriteInput,
 ): Promise<number> {
   const validationErrors = validateProjectPlanningOccurrenceInput(input);
   if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
 
-  const { data, error } = await client.rpc('projects_create_planning_occurrence', {
+  const { data, error } = await client.rpc('projects_save_planning_occurrence', {
+    target_occurrence_id: input.occurrenceId,
     target_project_id: input.projectId,
     target_starts_on: input.startsOn,
     target_ends_on: input.endsOn,
     target_primary_vessel_id: input.primaryVesselId,
     target_status: optionalText(input.status),
     target_description: optionalText(input.description),
+    target_charter_hire: input.charterHire,
+    target_hire_currency: optionalText(input.hireCurrency.toUpperCase()),
+    target_hire_unit: optionalText(input.hireUnit),
   });
-  if (error) throw mutationError(error, "Impossible d'ajouter cette op\u00e9ration au planning.");
+  if (error) throw mutationError(error, "Impossible d’enregistrer cette opération dans le planning.");
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
   if (!row || !Number.isInteger(Number(row.id))) {
     throw new Error("Supabase n'a retourn\u00e9 aucune op\u00e9ration apr\u00e8s l'enregistrement.");

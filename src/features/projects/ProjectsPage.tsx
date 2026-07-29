@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  Briefcase,
   Archive,
   CalendarDays,
   CalendarPlus,
@@ -10,10 +9,16 @@ import {
   FileText,
   Download,
   ExternalLink,
+  FileOutput,
+  Filter,
   Info,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Rows3,
+  Share2,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
@@ -31,6 +36,7 @@ import {
   type ClientRecord,
   type ProjectContractRecord,
   type ProjectDocumentRecord,
+  type ProjectOperationDocumentRecord,
   type ProjectPlanningOccurrenceRecord,
   type ProjectRecord,
   type ProjectsData,
@@ -57,6 +63,7 @@ interface ProjectsPageProps {
 const EMPTY_PROJECTS_DATA: ProjectsData = {
   clients: [],
   contractDocuments: [],
+  operationDocuments: [],
   projectContracts: [],
   projectDocuments: [],
   planningOccurrences: [],
@@ -111,6 +118,14 @@ function formatMoney(value: number | null, currency: string, unit = ''): string 
   return [formatted, currency, unit ? `/ ${unit}` : ''].filter(Boolean).join(' ');
 }
 
+function planningOperationUrl(occurrenceId: number): string {
+  const parameters = new URLSearchParams({ planningOccurrenceId: String(occurrenceId) });
+  if (new URLSearchParams(window.location.search).get('preview') === '1') {
+    parameters.set('preview', '1');
+  }
+  return `/modules/planning?${parameters.toString()}`;
+}
+
 function formatFileSize(value: number | null): string {
   if (value === null) {
     return '';
@@ -163,12 +178,33 @@ function canManageProjects(roles: RoleKey[]): boolean {
   return roles.includes('admin') || roles.includes('direction');
 }
 
+function ProjectRibbonGroup({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <div aria-label={label} className="project-ribbon-group" role="group">
+      <div className="project-ribbon-actions">{children}</div>
+      <span className="project-ribbon-group-label">{label}</span>
+    </div>
+  );
+}
+
+function ProjectRibbonButton({
+  icon,
+  label,
+  ...buttonProps
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: React.ReactNode; label: string }) {
+  return (
+    <button className="project-ribbon-command" type="button" {...buttonProps}>
+      <span className="project-ribbon-command-icon">{icon}</span>
+      <span className="project-ribbon-command-label">{label}</span>
+    </button>
+  );
+}
+
 const PROJECT_DETAIL_TABS = [
-  { id: 'contract', label: 'Contrat' },
   { id: 'operations', label: 'Opérations' },
-  { id: 'documents', label: 'Génération documentaire' },
+  { id: 'contract', label: 'Contrat / SUPPLYTIME' },
   { id: 'commercial', label: 'Offre commerciale' },
-  { id: 'planning', label: 'Planning' },
+  { id: 'documents', label: 'Documents contractuels' },
   { id: 'identification', label: 'Identification' },
 ] as const;
 
@@ -334,11 +370,13 @@ function ProjectDetail({
   projectDocuments,
   contractDocuments,
   contractUnavailable,
-  projectDocumentsUnavailable,
   contractDocumentsUnavailable,
   generatingDocument,
   isManager,
+  onEditOccurrence,
   onGenerateDocument,
+  onOpenPlanning,
+  operationDocuments,
   planningOccurrences,
 }: {
   project: ProjectRecord;
@@ -347,33 +385,48 @@ function ProjectDetail({
   projectDocuments: ProjectDocumentRecord[];
   contractDocuments: ProjectDocumentRecord[];
   contractUnavailable: boolean;
-  projectDocumentsUnavailable: boolean;
   contractDocumentsUnavailable: boolean;
   generatingDocument: ProjectGeneratedDocumentKind | null;
   isManager: boolean;
+  onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
+  onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
+  operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
-  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('contract');
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('operations');
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
   useEffect(() => {
     setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
   }, [planningOccurrences, project.id]);
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
-  const extension = [
-    contract?.extensionCount === null || contract?.extensionCount === undefined
-      ? ''
-      : `${contract.extensionCount} prolongation(s)`,
-    contract?.extensionDuration === null || contract?.extensionDuration === undefined
-      ? ''
-      : `${contract.extensionDuration} ${contract.extensionUnit}`.trim(),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
   return (
-    <article className="project-detail" aria-label={`Détails du projet ${project.projectCode || project.title}`}>
+    <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
+      <header className="project-contract-header">
+        <div className="project-contract-identity">
+          <span className="project-contract-icon"><ClipboardList aria-hidden="true" size={22} /></span>
+          <div>
+            <div className="project-contract-title">
+              <h2>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</h2>
+              <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+            </div>
+            <dl className="project-contract-summary">
+              <DetailField label="Client" value={displayText(project.clientName)} />
+              <DetailField label="Type" value={displayText(project.contractType)} />
+              <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
+              <DetailField
+                label="Loyer du contrat"
+                value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)}
+              />
+            </dl>
+          </div>
+        </div>
+        <div className="project-contract-counts" aria-label="Indicateurs du contrat">
+          <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
+          <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
+        </div>
+      </header>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
@@ -418,44 +471,6 @@ function ProjectDetail({
       </section>
       ) : null}
 
-      {activeTab === 'planning' ? (
-      <section aria-label="Planning" className="project-detail-section">
-        <div className="project-section-heading">
-          <strong>Planning du projet</strong>
-          <span>{planningOccurrences.length} opération(s)</span>
-        </div>
-        <dl className="project-detail-grid">
-          <DetailField label="Période de référence" value={formatPeriod(project.startsOn, project.endsOn)} wide />
-          <DetailField label="Livraison" value={formatDate(project.deliveryAt)} />
-          <DetailField label="Port de livraison" value={displayText(project.deliveryPort)} />
-          <DetailField label="Début d’affrètement" value={formatDate(project.charterStartsAt)} />
-          <DetailField label="Fin d’affrètement" value={formatDate(project.charterEndsAt)} />
-          <DetailField label="Restitution" value={formatDate(project.redeliveryAt)} />
-          <DetailField label="Port de restitution" value={displayText(project.redeliveryPort)} />
-          <DetailField label="Période opérationnelle" value={formatPeriod(projectStart, projectEnd)} wide />
-          <DetailField label="Prolongations" value={displayText(extension)} />
-          <DetailField label="Extension automatique" value={displayText(contract?.autoExtensionPeriod)} />
-          <DetailField label="Maximum de prolongation" value={contract?.maxExtensionDays === null || contract?.maxExtensionDays === undefined ? 'Non renseigné' : `${contract.maxExtensionDays} jours`} />
-        </dl>
-        {planningOccurrences.length > 0 ? (
-          <ul className="project-planning-occurrences">
-            {planningOccurrences.map((occurrence) => (
-              <li key={occurrence.id}>
-                <CalendarDays aria-hidden="true" size={18} />
-                <div>
-                  <strong>{formatPeriod(occurrence.startsOn, occurrence.endsOn)}</strong>
-                  <span>{displayText(occurrence.primaryVesselName)} · {displayText(occurrence.status)}</span>
-                  {occurrence.description ? <small>{occurrence.description}</small> : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="project-section-empty">Aucune opération planning associée.</p>
-        )}
-      </section>
-      ) : null}
-
       {activeTab === 'commercial' ? (
       <section aria-label="Offre commerciale" className="project-detail-section">
         <dl className="project-detail-grid">
@@ -477,13 +492,21 @@ function ProjectDetail({
       <section aria-label="Génération documentaire" className="project-detail-section">
         <div className="project-section-heading">
           <div>
-            <strong>Documents du projet</strong>
-            <span>Chaque document validé est classé dans SharePoint · Documents Projets.</span>
+            <strong>Documents contractuels et modèles</strong>
+            <span>Consultez les contrats existants ou générez un document classé dans SharePoint.</span>
           </div>
           <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
+        <h4>Documents Projets</h4>
+        <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
+        <h4>Documents contractuels</h4>
+        {contractDocumentsUnavailable ? (
+          <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
+        ) : (
+          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+        )}
         <label className="project-document-occurrence-select">
           Mission / occurrence à reprendre dans le document
           <select
@@ -524,21 +547,87 @@ function ProjectDetail({
       ) : null}
 
       {activeTab === 'operations' ? (
-      <section aria-label="Opérations" className="project-detail-section">
-        <dl className="project-detail-grid">
-          <DetailField label="Zone d’opération" value={displayText(project.operationArea)} wide />
-          <DetailField label="Période maximale d’audit" value={displayText(contract?.maxAuditPeriod)} />
-          <DetailField label="Description / commentaires" value={displayText(project.description)} wide />
-        </dl>
-        <h4>Documents Projets</h4>
-        {projectDocumentsUnavailable ? (
-          <p className="project-section-empty">Documents projets indisponibles en raison d’une erreur de chargement.</p>
+      <section aria-label="Opérations" className="project-detail-section project-operations-section">
+        <div className="project-section-heading">
+          <div>
+            <strong>Calendrier des opérations</strong>
+            <span>Un contrat peut regrouper plusieurs opérations indépendantes dans le Planning.</span>
+          </div>
+          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden="true" size={15} /> Documents Projets
+          </a>
+        </div>
+        {planningOccurrences.length > 0 ? (
+          <div className="project-operations-table-scroll">
+            <table className="project-operations-table">
+              <thead>
+                <tr>
+                  <th>Mission / opération</th>
+                  <th>Début</th>
+                  <th>Fin</th>
+                  <th>Navire</th>
+                  <th>Loyer d’affrètement</th>
+                  <th>Documents</th>
+                  <th>Statut Planning</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {planningOccurrences.map((occurrence) => {
+                  const documents = operationDocuments.filter(
+                    (document) => document.planningOccurrenceId === occurrence.id,
+                  );
+                  const inheritedHire =
+                    occurrence.charterHire === contract?.charterHire
+                    && occurrence.hireCurrency === (contract?.hireCurrency || '')
+                    && occurrence.hireUnit === (contract?.hireUnit || '');
+                  return (
+                    <tr key={occurrence.id}>
+                      <td>
+                        <strong>{occurrence.description || `${project.projectCode || 'Projet'} · Opération ${occurrence.id}`}</strong>
+                        <small>Occurrence #{occurrence.id}</small>
+                      </td>
+                      <td>{formatDate(occurrence.startsOn)}</td>
+                      <td>{formatDate(occurrence.endsOn)}</td>
+                      <td>{displayText(occurrence.primaryVesselName)}</td>
+                      <td>
+                        <strong>{formatMoney(occurrence.charterHire, occurrence.hireCurrency, occurrence.hireUnit)}</strong>
+                        <small>{inheritedHire ? 'Loyer du contrat' : 'Modifié pour l’opération'}</small>
+                      </td>
+                      <td>
+                        {documents.length > 0 ? (
+                          <div className="project-operation-document-links">
+                            {documents.map((document) => (
+                              <a href={document.sharePointWebUrl} key={document.id} rel="noreferrer" target="_blank">
+                                <FileText aria-hidden="true" size={14} />
+                                {document.fileName}
+                              </a>
+                            ))}
+                          </div>
+                        ) : <span className="project-operation-no-document">0 fichier</span>}
+                      </td>
+                      <td><span className="project-status-chip">{displayText(occurrence.status)}</span></td>
+                      <td>
+                        <div className="project-operation-actions">
+                          {isManager ? (
+                            <button onClick={() => onEditOccurrence(occurrence)} type="button">
+                              <Pencil aria-hidden="true" size={14} /> Modifier
+                            </button>
+                          ) : null}
+                          <button onClick={() => onOpenPlanning(occurrence)} type="button">
+                            <CalendarDays aria-hidden="true" size={14} /> Ouvrir dans le planning
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
+          <p className="project-section-empty">Aucune opération Planning n’est encore associée à ce contrat.</p>
         )}
-        <a className="project-sharepoint-folder-link" href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
-          <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Projets
-        </a>
       </section>
       ) : null}
 
@@ -577,8 +666,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [compactDensity, setCompactDensity] = useState(true);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
+  const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
   const [lastStoredDocument, setLastStoredDocument] = useState<{ fileName: string; webUrl: string } | null>(null);
@@ -598,6 +690,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             ...loadedData,
             clients: sortClients(loadedData.clients),
             contractDocuments: sortDocuments(loadedData.contractDocuments),
+            operationDocuments: [...loadedData.operationDocuments].sort(
+              (left, right) => right.createdAt.localeCompare(left.createdAt) || left.fileName.localeCompare(right.fileName, 'fr'),
+            ),
             planningOccurrences: sortPlanningOccurrences(loadedData.planningOccurrences),
             projectDocuments: sortDocuments(loadedData.projectDocuments),
             projects: sortProjects(loadedData.projects),
@@ -695,6 +790,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedPlanningOccurrences = selectedProject
     ? projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === selectedProject.id)
     : [];
+  const selectedOperationDocuments = selectedProject
+    ? projectsData.operationDocuments.filter((document) => document.projectId === selectedProject.id)
+    : [];
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -728,6 +826,12 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setMutationError('');
     setEditingClient(clientRecord);
     setClientEditorOpen(true);
+  }
+
+  function openPlanningEditor(occurrence?: ProjectPlanningOccurrenceRecord) {
+    setMutationError('');
+    setEditingOccurrence(occurrence);
+    setPlanningEditorOpen(true);
   }
 
   async function archiveSelectedProject() {
@@ -822,40 +926,44 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
   return (
     <section className="projects-page">
-      <div className="admin-header">
+      <header className="project-module-header">
         <div>
           <p className="module-family">MODULE</p>
           <h1>Projets</h1>
-          <p className="projects-header-subtitle">Liste BBTM · projets, missions, offres et contrats.</p>
+          <p className="projects-header-subtitle">Contrats, opérations, loyers et documents associés.</p>
         </div>
-        <div className="projects-summary-grid">
-          <div className="planning-summary" aria-label="Projets actifs">
-            <Briefcase aria-hidden="true" size={18} />
-            <strong>{metrics.activeProjects}</strong>
-            <span>actifs</span>
-          </div>
-          <div className="planning-summary" aria-label="Projets affichés">
-            <CalendarDays aria-hidden="true" size={18} />
-            <strong>{metrics.totalProjects}</strong>
-            <span>affichés</span>
-          </div>
-          <div className="planning-summary" aria-label="Documents projets">
-            <FileText aria-hidden="true" size={18} />
-            <strong>{warningIsPresent(projectsData, 'projectDocuments') ? '—' : metrics.projectDocumentCount}</strong>
-            <span>documents</span>
-          </div>
-          <div className="planning-summary" aria-label="Documents contractuels">
-            <ClipboardList aria-hidden="true" size={18} />
-            <strong>{warningIsPresent(projectsData, 'contractDocuments') ? '—' : metrics.contractDocumentCount}</strong>
-            <span>contrats</span>
-          </div>
-          <div className="planning-summary" aria-label="Clients représentés">
-            <Users aria-hidden="true" size={18} />
-            <strong>{warningIsPresent(projectsData, 'clients') ? '—' : metrics.clientCount}</strong>
-            <span>clients</span>
-          </div>
+        <div className="project-compact-metrics" aria-label="Indicateurs des contrats">
+          <span><strong>{metrics.activeProjects}</strong> actifs</span>
+          <span><strong>{metrics.totalProjects}</strong> contrats</span>
+          <span><strong>{projectsData.planningOccurrences.length}</strong> opérations</span>
+          <span><strong>{metrics.projectDocumentCount + projectsData.operationDocuments.length}</strong> documents projets</span>
         </div>
-      </div>
+      </header>
+
+      <nav aria-label="Commandes du module Projets" className="project-command-ribbon">
+        <ProjectRibbonGroup label="Portefeuille">
+          <ProjectRibbonButton disabled={!isManager} icon={<Plus aria-hidden="true" size={20} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil aria-hidden="true" size={20} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive aria-hidden="true" size={20} />} label="Archiver" onClick={archiveSelectedProject} />
+          <ProjectRibbonButton icon={<RefreshCw aria-hidden="true" size={20} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
+        </ProjectRibbonGroup>
+        <ProjectRibbonGroup label="Clients & opérations">
+          <ProjectRibbonButton disabled={!isManager} icon={<UserPlus aria-hidden="true" size={20} />} label="Nouveau client" onClick={() => openClientEditor()} />
+          <ProjectRibbonButton disabled={!isManager || !selectedClient} icon={<Users aria-hidden="true" size={20} />} label="Modifier le client" onClick={() => selectedClient && openClientEditor(selectedClient)} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
+        </ProjectRibbonGroup>
+        <ProjectRibbonGroup label="Documents">
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText aria-hidden="true" size={20} />} label="Générer offre" onClick={() => void generateSelectedProjectDocument('offer', null)} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<ClipboardList aria-hidden="true" size={20} />} label="Générer contrat" onClick={() => void generateSelectedProjectDocument('bimco_supplytime', selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileOutput aria-hidden="true" size={20} />} label="Générer OT / CR" onClick={() => void generateSelectedProjectDocument('towage_contract', selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
+        </ProjectRibbonGroup>
+        <ProjectRibbonGroup label="Affichage">
+          <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
+          <ProjectRibbonButton disabled={!hasActiveFilters} icon={<RotateCcw aria-hidden="true" size={20} />} label="Réinitialiser" onClick={resetFilters} />
+          <ProjectRibbonButton aria-pressed={compactDensity} icon={<Rows3 aria-hidden="true" size={20} />} label="Densité" onClick={() => setCompactDensity((compact) => !compact)} />
+        </ProjectRibbonGroup>
+      </nav>
 
       {projectsData.warnings.length > 0 ? (
         <div className="project-partial-state" role="status">
@@ -879,7 +987,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </aside>
       ) : null}
 
-      <div className="planning-filter-panel projects-filter-panel" aria-label="Filtres projets">
+      {filtersOpen ? <div className="planning-filter-panel projects-filter-panel" aria-label="Filtres contrats">
         <label>
           Recherche projets
           <input
@@ -933,19 +1041,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <button disabled={!hasActiveFilters} onClick={resetFilters} type="button">
           Réinitialiser
         </button>
-      </div>
-
-      {isManager ? (
-        <div className="planning-toolbar">
-          <div className="project-write-actions">
-            <button onClick={() => openClientEditor()} type="button"><Users aria-hidden="true" size={16} /> Nouveau client</button>
-            <button onClick={() => openProjectEditor()} type="button"><Plus aria-hidden="true" size={16} /> Nouveau projet</button>
-            <button disabled={!selectedProject || Boolean(selectedProject.archivedAt)} onClick={() => selectedProject && openProjectEditor(selectedProject)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le projet</button>
-            <button disabled={!selectedClient} onClick={() => selectedClient && openClientEditor(selectedClient)} type="button"><Pencil aria-hidden="true" size={16} /> Modifier le client</button>
-            <button className="is-danger" disabled={!selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} onClick={archiveSelectedProject} type="button"><Archive aria-hidden="true" size={16} /> Archiver</button>
-          </div>
-        </div>
-      ) : null}
+      </div> : null}
 
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
       {lastStoredDocument ? (
@@ -967,11 +1063,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           </div>
         </div>
       ) : (
-        <div className="projects-read-layout">
+        <div className={`projects-read-layout project-contract-workspace${compactDensity ? ' is-compact' : ''}`}>
           <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
-            <div className="procedures-section-heading">
-              <h2 id="projects-list-title">Portefeuille projets</h2>
-              <span>{filteredProjects.length} projet(s)</span>
+            <div className="project-contract-list-heading">
+              <div>
+                <h2 id="projects-list-title">Contrats</h2>
+                <span>{filteredProjects.length} contrat(s)</span>
+              </div>
+              <label>
+                <span className="sr-only">Rechercher un contrat</span>
+                <input
+                  onChange={(event) => updateFilterValue('search', event.target.value)}
+                  placeholder="Pxxx – Nom du projet…"
+                  type="search"
+                  value={filters.search}
+                />
+              </label>
             </div>
             <ul className="project-catalog-list">
               {visibleProjects.map((project) => {
@@ -979,52 +1086,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 const occurrences = projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === project.id);
                 return (
                   <li className={isSelected ? 'is-selected' : undefined} key={project.id}>
-                    <div className="project-catalog-row">
-                      <button
-                        aria-label={`${project.title}${project.projectCode}`}
-                        aria-pressed={isSelected}
-                        className="project-select-button"
-                        onClick={() => setSelectedProjectId(project.id)}
-                        type="button"
-                      >
-                        <span className="project-title">
-                          <Briefcase aria-hidden="true" size={16} />
-                          {project.projectCode ? `${project.projectCode} - ` : ''}{project.title}
-                        </span>
-                        <small>Détail de la mission : {project.description || 'Non renseigné'}</small>
-                      </button>
-                      <div className="project-catalog-actions">
-                        {isManager ? (
-                          <button
-                            aria-label={`Nouvelle opération ${project.projectCode || project.title}`}
-                            onClick={() => {
-                              setSelectedProjectId(project.id);
-                              setPlanningEditorOpen(true);
-                            }}
-                            type="button"
-                          >
-                            <CalendarPlus aria-hidden="true" size={15} /> Nouvelle opération
-                          </button>
-                        ) : null}
-                        <span>{displayText(project.clientName)}</span>
+                    <button
+                      aria-label={`${project.projectCode || ''} ${project.title}`}
+                      aria-pressed={isSelected}
+                      className="project-select-button project-contract-list-row"
+                      onClick={() => setSelectedProjectId(project.id)}
+                      type="button"
+                    >
+                      <span className="project-contract-list-title">
+                        <strong>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</strong>
                         <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-                        <strong>{occurrences.length}</strong>
-                      </div>
-                    </div>
-                    {occurrences.length > 0 ? (
-                      <ul className="project-catalog-occurrences">
-                        {occurrences.map((occurrence) => (
-                          <li key={occurrence.id}>
-                            <CalendarDays aria-hidden="true" size={16} />
-                            <span>Date de début <strong>{formatDate(occurrence.startsOn)}</strong></span>
-                            <span>Navire <strong>{displayText(occurrence.primaryVesselName)}</strong></span>
-                            <small>{displayText(occurrence.status)}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="project-catalog-empty">Aucun enregistrement planning associé.</p>
-                    )}
+                      </span>
+                      <span className="project-contract-list-meta">
+                        <span>{displayText(project.clientName)}</span>
+                        <small>{occurrences.length} opération(s)</small>
+                      </span>
+                    </button>
                   </li>
                 );
               })}
@@ -1053,11 +1130,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               contractUnavailable={warningIsPresent(projectsData, 'projectContracts')}
               generatingDocument={generatingDocument}
               isManager={isManager}
+              onEditOccurrence={openPlanningEditor}
               onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
+              onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
+              operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}
-              projectDocumentsUnavailable={warningIsPresent(projectsData, 'projectDocuments')}
             />
           ) : null}
         </div>
@@ -1096,12 +1175,31 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       {planningEditorOpen && selectedProject ? (
         <ProjectPlanningEditor
           client={effectiveClient}
-          onClose={() => setPlanningEditorOpen(false)}
-          onSaved={() => {
+          contract={selectedContract}
+          occurrence={editingOccurrence}
+          onClose={() => {
             setPlanningEditorOpen(false);
-            setMutationMessage('Opération ajoutée au Planning Supabase.');
+            setEditingOccurrence(undefined);
+          }}
+          onSaved={(_occurrenceId, uploads) => {
+            setPlanningEditorOpen(false);
+            setEditingOccurrence(undefined);
+            setMutationMessage(
+              editingOccurrence
+                ? 'Opération mise à jour dans le Planning.'
+                : 'Opération ajoutée au Planning.',
+            );
+            if (uploads.stored.length > 0) {
+              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SharePoint.`);
+            }
+            if (uploads.failed.length > 0) {
+              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
+            }
             setLoadAttempt((attempt) => attempt + 1);
           }}
+          operationDocuments={editingOccurrence
+            ? selectedOperationDocuments.filter((document) => document.planningOccurrenceId === editingOccurrence.id)
+            : []}
           project={selectedProject}
           vessels={projectsData.vessels}
         />
