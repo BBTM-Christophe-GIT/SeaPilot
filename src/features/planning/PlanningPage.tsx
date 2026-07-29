@@ -615,6 +615,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
+
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
   const fleetLanes = useMemo(
     () => buildPlanningFleetLanes(overview, range, filters, allPlanningCrewEvents),
