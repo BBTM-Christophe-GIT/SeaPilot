@@ -696,7 +696,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
 
-  it('opens the current month with the current week’s Monday at the left edge of the calendar', async () => {
+  it('opens the current month with the current week’s Monday in view', async () => {
     const { client } = createClient();
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
 
