@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  billingExpenseAttachmentName,
+  billingServicesTotal,
   billingDprComment,
   billingOperationRows,
+  completeBillingDprs,
+  countDailyOperations,
+  defaultProjectClientReference,
+  missingBillingDates,
   type BillingExportInput,
   type ProjectBillingDpr,
 } from './projectBilling';
@@ -82,6 +88,7 @@ const input: BillingExportInput = {
     comments: '',
   },
   expenses: [],
+  services: [],
   dprs: [{
     id: 838,
     reportDate: '2026-06-01',
@@ -94,6 +101,7 @@ const input: BillingExportInput = {
     departureAt: '2026-06-02T12:20:00Z',
     fuelLiters: 7200,
   }],
+  selectedVesselName: 'GOURY',
   startDate: '2026-06-01',
   endDate: '2026-06-30',
 };
@@ -123,6 +131,64 @@ describe('billing operation export', () => {
       dprs: [{ ...input.dprs[0], amountHt: null }],
     });
     expect(rows[0].amountHt).toBe(4227.5);
+  });
+});
+
+describe('monthly billing completion', () => {
+  it('uses the P144 client reference by default', () => {
+    expect(defaultProjectClientReference(input.project)).toBe('TRE-PO-000503');
+  });
+
+  it('identifies and completes missing dates with the operation hire', () => {
+    expect(missingBillingDates(input.dprs, '2026-06-01', '2026-06-03')).toEqual([
+      '2026-06-02',
+      '2026-06-03',
+    ]);
+    const completed = completeBillingDprs(input.dprs, '2026-06-01', '2026-06-03', {
+      vesselName: 'GOURY',
+      amountHt: 4227.5,
+    });
+    expect(completed).toHaveLength(3);
+    expect(completed[2]).toMatchObject({
+      reportDate: '2026-06-03',
+      vesselName: 'GOURY',
+      operation: '24/24 Operation',
+      amountHt: 4227.5,
+    });
+    expect(countDailyOperations(completed)).toBe(2);
+  });
+
+  it('calculates the BBTM subtotal from editable unit amounts and quantities', () => {
+    expect(billingServicesTotal([{
+      id: 1,
+      billingPeriodId: 1,
+      category: 'spread_antipollution',
+      unitAmountHt: 350,
+      quantity: 29,
+    }])).toBe(10150);
+  });
+
+  it('renames service attachments with date, invoice and category', () => {
+    const file = new File(['test'], 'source.pdf', { type: 'application/pdf' });
+    const renamed = billingExpenseAttachmentName(file, {
+      id: 1,
+      billingPeriodId: 1,
+      category: 'port',
+      nature: '',
+      supplier: 'Port',
+      invoiceDate: '2026-06-10',
+      invoiceNumber: 'R202600790',
+      amountHt: 72.01,
+      amountTtc: null,
+      currency: 'EUR',
+      quantity: null,
+      unit: '',
+      comments: '',
+      chargeable: true,
+      includedInClientInvoice: false,
+      dprReportId: null,
+    });
+    expect(renamed.name).toBe('2026-06-10 - R202600790 - Frais de port.pdf');
   });
 });
 

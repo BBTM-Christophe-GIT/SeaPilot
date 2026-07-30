@@ -15650,6 +15650,60 @@ button.planning-p12-conflict-card {
   color: #c32232;
 }
 
+.project-billing-expense-documents {
+  display: grid;
+  gap: 5px;
+  min-width: 220px;
+}
+
+.project-billing-expense-documents button {
+  background: #f8fbff;
+  border-color: #d8e5f2;
+  color: #31506e;
+  font-size: 11px;
+  justify-content: flex-start;
+  max-width: 330px;
+  min-height: 28px;
+  text-align: left;
+}
+
+.project-billing-expense-documents button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-billing-upload.is-compact {
+  background: #fff;
+  border-color: #cad6e2;
+  color: #31506e;
+  font-size: 11px;
+  margin: 0;
+  min-height: 28px;
+  padding: 4px 8px;
+  width: fit-content;
+}
+
+.project-billing-service-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  padding: 15px;
+}
+
+.project-billing-service-grid label {
+  color: #53657a;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.project-billing-service-grid small {
+  color: #6d7f91;
+  font-weight: 500;
+}
+
 .project-billing-empty {
   color: #687b8f;
   padding: 28px !important;
@@ -15679,6 +15733,33 @@ button.planning-p12-conflict-card {
   justify-content: flex-end;
 }
 
+.project-billing-completion,
+.project-billing-range-complete {
+  align-items: center !important;
+  background: #eef7ff;
+  border: 1px solid #b9dcff;
+  border-radius: 8px;
+  color: #174678 !important;
+  display: flex !important;
+  font-size: 13px !important;
+  grid-column: 1 / -1;
+  line-height: 1.4;
+  margin: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+}
+
+.project-billing-completion input {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.project-billing-range-complete {
+  background: #effaf5;
+  border-color: #b7e5d0;
+  color: #08765e !important;
+}
+
 .project-billing-preview {
   border: 0;
   border-top: 1px solid #e0e7ef;
@@ -15698,6 +15779,7 @@ button.planning-p12-conflict-card {
 
 @media (max-width: 980px) {
   .project-billing-grid,
+  .project-billing-service-grid,
   .project-billing-export-controls {
     grid-template-columns: 1fr 1fr;
   }
@@ -15706,6 +15788,7 @@ button.planning-p12-conflict-card {
 @media (max-width: 680px) {
   .project-billing-grid,
   .project-billing-form,
+  .project-billing-service-grid,
   .project-billing-export-controls {
     grid-template-columns: 1fr;
   }
