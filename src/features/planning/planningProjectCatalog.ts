@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeProjectStatus } from '../projects/projectStatus';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 import { mapPlanningProjectRows, type PlanningProjectRecord } from './planningQueries';
 
@@ -52,7 +53,7 @@ function mapCatalogRow(row: Record<string, unknown>): PlanningProjectCatalogReco
     projectCode: String(row.project_code || ''),
     title: String(row.title || ''),
     clientName: String(row.client_name || ''),
-    status: String(row.status || ''),
+    status: normalizeProjectStatus(row.status),
     description: String(row.description || ''),
     startsOn: String(row.starts_on || ''),
     endsOn: String(row.ends_on || ''),
@@ -95,7 +96,7 @@ export async function schedulePlanningCatalogProject(
     target_starts_on: input.startsOn,
     target_ends_on: input.startsOn,
     target_primary_vessel_id: input.vesselId,
-    target_status: 'A planifier',
+    target_status: 'Non validé',
     target_description: null,
   });
   if (error) throw rpcError(error, "Impossible d'ajouter ce projet au planning.");
@@ -115,7 +116,7 @@ export async function createAndSchedulePlanningProject(
     target_client_id: input.clientId,
     target_primary_vessel_id: input.vesselId,
     target_starts_on: input.startsOn,
-    target_status: input.status.trim() || null,
+    target_status: normalizeProjectStatus(input.status),
     target_description: input.description.trim() || null,
   });
   if (error) throw rpcError(error, "Impossible de créer et d'ajouter ce projet au planning.");

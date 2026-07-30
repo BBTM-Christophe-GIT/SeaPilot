@@ -141,7 +141,7 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
         secondaryVesselName: '',
         eventType: 'operation',
         responsibleName: 'Christophe Admin',
-        status: 'En cours',
+        status: 'Validé',
         sourceLabel: 'preview',
       },
       {
@@ -173,7 +173,7 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
         secondaryVesselName: '',
         eventType: 'operation',
         responsibleName: 'Christophe Admin',
-        status: 'A planifier',
+        status: 'Non validé',
         sourceLabel: 'seapilot-projects',
       },
     ],

@@ -26,6 +26,7 @@ import {
   type PlanningProjectIdentificationInput,
 } from './planningProjectCatalog';
 import type { PlanningProjectRecord, PlanningVessel } from './planningQueries';
+import { PROJECT_STATUSES, normalizeProjectStatus } from '../projects/projectStatus';
 
 interface PlanningProjectPickerDialogProps {
   client: SupabaseClient;
@@ -35,8 +36,6 @@ interface PlanningProjectPickerDialogProps {
   onScheduled: (project: PlanningProjectRecord) => void;
   vessel: PlanningVessel;
 }
-
-const PROJECT_STATUSES = ['A planifier', 'Confirmé', 'En cours', 'Validé', 'Terminé', 'Annulé'];
 
 const EMPTY_CLIENT: PlanningProjectClientInput = {
   name: '',
@@ -89,7 +88,7 @@ export function PlanningProjectPickerDialog({
   const [form, setForm] = useState<PlanningProjectIdentificationInput>({
     title: '',
     clientId: null,
-    status: 'A planifier',
+    status: 'Non validé',
     description: '',
     vesselId: vessel.id,
     startsOn: date,
@@ -246,7 +245,7 @@ export function PlanningProjectPickerDialog({
                             {projectDuration(project)}
                           </small>
                         </span>
-                        <em className={statusTone(project.status)}>{project.status || 'A planifier'}</em>
+                        <em className={statusTone(project.status)}>{normalizeProjectStatus(project.status)}</em>
                         <ChevronRight aria-hidden="true" size={18} />
                       </button>
                     );

@@ -120,7 +120,7 @@ describe('projectMutations', () => {
       target_starts_on: '2026-08-03',
       target_ends_on: '2026-08-08',
       target_primary_vessel_id: 12,
-      target_status: 'A planifier',
+      target_status: 'Non validé',
       target_description: 'Première rotation',
       target_charter_hire: 18_000,
       target_hire_currency: 'EUR',

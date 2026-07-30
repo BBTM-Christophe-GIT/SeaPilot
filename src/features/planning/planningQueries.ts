@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
 import {
@@ -23,7 +24,7 @@ export const PLANNING_ASSIGNMENT_NOTE_SOURCE = 'seapilot-assignment-note';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
-  'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, source_label';
+  'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, cancelled_at, cancellation_reason, source_label';
 const PLANNING_OPERATION_DOCUMENT_SELECT =
   'id, planning_occurrence_id, file_name, mime_type, file_size_bytes, sharepoint_web_url, created_at';
 const PLANNING_CERTIFICATE_SELECT = 'id, vessel_id, vessel_name, title, status, expires_on, file_url';
@@ -169,6 +170,8 @@ interface PlanningProjectRow {
   event_type?: string | null;
   responsible_name?: string | null;
   status: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   source_label: string;
 }
 
@@ -452,6 +455,8 @@ export interface PlanningProjectRecord {
   eventType: PlanningFleetEventType;
   responsibleName: string;
   status: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
   sourceLabel: string;
 }
 
@@ -987,7 +992,9 @@ export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProj
     secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
     eventType: planningFleetEventType(row.event_type),
     responsibleName: textOrEmpty(row.responsible_name),
-    status: textOrEmpty(row.status) || 'A planifier',
+    status: normalizeProjectStatus(row.status),
+    cancelledAt: textOrEmpty(row.cancelled_at),
+    cancellationReason: textOrEmpty(row.cancellation_reason),
     sourceLabel: row.source_label,
   }));
 }
@@ -1884,7 +1891,7 @@ function planningProjectPayload(input: CreatePlanningProjectInput) {
     title,
     starts_on: input.startsOn,
     ends_on: input.endsOn,
-    status: input.status.trim() || 'A planifier',
+    status: normalizeProjectStatus(input.status),
     event_type: input.eventType,
     responsible_name: input.responsibleName.trim() || null,
     primary_vessel_id: vesselId,
@@ -1925,6 +1932,54 @@ export async function updatePlanningProject(client: SupabaseClient, input: Updat
   const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
   if (!project) throw new Error('L’événement flotte modifié n’a pas pu être relu.');
   return project;
+}
+
+export async function updatePlanningProjectStatus(
+  client: SupabaseClient,
+  projectId: number,
+  status: ProjectStatus,
+): Promise<PlanningProjectRecord> {
+  const id = planningEntityId(projectId, 'Le projet');
+  const { data, error } = await client
+    .from('planning_projects')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
+  if (error) throwPlanningDataError('update-project-status', 'Impossible de modifier le statut du projet.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('Le projet modifié n’a pas pu être relu.');
+  return project;
+}
+
+export async function cancelPlanningProject(
+  client: SupabaseClient,
+  projectId: number,
+  reason = '',
+): Promise<PlanningProjectRecord> {
+  const id = planningEntityId(projectId, 'Le projet');
+  const { data: userData } = await client.auth.getUser();
+  const { data, error } = await client
+    .from('planning_projects')
+    .update({
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: userData.user?.id || null,
+      cancellation_reason: reason.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select(PLANNING_PROJECT_SELECT)
+    .single();
+  if (error) throwPlanningDataError('cancel-project', 'Impossible d’annuler cet événement.', error);
+  const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
+  if (!project) throw new Error('L’événement annulé n’a pas pu être relu.');
+  return project;
+}
+
+export async function deletePlanningProject(client: SupabaseClient, projectId: number): Promise<void> {
+  const id = planningEntityId(projectId, 'Le projet');
+  const { error } = await client.from('planning_projects').delete().eq('id', id);
+  if (error) throwPlanningDataError('delete-project', 'Impossible de supprimer cet événement.', error);
 }
 
 export async function savePlanningHandover(client: SupabaseClient, input: SavePlanningHandoverInput): Promise<number> {

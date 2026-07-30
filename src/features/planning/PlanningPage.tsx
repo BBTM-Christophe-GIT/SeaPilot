@@ -40,6 +40,8 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { AppConfirmDialog, AppDialog } from '../../components/AppDialog';
+import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { supabase } from '../../lib/supabaseClient';
 import { PLANNING_ASSISTANT_ENABLED, PLANNING_PREDICTIONS_ENABLED } from '../../config/featureFlags';
 import type { RoleKey } from '../permissions/roles';
@@ -75,10 +77,12 @@ import {
   addPlanningBoardRow,
   archivePlanningVessel,
   applyPlanningGridCells,
+  cancelPlanningProject,
   createPlanningAssignment,
   createPlanningBoardAssignments,
   createPlanningProject,
   createVessel,
+  deletePlanningProject,
   deletePlanningBoardRow,
   deletePlanningEvent,
   fetchPlanningAssignmentOverviewRows,
@@ -98,6 +102,7 @@ import {
   updatePlanningEvent,
   updatePlanningVessel,
   updatePlanningProject,
+  updatePlanningProjectStatus,
   type PlanningPerson,
   type PlanningConfirmationStatus,
   type PlanningFleetEventType,
@@ -109,6 +114,7 @@ import {
   type PlanningVessel,
   type SavePlanningHandoverInput,
 } from './planningQueries';
+import { PROJECT_STATUSES, projectStatusToneClass, type ProjectStatus } from '../projects/projectStatus';
 import {
   buildPlanningGridPaste,
   normalizePlanningGridStatus,
@@ -317,7 +323,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   title: '',
   startsOn: '',
   endsOn: '',
-  status: 'A planifier',
+  status: 'Non validé',
   eventType: 'operation',
   vesselId: '',
   responsibleName: '',
@@ -326,7 +332,6 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
 };
 
 const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Repos', 'Vacance', 'Arrêt de travail', 'Formation'];
-const PROJECT_STATUSES = ['A planifier', 'Confirmé', 'En cours', 'Validé', 'Terminé', 'Annulé'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -478,6 +483,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [projectForm, setProjectForm] = useState<ProjectFormState>(EMPTY_PROJECT_FORM);
   const [isProjectOpen, setIsProjectOpen] = useState(false);
   const [isProjectQuick, setIsProjectQuick] = useState(false);
+  const [projectContextMenu, setProjectContextMenu] = useState<{ project: PlanningProjectRecord; position: AppContextMenuPosition } | null>(null);
+  const [projectConfirmation, setProjectConfirmation] = useState<{ kind: 'cancel' | 'delete'; project: PlanningProjectRecord } | null>(null);
   const [projectCellContext, setProjectCellContext] = useState<{ date: string; vessel: PlanningVessel } | null>(null);
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
@@ -1614,22 +1621,26 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setEventForm(null);
   }
 
-  function duplicateSelectedProject() {
-    if (!selectedProject) return;
+  function duplicateProject(project: PlanningProjectRecord) {
     setProjectForm({
-      title: `${selectedProject.title} (copie)`,
-      startsOn: selectedProject.startsOn,
-      endsOn: selectedProject.endsOn,
-      status: 'A planifier',
-      eventType: selectedProject.eventType,
-      vesselId: String(selectedProject.primaryVesselId || ''),
-      responsibleName: selectedProject.responsibleName,
-      clientName: selectedProject.clientName,
-      description: selectedProject.description,
+      title: `${project.title} (copie)`,
+      startsOn: project.startsOn,
+      endsOn: project.endsOn,
+      status: 'Non validé',
+      eventType: project.eventType,
+      vesselId: String(project.primaryVesselId || ''),
+      responsibleName: project.responsibleName,
+      clientName: project.clientName,
+      description: project.description,
     });
     setSelectedProject(null);
+    setProjectContextMenu(null);
     setIsProjectQuick(false);
     setIsProjectOpen(true);
+  }
+
+  function duplicateSelectedProject() {
+    if (selectedProject) duplicateProject(selectedProject);
   }
 
   function openEvent(event: PlanningCrewEvent) {
@@ -1889,9 +1900,67 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     } catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer cet événement flotte.')); } finally { setIsSaving(false); }
   }
 
-  async function cancelProject() {
-    if (!selectedProject || !window.confirm(`Annuler ${selectedProject.title} ? L’événement restera visible dans le planning.`)) return;
-    await saveProject({ ...projectForm, status: 'Annulé' });
+  function requestCancelProject(project: PlanningProjectRecord) {
+    setProjectContextMenu(null);
+    setProjectConfirmation({ kind: 'cancel', project });
+  }
+
+  function requestDeleteProject(project: PlanningProjectRecord) {
+    setProjectContextMenu(null);
+    setProjectConfirmation({ kind: 'delete', project });
+  }
+
+  async function confirmProjectAction() {
+    if (!projectConfirmation || isSaving) return;
+    const { kind, project } = projectConfirmation;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      if (kind === 'cancel') {
+        const saved = await cancelPlanningProject(effectiveClient, project.id);
+        updateOverview((current) => replacePlanningProject(current, saved));
+        setSelectedProject((current) => current?.id === saved.id ? saved : current);
+        setStatusMessage(`L’opération « ${project.title} » a été annulée.`);
+      } else {
+        await deletePlanningProject(effectiveClient, project.id);
+        updateOverview((current) => ({ ...current, projects: current.projects.filter((item) => item.id !== project.id) }));
+        if (selectedProject?.id === project.id) {
+          setSelectedProject(null);
+          setIsProjectOpen(false);
+        }
+        setStatusMessage(`L’opération « ${project.title} » a été supprimée.`);
+      }
+      setProjectConfirmation(null);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(
+        error,
+        kind === 'cancel' ? 'Impossible d’annuler cette opération.' : 'Impossible de supprimer cette opération.',
+      ));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function changeProjectStatus(project: PlanningProjectRecord, status: ProjectStatus) {
+    if (isSaving || project.status === status) {
+      setProjectContextMenu(null);
+      return;
+    }
+    setIsSaving(true);
+    setPendingMutationId(`project-${project.id}`);
+    setErrorMessage(null);
+    try {
+      const saved = await updatePlanningProjectStatus(effectiveClient, project.id, status);
+      updateOverview((current) => replacePlanningProject(current, saved));
+      setSelectedProject((current) => current?.id === saved.id ? saved : current);
+      setStatusMessage(`Statut de « ${project.title} » mis à jour : ${status}.`);
+      setProjectContextMenu(null);
+    } catch (error) {
+      setErrorMessage(planningErrorMessage(error, 'Impossible de modifier le statut de cette opération.'));
+    } finally {
+      setPendingMutationId(null);
+      setIsSaving(false);
+    }
   }
 
   function openAssignmentById(assignmentId: number) {
@@ -2228,6 +2297,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
                       onCreateVisit={openNewVesselVisit}
                       onOpen={openProjectEditor}
+                      onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
                       onOpenVisit={openVesselVisit}
                       onOpenVessel={openVesselEditor}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
@@ -2381,7 +2451,65 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
-      {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} documents={selectedProjectDocuments} documentsError={selectedProjectDocumentsError} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => void cancelProject()} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
+      {projectContextMenu ? (
+        <AppContextMenu
+          label={`Actions pour ${projectContextMenu.project.title}`}
+          onClose={() => setProjectContextMenu(null)}
+          position={projectContextMenu.position}
+        >
+          <div className="app-context-menu__title">{projectContextMenu.project.title}</div>
+          <AppContextMenuItem onSelect={() => { openProjectEditor(projectContextMenu.project); setProjectContextMenu(null); }}>
+            <FileText aria-hidden="true" size={16} /> Voir les détails
+          </AppContextMenuItem>
+          {canEditPlanning ? (
+            <>
+              <AppContextMenuItem onSelect={() => { openProjectEditor(projectContextMenu.project); setProjectContextMenu(null); }}>
+                <Pencil aria-hidden="true" size={16} /> Modifier
+              </AppContextMenuItem>
+              <AppContextMenuItem onSelect={() => duplicateProject(projectContextMenu.project)}>
+                <Copy aria-hidden="true" size={16} /> Dupliquer
+              </AppContextMenuItem>
+              <div className="app-context-menu__separator" role="separator" />
+              <div className="app-context-menu__label">Changer le statut</div>
+              {PROJECT_STATUSES.map((status) => (
+                <AppContextMenuItem
+                  disabled={isSaving}
+                  key={status}
+                  onSelect={() => void changeProjectStatus(projectContextMenu.project, status)}
+                >
+                  <span aria-hidden="true" className={`planning-project-status-dot is-${projectStatusToneClass(status)}`} />
+                  {status}{projectContextMenu.project.status === status ? ' ✓' : ''}
+                </AppContextMenuItem>
+              ))}
+              <div className="app-context-menu__separator" role="separator" />
+              <AppContextMenuItem
+                disabled={Boolean(projectContextMenu.project.cancelledAt)}
+                onSelect={() => requestCancelProject(projectContextMenu.project)}
+              >
+                <CalendarOff aria-hidden="true" size={16} />
+                {projectContextMenu.project.cancelledAt ? 'Opération annulée' : 'Annuler l’opération'}
+              </AppContextMenuItem>
+              <AppContextMenuItem danger onSelect={() => requestDeleteProject(projectContextMenu.project)}>
+                <Trash2 aria-hidden="true" size={16} /> Supprimer
+              </AppContextMenuItem>
+            </>
+          ) : null}
+        </AppContextMenu>
+      ) : null}
+      {projectConfirmation ? (
+        <AppConfirmDialog
+          confirmLabel={projectConfirmation.kind === 'delete' ? 'Supprimer définitivement' : 'Confirmer l’annulation'}
+          description={projectConfirmation.kind === 'delete'
+            ? <>L’opération <strong>{projectConfirmation.project.title}</strong> sera supprimée du Planning. Cette action est irréversible.</>
+            : <>L’opération <strong>{projectConfirmation.project.title}</strong> restera visible, marquée comme annulée, et conservera son statut métier.</>}
+          isBusy={isSaving}
+          onCancel={() => { if (!isSaving) setProjectConfirmation(null); }}
+          onConfirm={() => void confirmProjectAction()}
+          title={projectConfirmation.kind === 'delete' ? 'Supprimer l’opération ?' : 'Annuler l’opération ?'}
+          tone={projectConfirmation.kind === 'delete' ? 'danger' : 'warning'}
+        />
+      ) : null}
+      {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} documents={selectedProjectDocuments} documentsError={selectedProjectDocumentsError} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => { if (selectedProject) requestCancelProject(selectedProject); }} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {projectCellContext ? (
         <PlanningProjectPickerDialog
           client={effectiveClient}
@@ -2734,25 +2862,49 @@ function PlanningOperationDocuments({ documents, error }: { documents: PlanningO
 }
 
 function PlanningProjectDialog({ project, form, activeVessels, documents, documentsError, editable, isQuick, isSaving, onChange, onClose, onSave, onExpand, onDuplicate, onCancel }: { project: PlanningProjectRecord | null; form: ProjectFormState; activeVessels: PlanningVessel[]; documents: PlanningOperationDocumentRecord[]; documentsError: string; editable: boolean; isQuick: boolean; isSaving: boolean; onChange: (form: ProjectFormState) => void; onClose: () => void; onSave: () => void; onExpand: () => void; onDuplicate: () => void; onCancel: () => void }) {
-  if (project && !editable) return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-modal="true" className="planning-dialog is-side-panel is-detail" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>{project.title}</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header><dl><div><dt>Type</dt><dd>{planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl><PlanningOperationDocuments documents={documents} error={documentsError} /><footer><button onClick={onClose} type="button">Fermer</button></footer></section></div>;
+  if (project && !editable) return (
+    <AppDialog
+      footer={<div className="app-dialog__actions"><button onClick={onClose} type="button">Fermer</button></div>}
+      icon={<Ship aria-hidden="true" size={20} />}
+      onClose={onClose}
+      size="md"
+      title={project.title}
+      variant="drawer"
+    >
+      <div className="planning-dialog is-shared-dialog is-detail">
+        <dl><div><dt>Type</dt><dd>{planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl>
+        <PlanningOperationDocuments documents={documents} error={documentsError} />
+      </div>
+    </AppDialog>
+  );
   return (
-    <div className="planning-dialog-backdrop is-side-panel" role="presentation">
-      <form aria-modal="true" className="planning-dialog is-side-panel" onSubmit={(event) => { event.preventDefault(); onSave(); }} role="dialog">
-        <header><div><Ship aria-hidden="true" size={20} /><span><small>{isQuick ? 'Formulaire rapide' : 'Formulaire complet'}</small><h2>{project ? 'Modifier l’événement' : 'Nouvel événement flotte'}</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
+    <AppDialog
+      eyebrow={isQuick ? 'Formulaire rapide' : 'Formulaire complet'}
+      footer={(
+        <div className="planning-dialog-footer-split">
+          {project ? <span><button className="is-danger" disabled={isSaving || Boolean(project.cancelledAt)} onClick={onCancel} type="button">{project.cancelledAt ? 'Événement annulé' : 'Annuler l’événement'}</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span> : isQuick ? <button className="is-secondary" onClick={onExpand} type="button">Formulaire complet</button> : <span />}
+          <span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span>
+        </div>
+      )}
+      icon={<Ship aria-hidden="true" size={20} />}
+      isBusy={isSaving}
+      onClose={onClose}
+      onSubmit={(event) => { event.preventDefault(); onSave(); }}
+      size="md"
+      title={project ? 'Modifier l’événement' : 'Nouvel événement flotte'}
+      variant="drawer"
+    >
+      <div className="planning-dialog is-shared-dialog">
         <div className="planning-dialog-grid">
           <label className="is-wide">Titre<input required value={form.title} onChange={(event) => onChange({ ...form, title: event.target.value })} /></label>
           <label>Navire<select required value={form.vesselId} onChange={(event) => onChange({ ...form, vesselId: event.target.value })}><option value="">Choisir</option>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label>
           <label>Type<select value={form.eventType} onChange={(event) => onChange({ ...form, eventType: event.target.value as PlanningFleetEventType })}>{FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>)}</select></label>
           <label>Début<input required type="date" value={form.startsOn} onChange={(event) => onChange({ ...form, startsOn: event.target.value, endsOn: isQuick ? event.target.value : form.endsOn })} /></label>
           <label>Statut<select value={form.status} onChange={(event) => onChange({ ...form, status: event.target.value })}>{PROJECT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
-          {!isQuick ? <><label>Fin<input required type="date" value={form.endsOn} onChange={(event) => onChange({ ...form, endsOn: event.target.value })} /></label><label>Responsable<input value={form.responsibleName} onChange={(event) => onChange({ ...form, responsibleName: event.target.value })} /></label><label className="is-wide">Client<input value={form.clientName} onChange={(event) => onChange({ ...form, clientName: event.target.value })} /></label><label className="is-wide">Description<textarea rows={4} value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} /></label></> : null}
+          {!isQuick ? <><label>Fin<input required type="date" value={form.endsOn} onChange={(event) => onChange({ ...form, endsOn: event.target.value })} /></label><label className="is-wide">Client<input value={form.clientName} onChange={(event) => onChange({ ...form, clientName: event.target.value })} /></label><label className="is-wide">Description<textarea rows={4} value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} /></label></> : null}
         </div>
         {project ? <PlanningOperationDocuments documents={documents} error={documentsError} /> : null}
-        <footer className="planning-dialog-footer-split">
-          {project ? <span><button className="is-danger" disabled={isSaving || project.status === 'Annulé'} onClick={onCancel} type="button">Annuler l’événement</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span> : isQuick ? <button className="is-secondary" onClick={onExpand} type="button">Formulaire complet</button> : <span />}
-          <span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span>
-        </footer>
-      </form>
-    </div>
+      </div>
+    </AppDialog>
   );
 }

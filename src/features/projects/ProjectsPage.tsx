@@ -28,6 +28,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ProjectBillingPanel } from './ProjectBillingPanel';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
@@ -203,6 +204,7 @@ function ProjectRibbonButton({
 
 const PROJECT_DETAIL_TABS = [
   { id: 'operations', label: 'Opérations' },
+  { id: 'billing', label: 'Facturation' },
   { id: 'contract', label: 'Contrat / SUPPLYTIME' },
   { id: 'commercial', label: 'Offre commerciale' },
   { id: 'documents', label: 'Documents contractuels' },
@@ -368,6 +370,7 @@ function ProjectDetail({
   project,
   contract,
   client,
+  supabaseClient,
   projectDocuments,
   contractDocuments,
   contractUnavailable,
@@ -385,6 +388,7 @@ function ProjectDetail({
   project: ProjectRecord;
   contract?: ProjectContractRecord;
   client?: ClientRecord;
+  supabaseClient: SupabaseClient;
   projectDocuments: ProjectDocumentRecord[];
   contractDocuments: ProjectDocumentRecord[];
   contractUnavailable: boolean;
@@ -650,6 +654,16 @@ function ProjectDetail({
           <p className="project-section-empty">Aucune opération Planning n’est encore associée à ce contrat.</p>
         )}
       </section>
+      ) : null}
+
+      {activeTab === 'billing' ? (
+        <ProjectBillingPanel
+          client={supabaseClient}
+          contract={contract}
+          isManager={isManager}
+          operations={planningOccurrences}
+          project={project}
+        />
       ) : null}
 
       {activeTab === 'contract' ? (
@@ -1184,6 +1198,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           {selectedProject ? (
             <ProjectDetail
               client={selectedClient}
+              supabaseClient={effectiveClient}
               contract={selectedContract}
               contractDocuments={selectedContractDocuments}
               contractDocumentsUnavailable={warningIsPresent(projectsData, 'contractDocuments')}

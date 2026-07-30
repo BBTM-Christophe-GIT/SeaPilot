@@ -13952,6 +13952,12 @@ button.planning-p12-conflict-card {
   }
 }
 
+.planning-project-bar.is-cancelled {
+  filter: grayscale(.7);
+  opacity: .62;
+  text-decoration: line-through;
+}
+
 /* Projects 3.6.19 — contract-centric workspace */
 .sr-only {
   position: absolute;
@@ -15151,4 +15157,620 @@ button.planning-p12-conflict-card {
   .planning-export-grid {
     grid-template-columns: 1fr;
   }
+}
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, #0f172a 48%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.app-dialog-backdrop--drawer {
+  justify-items: end;
+  padding-left: max(16px, 8vw);
+}
+
+.app-dialog {
+  --dialog-width: 640px;
+  display: flex;
+  width: min(var(--dialog-width), 100%);
+  max-height: calc(100dvh - 32px);
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgb(15 23 42 / 28%);
+  color: #172033;
+}
+
+.app-dialog--sm { --dialog-width: 460px; }
+.app-dialog--md { --dialog-width: 640px; }
+.app-dialog--lg { --dialog-width: 860px; }
+.app-dialog--xl { --dialog-width: 1120px; }
+.app-dialog--fullscreen { --dialog-width: calc(100vw - 32px); height: calc(100dvh - 32px); }
+.app-dialog--drawer { width: min(720px, 100%); height: calc(100dvh - 32px); border-radius: 18px 0 0 18px; }
+.app-dialog--preview { --dialog-width: 1180px; }
+
+.app-dialog__header,
+.app-dialog__footer {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  background: #fff;
+}
+
+.app-dialog__header {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e3e9f1;
+}
+
+.app-dialog__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-dialog__identity > span:last-child { min-width: 0; }
+.app-dialog__identity small {
+  display: block;
+  margin-bottom: 2px;
+  color: #5e6d80;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-dialog__identity h2 {
+  overflow: hidden;
+  margin: 0;
+  color: #172033;
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-dialog__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 10px;
+  background: #eaf3ff;
+  color: #1267d5;
+}
+
+.app-dialog__close {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+}
+
+.app-dialog__close:hover { border-color: #d9e1eb; background: #f4f7fb; color: #172033; }
+.app-dialog__description {
+  padding: 12px 20px;
+  border-bottom: 1px solid #e7edf4;
+  background: #f7faff;
+  color: #536274;
+  line-height: 1.45;
+}
+
+.app-dialog__content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+
+.app-dialog__footer {
+  display: flex;
+  min-height: 66px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid #e3e9f1;
+  box-shadow: 0 -8px 20px rgb(15 23 42 / 4%);
+}
+
+.app-dialog__actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.app-dialog__footer button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #d4dde8;
+  border-radius: 9px;
+  background: #fff;
+  color: #263246;
+  font-weight: 750;
+}
+
+.app-dialog__footer button.is-primary {
+  border-color: #1267d5;
+  background: #1267d5;
+  color: #fff;
+}
+
+.app-dialog__footer button.is-danger {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.app-dialog__footer button:disabled { cursor: not-allowed; opacity: 0.58; }
+.app-dialog__confirm-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #8a5100;
+}
+.app-dialog__confirm-note.is-danger { background: #fff0f0; color: #a61b1b; }
+
+.app-context-menu {
+  position: fixed;
+  z-index: 2300;
+  display: grid;
+  width: min(248px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  gap: 2px;
+  overflow-y: auto;
+  padding: 7px;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(15 23 42 / 24%);
+}
+
+.app-context-menu button {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #283548;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.app-context-menu button:hover,
+.app-context-menu button:focus-visible { background: #edf5ff; outline: none; color: #125db8; }
+.app-context-menu button.is-danger { color: #c52222; }
+.app-context-menu button.is-danger:hover,
+.app-context-menu button.is-danger:focus-visible { background: #fff0f0; }
+.app-context-menu button:disabled { opacity: 0.45; }
+.app-context-menu__separator { height: 1px; margin: 4px; background: #e6ebf2; }
+.app-context-menu__label {
+  padding: 6px 10px 3px;
+  color: #748095;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.planning-project-status-dot {
+  background: #94a3b8;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgb(148 163 184 / 15%);
+  flex: 0 0 8px;
+  height: 8px;
+  width: 8px;
+}
+
+.planning-project-status-dot.is-success {
+  background: #15a675;
+  box-shadow: 0 0 0 3px rgb(21 166 117 / 15%);
+}
+
+.planning-project-status-dot.is-warning {
+  background: #f2a617;
+  box-shadow: 0 0 0 3px rgb(242 166 23 / 18%);
+}
+
+.planning-project-status-dot.is-billed {
+  background: #2087df;
+  box-shadow: 0 0 0 3px rgb(32 135 223 / 16%);
+}
+
+@media (max-width: 760px) {
+  .app-dialog-backdrop { align-items: end; padding: 0; }
+  .app-dialog,
+  .app-dialog--drawer,
+  .app-dialog--fullscreen {
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+    border-radius: 18px 18px 0 0;
+  }
+  .app-dialog__header { min-height: 64px; padding: 13px 15px; }
+  .app-dialog__description,
+  .app-dialog__content { padding: 14px 15px; }
+  .app-dialog__footer { padding: 10px 15px calc(10px + env(safe-area-inset-bottom)); }
+  .app-dialog__actions { display: grid; grid-template-columns: 1fr 1fr; }
+}
+.project-billing {
+  display: grid;
+  gap: 16px;
+}
+
+.project-billing .project-section-heading {
+  align-items: end;
+}
+
+.project-billing-month {
+  color: #53657a;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+  min-width: 170px;
+}
+
+.project-billing input,
+.project-billing select,
+.project-billing textarea {
+  background: #fff;
+  border: 1px solid #cbd7e4;
+  border-radius: 7px;
+  color: #172033;
+  font: inherit;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.project-billing textarea {
+  resize: vertical;
+}
+
+.project-billing-message,
+.project-billing-error {
+  border-radius: 8px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.project-billing-message {
+  background: #eaf8f4;
+  border: 1px solid #a7dfcf;
+  color: #08765e;
+}
+
+.project-billing-error {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
+}
+
+.project-billing-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-billing-card {
+  background: #fff;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(21, 43, 73, .05);
+  overflow: hidden;
+}
+
+.project-billing-card > header {
+  align-items: center;
+  background: linear-gradient(180deg, #f8fbff, #f3f7fb);
+  border-bottom: 1px solid #e0e7ef;
+  color: #174678;
+  display: flex;
+  gap: 10px;
+  min-height: 58px;
+  padding: 12px 15px;
+}
+
+.project-billing-card > header > div,
+.project-billing-card-heading > div > span {
+  display: grid;
+  gap: 2px;
+}
+
+.project-billing-card > header span,
+.project-billing-card > header small {
+  color: #66798d;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.project-billing-card > footer {
+  border-top: 1px solid #e6ecf2;
+  display: flex;
+  justify-content: flex-end;
+  padding: 11px 15px;
+}
+
+.project-billing button,
+.project-billing-upload,
+.project-billing-row-actions .is-button {
+  align-items: center;
+  background: #0d67d5;
+  border: 1px solid #0d67d5;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
+.project-billing button:disabled,
+.project-billing-upload:has(input:disabled) {
+  cursor: wait;
+  opacity: .55;
+}
+
+.project-billing-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 15px;
+}
+
+.project-billing-form label {
+  color: #53657a;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.project-billing-form .is-wide {
+  grid-column: 1 / -1;
+}
+
+.project-billing-upload {
+  margin: 14px 15px 6px;
+}
+
+.project-billing-upload input,
+.project-billing-row-actions .is-button input {
+  display: none;
+}
+
+.project-billing-documents {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 10px 15px 15px;
+}
+
+.project-billing-documents li {
+  align-items: center;
+  border: 1px solid #e1e8f0;
+  border-radius: 7px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.project-billing-documents li span {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-billing-card-heading {
+  justify-content: space-between;
+}
+
+.project-billing-card-heading > div {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.project-billing-table-scroll {
+  overflow-x: auto;
+}
+
+.project-billing table {
+  border-collapse: collapse;
+  min-width: 980px;
+  width: 100%;
+}
+
+.project-billing th,
+.project-billing td {
+  border-bottom: 1px solid #e8edf3;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.project-billing th {
+  background: #f8fafc;
+  color: #52657a;
+  font-size: 11px;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+}
+
+.project-billing-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.project-billing-row-actions button,
+.project-billing-row-actions .is-button {
+  background: #fff;
+  border-color: #cad6e2;
+  color: #31475e;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.project-billing-row-actions .is-danger {
+  border-color: #fecaca;
+  color: #c32232;
+}
+
+.project-billing-empty {
+  color: #687b8f;
+  padding: 28px !important;
+  text-align: center !important;
+}
+
+.project-billing-export-controls {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  padding: 15px;
+}
+
+.project-billing-export-controls > label {
+  color: #53657a;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.project-billing-export-actions {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.project-billing-preview {
+  border: 0;
+  border-top: 1px solid #e0e7ef;
+  height: 580px;
+  width: 100%;
+}
+
+.project-billing-check {
+  align-items: center !important;
+  display: flex !important;
+  flex-direction: row;
+}
+
+.project-billing-check input {
+  min-height: 0;
+}
+
+@media (max-width: 980px) {
+  .project-billing-grid,
+  .project-billing-export-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .project-billing-grid,
+  .project-billing-form,
+  .project-billing-export-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .project-billing .project-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-billing-export-controls > *,
+  .project-billing-export-actions {
+    grid-column: auto;
+  }
+
+  .project-billing-export-actions {
+    flex-direction: column;
+  }
+
+  .project-billing-preview {
+    height: 430px;
+  }
+}
+.project-editor.is-shared-dialog {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-height: none;
+  max-width: none;
+  overflow: visible;
+  width: auto;
+}
+
+.project-editor.is-shared-dialog .project-editor-grid {
+  padding: 0;
+}
+
+.planning-dialog.is-shared-dialog {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  height: auto;
+  max-height: none;
+  max-width: none;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+  position: static;
+  width: auto;
+}
+
+.planning-dialog.is-shared-dialog .planning-dialog-grid {
+  padding: 0;
+}
+
+.app-dialog__footer .planning-dialog-footer-split {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.app-dialog__footer .planning-dialog-footer-split > span {
+  display: flex;
+  gap: 8px;
 }
