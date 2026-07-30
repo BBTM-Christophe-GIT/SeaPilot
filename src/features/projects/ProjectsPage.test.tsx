@@ -245,15 +245,20 @@ function createClient(
     },
     ...overrides,
   };
-  const from = vi.fn((table: string) => ({
-    select: vi.fn(() => ({
-      order: vi.fn(() => ({
-        gt: vi.fn(() => ({
-          limit: vi.fn().mockResolvedValue(sources[table]),
-        })),
-      })),
-    })),
-  }));
+  const from = vi.fn((table: string) => {
+    const result = sources[table] || { data: [], error: null };
+    const promise = Promise.resolve(result);
+    const query: Record<string, unknown> = {
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    };
+    query.select = vi.fn(() => query);
+    query.eq = vi.fn(() => query);
+    query.order = vi.fn(() => query);
+    query.gt = vi.fn(() => query);
+    query.limit = vi.fn(() => promise);
+    return query;
+  });
 
   const rpc = vi.fn().mockResolvedValue(rpcResult);
   return { client: { from, rpc }, from, rpc };
@@ -284,7 +289,7 @@ describe('ProjectsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
-    await user.selectOptions(screen.getByLabelText('Filtre statut projet'), 'Contrat signé');
+    await user.selectOptions(screen.getByLabelText('Filtre statut projet'), 'Non validé');
     await user.selectOptions(screen.getByLabelText('Filtre client projet'), 'Ifremer');
     await user.selectOptions(screen.getByLabelText('Filtre navire projet'), 'COTENTIN');
     fireEvent.change(screen.getByLabelText('Projet depuis'), { target: { value: '2026-07-01' } });
@@ -310,6 +315,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Opérations',
+      'Facturation',
       'Contrat / SUPPLYTIME',
       'Offre commerciale',
       'Documents contractuels',
@@ -336,19 +342,24 @@ describe('ProjectsPage', () => {
     );
     screen.getByRole('tab', { name: 'Opérations' }).focus();
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('tab', { name: 'Contrat / SUPPLYTIME' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
-    expect(from.mock.calls.map(([table]) => table)).toEqual(
-      expect.arrayContaining([
-        'projects',
-        'project_contracts',
-        'project_documents',
-        'contract_documents',
-        'project_generated_documents',
-        'clients',
-        'planning_projects',
-      ]),
-    );
+    await waitFor(() => {
+      expect(from.mock.calls.map(([table]) => table)).toEqual(
+        expect.arrayContaining([
+          'projects',
+          'project_contracts',
+          'project_documents',
+          'contract_documents',
+          'project_generated_documents',
+          'clients',
+          'planning_projects',
+          'project_billing_periods',
+          'project_chargeable_expenses',
+          'project_billing_documents',
+        ]),
+      );
+    });
   });
 
   it('shows an explicit technical error and retry action when the projects query fails', async () => {
@@ -539,7 +550,7 @@ describe('ProjectsPage', () => {
       target_primary_vessel_id: 12,
       target_project_id: 880,
       target_starts_on: '2026-09-01',
-      target_status: 'A planifier',
+      target_status: 'Non validé',
     });
     expect(await screen.findByText('Opération ajoutée au Planning.')).toBeInTheDocument();
   });

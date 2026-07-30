@@ -545,6 +545,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_templates: [],
   planning_manning_matrices: [],
   planning_manning_requirements: [],
+  project_billing_periods: [],
+  project_chargeable_expenses: [],
+  project_billing_documents: [],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 

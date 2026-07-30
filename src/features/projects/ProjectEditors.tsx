@@ -21,7 +21,9 @@ import type {
 } from './projectQueries';
 import { SUPPLYTIME_GROUPS } from './projectReadModel';
 import { formatProjectPort, PROJECT_PORT_GROUPS } from './projectPorts';
+import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { AppDialog } from '../../components/AppDialog';
 
 interface ProjectEditorProps {
   client: SupabaseClient;
@@ -79,7 +81,7 @@ export function projectToWriteInput(
     clientId: project.clientId,
     primaryVesselId: project.primaryVesselId,
     secondaryVesselId: project.secondaryVesselId,
-    status: project.status,
+    status: normalizeProjectStatus(project.status),
     description: project.description,
     startsOn: project.startsOn,
     endsOn: project.endsOn,
@@ -173,7 +175,6 @@ export function ProjectEditor({
   onClose,
   onSaved,
   project,
-  statuses,
   vessels,
 }: ProjectEditorProps) {
   const [form, setForm] = useState(() => projectToWriteInput(project, contract));
@@ -297,8 +298,9 @@ export function ProjectEditor({
                 </select>
               </div>
               <Field label="Statut">
-                <input list="project-status-values" onChange={(event) => update('status', event.target.value)} value={form.status} />
-                <datalist id="project-status-values">{statuses.map((status) => <option key={status} value={status} />)}</datalist>
+                <select onChange={(event) => update('status', event.target.value)} value={form.status}>
+                  {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
               </Field>
               <Field label="Description" wide>
                 <textarea onChange={(event) => update('description', event.target.value)} value={form.description} />
@@ -490,7 +492,7 @@ export function ProjectPlanningEditor({
     startsOn: dateOnly(occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn),
     endsOn: dateOnly(occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
     primaryVesselId: occurrence?.primaryVesselId ?? project.primaryVesselId,
-    status: occurrence?.status || 'A planifier',
+    status: normalizeProjectStatus(occurrence?.status),
     description: occurrence?.description || project.description,
     charterHire: occurrence?.charterHire ?? contract?.charterHire ?? null,
     hireCurrency: occurrence?.hireCurrency || contract?.hireCurrency || 'EUR',
@@ -530,18 +532,24 @@ export function ProjectPlanningEditor({
   }
 
   return (
-    <div className="project-editor-backdrop">
-      <section aria-labelledby="project-planning-editor-title" aria-modal="true" className="project-editor is-planning" role="dialog">
-        <header>
-          <div>
-            <span>{project.projectCode || 'Projet catalogue'}</span>
-            <h2 id="project-planning-editor-title">{occurrence ? 'Modifier l’opération' : 'Nouvelle opération'}</h2>
-          </div>
-          <button aria-label="Fermer le formulaire opération" disabled={isSaving} onClick={onClose} type="button">
-            <X aria-hidden="true" size={20} />
+    <AppDialog
+      eyebrow={project.projectCode || 'Projet catalogue'}
+      footer={(
+        <div className="app-dialog__actions">
+          <button className="is-secondary" disabled={isSaving} onClick={onClose} type="button">Annuler</button>
+          <button disabled={isSaving} type="submit">
+            {isSaving ? 'Enregistrement…' : occurrence ? 'Enregistrer les modifications' : 'Ajouter au planning'}
           </button>
-        </header>
-        <form onSubmit={submit}>
+        </div>
+      )}
+      icon={<CalendarDays aria-hidden="true" size={20} />}
+      isBusy={isSaving}
+      onClose={onClose}
+      onSubmit={submit}
+      size="lg"
+      title={occurrence ? 'Modifier l’opération' : 'Nouvelle opération'}
+    >
+      <div className="project-editor is-planning is-shared-dialog">
           <div className="project-editor-grid">
             <Field label="Projet" wide><input disabled value={`${project.projectCode || ''} - ${project.title}`.replace(/^ - /, '')} /></Field>
             <Field label="Début *"><input autoFocus onChange={(event) => update('startsOn', event.target.value)} required type="date" value={form.startsOn} /></Field>
@@ -552,7 +560,7 @@ export function ProjectPlanningEditor({
                 {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
               </select>
             </Field>
-            <Field label="Statut"><input onChange={(event) => update('status', event.target.value)} value={form.status} /></Field>
+            <Field label="Statut"><select onChange={(event) => update('status', event.target.value)} value={form.status}>{PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>
             <Field label="Description / mission" wide><textarea onChange={(event) => update('description', event.target.value)} value={form.description} /></Field>
             <Field label="Loyer d’affrètement">
               <input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} />
@@ -592,14 +600,7 @@ export function ProjectPlanningEditor({
             Le loyer du contrat est recopié lors de la création puis reste propre à cette opération. Les documents sont classés dans SharePoint · Documents Projets.
           </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
-          <footer>
-            <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} type="submit">
-              {isSaving ? 'Enregistrement…' : occurrence ? 'Enregistrer les modifications' : 'Ajouter au planning'}
-            </button>
-          </footer>
-        </form>
-      </section>
-    </div>
+      </div>
+    </AppDialog>
   );
 }

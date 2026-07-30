@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeProjectStatus } from './projectStatus';
 
 export interface ProjectMutationResult {
   id: number;
@@ -84,7 +85,7 @@ export const EMPTY_PROJECT_WRITE_INPUT: ProjectWriteInput = {
   clientId: null,
   primaryVesselId: null,
   secondaryVesselId: null,
-  status: '',
+  status: 'Non validé',
   description: '',
   startsOn: '',
   endsOn: '',
@@ -181,7 +182,7 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     target_client_id: input.clientId,
     target_primary_vessel_id: input.primaryVesselId,
     target_secondary_vessel_id: input.secondaryVesselId,
-    target_status: optionalText(input.status),
+    target_status: normalizeProjectStatus(input.status),
     target_description: optionalText(input.description),
     target_starts_on: optionalText(input.startsOn),
     target_ends_on: optionalText(input.endsOn),
@@ -286,7 +287,7 @@ export async function saveProjectPlanningOccurrence(
     target_starts_on: input.startsOn,
     target_ends_on: input.endsOn,
     target_primary_vessel_id: input.primaryVesselId,
-    target_status: optionalText(input.status),
+    target_status: normalizeProjectStatus(input.status),
     target_description: optionalText(input.description),
     target_charter_hire: input.charterHire,
     target_hire_currency: optionalText(input.hireCurrency.toUpperCase()),

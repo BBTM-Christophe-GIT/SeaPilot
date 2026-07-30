@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeProjectStatus } from './projectStatus';
 
 const READ_PAGE_SIZE = 500;
 
@@ -554,7 +555,7 @@ export function mapProjectRows(rows: ProjectRow[]): ProjectRecord[] {
     operationArea: nullableText(row.operation_area),
     isRovSupport: row.is_rov_support ?? false,
     isDivingSupport: row.is_diving_support ?? false,
-    status: nullableText(row.status),
+    status: normalizeProjectStatus(row.status),
     description: nullableText(row.description),
     sourceLabel: nullableText(row.source_label),
     sharePointListTitle: nullableText(row.sharepoint_list_title),
@@ -665,7 +666,7 @@ export function mapProjectPlanningOccurrenceRows(
       endsOn: nullableText(row.ends_on || row.starts_on),
       primaryVesselId: row.primary_vessel_id,
       primaryVesselName: nullableText(row.primary_vessel_name),
-      status: nullableText(row.status) || 'A planifier',
+      status: normalizeProjectStatus(row.status),
       description: nullableText(row.description),
       charterHire: nullableNumber(row.charter_hire),
       hireCurrency: nullableText(row.hire_currency),

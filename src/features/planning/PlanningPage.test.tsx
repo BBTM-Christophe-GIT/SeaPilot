@@ -667,7 +667,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre type d’événement'), 'transit');
-    await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Confirmé');
+    await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Validé');
     await user.dblClick(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
     const dialog = screen.getByRole('dialog');
     await user.clear(within(dialog).getByLabelText('Titre'));
@@ -676,7 +676,7 @@ describe('PlanningPage cockpit', () => {
 
     await waitFor(() => expect(updateProject).toHaveBeenCalled());
     expect(screen.getByLabelText('Filtre type d’événement')).toHaveValue('transit');
-    expect(screen.getByLabelText('Filtre statut')).toHaveValue('Confirmé');
+    expect(screen.getByLabelText('Filtre statut')).toHaveValue('Validé');
     expect(vesselOrder).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);

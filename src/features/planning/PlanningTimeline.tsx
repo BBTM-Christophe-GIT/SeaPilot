@@ -95,6 +95,7 @@ export function PlanningFleetTimelineRow({
   onOpenCell,
   onMove,
   onOpen,
+  onOpenContextMenu = () => {},
   onResize,
   onAddBoard,
   onOpenVessel,
@@ -115,6 +116,7 @@ export function PlanningFleetTimelineRow({
   onOpenCell: (lane: PlanningFleetLane, date: string) => void;
   onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
+  onOpenContextMenu?: (project: PlanningProjectRecord, position: { x: number; y: number }) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
   onAddBoard: (lane: PlanningFleetLane) => void;
   onOpenVessel: (lane: PlanningFleetLane) => void;
@@ -300,13 +302,19 @@ export function PlanningFleetTimelineRow({
         return (
           <button
             aria-busy={isPending}
-            aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
+            aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
             key={project.id}
             onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
             onDoubleClick={() => onOpen(project)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onSelect(`project-${project.id}`);
+              onOpenContextMenu(project, { x: event.clientX, y: event.clientY });
+            }}
             onDragEnd={() => { setDraggingId(null); setMovePreview(null); }}
             onDragStart={(event) => {
               setDraggingId(project.id);
@@ -318,7 +326,7 @@ export function PlanningFleetTimelineRow({
               gridRow: 1,
               ...((projectStack.count > 1 || maxVisitStack) ? { marginTop: 7 + stack * 27 } : {}),
             }}
-            title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
+            title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
