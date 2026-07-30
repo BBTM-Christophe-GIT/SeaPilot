@@ -17,6 +17,7 @@ import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRec
 import {
   deleteProjectChargeableExpense,
   fetchProjectBillingData,
+  fetchProjectBillingDprs,
   generateBillingExportPackage,
   saveProjectBillingPeriod,
   saveProjectChargeableExpense,
@@ -156,9 +157,6 @@ export function ProjectBillingPanel({
     () => Array.from(new Set(operations.map((operation) => operation.primaryVesselName).filter(Boolean))).sort(),
     [operations],
   );
-  const filteredOperations = vesselFilter
-    ? operations.filter((operation) => operation.primaryVesselName === vesselFilter)
-    : operations;
   const exportRange = periodMode === 'calendar-month'
     ? monthRange(selectedMonth)
     : { start: customStart, end: customEnd };
@@ -288,12 +286,19 @@ export function ProjectBillingPanel({
     setBusy('export');
     setError('');
     try {
+      const dprs = await fetchProjectBillingDprs(
+        client,
+        project.id,
+        exportRange.start,
+        exportRange.end,
+        vesselFilter,
+      );
       const result = await generateBillingExportPackage(client, {
         project,
         contract,
         period: selectedPeriod,
         expenses: periodExpenses,
-        operations: filteredOperations,
+        dprs,
         startDate: exportRange.start,
         endDate: exportRange.end,
       }, periodDocuments, mode === 'preview' ? 'pdf' : exportFormat);

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { billingOperationRows, type BillingExportInput } from './projectBilling';
+import {
+  billingDprComment,
+  billingOperationRows,
+  type BillingExportInput,
+  type ProjectBillingDpr,
+} from './projectBilling';
 
 const input: BillingExportInput = {
   project: {
@@ -77,38 +82,81 @@ const input: BillingExportInput = {
     comments: '',
   },
   expenses: [],
-  operations: [{
-    id: 13,
-    projectId: 144,
-    startsOn: '2024-06-01',
-    endsOn: '2026-08-31',
-    primaryVesselId: 1,
-    primaryVesselName: 'GOURY',
-    status: 'Validé',
-    description: '24/24 Operation',
-    charterHire: 4227.5,
-    hireCurrency: 'EUR',
-    hireUnit: 'jour',
-    sourceLabel: 'test',
-    createdAt: '',
+  dprs: [{
+    id: 838,
+    reportDate: '2026-06-01',
+    vesselId: 1,
+    vesselName: 'GOURY',
+    operation: '24/24 Crew Change',
+    amountHt: 4227.5,
+    vesselStatus: 'Navire au Port',
+    arrivalAt: '2026-06-01T22:20:00Z',
+    departureAt: '2026-06-02T12:20:00Z',
+    fuelLiters: 7200,
   }],
   startDate: '2026-06-01',
   endDate: '2026-06-30',
 };
 
 describe('billing operation export', () => {
-  it('creates one line per billable day in the requested period', () => {
+  it('creates only the lines backed by DPRs in the requested period', () => {
     const rows = billingOperationRows(input);
-    expect(rows).toHaveLength(30);
-    expect(rows[0]).toEqual(['01/06/2026', '24/24 Operation', '4 227,50 EUR', 'GOURY']);
-    expect(rows.at(-1)?.[0]).toBe('30/06/2026');
+    expect(rows).toEqual([{
+      date: '01/06/2026',
+      operation: '24/24 Crew Change',
+      amountHt: 4227.5,
+      comments: 'Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20',
+    }]);
   });
 
-  it('uses the hire snapshot of the operation before the contract default', () => {
+  it('uses the DPR amount before the contract default', () => {
     const rows = billingOperationRows({
       ...input,
-      operations: [{ ...input.operations[0], charterHire: 4450 }],
+      dprs: [{ ...input.dprs[0], amountHt: 4450 }],
     });
-    expect(rows[0][2]).toBe('4 450,00 EUR');
+    expect(rows[0].amountHt).toBe(4450);
+  });
+
+  it('falls back to the contract hire only when the DPR has no amount', () => {
+    const rows = billingOperationRows({
+      ...input,
+      dprs: [{ ...input.dprs[0], amountHt: null }],
+    });
+    expect(rows[0].amountHt).toBe(4227.5);
+  });
+});
+
+describe('Power BI P144 comments formula', () => {
+  const base: ProjectBillingDpr = {
+    id: 1,
+    reportDate: '2026-06-01',
+    vesselId: 1,
+    vesselName: 'GOURY',
+    operation: '24/24 Crew Change',
+    amountHt: 4227.5,
+    vesselStatus: 'Navire au Port',
+    arrivalAt: '2026-06-01T22:20:00Z',
+    departureAt: '2026-06-02T12:20:00Z',
+    fuelLiters: 7200,
+  };
+
+  it('keeps the exact Crew Change line order and UTC+2 conversion', () => {
+    expect(billingDprComment(base)).toBe(
+      'Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20',
+    );
+  });
+
+  it('returns only refueling for a regular operation', () => {
+    expect(billingDprComment({
+      ...base,
+      operation: '24/24 Operation',
+    })).toBe('Refueling : 7 200 L');
+  });
+
+  it('does not show an arrival when the vessel is not at port', () => {
+    expect(billingDprComment({
+      ...base,
+      vesselStatus: 'Navire en Opération - On hire',
+    })).toBe('Refueling : 7 200 L\nAppareillage du quai à 14h20');
   });
 });
