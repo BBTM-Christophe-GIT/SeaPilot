@@ -15604,6 +15604,24 @@ button.planning-p12-conflict-card {
   gap: 10px;
 }
 
+.project-billing-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.project-billing button.project-billing-pdf-toggle {
+  background: #fff;
+  border-color: #cbd7e4;
+  color: #53657a;
+}
+
+.project-billing button.project-billing-pdf-toggle.is-active {
+  background: #eaf8f4;
+  border-color: #9edac8;
+  color: #08765e;
+}
+
 .project-billing-table-scroll {
   overflow-x: auto;
 }

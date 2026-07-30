@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   billingExpenseAttachmentName,
+  billingInvoiceTotal,
   billingServicesTotal,
   billingDprComment,
   billingOperationRows,
@@ -89,6 +90,7 @@ const input: BillingExportInput = {
   },
   expenses: [],
   services: [],
+  includeBbtmService: true,
   dprs: [{
     id: 838,
     reportDate: '2026-06-01',
@@ -159,13 +161,16 @@ describe('monthly billing completion', () => {
   });
 
   it('calculates the BBTM subtotal from editable unit amounts and quantities', () => {
-    expect(billingServicesTotal([{
+    const services = [{
       id: 1,
       billingPeriodId: 1,
       category: 'spread_antipollution',
       unitAmountHt: 350,
       quantity: 29,
-    }])).toBe(10150);
+    }] as const;
+    expect(billingServicesTotal([...services])).toBe(10150);
+    expect(billingInvoiceTotal(126825, 18996.46, [...services], true)).toBe(155971.46);
+    expect(billingInvoiceTotal(126825, 18996.46, [...services], false)).toBe(145821.46);
   });
 
   it('renames service attachments with date, invoice and category', () => {

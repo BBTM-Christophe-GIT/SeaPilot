@@ -369,6 +369,7 @@ export interface BillingExportInput {
   period: ProjectBillingPeriod;
   expenses: ProjectChargeableExpense[];
   services: ProjectBillingService[];
+  includeBbtmService: boolean;
   dprs: ProjectBillingDpr[];
   selectedVesselName: string;
   startDate: string;
@@ -445,6 +446,15 @@ export function countDailyOperations(dprs: ProjectBillingDpr[]): number {
 
 export function billingServicesTotal(services: ProjectBillingService[]): number {
   return services.reduce((sum, service) => sum + service.unitAmountHt * service.quantity, 0);
+}
+
+export function billingInvoiceTotal(
+  hiresTotal: number,
+  expenseTotal: number,
+  services: ProjectBillingService[],
+  includeBbtmService: boolean,
+): number {
+  return hiresTotal + expenseTotal + (includeBbtmService ? billingServicesTotal(services) : 0);
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -616,7 +626,8 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   const expenses = input.expenses.filter((expense) => expense.chargeable);
   const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const services = input.services;
-  const serviceTotal = billingServicesTotal(services);
+  const serviceTotal = input.includeBbtmService ? billingServicesTotal(services) : 0;
+  const invoiceTotal = billingInvoiceTotal(hiresTotal, expenseTotal, services, input.includeBbtmService);
 
   const setFont = (size: number, style: 'normal' | 'bold' | 'italic' = 'normal') => {
     pdf.setFont('helvetica', style);
@@ -796,46 +807,57 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     expenseY += 38.25;
   });
 
-  const serviceY = Math.min(Math.max(expenseY + 58, 760), 1180);
-  setFont(36, 'bold');
-  pdf.text('Prestation BBTM', 1951, serviceY, { align: 'center' });
-  pdf.setDrawColor(96, 94, 92);
-  pdf.line(1284, serviceY + 15, 2619, serviceY + 15);
-  setFont(28, 'bold');
-  pdf.text('Catégorie', 1297, serviceY + 64);
-  pdf.text('Montant unitaire HT', 1815, serviceY + 64, { align: 'center' });
-  pdf.text('Nombre d’unités', 2180, serviceY + 64, { align: 'center' });
-  pdf.text('Montant total HT', 2520, serviceY + 64, { align: 'center' });
-  setFont(28);
-  const serviceLabels: Record<BillingServiceCategory, string> = {
-    spread_antipollution: 'Spread Antipollution',
-  };
-  const serviceSource = services.length ? services : [{
-    id: 0,
-    billingPeriodId: input.period.id,
-    category: 'spread_antipollution' as const,
-    unitAmountHt: 0,
-    quantity: 0,
-  }];
-  serviceSource.forEach((service, index) => {
-    const rowY = serviceY + 112 + index * 40;
-    pdf.text(serviceLabels[service.category], 1297, rowY);
-    pdf.text(money(service.unitAmountHt), 1880, rowY, { align: 'center' });
-    pdf.text(service.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), 2180, rowY, { align: 'center' });
-    pdf.text(money(service.unitAmountHt * service.quantity), 2598, rowY, { align: 'right' });
-  });
+  if (input.includeBbtmService) {
+    const serviceY = Math.min(Math.max(expenseY + 58, 760), 1180);
+    setFont(36, 'bold');
+    pdf.text('Prestation BBTM', 1951, serviceY, { align: 'center' });
+    pdf.setDrawColor(96, 94, 92);
+    pdf.line(1284, serviceY + 15, 2619, serviceY + 15);
+    setFont(28, 'bold');
+    pdf.text('Catégorie', 1297, serviceY + 64);
+    pdf.text('Montant unitaire HT', 1815, serviceY + 64, { align: 'center' });
+    pdf.text('Nombre d’unités', 2180, serviceY + 64, { align: 'center' });
+    pdf.text('Montant total HT', 2520, serviceY + 64, { align: 'center' });
+    setFont(28);
+    const serviceLabels: Record<BillingServiceCategory, string> = {
+      spread_antipollution: 'Spread Antipollution',
+    };
+    const serviceSource = services.length ? services : [{
+      id: 0,
+      billingPeriodId: input.period.id,
+      category: 'spread_antipollution' as const,
+      unitAmountHt: 0,
+      quantity: 0,
+    }];
+    serviceSource.forEach((service, index) => {
+      const rowY = serviceY + 112 + index * 40;
+      pdf.text(serviceLabels[service.category], 1297, rowY);
+      pdf.text(money(service.unitAmountHt), 1880, rowY, { align: 'center' });
+      pdf.text(service.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), 2180, rowY, { align: 'center' });
+      pdf.text(money(service.unitAmountHt * service.quantity), 2598, rowY, { align: 'right' });
+    });
+  }
 
   pdf.setFillColor(179, 179, 179);
-  pdf.rect(1810.5, 1330.5, 787.5, 502.5, 'F');
+  const totalFrame = input.includeBbtmService
+    ? { y: 1330.5, height: 502.5 }
+    : { y: 1454.25, height: 378.75 };
+  pdf.rect(1810.5, totalFrame.y, 787.5, totalFrame.height, 'F');
   pdf.setDrawColor(0);
   pdf.setLineWidth(0.75);
-  pdf.rect(1810.5, 1330.5, 787.5, 502.5);
-  const totalBlocks = [
-    { y: 1330.5, height: 105, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
-    { y: 1435.5, height: 105, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
-    { y: 1540.5, height: 105, label: 'Sous-total Prestation BBTM', value: serviceTotal, final: false },
-    { y: 1645.5, height: 187.5, label: 'Total Facture du mois Hors Taxes', value: hiresTotal + expenseTotal + serviceTotal, final: true },
-  ];
+  pdf.rect(1810.5, totalFrame.y, 787.5, totalFrame.height);
+  const totalBlocks = input.includeBbtmService
+    ? [
+      { y: 1330.5, height: 105, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
+      { y: 1435.5, height: 105, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
+      { y: 1540.5, height: 105, label: 'Sous-total Prestation BBTM', value: serviceTotal, final: false },
+      { y: 1645.5, height: 187.5, label: 'Total Facture du mois Hors Taxes', value: invoiceTotal, final: true },
+    ]
+    : [
+      { y: 1454.25, height: 111, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
+      { y: 1565.25, height: 110.25, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
+      { y: 1675.5, height: 157.5, label: 'Total Facture du mois Hors Taxes', value: invoiceTotal, final: true },
+    ];
   totalBlocks.forEach((block) => {
     const background = block.final ? 230 : 255;
     pdf.setFillColor(background, background, background);
