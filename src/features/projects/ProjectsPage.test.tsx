@@ -355,6 +355,7 @@ describe('ProjectsPage', () => {
           'clients',
           'planning_projects',
           'project_billing_periods',
+          'project_billing_services',
           'project_chargeable_expenses',
           'project_billing_documents',
         ]),

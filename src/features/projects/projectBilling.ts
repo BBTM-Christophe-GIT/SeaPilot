@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ProjectContractRecord, ProjectRecord } from './projectQueries';
 
 export type BillingExpenseCategory = 'fuel' | 'port' | 'water' | 'other';
+export type BillingServiceCategory = 'spread_antipollution';
 export type BillingPeriodMode = 'calendar-month' | 'custom';
 
 export interface ProjectBillingPeriod {
@@ -50,10 +51,19 @@ export interface ProjectBillingDocument {
   fileSizeBytes: number;
 }
 
+export interface ProjectBillingService {
+  id: number;
+  billingPeriodId: number;
+  category: BillingServiceCategory;
+  unitAmountHt: number;
+  quantity: number;
+}
+
 export interface ProjectBillingData {
   periods: ProjectBillingPeriod[];
   expenses: ProjectChargeableExpense[];
   documents: ProjectBillingDocument[];
+  services: ProjectBillingService[];
 }
 
 export interface BillingPeriodDraft {
@@ -83,6 +93,12 @@ export interface BillingExpenseDraft {
   chargeable: boolean;
   includedInClientInvoice: boolean;
   dprReportId: number | null;
+}
+
+export interface BillingServiceDraft {
+  category: BillingServiceCategory;
+  unitAmountHt: number;
+  quantity: number;
 }
 
 function text(value: unknown): string {
@@ -149,6 +165,16 @@ function mapDocument(row: Record<string, unknown>): ProjectBillingDocument {
   };
 }
 
+function mapService(row: Record<string, unknown>): ProjectBillingService {
+  return {
+    id: number(row.id),
+    billingPeriodId: number(row.billing_period_id),
+    category: text(row.category) as BillingServiceCategory,
+    unitAmountHt: number(row.unit_amount_ht),
+    quantity: number(row.quantity),
+  };
+}
+
 async function projectCompanyId(client: SupabaseClient, projectId: number): Promise<number> {
   const { data, error } = await client.from('projects').select('company_id').eq('id', projectId).single();
   if (error) throw error;
@@ -156,18 +182,21 @@ async function projectCompanyId(client: SupabaseClient, projectId: number): Prom
 }
 
 export async function fetchProjectBillingData(client: SupabaseClient, projectId: number): Promise<ProjectBillingData> {
-  const [periodResult, expenseResult, documentResult] = await Promise.all([
+  const [periodResult, expenseResult, documentResult, serviceResult] = await Promise.all([
     client.from('project_billing_periods').select('*').eq('project_id', projectId).order('period_month', { ascending: false }),
     client.from('project_chargeable_expenses').select('*').eq('project_id', projectId).order('invoice_date', { ascending: false }),
     client.from('project_billing_documents').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+    client.from('project_billing_services').select('*').eq('project_id', projectId).order('created_at'),
   ]);
   if (periodResult.error) throw periodResult.error;
   if (expenseResult.error) throw expenseResult.error;
   if (documentResult.error) throw documentResult.error;
+  if (serviceResult.error) throw serviceResult.error;
   return {
     periods: (periodResult.data || []).map((row) => mapPeriod(row as Record<string, unknown>)),
     expenses: (expenseResult.data || []).map((row) => mapExpense(row as Record<string, unknown>)),
     documents: (documentResult.data || []).map((row) => mapDocument(row as Record<string, unknown>)),
+    services: (serviceResult.data || []).map((row) => mapService(row as Record<string, unknown>)),
   };
 }
 
@@ -241,6 +270,43 @@ export async function deleteProjectChargeableExpense(client: SupabaseClient, exp
   if (error) throw error;
 }
 
+export async function saveProjectBillingService(
+  client: SupabaseClient,
+  projectId: number,
+  billingPeriodId: number,
+  draft: BillingServiceDraft,
+): Promise<ProjectBillingService> {
+  const companyId = await projectCompanyId(client, projectId);
+  const { data, error } = await client
+    .from('project_billing_services')
+    .upsert({
+      company_id: companyId,
+      project_id: projectId,
+      billing_period_id: billingPeriodId,
+      category: draft.category,
+      unit_amount_ht: draft.unitAmountHt,
+      quantity: draft.quantity,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'billing_period_id,category' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapService(data as Record<string, unknown>);
+}
+
+export function billingExpenseAttachmentName(file: File, expense: ProjectChargeableExpense): File {
+  const extension = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+  const categoryLabels: Record<BillingExpenseCategory, string> = {
+    fuel: 'Gasoil',
+    port: 'Frais de port',
+    water: 'Eau',
+    other: expense.nature || 'Autre',
+  };
+  const invoice = expense.invoiceNumber.trim() || 'sans facture';
+  const name = `${expense.invoiceDate} - ${invoice} - ${categoryLabels[expense.category]}${extension}`;
+  return new File([file], name, { type: file.type, lastModified: file.lastModified });
+}
+
 function safeFileName(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '-');
 }
@@ -302,7 +368,9 @@ export interface BillingExportInput {
   contract?: ProjectContractRecord;
   period: ProjectBillingPeriod;
   expenses: ProjectChargeableExpense[];
+  services: ProjectBillingService[];
   dprs: ProjectBillingDpr[];
+  selectedVesselName: string;
   startDate: string;
   endDate: string;
 }
@@ -325,6 +393,58 @@ export interface BillingOperationRow {
   operation: string;
   amountHt: number;
   comments: string;
+}
+
+export function defaultProjectClientReference(project: Pick<ProjectRecord, 'projectCode'>): string {
+  return project.projectCode.trim().toUpperCase() === 'P144' ? 'TRE-PO-000503' : '';
+}
+
+function dateRange(startDate: string, endDate: string): string[] {
+  if (!startDate || !endDate || endDate < startDate) return [];
+  const dates: string[] = [];
+  const cursor = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+export function missingBillingDates(dprs: ProjectBillingDpr[], startDate: string, endDate: string): string[] {
+  const coveredDates = new Set(dprs.map((dpr) => dpr.reportDate));
+  return dateRange(startDate, endDate).filter((date) => !coveredDates.has(date));
+}
+
+export function completeBillingDprs(
+  dprs: ProjectBillingDpr[],
+  startDate: string,
+  endDate: string,
+  input: { vesselName: string; amountHt: number },
+): ProjectBillingDpr[] {
+  const synthetic = missingBillingDates(dprs, startDate, endDate).map((reportDate, index) => ({
+    id: -(index + 1),
+    reportDate,
+    vesselId: null,
+    vesselName: input.vesselName,
+    operation: '24/24 Operation',
+    amountHt: input.amountHt,
+    vesselStatus: '',
+    arrivalAt: '',
+    departureAt: '',
+    fuelLiters: null,
+  }));
+  return [...dprs, ...synthetic].sort(
+    (left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id,
+  );
+}
+
+export function countDailyOperations(dprs: ProjectBillingDpr[]): number {
+  return dprs.filter((dpr) => dpr.operation.trim().toUpperCase() === '24/24 OPERATION').length;
+}
+
+export function billingServicesTotal(services: ProjectBillingService[]): number {
+  return services.reduce((sum, service) => sum + service.unitAmountHt * service.quantity, 0);
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -495,6 +615,8 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   const hiresTotal = operationRows.reduce((sum, row) => sum + row.amountHt, 0);
   const expenses = input.expenses.filter((expense) => expense.chargeable);
   const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
+  const services = input.services;
+  const serviceTotal = billingServicesTotal(services);
 
   const setFont = (size: number, style: 'normal' | 'bold' | 'italic' = 'normal') => {
     pdf.setFont('helvetica', style);
@@ -534,6 +656,14 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       points[2][1],
       'F',
     );
+  };
+  const fitText = (value: string, maxWidth: number): string => {
+    if (pdf.getTextWidth(value) <= maxWidth) return value;
+    let candidate = value;
+    while (candidate.length > 1 && pdf.getTextWidth(`${candidate}…`) > maxWidth) {
+      candidate = candidate.slice(0, -1);
+    }
+    return `${candidate.trimEnd()}…`;
   };
 
   try {
@@ -594,14 +724,20 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.rect(2110.875, 190.125, 455.25, 46.5);
   setFont(32);
   pdf.setTextColor(91, 88, 84);
-  const selectedVessel = input.dprs.find((dpr) => dpr.vesselName)?.vesselName
+  const selectedVessel = input.selectedVesselName
+    || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
     || input.project.primaryVesselName
     || 'Non renseigné';
   pdf.text(selectedVessel, 2117, 225);
   drawChevron(2523, 202);
   setFont(28, 'italic');
   pdf.setTextColor(30, 29, 28);
-  pdf.text(`Référence Client : ${input.period.clientReference || '—'}`, 2564, 280, { align: 'right' });
+  pdf.text(
+    `Référence Client : ${input.period.clientReference || defaultProjectClientReference(input.project) || '—'}`,
+    2564,
+    280,
+    { align: 'right' },
+  );
   pdf.setDrawColor(17, 141, 255);
   pdf.setLineWidth(0.75);
   pdf.line(2153, 288, 2564, 288);
@@ -638,7 +774,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   operationSource.forEach((row) => {
     const commentLines = row.comments ? row.comments.split('\n') : [];
     pdf.text(row.date, 81.75, operationY);
-    pdf.text(row.operation, 277.5, operationY);
+    pdf.text(fitText(row.operation, 500), 277.5, operationY);
     pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
     commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
     operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
@@ -660,15 +796,45 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     expenseY += 38.25;
   });
 
+  const serviceY = Math.min(Math.max(expenseY + 58, 760), 1180);
+  setFont(36, 'bold');
+  pdf.text('Prestation BBTM', 1951, serviceY, { align: 'center' });
+  pdf.setDrawColor(96, 94, 92);
+  pdf.line(1284, serviceY + 15, 2619, serviceY + 15);
+  setFont(28, 'bold');
+  pdf.text('Catégorie', 1297, serviceY + 64);
+  pdf.text('Montant unitaire HT', 1815, serviceY + 64, { align: 'center' });
+  pdf.text('Nombre d’unités', 2180, serviceY + 64, { align: 'center' });
+  pdf.text('Montant total HT', 2520, serviceY + 64, { align: 'center' });
+  setFont(28);
+  const serviceLabels: Record<BillingServiceCategory, string> = {
+    spread_antipollution: 'Spread Antipollution',
+  };
+  const serviceSource = services.length ? services : [{
+    id: 0,
+    billingPeriodId: input.period.id,
+    category: 'spread_antipollution' as const,
+    unitAmountHt: 0,
+    quantity: 0,
+  }];
+  serviceSource.forEach((service, index) => {
+    const rowY = serviceY + 112 + index * 40;
+    pdf.text(serviceLabels[service.category], 1297, rowY);
+    pdf.text(money(service.unitAmountHt), 1880, rowY, { align: 'center' });
+    pdf.text(service.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), 2180, rowY, { align: 'center' });
+    pdf.text(money(service.unitAmountHt * service.quantity), 2598, rowY, { align: 'right' });
+  });
+
   pdf.setFillColor(179, 179, 179);
-  pdf.rect(1810.5, 1454.25, 787.5, 378.75, 'F');
+  pdf.rect(1810.5, 1330.5, 787.5, 502.5, 'F');
   pdf.setDrawColor(0);
   pdf.setLineWidth(0.75);
-  pdf.rect(1810.5, 1454.25, 787.5, 378.75);
+  pdf.rect(1810.5, 1330.5, 787.5, 502.5);
   const totalBlocks = [
-    { y: 1454.25, height: 111, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
-    { y: 1565.25, height: 110.25, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
-    { y: 1675.5, height: 157.5, label: 'Total Facture du mois Hors Taxes', value: hiresTotal + expenseTotal, final: true },
+    { y: 1330.5, height: 105, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
+    { y: 1435.5, height: 105, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
+    { y: 1540.5, height: 105, label: 'Sous-total Prestation BBTM', value: serviceTotal, final: false },
+    { y: 1645.5, height: 187.5, label: 'Total Facture du mois Hors Taxes', value: hiresTotal + expenseTotal + serviceTotal, final: true },
   ];
   totalBlocks.forEach((block) => {
     const background = block.final ? 230 : 255;
