@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
+import type { ProjectContractRecord, ProjectRecord } from './projectQueries';
 
 export type BillingExpenseCategory = 'fuel' | 'port' | 'water' | 'other';
 export type BillingPeriodMode = 'calendar-month' | 'custom';
@@ -302,92 +302,386 @@ export interface BillingExportInput {
   contract?: ProjectContractRecord;
   period: ProjectBillingPeriod;
   expenses: ProjectChargeableExpense[];
-  operations: ProjectPlanningOccurrenceRecord[];
+  dprs: ProjectBillingDpr[];
   startDate: string;
   endDate: string;
 }
 
-function daysInclusive(startDate: string, endDate: string): string[] {
-  const dates: string[] = [];
-  const cursor = new Date(`${startDate}T12:00:00Z`);
-  const end = new Date(`${endDate}T12:00:00Z`);
-  while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return dates;
+export interface ProjectBillingDpr {
+  id: number;
+  reportDate: string;
+  vesselId: number | null;
+  vesselName: string;
+  operation: string;
+  amountHt: number | null;
+  vesselStatus: string;
+  arrivalAt: string;
+  departureAt: string;
+  fuelLiters: number | null;
 }
 
-export function billingOperationRows(input: BillingExportInput): Array<[string, string, string, string]> {
-  return input.operations.flatMap((operation) => {
-    const start = operation.startsOn > input.startDate ? operation.startsOn : input.startDate;
-    const end = operation.endsOn < input.endDate ? operation.endsOn : input.endDate;
-    if (!start || !end || end < start) return [];
-    const dailyHire = operation.charterHire ?? input.contract?.charterHire ?? 0;
-    return daysInclusive(start, end).map((date): [string, string, string, string] => [
-      new Intl.DateTimeFormat('fr-FR').format(new Date(`${date}T12:00:00Z`)),
-      operation.description || '24/24 Operation',
-      `${dailyHire.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${operation.hireCurrency || input.contract?.hireCurrency || 'EUR'}`,
-      operation.primaryVesselName || input.project.primaryVesselName,
-    ]);
+export interface BillingOperationRow {
+  date: string;
+  operation: string;
+  amountHt: number;
+  comments: string;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function firstText(source: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function firstNumber(source: Record<string, unknown>, keys: string[]): number | null {
+  const value = firstText(source, keys);
+  if (!value) return null;
+  const parsed = Number(value.replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addUtcOffset(value: string, hours = 2): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setTime(date.getTime() + hours * 60 * 60 * 1_000);
+  return `${String(date.getUTCHours()).padStart(2, '0')}h${String(date.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function formatDate(value: string): string {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('fr-FR').format(new Date(`${value}T12:00:00Z`));
+}
+
+function formatWholeNumber(value: number): string {
+  return Math.round(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 }).replace(/[\u00a0\u202f]/g, ' ');
+}
+
+export function billingDprComment(
+  dpr: Pick<ProjectBillingDpr, 'operation' | 'vesselStatus' | 'arrivalAt' | 'departureAt' | 'fuelLiters'>,
+): string {
+  const operation = dpr.operation.trim().toUpperCase();
+  const isSpecialOperation = operation === '24/24 CREW CHANGE' || operation === 'CONTRACTUAL MAINTENANCE DAY';
+  const isPort = dpr.vesselStatus.trim().toUpperCase() === 'NAVIRE AU PORT';
+  const arrival = isPort && dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
+  const departure = dpr.departureAt ? `Appareillage du quai à ${addUtcOffset(dpr.departureAt)}` : '';
+  const refueling = dpr.fuelLiters && dpr.fuelLiters > 0
+    ? `Refueling : ${formatWholeNumber(dpr.fuelLiters)} L`
+    : '';
+  if (!isSpecialOperation) return refueling;
+  return [arrival, refueling, departure].filter(Boolean).join('\n');
+}
+
+export async function fetchProjectBillingDprs(
+  client: SupabaseClient,
+  projectId: number,
+  startDate: string,
+  endDate: string,
+  vesselName = '',
+): Promise<ProjectBillingDpr[]> {
+  const reportResult = await client
+    .from('dpr_reports')
+    .select('id,report_date,vessel_id,description,source_payload')
+    .eq('project_id', projectId)
+    .gte('report_date', startDate)
+    .lte('report_date', endDate)
+    .is('deleted_at', null)
+    .order('report_date')
+    .order('id');
+  if (reportResult.error) throw reportResult.error;
+  const reports = (reportResult.data || []) as Array<Record<string, unknown>>;
+  if (!reports.length) return [];
+
+  const reportIds = reports.map((row) => number(row.id));
+  const vesselIds = Array.from(new Set(
+    reports.map((row) => nullableNumber(row.vessel_id)).filter((id): id is number => id !== null),
+  ));
+  const [callResult, supplyResult, vesselResult] = await Promise.all([
+    client.from('dpr_port_calls').select('dpr_id,arrival_at,departure_at,display_order').in('dpr_id', reportIds).order('display_order'),
+    client.from('dpr_supplies').select('dpr_id,fuel_m3').in('dpr_id', reportIds),
+    vesselIds.length
+      ? client.from('vessels').select('id,name').in('id', vesselIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (callResult.error) throw callResult.error;
+  if (supplyResult.error) throw supplyResult.error;
+  if (vesselResult.error) throw vesselResult.error;
+
+  const calls = new Map<number, Array<Record<string, unknown>>>();
+  ((callResult.data || []) as Array<Record<string, unknown>>).forEach((row) => {
+    const id = number(row.dpr_id);
+    calls.set(id, [...(calls.get(id) || []), row]);
   });
+  const supplies = new Map(
+    ((supplyResult.data || []) as Array<Record<string, unknown>>).map((row) => [
+      number(row.dpr_id),
+      nullableNumber(row.fuel_m3),
+    ]),
+  );
+  const vessels = new Map(
+    ((vesselResult.data || []) as Array<Record<string, unknown>>).map((row) => [number(row.id), text(row.name)]),
+  );
+
+  return reports.flatMap((row) => {
+    const id = number(row.id);
+    const source = record(row.source_payload);
+    const vesselId = nullableNumber(row.vessel_id);
+    const resolvedVesselName = vesselId ? vessels.get(vesselId) || '' : '';
+    if (vesselName && resolvedVesselName !== vesselName) return [];
+    const reportCalls = calls.get(id) || [];
+    const arrivalAt = firstText(source, ['Heure_x002d_NavireAccost_x00e9_a'])
+      || text(reportCalls.find((call) => call.arrival_at)?.arrival_at);
+    const departureAt = firstText(source, ['Heure_x002d_AppareillageduPort'])
+      || text([...reportCalls].reverse().find((call) => call.departure_at)?.departure_at);
+    const sourceFuelLiters = firstNumber(source, [
+      'P144_x002d_FAC_x002d_Fuel_x0020_',
+      'P144-FAC-Fuel',
+    ]);
+    const sourceFuelM3 = firstNumber(source, ['P144_x002d_FAC_x002d_Fuel_x0028_']);
+    const supplyFuelM3 = supplies.get(id);
+    return [{
+      id,
+      reportDate: text(row.report_date),
+      vesselId,
+      vesselName: resolvedVesselName,
+      operation: firstText(source, ['P144_x002d_FAC_x002d_Operations'])
+        || text(row.description)
+        || '24/24 Operation',
+      amountHt: firstNumber(source, ['P144_x002d_FAC_x002d_Montant', 'P144_x002d_FAC_x002d_Forfait_x00']),
+      vesselStatus: firstText(source, ['P144_x002d_FAC_x002d_Entr_x00e9_', 'Statut du Navire']),
+      arrivalAt,
+      departureAt,
+      fuelLiters: sourceFuelLiters
+        ?? (sourceFuelM3 !== null
+          ? sourceFuelM3 * 1_000
+          : supplyFuelM3 !== null && supplyFuelM3 !== undefined
+            ? supplyFuelM3 * 1_000
+            : null),
+    }];
+  });
+}
+
+export function billingOperationRows(input: BillingExportInput): BillingOperationRow[] {
+  return input.dprs
+    .filter((dpr) => dpr.reportDate >= input.startDate && dpr.reportDate <= input.endDate)
+    .sort((left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id)
+    .map((dpr) => ({
+      date: formatDate(dpr.reportDate),
+      operation: dpr.operation || '24/24 Operation',
+      amountHt: dpr.amountHt ?? input.contract?.charterHire ?? 0,
+      comments: billingDprComment(dpr),
+    }));
 }
 
 export async function generateBillingPdf(input: BillingExportInput): Promise<Blob> {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
-  const pdf = new jsPDF({ compress: true, orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const money = (value: number) => `${value.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`;
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({
+    compress: true,
+    orientation: 'landscape',
+    unit: 'pt',
+    format: [2667.12, 1896],
+  });
+  const money = (value: number) => `${value
+    .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .replace(/[\u00a0\u202f]/g, ' ')} €`;
   const operationRows = billingOperationRows(input);
-  const hiresTotal = operationRows.reduce((sum, row) => {
-    const raw = row[2].replace(/\s/g, '').replace(',', '.').replace(/[^\d.-]/g, '');
-    return sum + Number(raw || 0);
-  }, 0);
+  const hiresTotal = operationRows.reduce((sum, row) => sum + row.amountHt, 0);
   const expenses = input.expenses.filter((expense) => expense.chargeable);
   const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
-  pdf.setFontSize(18);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Éléments de facturation', 148.5, 15, { align: 'center' });
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(`${input.project.projectCode} - ${input.project.title}`, 15, 23);
-  pdf.text(`Période : ${input.startDate} au ${input.endDate}`, 205, 23);
-  pdf.text(`Navire : ${input.project.primaryVesselName || 'Non renseigné'}`, 205, 28);
-  pdf.text(`Référence client : ${input.period.clientReference || '—'}`, 205, 33);
-  autoTable(pdf, {
-    startY: 39,
-    head: [['Date', 'Opérations', 'Loyer journalier HT', 'Navire']],
-    body: operationRows.length ? operationRows : [['—', 'Aucune opération sur la période', '0,00 €', '—']],
-    margin: { left: 15, right: 151 },
-    styles: { fontSize: 7, cellPadding: 1.5 },
-    headStyles: { fillColor: [20, 64, 112] },
+
+  const setFont = (size: number, style: 'normal' | 'bold' | 'italic' = 'normal') => {
+    pdf.setFont('helvetica', style);
+    pdf.setFontSize(size);
+    pdf.setTextColor(30, 29, 28);
+  };
+  const strokeRect = (x: number, y: number, width: number, height: number, color = 0) => {
+    pdf.setDrawColor(color);
+    pdf.setLineWidth(0.75);
+    pdf.rect(x, y, width, height);
+  };
+  const drawChevron = (x: number, y: number) => {
+    pdf.setDrawColor(91, 88, 84);
+    pdf.setLineWidth(2);
+    pdf.line(x, y, x + 14, y + 14);
+    pdf.line(x + 14, y + 14, x + 28, y);
+  };
+  const drawCalendar = (x: number, y: number) => {
+    pdf.setDrawColor(91, 88, 84);
+    pdf.setLineWidth(1.5);
+    pdf.rect(x, y + 4, 12, 11);
+    pdf.line(x, y + 8, x + 12, y + 8);
+    pdf.line(x + 3, y + 1, x + 3, y + 6);
+    pdf.line(x + 9, y + 1, x + 9, y + 6);
+  };
+  const drawSortArrow = (x: number, y: number, direction: 'up' | 'down') => {
+    pdf.setFillColor(30, 29, 28);
+    const points = direction === 'up'
+      ? [[x, y + 14], [x + 14, y], [x + 28, y + 14]]
+      : [[x, y], [x + 14, y + 14], [x + 28, y]];
+    pdf.triangle(
+      points[0][0],
+      points[0][1],
+      points[1][0],
+      points[1][1],
+      points[2][0],
+      points[2][1],
+      'F',
+    );
+  };
+
+  try {
+    const response = await fetch('/bbtm-logo.png');
+    const source = await response.blob();
+    const objectUrl = URL.createObjectURL(source);
+    const logo = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = objectUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = logo.naturalWidth;
+    canvas.height = logo.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.drawImage(logo, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let index = 0; index < pixels.data.length; index += 4) {
+        pixels.data[index] = 255 - pixels.data[index];
+        pixels.data[index + 1] = 255 - pixels.data[index + 1];
+        pixels.data[index + 2] = 255 - pixels.data[index + 2];
+      }
+      context.putImageData(pixels, 0, 0);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 110.25, 21.75, 217.5, 217.5);
+    }
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    // The export remains usable if the browser cannot decode the logo.
+  }
+
+  strokeRect(420, 18, 1668, 169.5);
+  setFont(60, 'bold');
+  pdf.text('Éléments de facturation', 1254, 142.5, { align: 'center' });
+  strokeRect(420, 186.75, 1668, 55.5);
+  pdf.setDrawColor(234);
+  pdf.rect(945.375, 190.875, 776.25, 46.5);
+  setFont(32);
+  pdf.setTextColor(91, 88, 84);
+  pdf.text(`${input.project.projectCode} - ${input.project.title}`, 950, 226);
+  drawChevron(1686, 205);
+
+  strokeRect(2088, 18, 483.75, 224.25);
+  setFont(31, 'bold');
+  pdf.text('Période', 2110, 56);
+  pdf.setDrawColor(234);
+  pdf.rect(2113.125, 70.125, 213, 69.75);
+  pdf.rect(2331.375, 70.125, 213, 69.75);
+  setFont(32);
+  pdf.text(formatDate(input.startDate), 2120, 119);
+  pdf.text(formatDate(input.endDate), 2338, 119);
+  drawCalendar(2304, 96);
+  drawCalendar(2522, 96);
+  setFont(31, 'bold');
+  pdf.text('Navire', 2110, 176);
+  pdf.setDrawColor(234);
+  pdf.rect(2110.875, 190.125, 455.25, 46.5);
+  setFont(32);
+  pdf.setTextColor(91, 88, 84);
+  const selectedVessel = input.dprs.find((dpr) => dpr.vesselName)?.vesselName
+    || input.project.primaryVesselName
+    || 'Non renseigné';
+  pdf.text(selectedVessel, 2117, 225);
+  drawChevron(2523, 202);
+  setFont(28, 'italic');
+  pdf.setTextColor(30, 29, 28);
+  pdf.text(`Référence Client : ${input.period.clientReference || '—'}`, 2564, 280, { align: 'right' });
+  pdf.setDrawColor(17, 141, 255);
+  pdf.setLineWidth(0.75);
+  pdf.line(2153, 288, 2564, 288);
+
+  setFont(40, 'bold');
+  pdf.text('Opérations', 672, 360, { align: 'center' });
+  pdf.text('Frais Imputables', 1951, 360, { align: 'center' });
+  pdf.setDrawColor(96, 94, 92);
+  pdf.setLineWidth(0.75);
+  pdf.line(73.5, 375.375, 1270.5, 375.375);
+  pdf.line(1284, 375.375, 2619, 375.375);
+
+  setFont(32, 'bold');
+  pdf.text('Date', 140.65, 423);
+  pdf.text('Operations', 389.06, 423);
+  pdf.text('Montant HT', 765.5, 423, { align: 'center' });
+  pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
+  pdf.text('Date Facture', 1296, 423);
+  pdf.text('N° Facture', 1504, 423);
+  pdf.text('Type de Service', 1675, 423);
+  pdf.text('Société', 2108, 423, { align: 'center' });
+  pdf.text('Montant HT', 2508, 423, { align: 'center' });
+  drawSortArrow(82, 441, 'up');
+  drawSortArrow(1296, 441, 'down');
+
+  setFont(28);
+  let operationY = 486;
+  const operationSource = operationRows.length ? operationRows : [{
+    date: '—',
+    operation: 'Aucune opération DPR sur la période',
+    amountHt: 0,
+    comments: '',
+  }];
+  operationSource.forEach((row) => {
+    const commentLines = row.comments ? row.comments.split('\n') : [];
+    pdf.text(row.date, 81.75, operationY);
+    pdf.text(row.operation, 277.5, operationY);
+    pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
+    commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
+    operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
   });
-  autoTable(pdf, {
-    startY: 39,
-    head: [['Date facture', 'N° facture', 'Type de service', 'Société', 'Montant HT']],
-    body: expenses.length ? expenses.map((expense) => [
-      expense.invoiceDate,
-      expense.invoiceNumber || '—',
-      expense.category === 'other' ? expense.nature : ({ fuel: 'Gasoil', port: 'Frais de port', water: 'Eau' }[expense.category]),
-      expense.supplier,
-      money(expense.amountHt),
-    ]) : [['—', '—', 'Aucun frais imputable', '—', money(0)]],
-    margin: { left: 151, right: 15 },
-    styles: { fontSize: 7, cellPadding: 1.5 },
-    headStyles: { fillColor: [20, 64, 112] },
+
+  let expenseY = 486;
+  const categoryLabels: Record<BillingExpenseCategory, string> = {
+    fuel: 'Fuel',
+    port: 'Frais de Port',
+    water: 'Eau',
+    other: 'Autre',
+  };
+  expenses.forEach((expense) => {
+    pdf.text(formatDate(expense.invoiceDate), 1297, expenseY);
+    pdf.text(expense.invoiceNumber || '—', 1505, expenseY);
+    pdf.text(expense.category === 'other' ? expense.nature : categoryLabels[expense.category], 1675, expenseY);
+    pdf.text(expense.supplier, 1920, expenseY);
+    pdf.text(money(expense.amountHt), 2598, expenseY, { align: 'right' });
+    expenseY += 38.25;
   });
-  const y = 160;
-  autoTable(pdf, {
-    startY: y,
-    body: [
-      ['Total des loyers journaliers', money(hiresTotal)],
-      ['Total des frais imputables', money(expenseTotal)],
-      ['Total du mois hors taxes', money(hiresTotal + expenseTotal)],
-    ],
-    margin: { left: 175, right: 15 },
-    styles: { fontSize: 9, fontStyle: 'bold' },
-    columnStyles: { 1: { halign: 'right' } },
-    theme: 'grid',
+
+  pdf.setFillColor(179, 179, 179);
+  pdf.rect(1810.5, 1454.25, 787.5, 378.75, 'F');
+  pdf.setDrawColor(0);
+  pdf.setLineWidth(0.75);
+  pdf.rect(1810.5, 1454.25, 787.5, 378.75);
+  const totalBlocks = [
+    { y: 1454.25, height: 111, label: 'Total des Loyers journaliers', value: hiresTotal, final: false },
+    { y: 1565.25, height: 110.25, label: 'Total des Frais Imputables', value: expenseTotal, final: false },
+    { y: 1675.5, height: 157.5, label: 'Total Facture du mois Hors Taxes', value: hiresTotal + expenseTotal, final: true },
+  ];
+  totalBlocks.forEach((block) => {
+    const background = block.final ? 230 : 255;
+    pdf.setFillColor(background, background, background);
+    pdf.rect(1850.25, block.y, 742.5, block.height, 'F');
+    pdf.setFillColor(179, 179, 179);
+    pdf.rect(1850.25, block.y, 742.5, block.final ? 42.75 : 36.75, 'F');
+    setFont(block.final ? 34 : 29, 'bold');
+    pdf.text(block.label, 2221.5, block.y + (block.final ? 34 : 29), { align: 'center' });
+    setFont(block.final ? 46 : 42, block.final ? 'bold' : 'normal');
+    pdf.text(money(block.value), 2221.5, block.y + (block.final ? 126 : 92), { align: 'center' });
   });
+
   pdf.setProperties({
     title: `${input.project.projectCode} - Éléments de facturation - ${input.period.periodMonth.slice(0, 7)}`,
     subject: 'Export SeaPilot des éléments de facturation',
