@@ -1,4 +1,4 @@
-# Facturation projets v3.7.2
+# Facturation projets v3.7.3
 
 ## Évolutions
 
@@ -8,6 +8,7 @@
 - Les pièces jointes sont gérées dans chaque service refacturable et renommées `date - facture - catégorie`.
 - La prestation BBTM `Spread Antipollution` possède un montant unitaire et une quantité modifiable. Sa quantité proposée correspond au nombre de lignes `24/24 Operation`, compléments compris.
 - Le PDF présente la prestation BBTM sous les frais imputables et l’intègre dans le total HT.
+- Un bouton permet d’afficher ou de masquer la prestation BBTM dans le PDF. Lorsqu’elle est masquée, son tableau, son sous-total et son montant sont exclus du total HT.
 
 ## Base de données
 
@@ -17,5 +18,5 @@ La table est protégée par RLS : lecture pour les membres de la société, écr
 ## Déploiement
 
 1. Appliquer la migration Supabase.
-2. Déployer l’application v3.7.2.
-3. Vérifier un export P144 sur un mois incomplet, avec et sans complétion.
+2. Déployer l’application v3.7.3.
+3. Vérifier un export P144 sur un mois incomplet, avec et sans complétion, puis avec et sans prestation BBTM.

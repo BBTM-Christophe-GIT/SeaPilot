@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   CalendarRange,
   Download,
+  Eye,
+  EyeOff,
   ExternalLink,
   FilePlus2,
   FileText,
@@ -134,6 +136,7 @@ export function ProjectBillingPanel({
   const [completeMissingDays, setCompleteMissingDays] = useState(false);
   const [serviceDraft, setServiceDraft] = useState({ unitAmountHt: 0, quantity: 0 });
   const [serviceQuantityEdited, setServiceQuantityEdited] = useState(false);
+  const [includeBbtmService, setIncludeBbtmService] = useState(true);
   const [exportFormat, setExportFormat] = useState<BillingExportFormat>('pdf');
   const [previewUrl, setPreviewUrl] = useState('');
   const [busy, setBusy] = useState('');
@@ -159,6 +162,7 @@ export function ProjectBillingPanel({
     setDprs([]);
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
+    setIncludeBbtmService(true);
     void reload();
   }, [project.id]);
 
@@ -253,6 +257,7 @@ export function ProjectBillingPanel({
     setCustomEnd(range.end);
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
+    setIncludeBbtmService(true);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl('');
   }
@@ -409,6 +414,7 @@ export function ProjectBillingPanel({
         period: { ...selectedPeriod, clientReference: periodDraft.clientReference },
         expenses: periodExpenses,
         services: serviceForExport,
+        includeBbtmService,
         dprs: exportDprs,
         selectedVesselName,
         startDate: exportRange.start,
@@ -517,11 +523,25 @@ export function ProjectBillingPanel({
               <small>{money(billingServicesTotal(serviceForExport))} HT</small>
             </span>
           </div>
-          {isManager ? (
-            <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService()} type="button">
-              <Save aria-hidden="true" size={16} /> Enregistrer
+          <div className="project-billing-card-actions">
+            <button
+              aria-label={includeBbtmService ? 'Masquer la prestation BBTM du PDF' : 'Afficher la prestation BBTM dans le PDF'}
+              aria-pressed={includeBbtmService}
+              className={`project-billing-pdf-toggle${includeBbtmService ? ' is-active' : ''}`}
+              disabled={Boolean(busy)}
+              onClick={() => setIncludeBbtmService((included) => !included)}
+              type="button"
+            >
+              {includeBbtmService
+                ? <><Eye aria-hidden="true" size={16} /> Affichée dans le PDF</>
+                : <><EyeOff aria-hidden="true" size={16} /> Masquée du PDF</>}
             </button>
-          ) : null}
+            {isManager ? (
+              <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService()} type="button">
+                <Save aria-hidden="true" size={16} /> Enregistrer
+              </button>
+            ) : null}
+          </div>
         </header>
         <div className="project-billing-service-grid">
           <label>Catégorie<input disabled value="Spread Antipollution" /></label>
@@ -549,7 +569,6 @@ export function ProjectBillingPanel({
               type="number"
               value={serviceDraft.quantity}
             />
-            <small>Par défaut : nombre de lignes « 24/24 Operation », compléments inclus.</small>
           </label>
           <label>Montant total HT<input disabled value={money(serviceDraft.unitAmountHt * serviceDraft.quantity)} /></label>
         </div>
