@@ -134,6 +134,17 @@ describe('billing operation export', () => {
     });
     expect(rows[0].amountHt).toBe(4227.5);
   });
+
+  it('renders a multiline operation as a single PDF table line', () => {
+    const rows = billingOperationRows({
+      ...input,
+      dprs: [{
+        ...input.dprs[0],
+        operation: '03H00 LARGUE\n04H00 LARGUE BOIS A.\n08H25 AS',
+      }],
+    });
+    expect(rows[0].operation).toBe('03H00 LARGUE 04H00 LARGUE BOIS A. 08H25 AS');
+  });
 });
 
 describe('monthly billing completion', () => {
@@ -215,6 +226,14 @@ describe('Power BI P144 comments formula', () => {
     expect(billingDprComment(base)).toBe(
       'Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20',
     );
+  });
+
+  it('applies the port movement comment logic to Weather Stand-by', () => {
+    expect(billingDprComment({
+      ...base,
+      operation: '24/24 Weather Stand-by',
+      fuelLiters: null,
+    })).toBe('Accosté au port à 00h20\nAppareillage du quai à 14h20');
   });
 
   it('returns only refueling for a regular operation', () => {
