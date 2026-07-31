@@ -494,11 +494,17 @@ function formatWholeNumber(value: number): string {
   return Math.round(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 }).replace(/[\u00a0\u202f]/g, ' ');
 }
 
+function singleLineBillingOperation(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 export function billingDprComment(
   dpr: Pick<ProjectBillingDpr, 'operation' | 'vesselStatus' | 'arrivalAt' | 'departureAt' | 'fuelLiters'>,
 ): string {
   const operation = dpr.operation.trim().toUpperCase();
-  const isSpecialOperation = operation === '24/24 CREW CHANGE' || operation === 'CONTRACTUAL MAINTENANCE DAY';
+  const isSpecialOperation = operation === '24/24 CREW CHANGE'
+    || operation === '24/24 WEATHER STAND-BY'
+    || operation === 'CONTRACTUAL MAINTENANCE DAY';
   const isPort = dpr.vesselStatus.trim().toUpperCase() === 'NAVIRE AU PORT';
   const arrival = isPort && dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
   const departure = dpr.departureAt ? `Appareillage du quai à ${addUtcOffset(dpr.departureAt)}` : '';
@@ -604,7 +610,7 @@ export function billingOperationRows(input: BillingExportInput): BillingOperatio
     .sort((left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id)
     .map((dpr) => ({
       date: formatDate(dpr.reportDate),
-      operation: dpr.operation || '24/24 Operation',
+      operation: singleLineBillingOperation(dpr.operation) || '24/24 Operation',
       amountHt: dpr.amountHt ?? input.contract?.charterHire ?? 0,
       comments: billingDprComment(dpr),
     }));
@@ -785,7 +791,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   operationSource.forEach((row) => {
     const commentLines = row.comments ? row.comments.split('\n') : [];
     pdf.text(row.date, 81.75, operationY);
-    pdf.text(fitText(row.operation, 500), 277.5, operationY);
+    pdf.text(fitText(row.operation, 380), 277.5, operationY);
     pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
     commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
     operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
