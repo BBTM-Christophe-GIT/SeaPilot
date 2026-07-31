@@ -498,6 +498,15 @@ function singleLineBillingOperation(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+export function resolveBillingDprOperation(sourceOperation: string, reasonKeys: string[]): string {
+  const operation = singleLineBillingOperation(sourceOperation);
+  if (operation) return operation;
+  const normalizedReasons = new Set(reasonKeys.map((reason) => reason.trim().toLowerCase()));
+  if (normalizedReasons.has('crew-change')) return '24/24 Crew Change';
+  if (normalizedReasons.has('weather-standby')) return '24/24 Weather Stand-by';
+  return '24/24 Operation';
+}
+
 export function billingDprComment(
   dpr: Pick<ProjectBillingDpr, 'operation' | 'vesselStatus' | 'arrivalAt' | 'departureAt' | 'fuelLiters'>,
 ): string {
@@ -540,7 +549,7 @@ export async function fetchProjectBillingDprs(
     reports.map((row) => nullableNumber(row.vessel_id)).filter((id): id is number => id !== null),
   ));
   const [callResult, supplyResult, vesselResult] = await Promise.all([
-    client.from('dpr_port_calls').select('dpr_id,arrival_at,departure_at,display_order').in('dpr_id', reportIds).order('display_order'),
+    client.from('dpr_port_calls').select('dpr_id,arrival_at,departure_at,display_order,dpr_port_call_reasons(reason_type_key)').in('dpr_id', reportIds).order('display_order'),
     client.from('dpr_supplies').select('dpr_id,fuel_m3').in('dpr_id', reportIds),
     vesselIds.length
       ? client.from('vessels').select('id,name').in('id', vesselIds)
@@ -582,14 +591,22 @@ export async function fetchProjectBillingDprs(
     ]);
     const sourceFuelM3 = firstNumber(source, ['P144_x002d_FAC_x002d_Fuel_x0028_']);
     const supplyFuelM3 = supplies.get(id);
+    const reasonKeys = reportCalls.flatMap((call) => {
+      const reasons = call.dpr_port_call_reasons;
+      if (!Array.isArray(reasons)) return [];
+      return reasons
+        .map((reason) => firstText(record(reason), ['reason_type_key']))
+        .filter(Boolean);
+    });
     return [{
       id,
       reportDate: text(row.report_date),
       vesselId,
       vesselName: resolvedVesselName,
-      operation: firstText(source, ['P144_x002d_FAC_x002d_Operations'])
-        || text(row.description)
-        || '24/24 Operation',
+      operation: resolveBillingDprOperation(
+        firstText(source, ['P144_x002d_FAC_x002d_Operations', 'P144-FAC-Operations']),
+        reasonKeys,
+      ),
       amountHt: firstNumber(source, ['P144_x002d_FAC_x002d_Montant', 'P144_x002d_FAC_x002d_Forfait_x00']),
       vesselStatus: firstText(source, ['P144_x002d_FAC_x002d_Entr_x00e9_', 'Statut du Navire']),
       arrivalAt,

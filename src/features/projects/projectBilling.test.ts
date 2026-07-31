@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { describe, expect, it, vi } from 'vitest';
 import {
   billingExpenseAttachmentName,
   billingInvoiceTotal,
@@ -8,7 +9,9 @@ import {
   completeBillingDprs,
   countDailyOperations,
   defaultProjectClientReference,
+  fetchProjectBillingDprs,
   missingBillingDates,
+  resolveBillingDprOperation,
   type BillingExportInput,
   type ProjectBillingDpr,
 } from './projectBilling';
@@ -144,6 +147,93 @@ describe('billing operation export', () => {
       }],
     });
     expect(rows[0].operation).toBe('03H00 LARGUE 04H00 LARGUE BOIS A. 08H25 AS');
+  });
+
+  it('derives SeaPilot DPR operations from port-call reasons instead of the daily description', async () => {
+    const reportOrder = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 994,
+          report_date: '2026-07-28',
+          vessel_id: null,
+          description: '11H30 START MP\n12H20 LARGUE QUAI DU MAROC',
+          source_payload: null,
+        },
+        {
+          id: 995,
+          report_date: '2026-07-29',
+          vessel_id: null,
+          description: '04H00 - QUART BOIS A.\n08H25 - ASSISTANCE TRAVAUX',
+          source_payload: null,
+        },
+      ],
+      error: null,
+    });
+    const reportSelect = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        gte: vi.fn().mockReturnValue({
+          lte: vi.fn().mockReturnValue({
+            is: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({ order: reportOrder }),
+            }),
+          }),
+        }),
+      }),
+    });
+    const callSelect = vi.fn().mockReturnValue({
+      in: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({
+          data: [
+            {
+              dpr_id: 994,
+              arrival_at: null,
+              departure_at: '2026-07-28T12:20:00Z',
+              display_order: 0,
+              dpr_port_call_reasons: [{ reason_type_key: 'crew-change' }],
+            },
+            {
+              dpr_id: 995,
+              arrival_at: null,
+              departure_at: null,
+              display_order: 0,
+              dpr_port_call_reasons: [],
+            },
+          ],
+          error: null,
+        }),
+      }),
+    });
+    const supplySelect = vi.fn().mockReturnValue({
+      in: vi.fn().mockResolvedValue({ data: [], error: null }),
+    });
+    const from = vi.fn((table: string) => {
+      if (table === 'dpr_reports') return { select: reportSelect };
+      if (table === 'dpr_port_calls') return { select: callSelect };
+      if (table === 'dpr_supplies') return { select: supplySelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const dprs = await fetchProjectBillingDprs(
+      { from } as unknown as SupabaseClient,
+      2,
+      '2026-07-28',
+      '2026-07-29',
+    );
+
+    expect(callSelect).toHaveBeenCalledWith(
+      'dpr_id,arrival_at,departure_at,display_order,dpr_port_call_reasons(reason_type_key)',
+    );
+    expect(dprs.map((dpr) => dpr.operation)).toEqual([
+      '24/24 Crew Change',
+      '24/24 Operation',
+    ]);
+  });
+
+  it('keeps the explicit P144 operation before port-call-derived defaults', () => {
+    expect(resolveBillingDprOperation('24/24 Weather Stand-by', ['crew-change']))
+      .toBe('24/24 Weather Stand-by');
+    expect(resolveBillingDprOperation('', ['weather-standby']))
+      .toBe('24/24 Weather Stand-by');
   });
 });
 
