@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ProjectContractRecord, ProjectRecord } from './projectQueries';
+import type {
+  ProjectContractRecord,
+  ProjectPlanningOccurrenceRecord,
+  ProjectRecord,
+} from './projectQueries';
 
 export type BillingExpenseCategory = 'fuel' | 'port' | 'water' | 'other';
 export type BillingServiceCategory = 'spread_antipollution';
@@ -366,6 +370,7 @@ export async function signedProjectBillingDocumentUrl(
 export interface BillingExportInput {
   project: ProjectRecord;
   contract?: ProjectContractRecord;
+  operations: ProjectPlanningOccurrenceRecord[];
   period: ProjectBillingPeriod;
   expenses: ProjectChargeableExpense[];
   services: ProjectBillingService[];
@@ -628,9 +633,39 @@ export function billingOperationRows(input: BillingExportInput): BillingOperatio
     .map((dpr) => ({
       date: formatDate(dpr.reportDate),
       operation: singleLineBillingOperation(dpr.operation) || '24/24 Operation',
-      amountHt: dpr.amountHt ?? input.contract?.charterHire ?? 0,
+      amountHt: dpr.amountHt
+        ?? billingOperationHire(
+          input.operations,
+          dpr.reportDate,
+          dpr.vesselName || input.selectedVesselName,
+        )
+        ?? input.contract?.charterHire
+        ?? 0,
       comments: billingDprComment(dpr),
     }));
+}
+
+export function billingOperationHire(
+  operations: ProjectPlanningOccurrenceRecord[],
+  reportDate: string,
+  vesselName: string,
+): number | null {
+  const normalizedVesselName = vesselName.trim().toLocaleUpperCase('fr-FR');
+  const matchingOperations = operations
+    .filter((operation) => (
+      operation.charterHire !== null
+      && operation.startsOn <= reportDate
+      && operation.endsOn >= reportDate
+      && (
+        !normalizedVesselName
+        || operation.primaryVesselName.trim().toLocaleUpperCase('fr-FR') === normalizedVesselName
+      )
+    ))
+    .sort((left, right) => (
+      right.startsOn.localeCompare(left.startsOn)
+      || right.id - left.id
+    ));
+  return matchingOperations[0]?.charterHire ?? null;
 }
 
 export async function generateBillingPdf(input: BillingExportInput): Promise<Blob> {
