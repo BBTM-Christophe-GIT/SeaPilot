@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   billingExpenseAttachmentName,
   billingInvoiceTotal,
+  billingOperationHire,
   billingServicesTotal,
   billingDprComment,
   billingOperationRows,
@@ -64,7 +65,7 @@ const input: BillingExportInput = {
     mobilisationFee: null,
     demobilisationFee: null,
     feeCurrency: 'EUR',
-    charterHire: 4227.5,
+    charterHire: 4450,
     extensionHire: null,
     hireCurrency: 'EUR',
     hireUnit: 'jour',
@@ -77,6 +78,21 @@ const input: BillingExportInput = {
     sourceModifiedAt: '',
     archivedAt: '',
   },
+  operations: [{
+    id: 13,
+    projectId: 144,
+    startsOn: '2024-06-01',
+    endsOn: '2026-08-31',
+    primaryVesselId: 1,
+    primaryVesselName: 'GOURY',
+    status: 'Validé',
+    description: '',
+    charterHire: 4227.5,
+    hireCurrency: 'EUR',
+    hireUnit: 'Journalier',
+    sourceLabel: 'SeaPilot',
+    createdAt: '2026-07-20T00:00:00Z',
+  }],
   period: {
     id: 1,
     projectId: 144,
@@ -122,7 +138,7 @@ describe('billing operation export', () => {
     }]);
   });
 
-  it('uses the DPR amount before the contract default', () => {
+  it('uses the DPR amount before the operation and contract defaults', () => {
     const rows = billingOperationRows({
       ...input,
       dprs: [{ ...input.dprs[0], amountHt: 4450 }],
@@ -130,12 +146,55 @@ describe('billing operation export', () => {
     expect(rows[0].amountHt).toBe(4450);
   });
 
-  it('falls back to the contract hire only when the DPR has no amount', () => {
+  it('uses the operation hire before the current contract hire when the DPR has no amount', () => {
     const rows = billingOperationRows({
       ...input,
+      dprs: [
+        {
+          ...input.dprs[0],
+          id: 994,
+          reportDate: '2026-07-28',
+          operation: '24/24 Crew Change',
+          amountHt: null,
+        },
+        {
+          ...input.dprs[0],
+          id: 995,
+          reportDate: '2026-07-29',
+          operation: '24/24 Operation',
+          amountHt: null,
+        },
+      ],
+      startDate: '2026-07-01',
+      endDate: '2026-07-31',
+    });
+    expect(rows.map(({ date, operation, amountHt }) => ({ date, operation, amountHt }))).toEqual([
+      { date: '28/07/2026', operation: '24/24 Crew Change', amountHt: 4227.5 },
+      { date: '29/07/2026', operation: '24/24 Operation', amountHt: 4227.5 },
+    ]);
+  });
+
+  it('resolves the hire from the operation active for the vessel and date', () => {
+    expect(billingOperationHire([
+      ...input.operations,
+      {
+        ...input.operations[0],
+        id: 40,
+        startsOn: '2026-08-10',
+        endsOn: '2026-08-20',
+        primaryVesselName: 'LE ROZEL',
+        charterHire: 3600,
+      },
+    ], '2026-08-12', 'LE ROZEL')).toBe(3600);
+  });
+
+  it('falls back to the contract hire when no operation covers the DPR', () => {
+    const rows = billingOperationRows({
+      ...input,
+      operations: [],
       dprs: [{ ...input.dprs[0], amountHt: null }],
     });
-    expect(rows[0].amountHt).toBe(4227.5);
+    expect(rows[0].amountHt).toBe(4450);
   });
 
   it('renders a multiline operation as a single PDF table line', () => {

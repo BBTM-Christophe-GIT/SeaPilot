@@ -411,6 +411,7 @@ export function ProjectBillingPanel({
       const result = await generateBillingExportPackage(client, {
         project,
         contract,
+        operations,
         period: { ...selectedPeriod, clientReference: periodDraft.clientReference },
         expenses: periodExpenses,
         services: serviceForExport,
