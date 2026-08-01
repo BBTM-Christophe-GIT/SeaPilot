@@ -125,7 +125,7 @@ export async function generateDprPdf(
   body(vessel.toUpperCase(), 92.25, 460);
 
   heading('Description de la Journée', 761.25, 393);
-  const descriptionLines = pdf.splitTextToSize(valueOrDash(payload.description), 1000).slice(0, 31) as string[];
+  const descriptionLines = pdf.splitTextToSize(valueOrDash(payload.description), 1000).slice(0, 48) as string[];
   body(descriptionLines, 761.25, 460);
 
   heading('Carburant :', 84.75, 629);
@@ -138,9 +138,6 @@ export async function generateDprPdf(
   heading('Autres Personnes', 92.25, 1380);
   const otherPeople = [...payload.otherPeople].sort((a, b) => a.displayOrder - b.displayOrder);
   if (otherPeople.length) body(otherPeople.map((person) => person.displayName), 92.25, 1447);
-
-  heading('Contact Radio', 761.25, 1671);
-  body('Néant', 761.25, 1738);
 
   sectionBar('Indicateurs QHSE', 2133, 65.25);
   heading('Leading Indicators', 296.93, 2239);

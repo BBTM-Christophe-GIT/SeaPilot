@@ -14707,6 +14707,19 @@ button.planning-p12-conflict-card {
 .dpr-people label, .dpr-choice-grid label { display: flex; align-items: center; gap: 8px; min-height: 35px; border: 1px solid #d8e1ed; border-radius: 999px; padding: 0 11px; font-size: .73rem; }
 .dpr-inline-add { display: flex !important; grid-template-columns: 1fr auto !important; gap: 8px; margin-top: 10px; }
 .dpr-inline-add input { min-width: 0; border: 1px solid #ced9e8; border-radius: 11px; padding: 9px 12px; }
+.dpr-multiselect { position: relative; }
+.dpr-multiselect summary { cursor: pointer; list-style: none; border: 1px solid #ced9e8; border-radius: 11px; background: #fff; padding: 10px 12px; color: #243750; font-size: .78rem; }
+.dpr-multiselect summary::-webkit-details-marker { display: none; }
+.dpr-multiselect summary::after { content: '⌄'; float: right; color: #2074d4; font-weight: 800; }
+.dpr-multiselect[open] summary { border-color: #2074d4; box-shadow: 0 0 0 3px rgba(32, 116, 212, .1); }
+.dpr-multiselect__panel { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; max-height: 320px; overflow: auto; margin-top: 8px; border: 1px solid #d9e2ee; border-radius: 12px; background: #f8fbff; padding: 10px; }
+.dpr-multiselect fieldset { min-width: 0; margin: 0; border: 1px solid #dce5f0; border-radius: 10px; background: #fff; padding: 8px; }
+.dpr-multiselect legend { padding: 0 5px; color: #154f91; font-size: .7rem; font-weight: 800; text-transform: uppercase; }
+.dpr-multiselect fieldset label { min-height: 30px; border: 0; border-radius: 7px; padding: 3px 5px; }
+.dpr-selected-people { display: flex !important; grid-template-columns: none !important; flex-wrap: wrap; gap: 7px !important; margin-top: 9px; }
+.dpr-selected-people span { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; background: #eaf3ff; padding: 6px 8px 6px 10px; color: #174c86; font-size: .72rem; font-weight: 700; }
+.dpr-selected-people button { display: inline-flex; border: 0; border-radius: 50%; background: #fff; color: #366ca5; padding: 2px; }
+.dpr-inline-add--names textarea { flex: 1; min-width: 0; resize: vertical; border: 1px solid #ced9e8; border-radius: 11px; padding: 9px 12px; font: inherit; }
 .dpr-qhse-grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 14px; }
 .dpr-check-grid { display: grid; grid-template-columns: .8fr 1.5fr; align-items: center; gap: 12px; margin-bottom: 12px; }
 .dpr-check-grid > label { font-weight: 750; }
@@ -14741,7 +14754,7 @@ button.planning-p12-conflict-card {
   .dpr-steps { display: flex; gap: 6px; overflow-x: auto; padding: 8px; }
   .dpr-steps > span, .dpr-steps > h3, .dpr-steps button span, .dpr-steps button svg { display: none; }
   .dpr-steps > button { min-width: 42px; min-height: 42px; margin: 0; padding: 4px; }
-  .dpr-form-grid, .dpr-people > div, .dpr-choice-grid, .dpr-qhse-grid, .dpr-file-grid { grid-template-columns: 1fr; }
+  .dpr-form-grid, .dpr-people > div, .dpr-choice-grid, .dpr-qhse-grid, .dpr-file-grid, .dpr-multiselect__panel { grid-template-columns: 1fr !important; }
   .dpr-modal__footer { overflow-x: auto; justify-content: flex-start; padding: 8px; }
   .dpr-unsaved { display: none; }
 }

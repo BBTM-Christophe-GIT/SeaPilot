@@ -12,9 +12,23 @@ export interface DprProjectOption { id: number; code: string; title: string }
 export interface DprVesselOption { id: number; name: string }
 export interface DprPersonOption {
   id: number;
+  firstName: string;
+  lastName: string;
   name: string;
   functionLabel: string;
+  gradeLabel: string;
+  roleLabel: string;
   crewFunction: CrewFunction;
+  isSedentary: boolean;
+}
+export interface DprEntryContext {
+  issuerPersonId: number | null;
+  issuerName: string;
+  vesselId: number | null;
+  projectId: number | null;
+  watchGroup: string;
+  people: DprPersonOption[];
+  crewPersonIds: number[];
 }
 export interface DprReferenceData {
   projects: DprProjectOption[];
@@ -72,6 +86,34 @@ function crewFunction(functionLabel: string, gradeLabel: string): CrewFunction {
   return 'execution';
 }
 
+function normalize(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function formatPersonName(firstName: string, lastName: string): string {
+  return `${firstName.trim()} ${lastName.trim().toUpperCase()}`.trim();
+}
+
+function mapPerson(row: Record<string, unknown>): DprPersonOption {
+  const firstName = text(row.first_name ?? row.firstName);
+  const lastName = text(row.last_name ?? row.lastName);
+  const functionLabel = text(row.function_label ?? row.functionLabel);
+  const gradeLabel = text(row.grade_label ?? row.gradeLabel);
+  const roleLabel = text(row.role_label ?? row.roleLabel);
+  const sedentaryLabel = normalize(`${functionLabel} ${gradeLabel} ${roleLabel}`);
+  return {
+    id: Number(row.id),
+    firstName,
+    lastName,
+    name: formatPersonName(firstName, lastName),
+    functionLabel: functionLabel || gradeLabel || 'Sans fonction',
+    gradeLabel,
+    roleLabel,
+    crewFunction: crewFunction(functionLabel, gradeLabel),
+    isSedentary: sedentaryLabel.includes('sedentaire'),
+  };
+}
+
 function mapFile(row: Record<string, unknown>): DprFileRecord {
   return {
     id: Number(row.id), dprId: Number(row.dpr_id), kind: row.file_kind as DprFileKind,
@@ -85,8 +127,12 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
   const { data: authData } = await client.auth.getUser();
   const userId = authData.user?.id || null;
   if (!userId) return { id: null, name: 'Utilisateur SeaPilot' };
-  const { data } = await client.from('profiles').select('display_name').eq('id', userId).maybeSingle();
-  return { id: userId, name: text(data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot' };
+  const [profileResult, personResult] = await Promise.all([
+    client.from('profiles').select('display_name').eq('id', userId).maybeSingle(),
+    client.from('people').select('first_name,last_name').eq('user_id', userId).maybeSingle(),
+  ]);
+  const personName = formatPersonName(text(personResult.data?.first_name), text(personResult.data?.last_name));
+  return { id: userId, name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot' };
 }
 
 export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDashboardData> {
@@ -97,7 +143,7 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
     client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,display_filename,mime_type,size_bytes,sha256,is_current,status').eq('status', 'ready').is('deleted_at', null).limit(5000),
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.from('vessels').select('id,name').order('name'),
-    client.from('people').select('id,first_name,last_name,function_label,grade_label').eq('active', true).order('last_name').limit(5000),
+    client.from('people').select('id,first_name,last_name,function_label,grade_label,role_label,hired_on,departed_on').eq('active', true).order('last_name').limit(5000),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     loadCurrentProfile(client),
@@ -132,10 +178,10 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
       incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;
   });
-  const people = (peopleResult.data || []).map((row) => {
-    const functionLabel = text(row.function_label); const gradeLabel = text(row.grade_label);
-    return { id: Number(row.id), name: `${text(row.first_name)} ${text(row.last_name)}`.trim(), functionLabel: functionLabel || gradeLabel, crewFunction: crewFunction(functionLabel, gradeLabel) };
-  });
+  const today = new Date().toISOString().slice(0, 10);
+  const people = (peopleResult.data || [])
+    .filter((row) => (!row.hired_on || text(row.hired_on) <= today) && (!row.departed_on || text(row.departed_on) >= today))
+    .map((row) => mapPerson(row as Record<string, unknown>));
   return {
     reports, currentUserId: profile.id, currentUserName: profile.name,
     references: {
@@ -143,6 +189,21 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
       exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
       portReasons: (reasonResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
     },
+  };
+}
+
+export async function fetchDprEntryContext(client: SupabaseClient, reportDate: string): Promise<DprEntryContext> {
+  const { data, error } = await client.rpc('dpr_entry_context', { target_date: reportDate });
+  if (error) throw error;
+  const row = (data || {}) as Record<string, unknown>;
+  return {
+    issuerPersonId: numberOrNull(row.issuerPersonId),
+    issuerName: text(row.issuerName) || 'Utilisateur SeaPilot',
+    vesselId: numberOrNull(row.vesselId),
+    projectId: numberOrNull(row.projectId),
+    watchGroup: text(row.watchGroup),
+    people: (Array.isArray(row.people) ? row.people : []).map((person) => mapPerson(person as Record<string, unknown>)),
+    crewPersonIds: (Array.isArray(row.crewPersonIds) ? row.crewPersonIds : []).map(Number).filter(Number.isFinite),
   };
 }
 

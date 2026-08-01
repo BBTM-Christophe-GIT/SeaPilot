@@ -4,7 +4,7 @@ const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
 
-type PreviewResult = { data: unknown[] | null; error: typeof PREVIEW_WRITE_ERROR | null };
+type PreviewResult = { data: unknown[] | Record<string, unknown> | null; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
   15: 'CRO',
@@ -97,7 +97,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   people: [
     {
       id: 9301,
-      user_id: null,
+      user_id: 'preview-user',
       first_name: 'Arthur',
       last_name: 'DEMO',
       email: 'arthur.demo@example.invalid',
@@ -138,6 +138,10 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       crane_induction_on: null,
       active: true,
     },
+    { id: 9302, user_id: null, first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction', grade_label: '', role_label: 'Sédentaire', hired_on: '2020-01-01', departed_on: null, active: true },
+    { id: 9303, user_id: null, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', grade_label: 'Chef mécanicien', role_label: 'Navigant', hired_on: '2022-05-01', departed_on: null, active: true },
+    { id: 9304, user_id: null, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', grade_label: 'Matelot', role_label: 'Navigant', hired_on: '2024-03-01', departed_on: null, active: true },
+    { id: 9399, user_id: null, first_name: 'Ancien', last_name: 'MARIN', function_label: 'Matelot', grade_label: 'Matelot', role_label: 'Navigant', hired_on: '2018-01-01', departed_on: '2025-12-31', active: false },
   ],
   hr_documents: [
     {
@@ -577,6 +581,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { key: 'weather-standby', label: 'Stand-by météo', display_order: 20, active: true },
     { key: 'breakdown', label: 'Avarie', display_order: 30, active: true },
     { key: 'standby', label: 'Stand-by', display_order: 40, active: true },
+    { key: 'off-hire', label: 'Off-Hire', display_order: 50, active: true },
   ],
   dpr_crew_members: [], dpr_other_people: [],
   dpr_incidents: [
@@ -676,6 +681,31 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'dpr_entry_context') {
+    const reportDate = String(args.target_date || '2026-08-01');
+    const people = previewRows('people')
+      .filter((person) => person.active && (!person.hired_on || String(person.hired_on) <= reportDate) && (!person.departed_on || String(person.departed_on) >= reportDate))
+      .map((person) => ({
+        id: person.id,
+        firstName: person.first_name,
+        lastName: person.last_name,
+        functionLabel: person.function_label,
+        gradeLabel: person.grade_label,
+        roleLabel: person.role_label,
+      }));
+    return createPreviewQuery({
+      data: {
+        issuerPersonId: 9301,
+        issuerName: 'Arthur DEMO',
+        vesselId: 9201,
+        projectId: 9001,
+        watchGroup: 'Bordée 1',
+        people,
+        crewPersonIds: [9301, 9303, 9304],
+      },
+      error: null,
+    });
+  }
   if (functionName === 'planning_project_catalog') {
     return createPreviewQuery({
       data: previewRows('projects').map((project) => ({

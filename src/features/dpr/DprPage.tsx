@@ -17,7 +17,7 @@ import {
 import { generateDprArchive, type GeneratedDprDocument } from './dprExport.ts';
 import { generateDprPdf } from './dprPdf.ts';
 import {
-  createDprSignedUrl, fetchDprDashboard, fetchDprDetail, fetchDprDiagnostic,
+  createDprSignedUrl, fetchDprDashboard, fetchDprDetail, fetchDprDiagnostic, fetchDprEntryContext,
   removeDprFile, runDprTransition, saveDprPayload, uploadDprFile,
   type DprDashboardData, type DprFileRecord, type DprReferenceData, type DprReportRecord,
 } from './dprQueries.ts';
@@ -128,6 +128,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [exportProgress, setExportProgress] = useState('');
   const [initialSignature, setInitialSignature] = useState('');
+  const [issuerName, setIssuerName] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
     const data = await fetchDprDashboard(db);
@@ -216,11 +217,37 @@ export function DprPage({ client, roles }: DprPageProps) {
     setPendingFiles([]); setModalOpen(false); setReport(null); setFiles([]); setError('');
   };
 
-  const openNew = () => {
+  const applyPlanningDefaults = async (reportDate: string, basePayload: DprFormPayload): Promise<DprFormPayload> => {
+    const context = await fetchDprEntryContext(db, reportDate);
+    const next = structuredClone(basePayload);
+    next.reportDate = reportDate;
+    next.projectId = context.projectId;
+    next.unlistedProjectName = '';
+    next.vesselId = context.vesselId;
+    next.crewMembers = context.crewPersonIds.flatMap((personId, index) => {
+      const person = context.people.find((item) => item.id === personId);
+      return person ? [{ personId, crewFunction: person.crewFunction, rosterGroup: context.watchGroup, displayName: person.name, displayOrder: index }] : [];
+    });
+    next.otherPeople = next.otherPeople.filter((person) => person.personId === null || context.people.some((candidate) => candidate.id === person.personId));
+    setDashboard((current) => current ? { ...current, references: { ...current.references, people: context.people } } : current);
+    setIssuerName(context.issuerName);
+    return next;
+  };
+
+  const openNew = async () => {
     const next = cloneEmptyPayload();
     next.reportDate = new Date().toISOString().slice(0, 10);
-    setReport(null); setPayload(next); setFiles([]); setPendingFiles([]); setStep(0);
-    setInitialSignature(JSON.stringify(next)); setModalOpen(true); setError(''); setNotice('');
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const populated = await applyPlanningDefaults(next.reportDate, next);
+      setReport(null); setPayload(populated); setFiles([]); setPendingFiles([]); setStep(0);
+      setInitialSignature(JSON.stringify(populated)); setModalOpen(true);
+    } catch (reason) {
+      setReport(null); setPayload(next); setFiles([]); setPendingFiles([]); setStep(0);
+      setIssuerName(dashboard?.currentUserName || 'Utilisateur SeaPilot');
+      setInitialSignature(JSON.stringify(next)); setModalOpen(true);
+      setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`);
+    } finally { setBusy(false); }
   };
 
   const openReport = async (item: DprReportRecord) => {
@@ -228,6 +255,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     try {
       const detail = await fetchDprDetail(db, item);
       setReport(item); setPayload(detail.payload); setFiles(detail.files); setPendingFiles([]); setStep(0);
+      setIssuerName(item.issuerName || dashboard?.currentUserName || 'Utilisateur SeaPilot');
       setInitialSignature(JSON.stringify(detail.payload)); setModalOpen(true);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -382,6 +410,15 @@ export function DprPage({ client, roles }: DprPageProps) {
 
   const editable = canEdit(report, currentRoles, dashboard?.currentUserId || null);
   const updatePayload = (recipe: (current: DprFormPayload) => void) => setPayload((current) => { const next = structuredClone(current); recipe(next); return next; });
+  const updateReportDate = async (reportDate: string) => {
+    if (report) { updatePayload((current) => { current.reportDate = reportDate; }); return; }
+    setBusy(true); setError('');
+    try { setPayload(await applyPlanningDefaults(reportDate, payload)); }
+    catch (reason) {
+      updatePayload((current) => { current.reportDate = reportDate; });
+      setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`);
+    } finally { setBusy(false); }
+  };
   const previewIndex = pdfPreview ? selectedReports.findIndex((item) => item.id === pdfPreview.report.id) : -1;
   const navigatePreview = (direction: -1 | 1) => {
     if (!selectedReports.length) return;
@@ -400,7 +437,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     <nav className="planning-module-toolbar dpr-module-toolbar" aria-label="Menu Daily Progress Report">
       <div className="planning-ribbon-scroll">
         <DprRibbonGroup label="DPR">
-          <DprRibbonButton icon={<Plus aria-hidden="true" size={22}/>} label="Saisir un DPR" onClick={openNew}/>
+          <DprRibbonButton icon={<Plus aria-hidden="true" size={22}/>} label="Saisir un DPR" onClick={() => void openNew()}/>
           <DprRibbonButton className={!filters.status ? 'is-active' : ''} icon={<BarChart3 aria-hidden="true" size={22}/>} label="Vue d’ensemble" onClick={() => setFilters(EMPTY_FILTERS)}/>
           <DprRibbonButton className={filters.status === 'submitted' ? 'is-active' : ''} count={kpis.submitted} icon={<ListChecks aria-hidden="true" size={22}/>} label="À valider" onClick={() => setFilters((current) => ({ ...current, status: 'submitted' }))}/>
         </DprRibbonGroup>
@@ -482,7 +519,7 @@ export function DprPage({ client, roles }: DprPageProps) {
           <nav className="dpr-steps" aria-label="Étapes du DPR"><span>ASSISTANT</span><h3>DPR</h3>{STEPS.map(([title, subtitle], index) => <button key={title} className={step === index ? 'active' : ''} onClick={() => setStep(index)}><b>{index + 1}</b><span><strong>{title}</strong><small>{subtitle}</small></span><ChevronRight size={15}/></button>)}</nav>
           <main className="dpr-step">
             <div className="dpr-step__title"><b>{step + 1}.</b><h3>{STEPS[step][0]}</h3><span>— {STEPS[step][1]}</span></div>
-            {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload}/>}
+            {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)}/>}
             {step === 1 && <StepDaily payload={payload} editable={editable} update={updatePayload}/>}
             {step === 2 && <StepQhse payload={payload} references={dashboard.references} editable={editable} update={updatePayload}/>}
             {step === 3 && <StepPort payload={payload} references={dashboard.references} editable={editable} update={updatePayload}/>}
@@ -506,24 +543,59 @@ export function DprPage({ client, roles }: DprPageProps) {
 
 interface StepProps { payload: DprFormPayload; editable: boolean; update: (recipe: (current: DprFormPayload) => void) => void }
 
-function StepProject({ payload, references, issuer, editable, update }: StepProps & { references: DprReferenceData; issuer: string }) {
-  const [otherName, setOtherName] = useState('');
+function StepProject({ payload, references, issuer, editable, update, onDateChange }: StepProps & { references: DprReferenceData; issuer: string; onDateChange: (value: string) => void }) {
+  const [manualNames, setManualNames] = useState('');
+  const otherPersonIds = useMemo(() => new Set(payload.otherPeople.flatMap((person) => person.personId === null ? [] : [person.personId])), [payload.otherPeople]);
+  const availableOtherPeople = useMemo(() => references.people.filter((person) => !payload.crewMembers.some((crew) => crew.personId === person.id)), [payload.crewMembers, references.people]);
+  const peopleByFunction = useMemo(() => {
+    const groups = new Map<string, typeof references.people>();
+    availableOtherPeople.forEach((person) => groups.set(person.functionLabel, [...(groups.get(person.functionLabel) || []), person]));
+    return [...groups.entries()].sort(([leftLabel, leftPeople], [rightLabel, rightPeople]) => {
+      const sedentaryDifference = Number(rightPeople.some((person) => person.isSedentary)) - Number(leftPeople.some((person) => person.isSedentary));
+      return sedentaryDifference || leftLabel.localeCompare(rightLabel, 'fr');
+    });
+  }, [availableOtherPeople, references.people]);
   const toggleCrew = (personId: number) => update((current) => {
     const person = references.people.find((item) => item.id === personId)!;
     const existing = current.crewMembers.findIndex((item) => item.personId === personId);
     if (existing >= 0) current.crewMembers.splice(existing, 1);
     else current.crewMembers.push({ personId, crewFunction: person.crewFunction, rosterGroup: '', displayName: person.name, displayOrder: current.crewMembers.length });
   });
+  const toggleOtherPerson = (personId: number) => update((current) => {
+    const existing = current.otherPeople.findIndex((item) => item.personId === personId);
+    if (existing >= 0) current.otherPeople.splice(existing, 1);
+    else {
+      const person = references.people.find((item) => item.id === personId);
+      if (person) current.otherPeople.push({ personId, displayName: person.name, displayOrder: current.otherPeople.length });
+    }
+  });
+  const addManualNames = () => {
+    const names = manualNames.split(/[;\n]+/).map((name) => name.trim()).filter(Boolean);
+    if (!names.length) return;
+    update((current) => {
+      const existing = new Set(current.otherPeople.map((person) => person.displayName.toLocaleLowerCase('fr')));
+      names.forEach((name) => {
+        if (!existing.has(name.toLocaleLowerCase('fr'))) {
+          current.otherPeople.push({ personId: null, displayName: name, displayOrder: current.otherPeople.length });
+          existing.add(name.toLocaleLowerCase('fr'));
+        }
+      });
+    });
+    setManualNames('');
+  };
   return <div className="dpr-cards">
     <section className="dpr-card"><h4><b>1</b> Projet</h4><div className="dpr-form-grid">
-      <Field label="DATE"><input type="date" disabled={!editable} value={payload.reportDate} onChange={(event) => update((current) => { current.reportDate = event.target.value; })}/></Field>
+      <Field label="DATE"><input type="date" disabled={!editable} value={payload.reportDate} onChange={(event) => onDateChange(event.target.value)}/></Field>
       <Field label="PROJET"><select disabled={!editable} value={payload.projectId ?? ''} onChange={(event) => update((current) => { current.projectId = event.target.value ? Number(event.target.value) : null; if (current.projectId) current.unlistedProjectName = ''; })}><option value="">Sélectionner…</option>{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
-      <Field label="PROJET NON RÉFÉRENCÉ"><input disabled={!editable || payload.projectId !== null} value={payload.unlistedProjectName} onChange={(event) => update((current) => { current.unlistedProjectName = event.target.value; })}/></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => update((current) => { current.vesselId = event.target.value ? Number(event.target.value) : null; })}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>
     <section className="dpr-card"><h4><b>2</b> Personnel embarqué</h4>{(Object.keys(CREW_LABELS) as CrewFunction[]).map((role) => <div className="dpr-people" key={role}><strong>{CREW_LABELS[role]}</strong><div>{references.people.filter((person) => person.crewFunction === role).map((person) => <label key={person.id}><input type="checkbox" disabled={!editable} checked={payload.crewMembers.some((item) => item.personId === person.id)} onChange={() => toggleCrew(person.id)}/>{person.name}</label>)}</div></div>)}
-      <div className="dpr-people"><strong>Autres personnes</strong><div>{payload.otherPeople.map((person, index) => <label key={`${person.personId ?? 'free'}-${index}`}><input type="checkbox" disabled={!editable} checked onChange={() => update((current) => { current.otherPeople.splice(index, 1); })}/>{person.displayName}</label>)}</div>{editable && <div className="dpr-inline-add"><input aria-label="Ajouter une autre personne" value={otherName} onChange={(event) => setOtherName(event.target.value)} placeholder="Prénom et nom"/><button type="button" className="button" onClick={() => { const name = otherName.trim(); if (!name) return; update((current) => { current.otherPeople.push({ personId: null, displayName: name, displayOrder: current.otherPeople.length }); }); setOtherName(''); }}><Plus size={15}/> Ajouter</button></div>}</div>
+      <div className="dpr-people dpr-other-people"><strong>Autres personnes</strong>
+        {editable && <details className="dpr-multiselect"><summary>{otherPersonIds.size ? `${otherPersonIds.size} personne(s) sélectionnée(s)` : 'Sélectionner des personnes en poste'}</summary><div className="dpr-multiselect__panel">{peopleByFunction.map(([functionLabel, people]) => <fieldset key={functionLabel}><legend>{functionLabel}{people.some((person) => person.isSedentary) ? ' · Sédentaire' : ''}</legend>{people.map((person) => <label key={person.id}><input type="checkbox" checked={otherPersonIds.has(person.id)} onChange={() => toggleOtherPerson(person.id)}/>{person.name}</label>)}</fieldset>)}</div></details>}
+        <div className="dpr-selected-people">{payload.otherPeople.map((person, index) => <span key={`${person.personId ?? 'free'}-${index}`}>{person.displayName}<button type="button" disabled={!editable} aria-label={`Retirer ${person.displayName}`} onClick={() => update((current) => { current.otherPeople.splice(index, 1); })}><X size={13}/></button></span>)}</div>
+        {editable && <div className="dpr-inline-add dpr-inline-add--names"><textarea aria-label="Ajouter plusieurs autres personnes" rows={2} value={manualNames} onChange={(event) => setManualNames(event.target.value)} placeholder="Prénom NOM ; Prénom NOM (séparer par un point-virgule ou une nouvelle ligne)"/><button type="button" className="button" onClick={addManualNames}><Plus size={15}/> Ajouter les personnes</button></div>}
+      </div>
     </section>
   </div>;
 }
