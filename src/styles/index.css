@@ -658,8 +658,49 @@ button:disabled {
   white-space: nowrap;
 }
 
+.admin-profile-view-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  gap: 6px;
+  margin-left: 6px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #fef3c7;
+  background: rgba(180, 83, 9, 0.34);
+  font-size: 0.7rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
 .topbar-actions {
   gap: 8px;
+}
+
+.admin-profile-view-selector {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c8cdd6;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.admin-profile-view-selector select {
+  min-width: 112px;
+  min-height: 34px;
+  border: 1px solid #3c4656;
+  border-radius: 7px;
+  padding: 0 28px 0 9px;
+  color: #ffffff;
+  background: #171c24;
+  font: inherit;
+}
+
+.admin-profile-view-selector select:focus {
+  border-color: #60a5fa;
+  outline: 2px solid rgba(96, 165, 250, 0.28);
 }
 
 .topbar-menu-button,
@@ -758,6 +799,13 @@ button:disabled {
 .user-menu-popover > .preview-mode-menu-note {
   border-bottom: 0;
   padding-bottom: 4px;
+  white-space: normal;
+}
+
+.user-menu-popover > .admin-profile-view-note {
+  border-bottom: 0;
+  padding-bottom: 4px;
+  color: #92400e;
   white-space: normal;
 }
 
@@ -8749,6 +8797,15 @@ button:disabled {
 
   .preview-mode-badge {
     display: none;
+  }
+
+  .admin-profile-view-badge,
+  .admin-profile-view-selector > span {
+    display: none;
+  }
+
+  .admin-profile-view-selector select {
+    max-width: 128px;
   }
 
   .user-identity {

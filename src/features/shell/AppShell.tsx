@@ -16,6 +16,7 @@ import {
   FolderKanban,
   Gauge,
   Home,
+  Eye,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -48,6 +49,8 @@ export interface AppShellOutletContext {
   client: SupabaseClient;
   previewMode: boolean;
 }
+
+type AdminProfileView = 'actual' | RoleKey;
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
@@ -145,6 +148,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [adminProfileView, setAdminProfileView] = useState<AdminProfileView>('actual');
+  const [adminProfileModules, setAdminProfileModules] = useState<AppModule[] | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
     () => new Set(NAVIGATION_FAMILIES),
   );
@@ -201,24 +206,53 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     };
   }, [client, rolesOverride, sessionUserId]);
 
+  const isActualAdmin = roles.includes('admin');
+  const simulatedRole = isActualAdmin && adminProfileView !== 'actual' ? adminProfileView : null;
+  const effectiveRoles: RoleKey[] = simulatedRole ? [simulatedRole] : roles;
+
+  useEffect(() => {
+    if (!isActualAdmin) {
+      setAdminProfileView('actual');
+      setAdminProfileModules(null);
+      return;
+    }
+
+    if (!simulatedRole) {
+      setAdminProfileModules(null);
+      return;
+    }
+
+    const fallbackModules = getDefaultVisibleModules([simulatedRole]);
+    setAdminProfileModules(fallbackModules);
+    if (rolesOverride) return;
+
+    let isMounted = true;
+    fetchVisibleModulesForRoles(client, [simulatedRole])
+      .then((modules) => { if (isMounted) setAdminProfileModules(modules); })
+      .catch(() => { if (isMounted) setAdminProfileModules(fallbackModules); });
+
+    return () => { isMounted = false; };
+  }, [client, isActualAdmin, rolesOverride, simulatedRole]);
+
   useEffect(() => {
     setIsMobileNavigationOpen(false);
     setIsUserMenuOpen(false);
   }, [location.pathname]);
 
   const requestedModule = getRequestedModule(location.pathname);
+  const activeVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
   const isRequestedModuleDenied = requestedModule
-    ? !visibleModules.some((module) => module.key === requestedModule.key)
+    ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
     : false;
   const groupedModules = useMemo(
     () =>
       NAVIGATION_FAMILIES.map((family) => ({
         family,
-        modules: visibleModules.filter(
+        modules: activeVisibleModules.filter(
           (module) => module.family === family && module.navigationKind !== 'hidden',
         ),
       })).filter((group) => group.modules.length > 0),
-    [visibleModules],
+    [activeVisibleModules],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
   const userEmail = previewMode ? 'preview@seapilot.local' : session?.user.email || 'utilisateur@bbtm.fr';
@@ -228,7 +262,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const userDisplayName = previewMode
     ? 'Préversion SeaPilot'
     : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur';
-  const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
+  const primaryRole = ROLE_KEYS.find((role) => effectiveRoles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
 
   function toggleFamily(family: AppModule['family']) {
@@ -261,7 +295,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     );
   }
 
-  if (visibleModules.length === 0) {
+  if (activeVisibleModules.length === 0) {
     return <div className="auth-loading">Aucun module autorise pour ce compte.</div>;
   }
 
@@ -398,9 +432,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             <ChevronRight aria-hidden="true" size={16} />
             <strong>{requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
+            {simulatedRole ? <span className="admin-profile-view-badge"><Eye aria-hidden="true" size={14}/> Vue {ROLE_LABELS[simulatedRole]}</span> : null}
           </div>
 
           <div className="topbar-actions">
+            {isActualAdmin ? <label className="admin-profile-view-selector"><span>Vue</span><select aria-label="Vue de profil" value={adminProfileView} onChange={(event) => setAdminProfileView(event.target.value as AdminProfileView)}><option value="actual">Réelle</option>{ROLE_KEYS.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label> : null}
             <button aria-label="Notifications" className="topbar-icon-button" type="button">
               <Bell aria-hidden="true" size={19} />
             </button>
@@ -422,6 +458,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               {isUserMenuOpen ? (
                 <div className="user-menu-popover" role="menu">
                   <span>{userEmail}</span>
+                  {simulatedRole ? <span className="admin-profile-view-note">Simulation visuelle {ROLE_LABELS[simulatedRole]}. Vos droits administrateur réels restent inchangés.</span> : null}
                   {previewMode ? (
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
@@ -440,7 +477,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client, previewMode } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles: effectiveRoles, client, previewMode } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>
