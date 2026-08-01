@@ -1,48 +1,46 @@
-# Design QA — Daily Progress Report v3.7.7
+# Design QA - Daily Progress Report v3.7.8
 
-## Comparison target
+## Comparison targets
 
-- Source visual truth: `C:/CODEX/SeaPilot/output/dpr-audit-20260801/design-02-liste-apercu-pdf.png`
-- Implementation screenshot: `C:/CODEX/SeaPilot/output/dpr-audit-20260801/implementation-v3-7-7-selected-top.png`
-- Viewport: 1502 × 1069 CSS px; browser capture content 1487 × 1058 px at density 1.
-- Source pixels: 1487 × 1058 px.
-- Implementation pixels: 1487 × 1058 px.
-- State: desktop, light content theme, eight visible DPR selected, first selected DPR active, ZIP action enabled.
-- Comparison evidence: the two full views were opened together in the same visual comparison input after pixel-size normalization.
+### Menu ribbon
+
+- Source visual truth: `C:/CODEX/SeaPilot/tmp/design/planning-menu-reference.png`
+- Implementation screenshot: `C:/CODEX/SeaPilot/tmp/design/dpr-menu-implementation.png`
+- Viewport and state: same in-app browser tab, 1265 x 712 capture, desktop preview dataset, no modal open.
+- Comparison evidence: both captures were opened together in the same visual comparison input.
+
+### Generated PDF
+
+- Source visual truth: `C:/CODEX/SeaPilot/tmp/pdfs/goury-january-reference/page.png`
+- Implementation render: `C:/CODEX/SeaPilot/tmp/pdfs/dpr-1071-reference-layout.png`
+- Rasterization: Poppler at 72 dpi, one portrait page measuring 1896 x 2667.12 points.
+- Comparison evidence: both full-page renders were opened together in the same visual comparison input.
 
 ## Findings
 
 No actionable P0, P1 or P2 mismatch remains.
 
-- Information architecture: the implementation preserves the selected option 2 structure (master list and persistent preview) and adds the requested option 1 KPI strip above the workspace.
-- Fonts and typography: the existing SeaPilot family, weights and hierarchy are preserved. Labels, DPR identifiers and status pills retain the source density and optical emphasis.
-- Spacing and layout rhythm: the two-column workspace, command ribbon, filter grid, group headers and sticky preview align consistently. The application header and KPI strip intentionally reduce the number of rows above the fold compared with the pure option 2 mock.
-- Colors and visual tokens: existing SeaPilot navy, blue, green, amber, borders, radii and shadows are reused. Selected rows and active actions remain clearly differentiated.
-- Image quality and asset fidelity: the supplied BBTM/SeaPilot brand assets are preserved and interface icons come from the project's Lucide library. No placeholder artwork or custom drawn substitute was introduced.
-- Copy and content: wording explicitly states generation on demand and absence of Supabase storage. The active preview repeats DPR number, date, vessel and project for identity verification.
-
-## Focused-region evidence
-
-- Command/KPI region: five command actions and five KPIs are aligned and readable at the target viewport.
-- List/preview region: project and vessel group checkboxes select all eight visible rows; the preview header reports `DPR-1062 · 01/08/2026`, `Support Démonstration · P902`, matching the active row.
-- Native PDF viewer: the Blob iframe is present and has a valid `blob:` source. The in-app browser capture does not rasterize its native PDF plugin surface, but the surrounding identity checks, enabled ZIP action and browser console (zero errors) confirm the generated preview state.
+- The DPR menu uses the same ribbon component classes, two-row command grid, group separators, icon sizing, badges,
+  active state, borders, radius and horizontal overflow behavior as the Planning menu.
+- `Saisir un DPR` is the first command in the `DPR` group. `Production` and `Outils` preserve the same visual grammar.
+- The PDF reproduces the supplied report frame: BBTM logo, oversized portrait canvas, project/date header, grey mission
+  and QHSE section bars, two-column mission content, leading indicators, incident categories and italic footer.
+- The exact source logo extracted from the user-provided PDF is reused. Interface icons remain from the project's
+  Lucide library.
+- Dynamic report values use the selected DPR payload; the filename repeats its DPR number, vessel and date.
+- PDF and ZIP generation remain browser-local and create no Supabase object or PDF metadata.
 
 ## Interaction verification
 
-- Project `P902` selected in one click: two DPR selected and preview generated.
-- Project filter changed to `P901`: hidden selections removed and preview reset.
-- All visible DPR selected: eight rows selected and ZIP action enabled.
-- Generated preview source: browser-local Blob URL; no upload action.
+- `Saisir un DPR` opens the six-step DPR dialog and the close action restores the workspace.
+- Selecting the `P902` project group selects two reports and prepares the matching `DPR-1062 - 01/08/2026` preview.
+- Production actions are disabled without a selection and become available from the selected group.
 - Browser console errors: none.
 
-## Comparison history
+## PDF verification
 
-- Initial implementation capture used the empty state and did not match the selected source state.
-- The fixture was expanded to eight realistic DPR, the viewport was normalized, and the selected state was recaptured.
-- Post-fix evidence shows matching list/preview proportions, active selection treatment and production action. No P0/P1/P2 visual issue remains.
-
-## Follow-up polish
-
-- [P3] A future iteration could replace the browser-native PDF iframe with a canvas renderer to make visual capture behavior identical across embedded-browser engines.
+- One page, portrait, 1896 x 2667.12 points.
+- Stable filename: `DPR-1071 - GOURY - 29-07-2026.pdf` for the fixture.
+- Final Poppler PNG inspection: no clipping, overlap, missing asset, broken glyph or off-page content.
 
 final result: passed

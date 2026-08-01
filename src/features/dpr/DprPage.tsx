@@ -5,7 +5,7 @@ import {
   Paperclip, Plus, RefreshCw, Save, Search, ShieldAlert, ShieldCheck, Ship, Trash2, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ChangeEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -65,6 +65,31 @@ function formatDate(value: string): string { return value ? new Intl.DateTimeFor
 
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return <label className={wide ? 'dpr-field dpr-field--wide' : 'dpr-field'}><span>{label}</span>{children}</label>;
+}
+
+interface DprRibbonButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  count?: number;
+  icon: ReactNode;
+  label: string;
+}
+
+function DprRibbonButton({ className = '', count = 0, icon, label, ...buttonProps }: DprRibbonButtonProps) {
+  return <button
+    aria-label={buttonProps['aria-label'] || `${label}${count ? ` (${Math.min(99, count)})` : ''}`}
+    className={`planning-ribbon-command${className ? ` ${className}` : ''}`}
+    type="button"
+    {...buttonProps}
+  >
+    <span className="planning-ribbon-command-icon">{icon}{count ? <em>{Math.min(99, count)}</em> : null}</span>
+    <span className="planning-ribbon-command-label">{label}</span>
+  </button>;
+}
+
+function DprRibbonGroup({ children, label }: { children: ReactNode; label: string }) {
+  return <div aria-label={label} className="planning-ribbon-group" role="group">
+    <div className="planning-ribbon-actions">{children}</div>
+    <span className="planning-ribbon-group-label">{label}</span>
+  </div>;
 }
 
 function SelectionCheckbox({ ids, selected, label, onChange }: {
@@ -368,21 +393,27 @@ export function DprPage({ client, roles }: DprPageProps) {
   return <section className="dpr-native" aria-busy={loading || busy}>
     <header className="dpr-native__header">
       <div><span className="dpr-native__eyebrow">OPÉRATIONS</span><h1>Daily Progress Report</h1><p>Consultez, prévisualisez et produisez les DPR à la demande, sans stockage des PDF.</p></div>
-      <div className="dpr-native__actions">
-        <button className="button button--primary" onClick={openNew}><Plus size={17}/> Saisir un DPR</button>
-        <button className="button" onClick={() => void load()} disabled={busy}><RefreshCw size={16}/> Actualiser</button>
-        {currentRoles.includes('admin') && <button className="button" onClick={() => void showDiagnostic()}><ShieldCheck size={16}/> Diagnostic</button>}
-      </div>
     </header>
 
     {(notice || error) && <div className={error ? 'dpr-message dpr-message--error' : 'dpr-message'}>{error || notice}</div>}
 
-    <nav className="dpr-command-bar" aria-label="Actions Daily Progress Report">
-      <button className={!filters.status ? 'active' : ''} onClick={() => setFilters(EMPTY_FILTERS)}><BarChart3/><span>Vue d’ensemble</span></button>
-      <button className={filters.status === 'submitted' ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, status: 'submitted' }))}><ListChecks/><span>À valider</span>{kpis.submitted ? <b>{kpis.submitted}</b> : null}</button>
-      <button onClick={() => selectedReports[0] && void preparePreview(selectedReports[0])} disabled={!selectedReports.length}><Eye/><span>Prévisualiser</span></button>
-      <button onClick={() => void downloadSelection()} disabled={!selectedReports.length || previewLoading || busy}><FileCheck2/><span>Produire</span></button>
-      <button onClick={() => void downloadSelection()} disabled={selectedReports.length < 2 || previewLoading || busy}><FileArchive/><span>Exports ZIP</span></button>
+    <nav className="planning-module-toolbar dpr-module-toolbar" aria-label="Menu Daily Progress Report">
+      <div className="planning-ribbon-scroll">
+        <DprRibbonGroup label="DPR">
+          <DprRibbonButton icon={<Plus aria-hidden="true" size={22}/>} label="Saisir un DPR" onClick={openNew}/>
+          <DprRibbonButton className={!filters.status ? 'is-active' : ''} icon={<BarChart3 aria-hidden="true" size={22}/>} label="Vue d’ensemble" onClick={() => setFilters(EMPTY_FILTERS)}/>
+          <DprRibbonButton className={filters.status === 'submitted' ? 'is-active' : ''} count={kpis.submitted} icon={<ListChecks aria-hidden="true" size={22}/>} label="À valider" onClick={() => setFilters((current) => ({ ...current, status: 'submitted' }))}/>
+        </DprRibbonGroup>
+        <DprRibbonGroup label="Production">
+          <DprRibbonButton disabled={!selectedReports.length} icon={<Eye aria-hidden="true" size={22}/>} label="Prévisualiser" onClick={() => selectedReports[0] && void preparePreview(selectedReports[0])}/>
+          <DprRibbonButton disabled={!selectedReports.length || previewLoading || busy} icon={<FileCheck2 aria-hidden="true" size={22}/>} label="Produire" onClick={() => void downloadSelection()}/>
+          <DprRibbonButton disabled={selectedReports.length < 2 || previewLoading || busy} icon={<FileArchive aria-hidden="true" size={22}/>} label="Exports ZIP" onClick={() => void downloadSelection()}/>
+        </DprRibbonGroup>
+        <DprRibbonGroup label="Outils">
+          <DprRibbonButton disabled={busy} icon={<RefreshCw aria-hidden="true" size={22}/>} label="Actualiser" onClick={() => void load()}/>
+          {currentRoles.includes('admin') ? <DprRibbonButton icon={<ShieldCheck aria-hidden="true" size={22}/>} label="Diagnostic" onClick={() => void showDiagnostic()}/> : null}
+        </DprRibbonGroup>
+      </div>
     </nav>
 
     <div className="dpr-kpi-strip" aria-label="Indicateurs Daily Progress Report">

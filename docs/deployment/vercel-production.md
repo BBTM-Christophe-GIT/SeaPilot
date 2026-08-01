@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.7.8` aligne le menu DPR sur le ruban du Planning, y intègre `Saisir un DPR` et reproduit le gabarit
+Power BI de la pièce `GOURY - DPR - Janvier 2026.pdf`. Les PDF restent générés strictement à la demande et ne sont
+jamais persistés. La recette est décrite dans `docs/deployment/dpr-report-template-v3-7-8.md`.
+
 Version `3.7.7` remplace la persistance des PDF DPR par une génération strictement à la demande. Avant de
 déployer le client, supprimer les objets du bucket `dpr-pdfs` avec l'API Storage, puis appliquer
 `supabase/migrations/20260801121733_dpr_on_demand_pdfs.sql`. La migration supprime les anciennes métadonnées,

@@ -65,6 +65,8 @@ describe('DprPage Phase 7', () => {
     render(<DprPage client={{} as never} roles={['direction']} />);
 
     expect(await screen.findByRole('heading', { name: 'Daily Progress Report' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Menu Daily Progress Report' }))
+      .toContainElement(screen.getByRole('button', { name: 'Saisir un DPR' }));
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.getAllByText('P144').length).toBeGreaterThan(0);
     expect(screen.getByText('DPR-1056')).toBeInTheDocument();

@@ -15877,38 +15877,16 @@ button.planning-p12-conflict-card {
 }
 
 /* Daily Progress Report — on-demand production workspace */
-.dpr-command-bar {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+.dpr-module-toolbar {
   margin: 16px 20px 0;
-  overflow: hidden;
-  border: 1px solid #d9e2ef;
-  border-radius: 14px;
-  background: #fff;
 }
 
-.dpr-command-bar button {
-  position: relative;
-  display: grid;
-  min-height: 82px;
-  place-items: center;
-  align-content: center;
-  gap: 6px;
-  border: 0;
-  border-right: 1px solid #e4eaf2;
-  background: #fff;
-  color: #1b2942;
-  cursor: pointer;
-  font: inherit;
-  font-size: .76rem;
-  font-weight: 800;
+.dpr-module-toolbar .planning-ribbon-command.is-active {
+  color: #0f57b7;
+  border-color: #c9dcf4;
+  background: #edf5ff;
+  box-shadow: inset 0 -2px #1769dc;
 }
-
-.dpr-command-bar button:last-child { border-right: 0; }
-.dpr-command-bar button svg { width: 23px; height: 23px; color: #2368e8; }
-.dpr-command-bar button.active { background: #f4f7ff; box-shadow: inset 0 -3px #2368e8; color: #124ca9; }
-.dpr-command-bar button:disabled { cursor: not-allowed; opacity: .45; }
-.dpr-command-bar button > b { position: absolute; top: 9px; left: calc(50% + 10px); min-width: 18px; border-radius: 999px; background: #e93c4f; color: #fff; padding: 2px 5px; font-size: .62rem; }
 
 .dpr-kpi-strip {
   display: grid;
@@ -16061,8 +16039,7 @@ button.planning-p12-conflict-card {
 }
 
 @media (max-width: 780px) {
-  .dpr-command-bar { grid-template-columns: repeat(5, minmax(100px, 1fr)); overflow-x: auto; }
-  .dpr-command-bar button { min-width: 100px; }
+  .dpr-module-toolbar { margin-inline: 10px; }
   .dpr-kpi-strip { grid-template-columns: 1fr 1fr; }
   .dpr-kpi-strip article { border-top: 1px solid #e4eaf2; }
   .dpr-kpi-strip article:first-child,
