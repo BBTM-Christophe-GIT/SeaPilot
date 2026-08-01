@@ -56,6 +56,7 @@ function hasOfficeRole(roles: RoleKey[]): boolean { return roles.some((role) => 
 function canValidate(roles: RoleKey[]): boolean { return hasOfficeRole(roles) || roles.includes('capitaine'); }
 function canEdit(report: DprReportRecord | null, roles: RoleKey[], userId: string | null): boolean {
   if (!report) return true;
+  if (report.status === 'submitted') return roles.includes('capitaine') && !hasOfficeRole(roles);
   if (!['draft', 'reopened'].includes(report.status)) return false;
   return canValidate(roles) || (roles.includes('marin') && report.createdBy === userId);
 }
@@ -532,8 +533,8 @@ export function DprPage({ client, roles }: DprPageProps) {
         <footer className="dpr-modal__footer">
           {dirty && <span className="dpr-unsaved"><AlertTriangle size={15}/> Modifications non enregistrées</span>}
           <button className="button" onClick={closeModal}>Annuler</button>
-          {editable && <button className="button" onClick={() => void save(false)} disabled={busy}><Save size={16}/> Enregistrer le brouillon</button>}
-          {editable && <button className="button button--primary" onClick={() => void save(true)} disabled={busy}><Check size={16}/> Soumettre le DPR</button>}
+          {editable && <button className="button" onClick={() => void save(false)} disabled={busy}><Save size={16}/> {report?.status === 'submitted' ? 'Enregistrer les modifications' : 'Enregistrer le brouillon'}</button>}
+          {editable && report?.status !== 'submitted' && <button className="button button--primary" onClick={() => void save(true)} disabled={busy}><Check size={16}/> Soumettre le DPR</button>}
           {report?.status === 'submitted' && canValidate(currentRoles) && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider</button>}
           {report?.status === 'validated' && canValidate(currentRoles) && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
           {report && hasOfficeRole(currentRoles) && <button className="button button--danger" onClick={() => void transition('delete')} disabled={busy}><Trash2 size={16}/> Supprimer</button>}

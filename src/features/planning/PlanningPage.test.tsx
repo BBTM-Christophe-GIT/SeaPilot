@@ -1001,6 +1001,40 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
   });
 
+  it('limits captains to leave requests and crew-list generation', async () => {
+    const release = {
+      id: 1,
+      publication_id: 1,
+      version_number: 1,
+      comment: '',
+      created_at: '2026-07-13T10:00:00Z',
+      created_by: 'user-publish',
+      created_by_name: 'Direction BBTM',
+    };
+    const { client } = createClient({
+      versions: [release],
+      publishedSnapshot: {
+        assignments: [assignmentOverviewRow],
+        days: [],
+        periods: [planningPeriodRow],
+        projects: [],
+        handovers: [],
+        derogations: [],
+      },
+    });
+    render(<PlanningPage client={client as never} roles={['capitaine']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Générer une crew list' })).toBeInTheDocument();
+    expect(screen.queryByText('Affectation rapide')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Absences et conflits' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Exports' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
+  });
+
   it('allows office direction to edit while keeping vessel administration restricted', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ periods: [planningPeriodRow] });

@@ -674,6 +674,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const isManager = canManagePersonnel(effectiveRoles);
   const isMarinView = effectiveRoles.includes('marin')
     && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const isCaptainView = effectiveRoles.includes('capitaine')
+    && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+  const isRestrictedHrView = isMarinView || isCaptainView;
   const ownPersonId = outletContext?.currentPerson?.id;
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
@@ -1192,7 +1195,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
       <header className="hr-command-header">
         <div>
           <h1>Ressources humaines</h1>
-          <p>{isMarinView ? 'Mon dossier RH' : 'Pilotage RH analytique'} · {visibleDocuments.length} documents suivis</p>
+          <p>{isMarinView ? 'Mon dossier RH' : isCaptainView ? 'Ma bordée' : 'Pilotage RH analytique'} · {visibleDocuments.length} documents suivis</p>
         </div>
         <div className="hr-command-actions">
           {isManager ? (
@@ -1210,7 +1213,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </div>
       </header>
 
-      {!isMarinView ? <div className="hr-kpi-band" aria-label="Indicateurs RH">
+      {!isRestrictedHrView ? <div className="hr-kpi-band" aria-label="Indicateurs RH">
         <MetricCluster
           icon={<Users aria-hidden="true" size={18} />}
           label="Effectif RH"
@@ -1250,7 +1253,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
       </div> : null}
 
-      {!isMarinView ? <div className="hr-analytics-grid">
+      {!isRestrictedHrView ? <div className="hr-analytics-grid">
         <StaffEvolutionChart
           onYearChange={setStaffEvolutionYear}
           points={staffEvolution}
