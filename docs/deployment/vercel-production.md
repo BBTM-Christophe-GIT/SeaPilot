@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.8.0` ajoute un sélecteur global de profil réservé aux administrateurs. Il permet de simuler les vues
+Admin, Direction, Armement, Capitaine et Marin sans modifier les rôles enregistrés ni les autorisations réelles du
+compte. La recette est décrite dans `docs/deployment/admin-profile-views-v3-8-0.md`.
+
 Version `3.7.9` assiste la saisie des DPR à partir du Planning daté, limite les personnes proposées aux effectifs en
 poste, ajoute `Off-Hire` et simplifie le PDF en retirant « Contact Radio ». Appliquer
 `supabase/migrations/20260801142931_dpr_planning_prefill_off_hire.sql` avant le client. La recette et le retour

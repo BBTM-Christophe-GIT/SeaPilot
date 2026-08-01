@@ -1,11 +1,17 @@
 import { act, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
 import { AuthProvider } from '../auth/AuthProvider';
 import { ModulePage } from '../modules/ModulePage';
 import { APP_MODULES } from '../permissions/moduleAccess';
-import { AppShell } from './AppShell';
+import { AppShell, type AppShellOutletContext } from './AppShell';
+
+function RoleProbe() {
+  const { roles } = useOutletContext<AppShellOutletContext>();
+  return <div data-testid="effective-roles">{roles.join(',')}</div>;
+}
 
 describe('AppShell', () => {
   it('renders the private application navigation', async () => {
@@ -45,6 +51,76 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
+  });
+
+  it('lets administrators preview every role profile without changing their real role', async () => {
+    const user = userEvent.setup();
+    const client = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'admin-1' } } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+        signInWithPassword: vi.fn(),
+        signOut: vi.fn(),
+      },
+    };
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter>
+          <Routes>
+            <Route element={<AppShell rolesOverride={['admin']} previewMode />}>
+              <Route index element={<RoleProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    const selector = await screen.findByRole('combobox', { name: 'Vue de profil' });
+    expect(screen.getByTestId('effective-roles')).toHaveTextContent('admin');
+    expect(screen.getByRole('option', { name: 'Direction' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Armement' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Capitaine' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Marin' })).toBeInTheDocument();
+
+    await user.selectOptions(selector, 'capitaine');
+    expect(screen.getByTestId('effective-roles')).toHaveTextContent('capitaine');
+    expect(screen.getByText('Vue Capitaine')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
+
+    await user.selectOptions(selector, 'marin');
+    expect(screen.getByTestId('effective-roles')).toHaveTextContent('marin');
+    expect(screen.getByText('Vue Marin')).toBeInTheDocument();
+
+    await user.selectOptions(selector, 'actual');
+    expect(screen.getByTestId('effective-roles')).toHaveTextContent('admin');
+    expect(screen.getByRole('link', { name: 'Administration' })).toBeInTheDocument();
+  });
+
+  it('does not expose the profile view selector to non administrators', async () => {
+    const client = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'captain-1' } } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+        signInWithPassword: vi.fn(),
+        signOut: vi.fn(),
+      },
+    };
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter>
+          <Routes>
+            <Route element={<AppShell rolesOverride={['capitaine']} />}>
+              <Route index element={<RoleProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByTestId('effective-roles')).toHaveTextContent('capitaine');
+    expect(screen.queryByRole('combobox', { name: 'Vue de profil' })).not.toBeInTheDocument();
   });
 
   it('marks the current direct module as active', async () => {
