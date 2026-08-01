@@ -1096,7 +1096,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(calendarBody).queryByText('Cherbourg')).not.toBeInTheDocument();
   });
 
-  it('edits a different short text on each colored assignment day', async () => {
+  it('edits a health status and a different short text on each colored assignment day', async () => {
     const user = userEvent.setup();
     const assignmentNoteRow = {
       ...planningDayRow,
@@ -1131,8 +1131,10 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Vacances' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();
-    await user.click(within(dialog).getByText('Vacances'));
+    await user.click(within(dialog).getByText('Accident du Travail'));
     const noteInput = within(dialog).getByLabelText('Commentaire');
     await user.clear(noteInput);
     await user.type(noteInput, 'Le Havre');
@@ -1141,10 +1143,10 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
       p_assignment_id: 100,
       p_work_date: '2026-07-14',
-      p_status: 'Vacance',
+      p_status: 'Accident du Travail',
       p_note: 'Le Havre',
     }));
-    expect(await screen.findByText('Vacances enregistrées pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
+    expect(await screen.findByText('Accident du Travail enregistré pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
   });
 
   it('creates a board from the vessel staffing decision and proposes compatible available sailors', async () => {

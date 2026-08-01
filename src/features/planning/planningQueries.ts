@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
+import { isPlanningGridStatus, type PlanningGridStatus } from './planningGrid';
 import {
   assertPlanningDateRange,
   assertPlanningDateTimeRange,
@@ -736,7 +737,7 @@ export interface SavePlanningAssignmentDayNoteInput {
 }
 
 export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignmentDayNoteInput {
-  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+  status: PlanningGridStatus;
 }
 
 export interface PlanningGridMutationCell {
@@ -746,7 +747,7 @@ export interface PlanningGridMutationCell {
   eventId?: number | null;
   eventKind?: 'assignment' | 'period' | 'day' | null;
   workDate: string;
-  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+  status: PlanningGridStatus;
   note: string;
   watchGroup: string;
   functionLabel: string;
@@ -1633,7 +1634,7 @@ export async function savePlanningAssignmentDayState(
   const assignmentId = planningEntityId(input.assignmentId, "L'affectation");
   assertSinglePlanningDay(input.workDate, input.workDate);
   const note = input.note.trim();
-  if (!['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(input.status)) throw new Error('Le statut quotidien est invalide.');
+  if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
   const { data, error } = await client.rpc('save_planning_assignment_day_state', {
     p_assignment_id: assignmentId,
@@ -1652,7 +1653,7 @@ function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {
     const vesselId = planningEntityId(cell.vesselId, 'Le navire');
     const assignmentId = cell.assignmentId ? planningEntityId(cell.assignmentId, "L'affectation") : null;
     assertSinglePlanningDay(cell.workDate, cell.workDate);
-    if (!['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(cell.status)) throw new Error('Le statut quotidien est invalide.');
+    if (!isPlanningGridStatus(cell.status)) throw new Error('Le statut quotidien est invalide.');
     if (cell.note.trim().length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
     const payload = {
       personId,

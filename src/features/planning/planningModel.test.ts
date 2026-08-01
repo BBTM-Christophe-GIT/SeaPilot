@@ -90,6 +90,10 @@ describe('planning timeline rules', () => {
     expect(normalizePlanningStatus('Embarqué')).toBe('En Mer');
     expect(planningStatusDisplayLabel('Vacance')).toBe('Vacances');
     expect(planningStatusDisplayLabel('Repos')).toBe('Repos');
+    expect(normalizePlanningStatus('arrêt maladie')).toBe('Arrêt Maladie');
+    expect(normalizePlanningStatus('accident du travail')).toBe('Accident du Travail');
+    expect(planningStatusTone('Arrêt Maladie')).toBe('sick-leave');
+    expect(planningStatusTone('Accident du Travail')).toBe('accident');
     expect(planningStatusTone('Formation')).toBe('training');
     expect(projectStatusTone('À facturer')).toBe('billed');
     expect(projectStatusTone('Validé')).toBe('valid');

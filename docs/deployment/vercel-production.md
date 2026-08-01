@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.11.0` ajoute les états quotidiens « Arrêt Maladie » et « Accident du Travail » dans l’éditeur de cases
+du Planning. Les deux états sont persistés par les RPC unitaires et groupés et disposent de couleurs dédiées dans
+la grille. Appliquer `supabase/migrations/20260801185157_planning_health_statuses.sql` avant le client. Voir
+[planning-health-statuses-v3-11-0.md](./planning-health-statuses-v3-11-0.md).
+
 Version `3.10.0` applique le périmètre du profil Capitaine : RH limitée à sa bordée en lecture seule, Planning limité
 aux demandes de congés et à la génération de crew lists, et DPR limités aux navires auxquels il est affecté avec
 saisie, modification, validation et téléchargement. Le diagnostic DPR reste réservé aux administrateurs. Appliquer

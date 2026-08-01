@@ -972,18 +972,18 @@ describe('planning writes', () => {
     }));
   });
 
-  it('saves one of the four visible daily states with its short comment', async () => {
+  it.each(['Arrêt Maladie', 'Accident du Travail'] as const)('saves the %s daily state with its short comment', async (status) => {
     const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
     await expect(savePlanningAssignmentDayState({ rpc } as never, {
       assignmentId: 12,
       workDate: '2026-07-14',
-      status: 'Repos',
+      status,
       note: 'Passation',
     })).resolves.toBe(8);
     expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
       p_assignment_id: 12,
       p_work_date: '2026-07-14',
-      p_status: 'Repos',
+      p_status: status,
       p_note: 'Passation',
     });
   });

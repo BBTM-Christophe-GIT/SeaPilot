@@ -117,12 +117,14 @@ import {
 import { PROJECT_STATUSES, projectStatusToneClass, type ProjectStatus } from '../projects/projectStatus';
 import {
   buildPlanningGridPaste,
+  isPlanningGridStatus,
   normalizePlanningGridStatus,
   planningGridCellKey,
   planningGridDefaultStatus,
   sortPlanningGridCells,
   type PlanningGridCell,
   type PlanningGridClipboard,
+  type PlanningGridStatus,
 } from './planningGrid';
 import { missingManningRequirementTerms, type PlanningManningRequirement } from './planningP11';
 import { fetchPlanningManningMatrices } from './planningP11Queries';
@@ -219,7 +221,7 @@ interface PlanningDayStateForm {
   event: PlanningCrewEvent;
   date: string | null;
   selectedDate: string;
-  status: 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+  status: PlanningGridStatus;
   note: string;
 }
 interface PlanningBoardPositionForm {
@@ -968,7 +970,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   function openDayState(event: PlanningCrewEvent, date: string | null) {
     const status = (date ? event.dailyStatuses?.[date] : event.status) || 'En Mer';
-    const allowedStatus = ['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(status) ? status as PlanningDayStateForm['status'] : 'En Mer';
+    const allowedStatus = isPlanningGridStatus(status) ? status : 'En Mer';
     setDayStateForm({ event, date, selectedDate: date || event.startsOn, status: allowedStatus, note: date ? event.dailyNotes?.[date] || '' : event.comments || '' });
   }
 
@@ -2618,6 +2620,8 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
     ['A Terre', 'À terre', 'shore'],
     ['Vacance', 'Vacances', 'vacation'],
     ['Repos', 'Repos', 'rest'],
+    ['Arrêt Maladie', 'Arrêt Maladie', 'sick-leave'],
+    ['Accident du Travail', 'Accident du Travail', 'accident'],
   ] as const;
   return <div className="planning-dialog-backdrop" role="presentation">
     <form aria-label="Statut et commentaire" aria-modal="true" className="planning-dialog planning-day-state-dialog" onSubmit={onSave} role="dialog">
