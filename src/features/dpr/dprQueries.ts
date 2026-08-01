@@ -53,6 +53,7 @@ export interface DprReportRecord {
   createdBy: string | null;
   updatedAt: string;
   fuelConsumedLiters: number;
+  incidentCount: number;
   files: DprFileRecord[];
 }
 export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string }
@@ -89,9 +90,10 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
 }
 
 export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDashboardData> {
-  const [reportResult, metricResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult, profile] = await Promise.all([
+  const [reportResult, metricResult, incidentResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult, profile] = await Promise.all([
     client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(2000),
     client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters'),
+    client.from('dpr_incidents').select('dpr_id,level'),
     client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,display_filename,mime_type,size_bytes,sha256,is_current,status').eq('status', 'ready').is('deleted_at', null).limit(5000),
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.from('vessels').select('id,name').order('name'),
@@ -100,13 +102,22 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     loadCurrentProfile(client),
   ]);
-  const firstError = [reportResult, metricResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
+  const firstError = [reportResult, metricResult, incidentResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
   if (firstError) throw firstError;
   const projects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
   const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) }));
   const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
+  const incidents = new Map<number, number>();
+  (incidentResult.data || []).forEach((row) => {
+    if (text(row.level) === 'T0') return;
+    const dprId = Number(row.dpr_id);
+    incidents.set(dprId, (incidents.get(dprId) || 0) + 1);
+  });
   const filesByReport = new Map<number, DprFileRecord[]>();
-  (fileResult.data || []).map((row) => mapFile(row as Record<string, unknown>)).forEach((file) => filesByReport.set(file.dprId, [...(filesByReport.get(file.dprId) || []), file]));
+  (fileResult.data || [])
+    .filter((row) => row.file_kind !== 'pdf')
+    .map((row) => mapFile(row as Record<string, unknown>))
+    .forEach((file) => filesByReport.set(file.dprId, [...(filesByReport.get(file.dprId) || []), file]));
   const projectMap = new Map(projects.map((project) => [project.id, project]));
   const vesselMap = new Map(vessels.map((vessel) => [vessel.id, vessel]));
   const reports = (reportResult.data || []).map((row) => {
@@ -117,7 +128,8 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
       projectTitle: projectId ? projectMap.get(projectId)?.title || '' : '', unlistedProjectName: text(row.unlisted_project_name),
       vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '', issuerName: text(row.issuer_name_snapshot),
       description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
-      updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
+      updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
+      incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;
   });
   const people = (peopleResult.data || []).map((row) => {
@@ -173,7 +185,11 @@ export async function fetchDprDetail(client: SupabaseClient, baseReport: DprRepo
     ].map((definition) => ({ ...definition, quantity: scalarText(wasteRows.find((row) => row.waste_type_key === definition.key)?.quantity) })),
   };
   if (!payload.portCalls.length) payload.portCalls = [{ portName: '', arrivalAt: '', departureAt: '', displayOrder: 0, reasons: [] }];
-  return { report: baseReport, payload, files: ((files.data || []) as Array<Record<string, unknown>>).map(mapFile) };
+  return {
+    report: baseReport,
+    payload,
+    files: ((files.data || []) as Array<Record<string, unknown>>).filter((row) => row.file_kind !== 'pdf').map(mapFile),
+  };
 }
 
 export async function saveDprPayload(client: SupabaseClient, dprId: number | null, payload: DprFormPayload): Promise<number> {

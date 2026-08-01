@@ -41,13 +41,13 @@ select ok(not has_table_privilege('authenticated', 'public.dpr_files', 'DELETE')
 select ok(to_regclass('public.dpr_reports_number_unique_idx') is not null, 'DPR number uniqueness is indexed');
 select ok(to_regclass('public.dpr_reports_company_vessel_date_idx') is not null, 'vessel and date lookup is indexed');
 select ok(to_regclass('public.dpr_reports_company_project_date_idx') is not null, 'project and date lookup is indexed');
-select ok(to_regclass('public.dpr_files_current_pdf_unique_idx') is not null, 'only one current PDF is allowed');
+select ok(to_regclass('public.dpr_files_dpr_kind_version_idx') is not null, 'file lookup by DPR and kind is indexed');
 select matches(
   pg_get_functiondef('public.dpr_allocate_next_number(bigint)'::regprocedure),
   '(?i)for update',
   'DPR number allocation locks the company counter'
 );
-select is((select public from storage.buckets where id = 'dpr-pdfs'), false, 'PDF bucket is private');
+select is((select count(*)::integer from storage.buckets where id = 'dpr-pdfs'), 0, 'PDF bucket does not exist');
 select is((select public from storage.buckets where id = 'dpr-photos'), false, 'photo bucket is private');
 select is((select public from storage.buckets where id = 'dpr-attachments'), false, 'attachment bucket is private');
 
@@ -72,8 +72,8 @@ select throws_ok(
     ) values (1, 999999, 'pdf', 'dpr-pdfs', 'invalid', 'bad.pdf', 'bad.pdf', 'text/plain', 1, repeat('a', 64), 1)
   $$,
   '23514',
-  null,
-  'final DPR file must be application/pdf'
+  'DPR PDFs are generated on demand and must not be stored',
+  'DPR PDF persistence is rejected'
 );
 
 select * from finish();

@@ -74,7 +74,6 @@ const sourceVesselCounts = countBy(manifest.reports, (report) => {
 const targetVesselCounts = countBy(reports, (report) => report.vessel_id === null ? 'null' : String(report.vessel_id));
 const targetById = new Map(reports.map((report) => [Number(report.id), report]));
 const crewCounts = countBy(crew, (row) => String(row.dpr_id));
-const pdfReportIds = new Set(files.filter((file) => file.file_kind === 'pdf').map((file) => Number(file.dpr_id)));
 const duplicateMigrationIdentities = records.length - new Set(records.map((record) => [
   record.entity_type, record.source_site_id, record.source_container_id, record.source_item_id,
 ].join('|'))).size;
@@ -90,7 +89,6 @@ Object.entries(crewCounts).find(([, count]) => count > 1) && addSample(Number(Ob
 addSample(Number(incidents.find((row) => row.level !== 'T0')?.dpr_id), 'incident QHSE T1/T2');
 addSample(Number(portCalls[0]?.dpr_id), 'escale');
 addSample(Number(files.find((file) => file.file_kind === 'photo')?.dpr_id), 'photo');
-addSample(Number(files.find((file) => file.file_kind === 'pdf')?.dpr_id), 'PDF');
 for (const vesselId of [...new Set(reports.map((report) => report.vessel_id).filter(Boolean))].slice(0, 3)) {
   addSample(Number(reports.find((report) => report.vessel_id === vesselId)?.id), `navire ${vesselId}`);
 }
@@ -106,9 +104,8 @@ const manualSample = [...sampleReasons].map(([dprId, reasons]) => ({
 
 const checks = {
   reports981: reports.length === 981 && reports.length === manifest.reports.length,
-  pdfs325: files.filter((file) => file.file_kind === 'pdf').length === 325,
+  noStoredPdfs: files.every((file) => file.file_kind !== 'pdf' && file.bucket_name !== 'dpr-pdfs'),
   photos10: files.filter((file) => file.file_kind === 'photo').length === 10,
-  reportsWithoutPdf656: reports.filter((report) => !pdfReportIds.has(Number(report.id))).length === 656,
   noOrphanFiles: files.every((file) => file.dpr_id !== null),
   allFilesReady: files.every((file) => file.status === 'ready'),
   allStorageChecksumsVerified: migrationReport.reconciliation.ok && migrationReport.reconciliation.objectErrors.length === 0,
@@ -117,7 +114,7 @@ const checks = {
   projectTotalsMatch: sameCounts(sourceProjectCounts, targetProjectCounts),
   vesselTotalsMatch: sameCounts(sourceVesselCounts, targetVesselCounts),
   idempotentReplay: migrationReport.counters.reportsInserted === 0 && migrationReport.counters.reportsUpdated === 0
-    && migrationReport.counters.reportsUnchanged === 981 && migrationReport.counters.filesReused === 335,
+    && migrationReport.counters.reportsUnchanged === 981 && migrationReport.counters.filesReused === 10,
 };
 const result = {
   generatedAt: new Date().toISOString(), companyId, manifestVersion: manifest.manifestVersion,
@@ -126,7 +123,7 @@ const result = {
     pdfs: files.filter((file) => file.file_kind === 'pdf').length,
     photos: files.filter((file) => file.file_kind === 'photo').length,
     attachments: files.filter((file) => file.file_kind === 'attachment').length,
-    reportsWithoutPdf: reports.filter((report) => !pdfReportIds.has(Number(report.id))).length,
+    pdfGenerationMode: 'on-demand',
     migrationErrors: errors.length,
     duplicateMigrationIdentities,
   },

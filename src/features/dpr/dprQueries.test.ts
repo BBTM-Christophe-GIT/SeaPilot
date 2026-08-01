@@ -22,15 +22,15 @@ describe('DPR Supabase commands', () => {
   it('allocates a trusted path before uploading and completing a file', async () => {
     const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
     const rpc = vi.fn()
-      .mockResolvedValueOnce({ data: { id: 9, bucket_name: 'dpr-pdfs', object_path: 'company/1/dpr/42/9-DPR-42.pdf' }, error: null })
-      .mockResolvedValueOnce({ data: { id: 9, dpr_id: 42, file_kind: 'pdf', bucket_name: 'dpr-pdfs', object_path: 'company/1/dpr/42/9-DPR-42.pdf', display_filename: 'DPR-42.pdf', mime_type: 'application/pdf', size_bytes: 3, sha256: 'a'.repeat(64), is_current: true, status: 'ready' }, error: null });
+      .mockResolvedValueOnce({ data: { id: 9, bucket_name: 'dpr-attachments', object_path: 'company/1/dpr/42/9-note.txt' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 9, dpr_id: 42, file_kind: 'attachment', bucket_name: 'dpr-attachments', object_path: 'company/1/dpr/42/9-note.txt', display_filename: 'note.txt', mime_type: 'text/plain', size_bytes: 4, sha256: 'a'.repeat(64), is_current: false, status: 'ready' }, error: null });
     const storage = { from: vi.fn().mockReturnValue({ upload }) };
-    const file = new Blob(['pdf'], { type: 'application/pdf' });
+    const file = new Blob(['note'], { type: 'text/plain' });
 
-    const result = await uploadDprFile({ rpc, storage } as never, 42, 'pdf', file, 'DPR-42.pdf');
-    expect(storage.from).toHaveBeenCalledWith('dpr-pdfs');
-    expect(upload).toHaveBeenCalledWith('company/1/dpr/42/9-DPR-42.pdf', file, { contentType: 'application/pdf', upsert: false });
+    const result = await uploadDprFile({ rpc, storage } as never, 42, 'attachment', file, 'note.txt');
+    expect(storage.from).toHaveBeenCalledWith('dpr-attachments');
+    expect(upload).toHaveBeenCalledWith('company/1/dpr/42/9-note.txt', file, { contentType: 'text/plain', upsert: false });
     expect(rpc).toHaveBeenLastCalledWith('dpr_complete_file_upload', { target_file_id: 9 });
-    expect(result.filename).toBe('DPR-42.pdf');
+    expect(result.filename).toBe('note.txt');
   });
 });

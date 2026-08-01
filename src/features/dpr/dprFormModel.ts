@@ -2,7 +2,7 @@ export type DprStatus = 'draft' | 'submitted' | 'validated' | 'reopened';
 export type IncidentCategory = 'person' | 'equipment' | 'environment';
 export type IncidentLevel = 'T0' | 'T1' | 'T2';
 export type CrewFunction = 'captain' | 'chief-engineer' | 'second-captain' | 'execution';
-export type DprFileKind = 'pdf' | 'photo' | 'attachment';
+export type DprFileKind = 'photo' | 'attachment';
 
 export interface DprCrewMemberInput {
   personId: number;

@@ -7,6 +7,7 @@ import type { DprDashboardData, DprReportRecord } from './dprQueries.ts';
 const mocks = vi.hoisted(() => ({
   fetchDashboard: vi.fn(), fetchDetail: vi.fn(), fetchDiagnostic: vi.fn(),
   save: vi.fn(), transition: vi.fn(), upload: vi.fn(), remove: vi.fn(), signedUrl: vi.fn(),
+  generatePdf: vi.fn(),
 }));
 
 vi.mock('./dprQueries.ts', () => ({
@@ -21,7 +22,7 @@ vi.mock('./dprQueries.ts', () => ({
 }));
 
 vi.mock('./dprPdf.ts', () => ({
-  generateDprPdf: vi.fn().mockResolvedValue({ blob: new Blob(['pdf'], { type: 'application/pdf' }), filename: 'DPR-1056.pdf' }),
+  generateDprPdf: mocks.generatePdf,
 }));
 
 import { DprPage } from './DprPage';
@@ -31,7 +32,7 @@ const report: DprReportRecord = {
   projectCode: 'P144', projectTitle: 'Guard Vessel EMDT', unlistedProjectName: '', vesselId: 3,
   vesselName: 'GOURY', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures', qhseNote: 'RAS',
   createdBy: 'user-1', updatedAt: '2026-07-21T18:00:00Z', fuelConsumedLiters: 650,
-  files: [{ id: 9, dprId: 1056, kind: 'pdf', bucket: 'dpr-pdfs', path: 'company/1/dpr/1056/file.pdf', filename: 'DPR-1056.pdf', mimeType: 'application/pdf', sizeBytes: 1200, sha256: 'a'.repeat(64), isCurrent: true, status: 'ready' }],
+  incidentCount: 0, files: [],
 };
 
 const submittedReport: DprReportRecord = { ...report, id: 1057, number: 1057, status: 'submitted', files: [] };
@@ -50,10 +51,13 @@ const dashboard: DprDashboardData = {
 describe('DprPage Phase 7', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:dpr-preview') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     mocks.fetchDashboard.mockResolvedValue(dashboard);
     mocks.fetchDetail.mockImplementation((_client, target: DprReportRecord) => Promise.resolve({ report: target, payload: { ...structuredClone(EMPTY_DPR_PAYLOAD), reportDate: target.reportDate, projectId: 144, vesselId: 3, description: target.description }, files: target.files }));
     mocks.fetchDiagnostic.mockResolvedValue({ reports: 2, orphan_files: 0 });
     mocks.signedUrl.mockResolvedValue('https://signed.test/dpr.pdf');
+    mocks.generatePdf.mockResolvedValue({ blob: new Blob(['pdf'], { type: 'application/pdf' }), filename: 'DPR-1056.pdf' });
   });
 
   it('renders Supabase DPR grouped by vessel and project with filters', async () => {
@@ -61,14 +65,31 @@ describe('DprPage Phase 7', () => {
     render(<DprPage client={{} as never} roles={['direction']} />);
 
     expect(await screen.findByRole('heading', { name: 'Daily Progress Report' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Menu Daily Progress Report' }))
+      .toContainElement(screen.getByRole('button', { name: 'Saisir un DPR' }));
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.getAllByText('P144').length).toBeGreaterThan(0);
     expect(screen.getByText('DPR-1056')).toBeInTheDocument();
     expect(screen.getByText('2 DPR affiché(s)')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByText('NAVIRE').closest('label')!.querySelector('select')!, '3');
-    fireEvent.change(screen.getByPlaceholderText('DPR, rédacteur…'), { target: { value: 'introuvable' } });
+    fireEvent.change(screen.getByPlaceholderText('DPR, navire, auteur…'), { target: { value: 'introuvable' } });
     expect(screen.getByText('Aucun rapport ne correspond aux filtres.')).toBeInTheDocument();
+  });
+
+  it('selects a whole project, previews on demand, and removes hidden selections after filtering', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+
+    await user.click(screen.getByRole('checkbox', { name: 'Sélectionner tous les DPR du projet P144' }));
+    expect(screen.getByText('2 DPR sélectionné(s)')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.generatePdf).toHaveBeenCalledTimes(1));
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(await screen.findByTitle('Aperçu DPR-1056')).toHaveAttribute('src', 'blob:dpr-preview');
+
+    await user.type(screen.getByPlaceholderText('DPR, navire, auteur…'), 'DPR-1056');
+    await waitFor(() => expect(screen.getByText('1 DPR sélectionné(s)')).toBeInTheDocument());
   });
 
   it('reconstructs the six-step form and marks unsaved changes', async () => {
