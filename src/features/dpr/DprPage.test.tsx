@@ -159,4 +159,28 @@ describe('DprPage Phase 7', () => {
     await user.click(consultButtons[1]);
     expect(await screen.findByRole('button', { name: /Valider/ })).toBeInTheDocument();
   });
+
+  it('lets a captain create, edit, validate and download DPRs without diagnostic access', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['capitaine']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+
+    expect(screen.getByRole('button', { name: 'Saisir un DPR' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Produire' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Diagnostic/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    expect(await screen.findByRole('button', { name: /Valider/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Enregistrer/ })).toBeInTheDocument();
+  });
+
+  it.each(['direction', 'armement', 'marin'] as const)(
+    'hides diagnostic for the %s profile',
+    async (role) => {
+      render(<DprPage client={{} as never} roles={[role]} />);
+      await screen.findByRole('heading', { name: 'Daily Progress Report' });
+      expect(screen.queryByRole('button', { name: /Diagnostic/ })).not.toBeInTheDocument();
+    },
+  );
 });

@@ -956,4 +956,17 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
     expect(screen.queryByText('Brevet pont a rattacher')).not.toBeInTheDocument();
   });
+
+  it('shows a captain only the read-only watch roster without collective indicators', async () => {
+    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} roles={['capitaine']} />);
+
+    expect(await screen.findByText(/Ma bordée/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    expect(screen.getByText('Marins par fonction')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
+  });
 });

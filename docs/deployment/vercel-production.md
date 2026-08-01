@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.10.0` applique le périmètre du profil Capitaine : RH limitée à sa bordée en lecture seule, Planning limité
+aux demandes de congés et à la génération de crew lists, et DPR limités aux navires auxquels il est affecté avec
+saisie, modification, validation et téléchargement. Le diagnostic DPR reste réservé aux administrateurs. Appliquer
+`supabase/migrations/20260801175252_captain_profile_permissions.sql` avant le client. Voir
+[captain-profile-v3-10-0.md](./captain-profile-v3-10-0.md).
+
 Version `3.9.0` ajoute le périmètre personnel du profil Marin : fiche RH individuelle, Planning en lecture seule avec demandes personnelles, et DPR réservés aux seconds capitaines auteurs sans téléchargement. Voir [marin-profile-v3-9-0.md](./marin-profile-v3-9-0.md).
 
 Version `3.8.0` ajoute un sélecteur global de profil réservé aux administrateurs. Il permet de simuler les vues

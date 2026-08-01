@@ -16078,8 +16078,8 @@ button.planning-p12-conflict-card {
   grid-template-columns: 120px 100px minmax(160px, 1fr) 90px 90px 92px;
 }
 
-.planning-workspace.is-marin .planning-command-layout,
-.planning-workspace.is-marin .planning-layout {
+.planning-workspace.is-personal .planning-command-layout,
+.planning-workspace.is-personal .planning-layout {
   grid-template-columns: minmax(0, 1fr);
 }
 
