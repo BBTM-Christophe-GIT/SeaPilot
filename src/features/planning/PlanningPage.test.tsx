@@ -220,6 +220,21 @@ const approvedLeaveRow = {
   reviewed_by: 'user-admin',
   reviewed_at: '2026-07-02T08:00:00Z',
 };
+const rejectedLeaveRow = {
+  ...requestedLeaveRow,
+  id: 702,
+  status: 'rejected',
+  reviewed_by: 'user-admin',
+  reviewed_at: '2026-07-02T08:00:00Z',
+  review_comment: 'Effectif insuffisant',
+};
+const cancelledLeaveRow = {
+  ...requestedLeaveRow,
+  id: 703,
+  status: 'cancelled',
+  reviewed_by: 'user-sailor',
+  reviewed_at: '2026-07-02T08:00:00Z',
+};
 const publicationRow = {
   id: 500,
   vessel_id: null,
@@ -979,6 +994,9 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
+    expect(screen.queryByText('Affectation rapide')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Absences et conflits' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
   });
@@ -1379,6 +1397,20 @@ describe('PlanningPage cockpit', () => {
       p_starts_at: '2026-07-16T06:00:00.000Z',
       p_ends_at: '2026-07-19T16:00:00.000Z',
     }));
+  });
+
+  it('keeps rejected requests visible on the planning timeline', async () => {
+    const { client } = createClient({ assignments: [assignmentOverviewRow], absences: [rejectedLeaveRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(await screen.findByRole('button', { name: /Congés refusés du 06\/07\/2026 au 09\/07\/2026/ })).toBeInTheDocument();
+  });
+
+  it('keeps cancelled requests visible until they are permanently deleted', async () => {
+    const { client } = createClient({ assignments: [assignmentOverviewRow], absences: [cancelledLeaveRow], periods: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    expect(await screen.findByRole('button', { name: /Congés annulés du 06\/07\/2026 au 09\/07\/2026/ })).toBeInTheDocument();
   });
 
   it('resolves a visible conflict by removing only the overlap after confirmation', async () => {

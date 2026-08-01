@@ -946,7 +946,11 @@ describe('HumanResourcesPage', () => {
   it('keeps marins in read-only mode', async () => {
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['marin']} />);
 
-    expect(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Marins par fonction')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();

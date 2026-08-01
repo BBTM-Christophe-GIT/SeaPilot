@@ -109,6 +109,8 @@ export function DprPage({ client, roles }: DprPageProps) {
   const outlet = useOutletContext<AppShellOutletContext | undefined>();
   const db = client || outlet?.client || supabase;
   const currentRoles = roles || outlet?.roles || [];
+  const isMarinView = currentRoles.includes('marin')
+    && !currentRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
   const [dashboard, setDashboard] = useState<DprDashboardData | null>(null);
   const [filters, setFilters] = useState<DprFilters>(EMPTY_FILTERS);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -131,7 +133,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [issuerName, setIssuerName] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
-    const data = await fetchDprDashboard(db);
+    const data = await fetchDprDashboard(db, { selfOnly: isMarinView });
     setDashboard(data);
     return data;
   };
@@ -139,11 +141,11 @@ export function DprPage({ client, roles }: DprPageProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchDprDashboard(db).then((data) => { if (active) setDashboard(data); })
+    fetchDprDashboard(db, { selfOnly: isMarinView }).then((data) => { if (active) setDashboard(data); })
       .catch((reason: Error) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [db]);
+  }, [db, isMarinView]);
 
   const dirty = modalOpen && (JSON.stringify(payload) !== initialSignature || pendingFiles.length > 0);
   useEffect(() => {
@@ -441,11 +443,11 @@ export function DprPage({ client, roles }: DprPageProps) {
           <DprRibbonButton className={!filters.status ? 'is-active' : ''} icon={<BarChart3 aria-hidden="true" size={22}/>} label="Vue d’ensemble" onClick={() => setFilters(EMPTY_FILTERS)}/>
           <DprRibbonButton className={filters.status === 'submitted' ? 'is-active' : ''} count={kpis.submitted} icon={<ListChecks aria-hidden="true" size={22}/>} label="À valider" onClick={() => setFilters((current) => ({ ...current, status: 'submitted' }))}/>
         </DprRibbonGroup>
-        <DprRibbonGroup label="Production">
+        {!isMarinView ? <DprRibbonGroup label="Production">
           <DprRibbonButton disabled={!selectedReports.length} icon={<Eye aria-hidden="true" size={22}/>} label="Prévisualiser" onClick={() => selectedReports[0] && void preparePreview(selectedReports[0])}/>
           <DprRibbonButton disabled={!selectedReports.length || previewLoading || busy} icon={<FileCheck2 aria-hidden="true" size={22}/>} label="Produire" onClick={() => void downloadSelection()}/>
           <DprRibbonButton disabled={selectedReports.length < 2 || previewLoading || busy} icon={<FileArchive aria-hidden="true" size={22}/>} label="Exports ZIP" onClick={() => void downloadSelection()}/>
-        </DprRibbonGroup>
+        </DprRibbonGroup> : null}
         <DprRibbonGroup label="Outils">
           <DprRibbonButton disabled={busy} icon={<RefreshCw aria-hidden="true" size={22}/>} label="Actualiser" onClick={() => void load()}/>
           {currentRoles.includes('admin') ? <DprRibbonButton icon={<ShieldCheck aria-hidden="true" size={22}/>} label="Diagnostic" onClick={() => void showDiagnostic()}/> : null}
@@ -461,7 +463,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       <article><Fuel/><span><small>Fuel consommé</small><strong>{kpis.fuel.toLocaleString('fr-FR')} L</strong></span></article>
     </div>
 
-    <div className="dpr-workspace">
+    <div className={`dpr-workspace${isMarinView ? ' is-read-only' : ''}`}>
       <section className="dpr-master" aria-label="Liste des DPR">
         <div className="dpr-native__filters">
           <Field label="NAVIRE"><select value={filters.vesselId} onChange={(event) => setFilters({ ...filters, vesselId: event.target.value })}><option value="">Tous</option>{dashboard?.references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
@@ -473,7 +475,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         </div>
 
         <div className="dpr-selection-summary">
-          <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span>
+          {!isMarinView ? <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span> : <span><strong>Mes DPR</strong><small>consultation sans téléchargement</small></span>}
           <span>{visibleReports.length} DPR affiché(s)</span>
         </div>
 
@@ -483,12 +485,12 @@ export function DprPage({ client, roles }: DprPageProps) {
           {[...groups.entries()].map(([vessel, projects]) => {
             const vesselItems = [...projects.values()].flat();
             return <section className="dpr-group" key={vessel}>
-              <header><span><SelectionCheckbox ids={vesselItems.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du navire ${vessel}`} onChange={(checked) => selectReports(vesselItems, checked)}/><Ship size={17}/> {vessel}</span><small>{vesselItems.length} DPR</small></header>
+              <header><span>{!isMarinView ? <SelectionCheckbox ids={vesselItems.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du navire ${vessel}`} onChange={(checked) => selectReports(vesselItems, checked)}/> : null}<Ship size={17}/> {vessel}</span><small>{vesselItems.length} DPR</small></header>
               {[...projects.entries()].map(([project, items]) => <div className="dpr-project" key={project}>
-                <div className="dpr-project__title"><SelectionCheckbox ids={items.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du projet ${project}`} onChange={(checked) => selectReports(items, checked)}/><FolderOpen size={16}/><strong>{project}</strong><span>{items.length} enregistrement(s)</span></div>
-                {items.map((item) => <article className={selectedSet.has(item.id) ? 'dpr-row is-selected' : 'dpr-row'} key={item.id}>
-                  <input aria-label={`Sélectionner ${reportTitle(item)}`} type="checkbox" checked={selectedSet.has(item.id)} onChange={(event) => selectReports([item], event.target.checked)}/>
-                  <button className="dpr-row__preview" aria-label={`Aperçu ${reportTitle(item)}`} onClick={() => void preparePreview(item)}><Eye size={16}/></button>
+                <div className="dpr-project__title">{!isMarinView ? <SelectionCheckbox ids={items.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du projet ${project}`} onChange={(checked) => selectReports(items, checked)}/> : null}<FolderOpen size={16}/><strong>{project}</strong><span>{items.length} enregistrement(s)</span></div>
+                {items.map((item) => <article className={`${selectedSet.has(item.id) ? 'dpr-row is-selected' : 'dpr-row'}${isMarinView ? ' is-read-only' : ''}`} key={item.id}>
+                  {!isMarinView ? <input aria-label={`Sélectionner ${reportTitle(item)}`} type="checkbox" checked={selectedSet.has(item.id)} onChange={(event) => selectReports([item], event.target.checked)}/> : null}
+                  {!isMarinView ? <button className="dpr-row__preview" aria-label={`Aperçu ${reportTitle(item)}`} onClick={() => void preparePreview(item)}><Eye size={16}/></button> : null}
                   <strong>{reportTitle(item)}</strong><span><small>DATE</small>{formatDate(item.reportDate)}</span><span><small>AUTEUR</small>{item.issuerName || '-'}</span><span><small>FUEL</small>{item.fuelConsumedLiters.toLocaleString('fr-FR')} L</span>
                   <span className={`dpr-status dpr-status--${item.status}`}>{STATUS_LABELS[item.status]}</span>
                   <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId || null) ? 'Modifier' : 'Consulter'}</button>
@@ -499,7 +501,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         </div>
       </section>
 
-      <aside className="dpr-preview" aria-label="Aperçu avant production">
+      {!isMarinView ? <aside className="dpr-preview" aria-label="Aperçu avant production">
         <header><div><span>APERÇU AVANT PRODUCTION</span><h2>{pdfPreview ? `${reportTitle(pdfPreview.report)} · ${formatDate(pdfPreview.report.reportDate)}` : 'Sélectionnez un DPR'}</h2>{pdfPreview ? <p>{pdfPreview.report.vesselName} · {projectLabel(pdfPreview.report)}</p> : <p>Le document est généré localement et n’est jamais stocké.</p>}</div></header>
         {previewLoading ? <div className="dpr-preview__loading"><RefreshCw/><strong>Génération de l’aperçu…</strong></div> : null}
         {!previewLoading && pdfPreview ? <>
@@ -509,7 +511,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         </> : null}
         {!previewLoading && !pdfPreview ? <div className="dpr-preview__empty"><Eye/><strong>Prévisualisez avant de produire</strong><p>Sélectionnez une ligne ou un groupe. Le premier DPR s’affichera ici.</p></div> : null}
         <footer>{exportProgress ? <span className="dpr-export-progress">Production {exportProgress}</span> : null}<button className="button button--primary" onClick={() => void downloadSelection()} disabled={!pdfPreview || !selectedReports.length || busy}>{selectedReports.length > 1 ? <FileArchive/> : <Download/>}{selectedReports.length > 1 ? `Télécharger le ZIP (${selectedReports.length})` : 'Télécharger le PDF'}</button></footer>
-      </aside>
+      </aside> : null}
     </div>
 
     {modalOpen && dashboard && <div className="dpr-modal" role="dialog" aria-modal="true" aria-label="Saisie Daily Progress Report">

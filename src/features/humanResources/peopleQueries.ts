@@ -1204,12 +1204,14 @@ export function buildWorkforceExitBreakdown(
   };
 }
 
-export async function fetchPeople(client: SupabaseClient): Promise<PersonRecord[]> {
-  const { data, error } = await client
+export async function fetchPeople(client: SupabaseClient, personId?: number | null): Promise<PersonRecord[]> {
+  let query = client
     .from('people')
     .select(PEOPLE_SELECT)
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
+  if (personId !== undefined) query = query.eq('id', personId ?? -1);
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -1218,11 +1220,13 @@ export async function fetchPeople(client: SupabaseClient): Promise<PersonRecord[
   return mapPersonRows((data || []) as unknown as PersonRow[]);
 }
 
-export async function fetchHrDocuments(client: SupabaseClient): Promise<HrDocumentRecord[]> {
-  const { data, error } = await client.from('hr_documents').select(HR_DOCUMENT_SELECT).order('expires_on', {
+export async function fetchHrDocuments(client: SupabaseClient, personId?: number | null): Promise<HrDocumentRecord[]> {
+  let query = client.from('hr_documents').select(HR_DOCUMENT_SELECT).order('expires_on', {
     ascending: true,
     nullsFirst: false,
   });
+  if (personId !== undefined) query = query.eq('person_id', personId ?? -1);
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -1295,10 +1299,13 @@ export async function saveHrVisibilityRules(
   return mapHrVisibilityRules((data || []) as unknown as HrVisibilityRuleRow[]);
 }
 
-export async function fetchHumanResourcesData(client: SupabaseClient): Promise<HumanResourcesData> {
+export async function fetchHumanResourcesData(
+  client: SupabaseClient,
+  options: { personId?: number | null } = {},
+): Promise<HumanResourcesData> {
   const [people, documents, documentTypes, visibilityRules] = await Promise.all([
-    fetchPeople(client),
-    fetchHrDocuments(client),
+    fetchPeople(client, options.personId),
+    fetchHrDocuments(client, options.personId),
     fetchHrDocumentTypes(client).catch(() => []),
     fetchHrVisibilityRules(client).catch(() => []),
   ]);

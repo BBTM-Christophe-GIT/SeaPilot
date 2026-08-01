@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchCurrentUserRoles, mapRoleRows } from './profileQueries';
+import { fetchCurrentPersonSummary, fetchCurrentUserRoles, mapRoleRows } from './profileQueries';
 
 describe('mapRoleRows', () => {
   it('maps Supabase role rows to role keys', () => {
@@ -34,5 +34,29 @@ describe('fetchCurrentUserRoles', () => {
     };
 
     await expect(fetchCurrentUserRoles(client as never)).rejects.toThrow(error);
+  });
+});
+
+describe('fetchCurrentPersonSummary', () => {
+  it('loads the HR identity linked to the authenticated user', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { id: 12, first_name: 'Paul', last_name: 'DURAND', function_label: '2nd Capitaine', grade_label: 'Pont' },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-12' } }, error: null }) },
+      from: vi.fn().mockReturnValue({ select }),
+    };
+
+    await expect(fetchCurrentPersonSummary(client as never)).resolves.toEqual({
+      id: 12,
+      firstName: 'Paul',
+      lastName: 'DURAND',
+      functionLabel: '2nd Capitaine',
+      gradeLabel: 'Pont',
+    });
+    expect(eq).toHaveBeenCalledWith('user_id', 'user-12');
   });
 });

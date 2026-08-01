@@ -444,6 +444,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const previewMode = outletContext?.previewMode || false;
+  const isMarinView = effectiveRoles.includes('marin')
+    && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const currentPersonId = outletContext?.currentPerson?.id ?? null;
   const readPermissions = getPlanningPermissions(effectiveRoles, false);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const workspaceRef = useRef<HTMLElement>(null);
@@ -604,13 +607,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       return true;
     }
     try {
-      setAbsences(await fetchPlanningAbsences(effectiveClient));
+      setAbsences(await fetchPlanningAbsences(effectiveClient, isMarinView ? currentPersonId : undefined));
       return true;
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
       return false;
     }
-  }, [effectiveClient, previewAbsences, previewMode, readPermissions.canRead]);
+  }, [currentPersonId, effectiveClient, isMarinView, previewAbsences, previewMode, readPermissions.canRead]);
 
   const loadVesselVisits = useCallback(async (): Promise<boolean> => {
     if (!readPermissions.canRead || previewMode) {
@@ -655,7 +658,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   useEffect(() => {
     if (!readPermissions.canRead || previewMode) return undefined;
     let active = true;
-    void fetchPlanningAbsences(effectiveClient)
+    void fetchPlanningAbsences(effectiveClient, isMarinView ? currentPersonId : undefined)
       .then((result) => {
         if (active) setAbsences(result);
       })
@@ -665,7 +668,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     return () => {
       active = false;
     };
-  }, [effectiveClient, previewMode, readPermissions.canRead]);
+  }, [currentPersonId, effectiveClient, isMarinView, previewMode, readPermissions.canRead]);
 
   const timelineDays = useMemo(() => buildPlanningTimeline(anchorDate, PLANNING_VIEW_MODE), [anchorDate]);
   const days = timelineDays;
@@ -2131,7 +2134,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   return (
-    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}`} ref={workspaceRef}>
+    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}${isMarinView ? ' is-marin' : ''}`} ref={workspaceRef}>
       <header className="planning-command-header">
         <div>
           <p className="module-family">Planning</p>
@@ -2151,6 +2154,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       <div className="planning-command-layout">
         <nav aria-label="Menu du planning" className="planning-module-toolbar">
           <div className="planning-ribbon-scroll">
+            {isMarinView ? (
+              <PlanningRibbonGroup className="is-centered" label="Gestion des congés">
+                <PlanningRibbonButton icon={<CalendarOff aria-hidden="true" size={22} />} label="Demander des congés" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} />
+              </PlanningRibbonGroup>
+            ) : <>
             <PlanningRibbonGroup label="ARMEMENT">
               {permissions.canViewDashboard || permissions.canViewWorkRest ? <PlanningRibbonButton icon={<Gauge aria-hidden="true" size={22} />} label="Cockpit métier P1.3" onClick={() => setIsP13Open(true)} /> : null}
               <PlanningRibbonButton count={tabCounts.billing} icon={<ReceiptText aria-hidden="true" size={22} />} label="Facturation" onClick={() => openOperationalTab('billing')} />
@@ -2182,14 +2190,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               {permissions.canExport ? <PlanningRibbonButton icon={<FileDown aria-hidden="true" size={22} />} label="Exports" onClick={() => setIsExportOpen(true)} /> : null}
               {permissions.canExport ? <PlanningRibbonButton icon={<ShipWheel aria-hidden="true" size={22} />} label="Attestation d'armement" onClick={() => setIsBoardingCertificateOpen(true)} /> : null}
             </PlanningRibbonGroup>
+            </>}
           </div>
         </nav>
-        <PlanningPublicationPanel
+        {!isMarinView ? <PlanningPublicationPanel
           canPublish={permissions.canPublishPublication}
           isSaving={isSaving}
           onPublish={handlePublishPlanning}
           release={latestRelease}
-        />
+        /> : null}
       </div>
 
       <div className="planning-layout">
@@ -2366,6 +2375,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                     canMoveApprovedAbsences={permissions.canMoveApprovedAbsences}
                     onMoveAbsence={(absence, date) => void moveApprovedAbsence(absence, date)}
+                    onRequestAbsence={isMarinView && row.personId === currentPersonId ? () => openP12({ tab: 'absences', openAbsenceForm: true }) : undefined}
                     onSelect={setSelectedTimelineId}
                     pendingId={pendingMutationId}
                     isDeletingEmptyRow={pendingMutationId === `board-row-${row.boardRowId}`}
@@ -2389,6 +2399,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                    onOpenAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id })}
                   canMoveApprovedAbsences={permissions.canMoveApprovedAbsences}
                   onMoveAbsence={(absence, date) => void moveApprovedAbsence(absence, date)}
+                  onRequestAbsence={isMarinView && lane.personId === currentPersonId ? () => openP12({ tab: 'absences', openAbsenceForm: true }) : undefined}
                   onOpen={openEvent}
                   onResize={(event, edge, delta) => void resizeEvent(event, edge, delta)}
                   onSelect={setSelectedTimelineId}
@@ -2402,7 +2413,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           </div>
         </section>
 
-        {perspective === 'fleet' || isOperationalPanelOpen ? <aside className="planning-side-card" aria-label={isOperationalPanelOpen ? 'Suivi opérationnel du planning' : 'Marins non affectés'}>
+        {!isMarinView && (perspective === 'fleet' || isOperationalPanelOpen) ? <aside className="planning-side-card" aria-label={isOperationalPanelOpen ? 'Suivi opérationnel du planning' : 'Marins non affectés'}>
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
@@ -2446,7 +2457,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={PLANNING_ASSIGNMENT_FUNCTIONS} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageManning={permissions.canManageManning} canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} range={range} /> : null}
-      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} personalOnly={isMarinView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}

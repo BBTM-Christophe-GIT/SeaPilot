@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.9.0` ajoute le périmètre personnel du profil Marin : fiche RH individuelle, Planning en lecture seule avec demandes personnelles, et DPR réservés aux seconds capitaines auteurs sans téléchargement. Voir [marin-profile-v3-9-0.md](./marin-profile-v3-9-0.md).
+
 Version `3.8.0` ajoute un sélecteur global de profil réservé aux administrateurs. Il permet de simuler les vues
 Admin, Direction, Armement, Capitaine et Marin sans modifier les rôles enregistrés ni les autorisations réelles du
 compte. La recette est décrite dans `docs/deployment/admin-profile-views-v3-8-0.md`.
