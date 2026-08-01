@@ -16,7 +16,7 @@ SeaPilot utilise Supabase comme source des nouveaux DPR, de leurs relations et d
 - Verrouillage des DPR soumis ou validés ; réouverture obligatoire et versionnée avant correction.
 - Ajout, prévisualisation par URL signée et retrait logique des fichiers privés.
 - Deux photos maximum par DPR, contrôlé dans l'interface et dans le RPC Supabase.
-- Génération d'un PDF à partir des données Supabase et stockage dans le bucket privé `dpr-pdfs`.
+- Génération d'un PDF à la demande à partir des données Supabase, sans stockage du PDF.
 - Diagnostic réservé au rôle Admin.
 - Alerte navigateur et confirmation de fermeture en présence de modifications non enregistrées.
 
@@ -48,7 +48,7 @@ La bascule ne doit être validée qu'après exécution des cas suivants par les 
 7. Vérifier les trois incidents en choix unique T0/T1/T2 et les exercices/motifs d'escale en choix multiples.
 8. Vérifier le rejet des nombres négatifs, d'un appareillage antérieur, d'un TBT sans thème et d'une troisième photo.
 9. Modifier une valeur puis fermer la fenêtre ou l'onglet ; vérifier l'avertissement de données non enregistrées.
-10. Comparer le PDF généré aux données affichées et confirmer sa présence dans `dpr-pdfs` comme version courante.
+10. Comparer le PDF généré aux données affichées et confirmer qu'aucun objet ni métadonnée PDF n'est créé dans Supabase.
 
 ## Point de validation
 

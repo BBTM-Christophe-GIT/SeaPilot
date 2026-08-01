@@ -275,7 +275,7 @@ describe('App', () => {
         projectCode: 'P-2026-014', projectTitle: 'Campagne Atlantique 2026', unlistedProjectName: '',
         vesselId: 12, vesselName: 'COTENTIN', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures',
         qhseNote: 'RAS', createdBy: 'user-1', updatedAt: '2026-07-01T18:30:00Z', fuelConsumedLiters: 1250.5,
-        files: [{ id: 1201, dprId: 1200, kind: 'pdf', bucket: 'dpr-pdfs', path: 'company/1/dpr/1200/file.pdf', filename: 'DPR-1200.pdf', mimeType: 'application/pdf', sizeBytes: 1000, sha256: 'a'.repeat(64), isCurrent: true, status: 'ready' }],
+        incidentCount: 0, files: [],
       }],
     });
     supabaseMock.from.mockReset();
@@ -394,7 +394,7 @@ describe('App', () => {
     expect(screen.getByText(/DPR affiché/)).toHaveTextContent('1');
     expect(screen.getByRole('option', { name: 'P-2026-014 — Campagne Atlantique 2026' })).toBeInTheDocument();
     expect(screen.getByText('P-2026-014')).toBeInTheDocument();
-    expect(screen.getByText(/SharePoint reste actif/)).toBeInTheDocument();
+    expect(screen.getByText(/sans stockage des PDF/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Télécharger le PDF/ })).toBeDisabled();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });

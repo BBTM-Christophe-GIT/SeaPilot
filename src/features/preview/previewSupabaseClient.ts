@@ -484,6 +484,42 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   ],
   dpr_reports: [
     {
+      id: 9908, dpr_number: 1062, status: 'validated', report_date: '2026-08-01',
+      project_id: 9002, unlisted_project_name: null, vessel_id: 9202,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Inspection sous-marine et relevÃ©s cÃ´tiers.',
+      qhse_note: 'RAS', created_by: 'preview-user', updated_at: '2026-08-01T18:00:00Z', deleted_at: null,
+    },
+    {
+      id: 9907, dpr_number: 1061, status: 'submitted', report_date: '2026-08-01',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Mobilisation et essais des Ã©quipements.',
+      qhse_note: 'Point de vigilance lors du levage.', created_by: 'preview-user', updated_at: '2026-08-01T17:30:00Z', deleted_at: null,
+    },
+    {
+      id: 9906, dpr_number: 1060, status: 'draft', report_date: '2026-07-31',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'PrÃ©paration du pont et contrÃ´les avant appareillage.',
+      qhse_note: 'RAS', created_by: 'preview-user', updated_at: '2026-07-31T16:00:00Z', deleted_at: null,
+    },
+    {
+      id: 9905, dpr_number: 1059, status: 'validated', report_date: '2026-07-30',
+      project_id: 9002, unlisted_project_name: null, vessel_id: 9202,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Transit vers la zone dâ€™inspection.',
+      qhse_note: 'RAS', created_by: 'preview-user', updated_at: '2026-07-30T18:00:00Z', deleted_at: null,
+    },
+    {
+      id: 9904, dpr_number: 1058, status: 'validated', report_date: '2026-07-29',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'OpÃ©rations de positionnement et mesures.',
+      qhse_note: 'RAS', created_by: 'preview-user', updated_at: '2026-07-29T18:00:00Z', deleted_at: null,
+    },
+    {
+      id: 9903, dpr_number: 1057, status: 'submitted', report_date: '2026-07-28',
+      project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
+      issuer_name_snapshot: 'Arthur DEMO', description: 'Maintenance prÃ©ventive et attente mÃ©tÃ©o.',
+      qhse_note: 'Brief sÃ©curitÃ© rÃ©alisÃ©.', created_by: 'preview-user', updated_at: '2026-07-28T18:00:00Z', deleted_at: null,
+    },
+    {
       id: 9901, dpr_number: 1056, status: 'validated', report_date: '2026-07-21',
       project_id: 9001, unlisted_project_name: null, vessel_id: 9201,
       issuer_name_snapshot: 'Arthur DEMO', description: 'Transit et opérations de démonstration.',
@@ -521,12 +557,16 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
   ],
   dpr_daily_metrics: [
+    { dpr_id: 9908, fuel_consumed_liters: 420, fuel_on_board_liters: 6400 },
+    { dpr_id: 9907, fuel_consumed_liters: 780, fuel_on_board_liters: 7050 },
+    { dpr_id: 9906, fuel_consumed_liters: 510, fuel_on_board_liters: 7730 },
+    { dpr_id: 9905, fuel_consumed_liters: 390, fuel_on_board_liters: 6790 },
+    { dpr_id: 9904, fuel_consumed_liters: 610, fuel_on_board_liters: 8240 },
+    { dpr_id: 9903, fuel_consumed_liters: 540, fuel_on_board_liters: 8850 },
     { dpr_id: 9901, fuel_consumed_liters: 650, fuel_on_board_liters: 8200 },
     { dpr_id: 9902, fuel_consumed_liters: 800, fuel_on_board_liters: 7550 },
   ],
-  dpr_files: [
-    { id: 9951, dpr_id: 9901, file_kind: 'pdf', bucket_name: 'dpr-pdfs', object_path: 'preview/DPR-1056.pdf', display_filename: 'DPR-1056 - M-V-Demonstration - 21-07-2026.pdf', mime_type: 'application/pdf', size_bytes: 84000, sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', is_current: true, status: 'ready', deleted_at: null },
-  ],
+  dpr_files: [],
   emergency_exercise_types: [
     { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 10, active: true },
     { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 20, active: true },
@@ -538,7 +578,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { key: 'breakdown', label: 'Avarie', display_order: 30, active: true },
     { key: 'standby', label: 'Stand-by', display_order: 40, active: true },
   ],
-  dpr_crew_members: [], dpr_other_people: [], dpr_incidents: [], dpr_hse_actions: [],
+  dpr_crew_members: [], dpr_other_people: [],
+  dpr_incidents: [
+    { id: 9981, dpr_id: 9907, level: 'T1', title: 'Quasi-accident lors du levage', description: 'Zone balisÃ©e et briefing repris.' },
+  ],
+  dpr_hse_actions: [],
   dpr_emergency_exercises: [], dpr_port_calls: [], dpr_supplies: [], dpr_waste_records: [],
   planning_rotation_series: [],
   planning_rotation_occurrences: [],

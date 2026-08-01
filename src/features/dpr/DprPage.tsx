@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertTriangle, Check, ChevronRight, Download, FileText, FolderOpen, Image,
-  Paperclip, Plus, RefreshCw, Save, Search, ShieldCheck, Ship, Trash2, X,
+  AlertTriangle, BarChart3, Check, ChevronLeft, ChevronRight, Download, Eye,
+  FileArchive, FileCheck2, FileText, FolderOpen, Fuel, Gauge, Image, ListChecks,
+  Paperclip, Plus, RefreshCw, Save, Search, ShieldAlert, ShieldCheck, Ship, Trash2, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
@@ -13,6 +14,7 @@ import {
   EMPTY_DPR_PAYLOAD, INCIDENT_CATEGORIES, validateDprPayload,
   type CrewFunction, type DprFormPayload,
 } from './dprFormModel.ts';
+import { generateDprArchive, type GeneratedDprDocument } from './dprExport.ts';
 import { generateDprPdf } from './dprPdf.ts';
 import {
   createDprSignedUrl, fetchDprDashboard, fetchDprDetail, fetchDprDiagnostic,
@@ -21,10 +23,18 @@ import {
 } from './dprQueries.ts';
 
 interface DprPageProps { client?: SupabaseClient; roles?: RoleKey[] }
-interface DprFilters { vesselId: string; projectId: string; dateFrom: string; dateTo: string; search: string }
+interface DprFilters {
+  vesselId: string;
+  projectId: string;
+  dateFrom: string;
+  dateTo: string;
+  search: string;
+  status: '' | DprReportRecord['status'];
+}
 interface PendingFile { key: string; kind: 'photo' | 'attachment'; file: File; previewUrl: string }
+interface DprPdfPreview extends GeneratedDprDocument { report: DprReportRecord; url: string }
 
-const EMPTY_FILTERS: DprFilters = { vesselId: '', projectId: '', dateFrom: '', dateTo: '', search: '' };
+const EMPTY_FILTERS: DprFilters = { vesselId: '', projectId: '', dateFrom: '', dateTo: '', search: '', status: '' };
 const STEPS = [
   ['Informations Projet', 'Informations projet'],
   ['Informations Journalière', 'Données journalières'],
@@ -57,6 +67,19 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   return <label className={wide ? 'dpr-field dpr-field--wide' : 'dpr-field'}><span>{label}</span>{children}</label>;
 }
 
+function SelectionCheckbox({ ids, selected, label, onChange }: {
+  ids: number[];
+  selected: Set<number>;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const selectedCount = ids.reduce((total, id) => total + Number(selected.has(id)), 0);
+  const checked = ids.length > 0 && selectedCount === ids.length;
+  useEffect(() => { if (input.current) input.current.indeterminate = selectedCount > 0 && !checked; }, [checked, selectedCount]);
+  return <input ref={input} type="checkbox" aria-label={label} checked={checked} onChange={(event) => onChange(event.target.checked)}/>;
+}
+
 export function DprPage({ client, roles }: DprPageProps) {
   const outlet = useOutletContext<AppShellOutletContext | undefined>();
   const db = client || outlet?.client || supabase;
@@ -75,6 +98,10 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [files, setFiles] = useState<DprFileRecord[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef<PendingFile[]>([]);
+  const previewUrlRef = useRef('');
+  const [pdfPreview, setPdfPreview] = useState<DprPdfPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [exportProgress, setExportProgress] = useState('');
   const [initialSignature, setInitialSignature] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
@@ -100,18 +127,51 @@ export function DprPage({ client, roles }: DprPageProps) {
   }, [dirty]);
   pendingFilesRef.current = pendingFiles;
   useEffect(() => () => pendingFilesRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)), []);
+  useEffect(() => () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); }, []);
 
   const visibleReports = useMemo(() => (dashboard?.reports || []).filter((item) => {
     if (filters.vesselId && String(item.vesselId ?? '') !== filters.vesselId) return false;
     if (filters.projectId && String(item.projectId ?? '') !== filters.projectId) return false;
     if (filters.dateFrom && item.reportDate < filters.dateFrom) return false;
     if (filters.dateTo && item.reportDate > filters.dateTo) return false;
+    if (filters.status && item.status !== filters.status) return false;
     if (filters.search) {
       const haystack = `${reportTitle(item)} ${item.vesselName} ${projectLabel(item)} ${item.issuerName} ${item.description}`.toLowerCase();
       if (!haystack.includes(filters.search.toLowerCase())) return false;
     }
     return true;
   }), [dashboard, filters]);
+
+  const visibleIds = useMemo(() => new Set(visibleReports.map((item) => item.id)), [visibleReports]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedReports = useMemo(
+    () => visibleReports.filter((item) => selectedSet.has(item.id)),
+    [selectedSet, visibleReports],
+  );
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const next = current.filter((id) => visibleIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+    if (pdfPreview && !visibleIds.has(pdfPreview.report.id)) {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = '';
+      setPdfPreview(null);
+    }
+  }, [pdfPreview, visibleIds]);
+
+  const kpis = useMemo(() => {
+    const reports = dashboard?.reports || [];
+    const month = new Date().toISOString().slice(0, 7);
+    return {
+      currentMonth: reports.filter((item) => item.reportDate.startsWith(month)).length,
+      submitted: reports.filter((item) => item.status === 'submitted').length,
+      validated: reports.filter((item) => item.status === 'validated').length,
+      incidents: reports.reduce((sum, item) => sum + item.incidentCount, 0),
+      fuel: reports.reduce((sum, item) => sum + item.fuelConsumedLiters, 0),
+    };
+  }, [dashboard]);
 
   const groups = useMemo(() => {
     const result = new Map<string, Map<string, DprReportRecord[]>>();
@@ -146,6 +206,71 @@ export function DprPage({ client, roles }: DprPageProps) {
       setInitialSignature(JSON.stringify(detail.payload)); setModalOpen(true);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
+  };
+
+  const generateOnDemand = async (target: DprReportRecord): Promise<GeneratedDprDocument> => {
+    if (!dashboard) throw new Error('Les données DPR ne sont pas encore disponibles.');
+    const detail = await fetchDprDetail(db, target);
+    return generateDprPdf(target, detail.payload, dashboard.references);
+  };
+
+  const preparePreview = async (target: DprReportRecord) => {
+    setPreviewLoading(true); setError('');
+    try {
+      const generated = await generateOnDemand(target);
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      const url = URL.createObjectURL(generated.blob);
+      previewUrlRef.current = url;
+      setPdfPreview({ ...generated, report: target, url });
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setPreviewLoading(false); }
+  };
+
+  const selectReports = (items: DprReportRecord[], checked: boolean) => {
+    const ids = new Set(items.map((item) => item.id));
+    setSelectedIds((current) => checked
+      ? [...new Set([...current, ...ids])]
+      : current.filter((id) => !ids.has(id)));
+    if (checked && items.length) void preparePreview(items[0]);
+    if (!checked && pdfPreview && ids.has(pdfPreview.report.id)) {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = '';
+      setPdfPreview(null);
+    }
+  };
+
+  const downloadBlob = (generated: GeneratedDprDocument) => {
+    const url = URL.createObjectURL(generated.blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = generated.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const downloadSelection = async () => {
+    if (!selectedReports.length) { setError('Sélectionnez au moins un DPR visible.'); return; }
+    setBusy(true); setError(''); setExportProgress('');
+    try {
+      if (selectedReports.length === 1) {
+        const target = selectedReports[0];
+        const generated = pdfPreview?.report.id === target.id ? pdfPreview : await generateOnDemand(target);
+        downloadBlob(generated);
+        setNotice(`${reportTitle(target)} généré à la demande. Aucun PDF n’a été stocké.`);
+        return;
+      }
+
+      const archive = await generateDprArchive(
+        selectedReports,
+        async (target) => pdfPreview?.report.id === target.id ? pdfPreview : generateOnDemand(target),
+        ({ completed, total, report: current }) => setExportProgress(`${completed}/${total} · ${reportTitle(current)}`),
+      );
+      downloadBlob(archive);
+      setNotice(`${selectedReports.length} PDF générés à la demande dans ${archive.filename}. Aucun PDF n’a été stocké.`);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); setExportProgress(''); }
   };
 
   const addPendingFiles = (kind: PendingFile['kind'], event: ChangeEvent<HTMLInputElement>) => {
@@ -184,17 +309,9 @@ export function DprPage({ client, roles }: DprPageProps) {
       const nextReport = nextDashboard.reports.find((item) => item.id === id) || null;
       setReport(nextReport); setInitialSignature(JSON.stringify(payload));
       setNotice(submit ? 'DPR soumis avec succès.' : 'Brouillon enregistré.');
-      if (submit && nextReport && canValidate(currentRoles)) await createAndStorePdf(nextReport, nextDashboard.references);
       return id;
     } catch (reason) { setError((reason as Error).message); return null; }
     finally { setBusy(false); }
-  };
-
-  const createAndStorePdf = async (target: DprReportRecord, references: DprReferenceData) => {
-    const detail = await fetchDprDetail(db, target);
-    const generated = await generateDprPdf(target, detail.payload, references);
-    await uploadDprFile(db, target.id, 'pdf', generated.blob, generated.filename);
-    await load();
   };
 
   const transition = async (action: 'validate' | 'reopen' | 'delete') => {
@@ -207,8 +324,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       await runDprTransition(db, action, report.id, reason);
       const nextDashboard = await load();
       const nextReport = nextDashboard.reports.find((item) => item.id === report.id) || null;
-      if (action === 'validate' && nextReport) await createAndStorePdf(nextReport, nextDashboard.references);
-      setNotice(action === 'validate' ? 'DPR validé et PDF enregistré.' : action === 'reopen' ? 'Nouvelle version réouverte.' : 'DPR supprimé logiquement.');
+      setNotice(action === 'validate' ? 'DPR validé. Le PDF sera généré uniquement à la demande.' : action === 'reopen' ? 'Nouvelle version réouverte.' : 'DPR supprimé logiquement.');
       if (action === 'delete') closeModal();
       else if (nextReport) await openReport(nextReport);
     } catch (reasonValue) { setError((reasonValue as Error).message); }
@@ -230,13 +346,6 @@ export function DprPage({ client, roles }: DprPageProps) {
     finally { setBusy(false); }
   };
 
-  const downloadSelectedPdf = async () => {
-    const target = dashboard?.reports.find((item) => selectedIds.includes(item.id));
-    const pdf = target?.files.find((item) => item.kind === 'pdf' && item.isCurrent) || target?.files.find((item) => item.kind === 'pdf');
-    if (!pdf) { setError('Sélectionnez un DPR possédant un PDF.'); return; }
-    await previewFile(pdf);
-  };
-
   const showDiagnostic = async () => {
     setBusy(true); setError('');
     try {
@@ -248,44 +357,91 @@ export function DprPage({ client, roles }: DprPageProps) {
 
   const editable = canEdit(report, currentRoles, dashboard?.currentUserId || null);
   const updatePayload = (recipe: (current: DprFormPayload) => void) => setPayload((current) => { const next = structuredClone(current); recipe(next); return next; });
+  const previewIndex = pdfPreview ? selectedReports.findIndex((item) => item.id === pdfPreview.report.id) : -1;
+  const navigatePreview = (direction: -1 | 1) => {
+    if (!selectedReports.length) return;
+    const currentIndex = previewIndex >= 0 ? previewIndex : 0;
+    const nextIndex = (currentIndex + direction + selectedReports.length) % selectedReports.length;
+    void preparePreview(selectedReports[nextIndex]);
+  };
 
   return <section className="dpr-native" aria-busy={loading || busy}>
     <header className="dpr-native__header">
-      <div><span className="dpr-native__eyebrow">QHSE</span><h1>Daily Progress Report</h1><p>Données, workflow et PDF centralisés dans Supabase. SharePoint reste actif pendant la bascule.</p></div>
+      <div><span className="dpr-native__eyebrow">OPÉRATIONS</span><h1>Daily Progress Report</h1><p>Consultez, prévisualisez et produisez les DPR à la demande, sans stockage des PDF.</p></div>
       <div className="dpr-native__actions">
         <button className="button button--primary" onClick={openNew}><Plus size={17}/> Saisir un DPR</button>
         <button className="button" onClick={() => void load()} disabled={busy}><RefreshCw size={16}/> Actualiser</button>
         {currentRoles.includes('admin') && <button className="button" onClick={() => void showDiagnostic()}><ShieldCheck size={16}/> Diagnostic</button>}
-        <button className="button" onClick={() => void downloadSelectedPdf()} disabled={!selectedIds.length}><Download size={16}/> Télécharger le PDF</button>
       </div>
     </header>
 
     {(notice || error) && <div className={error ? 'dpr-message dpr-message--error' : 'dpr-message'}>{error || notice}</div>}
 
-    <div className="dpr-native__filters">
-      <Field label="NAVIRE"><select value={filters.vesselId} onChange={(event) => setFilters({ ...filters, vesselId: event.target.value })}><option value="">Tous</option>{dashboard?.references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-      <Field label="PROJET"><select value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">Tous</option>{dashboard?.references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
-      <Field label="PÉRIODE"><div className="dpr-period"><input aria-label="Date de début" type="date" value={filters.dateFrom} onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}/><input aria-label="Date de fin" type="date" value={filters.dateTo} onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}/></div></Field>
-      <Field label="RECHERCHE"><div className="dpr-search"><Search size={15}/><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="DPR, rédacteur…"/></div></Field>
-      <button className="button" onClick={() => setFilters(EMPTY_FILTERS)}>Réinitialiser</button>
-      <strong>{visibleReports.length} DPR affiché(s)</strong>
+    <nav className="dpr-command-bar" aria-label="Actions Daily Progress Report">
+      <button className={!filters.status ? 'active' : ''} onClick={() => setFilters(EMPTY_FILTERS)}><BarChart3/><span>Vue d’ensemble</span></button>
+      <button className={filters.status === 'submitted' ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, status: 'submitted' }))}><ListChecks/><span>À valider</span>{kpis.submitted ? <b>{kpis.submitted}</b> : null}</button>
+      <button onClick={() => selectedReports[0] && void preparePreview(selectedReports[0])} disabled={!selectedReports.length}><Eye/><span>Prévisualiser</span></button>
+      <button onClick={() => void downloadSelection()} disabled={!selectedReports.length || previewLoading || busy}><FileCheck2/><span>Produire</span></button>
+      <button onClick={() => void downloadSelection()} disabled={selectedReports.length < 2 || previewLoading || busy}><FileArchive/><span>Exports ZIP</span></button>
+    </nav>
+
+    <div className="dpr-kpi-strip" aria-label="Indicateurs Daily Progress Report">
+      <article><Gauge/><span><small>DPR ce mois</small><strong>{kpis.currentMonth}</strong></span></article>
+      <article><ListChecks/><span><small>À valider</small><strong>{kpis.submitted}</strong></span></article>
+      <article><FileCheck2/><span><small>Prêts à produire</small><strong>{kpis.validated}</strong></span></article>
+      <article><ShieldAlert/><span><small>Incidents QHSE</small><strong>{kpis.incidents}</strong></span></article>
+      <article><Fuel/><span><small>Fuel consommé</small><strong>{kpis.fuel.toLocaleString('fr-FR')} L</strong></span></article>
     </div>
 
-    <div className="dpr-native__list">
-      {loading && <p>Chargement des DPR Supabase…</p>}
-      {!loading && !visibleReports.length && <div className="dpr-empty"><FolderOpen/><h2>Aucun DPR</h2><p>Aucun rapport ne correspond aux filtres.</p></div>}
-      {[...groups.entries()].map(([vessel, projects]) => <section className="dpr-group" key={vessel}>
-        <header><span><Ship size={17}/> {vessel}</span><small>{[...projects.values()].reduce((sum, items) => sum + items.length, 0)} DPR</small></header>
-        {[...projects.entries()].map(([project, items]) => <div className="dpr-project" key={project}>
-          <div className="dpr-project__title"><FolderOpen size={16}/><strong>{project}</strong><span>{items.length} enregistrement(s)</span></div>
-          {items.map((item) => <article className="dpr-row" key={item.id}>
-            <input aria-label={`Sélectionner ${reportTitle(item)}`} type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}/>
-            <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId || null) ? 'Modifier' : 'Consulter'}</button>
-            <strong>{reportTitle(item)}</strong><span><small>DATE DU DPR</small>{formatDate(item.reportDate)}</span><span><small>RÉDACTEUR</small>{item.issuerName || '-'}</span><span><small>FUEL CONSOMMÉ</small>{item.fuelConsumedLiters.toLocaleString('fr-FR')} L</span>
-            <span className={`dpr-status dpr-status--${item.status}`}>{STATUS_LABELS[item.status]}</span>
-          </article>)}
-        </div>)}
-      </section>)}
+    <div className="dpr-workspace">
+      <section className="dpr-master" aria-label="Liste des DPR">
+        <div className="dpr-native__filters">
+          <Field label="NAVIRE"><select value={filters.vesselId} onChange={(event) => setFilters({ ...filters, vesselId: event.target.value })}><option value="">Tous</option>{dashboard?.references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+          <Field label="PROJET"><select value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">Tous</option>{dashboard?.references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
+          <Field label="STATUT"><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as DprFilters['status'] })}><option value="">Tous</option>{Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
+          <Field label="PÉRIODE"><div className="dpr-period"><input aria-label="Date de début" type="date" value={filters.dateFrom} onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}/><input aria-label="Date de fin" type="date" value={filters.dateTo} onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}/></div></Field>
+          <Field label="RECHERCHE"><div className="dpr-search"><Search size={15}/><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="DPR, navire, auteur…"/></div></Field>
+          <button className="button" onClick={() => setFilters(EMPTY_FILTERS)}>Réinitialiser</button>
+        </div>
+
+        <div className="dpr-selection-summary">
+          <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span>
+          <span>{visibleReports.length} DPR affiché(s)</span>
+        </div>
+
+        <div className="dpr-native__list">
+          {loading && <p>Chargement des DPR Supabase…</p>}
+          {!loading && !visibleReports.length && <div className="dpr-empty"><FolderOpen/><h2>Aucun DPR</h2><p>Aucun rapport ne correspond aux filtres.</p></div>}
+          {[...groups.entries()].map(([vessel, projects]) => {
+            const vesselItems = [...projects.values()].flat();
+            return <section className="dpr-group" key={vessel}>
+              <header><span><SelectionCheckbox ids={vesselItems.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du navire ${vessel}`} onChange={(checked) => selectReports(vesselItems, checked)}/><Ship size={17}/> {vessel}</span><small>{vesselItems.length} DPR</small></header>
+              {[...projects.entries()].map(([project, items]) => <div className="dpr-project" key={project}>
+                <div className="dpr-project__title"><SelectionCheckbox ids={items.map((item) => item.id)} selected={selectedSet} label={`Sélectionner tous les DPR du projet ${project}`} onChange={(checked) => selectReports(items, checked)}/><FolderOpen size={16}/><strong>{project}</strong><span>{items.length} enregistrement(s)</span></div>
+                {items.map((item) => <article className={selectedSet.has(item.id) ? 'dpr-row is-selected' : 'dpr-row'} key={item.id}>
+                  <input aria-label={`Sélectionner ${reportTitle(item)}`} type="checkbox" checked={selectedSet.has(item.id)} onChange={(event) => selectReports([item], event.target.checked)}/>
+                  <button className="dpr-row__preview" aria-label={`Aperçu ${reportTitle(item)}`} onClick={() => void preparePreview(item)}><Eye size={16}/></button>
+                  <strong>{reportTitle(item)}</strong><span><small>DATE</small>{formatDate(item.reportDate)}</span><span><small>AUTEUR</small>{item.issuerName || '-'}</span><span><small>FUEL</small>{item.fuelConsumedLiters.toLocaleString('fr-FR')} L</span>
+                  <span className={`dpr-status dpr-status--${item.status}`}>{STATUS_LABELS[item.status]}</span>
+                  <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId || null) ? 'Modifier' : 'Consulter'}</button>
+                </article>)}
+              </div>)}
+            </section>;
+          })}
+        </div>
+      </section>
+
+      <aside className="dpr-preview" aria-label="Aperçu avant production">
+        <header><div><span>APERÇU AVANT PRODUCTION</span><h2>{pdfPreview ? `${reportTitle(pdfPreview.report)} · ${formatDate(pdfPreview.report.reportDate)}` : 'Sélectionnez un DPR'}</h2>{pdfPreview ? <p>{pdfPreview.report.vesselName} · {projectLabel(pdfPreview.report)}</p> : <p>Le document est généré localement et n’est jamais stocké.</p>}</div></header>
+        {previewLoading ? <div className="dpr-preview__loading"><RefreshCw/><strong>Génération de l’aperçu…</strong></div> : null}
+        {!previewLoading && pdfPreview ? <>
+          <div className="dpr-preview__toolbar"><button aria-label="DPR précédent" onClick={() => navigatePreview(-1)} disabled={selectedReports.length < 2}><ChevronLeft/></button><span>{previewIndex + 1} / {selectedReports.length}</span><button aria-label="DPR suivant" onClick={() => navigatePreview(1)} disabled={selectedReports.length < 2}><ChevronRight/></button></div>
+          <iframe className="dpr-preview__document" title={`Aperçu ${reportTitle(pdfPreview.report)}`} src={pdfPreview.url}/>
+          <div className="dpr-preview__checks"><span><Check/><strong>Identité concordante</strong><small>{reportTitle(pdfPreview.report)} · {formatDate(pdfPreview.report.reportDate)} · {pdfPreview.report.vesselName} · {projectLabel(pdfPreview.report)}</small></span><span><Check/><strong>PDF généré à la demande</strong><small>Aucun objet Supabase créé</small></span><span><Check/><strong>Prêt à produire</strong><small>{selectedReports.length} DPR visible(s) dans la sélection</small></span></div>
+        </> : null}
+        {!previewLoading && !pdfPreview ? <div className="dpr-preview__empty"><Eye/><strong>Prévisualisez avant de produire</strong><p>Sélectionnez une ligne ou un groupe. Le premier DPR s’affichera ici.</p></div> : null}
+        <footer>{exportProgress ? <span className="dpr-export-progress">Production {exportProgress}</span> : null}<button className="button button--primary" onClick={() => void downloadSelection()} disabled={!pdfPreview || !selectedReports.length || busy}>{selectedReports.length > 1 ? <FileArchive/> : <Download/>}{selectedReports.length > 1 ? `Télécharger le ZIP (${selectedReports.length})` : 'Télécharger le PDF'}</button></footer>
+      </aside>
     </div>
 
     {modalOpen && dashboard && <div className="dpr-modal" role="dialog" aria-modal="true" aria-label="Saisie Daily Progress Report">

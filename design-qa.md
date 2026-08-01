@@ -1,68 +1,48 @@
-# Design QA — ordre numérique décroissant des projets
+# Design QA — Daily Progress Report v3.7.7
 
-## Sources et état comparé
+## Comparison target
 
-- Vérité visuelle — sélecteur Planning : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-d56e0543-44d5-48b7-b507-ea4db32f963f.png`
-- Vérité visuelle — portefeuille Projets : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-34c8263a-7c11-4a95-b7e2-61578c1a5763.png`
-- Capture navigateur — sélecteur Planning : `C:\CODEX\SeaPilot\.design-qa\project-number-order-planning-picker.png`
-- Capture navigateur — portefeuille Projets : `C:\CODEX\SeaPilot\.design-qa\project-number-order-portfolio.png`
-- Comparaison combinée : `C:\CODEX\SeaPilot\.design-qa\project-number-order-comparison.png`
-- Routes locales :
-  - `http://127.0.0.1:4173/modules/planning?preview=1`
-  - `http://127.0.0.1:4173/modules/projects?preview=1`
-- Viewport navigateur : `1253 × 705` CSS px, densité 1.
-- Dimensions : sources `1372 × 1888` px et `1368 × 1531` px ; captures navigateur `1253 × 705` px ; comparaison combinée `1600 × 1050` px.
-- État : profil Admin de démonstration, portefeuille sans filtre et sélecteur Planning ouvert sur GOURY au 28/07/2026.
-
-Les sources montrent les deux emplacements à corriger. Elles contiennent davantage de données de production que la prévisualisation locale ; la comparaison porte donc sur l’ordre visible, la structure et les surfaces UI, sans comparer les intitulés dynamiques ligne à ligne.
+- Source visual truth: `C:/CODEX/SeaPilot/output/dpr-audit-20260801/design-02-liste-apercu-pdf.png`
+- Implementation screenshot: `C:/CODEX/SeaPilot/output/dpr-audit-20260801/implementation-v3-7-7-selected-top.png`
+- Viewport: 1502 × 1069 CSS px; browser capture content 1487 × 1058 px at density 1.
+- Source pixels: 1487 × 1058 px.
+- Implementation pixels: 1487 × 1058 px.
+- State: desktop, light content theme, eight visible DPR selected, first selected DPR active, ZIP action enabled.
+- Comparison evidence: the two full views were opened together in the same visual comparison input after pixel-size normalization.
 
 ## Findings
 
-Aucun écart P0, P1 ou P2 ne subsiste.
+No actionable P0, P1 or P2 mismatch remains.
 
-- Le portefeuille affiche `P902` avant `P901`.
-- Le sélecteur Planning affiche également `P902` avant `P901`.
-- Les tests avec préfixes mixtes confirment l’ordre `P266`, `P265`, `SP-52`, `SP-49`.
-- Les codes sans partie numérique sont placés après les codes numérotés.
+- Information architecture: the implementation preserves the selected option 2 structure (master list and persistent preview) and adds the requested option 1 KPI strip above the workspace.
+- Fonts and typography: the existing SeaPilot family, weights and hierarchy are preserved. Labels, DPR identifiers and status pills retain the source density and optical emphasis.
+- Spacing and layout rhythm: the two-column workspace, command ribbon, filter grid, group headers and sticky preview align consistently. The application header and KPI strip intentionally reduce the number of rows above the fold compared with the pure option 2 mock.
+- Colors and visual tokens: existing SeaPilot navy, blue, green, amber, borders, radii and shadows are reused. Selected rows and active actions remain clearly differentiated.
+- Image quality and asset fidelity: the supplied BBTM/SeaPilot brand assets are preserved and interface icons come from the project's Lucide library. No placeholder artwork or custom drawn substitute was introduced.
+- Copy and content: wording explicitly states generation on demand and absence of Supabase storage. The active preview repeats DPR number, date, vessel and project for identity verification.
 
-## Comparaison complète et focalisée
+## Focused-region evidence
 
-La comparaison combinée présente les deux sources et les deux implémentations dans un même visuel. Les régions focalisées couvrent les premières lignes de chaque liste, ce qui suffit à contrôler le sens du tri, la conservation des cartes, les statuts, les actions et la densité. Les captures navigateur complètes conservent le contexte SeaPilot et confirment l’absence de régression autour des listes.
+- Command/KPI region: five command actions and five KPIs are aligned and readable at the target viewport.
+- List/preview region: project and vessel group checkboxes select all eight visible rows; the preview header reports `DPR-1062 · 01/08/2026`, `Support Démonstration · P902`, matching the active row.
+- Native PDF viewer: the Blob iframe is present and has a valid `blob:` source. The in-app browser capture does not rasterize its native PDF plugin surface, but the surrounding identity checks, enabled ZIP action and browser console (zero errors) confirm the generated preview state.
 
-## Surfaces de fidélité
+## Interaction verification
 
-- **Polices et typographie** : familles, graisses, tailles, hiérarchie, troncature et lisibilité des codes et titres sont inchangées.
-- **Espacement et rythme** : hauteurs de lignes, marges, séparateurs, rayons, badges et alignements restent identiques ; seul l’ordre des enregistrements change.
-- **Couleurs et tokens** : bleu marine, bleu d’action, fonds, bordures et couleurs sémantiques des statuts utilisent les tokens existants.
-- **Images et ressources** : aucune image produit n’est concernée. Les icônes existantes sont conservées ; aucun actif de substitution n’a été ajouté.
-- **Copie et contenu** : les codes, titres, clients, durées, navires et statuts restent issus des données ; aucun libellé fonctionnel n’a été modifié.
+- Project `P902` selected in one click: two DPR selected and preview generated.
+- Project filter changed to `P901`: hidden selections removed and preview reset.
+- All visible DPR selected: eight rows selected and ZIP action enabled.
+- Generated preview source: browser-local Blob URL; no upload action.
+- Browser console errors: none.
 
-## Interactions, accessibilité et résilience
+## Comparison history
 
-- Portefeuille Projets chargé sans filtre et ordre des boutons vérifié.
-- Double-clic sur une case navire, ouverture du sélecteur et ordre des options vérifié.
-- Recherche, sélection et ajout restent couverts par les tests existants.
-- Les boutons et options conservent leurs rôles et noms accessibles.
-- Le comparateur accepte les préfixes mixtes, les zéros initiaux et les numéros dépassant la précision entière JavaScript.
-- Aucun log navigateur de niveau `error`.
+- Initial implementation capture used the empty state and did not match the selected source state.
+- The fixture was expanded to eight realistic DPR, the viewport was normalized, and the selected state was recaptured.
+- Post-fix evidence shows matching list/preview proportions, active selection treatment and production action. No P0/P1/P2 visual issue remains.
 
-## Historique de comparaison
+## Follow-up polish
 
-### Itération 1 — bloquée
-
-- [P1] Le portefeuille était trié par date et le catalogue Planning par chaîne de caractères. Des codes comme `P266`, `P260` et `SP-52` pouvaient donc apparaître dans un ordre incohérent.
-- Correction : comparateur partagé fondé sur la partie numérique, tri décroissant côté portefeuille et catalogue Planning, puis alignement de la RPC Supabase.
-
-### Itération 2 — passée
-
-Les deux captures post-correction présentent le numéro le plus élevé en premier. Aucun écart P0, P1 ou P2 restant.
-
-## Vérifications automatisées
-
-- Tests ciblés : 4 fichiers, 13 tests réussis.
-- `npm test -- --run` : 78 fichiers, 554 tests réussis.
-- `npm run lint` : réussi.
-- `npm run build` : réussi.
-- `npx supabase db lint --linked --level warning` : aucune erreur de schéma.
+- [P3] A future iteration could replace the browser-native PDF iframe with a canvas renderer to make visual capture behavior identical across embedded-browser engines.
 
 final result: passed

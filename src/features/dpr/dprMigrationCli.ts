@@ -504,8 +504,7 @@ async function loadReports(
   return loaded;
 }
 
-function bucketFor(file: DprMigrationFile): 'dpr-pdfs' | 'dpr-photos' | 'dpr-attachments' {
-  if (file.kind === 'pdf') return 'dpr-pdfs';
+function bucketFor(file: DprMigrationFile): 'dpr-photos' | 'dpr-attachments' {
   if (file.kind === 'photo') return 'dpr-photos';
   return 'dpr-attachments';
 }
@@ -541,9 +540,21 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
   let completedFiles = 0;
   try {
     for (const file of manifest.files) {
-      if (file.kind === 'excluded') {
+      if (file.kind === 'excluded' || file.kind === 'pdf') {
         counters.filesExcluded += 1;
-        await upsertMigrationRecord(client, companyId, batchId, 'dpr-file', DPR_LIBRARY_ID, file.sourceItemId, 'excluded', 'excluded', null, null, file.raw);
+        await upsertMigrationRecord(
+          client,
+          companyId,
+          batchId,
+          'dpr-file',
+          DPR_LIBRARY_ID,
+          file.sourceItemId,
+          'excluded',
+          file.kind === 'pdf' ? 'pdf-generated-on-demand' : 'excluded',
+          null,
+          null,
+          file.raw,
+        );
         completedFiles += 1;
         continue;
       }
@@ -563,12 +574,10 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
       if (file.sizeBytes !== null && file.sizeBytes !== sizeBytes) throw new Error(`Size mismatch for ${file.fileName}: SharePoint=${file.sizeBytes}, downloaded=${sizeBytes}.`);
       const bucket = bucketFor(file);
       let objectPath = storageObjectPath(companyId, linkedReport.dprId, file);
-      if (file.kind !== 'pdf') {
-        const { data: duplicate, error: duplicateError } = await client.from('dpr_files').select('object_path')
-          .eq('company_id', companyId).eq('file_kind', file.kind).eq('sha256', checksum).eq('size_bytes', sizeBytes).eq('status', 'ready').limit(1).maybeSingle();
-        if (duplicateError) throw new Error(`Cannot inspect attachment deduplication: ${duplicateError.message}`);
-        if (duplicate?.object_path) objectPath = String(duplicate.object_path);
-      }
+      const { data: duplicate, error: duplicateError } = await client.from('dpr_files').select('object_path')
+        .eq('company_id', companyId).eq('file_kind', file.kind).eq('sha256', checksum).eq('size_bytes', sizeBytes).eq('status', 'ready').limit(1).maybeSingle();
+      if (duplicateError) throw new Error(`Cannot inspect attachment deduplication: ${duplicateError.message}`);
+      if (duplicate?.object_path) objectPath = String(duplicate.object_path);
       const { data: existingMetadata, error: existingMetadataError } = await client.from('dpr_files').select('*')
         .eq('company_id', companyId).eq('sharepoint_site_id', DPR_SITE_ID).eq('sharepoint_drive_id', DPR_DRIVE_ID)
         .eq('sharepoint_item_id', file.sourceItemId).maybeSingle();
@@ -591,7 +600,7 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
         company_id: companyId, dpr_id: linkedReport.dprId, file_kind: file.kind, bucket_name: bucket,
         object_path: objectPath, original_filename: file.fileName, display_filename: file.fileName,
         mime_type: file.mimeType, size_bytes: sizeBytes, sha256: checksum, status: 'ready',
-        version_no: file.kind === 'pdf' ? 1 : null, is_current: file.kind === 'pdf', ready_at: dependencies.now().toISOString(),
+        version_no: null, is_current: false, ready_at: dependencies.now().toISOString(),
         sharepoint_site_id: DPR_SITE_ID, sharepoint_drive_id: DPR_DRIVE_ID, sharepoint_item_id: file.sourceItemId,
         source_modified_at: file.sourceModifiedAt, migration_batch_id: batchId,
       };
@@ -637,7 +646,7 @@ async function reconcile(client: SupabaseClient, companyId: number, manifest: Dp
     const bytes = new Uint8Array(await data.arrayBuffer());
     if (bytes.byteLength !== Number(file.size_bytes) || sha256(bytes) !== file.sha256) objectErrors.push(`Checksum or size mismatch for dpr_files.id=${file.id}.`);
   }
-  const eligibleFiles = manifest.files.filter((file) => file.kind !== 'excluded').length;
+  const eligibleFiles = manifest.files.filter((file) => file.kind !== 'excluded' && file.kind !== 'pdf').length;
   const orphanMetadata = (files || []).filter((file) => !file.dpr_id).map((file) => file.id);
   return {
     sourceReports: manifest.reports.length,

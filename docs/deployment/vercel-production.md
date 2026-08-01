@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.7.7` remplace la persistance des PDF DPR par une génération strictement à la demande. Avant de
+déployer le client, supprimer les objets du bucket `dpr-pdfs` avec l'API Storage, puis appliquer
+`supabase/migrations/20260801121733_dpr_on_demand_pdfs.sql`. La migration supprime les anciennes métadonnées,
+puis installe un garde-fou SQL qui rejette toute nouvelle persistance de PDF DPR. Le protocole complet
+est décrit dans `docs/deployment/dpr-on-demand-pdf-v3-7-7.md`.
+
 ## Application shell and navigation permissions
 
 SeaPilot displays its semantic application version in the sidebar. The source version is kept in
