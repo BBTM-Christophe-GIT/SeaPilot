@@ -5,7 +5,7 @@ import { EMPTY_DPR_PAYLOAD } from './dprFormModel.ts';
 import type { DprDashboardData, DprReportRecord } from './dprQueries.ts';
 
 const mocks = vi.hoisted(() => ({
-  fetchDashboard: vi.fn(), fetchDetail: vi.fn(), fetchDiagnostic: vi.fn(),
+  fetchDashboard: vi.fn(), fetchDetail: vi.fn(), fetchDiagnostic: vi.fn(), fetchEntryContext: vi.fn(),
   save: vi.fn(), transition: vi.fn(), upload: vi.fn(), remove: vi.fn(), signedUrl: vi.fn(),
   generatePdf: vi.fn(),
 }));
@@ -14,6 +14,7 @@ vi.mock('./dprQueries.ts', () => ({
   fetchDprDashboard: mocks.fetchDashboard,
   fetchDprDetail: mocks.fetchDetail,
   fetchDprDiagnostic: mocks.fetchDiagnostic,
+  fetchDprEntryContext: mocks.fetchEntryContext,
   saveDprPayload: mocks.save,
   runDprTransition: mocks.transition,
   uploadDprFile: mocks.upload,
@@ -42,7 +43,7 @@ const dashboard: DprDashboardData = {
   references: {
     projects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
     vessels: [{ id: 3, name: 'GOURY' }],
-    people: [{ id: 12, name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', crewFunction: 'captain' }],
+    people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false }],
     exerciseTypes: [{ key: 'fire-protection', label: "Protection contre l'incendie" }],
     portReasons: [{ key: 'crew-change', label: 'Crew Change' }],
   },
@@ -56,6 +57,14 @@ describe('DprPage Phase 7', () => {
     mocks.fetchDashboard.mockResolvedValue(dashboard);
     mocks.fetchDetail.mockImplementation((_client, target: DprReportRecord) => Promise.resolve({ report: target, payload: { ...structuredClone(EMPTY_DPR_PAYLOAD), reportDate: target.reportDate, projectId: 144, vesselId: 3, description: target.description }, files: target.files }));
     mocks.fetchDiagnostic.mockResolvedValue({ reports: 2, orphan_files: 0 });
+    mocks.fetchEntryContext.mockResolvedValue({
+      issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144, watchGroup: 'Bordée A',
+      people: [
+        dashboard.references.people[0],
+        { id: 13, firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', functionLabel: 'Direction', gradeLabel: '', roleLabel: 'Sédentaire', crewFunction: 'execution', isSedentary: true },
+      ],
+      crewPersonIds: [12],
+    });
     mocks.signedUrl.mockResolvedValue('https://signed.test/dpr.pdf');
     mocks.generatePdf.mockResolvedValue({ blob: new Blob(['pdf'], { type: 'application/pdf' }), filename: 'DPR-1056.pdf' });
   });
@@ -106,12 +115,32 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: /^4Escale/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^5Photos/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ajouter un fichier/ })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Camille Marin')).toBeDisabled();
+    expect(screen.getByDisplayValue('Pierre LEPRETRE')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Pierre LEPRETRE' })).toBeChecked();
+    expect(screen.queryByText('PROJET NON RÉFÉRENCÉ')).not.toBeInTheDocument();
 
     const currentDate = new Date().toISOString().slice(0, 10);
     const changedDate = currentDate === '2026-07-23' ? '2026-07-24' : '2026-07-23';
     fireEvent.change(screen.getByDisplayValue(currentDate), { target: { value: changedDate } });
+    await waitFor(() => expect(mocks.fetchEntryContext).toHaveBeenLastCalledWith(expect.anything(), changedDate));
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
+  });
+
+  it('adds active other people from the function-grouped multiselect and manual names', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+
+    await user.click(screen.getByText('Sélectionner des personnes en poste'));
+    expect(screen.getByText('Direction · Sédentaire')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('checkbox', { name: 'Alice MARTIN' }).at(-1)!);
+    await user.type(screen.getByLabelText('Ajouter plusieurs autres personnes'), 'Jean DUPONT; Léa DURAND');
+    await user.click(screen.getByRole('button', { name: /Ajouter les personnes/ }));
+
+    expect(screen.getAllByText('Alice MARTIN').length).toBeGreaterThan(1);
+    expect(screen.getByText('Jean DUPONT')).toBeInTheDocument();
+    expect(screen.getByText('Léa DURAND')).toBeInTheDocument();
   });
 
   it('reserves diagnostic for admin and validation for captain', async () => {
