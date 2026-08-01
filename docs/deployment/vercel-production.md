@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.7.9` assiste la saisie des DPR à partir du Planning daté, limite les personnes proposées aux effectifs en
+poste, ajoute `Off-Hire` et simplifie le PDF en retirant « Contact Radio ». Appliquer
+`supabase/migrations/20260801142931_dpr_planning_prefill_off_hire.sql` avant le client. La recette et le retour
+arrière sont décrits dans `docs/deployment/dpr-planning-prefill-v3-7-9.md`.
+
 Version `3.7.8` aligne le menu DPR sur le ruban du Planning, y intègre `Saisir un DPR` et reproduit le gabarit
 Power BI de la pièce `GOURY - DPR - Janvier 2026.pdf`. Les PDF restent générés strictement à la demande et ne sont
 jamais persistés. La recette est décrite dans `docs/deployment/dpr-report-template-v3-7-8.md`.
