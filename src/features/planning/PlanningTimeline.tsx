@@ -241,11 +241,14 @@ export function PlanningFleetTimelineRow({
       {days.map((day, index) => {
         const mouseDragOver = dragOver === day.date;
         const shared = {
-          'aria-label': `Planifier un projet pour ${lane.label} le ${formatPlanningDate(day.date)}`,
+          'aria-label': editable
+            ? `Planifier un projet pour ${lane.label} le ${formatPlanningDate(day.date)}`
+            : `Créneau du ${formatPlanningDate(day.date)} pour ${lane.label}`,
           className: cellClass(day, { create: true, dragOver: mouseDragOver, drop: editable }),
           'data-planning-drop-date': day.date,
           'data-planning-drop-vessel': lane.vessel,
-          onDoubleClick: () => onOpenCell(lane, day.date),
+          disabled: !editable,
+          onDoubleClick: editable ? () => onOpenCell(lane, day.date) : undefined,
           onDragEnter: editable ? (event: React.DragEvent) => { if (!event.dataTransfer.types.includes('application/x-seapilot-planning')) setDragOver(day.date); } : undefined,
           onDragLeave: editable ? () => setDragOver((current) => current === day.date ? null : current) : undefined,
           onDragOver: editable ? (event: React.DragEvent) => {
@@ -265,7 +268,7 @@ export function PlanningFleetTimelineRow({
             if (Number.isSafeInteger(id) && id > 0) onMove(id, lane, day.date);
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
-          title: `Double-cliquer pour planifier un projet sur ${lane.label}`,
+          title: editable ? `Double-cliquer pour planifier un projet sur ${lane.label}` : 'Planning en lecture seule',
           type: 'button' as const,
         };
         return <button {...shared} key={day.date} />;
@@ -456,6 +459,7 @@ export function PlanningCrewTimelineRow({
   onOpenAbsence,
   canMoveApprovedAbsences = false,
   onMoveAbsence,
+  onRequestAbsence,
   onDeleteEmptyRow,
   isDeletingEmptyRow = false,
   hierarchy = false,
@@ -480,6 +484,7 @@ export function PlanningCrewTimelineRow({
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
   canMoveApprovedAbsences?: boolean;
   onMoveAbsence?: (absence: PlanningAbsenceRecord, startsOn: string) => void;
+  onRequestAbsence?: () => void;
   onDeleteEmptyRow?: () => void;
   isDeletingEmptyRow?: boolean;
   hierarchy?: boolean;
@@ -499,10 +504,7 @@ export function PlanningCrewTimelineRow({
     functionLabel: lane.events[0]?.functionLabel || lane.functionLabel || 'Équipage',
   }), [days, lane.events, lane.functionLabel, lane.vesselId]);
   const laneAbsences = useMemo(
-    () => absences.filter((absence) => (
-      absence.personId === lane.personId
-      && (absence.status === 'requested' || absence.status === 'approved')
-    )),
+    () => absences.filter((absence) => absence.personId === lane.personId),
     [absences, lane.personId],
   );
 
@@ -688,7 +690,14 @@ export function PlanningCrewTimelineRow({
               onSelect(event.id);
             }}
             onContextMenu={(contextEvent) => {
-              if (!editable || !hierarchy || !event.assignmentId || !onEditDayState) return;
+              if (!editable) {
+                if (!onRequestAbsence) return;
+                contextEvent.preventDefault();
+                contextEvent.stopPropagation();
+                onRequestAbsence();
+                return;
+              }
+              if (!hierarchy || !event.assignmentId || !onEditDayState) return;
               contextEvent.preventDefault();
               contextEvent.stopPropagation();
               onSelect(event.id);
@@ -811,7 +820,11 @@ export function PlanningCrewTimelineRow({
         const movable = canMoveApprovedAbsences && absence.status === 'approved' && absence.absenceType === 'leave';
         const statusLabel = absence.status === 'approved'
           ? absence.absenceType === 'leave' ? 'Validés' : 'Validée'
-          : 'À valider';
+          : absence.status === 'rejected'
+            ? absence.absenceType === 'leave' ? 'Refusés' : 'Refusée'
+            : absence.status === 'cancelled'
+              ? absence.absenceType === 'leave' ? 'Annulés' : 'Annulée'
+              : 'À valider';
         return (
           <button
             aria-label={`${planningAbsenceTypeLabel(absence.absenceType)} ${statusLabel.toLocaleLowerCase('fr-FR')} du ${formatPlanningDate(absence.startsOn)} au ${formatPlanningDate(absence.endsOn)}`}

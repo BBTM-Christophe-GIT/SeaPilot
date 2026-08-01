@@ -7753,6 +7753,16 @@ button:disabled {
   align-items: start;
 }
 
+.hr-master-detail-layout.is-self-service {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hr-master-detail-layout.is-self-service .hr-profile-card {
+  position: static;
+  width: 100%;
+  max-height: none;
+}
+
 .hr-master-detail-layout .hr-roster-panel .hr-filter-panel {
   grid-template-columns: minmax(0, 1fr);
   gap: 11px;
@@ -12401,6 +12411,23 @@ button.planning-p12-conflict-card {
   box-shadow: 0 2px 5px rgba(13, 86, 58, .16);
 }
 
+.planning-absence-bar.is-rejected {
+  border-style: solid;
+  border-color: #a91f36;
+  color: #89172b;
+  background: #fde8ec;
+  box-shadow: 0 2px 5px rgba(137, 23, 43, .14);
+}
+
+.planning-absence-bar.is-cancelled {
+  border-style: solid;
+  border-color: #7b8798;
+  color: #566274;
+  background: #eef1f5;
+  box-shadow: 0 2px 5px rgba(53, 65, 82, .12);
+  opacity: .82;
+}
+
 .planning-absence-bar.is-approved.is-leave {
   border-color: #000;
   color: #fff;
@@ -15990,6 +16017,10 @@ button.planning-p12-conflict-card {
   padding: 14px 20px 28px;
 }
 
+.dpr-workspace.is-read-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .dpr-master,
 .dpr-preview {
   min-width: 0;
@@ -16041,6 +16072,15 @@ button.planning-p12-conflict-card {
   min-height: 56px;
   padding: 0 9px;
   transition: background-color .15s ease, box-shadow .15s ease;
+}
+
+.dpr-master .dpr-row.is-read-only {
+  grid-template-columns: 120px 100px minmax(160px, 1fr) 90px 90px 92px;
+}
+
+.planning-workspace.is-marin .planning-command-layout,
+.planning-workspace.is-marin .planning-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .dpr-master .dpr-row.is-selected { background: #f4f7ff; box-shadow: inset 3px 0 #2368e8; }

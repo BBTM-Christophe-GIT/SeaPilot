@@ -122,11 +122,13 @@ export function mapPlanningAbsenceRows(rows: AbsenceRow[]): PlanningAbsenceRecor
   }));
 }
 
-export async function fetchPlanningAbsences(client: SupabaseClient): Promise<PlanningAbsenceRecord[]> {
-  const { data, error } = await client
+export async function fetchPlanningAbsences(client: SupabaseClient, personId?: number | null): Promise<PlanningAbsenceRecord[]> {
+  let query = client
     .from('planning_absences')
     .select(ABSENCE_SELECT)
     .order('starts_at', { ascending: false });
+  if (personId !== undefined) query = query.eq('person_id', personId ?? -1);
+  const { data, error } = await query;
   if (error) throwPlanningDataError('load-planning-absences', 'Impossible de charger les demandes de congés.', error);
   return mapPlanningAbsenceRows((data || []) as AbsenceRow[]);
 }
@@ -173,12 +175,21 @@ export function mapPlanningConflictHistoryRows(rows: ConflictHistoryRow[]): Plan
   }));
 }
 
-export async function fetchPlanningP12Data(client: SupabaseClient): Promise<PlanningP12Data> {
+export async function fetchPlanningP12Data(
+  client: SupabaseClient,
+  options: { absencePersonId?: number | null; absencesOnly?: boolean } = {},
+): Promise<PlanningP12Data> {
+  let absenceQuery = client.from('planning_absences').select(ABSENCE_SELECT).order('starts_at', { ascending: false });
+  if (options.absencePersonId !== undefined) absenceQuery = absenceQuery.eq('person_id', options.absencePersonId ?? -1);
   const [absencesResult, casesResult, historyResult, matrices] = await Promise.all([
-    client.from('planning_absences').select(ABSENCE_SELECT).order('starts_at', { ascending: false }),
-    client.from('planning_conflict_cases').select(CONFLICT_CASE_SELECT).order('last_seen_at', { ascending: false }),
-    client.from('planning_conflict_case_history').select(CONFLICT_HISTORY_SELECT).order('changed_at', { ascending: false }),
-    fetchPlanningManningMatrices(client),
+    absenceQuery,
+    options.absencesOnly
+      ? Promise.resolve({ data: [], error: null })
+      : client.from('planning_conflict_cases').select(CONFLICT_CASE_SELECT).order('last_seen_at', { ascending: false }),
+    options.absencesOnly
+      ? Promise.resolve({ data: [], error: null })
+      : client.from('planning_conflict_case_history').select(CONFLICT_HISTORY_SELECT).order('changed_at', { ascending: false }),
+    options.absencesOnly ? Promise.resolve([]) : fetchPlanningManningMatrices(client),
   ]);
   const failed = [absencesResult, casesResult, historyResult].find((result) => result.error);
   if (failed?.error) throwPlanningDataError('load-planning-p12', 'Impossible de charger les absences et conflits.', failed.error);

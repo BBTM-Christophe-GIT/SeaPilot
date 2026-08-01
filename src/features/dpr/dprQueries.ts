@@ -70,7 +70,7 @@ export interface DprReportRecord {
   incidentCount: number;
   files: DprFileRecord[];
 }
-export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string }
+export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string; currentPersonFunction?: string }
 export interface DprDetail { report: DprReportRecord; payload: DprFormPayload; files: DprFileRecord[] }
 
 function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
@@ -123,19 +123,23 @@ function mapFile(row: Record<string, unknown>): DprFileRecord {
   };
 }
 
-async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; name: string }> {
+async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; name: string; functionLabel: string }> {
   const { data: authData } = await client.auth.getUser();
   const userId = authData.user?.id || null;
-  if (!userId) return { id: null, name: 'Utilisateur SeaPilot' };
+  if (!userId) return { id: null, name: 'Utilisateur SeaPilot', functionLabel: '' };
   const [profileResult, personResult] = await Promise.all([
     client.from('profiles').select('display_name').eq('id', userId).maybeSingle(),
-    client.from('people').select('first_name,last_name').eq('user_id', userId).maybeSingle(),
+    client.from('people').select('first_name,last_name,function_label,grade_label').eq('user_id', userId).maybeSingle(),
   ]);
   const personName = formatPersonName(text(personResult.data?.first_name), text(personResult.data?.last_name));
-  return { id: userId, name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot' };
+  return {
+    id: userId,
+    name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot',
+    functionLabel: `${text(personResult.data?.function_label)} ${text(personResult.data?.grade_label)}`.trim(),
+  };
 }
 
-export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDashboardData> {
+export async function fetchDprDashboard(client: SupabaseClient, options: { selfOnly?: boolean } = {}): Promise<DprDashboardData> {
   const [reportResult, metricResult, incidentResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult, profile] = await Promise.all([
     client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(2000),
     client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters'),
@@ -166,7 +170,7 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
     .forEach((file) => filesByReport.set(file.dprId, [...(filesByReport.get(file.dprId) || []), file]));
   const projectMap = new Map(projects.map((project) => [project.id, project]));
   const vesselMap = new Map(vessels.map((vessel) => [vessel.id, vessel]));
-  const reports = (reportResult.data || []).map((row) => {
+  const reports = (reportResult.data || []).filter((row) => !options.selfOnly || row.created_by === profile.id).map((row) => {
     const projectId = numberOrNull(row.project_id); const vesselId = numberOrNull(row.vessel_id);
     return {
       id: Number(row.id), number: numberOrNull(row.dpr_number), status: row.status as DprStatus,
@@ -183,7 +187,7 @@ export async function fetchDprDashboard(client: SupabaseClient): Promise<DprDash
     .filter((row) => (!row.hired_on || text(row.hired_on) <= today) && (!row.departed_on || text(row.departed_on) >= today))
     .map((row) => mapPerson(row as Record<string, unknown>));
   return {
-    reports, currentUserId: profile.id, currentUserName: profile.name,
+    reports, currentUserId: profile.id, currentUserName: profile.name, currentPersonFunction: profile.functionLabel,
     references: {
       projects, vessels, people,
       exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),

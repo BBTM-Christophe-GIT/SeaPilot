@@ -36,7 +36,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { APP_MODULES, type AppModule, type ModuleKey } from '../permissions/moduleAccess';
 import { fetchVisibleModulesForRoles, getDefaultVisibleModules } from '../permissions/navigationPermissions';
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
-import { fetchCurrentUserRoles } from '../profiles/profileQueries';
+import { fetchCurrentPersonSummary, fetchCurrentUserRoles, type CurrentPersonSummary } from '../profiles/profileQueries';
 
 interface AppShellProps {
   rolesOverride?: RoleKey[];
@@ -48,6 +48,7 @@ export interface AppShellOutletContext {
   roles: RoleKey[];
   client: SupabaseClient;
   previewMode: boolean;
+  currentPerson: CurrentPersonSummary | null;
 }
 
 type AdminProfileView = 'actual' | RoleKey;
@@ -145,6 +146,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   );
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
   const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
+  const [currentPerson, setCurrentPerson] = useState<CurrentPersonSummary | null>(null);
+  const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -206,6 +209,21 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     };
   }, [client, rolesOverride, sessionUserId]);
 
+  useEffect(() => {
+    if (rolesOverride || !sessionUserId) {
+      setCurrentPerson(null);
+      setIsLoadingPerson(false);
+      return;
+    }
+    let isMounted = true;
+    setIsLoadingPerson(true);
+    fetchCurrentPersonSummary(client)
+      .then((person) => { if (isMounted) setCurrentPerson(person); })
+      .catch(() => { if (isMounted) setCurrentPerson(null); })
+      .finally(() => { if (isMounted) setIsLoadingPerson(false); });
+    return () => { isMounted = false; };
+  }, [client, rolesOverride, sessionUserId]);
+
   const isActualAdmin = roles.includes('admin');
   const simulatedRole = isActualAdmin && adminProfileView !== 'actual' ? adminProfileView : null;
   const effectiveRoles: RoleKey[] = simulatedRole ? [simulatedRole] : roles;
@@ -240,7 +258,15 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }, [location.pathname]);
 
   const requestedModule = getRequestedModule(location.pathname);
-  const activeVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
+  const roleVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
+  const isMarinOnly = effectiveRoles.includes('marin')
+    && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const currentFunction = `${currentPerson?.functionLabel || ''} ${currentPerson?.gradeLabel || ''}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR');
+  const isSecondCaptain = currentFunction.includes('2nd capitaine') || currentFunction.includes('second capitaine');
+  const activeVisibleModules = isMarinOnly && !isSecondCaptain
+    ? roleVisibleModules.filter((module) => module.key !== 'dpr')
+    : roleVisibleModules;
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
     : false;
@@ -279,7 +305,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     });
   }
 
-  if (isLoadingRoles) {
+  if (isLoadingRoles || isLoadingPerson) {
     return <div className="auth-loading">Chargement des droits...</div>;
   }
 
@@ -477,7 +503,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles: effectiveRoles, client, previewMode } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles: effectiveRoles, client, previewMode, currentPerson } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>

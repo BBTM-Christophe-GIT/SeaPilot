@@ -133,7 +133,11 @@ export function buildPlanningFleetLanes(
   filters: PlanningFilters,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningFleetLane[] {
-  const projects = overview.projects.filter((project) => (
+  const uniqueProjects = [...new Map(overview.projects.map((project) => [
+    `${normalizePlanningText(project.title)}:${project.primaryVesselId || ''}:${project.secondaryVesselId || ''}:${project.startsOn}:${project.endsOn}`,
+    project,
+  ])).values()];
+  const projects = uniqueProjects.filter((project) => (
     project.startsOn
     && rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end)
     && projectMatchesFilters(project, filters)

@@ -132,6 +132,8 @@ export function PlanningP12Panel({
   initialAbsenceId = null,
   openAbsenceFormOnMount = false,
   requestedOnly = false,
+  personalPersonId,
+  personalOnly = false,
 }: {
   client: SupabaseClient;
   overview: PlanningOverview;
@@ -149,9 +151,14 @@ export function PlanningP12Panel({
   initialAbsenceId?: number | null;
   openAbsenceFormOnMount?: boolean;
   requestedOnly?: boolean;
+  personalPersonId?: number | null;
+  personalOnly?: boolean;
 }) {
-  const people = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
-  const [tab, setTab] = useState<P12Tab>(initialTab);
+  const people = useMemo(
+    () => overview.people.filter((person) => person.active && (!personalOnly || person.id === personalPersonId)),
+    [overview.people, personalOnly, personalPersonId],
+  );
+  const [tab, setTab] = useState<P12Tab>(personalOnly ? 'absences' : initialTab);
   const [data, setData] = useState<PlanningP12Data>(EMPTY_DATA);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -167,23 +174,29 @@ export function PlanningP12Panel({
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      setData(await fetchPlanningP12Data(client));
+      setData(await fetchPlanningP12Data(client, {
+        absencePersonId: personalOnly ? personalPersonId : undefined,
+        absencesOnly: personalOnly,
+      }));
       setFeedback(null);
     } catch (error) {
       setFeedback({ message: planningErrorMessage(error, 'Impossible de charger les absences et conflits.'), error: true });
     } finally {
       setIsLoading(false);
     }
-  }, [client]);
+  }, [client, personalOnly, personalPersonId]);
 
   useEffect(() => {
     let active = true;
-    void fetchPlanningP12Data(client)
+    void fetchPlanningP12Data(client, {
+      absencePersonId: personalOnly ? personalPersonId : undefined,
+      absencesOnly: personalOnly,
+    })
       .then((result) => { if (active) setData(result); })
       .catch((error) => { if (active) setFeedback({ message: planningErrorMessage(error, 'Impossible de charger les absences et conflits.'), error: true }); })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
-  }, [client]);
+  }, [client, personalOnly, personalPersonId]);
 
   const detectedConflicts = useMemo(
     () => buildPlanningP12Conflicts(overview, data, range),
@@ -354,16 +367,16 @@ export function PlanningP12Panel({
           <div><ShieldAlert aria-hidden="true" size={20} /><span><small>Planification opérationnelle · P1.2</small><h2>Absences et conflits</h2></span></div>
           <div><button aria-label="Actualiser les absences et conflits" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div>
         </header>
-        <div className="planning-p12-kpis" aria-label="Indicateurs de conflits">
+        {!personalOnly ? <div className="planning-p12-kpis" aria-label="Indicateurs de conflits">
           <span className="is-danger"><strong>{blockingCount}</strong> blocage(s)</span>
           <span className="is-warning"><strong>{warningCount}</strong> avertissement(s)</span>
           <span><strong>{vacantCount}</strong> poste(s) vacant(s)</span>
           <span><strong>{data.absences.filter((absence) => absence.status === 'requested').length}</strong> demande(s) à traiter</span>
-        </div>
+        </div> : null}
         <nav aria-label="Sections P1.2" className="planning-p12-tabs">
           <button aria-selected={tab === 'absences'} className={tab === 'absences' ? 'is-active' : ''} onClick={() => setTab('absences')} role="tab" type="button"><CalendarOff size={16} />Absences</button>
-          <button aria-selected={tab === 'conflicts'} className={tab === 'conflicts' ? 'is-active' : ''} onClick={() => setTab('conflicts')} role="tab" type="button"><AlertTriangle size={16} />Centre de conflits</button>
-          <button aria-selected={tab === 'replacements'} className={tab === 'replacements' ? 'is-active' : ''} onClick={() => setTab('replacements')} role="tab" type="button"><UserRoundSearch size={16} />Remplacements</button>
+          {!personalOnly ? <button aria-selected={tab === 'conflicts'} className={tab === 'conflicts' ? 'is-active' : ''} onClick={() => setTab('conflicts')} role="tab" type="button"><AlertTriangle size={16} />Centre de conflits</button> : null}
+          {!personalOnly ? <button aria-selected={tab === 'replacements'} className={tab === 'replacements' ? 'is-active' : ''} onClick={() => setTab('replacements')} role="tab" type="button"><UserRoundSearch size={16} />Remplacements</button> : null}
         </nav>
         {feedback ? <p className={feedback.error ? 'form-error planning-p12-feedback' : 'admin-success planning-p12-feedback'} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p> : null}
         <div className="planning-p12-body">
@@ -372,7 +385,7 @@ export function PlanningP12Panel({
             <section className="planning-p12-section">
               <div className="planning-p12-section-heading"><div><h3>Demandes et indisponibilités</h3><p>Les dates sont affichées en heure locale et conservées en UTC.</p></div>{canRequestAbsences ? <button onClick={() => { setAbsenceForm(emptyAbsence(range, people)); setIsAbsenceFormOpen((value) => !value); }} type="button"><Plus size={16} />Nouvelle demande</button> : null}</div>
               {isAbsenceFormOpen ? <form className="planning-p12-form" onSubmit={submitAbsence}>
-                <label>Marin<select required value={absenceForm.personId} onChange={(event) => setAbsenceForm({ ...absenceForm, personId: event.target.value })}><option value="">Choisir</option>{people.map((person) => <option key={person.id} value={person.id}>{formatPlanningPerson(person)} · {person.functionLabel || 'Marin'}</option>)}</select></label>
+                <label>Marin<select disabled={personalOnly} required value={absenceForm.personId} onChange={(event) => setAbsenceForm({ ...absenceForm, personId: event.target.value })}><option value="">Choisir</option>{people.map((person) => <option key={person.id} value={person.id}>{formatPlanningPerson(person)} · {person.functionLabel || 'Marin'}</option>)}</select></label>
                 <label>Type<select value={absenceForm.absenceType} onChange={(event) => setAbsenceForm({ ...absenceForm, absenceType: event.target.value as PlanningAbsenceType })}>{ABSENCE_TYPES.map((type) => <option key={type} value={type}>{planningAbsenceTypeLabel(type)}</option>)}</select></label>
                 <label>Début<input required type="datetime-local" value={absenceForm.startsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, startsAt: event.target.value })} /></label>
                 <label>Fin<input required type="datetime-local" value={absenceForm.endsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, endsAt: event.target.value })} /></label>
@@ -394,12 +407,12 @@ export function PlanningP12Panel({
                   {absence.status === 'requested' ? <div className="planning-p12-review">
                     <label>Commentaire<input aria-label={`Commentaire pour ${personName}`} value={reviewComments[absence.id] || ''} onChange={(event) => setReviewComments((current) => ({ ...current, [absence.id]: event.target.value }))} /></label>
                     <div>
-                      {canRequestAbsences ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}
+                      {canRequestAbsences && (!personalOnly || absence.personId === personalPersonId) ? <button className="is-secondary" onClick={() => editAbsence(absence)} type="button">Modifier</button> : null}
                       {canReviewAbsences ? <>
                         <button className="is-success" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'approve')} type="button"><Check size={15} />Valider</button>
                         <button className="is-danger" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'reject')} type="button"><Ban size={15} />Refuser</button>
                       </> : null}
-                      <button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button>
+                      {(canReviewAbsences || (canRequestAbsences && (!personalOnly || absence.personId === personalPersonId))) ? <button className="is-secondary" disabled={isSaving} onClick={() => void reviewAbsence(absence, 'cancel')} type="button">Annuler la demande</button> : null}
                     </div>
                   </div> : null}
                   {canDeleteAbsences ? <div className="planning-p12-card-actions">

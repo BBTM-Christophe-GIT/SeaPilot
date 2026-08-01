@@ -672,6 +672,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
+  const isMarinView = effectiveRoles.includes('marin')
+    && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const ownPersonId = outletContext?.currentPerson?.id;
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
@@ -700,7 +703,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetchHumanResourcesData(effectiveClient)
+    fetchHumanResourcesData(effectiveClient, { personId: isMarinView && ownPersonId !== undefined ? ownPersonId : undefined })
       .then((loadedData) => {
         if (isMounted) {
           const sortedPeople = sortPeople(loadedData.people);
@@ -733,7 +736,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient]);
+  }, [effectiveClient, isMarinView, ownPersonId]);
 
   const normalizedSearchQuery = normalizeSearch(searchQuery.trim());
   const roleVisiblePeople = useMemo(
@@ -1189,7 +1192,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
       <header className="hr-command-header">
         <div>
           <h1>Ressources humaines</h1>
-          <p>Pilotage RH analytique · {visibleDocuments.length} documents suivis</p>
+          <p>{isMarinView ? 'Mon dossier RH' : 'Pilotage RH analytique'} · {visibleDocuments.length} documents suivis</p>
         </div>
         <div className="hr-command-actions">
           {isManager ? (
@@ -1207,7 +1210,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </div>
       </header>
 
-      <div className="hr-kpi-band" aria-label="Indicateurs RH">
+      {!isMarinView ? <div className="hr-kpi-band" aria-label="Indicateurs RH">
         <MetricCluster
           icon={<Users aria-hidden="true" size={18} />}
           label="Effectif RH"
@@ -1245,9 +1248,9 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         <StrategicMetric label="Turnover CDI 12 mois" suffix="%" value={trailingWorkforceMetrics.permanentTurnover.rate} />
         <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
         <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
-      </div>
+      </div> : null}
 
-      <div className="hr-analytics-grid">
+      {!isMarinView ? <div className="hr-analytics-grid">
         <StaffEvolutionChart
           onYearChange={setStaffEvolutionYear}
           points={staffEvolution}
@@ -1259,7 +1262,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
           years={staffEvolutionYears}
         />
         <FunctionDistribution groups={dashboard.groups} />
-      </div>
+      </div> : null}
 
       {statusMessage || errorMessage ? (
         <div className="admin-notices" aria-live="polite">
@@ -1268,8 +1271,8 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </div>
       ) : null}
 
-      <div className="hr-master-detail-layout">
-        <section className="hr-roster-panel">
+      <div className={`hr-master-detail-layout${isMarinView ? ' is-self-service' : ''}`}>
+        {!isMarinView ? <section className="hr-roster-panel">
         <div className="hr-roster-heading">
           <div>
             <h2>Marins par fonction</h2>
@@ -1418,9 +1421,10 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
             ))}
           </div>
         )}
-        </section>
+        </section> : null}
 
         <PersonProfileCard
+          canClose={!isMarinView}
           documents={selectedPersonDocuments}
           isManager={isManager}
           isSaving={isSaving}
@@ -1838,6 +1842,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  canClose = true,
   documents,
   isManager,
   isSaving,
@@ -1851,6 +1856,7 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canClose?: boolean;
   documents: HrDocumentRecord[];
   isManager: boolean;
   isSaving: boolean;
@@ -1894,9 +1900,11 @@ function PersonProfileCard({
           <p>{normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}</p>
           <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>{person.active ? 'Actif' : 'Inactif'}</span>
         </div>
-        <button aria-label="Fermer la fiche RH" className="hr-profile-close" onClick={onClose} type="button">
-          <X aria-hidden="true" size={19} />
-        </button>
+        {canClose ? (
+          <button aria-label="Fermer la fiche RH" className="hr-profile-close" onClick={onClose} type="button">
+            <X aria-hidden="true" size={19} />
+          </button>
+        ) : null}
       </header>
 
       <div aria-label="Indicateurs du collaborateur" className="hr-profile-metrics">

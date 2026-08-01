@@ -106,6 +106,10 @@ describe('DprPage Phase 7', () => {
     render(<DprPage client={{} as never} roles={['marin']} />);
     await screen.findByRole('heading', { name: 'Daily Progress Report' });
     expect(screen.queryByRole('button', { name: /Diagnostic/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Produire' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Exports ZIP' })).not.toBeInTheDocument();
+    expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
+    expect(screen.getByText('consultation sans téléchargement')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
