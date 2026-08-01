@@ -4,6 +4,7 @@ import {
   planningGridCellKey,
   planningGridCellsShareSegment,
   planningGridDefaultStatus,
+  normalizePlanningGridStatus,
   type PlanningGridCell,
 } from './planningGrid';
 
@@ -20,6 +21,11 @@ describe('Planning grid editing helpers', () => {
   it('uses the shore default only for Armement rows', () => {
     expect(planningGridDefaultStatus('Armement - Cherbourg')).toBe('A Terre');
     expect(planningGridDefaultStatus('GOURY')).toBe('En Mer');
+  });
+
+  it('keeps health-related daily statuses when reading the grid', () => {
+    expect(normalizePlanningGridStatus('Arrêt Maladie', 'GOURY')).toBe('Arrêt Maladie');
+    expect(normalizePlanningGridStatus('Accident du Travail', 'GOURY')).toBe('Accident du Travail');
   });
 
   it('separates adjacent cells when status, comment or conflict state differs', () => {

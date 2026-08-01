@@ -1,6 +1,19 @@
 import { addPlanningDays, daysBetween } from './planningDates';
 
-export type PlanningGridStatus = 'En Mer' | 'A Terre' | 'Vacance' | 'Repos';
+export const PLANNING_GRID_STATUSES = [
+  'En Mer',
+  'A Terre',
+  'Vacance',
+  'Repos',
+  'Arrêt Maladie',
+  'Accident du Travail',
+] as const;
+
+export type PlanningGridStatus = typeof PLANNING_GRID_STATUSES[number];
+
+export function isPlanningGridStatus(status: string): status is PlanningGridStatus {
+  return (PLANNING_GRID_STATUSES as readonly string[]).includes(status);
+}
 
 export interface PlanningGridCell {
   key: string;
@@ -33,8 +46,8 @@ export function planningGridDefaultStatus(vessel: string): PlanningGridStatus {
 }
 
 export function normalizePlanningGridStatus(status: string, vessel: string): PlanningGridStatus {
-  return ['En Mer', 'A Terre', 'Vacance', 'Repos'].includes(status)
-    ? status as PlanningGridStatus
+  return isPlanningGridStatus(status)
+    ? status
     : planningGridDefaultStatus(vessel);
 }
 
