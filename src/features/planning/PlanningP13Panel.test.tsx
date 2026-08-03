@@ -78,6 +78,23 @@ describe('Planning P1.3 cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Nouvelle politique' })).not.toBeInTheDocument();
   });
 
+  it('can reuse the work/rest surface as an embedded application page', async () => {
+    renderPanel({
+      presentation: 'page',
+      initialTab: 'rest',
+      visibleTabs: ['rest'],
+      title: 'Contrôles travail et repos',
+      subtitle: 'Socle Planning partagé.',
+      onClose: undefined,
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Contrôles travail et repos' })).toBeInTheDocument();
+    expect(screen.getByRole('region')).toHaveClass('is-page');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fermer' })).not.toBeInTheDocument();
+    expect(screen.getByText('Contrôles travail & repos')).toBeInTheDocument();
+  });
+
   it('starts policy creation with blank administrator-owned thresholds and persists entered values', async () => {
     const user = userEvent.setup();
     renderPanel();

@@ -600,6 +600,7 @@ button:disabled {
 .content-shell {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   background: #f4f6f9;
 }
@@ -8703,11 +8704,17 @@ button:disabled {
 
 @media (max-width: 760px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-shell.sidebar-is-collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-shell {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .sidebar {
@@ -10276,6 +10283,181 @@ button.planning-p12-conflict-card {
   .planning-p13-panel input,
   .planning-p13-panel select,
   .planning-p13-panel textarea { min-height: 44px; }
+}
+
+/* Module Suivi du Temps de Travail — surface dédiée fondée sur Planning P1.3 */
+.working-time-page {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.working-time-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.working-time-heading {
+  display: flex;
+  flex: 1 1 480px;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+.working-time-heading-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: #ffffff;
+  background: #0b6075;
+}
+
+.working-time-heading p,
+.working-time-heading h1,
+.working-time-heading span,
+.working-time-foundation-note p {
+  margin: 0;
+}
+
+.working-time-heading p {
+  color: #0c5598;
+  font-size: .76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.working-time-heading h1 {
+  margin-top: 3px;
+  color: #182132;
+  font-size: clamp(1.35rem, 2.4vw, 1.8rem);
+  line-height: 1.2;
+}
+
+.working-time-heading span {
+  display: block;
+  margin-top: 5px;
+  color: #617381;
+  font-size: .9rem;
+}
+
+.working-time-range {
+  display: flex;
+  flex: 1 1 360px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.working-time-range label {
+  display: grid;
+  gap: 4px;
+  color: #617381;
+  font-size: .75rem;
+  font-weight: 750;
+}
+
+.working-time-range input,
+.working-time-range button {
+  min-height: 39px;
+  border-radius: 7px;
+  font: inherit;
+}
+
+.working-time-range input {
+  padding: 7px 9px;
+  border: 1px solid #b9c9d4;
+  color: #182132;
+  background: #ffffff;
+}
+
+.working-time-range button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 0;
+  color: #ffffff;
+  background: #0b6075;
+  font-weight: 750;
+}
+
+.working-time-range button:disabled { cursor: wait; opacity: .6; }
+
+.working-time-foundation-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #cce0e6;
+  border-radius: 9px;
+  color: #294b57;
+  background: #eef7f9;
+  font-size: .86rem;
+}
+
+.working-time-foundation-note > svg { flex: 0 0 auto; margin-top: 1px; color: #0b6075; }
+.working-time-foundation-note code { font-size: .82em; }
+.working-time-foundation-note p,
+.working-time-foundation-note code { overflow-wrap: anywhere; }
+
+.working-time-message {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.working-time-message.is-error { color: #8b2635; background: #fdecef; }
+
+.planning-p13-panel.is-page {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 560px;
+  overflow: visible;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.planning-p13-panel.is-page .planning-p13-content {
+  max-height: none;
+  overflow: visible;
+}
+
+.planning-p13-panel.is-page > header small { white-space: normal; overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .working-time-header { align-items: stretch; flex-direction: column; }
+  .working-time-heading,
+  .working-time-range { flex: 0 1 auto; }
+  .working-time-range { width: 100%; flex-wrap: wrap; }
+  .working-time-range label { flex: 1 1 150px; }
+  .working-time-range input { width: 100%; }
+}
+
+@media (max-width: 560px) {
+  .working-time-header { padding: 15px; }
+  .working-time-heading-icon { width: 40px; height: 40px; flex-basis: 40px; }
+  .working-time-range { justify-content: stretch; }
+  .working-time-range button { width: 100%; }
+  .planning-p13-panel.is-page { min-height: 500px; border-radius: 8px; }
+  .planning-p13-panel.is-page .planning-p13-toolbar { flex-direction: column; }
+  .planning-p13-panel.is-page .planning-p13-toolbar > button { width: 100%; }
 }
 
 /* Planning P2.1 — assistant maritime explicable */

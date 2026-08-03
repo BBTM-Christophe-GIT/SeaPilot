@@ -35,7 +35,7 @@ import {
   savePlanningDependency,
   savePlanningWorkRestPolicy,
 } from './planningP13Queries';
-type P13Tab = 'dashboard' | 'rest' | 'notifications' | 'dependencies';
+export type P13Tab = 'dashboard' | 'rest' | 'notifications' | 'dependencies';
 
 const EMPTY_DATA: PlanningP13Data = {
   policies: [], notifications: [], dependencies: [],
@@ -105,6 +105,25 @@ function splitEntity(value: string): { kind: PlanningDependencyEntityKind; id: n
   return { kind: kind as PlanningDependencyEntityKind, id: Number(id) };
 }
 
+export interface PlanningP13PanelProps {
+  client: SupabaseClient;
+  overview: PlanningOverview;
+  range: { start: string; end: string };
+  canManageWorkRestPolicies: boolean;
+  canViewDashboard: boolean;
+  canViewWorkRest: boolean;
+  canViewNotifications: boolean;
+  canRefreshNotifications: boolean;
+  canManageDependencies: boolean;
+  onClose?: () => void;
+  onAuditChange?: () => Promise<void>;
+  presentation?: 'dialog' | 'page';
+  initialTab?: P13Tab;
+  visibleTabs?: P13Tab[];
+  title?: string;
+  subtitle?: string;
+}
+
 export function PlanningP13Panel({
   client,
   overview,
@@ -116,21 +135,13 @@ export function PlanningP13Panel({
   canRefreshNotifications,
   canManageDependencies,
   onClose,
-  onAuditChange,
-}: {
-  client: SupabaseClient;
-  overview: PlanningOverview;
-  range: { start: string; end: string };
-  canManageWorkRestPolicies: boolean;
-  canViewDashboard: boolean;
-  canViewWorkRest: boolean;
-  canViewNotifications: boolean;
-  canRefreshNotifications: boolean;
-  canManageDependencies: boolean;
-  onClose: () => void;
-  onAuditChange: () => Promise<void>;
-}) {
-  const [tab, setTab] = useState<P13Tab>(() => canViewDashboard ? 'dashboard' : canViewWorkRest ? 'rest' : 'notifications');
+  onAuditChange = async () => undefined,
+  presentation = 'dialog',
+  initialTab,
+  visibleTabs,
+  title = 'Cockpit Planning P1.3',
+  subtitle = 'Repos, notifications, indicateurs, exports et dépendances',
+}: PlanningP13PanelProps) {
   const [data, setData] = useState<PlanningP13Data>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -139,11 +150,18 @@ export function PlanningP13Panel({
   const [restFilter, setRestFilter] = useState<'all' | 'alerts' | 'missing'>('alerts');
   const [dependencyForm, setDependencyForm] = useState<DependencyForm | null>(null);
   const availableTabs = useMemo(() => TABS.filter((item) => {
+    if (visibleTabs && !visibleTabs.includes(item.key)) return false;
     if (item.key === 'dashboard') return canViewDashboard;
     if (item.key === 'rest') return canViewWorkRest;
     if (item.key === 'notifications') return canViewNotifications;
     return canManageDependencies;
-  }), [canManageDependencies, canViewDashboard, canViewNotifications, canViewWorkRest]);
+  }), [canManageDependencies, canViewDashboard, canViewNotifications, canViewWorkRest, visibleTabs]);
+  const [tab, setTab] = useState<P13Tab>(() => (
+    initialTab && availableTabs.some((item) => item.key === initialTab)
+      ? initialTab
+      : availableTabs[0]?.key || 'rest'
+  ));
+  const activeTab = availableTabs.some((item) => item.key === tab) ? tab : availableTabs[0]?.key || 'rest';
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
@@ -256,14 +274,13 @@ export function PlanningP13Panel({
     }
   }
 
-  return <div className="planning-dialog-backdrop is-side-panel" role="presentation">
-    <section aria-modal="true" className="planning-dialog planning-p13-panel" role="dialog">
-      <header><div><Gauge aria-hidden="true" size={21} /><div><h2>Cockpit Planning P1.3</h2><small>Repos, notifications, indicateurs, exports et dépendances</small></div></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></header>
-      <nav aria-label="Sections P1.3" className="planning-p13-tabs" role="tablist">{availableTabs.map((item) => <button aria-selected={tab === item.key} className={tab === item.key ? 'is-active' : ''} key={item.key} onClick={() => setTab(item.key)} role="tab" type="button">{item.label}{item.key === 'notifications' && metrics.unreadNotifications ? <span>{metrics.unreadNotifications}</span> : null}</button>)}</nav>
+  const panel = <section aria-modal={presentation === 'dialog' ? 'true' : undefined} className={`planning-dialog planning-p13-panel${presentation === 'page' ? ' is-page' : ''}`} role={presentation === 'dialog' ? 'dialog' : 'region'}>
+      <header><div><Gauge aria-hidden="true" size={21} /><div><h2>{title}</h2><small>{subtitle}</small></div></div>{onClose ? <button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button> : null}</header>
+      {availableTabs.length > 1 ? <nav aria-label="Sections P1.3" className="planning-p13-tabs" role="tablist">{availableTabs.map((item) => <button aria-selected={activeTab === item.key} className={activeTab === item.key ? 'is-active' : ''} key={item.key} onClick={() => setTab(item.key)} role="tab" type="button">{item.label}{item.key === 'notifications' && metrics.unreadNotifications ? <span>{metrics.unreadNotifications}</span> : null}</button>)}</nav> : null}
       {feedback ? <p className={`planning-p13-feedback${feedback.error ? ' is-error' : ''}`} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p> : null}
       {loading ? <div className="admin-state" role="status"><RefreshCw className="is-spinning" size={18} />Chargement des contrôles P1.3…</div> : null}
 
-      {!loading && tab === 'dashboard' ? <div className="planning-p13-content">
+      {!loading && activeTab === 'dashboard' ? <div className="planning-p13-content">
         <div className="planning-p13-kpis">
           {[
             ['Navires en opération', metrics.operatingVessels], ['Marins embarqués', metrics.embarkedSailors],
@@ -277,19 +294,19 @@ export function PlanningP13Panel({
         <section className="planning-p13-health"><h3>À traiter</h3><p><Bell size={17} />{metrics.unreadNotifications} notification(s) non lue(s)</p><p><Link2 size={17} />{metrics.dependencyViolations} dépendance(s) non respectée(s)</p></section>
       </div> : null}
 
-      {!loading && tab === 'rest' ? <div className="planning-p13-content">
+      {!loading && activeTab === 'rest' ? <div className="planning-p13-content">
         <div className="planning-p13-toolbar"><div><strong>Contrôles travail & repos</strong><small>{data.policies.length ? `${data.policies.length} politique(s) administrée(s)` : 'Aucun seuil configuré : aucun seuil réglementaire implicite n’est appliqué.'}</small></div>{canManageWorkRestPolicies ? <button onClick={() => setPolicyEditor(emptyPolicy(range.start))} type="button"><Plus size={16} />Nouvelle politique</button> : null}</div>
         <div className="planning-p13-segmented"><button className={restFilter === 'alerts' ? 'is-active' : ''} onClick={() => setRestFilter('alerts')} type="button">Alertes</button><button className={restFilter === 'missing' ? 'is-active' : ''} onClick={() => setRestFilter('missing')} type="button">Données manquantes</button><button className={restFilter === 'all' ? 'is-active' : ''} onClick={() => setRestFilter('all')} type="button">Tous</button></div>
         <div className="planning-p13-policy-list">{data.policies.map((policy) => <button key={policy.id} onClick={() => canManageWorkRestPolicies && setPolicyEditor(policyForm(policy))} type="button"><span><strong>{policy.name}</strong><small>{policy.scope === 'company' ? 'Entreprise' : overview.vessels.find((vessel) => vessel.id === policy.vesselId)?.name} · depuis le {formatPlanningDate(policy.effectiveFrom)}</small></span><em>{policy.active ? 'Active' : 'Inactive'}</em></button>)}</div>
         <div className="planning-p13-check-list">{filteredChecks.length ? filteredChecks.map((check) => <article className={`is-${check.status}`} key={check.id}><div><strong>{check.personName}</strong><span>{check.ruleLabel}</span><small>{check.vesselName} · {formatPlanningDate(check.date)} · {check.policyName}</small></div><div><strong>{check.value ?? 'N/A'} {check.value === null ? '' : check.unit === 'hours' ? 'h' : 'période(s)'}</strong><span>Seuil : {check.threshold ?? 'non configuré'}</span><em>{check.status === 'compliant' ? 'Conforme' : check.status === 'non_compliant' ? 'Non conforme' : 'Non évaluable'}</em></div></article>) : <div className="admin-empty"><CheckCircle2 size={20} /><p>Aucun contrôle dans ce filtre.</p></div>}</div>
       </div> : null}
 
-      {!loading && tab === 'notifications' ? <div className="planning-p13-content">
+      {!loading && activeTab === 'notifications' ? <div className="planning-p13-content">
         <div className="planning-p13-toolbar"><div><strong>Notifications métier</strong><small>{metrics.unreadNotifications} non lue(s) sur {data.notifications.length}</small></div>{canRefreshNotifications ? <button onClick={() => void load(true)} type="button"><RefreshCw size={16} />Actualiser</button> : null}</div>
         <div className="planning-p13-notifications">{data.notifications.length ? data.notifications.map((notification) => <article className={`${notification.readAt ? 'is-read' : ''} is-${notification.severity}`} key={notification.id}><Bell size={18} /><div><span><strong>{notification.title}</strong><em>{PLANNING_NOTIFICATION_LABELS[notification.notificationType]}</em></span><p>{notification.body}</p><small>{formatPlanningDateTime(notification.createdAt)}{notification.dueOn ? ` · échéance ${formatPlanningDate(notification.dueOn)}` : ''}</small></div><button onClick={() => void toggleNotification(notification.id, !notification.readAt)} type="button">{notification.readAt ? 'Marquer non lue' : 'Marquer lue'}</button></article>) : <div className="admin-empty"><Bell size={20} /><p>Aucune notification.</p></div>}</div>
       </div> : null}
 
-      {!loading && tab === 'dependencies' ? <div className="planning-p13-content">
+      {!loading && activeTab === 'dependencies' ? <div className="planning-p13-content">
         <div className="planning-p13-toolbar"><div><strong>Dépendances opérationnelles</strong><small>La cible doit commencer après la source et le délai configuré.</small></div>{canManageDependencies && entities.length > 1 ? <button onClick={() => setDependencyForm({ dependencyType: 'operation_sequence', predecessor: entities[0].value, successor: entities[1].value, lagMinutes: '0', notes: '' })} type="button"><Plus size={16} />Nouvelle dépendance</button> : null}</div>
         <div className="planning-p13-dependencies">{dependencyResults.length ? dependencyResults.map((result) => <article className={result.violated ? 'is-violated' : 'is-valid'} key={result.dependency.id}><Activity size={18} /><div><span><strong>{PLANNING_DEPENDENCY_LABELS[result.dependency.dependencyType]}</strong><em>{result.violated ? 'Non respectée' : 'Respectée'}</em></span><p>{result.predecessorLabel} → {result.successorLabel}</p><small>{result.detail}</small></div>{canManageDependencies ? <button aria-label={`Supprimer la dépendance ${result.dependency.id}`} disabled={saving} onClick={() => void removeDependency(result.dependency.id)} type="button"><Trash2 size={16} /></button> : null}</article>) : <div className="admin-empty"><Link2 size={20} /><p>Aucune dépendance configurée.</p></div>}</div>
       </div> : null}
@@ -297,6 +314,9 @@ export function PlanningP13Panel({
       {policyEditor ? <form className="planning-p13-inline-editor" onSubmit={submitPolicy}><header><div><Settings2 size={18} /><h3>{policyEditor.id ? 'Modifier la politique' : 'Nouvelle politique'}</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setPolicyEditor(null)} type="button"><X size={16} /></button></header><div className="planning-p13-form-grid"><label className="is-wide">Nom<input required minLength={2} value={policyEditor.name} onChange={(event) => setPolicyEditor({ ...policyEditor, name: event.target.value })} /></label><label>Portée<select value={policyEditor.scope} onChange={(event) => setPolicyEditor({ ...policyEditor, scope: event.target.value as PolicyForm['scope'], vesselId: '' })}><option value="company">Entreprise</option><option value="vessel">Navire</option></select></label>{policyEditor.scope === 'vessel' ? <label>Navire<select required value={policyEditor.vesselId} onChange={(event) => setPolicyEditor({ ...policyEditor, vesselId: event.target.value })}><option value="">Sélectionner</option>{overview.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label> : null}<label>Applicable du<input required type="date" value={policyEditor.effectiveFrom} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveFrom: event.target.value })} /></label><label>Au<input min={policyEditor.effectiveFrom} type="date" value={policyEditor.effectiveTo} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveTo: event.target.value })} /></label><label>Travail max / 24 h<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork24h: event.target.value })} /></label><label>Repos min / 24 h<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minRest24h} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest24h: event.target.value })} /></label><label>Travail max / 7 j<input max="168" min="0" required step="0.25" type="number" value={policyEditor.maxWork7d} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork7d: event.target.value })} /></label><label>Repos min / 7 j<input max="168" min="0" required step="0.25" type="number" value={policyEditor.minRest7d} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest7d: event.target.value })} /></label><label>Repos consécutif min<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minConsecutiveRestHours} onChange={(event) => setPolicyEditor({ ...policyEditor, minConsecutiveRestHours: event.target.value })} /></label><label>Périodes de repos max<input max="24" min="1" required type="number" value={policyEditor.maxRestPeriods24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxRestPeriods24h: event.target.value })} /></label><label>Début de nuit<input required type="time" value={policyEditor.nightStartsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightStartsAt: event.target.value })} /></label><label>Fin de nuit<input required type="time" value={policyEditor.nightEndsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightEndsAt: event.target.value })} /></label><label>Travail de nuit max<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxNightWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxNightWork24h: event.target.value })} /></label><label className="is-checkbox"><input checked={policyEditor.includeHandover} onChange={(event) => setPolicyEditor({ ...policyEditor, includeHandover: event.target.checked })} type="checkbox" />Inclure la passation</label><label className="is-checkbox"><input checked={policyEditor.active} onChange={(event) => setPolicyEditor({ ...policyEditor, active: event.target.checked })} type="checkbox" />Politique active</label><label className="is-wide">Notes<textarea value={policyEditor.notes} onChange={(event) => setPolicyEditor({ ...policyEditor, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setPolicyEditor(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
 
       {dependencyForm ? <form className="planning-p13-inline-editor" onSubmit={submitDependency}><header><div><Link2 size={18} /><h3>Nouvelle dépendance</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setDependencyForm(null)} type="button"><X size={16} /></button></header><div className="planning-p13-form-grid"><label>Type<select value={dependencyForm.dependencyType} onChange={(event) => setDependencyForm({ ...dependencyForm, dependencyType: event.target.value as PlanningDependencyType })}>{DEPENDENCY_TYPES.map((type) => <option key={type} value={type}>{PLANNING_DEPENDENCY_LABELS[type]}</option>)}</select></label><label className="is-wide">Source<select value={dependencyForm.predecessor} onChange={(event) => setDependencyForm({ ...dependencyForm, predecessor: event.target.value })}>{entities.map((entity) => <option key={entity.value} value={entity.value}>{entity.label}</option>)}</select></label><label className="is-wide">Cible<select value={dependencyForm.successor} onChange={(event) => setDependencyForm({ ...dependencyForm, successor: event.target.value })}>{entities.map((entity) => <option key={entity.value} value={entity.value}>{entity.label}</option>)}</select></label><label>Délai minimum (minutes)<input max="525600" min="0" required type="number" value={dependencyForm.lagMinutes} onChange={(event) => setDependencyForm({ ...dependencyForm, lagMinutes: event.target.value })} /></label><label className="is-wide">Commentaire<textarea value={dependencyForm.notes} onChange={(event) => setDependencyForm({ ...dependencyForm, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setDependencyForm(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
-    </section>
-  </div>;
+    </section>;
+
+  return presentation === 'dialog'
+    ? <div className="planning-dialog-backdrop is-side-panel" role="presentation">{panel}</div>
+    : panel;
 }
