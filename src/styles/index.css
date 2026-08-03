@@ -10239,6 +10239,9 @@ button.planning-p12-conflict-card {
 .planning-p13-inline-editor > header > div { display: flex; align-items: center; gap: 8px; }
 .planning-p13-inline-editor h3 { margin: 0; }
 .planning-p13-inline-editor > header > button { width: 36px; min-height: 36px; border: 0; border-radius: 7px; background: var(--surface-soft); }
+.planning-p13-policy-warning { display: flex; gap: 9px; margin: 12px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--line)); border-radius: 8px; color: var(--text); background: color-mix(in srgb, var(--warning) 9%, var(--surface)); }
+.planning-p13-policy-warning > svg { flex: 0 0 auto; margin-top: 1px; color: var(--warning); }
+.planning-p13-policy-warning p { margin: 0; font-size: .78rem; line-height: 1.45; }
 .planning-p13-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px; }
 .planning-p13-form-grid .is-wide { grid-column: 1 / -1; }
 .planning-p13-form-grid .is-checkbox { display: flex; align-items: center; gap: 8px; min-height: 38px; }

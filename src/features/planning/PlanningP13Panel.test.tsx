@@ -20,6 +20,11 @@ vi.mock('./planningP13Queries', () => ({
   refreshPlanningNotifications: vi.fn(), savePlanningDependency: vi.fn(), savePlanningWorkRestPolicy: vi.fn(),
 }));
 
+vi.mock('./planningDates', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./planningDates')>();
+  return { ...original, todayPlanningDate: () => '2026-08-03' };
+});
+
 const client = {} as SupabaseClient;
 const overview: PlanningOverview = {
   ...EMPTY_PLANNING_OVERVIEW,
@@ -102,14 +107,26 @@ describe('Planning P1.3 cockpit', () => {
     await user.click(screen.getByRole('tab', { name: 'Travail & repos' }));
     await user.click(screen.getByRole('button', { name: 'Nouvelle politique' }));
     const form = screen.getByRole('heading', { name: 'Nouvelle politique' }).closest('form')!;
-    expect(within(form).getByLabelText('Travail max / 24 h')).toHaveValue(null);
+    expect(within(form).getByText(/sans valeur réglementaire implicite/i)).toBeInTheDocument();
+    expect(within(form).getByText(/suggestion d’import/i)).toBeInTheDocument();
+    expect(within(form).getByLabelText('Portée')).toHaveValue('company');
+    for (const label of [
+      'Travail max — 24 h glissantes', 'Repos min — 24 h glissantes',
+      'Travail max — 7 j glissants', 'Repos min — 7 j glissants',
+      'Repos consécutif minimum', 'Périodes de repos max / 24 h',
+      'Travail de nuit maximum',
+    ]) expect(within(form).getByLabelText(label)).toHaveValue(null);
+    expect(within(form).getByLabelText('Début de la fenêtre de nuit')).toHaveValue('');
+    expect(within(form).getByLabelText('Fin de la fenêtre de nuit')).toHaveValue('');
     fireEvent.change(within(form).getByLabelText('Nom'), { target: { value: 'Politique direction' } });
     for (const [label, value] of [
-      ['Travail max / 24 h', '12'], ['Repos min / 24 h', '11'], ['Travail max / 7 j', '72'],
-      ['Repos min / 7 j', '96'], ['Repos consécutif min', '6'], ['Périodes de repos max', '2'], ['Travail de nuit max', '8'],
+      ['Travail max — 24 h glissantes', '12'], ['Repos min — 24 h glissantes', '11'],
+      ['Travail max — 7 j glissants', '72'], ['Repos min — 7 j glissants', '96'],
+      ['Repos consécutif minimum', '6'], ['Périodes de repos max / 24 h', '2'],
+      ['Travail de nuit maximum', '8'],
     ]) fireEvent.change(within(form).getByLabelText(label), { target: { value } });
-    fireEvent.change(within(form).getByLabelText('Début de nuit'), { target: { value: '22:00' } });
-    fireEvent.change(within(form).getByLabelText('Fin de nuit'), { target: { value: '06:00' } });
+    fireEvent.change(within(form).getByLabelText('Début de la fenêtre de nuit'), { target: { value: '22:00' } });
+    fireEvent.change(within(form).getByLabelText('Fin de la fenêtre de nuit'), { target: { value: '06:00' } });
     await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96 })));
   });
