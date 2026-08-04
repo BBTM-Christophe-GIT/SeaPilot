@@ -23,3 +23,26 @@ Les classifications disponibles sont `FAT`, `LWDC`, `RWC`, `MTC`, `FAC`, `NEAR_M
 3. Les rôles autorisés interrogent `hse_kpi_summary` depuis le panneau HSE du module.
 
 Les politiques RLS limitent les lectures à la société active. La gestion des méthodes est réservée à l’administrateur et le recalcul d’exposition aux rôles administrateur, direction et armement.
+
+## Import annuel XLSM
+
+L’assistant d’import est visible uniquement par les rôles `admin` et `armement`. Il lit les parties OpenXML du classeur avec JSZip et ne charge jamais `xl/vbaProject.bin` : les macros sont détectées pour information mais ne sont ni interprétées ni exécutées.
+
+Le parcours est volontairement séparé en dépôt privé, détection, aperçu, contrôle des totaux, recherche de doublons, correction ou exclusion, validation et traçabilité. La grille source est convertie en phases de 30 minutes ; plusieurs phases disjointes restent plusieurs intervalles. Une différence entre l’année du nom de fichier et celle des dates mises en cache dans Excel est affichée avant validation et conservée dans les métadonnées.
+
+Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée déjà validée, soumise ou déjà saisie n’est jamais remplacée.
+
+Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. La migration à appliquer est `20260804224824_working_time_excel_import.sql`.
+
+## Matrice de recette
+
+| Exigence | Couverture automatisée |
+| --- | --- |
+| Minuit, chevauchements, doublons, repos total/consécutif | `working_time_server_calculations_test.sql` |
+| Fenêtre entre deux mois et exactement 7 jours | `working_time_server_calculations_test.sql` |
+| Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
+| Droits Marin/Capitaine/Admin, auto-validation interdite | `working_time_workflow_permissions_test.sql` |
+| Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
+| RLS/RPC et non-écrasement d’une journée validée | `working_time_excel_import_test.sql` |
+| XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
+| PDF avec les deux signatures figées | `workingTimePdf.test.ts` |

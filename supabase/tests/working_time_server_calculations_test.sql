@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(30);
 
 select has_table(
   'public',
@@ -193,6 +193,34 @@ select is(
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
   'work_24h,rest_24h,work_7d,rest_7d',
   'server results identify each breached rolling quota'
+);
+
+select is(
+  (select work_seconds from private.working_time_window_metrics(
+    (select id from public.people where sailor_number = 'CAL-780'),
+    '2026-07-28 20:00:00+02'::timestamptz,
+    '2026-08-04 20:00:00+02'::timestamptz,
+    'Europe/Paris', null, null
+  )),
+  50400::numeric,
+  'an exact seven-day rolling window is calculated across a month boundary'
+);
+select is(
+  (select work_seconds from private.working_time_window_metrics(
+    (select id from public.people where sailor_number = 'CAL-780'),
+    '2026-08-04 08:00:00+02'::timestamptz,
+    '2026-08-11 08:00:00+02'::timestamptz,
+    'Europe/Paris', null, null
+  )),
+  7200::numeric,
+  'work ending exactly at the seven-day boundary is not double counted'
+);
+select isnt(
+  (select rest_24h_seconds from public.working_time_calculation_windows
+   where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
+  (select longest_rest_24h_seconds from public.working_time_calculation_windows
+   where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
+  'total rest and longest consecutive rest remain distinct metrics'
 );
 
 update public.planning_work_rest_policies

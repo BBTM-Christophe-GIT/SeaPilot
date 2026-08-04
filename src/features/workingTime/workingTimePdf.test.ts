@@ -30,6 +30,18 @@ const snapshot = {
   sha256: 'a'.repeat(64),
 };
 
+const validatorSnapshot = {
+  ...snapshot,
+  signatureId: 9,
+  signerPersonId: 10,
+  signerName: 'Camille CAPITAINE',
+  signerRoles: ['capitaine'],
+  signedAt: '2026-08-04T08:00:00Z',
+  versionNumber: 4,
+  storagePath: '1/10/signature.png',
+  sha256: 'b'.repeat(64),
+};
+
 const signaturePng = Uint8Array.from(
   atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
   (character) => character.charCodeAt(0),
@@ -59,6 +71,10 @@ const workspace: WorkingTimeWorkspace = {
   }],
   signatures: [],
   validations: [{
+    id: 501, registerId: 100, eventType: 'captain_validated', previousStatus: 'submitted', newStatus: 'validated',
+    actorName: 'Camille CAPITAINE', actorRoles: ['capitaine'], signatureSnapshot: validatorSnapshot, intervalSnapshot: [],
+    nonComplianceSnapshot: [], comment: 'Validation explicite', occurredAt: '2026-08-04T08:00:00Z',
+  }, {
     id: 500, registerId: 100, eventType: 'sailor_signed', previousStatus: 'awaiting_sailor_signature', newStatus: 'submitted',
     actorName: 'Alex MARIN', actorRoles: ['marin'], signatureSnapshot: snapshot, intervalSnapshot: [],
     nonComplianceSnapshot: [], comment: 'Signature explicite', occurredAt: '2026-08-03T18:00:00Z',
@@ -67,15 +83,16 @@ const workspace: WorkingTimeWorkspace = {
 };
 
 describe('working-time PDF', () => {
-  it('loads the frozen audit signature, never the current profile version', async () => {
+  it('loads both frozen audit signatures, never the current profile versions', async () => {
     const download = vi.fn().mockResolvedValue({ data: new Blob(['png']), error: null });
     const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
 
     const prepared = await prepareWorkingTimePdf(client, workspace, register);
 
     expect(download).toHaveBeenCalledWith(snapshot.storagePath);
+    expect(download).toHaveBeenCalledWith(validatorSnapshot.storagePath);
     expect(prepared.signatures[0].snapshot).toEqual(snapshot);
-    expect(prepared.signatures[1].snapshot).toBeNull();
+    expect(prepared.signatures[1].snapshot).toEqual(validatorSnapshot);
   });
 
   it('refuses to produce a misleading PDF when a frozen signature cannot be loaded', async () => {
@@ -93,7 +110,7 @@ describe('working-time PDF', () => {
       workspace,
       signatures: [
         { label: 'Titulaire du registre', snapshot, png: signaturePng },
-        { label: 'Validateur', snapshot: null, png: null },
+        { label: 'Validateur', snapshot: validatorSnapshot, png: signaturePng },
       ],
       audit: workspace.validations,
     });
