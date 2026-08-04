@@ -48,12 +48,21 @@ function workspaceClient() {
     }],
     working_time_day_comments: [{
       id: 40, register_id: 10, person_id: 42, local_work_date: '2026-08-03',
+      cause_category: 'unexpected_operation', operational_context: 'Opération pont prolongée',
+      immediate_action: 'Relève organisée', compensatory_rest_plan: 'Repos le lendemain',
       comment: 'Opération urgente', authored_by: 'captain', authored_by_person_id: 9,
       updated_at: '2026-08-03T17:00:00Z',
     }],
     working_time_profile_signatures: [{
       id: 50, person_id: 42, version_number: 2, storage_bucket: 'working-time-signatures',
-      storage_path: '1/42/signature.png', mime_type: 'image/png', valid_from: '2026-01-01T00:00:00Z',
+      storage_path: '1/42/signature.png', mime_type: 'image/png', file_size_bytes: 1234,
+      sha256: 'a'.repeat(64), valid_from: '2026-01-01T00:00:00Z',
+    }],
+    working_time_validations: [{
+      id: 60, register_id: 10, event_type: 'sailor_signed', previous_status: 'awaiting_sailor_signature', new_status: 'submitted',
+      actor_identity_snapshot: { first_name: 'Alex', last_name: 'MARIN', roles: ['marin'] },
+      signature_snapshot: { signature_id: 50, signer_person_id: 42, signer_name: 'Alex MARIN', signer_roles: ['marin'], signed_at: '2026-08-03T18:00:00Z', version_number: 2, storage_bucket: 'working-time-signatures', storage_path: '1/42/signature.png', mime_type: 'image/png', file_size_bytes: 1234, sha256: 'a'.repeat(64) },
+      interval_snapshot: [], non_compliance_snapshot: [], comment: 'Signature explicite', occurred_at: '2026-08-03T18:00:00Z',
     }],
     vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
   };
@@ -80,7 +89,9 @@ describe('working-time workflow queries', () => {
     expect(workspace.intervals[0]).toMatchObject({ id: 20, timezoneName: 'Europe/Paris' });
     expect(workspace.calculations[0]).toMatchObject({ isCompliant: false, violationCodes: ['work_24h'] });
     expect(workspace.dayComments[0].comment).toBe('Opération urgente');
+    expect(workspace.dayComments[0].causeCategory).toBe('unexpected_operation');
     expect(workspace.signatures[0]).toMatchObject({ personId: 42, versionNumber: 2 });
+    expect(workspace.validations[0].signatureSnapshot).toMatchObject({ signerName: 'Alex MARIN', versionNumber: 2 });
   });
 
   it('sends only raw timestamps and interval context to the authoritative RPC', async () => {
@@ -115,14 +126,28 @@ describe('working-time workflow queries', () => {
     const client = { rpc } as unknown as SupabaseClient;
 
     await getOrCreateWorkingTimeRegister(client, { personId: 42, periodKind: 'weekly', periodStart: '2026-08-03' });
-    await saveWorkingTimeDayComment(client, { registerId: 99, localWorkDate: '2026-08-04', comment: 'Dépassement expliqué' });
+    await saveWorkingTimeDayComment(client, {
+      registerId: 99,
+      localWorkDate: '2026-08-04',
+      causeCategory: 'unexpected_operation',
+      operationalContext: 'Opération prolongée',
+      immediateAction: 'Relève organisée',
+      compensatoryRestPlan: 'Repos le lendemain',
+      comment: 'Dépassement expliqué',
+    });
     await transitionWorkingTimeRegister(client, { registerId: 99, action: 'captain_validate' });
 
     expect(rpc).toHaveBeenNthCalledWith(1, 'get_or_create_working_time_register', {
       p_person_id: 42, p_period_kind: 'weekly', p_period_start: '2026-08-03',
     });
     expect(rpc).toHaveBeenNthCalledWith(2, 'save_working_time_day_comment', {
-      p_register_id: 99, p_local_work_date: '2026-08-04', p_comment: 'Dépassement expliqué',
+      p_register_id: 99,
+      p_local_work_date: '2026-08-04',
+      p_cause_category: 'unexpected_operation',
+      p_operational_context: 'Opération prolongée',
+      p_immediate_action: 'Relève organisée',
+      p_compensatory_rest_plan: 'Repos le lendemain',
+      p_comment: 'Dépassement expliqué',
     });
     expect(rpc).toHaveBeenNthCalledWith(3, 'transition_working_time_register', {
       p_register_id: 99, p_action: 'captain_validate', p_comment: null,
@@ -132,7 +157,7 @@ describe('working-time workflow queries', () => {
   it('translates server authorization failures into actionable interface messages', () => {
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_SELF_VALIDATION_FORBIDDEN.')))
       .toBe('Un capitaine ne peut pas valider son propre registre.');
-    expect(workingTimeErrorMessage(new Error('WORKING_TIME_NON_COMPLIANT_COMMENT_REQUIRED.')))
-      .toBe('Chaque journée non conforme doit être commentée par un capitaine.');
+    expect(workingTimeErrorMessage(new Error('WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.')))
+      .toBe('Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.');
   });
 });

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   BadgeCheck,
+  Download,
   FileSignature,
   LockKeyhole,
   PenLine,
@@ -25,8 +26,11 @@ import {
   voidWorkingTimeInterval,
   workingTimeErrorMessage,
   type WorkingTimeActiveSignature,
+  type WorkingTimeNonComplianceCause,
   type WorkingTimeRange,
+  type WorkingTimeSignatureSnapshot,
 } from './workingTimeQueries';
+import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
 interface WorkingTimeWorkflowPanelProps {
@@ -44,6 +48,73 @@ const STATUS_LABELS: Record<WorkingTimeRegisterStatus, string> = {
   validated: 'Validé et verrouillé',
   reopened: 'Rouvert pour correction',
 };
+
+interface NonComplianceDraft {
+  causeCategory: WorkingTimeNonComplianceCause | '';
+  operationalContext: string;
+  immediateAction: string;
+  compensatoryRestPlan: string;
+  comment: string;
+}
+
+interface SignatureEvidence {
+  versionNumber: number;
+  storageBucket: string;
+  storagePath: string;
+  sha256: string;
+  signedAt?: string;
+  signerRoles?: string[];
+}
+
+const EMPTY_NON_COMPLIANCE: NonComplianceDraft = {
+  causeCategory: '',
+  operationalContext: '',
+  immediateAction: '',
+  compensatoryRestPlan: '',
+  comment: '',
+};
+
+const NON_COMPLIANCE_CAUSES: Array<{ value: WorkingTimeNonComplianceCause; label: string }> = [
+  { value: 'unexpected_operation', label: 'Opération imprévue' },
+  { value: 'safety_emergency', label: 'Urgence de sécurité' },
+  { value: 'weather', label: 'Conditions météorologiques' },
+  { value: 'handover', label: 'Relève / passation' },
+  { value: 'breakdown_maintenance', label: 'Panne / maintenance' },
+  { value: 'understaffing', label: 'Sous-effectif' },
+  { value: 'other', label: 'Autre' },
+];
+
+function signatureKey(signature: Pick<SignatureEvidence, 'storageBucket' | 'storagePath'>): string {
+  return `${signature.storageBucket}/${signature.storagePath}`;
+}
+
+function activeSignatureEvidence(signature: WorkingTimeActiveSignature | undefined): SignatureEvidence | undefined {
+  return signature ? {
+    versionNumber: signature.versionNumber,
+    storageBucket: signature.storageBucket,
+    storagePath: signature.storagePath,
+    sha256: signature.sha256,
+  } : undefined;
+}
+
+function frozenSignatureEvidence(signature: WorkingTimeSignatureSnapshot | null | undefined): SignatureEvidence | undefined {
+  return signature ? {
+    versionNumber: signature.versionNumber,
+    storageBucket: signature.storageBucket,
+    storagePath: signature.storagePath,
+    sha256: signature.sha256,
+    signedAt: signature.signedAt,
+    signerRoles: signature.signerRoles,
+  } : undefined;
+}
+
+function nonComplianceComplete(value: NonComplianceDraft | undefined): boolean {
+  return Boolean(value?.causeCategory
+    && value.operationalContext.trim().length >= 2
+    && value.immediateAction.trim().length >= 2
+    && value.compensatoryRestPlan.trim().length >= 2
+    && value.comment.trim().length >= 2);
+}
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -71,7 +142,7 @@ function formatPerson(firstName: string, lastName: string): string {
 }
 
 function SignatureCard({ signature, imageUrl, label }: {
-  signature: WorkingTimeActiveSignature | undefined;
+  signature: SignatureEvidence | undefined;
   imageUrl: string | undefined;
   label: string;
 }) {
@@ -80,7 +151,11 @@ function SignatureCard({ signature, imageUrl, label }: {
       <span>{label}</span>
       {imageUrl ? <img alt={`Signature numérisée — ${label}`} src={imageUrl} /> : null}
       {signature ? (
-        <strong><FileSignature aria-hidden="true" size={16} /> Signature de profil v{signature.versionNumber}</strong>
+        <>
+          <strong><FileSignature aria-hidden="true" size={16} /> Signature de profil v{signature.versionNumber}</strong>
+          {signature.signedAt ? <small>Figée le {formatDateTime(signature.signedAt)} · {signature.signerRoles?.join(', ')}</small> : <small>Version active, non encore apposée</small>}
+          <code title={signature.sha256}>SHA-256 {signature.sha256.slice(0, 14)}…</code>
+        </>
       ) : (
         <strong><AlertTriangle aria-hidden="true" size={16} /> Signature de profil absente</strong>
       )}
@@ -109,11 +184,12 @@ export function WorkingTimeWorkflowPanel({
   const [editingIntervalId, setEditingIntervalId] = useState<number | null>(null);
   const [voidCandidateId, setVoidCandidateId] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState('');
-  const [dayComments, setDayComments] = useState<Record<string, string>>({});
+  const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
   const [reopenReason, setReopenReason] = useState('');
   const [signatureConsent, setSignatureConsent] = useState(false);
-  const [signatureUrls, setSignatureUrls] = useState<Record<number, string>>({});
+  const [signatureUrls, setSignatureUrls] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -140,8 +216,23 @@ export function WorkingTimeWorkflowPanel({
 
   const currentSignature = workspace?.signatures.find((signature) => signature.personId === currentPersonId);
   const subjectSignature = workspace?.signatures.find((signature) => signature.personId === selectedRegister?.personId);
+  const selectedValidations = useMemo(
+    () => workspace?.validations.filter((validation) => validation.registerId === selectedRegister?.id) || [],
+    [selectedRegister?.id, workspace?.validations],
+  );
+  const sailorSignatureSnapshot = selectedValidations.find((validation) => validation.eventType === 'sailor_signed')?.signatureSnapshot;
+  const validatorSignatureSnapshot = selectedValidations.find((validation) => validation.eventType === 'captain_validated')?.signatureSnapshot;
+  const subjectSignatureEvidence = frozenSignatureEvidence(sailorSignatureSnapshot) || activeSignatureEvidence(subjectSignature);
+  const validatorSignatureEvidence = frozenSignatureEvidence(validatorSignatureSnapshot)
+    || (!isOwnRegister ? activeSignatureEvidence(currentSignature) : undefined);
   const persistedCommentDates = new Set((workspace?.dayComments || [])
-    .filter((comment) => comment.registerId === selectedRegister?.id && comment.comment.trim().length >= 2)
+    .filter((comment) => comment.registerId === selectedRegister?.id && nonComplianceComplete({
+      causeCategory: comment.causeCategory || '',
+      operationalContext: comment.operationalContext,
+      immediateAction: comment.immediateAction,
+      compensatoryRestPlan: comment.compensatoryRestPlan,
+      comment: comment.comment,
+    }))
     .map((comment) => comment.localWorkDate));
   const missingCaptainComments = nonCompliantDates.filter((date) => !persistedCommentDates.has(date));
   const canValidate = Boolean(
@@ -172,12 +263,18 @@ export function WorkingTimeWorkflowPanel({
 
   useEffect(() => {
     if (!workspace || !selectedRegister) {
-      setDayComments({});
+      setDayResponses({});
       return;
     }
-    setDayComments(Object.fromEntries(workspace.dayComments
+    setDayResponses(Object.fromEntries(workspace.dayComments
       .filter((comment) => comment.registerId === selectedRegister.id)
-      .map((comment) => [comment.localWorkDate, comment.comment])));
+      .map((comment) => [comment.localWorkDate, {
+        causeCategory: comment.causeCategory || '',
+        operationalContext: comment.operationalContext,
+        immediateAction: comment.immediateAction,
+        compensatoryRestPlan: comment.compensatoryRestPlan,
+        comment: comment.comment,
+      }])));
     setSignatureConsent(false);
     setReopenReason('');
   }, [selectedRegister?.id, workspace]);
@@ -187,18 +284,38 @@ export function WorkingTimeWorkflowPanel({
       setSignatureUrls({});
       return;
     }
-    const relevant = workspace.signatures.filter((signature) => (
-      signature.personId === currentPersonId || signature.personId === selectedRegister?.personId
-    ));
+    const relevant = [
+      activeSignatureEvidence(currentSignature),
+      activeSignatureEvidence(subjectSignature),
+      frozenSignatureEvidence(sailorSignatureSnapshot),
+      frozenSignatureEvidence(validatorSignatureSnapshot),
+    ].filter((signature): signature is SignatureEvidence => Boolean(signature));
+    const unique = Array.from(new Map(relevant.map((signature) => [signatureKey(signature), signature])).values());
     let cancelled = false;
-    void Promise.all(relevant.map(async (signature) => {
+    void Promise.all(unique.map(async (signature) => {
       const { data } = await client.storage.from(signature.storageBucket).createSignedUrl(signature.storagePath, 600);
-      return [signature.id, data?.signedUrl || ''] as const;
+      return [signatureKey(signature), data?.signedUrl || ''] as const;
     })).then((entries) => {
       if (!cancelled) setSignatureUrls(Object.fromEntries(entries.filter(([, url]) => url)));
     });
     return () => { cancelled = true; };
-  }, [client, currentPersonId, previewMode, selectedRegister?.personId, workspace]);
+  }, [client, currentSignature, previewMode, sailorSignatureSnapshot, subjectSignature, validatorSignatureSnapshot, workspace]);
+
+  async function handlePdfDownload() {
+    if (!workspace || !selectedRegister) return;
+    setIsExporting(true);
+    setActionError(null);
+    try {
+      const prepared = await prepareWorkingTimePdf(client, workspace, selectedRegister);
+      const { document, filename } = await buildWorkingTimePdf(prepared);
+      document.save(filename);
+      setActionMessage('Le registre PDF a été généré avec ses signatures et son audit.');
+    } catch (error) {
+      setActionError(workingTimeErrorMessage(error));
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   async function runAction(action: () => Promise<unknown>, successMessage: string) {
     setIsSaving(true);
@@ -311,7 +428,12 @@ export function WorkingTimeWorkflowPanel({
                     <h3>{selectedRegister.personName}</h3>
                     <span>{selectedRegister.periodStart} → {selectedRegister.periodEnd}</span>
                   </div>
-                  <strong className={`working-time-status is-${selectedRegister.status}`}>{STATUS_LABELS[selectedRegister.status]}</strong>
+                  <div className="working-time-register-header-actions">
+                    <button disabled={isExporting} onClick={() => void handlePdfDownload()} type="button">
+                      <Download aria-hidden="true" size={16} /> {isExporting ? 'Génération…' : 'Télécharger le PDF'}
+                    </button>
+                    <strong className={`working-time-status is-${selectedRegister.status}`}>{STATUS_LABELS[selectedRegister.status]}</strong>
+                  </div>
                 </header>
 
                 {selectedRegister.status === 'validated' ? (
@@ -319,8 +441,18 @@ export function WorkingTimeWorkflowPanel({
                 ) : null}
 
                 <div className="working-time-signatures">
-                  <SignatureCard imageUrl={subjectSignature ? signatureUrls[subjectSignature.id] : undefined} label="Titulaire du registre" signature={subjectSignature} />
-                  {!isOwnRegister ? <SignatureCard imageUrl={currentSignature ? signatureUrls[currentSignature.id] : undefined} label="Validateur connecté" signature={currentSignature} /> : null}
+                  <SignatureCard
+                    imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined}
+                    label="Titulaire du registre"
+                    signature={subjectSignatureEvidence}
+                  />
+                  {validatorSignatureEvidence ? (
+                    <SignatureCard
+                      imageUrl={signatureUrls[signatureKey(validatorSignatureEvidence)]}
+                      label={validatorSignatureSnapshot ? 'Validation figée' : 'Validateur connecté'}
+                      signature={validatorSignatureEvidence}
+                    />
+                  ) : null}
                 </div>
 
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
@@ -385,16 +517,44 @@ export function WorkingTimeWorkflowPanel({
                 {nonCompliantDates.length ? (
                   <section className="working-time-non-compliance" aria-label="Journées non conformes">
                     <div className="working-time-subheading"><h4><AlertTriangle aria-hidden="true" size={17} />Journées non conformes</h4><span>{nonCompliantDates.length}</span></div>
-                    <p>Les heures restent enregistrées. Chaque journée doit recevoir un commentaire signé par un capitaine avant validation.</p>
-                    {nonCompliantDates.map((date) => (
-                      <div key={date}>
-                        <label>{date}<textarea disabled={!hasCaptainRole || selectedRegister.status === 'validated'} onChange={(event) => setDayComments((current) => ({ ...current, [date]: event.target.value }))} value={dayComments[date] || ''} /></label>
-                        {hasCaptainRole && selectedRegister.status !== 'validated' ? <button disabled={isSaving || (dayComments[date] || '').trim().length < 2} onClick={() => void runAction(
-                          () => saveWorkingTimeDayComment(client, { registerId: selectedRegister.id, localWorkDate: date, comment: dayComments[date] }),
-                          `Le commentaire capitaine du ${date} est enregistré.`,
-                        )} type="button">Enregistrer le commentaire</button> : null}
-                      </div>
-                    ))}
+                    <p>Le commentaire et les mesures prises documentent l’écart sans jamais rendre la journée conforme. Les cinq champs sont obligatoires avant validation.</p>
+                    {nonCompliantDates.map((date) => {
+                      const response = dayResponses[date] || EMPTY_NON_COMPLIANCE;
+                      const disabled = !hasCaptainRole || selectedRegister.status === 'validated';
+                      const update = (field: keyof NonComplianceDraft, value: string) => setDayResponses((current) => ({
+                        ...current,
+                        [date]: { ...(current[date] || EMPTY_NON_COMPLIANCE), [field]: value },
+                      }));
+                      return (
+                        <div className="working-time-non-compliance-card" key={date}>
+                          <header><strong>{date}</strong><span>NON CONFORME</span></header>
+                          <div className="working-time-non-compliance-fields">
+                            <label>Catégorie de cause
+                              <select disabled={disabled} onChange={(event) => update('causeCategory', event.target.value)} value={response.causeCategory}>
+                                <option value="">Sélectionner…</option>
+                                {NON_COMPLIANCE_CAUSES.map((cause) => <option key={cause.value} value={cause.value}>{cause.label}</option>)}
+                              </select>
+                            </label>
+                            <label>Contexte opérationnel<textarea disabled={disabled} onChange={(event) => update('operationalContext', event.target.value)} value={response.operationalContext} /></label>
+                            <label>Action immédiate<textarea disabled={disabled} onChange={(event) => update('immediateAction', event.target.value)} value={response.immediateAction} /></label>
+                            <label>Repos compensateur prévu<textarea disabled={disabled} onChange={(event) => update('compensatoryRestPlan', event.target.value)} value={response.compensatoryRestPlan} /></label>
+                            <label className="is-wide">Commentaire obligatoire<textarea disabled={disabled} onChange={(event) => update('comment', event.target.value)} value={response.comment} /></label>
+                          </div>
+                          {hasCaptainRole && selectedRegister.status !== 'validated' ? <button disabled={isSaving || !nonComplianceComplete(response)} onClick={() => void runAction(
+                            () => saveWorkingTimeDayComment(client, {
+                              registerId: selectedRegister.id,
+                              localWorkDate: date,
+                              causeCategory: response.causeCategory as WorkingTimeNonComplianceCause,
+                              operationalContext: response.operationalContext,
+                              immediateAction: response.immediateAction,
+                              compensatoryRestPlan: response.compensatoryRestPlan,
+                              comment: response.comment,
+                            }),
+                            `La réponse capitaine du ${date} est enregistrée.`,
+                          )} type="button">Enregistrer la réponse</button> : null}
+                        </div>
+                      );
+                    })}
                   </section>
                 ) : null}
 
@@ -426,7 +586,7 @@ export function WorkingTimeWorkflowPanel({
                     )} type="button"><UserCheck aria-hidden="true" size={17} />Contrôler et valider le registre</button>
                   ) : null}
 
-                  {missingCaptainComments.length > 0 && selectedRegister.status === 'submitted' ? <p className="working-time-message is-error">Commentaires capitaine manquants : {missingCaptainComments.join(', ')}.</p> : null}
+                  {missingCaptainComments.length > 0 && selectedRegister.status === 'submitted' ? <p className="working-time-message is-error">Réponses de non-conformité incomplètes : {missingCaptainComments.join(', ')}.</p> : null}
                   {!currentSignature && ['awaiting_sailor_signature', 'submitted'].includes(selectedRegister.status) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
 
                   {canReopen ? (

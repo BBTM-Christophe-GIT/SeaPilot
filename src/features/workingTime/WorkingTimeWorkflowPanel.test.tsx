@@ -68,9 +68,10 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
     calculations: [],
     dayComments: [],
     signatures: [
-      { id: 300, personId: 10, versionNumber: 1, storageBucket: 'working-time-signatures', storagePath: '1/10/sign.png', mimeType: 'image/png', validFrom: '2026-01-01T00:00:00Z' },
-      { id: 301, personId: 20, versionNumber: 1, storageBucket: 'working-time-signatures', storagePath: '1/20/sign.png', mimeType: 'image/png', validFrom: '2026-01-01T00:00:00Z' },
+      { id: 300, personId: 10, versionNumber: 1, storageBucket: 'working-time-signatures', storagePath: '1/10/sign.png', mimeType: 'image/png', fileSizeBytes: 1234, sha256: 'a'.repeat(64), validFrom: '2026-01-01T00:00:00Z' },
+      { id: 301, personId: 20, versionNumber: 1, storageBucket: 'working-time-signatures', storagePath: '1/20/sign.png', mimeType: 'image/png', fileSizeBytes: 1234, sha256: 'b'.repeat(64), validFrom: '2026-01-01T00:00:00Z' },
     ],
+    validations: [],
     vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
   };
 }
@@ -149,14 +150,22 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['capitaine'], data);
 
     expect(screen.getByRole('button', { name: 'Contrôler et valider le registre' })).toBeDisabled();
-    expect(screen.getByText(/Commentaires capitaine manquants : 2026-08-03/)).toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: '2026-08-03' }), 'Opération de sécurité prolongée.');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le commentaire' }));
+    expect(screen.getByText(/Réponses de non-conformité incomplètes : 2026-08-03/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Catégorie de cause'), 'safety_emergency');
+    await user.type(screen.getByLabelText('Contexte opérationnel'), 'Opération de sécurité prolongée.');
+    await user.type(screen.getByLabelText('Action immédiate'), 'Relève organisée.');
+    await user.type(screen.getByLabelText('Repos compensateur prévu'), 'Repos planifié demain.');
+    await user.type(screen.getByLabelText('Commentaire obligatoire'), 'Écart documenté par le capitaine.');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la réponse' }));
 
     expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
       registerId: 100,
       localWorkDate: '2026-08-03',
-      comment: 'Opération de sécurité prolongée.',
+      causeCategory: 'safety_emergency',
+      operationalContext: 'Opération de sécurité prolongée.',
+      immediateAction: 'Relève organisée.',
+      compensatoryRestPlan: 'Repos planifié demain.',
+      comment: 'Écart documenté par le capitaine.',
     });
   });
 

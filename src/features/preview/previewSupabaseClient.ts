@@ -4,6 +4,13 @@ const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
 
+const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+function previewSignaturePng(): Blob {
+  const bytes = Uint8Array.from(atob(PREVIEW_SIGNATURE_PNG_BASE64), (character) => character.charCodeAt(0));
+  return new Blob([bytes], { type: 'image/png' });
+}
+
 type PreviewResult = { data: unknown[] | Record<string, unknown> | null; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
@@ -659,11 +666,28 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     is_compliant: false, violation_codes: ['rest_24h'], calculation_version: 1,
     calculated_at: '2026-08-03T20:01:00Z',
   }],
-  working_time_day_comments: [],
+  working_time_day_comments: [{
+    id: 9825, register_id: 9802, person_id: 9304, local_work_date: '2026-08-03',
+    cause_category: 'unexpected_operation', operational_context: 'Prolongation d’une opération pont prioritaire.',
+    immediate_action: 'Relève organisée et tâches non essentielles reportées.',
+    compensatory_rest_plan: 'Repos compensateur de quatre heures prévu le 4 août.',
+    comment: 'Écart maintenu NON CONFORME et suivi à la relève.',
+    authored_by: 'preview-user', authored_by_person_id: 9301, updated_at: '2026-08-03T20:15:00Z',
+  }],
   working_time_profile_signatures: [
-    { id: 9831, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', valid_from: '2026-01-01T00:00:00Z', valid_to: null },
-    { id: 9832, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', valid_from: '2026-01-01T00:00:00Z', valid_to: null },
+    { id: 9831, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', file_size_bytes: 12480, sha256: 'a'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
+    { id: 9832, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
   ],
+  working_time_validations: [{
+    id: 9841, register_id: 9802, event_type: 'sailor_signed', previous_status: 'awaiting_sailor_signature', new_status: 'submitted',
+    actor_identity_snapshot: { first_name: 'Hugo', last_name: 'BERNARD', roles: ['marin'] },
+    signature_snapshot: {
+      signature_id: 9832, signer_person_id: 9304, signer_name: 'Hugo BERNARD', signer_roles: ['marin'],
+      signed_at: '2026-08-03T20:10:00Z', version_number: 1, storage_bucket: 'working-time-signatures',
+      storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64),
+    },
+    interval_snapshot: [], non_compliance_snapshot: [], comment: 'Signature explicite du marin.', occurred_at: '2026-08-03T20:10:00Z',
+  }],
   planning_notifications: [],
   planning_dependencies: [],
   project_billing_periods: [],
@@ -872,5 +896,13 @@ export const previewSupabaseClient = {
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
+  },
+  storage: {
+    from: () => ({
+      createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
+      upload: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+      remove: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+    }),
   },
 } as unknown as SupabaseClient;

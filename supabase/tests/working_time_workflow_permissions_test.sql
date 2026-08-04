@@ -1,6 +1,6 @@
 begin;
 
-select plan(40);
+select plan(56);
 
 select has_function(
   'public', 'working_time_entry_context', array['date', 'date'],
@@ -16,8 +16,29 @@ select has_function(
   'interval mutations are controlled by an RPC'
 );
 select has_function(
-  'public', 'save_working_time_day_comment', array['bigint', 'date', 'text'],
-  'captain comments are controlled by an RPC'
+  'public', 'save_working_time_day_comment',
+  array['bigint', 'date', 'text', 'text', 'text', 'text', 'text'],
+  'structured captain responses are controlled by an RPC'
+);
+select has_function(
+  'public', 'working_time_signature_upload_context', array['bigint'],
+  'profile-signature uploads receive a server-authorized private path context'
+);
+select has_column(
+  'public', 'working_time_day_comments', 'cause_category',
+  'non-compliance responses retain a cause category'
+);
+select has_column(
+  'public', 'working_time_day_comments', 'compensatory_rest_plan',
+  'non-compliance responses retain the compensatory-rest plan'
+);
+select has_column(
+  'public', 'working_time_validations', 'interval_snapshot',
+  'workflow decisions freeze the active intervals'
+);
+select has_column(
+  'public', 'working_time_validations', 'non_compliance_snapshot',
+  'workflow decisions freeze compliance evidence'
 );
 select ok(
   not has_table_privilege('authenticated', 'public.working_time_intervals', 'INSERT'),
@@ -36,6 +57,16 @@ select ok(
       and policyname like 'working_time_intervals_%_guard'
   ),
   'RLS contains insert, update and delete workflow guards'
+);
+select is(
+  (select file_size_limit::bigint from storage.buckets where id = 'working-time-signatures'),
+  1048576::bigint,
+  'the private signature bucket enforces the one-megabyte limit'
+);
+select is(
+  (select allowed_mime_types from storage.buckets where id = 'working-time-signatures'),
+  array['image/png']::text[],
+  'the private signature bucket accepts PNG files only'
 );
 
 insert into auth.users (id, email)
@@ -91,6 +122,51 @@ from (
 ) fixture(user_id, first_name, last_name, function_label, sailor_number)
 cross join public.companies company
 where company.code = 'bbtm';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
+select lives_ok(
+  $$select public.working_time_signature_upload_context(
+    (select id from public.people where sailor_number = 'WF-MARIN')
+  )$$,
+  'an admin can obtain a scoped upload path for an HR profile'
+);
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000006', true);
+select throws_ok(
+  $$select public.working_time_signature_upload_context(
+    (select id from public.people where sailor_number = 'WF-MARIN')
+  )$$,
+  '42501', null,
+  'Direction cannot manage another person signature'
+);
+reset role;
+
+insert into storage.objects (bucket_id, name, metadata)
+select 'working-time-signatures', company.id || '/' || person.id || '/00000000-0000-4000-8000-000000000006.png',
+       jsonb_build_object('mimetype', 'image/png', 'size', 256)
+from public.companies company
+join public.people person on person.company_id = company.id and person.sailor_number = 'WF-DIR'
+where company.code = 'bbtm';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
+select lives_ok(
+  $$select public.register_working_time_profile_signature(
+    (select id from public.people where sailor_number = 'WF-DIR'),
+    (select company_id || '/' || id || '/00000000-0000-4000-8000-000000000006.png'
+     from public.people where sailor_number = 'WF-DIR'),
+    'image/png', 256, repeat('f', 64)
+  )$$,
+  'an admin registers the exact uploaded PNG as a versioned HR signature'
+);
+select is(
+  (select sha256 from public.working_time_profile_signatures
+   where person_id = (select id from public.people where sailor_number = 'WF-DIR')
+   order by version_number desc limit 1),
+  repeat('f', 64),
+  'the registered profile-signature version retains its SHA-256 digest'
+);
+reset role;
 
 insert into public.vessels (company_id, name, acronym, active)
 select company.id, 'WORKFLOW TEST VESSEL', 'WFW', true
@@ -315,8 +391,8 @@ select throws_ok(
   $$select public.transition_working_time_register(
     current_setting('test.workflow.sailor_register_id')::bigint, 'captain_validate'
   )$$,
-  '23514', 'WORKING_TIME_NON_COMPLIANT_COMMENT_REQUIRED.',
-  'a non-compliant register cannot be validated without captain comments'
+  '23514', 'WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.',
+  'a non-compliant register cannot be validated without the structured captain response'
 );
 select is(
   (select count(*)::integer from public.working_time_intervals
@@ -329,6 +405,10 @@ select lives_ok(
     select public.save_working_time_day_comment(
       current_setting('test.workflow.sailor_register_id')::bigint,
       non_compliant_day.local_window_end_date,
+      'unexpected_operation',
+      'Opération de sécurité non planifiée pendant le quart.',
+      'Relève renforcée et information immédiate du bord.',
+      'Repos compensateur de huit heures prévu après la relève.',
       'Dépassement expliqué par une opération de sécurité.'
     )
     from (
@@ -347,6 +427,13 @@ select ok(
    where register_id = current_setting('test.workflow.sailor_register_id')::bigint),
   'non-conformity comments retain the captain identity'
 );
+select is(
+  (select cause_category from public.working_time_day_comments
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint
+   order by local_work_date limit 1),
+  'unexpected_operation',
+  'the structured cause is retained without changing calculated compliance'
+);
 select lives_ok(
   $$select public.transition_working_time_register(
     current_setting('test.workflow.sailor_register_id')::bigint, 'captain_validate'
@@ -358,6 +445,40 @@ select is(
    where register_id = current_setting('test.workflow.sailor_register_id')::bigint and voided_at is null),
   1,
   'validation preserves all submitted hours'
+);
+select is(
+  (select jsonb_array_length(interval_snapshot)
+   from public.working_time_validations
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint
+     and event_type = 'captain_validated'),
+  1,
+  'validation freezes the active interval evidence'
+);
+select ok(
+  (select jsonb_array_length(non_compliance_snapshot) > 0
+     and non_compliance_snapshot->0->>'status' = 'NON CONFORME'
+     and non_compliance_snapshot->0->'response'->>'cause_category' = 'unexpected_operation'
+   from public.working_time_validations
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint
+     and event_type = 'captain_validated'),
+  'validation freezes the non-compliance and structured captain response'
+);
+select ok(
+  (select (signature_snapshot->'signer_roles') ? 'capitaine'
+     and length(signature_snapshot->>'sha256') = 64
+     and signature_snapshot ? 'signed_at'
+   from public.working_time_validations
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint
+     and event_type = 'captain_validated'),
+  'the validator snapshot retains role, date and file digest'
+);
+select ok(
+  exists (
+    select 1 from public.working_time_calculation_windows calculation
+    where calculation.person_id = (select id from public.people where sailor_number = 'WF-MARIN')
+      and calculation.is_compliant is false
+  ),
+  'the structured response never cancels the server non-compliance'
 );
 select throws_ok(
   $$update public.working_time_intervals

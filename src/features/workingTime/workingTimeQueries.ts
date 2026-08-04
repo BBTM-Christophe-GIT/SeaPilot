@@ -79,6 +79,10 @@ interface CommentRow {
   register_id: number | string;
   person_id: number | string;
   local_work_date: string;
+  cause_category: string | null;
+  operational_context: string | null;
+  immediate_action: string | null;
+  compensatory_rest_plan: string | null;
   comment: string;
   authored_by: string | null;
   authored_by_person_id: number | string | null;
@@ -92,7 +96,23 @@ interface SignatureRow {
   storage_bucket: string;
   storage_path: string;
   mime_type: string;
+  file_size_bytes: number | string;
+  sha256: string;
   valid_from: string;
+}
+
+interface ValidationRow {
+  id: number | string;
+  register_id: number | string;
+  event_type: string;
+  previous_status: string;
+  new_status: string;
+  actor_identity_snapshot: Record<string, unknown> | null;
+  signature_snapshot: Record<string, unknown> | null;
+  interval_snapshot: unknown[] | null;
+  non_compliance_snapshot: unknown[] | null;
+  comment: string | null;
+  occurred_at: string;
 }
 
 interface VesselRow {
@@ -127,6 +147,10 @@ export interface WorkingTimeDayComment {
   registerId: number;
   personId: number;
   localWorkDate: string;
+  causeCategory: WorkingTimeNonComplianceCause | null;
+  operationalContext: string;
+  immediateAction: string;
+  compensatoryRestPlan: string;
   comment: string;
   authoredBy: string | null;
   authoredByPersonId: number | null;
@@ -140,7 +164,47 @@ export interface WorkingTimeActiveSignature {
   storageBucket: string;
   storagePath: string;
   mimeType: string;
+  fileSizeBytes: number;
+  sha256: string;
   validFrom: string;
+}
+
+export type WorkingTimeNonComplianceCause =
+  | 'unexpected_operation'
+  | 'safety_emergency'
+  | 'weather'
+  | 'handover'
+  | 'breakdown_maintenance'
+  | 'understaffing'
+  | 'other';
+
+export interface WorkingTimeSignatureSnapshot {
+  signatureId: number;
+  signerPersonId: number;
+  signerName: string;
+  signerRoles: string[];
+  signedAt: string;
+  versionNumber: number;
+  storageBucket: string;
+  storagePath: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  sha256: string;
+}
+
+export interface WorkingTimeValidationEvent {
+  id: number;
+  registerId: number;
+  eventType: string;
+  previousStatus: string;
+  newStatus: string;
+  actorName: string;
+  actorRoles: string[];
+  signatureSnapshot: WorkingTimeSignatureSnapshot | null;
+  intervalSnapshot: unknown[];
+  nonComplianceSnapshot: unknown[];
+  comment: string;
+  occurredAt: string;
 }
 
 export interface WorkingTimeVesselOption {
@@ -157,6 +221,7 @@ export interface WorkingTimeWorkspace {
   calculations: WorkingTimeCalculationWindow[];
   dayComments: WorkingTimeDayComment[];
   signatures: WorkingTimeActiveSignature[];
+  validations: WorkingTimeValidationEvent[];
   vessels: WorkingTimeVesselOption[];
 }
 
@@ -176,9 +241,20 @@ export interface SaveWorkingTimeIntervalInput {
   intervalId?: number | null;
 }
 
+export interface SaveWorkingTimeDayCommentInput {
+  registerId: number;
+  localWorkDate: string;
+  causeCategory: WorkingTimeNonComplianceCause;
+  operationalContext: string;
+  immediateAction: string;
+  compensatoryRestPlan: string;
+  comment: string;
+}
+
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
+const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
 
 function numberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -259,11 +335,50 @@ function mapCalculation(row: CalculationRow): WorkingTimeCalculationWindow {
   };
 }
 
+function textArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function mapSignatureSnapshot(value: Record<string, unknown> | null): WorkingTimeSignatureSnapshot | null {
+  if (!value || !value.storage_path || !value.sha256) return null;
+  return {
+    signatureId: Number(value.signature_id || 0),
+    signerPersonId: Number(value.signer_person_id || 0),
+    signerName: String(value.signer_name || ''),
+    signerRoles: textArray(value.signer_roles),
+    signedAt: String(value.signed_at || ''),
+    versionNumber: Number(value.version_number || 0),
+    storageBucket: String(value.storage_bucket || ''),
+    storagePath: String(value.storage_path || ''),
+    mimeType: String(value.mime_type || ''),
+    fileSizeBytes: Number(value.file_size_bytes || 0),
+    sha256: String(value.sha256 || ''),
+  };
+}
+
+function mapValidation(row: ValidationRow): WorkingTimeValidationEvent {
+  const actor = row.actor_identity_snapshot || {};
+  return {
+    id: Number(row.id),
+    registerId: Number(row.register_id),
+    eventType: row.event_type,
+    previousStatus: row.previous_status,
+    newStatus: row.new_status,
+    actorName: `${String(actor.first_name || '')} ${String(actor.last_name || '')}`.trim(),
+    actorRoles: textArray(actor.roles),
+    signatureSnapshot: mapSignatureSnapshot(row.signature_snapshot),
+    intervalSnapshot: Array.isArray(row.interval_snapshot) ? row.interval_snapshot : [],
+    nonComplianceSnapshot: Array.isArray(row.non_compliance_snapshot) ? row.non_compliance_snapshot : [],
+    comment: row.comment || '',
+    occurredAt: row.occurred_at,
+  };
+}
+
 export async function fetchWorkingTimeWorkspace(
   client: SupabaseClient,
   range: WorkingTimeRange,
 ): Promise<WorkingTimeWorkspace> {
-  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, vesselResult] = await Promise.all([
+  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, vesselResult] = await Promise.all([
     client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
     client.from('working_time_registers').select(REGISTER_SELECT)
       .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false }),
@@ -271,10 +386,11 @@ export async function fetchWorkingTimeWorkspace(
       .gte('local_work_date', range.start).lte('local_work_date', range.end).is('voided_at', null).order('starts_at'),
     client.from('working_time_calculation_windows').select(CALCULATION_SELECT)
       .gte('local_window_end_date', range.start).lte('local_window_end_date', range.end).order('window_end'),
-    client.from('working_time_day_comments').select('id,register_id,person_id,local_work_date,comment,authored_by,authored_by_person_id,updated_at')
+    client.from('working_time_day_comments').select('id,register_id,person_id,local_work_date,cause_category,operational_context,immediate_action,compensatory_rest_plan,comment,authored_by,authored_by_person_id,updated_at')
       .gte('local_work_date', range.start).lte('local_work_date', range.end).order('local_work_date'),
-    client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,valid_from')
+    client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
       .is('valid_to', null).order('version_number', { ascending: false }),
+    client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
     client.from('vessels').select('id,name,acronym').eq('active', true).order('name'),
   ]);
 
@@ -284,6 +400,7 @@ export async function fetchWorkingTimeWorkspace(
   assertResult(calculationResult.error, 'Impossible de charger les calculs serveur.');
   assertResult(commentResult.error, 'Impossible de charger les commentaires.');
   assertResult(signatureResult.error, 'Impossible de charger les signatures.');
+  assertResult(validationResult.error, 'Impossible de charger les instantanés de validation.');
   assertResult(vesselResult.error, 'Impossible de charger les navires.');
 
   const context = (contextResult.data || {}) as EntryContextRow;
@@ -309,6 +426,10 @@ export async function fetchWorkingTimeWorkspace(
       registerId: Number(comment.register_id),
       personId: Number(comment.person_id),
       localWorkDate: comment.local_work_date,
+      causeCategory: (comment.cause_category || null) as WorkingTimeNonComplianceCause | null,
+      operationalContext: comment.operational_context || '',
+      immediateAction: comment.immediate_action || '',
+      compensatoryRestPlan: comment.compensatory_rest_plan || '',
       comment: comment.comment,
       authoredBy: comment.authored_by,
       authoredByPersonId: numberOrNull(comment.authored_by_person_id),
@@ -321,8 +442,11 @@ export async function fetchWorkingTimeWorkspace(
       storageBucket: signature.storage_bucket,
       storagePath: signature.storage_path,
       mimeType: signature.mime_type,
+      fileSizeBytes: Number(signature.file_size_bytes),
+      sha256: signature.sha256,
       validFrom: signature.valid_from,
     })),
+    validations: ((validationResult.data || []) as ValidationRow[]).map(mapValidation),
     vessels: ((vesselResult.data || []) as VesselRow[]).map((vessel) => ({
       id: Number(vessel.id),
       name: vessel.name,
@@ -377,11 +501,15 @@ export async function voidWorkingTimeInterval(
 
 export async function saveWorkingTimeDayComment(
   client: SupabaseClient,
-  input: { registerId: number; localWorkDate: string; comment: string },
+  input: SaveWorkingTimeDayCommentInput,
 ): Promise<number> {
   const { data, error } = await client.rpc('save_working_time_day_comment', {
     p_register_id: input.registerId,
     p_local_work_date: input.localWorkDate,
+    p_cause_category: input.causeCategory,
+    p_operational_context: input.operationalContext,
+    p_immediate_action: input.immediateAction,
+    p_compensatory_rest_plan: input.compensatoryRestPlan,
     p_comment: input.comment,
   });
   assertResult(error, 'Impossible d’enregistrer le commentaire capitaine.');
@@ -403,7 +531,7 @@ export async function transitionWorkingTimeRegister(
 
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_SELF_VALIDATION_FORBIDDEN', 'Un capitaine ne peut pas valider son propre registre.'],
-  ['WORKING_TIME_NON_COMPLIANT_COMMENT_REQUIRED', 'Chaque journée non conforme doit être commentée par un capitaine.'],
+  ['WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED', 'Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.'],
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
   ['WORKING_TIME_REGISTER_LOCKED', 'Ce registre validé est verrouillé. Réouvrez-le avec un motif pour le corriger.'],
   ['WORKING_TIME_REGISTER_NOT_EDITABLE', 'Ce registre doit être rouvert avant toute correction.'],
