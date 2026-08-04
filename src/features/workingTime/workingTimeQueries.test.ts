@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  fetchWorkingTimeEntryRecommendation,
   fetchWorkingTimeWorkspace,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
@@ -118,6 +119,48 @@ describe('working-time workflow queries', () => {
       p_watch_group: 'Bordée 1',
       p_comment: 'Quart',
       p_interval_id: null,
+    });
+  });
+
+  it('maps the authoritative entry guidance without calculating quotas in the browser', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        status: 'conforme', policy_id: 5, policy_name: 'Politique datée', already_non_compliant: false,
+        available_24h_seconds: 14400, available_7d_seconds: 180000,
+        work_24h_seconds: 28800, work_7d_seconds: 79200,
+        rest_24h_seconds: 57600, longest_rest_24h_seconds: 43200,
+        rest_impact_seconds: -14400, consecutive_rest_impact_seconds: -3600,
+        max_additional_seconds: 14400, latest_end_at: '2026-08-03T16:00:00Z',
+        next_resume_at: '2026-08-03T22:00:00Z', violation_codes: [],
+      },
+      error: null,
+    });
+    const client = { rpc } as unknown as SupabaseClient;
+
+    const result = await fetchWorkingTimeEntryRecommendation(client, {
+      personId: 42,
+      proposedStart: '2026-08-03T08:00:00Z',
+      proposedEnd: '2026-08-03T12:00:00Z',
+      timezoneName: 'Europe/Paris',
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      excludeIntervalId: 20,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('working_time_interval_recommendation', {
+      p_person_id: 42,
+      p_proposed_start: '2026-08-03T08:00:00Z',
+      p_proposed_end: '2026-08-03T12:00:00Z',
+      p_timezone_name: 'Europe/Paris',
+      p_vessel_id: 7,
+      p_watch_group: 'Bordée 1',
+      p_exclude_interval_id: 20,
+    });
+    expect(result).toMatchObject({
+      status: 'conforme',
+      available24hSeconds: 14400,
+      maxAdditionalSeconds: 14400,
+      latestEndAt: '2026-08-03T16:00:00Z',
     });
   });
 

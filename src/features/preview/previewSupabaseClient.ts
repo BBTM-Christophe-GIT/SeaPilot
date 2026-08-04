@@ -790,6 +790,36 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       error: null,
     });
   }
+  if (functionName === 'working_time_interval_recommendation') {
+    const startsAt = new Date(String(args.p_proposed_start || ''));
+    const endsAt = new Date(String(args.p_proposed_end || ''));
+    const proposedSeconds = Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 1000);
+    const existingSeconds = 4 * 3600;
+    const work24hSeconds = existingSeconds + proposedSeconds;
+    const available24hSeconds = Math.max(0, 12 * 3600 - work24hSeconds);
+    const status = available24hSeconds === 0 ? 'alerte' : 'conforme';
+    return createPreviewQuery({
+      data: {
+        status,
+        policy_id: 9501,
+        policy_name: 'Politique démo datée',
+        already_non_compliant: false,
+        available_24h_seconds: available24hSeconds,
+        available_7d_seconds: Math.max(0, 72 * 3600 - (28 * 3600 + proposedSeconds)),
+        work_24h_seconds: work24hSeconds,
+        work_7d_seconds: 28 * 3600 + proposedSeconds,
+        rest_24h_seconds: 24 * 3600 - work24hSeconds,
+        longest_rest_24h_seconds: 8 * 3600,
+        rest_impact_seconds: -proposedSeconds,
+        consecutive_rest_impact_seconds: 0,
+        max_additional_seconds: available24hSeconds,
+        latest_end_at: new Date(endsAt.getTime() + available24hSeconds * 1000).toISOString(),
+        next_resume_at: new Date(endsAt.getTime() + 8 * 3600 * 1000).toISOString(),
+        violation_codes: [],
+      },
+      error: null,
+    });
+  }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const people = previewRows('people')

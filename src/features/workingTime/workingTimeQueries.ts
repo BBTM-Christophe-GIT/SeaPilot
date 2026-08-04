@@ -251,6 +251,37 @@ export interface SaveWorkingTimeDayCommentInput {
   comment: string;
 }
 
+export type WorkingTimeRecommendationStatus = 'conforme' | 'alerte' | 'non_conforme' | 'sans_politique';
+
+export interface WorkingTimeEntryRecommendation {
+  status: WorkingTimeRecommendationStatus;
+  policyId: number | null;
+  policyName: string | null;
+  alreadyNonCompliant: boolean;
+  available24hSeconds: number;
+  available7dSeconds: number;
+  work24hSeconds: number;
+  work7dSeconds: number;
+  rest24hSeconds: number;
+  longestRest24hSeconds: number;
+  restImpactSeconds: number;
+  consecutiveRestImpactSeconds: number;
+  maxAdditionalSeconds: number;
+  latestEndAt: string | null;
+  nextResumeAt: string | null;
+  violationCodes: string[];
+}
+
+export interface WorkingTimeRecommendationInput {
+  personId: number;
+  proposedStart: string;
+  proposedEnd: string;
+  timezoneName: string;
+  vesselId: number | null;
+  watchGroup: string | null;
+  excludeIntervalId?: number | null;
+}
+
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
@@ -486,6 +517,41 @@ export async function saveWorkingTimeInterval(
   return Number(data);
 }
 
+export async function fetchWorkingTimeEntryRecommendation(
+  client: SupabaseClient,
+  input: WorkingTimeRecommendationInput,
+): Promise<WorkingTimeEntryRecommendation> {
+  const { data, error } = await client.rpc('working_time_interval_recommendation', {
+    p_person_id: input.personId,
+    p_proposed_start: input.proposedStart,
+    p_proposed_end: input.proposedEnd,
+    p_timezone_name: input.timezoneName,
+    p_vessel_id: input.vesselId,
+    p_watch_group: input.watchGroup,
+    p_exclude_interval_id: input.excludeIntervalId ?? null,
+  });
+  assertResult(error, 'Impossible de calculer la recommandation de saisie.');
+  const value = (data || {}) as Record<string, unknown>;
+  return {
+    status: String(value.status || 'sans_politique') as WorkingTimeRecommendationStatus,
+    policyId: numberOrNull(value.policy_id as number | string | null),
+    policyName: value.policy_name ? String(value.policy_name) : null,
+    alreadyNonCompliant: Boolean(value.already_non_compliant),
+    available24hSeconds: Number(value.available_24h_seconds || 0),
+    available7dSeconds: Number(value.available_7d_seconds || 0),
+    work24hSeconds: Number(value.work_24h_seconds || 0),
+    work7dSeconds: Number(value.work_7d_seconds || 0),
+    rest24hSeconds: Number(value.rest_24h_seconds || 0),
+    longestRest24hSeconds: Number(value.longest_rest_24h_seconds || 0),
+    restImpactSeconds: Number(value.rest_impact_seconds || 0),
+    consecutiveRestImpactSeconds: Number(value.consecutive_rest_impact_seconds || 0),
+    maxAdditionalSeconds: Number(value.max_additional_seconds || 0),
+    latestEndAt: value.latest_end_at ? String(value.latest_end_at) : null,
+    nextResumeAt: value.next_resume_at ? String(value.next_resume_at) : null,
+    violationCodes: textArray(value.violation_codes),
+  };
+}
+
 export async function voidWorkingTimeInterval(
   client: SupabaseClient,
   intervalId: number,
@@ -537,6 +603,8 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_REGISTER_NOT_EDITABLE', 'Ce registre doit être rouvert avant toute correction.'],
   ['WORKING_TIME_REOPEN_COMMENT_REQUIRED', 'Le motif de réouverture est obligatoire.'],
   ['WORKING_TIME_PERMISSION_DENIED', 'Cette action n’est pas autorisée pour votre profil ou votre bordée publiée.'],
+  ['WORKING_TIME_POLICY_NOT_FOUND', 'Aucune politique de travail et repos datée ne couvre ce créneau.'],
+  ['WORKING_TIME_INVALID_INTERVAL', 'La fin doit être postérieure au début, dans une limite de 24 heures.'],
 ];
 
 export function workingTimeErrorMessage(error: unknown): string {

@@ -9,7 +9,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Save,
   Send,
   Trash2,
   UserCheck,
@@ -31,6 +30,7 @@ import {
   type WorkingTimeSignatureSnapshot,
 } from './workingTimeQueries';
 import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
+import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
 interface WorkingTimeWorkflowPanelProps {
@@ -193,12 +193,22 @@ export function WorkingTimeWorkflowPanel({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const selectedRegister = workspace?.registers.find((register) => register.id === selectedRegisterId) || null;
+  const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
+  const isSailorOnlyView = roles.includes('marin')
+    && !roles.some((role) => role === 'capitaine' || role === 'admin' || role === 'armement');
+  const visibleRegisters = useMemo(
+    () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
+    [currentPersonId, isSailorOnlyView, workspace?.registers],
+  );
+  const visibleEditablePeople = useMemo(
+    () => workspace?.editablePeople.filter((person) => !isSailorOnlyView || person.personId === currentPersonId) || [],
+    [currentPersonId, isSailorOnlyView, workspace?.editablePeople],
+  );
+  const selectedRegister = visibleRegisters.find((register) => register.id === selectedRegisterId) || null;
   const selectedIntervals = useMemo(
     () => workspace?.intervals.filter((interval) => interval.registerId === selectedRegisterId) || [],
     [selectedRegisterId, workspace?.intervals],
   );
-  const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = roles.includes('capitaine');
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
@@ -250,16 +260,16 @@ export function WorkingTimeWorkflowPanel({
 
   useEffect(() => {
     if (!workspace) return;
-    setPersonId((current) => current && workspace.editablePeople.some((person) => person.personId === current)
+    setPersonId((current) => current && visibleEditablePeople.some((person) => person.personId === current)
       ? current
-      : workspace.editablePeople[0]?.personId || currentPerson?.id || null);
+      : visibleEditablePeople[0]?.personId || currentPerson?.id || null);
     setSelectedRegisterId((current) => {
-      if (current && workspace.registers.some((register) => register.id === current)) return current;
-      return workspace.registers.find((register) => register.personId === workspace.currentPersonId)?.id
-        || workspace.registers[0]?.id
+      if (current && visibleRegisters.some((register) => register.id === current)) return current;
+      return visibleRegisters.find((register) => register.personId === workspace.currentPersonId)?.id
+        || visibleRegisters[0]?.id
         || null;
     });
-  }, [currentPerson?.id, workspace]);
+  }, [currentPerson?.id, visibleEditablePeople, visibleRegisters, workspace]);
 
   useEffect(() => {
     if (!workspace || !selectedRegister) {
@@ -359,7 +369,7 @@ export function WorkingTimeWorkflowPanel({
       <header className="working-time-section-heading">
         <div><p>Registres individuels</p><h2 id="working-time-registers-title">Saisie, signature et validation</h2></div>
         <div className="working-time-heading-actions">
-          <span>{workspace?.registers.length || 0} registre(s) sur la période</span>
+          <span>{visibleRegisters.length} registre(s) sur la période</span>
           <button disabled={isLoading || isSaving} onClick={() => void reload()} type="button">
             <RefreshCw aria-hidden="true" size={15} /> Actualiser
           </button>
@@ -376,7 +386,7 @@ export function WorkingTimeWorkflowPanel({
           <div className="working-time-register-create">
             <label>Personne
               <select onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
-                {workspace.editablePeople.map((person) => (
+                {visibleEditablePeople.map((person) => (
                   <option key={person.personId} value={person.personId}>
                     {formatPerson(person.firstName, person.lastName)}{person.isSelf ? ' — moi' : ''}
                   </option>
@@ -406,7 +416,7 @@ export function WorkingTimeWorkflowPanel({
 
           <div className="working-time-workspace-grid">
             <nav aria-label="Registres accessibles" className="working-time-register-list">
-              {workspace.registers.length ? workspace.registers.map((register) => (
+              {visibleRegisters.length ? visibleRegisters.map((register) => (
                 <button
                   className={register.id === selectedRegisterId ? 'is-active' : ''}
                   key={register.id}
@@ -457,6 +467,41 @@ export function WorkingTimeWorkflowPanel({
 
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
                   <div className="working-time-subheading"><h4>Créneaux horodatés</h4><span>{selectedIntervals.length} créneau(x)</span></div>
+                  <WorkingTimeEntryBoard
+                    canEdit={canEdit}
+                    client={client}
+                    comment={intervalComment}
+                    editingIntervalId={editingIntervalId}
+                    endsAt={endsAt}
+                    intervals={selectedIntervals}
+                    isSaving={isSaving}
+                    onCancelEdit={resetIntervalForm}
+                    onCommentChange={setIntervalComment}
+                    onEndsAtChange={setEndsAt}
+                    onStartsAtChange={setStartsAt}
+                    onSubmit={() => void runAction(async () => {
+                      await saveWorkingTimeInterval(client, {
+                        registerId: selectedRegister.id,
+                        startsAt: localInputToIso(startsAt),
+                        endsAt: localInputToIso(endsAt),
+                        timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
+                        vesselId: vesselId ? Number(vesselId) : null,
+                        watchGroup: watchGroup.trim() || null,
+                        comment: intervalComment.trim() || null,
+                        intervalId: editingIntervalId,
+                      });
+                      resetIntervalForm();
+                    }, editingIntervalId ? 'Le créneau a été corrigé.' : 'Les heures ont été ajoutées au brouillon.')}
+                    onVesselIdChange={setVesselId}
+                    onWatchGroupChange={setWatchGroup}
+                    periodEnd={selectedRegister.periodEnd}
+                    periodStart={selectedRegister.periodStart}
+                    personId={selectedRegister.personId}
+                    startsAt={startsAt}
+                    vesselId={vesselId}
+                    vessels={workspace.vessels}
+                    watchGroup={watchGroup}
+                  />
                   {selectedIntervals.length ? (
                     <div className="working-time-interval-list">
                       {selectedIntervals.map((interval) => (
@@ -484,34 +529,6 @@ export function WorkingTimeWorkflowPanel({
                     </div>
                   ) : null}
 
-                  {canEdit ? (
-                    <form className="working-time-interval-form" onSubmit={(event) => {
-                      event.preventDefault();
-                      void runAction(async () => {
-                        await saveWorkingTimeInterval(client, {
-                          registerId: selectedRegister.id,
-                          startsAt: localInputToIso(startsAt),
-                          endsAt: localInputToIso(endsAt),
-                          timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-                          vesselId: vesselId ? Number(vesselId) : null,
-                          watchGroup: watchGroup.trim() || null,
-                          comment: intervalComment.trim() || null,
-                          intervalId: editingIntervalId,
-                        });
-                        resetIntervalForm();
-                      }, editingIntervalId ? 'Le créneau a été corrigé.' : 'Les heures ont été ajoutées au brouillon.');
-                    }}>
-                      <label>Début<input onChange={(event) => setStartsAt(event.target.value)} required type="datetime-local" value={startsAt} /></label>
-                      <label>Fin<input onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} /></label>
-                      <label>Navire<select onChange={(event) => setVesselId(event.target.value)} value={vesselId}><option value="">Sans navire</option>{workspace.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
-                      <label>Bordée<input onChange={(event) => setWatchGroup(event.target.value)} value={watchGroup} /></label>
-                      <label className="is-wide">Commentaire<input onChange={(event) => setIntervalComment(event.target.value)} value={intervalComment} /></label>
-                      <div className="working-time-form-actions">
-                        <button disabled={isSaving} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : 'Ajouter au brouillon'}</button>
-                        {editingIntervalId ? <button onClick={resetIntervalForm} type="button">Annuler</button> : null}
-                      </div>
-                    </form>
-                  ) : null}
                 </section>
 
                 {nonCompliantDates.length ? (

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Clock3, RefreshCw, ShieldCheck } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -31,6 +31,24 @@ function currentMonthRange(referenceDate: string): { start: string; end: string 
   };
 }
 
+function currentWeekRange(referenceDate: string): { start: string; end: string } {
+  const date = new Date(`${referenceDate}T12:00:00`);
+  const mondayOffset = (date.getDay() + 6) % 7;
+  const start = addPlanningDays(referenceDate, -mondayOffset);
+  return { start, end: addPlanningDays(start, 6) };
+}
+
+function shiftRange(range: { start: string; end: string }, mode: 'week' | 'month', direction: -1 | 1) {
+  if (mode === 'week') {
+    const start = addPlanningDays(range.start, direction * 7);
+    return { start, end: addPlanningDays(start, 6) };
+  }
+  const date = new Date(`${range.start}T12:00:00`);
+  date.setMonth(date.getMonth() + direction, 1);
+  const anchor = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+  return currentMonthRange(anchor);
+}
+
 export function WorkingTimePage({ client, roles, currentPerson, initialRange }: WorkingTimePageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -44,7 +62,8 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     () => previewMode ? createPlanningPreviewOverview(referenceDate) : undefined,
     [previewMode, referenceDate],
   );
-  const [range, setRange] = useState(() => initialRange || currentMonthRange(referenceDate));
+  const [rangeMode, setRangeMode] = useState<'week' | 'month'>(() => !initialRange || addPlanningDays(initialRange.start, 6) === initialRange.end ? 'week' : 'month');
+  const [range, setRange] = useState(() => initialRange || currentWeekRange(referenceDate));
   const {
     overview,
     reload,
@@ -76,8 +95,15 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           </div>
         </div>
         <div aria-label="Période analysée" className="working-time-range" role="group">
+          <div className="working-time-range-mode" role="group" aria-label="Vue du registre">
+            <button aria-pressed={rangeMode === 'week'} onClick={() => { setRangeMode('week'); setRange(currentWeekRange(range.start)); }} type="button">Semaine</button>
+            <button aria-pressed={rangeMode === 'month'} onClick={() => { setRangeMode('month'); setRange(currentMonthRange(range.start)); }} type="button">Mois</button>
+          </div>
+          <button aria-label="Période précédente" onClick={() => setRange((current) => shiftRange(current, rangeMode, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
           <label>Du<input onChange={(event) => setRange((current) => ({ ...current, start: event.target.value }))} type="date" value={range.start} /></label>
           <label>Au<input min={range.start} onChange={(event) => setRange((current) => ({ ...current, end: event.target.value }))} type="date" value={range.end} /></label>
+          <button aria-label="Période suivante" onClick={() => setRange((current) => shiftRange(current, rangeMode, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
+          <button onClick={() => setRange(rangeMode === 'week' ? currentWeekRange(referenceDate) : currentMonthRange(referenceDate))} type="button"><CalendarDays aria-hidden="true" size={17} />Aujourd’hui</button>
           <button aria-label="Actualiser le suivi" disabled={isInitialLoading || isRefreshing} onClick={() => void reload()} type="button">
             <RefreshCw aria-hidden="true" className={isRefreshing ? 'is-spinning' : ''} size={17} />
             Actualiser
