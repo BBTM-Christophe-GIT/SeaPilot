@@ -4,6 +4,13 @@ const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
 
+const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+function previewSignaturePng(): Blob {
+  const bytes = Uint8Array.from(atob(PREVIEW_SIGNATURE_PNG_BASE64), (character) => character.charCodeAt(0));
+  return new Blob([bytes], { type: 'image/png' });
+}
+
 type PreviewResult = { data: unknown[] | Record<string, unknown> | null; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
@@ -592,8 +599,103 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_rotation_series: [],
   planning_rotation_occurrences: [],
   planning_templates: [],
+  planning_absences: [],
+  planning_conflict_cases: [],
+  planning_conflict_case_history: [],
   planning_manning_matrices: [],
   planning_manning_requirements: [],
+  planning_work_rest_policies: [{
+    id: 9701,
+    name: 'Politique de démonstration',
+    scope: 'company',
+    vessel_id: null,
+    effective_from: '2026-01-01',
+    effective_to: null,
+    max_work_24h: 12,
+    min_rest_24h: 11,
+    max_work_7d: 72,
+    min_rest_7d: 96,
+    min_consecutive_rest_hours: 6,
+    max_rest_periods_24h: 2,
+    night_starts_at: '22:00:00',
+    night_ends_at: '06:00:00',
+    max_night_work_24h: 8,
+    include_handover: true,
+    active: true,
+    notes: 'Valeurs synthétiques réservées à la préversion SeaPilot.',
+    updated_at: '2026-08-01T08:00:00Z',
+  }],
+  working_time_registers: [
+    {
+      id: 9801, company_id: 1, person_id: 9301, period_kind: 'weekly',
+      period_start: '2026-08-03', period_end: '2026-08-09', status: 'draft',
+      work_rest_policy_id: 9701,
+      people: { first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine' },
+    },
+    {
+      id: 9802, company_id: 1, person_id: 9304, period_kind: 'weekly',
+      period_start: '2026-08-03', period_end: '2026-08-09', status: 'submitted',
+      work_rest_policy_id: 9701,
+      people: { first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot' },
+    },
+  ],
+  working_time_intervals: [
+    {
+      id: 9811, register_id: 9801, company_id: 1, person_id: 9301,
+      local_work_date: '2026-08-03', starts_at: '2026-08-03T06:00:00Z', ends_at: '2026-08-03T14:00:00Z',
+      timezone_name: 'Europe/Paris', utc_offset_minutes: 120, vessel_id: 9201,
+      watch_group: 'Bordée 1', comment: 'Quart passerelle', author_user_id: 'preview-user',
+      author_person_id: 9301, source_type: 'manual', source_reference: null, source_record_key: null,
+      voided_at: null,
+    },
+    {
+      id: 9812, register_id: 9802, company_id: 1, person_id: 9304,
+      local_work_date: '2026-08-03', starts_at: '2026-08-03T06:00:00Z', ends_at: '2026-08-03T18:00:00Z',
+      timezone_name: 'Europe/Paris', utc_offset_minutes: 120, vessel_id: 9201,
+      watch_group: 'Bordée 1', comment: 'Opération pont', author_user_id: 'preview-user',
+      author_person_id: 9301, source_type: 'manual', source_reference: null, source_record_key: null,
+      voided_at: null,
+    },
+  ],
+  working_time_calculation_windows: [{
+    id: 9821, company_id: 1, person_id: 9304, window_end: '2026-08-03T20:00:00Z',
+    local_window_end_date: '2026-08-03', timezone_name: 'Europe/Paris', vessel_id: 9201,
+    work_rest_policy_id: 9701, work_24h_seconds: 43200, rest_24h_seconds: 43200,
+    longest_rest_24h_seconds: 43200, rest_period_count_24h: 1,
+    work_7d_seconds: 43200, rest_7d_seconds: 561600, night_work_24h_seconds: 0,
+    is_compliant: false, violation_codes: ['rest_24h'], calculation_version: 1,
+    calculated_at: '2026-08-03T20:01:00Z',
+  }],
+  working_time_day_comments: [{
+    id: 9825, register_id: 9802, person_id: 9304, local_work_date: '2026-08-03',
+    cause_category: 'unexpected_operation', operational_context: 'Prolongation d’une opération pont prioritaire.',
+    immediate_action: 'Relève organisée et tâches non essentielles reportées.',
+    compensatory_rest_plan: 'Repos compensateur de quatre heures prévu le 4 août.',
+    comment: 'Écart maintenu NON CONFORME et suivi à la relève.',
+    authored_by: 'preview-user', authored_by_person_id: 9301, updated_at: '2026-08-03T20:15:00Z',
+  }],
+  working_time_profile_signatures: [
+    { id: 9831, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', file_size_bytes: 12480, sha256: 'a'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
+    { id: 9832, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
+  ],
+  working_time_validations: [{
+    id: 9841, register_id: 9802, event_type: 'sailor_signed', previous_status: 'awaiting_sailor_signature', new_status: 'submitted',
+    actor_identity_snapshot: { first_name: 'Hugo', last_name: 'BERNARD', roles: ['marin'] },
+    signature_snapshot: {
+      signature_id: 9832, signer_person_id: 9304, signer_name: 'Hugo BERNARD', signer_roles: ['marin'],
+      signed_at: '2026-08-03T20:10:00Z', version_number: 1, storage_bucket: 'working-time-signatures',
+      storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64),
+    },
+    interval_snapshot: [], non_compliance_snapshot: [], comment: 'Signature explicite du marin.', occurred_at: '2026-08-03T20:10:00Z',
+  }],
+  hse_exposure_methodologies: [{
+    id: 9851, name: 'Méthode HSE démo', version_label: '2026-08', effective_from: '2026-01-01',
+    sedentary_day_hours: 8, offshore_actual_hour_factor: 1,
+  }],
+  hse_exposure_hours: [],
+  hse_safety_events: [],
+  planning_notifications: [],
+  planning_dependencies: [],
   project_billing_periods: [],
   project_billing_services: [],
   project_chargeable_expenses: [],
@@ -681,6 +783,59 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'working_time_entry_context') {
+    return createPreviewQuery({
+      data: {
+        current_person_id: 9301,
+        editable_people: [
+          { person_id: 9301, first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine', is_self: true },
+          { person_id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', is_self: false },
+          { person_id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', is_self: false },
+        ],
+      },
+      error: null,
+    });
+  }
+  if (functionName === 'working_time_interval_recommendation' || functionName === 'working_time_phases_recommendation') {
+    const phases = Array.isArray(args.p_phases) ? args.p_phases as Array<{ starts_at: string; ends_at: string }> : [{ starts_at: String(args.p_proposed_start || ''), ends_at: String(args.p_proposed_end || '') }];
+    const endsAt = new Date(phases.at(-1)?.ends_at || '');
+    const proposedSeconds = phases.reduce((sum, phase) => sum + Math.max(0, (new Date(phase.ends_at).getTime() - new Date(phase.starts_at).getTime()) / 1000), 0);
+    const existingSeconds = 4 * 3600;
+    const work24hSeconds = existingSeconds + proposedSeconds;
+    const available24hSeconds = Math.max(0, 12 * 3600 - work24hSeconds);
+    const status = available24hSeconds === 0 ? 'alerte' : 'conforme';
+    return createPreviewQuery({
+      data: {
+        status,
+        policy_id: 9501,
+        policy_name: 'Politique démo datée',
+        already_non_compliant: false,
+        available_24h_seconds: available24hSeconds,
+        available_7d_seconds: Math.max(0, 72 * 3600 - (28 * 3600 + proposedSeconds)),
+        work_24h_seconds: work24hSeconds,
+        work_7d_seconds: 28 * 3600 + proposedSeconds,
+        rest_24h_seconds: 24 * 3600 - work24hSeconds,
+        longest_rest_24h_seconds: 8 * 3600,
+        rest_impact_seconds: -proposedSeconds,
+        consecutive_rest_impact_seconds: 0,
+        max_additional_seconds: available24hSeconds,
+        latest_end_at: new Date(endsAt.getTime() + available24hSeconds * 1000).toISOString(),
+        next_resume_at: new Date(endsAt.getTime() + 8 * 3600 * 1000).toISOString(),
+        violation_codes: [],
+        phase_count: phases.length,
+      },
+      error: null,
+    });
+  }
+  if (functionName === 'hse_kpi_summary') {
+    return createPreviewQuery({ data: {
+      methodology_id: 9851, methodology_version: '2026-08', exposure_hours: 12480,
+      FAT: 0, LWDC: 1, RWC: 1, MTC: 2, FAC: 3, near_miss: 8, safety_observation: 42,
+      LTI: 1, LTIFR: null, TRIR: null, FAR: null, FAC_rate: null, MTC_rate: null,
+      RWC_rate: null, SOFR: null, french_frequency_rate: null, french_severity_rate: null,
+      configuration_complete: false,
+    }, error: null });
+  }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const people = previewRows('people')
@@ -787,5 +942,13 @@ export const previewSupabaseClient = {
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
+  },
+  storage: {
+    from: () => ({
+      createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
+      upload: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+      remove: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+    }),
   },
 } as unknown as SupabaseClient;

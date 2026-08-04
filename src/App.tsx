@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ActionPlanPage } from './features/actionPlan/ActionPlanPage';
 import { AdminPage } from './features/admin/AdminPage';
@@ -18,6 +19,8 @@ import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseReques
 import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
+
+const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -67,6 +70,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <PlanningPage />
                 ) : module.key === 'humanResources' ? (
                   <HumanResourcesPage />
+                ) : module.key === 'workingTime' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du suivi du temps de travail…</div>}><WorkingTimePage /></Suspense>
                 ) : module.key === 'procedures' ? (
                   <ProceduresPage />
                 ) : module.key === 'projects' ? (

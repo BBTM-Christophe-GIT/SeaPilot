@@ -8,6 +8,7 @@ import {
   ContactRound,
   FileDown,
   FilePlus2,
+  FileSignature,
   FileText,
   Download,
   HeartPulse,
@@ -73,6 +74,7 @@ import {
   type WorkforceExitBreakdown,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
+import { ProfileSignaturePanel } from '../workingTime/ProfileSignaturePanel';
 
 interface HumanResourcesPageProps {
   client?: SupabaseClient;
@@ -209,6 +211,7 @@ const HR_DETAILS_SECTIONS = [
   { key: 'administrative', label: 'Documents administratifs' },
   { key: 'health', label: 'Santé et habilitations' },
   { key: 'clothing', label: 'Tenues et mensurations' },
+  { key: 'signature', label: 'Signature' },
   { key: 'documents', label: 'Documents' },
 ] as const;
 
@@ -382,6 +385,8 @@ function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
       return <HeartPulse aria-hidden="true" size={18} />;
     case 'clothing':
       return <Ruler aria-hidden="true" size={18} />;
+    case 'signature':
+      return <FileSignature aria-hidden="true" size={18} />;
     default:
       return <FileText aria-hidden="true" size={18} />;
   }
@@ -1427,7 +1432,13 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </section> : null}
 
         <PersonProfileCard
+          canManageSignature={Boolean(selectedPerson && (
+            selectedPerson.id === ownPersonId
+            || effectiveRoles.includes('admin')
+            || effectiveRoles.includes('armement')
+          ))}
           canClose={!isMarinView}
+          client={effectiveClient}
           documents={selectedPersonDocuments}
           isManager={isManager}
           isSaving={isSaving}
@@ -1845,7 +1856,9 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  canManageSignature,
   canClose = true,
+  client,
   documents,
   isManager,
   isSaving,
@@ -1859,7 +1872,9 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canManageSignature: boolean;
   canClose?: boolean;
+  client: SupabaseClient;
   documents: HrDocumentRecord[];
   isManager: boolean;
   isSaving: boolean;
@@ -1917,6 +1932,8 @@ function PersonProfileCard({
         <ProfileMetric label="Manquants" tone="danger" value={missingCount} />
       </div>
       <PersonDetailsPanel
+        canManageSignature={canManageSignature}
+        client={client}
         documents={documents}
         isManager={isManager}
         isSaving={isSaving}
@@ -2449,6 +2466,19 @@ function CreatePersonDialog({
             </DetailsGrid>
           </section>
         );
+      case 'signature':
+        return (
+          <section>
+            <h3>Signature numérisée</h3>
+            <div className="hr-create-documents-note">
+              <FileSignature aria-hidden="true" size={22} />
+              <div>
+                <strong>Signature à ajouter après création</strong>
+                <p>Enregistrez d’abord le collaborateur, puis importez ou dessinez sa signature PNG depuis sa fiche RH.</p>
+              </div>
+            </div>
+          </section>
+        );
       case 'documents':
         return (
           <section>
@@ -2515,6 +2545,8 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  canManageSignature,
+  client,
   documents,
   isManager,
   isSaving,
@@ -2527,6 +2559,8 @@ function PersonDetailsPanel({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canManageSignature: boolean;
+  client: SupabaseClient;
   documents: HrDocumentRecord[];
   isManager: boolean;
   isSaving: boolean;
@@ -2873,6 +2907,8 @@ function PersonDetailsPanel({
             </DetailsGrid>
           </section>
         );
+      case 'signature':
+        return <ProfileSignaturePanel canManage={canManageSignature} client={client} person={person} />;
       case 'documents':
         return (
           <ProfileDocumentsSection

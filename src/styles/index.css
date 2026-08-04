@@ -600,6 +600,7 @@ button:disabled {
 .content-shell {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   background: #f4f6f9;
 }
@@ -8703,11 +8704,17 @@ button:disabled {
 
 @media (max-width: 760px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-shell.sidebar-is-collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-shell {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .sidebar {
@@ -10232,6 +10239,9 @@ button.planning-p12-conflict-card {
 .planning-p13-inline-editor > header > div { display: flex; align-items: center; gap: 8px; }
 .planning-p13-inline-editor h3 { margin: 0; }
 .planning-p13-inline-editor > header > button { width: 36px; min-height: 36px; border: 0; border-radius: 7px; background: var(--surface-soft); }
+.planning-p13-policy-warning { display: flex; gap: 9px; margin: 12px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--line)); border-radius: 8px; color: var(--text); background: color-mix(in srgb, var(--warning) 9%, var(--surface)); }
+.planning-p13-policy-warning > svg { flex: 0 0 auto; margin-top: 1px; color: var(--warning); }
+.planning-p13-policy-warning p { margin: 0; font-size: .78rem; line-height: 1.45; }
 .planning-p13-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px; }
 .planning-p13-form-grid .is-wide { grid-column: 1 / -1; }
 .planning-p13-form-grid .is-checkbox { display: flex; align-items: center; gap: 8px; min-height: 38px; }
@@ -10276,6 +10286,751 @@ button.planning-p12-conflict-card {
   .planning-p13-panel input,
   .planning-p13-panel select,
   .planning-p13-panel textarea { min-height: 44px; }
+}
+
+/* Module Suivi du Temps de Travail — surface dédiée fondée sur Planning P1.3 */
+.working-time-page {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.working-time-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.working-time-heading {
+  display: flex;
+  flex: 1 1 480px;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+.working-time-heading-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: #ffffff;
+  background: #0b6075;
+}
+
+.working-time-heading p,
+.working-time-heading h1,
+.working-time-heading span,
+.working-time-foundation-note p {
+  margin: 0;
+}
+
+.working-time-heading p {
+  color: #0c5598;
+  font-size: .76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.working-time-heading h1 {
+  margin-top: 3px;
+  color: #182132;
+  font-size: clamp(1.35rem, 2.4vw, 1.8rem);
+  line-height: 1.2;
+}
+
+.working-time-heading span {
+  display: block;
+  margin-top: 5px;
+  color: #617381;
+  font-size: .9rem;
+}
+
+.working-time-range {
+  display: flex;
+  flex: 1 1 360px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.working-time-range label {
+  display: grid;
+  gap: 4px;
+  color: #617381;
+  font-size: .75rem;
+  font-weight: 750;
+}
+
+.working-time-range input,
+.working-time-range button {
+  min-height: 39px;
+  border-radius: 7px;
+  font: inherit;
+}
+
+.working-time-range input {
+  padding: 7px 9px;
+  border: 1px solid #b9c9d4;
+  color: #182132;
+  background: #ffffff;
+}
+
+.working-time-range button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 0;
+  color: #ffffff;
+  background: #0b6075;
+  font-weight: 750;
+}
+
+.working-time-range button:disabled { cursor: wait; opacity: .6; }
+.working-time-range-mode { display: inline-flex; padding: 3px; border-radius: 8px; background: #eaf1f4; }
+.working-time-range-mode button { min-height: 33px; padding: 6px 9px; color: #42606d; background: transparent; }
+.working-time-range-mode button[aria-pressed="true"] { color: #fff; background: #0b6075; }
+
+.working-time-foundation-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #cce0e6;
+  border-radius: 9px;
+  color: #294b57;
+  background: #eef7f9;
+  font-size: .86rem;
+}
+
+.working-time-foundation-note > svg { flex: 0 0 auto; margin-top: 1px; color: #0b6075; }
+.working-time-foundation-note code { font-size: .82em; }
+.working-time-foundation-note p,
+.working-time-foundation-note code { overflow-wrap: anywhere; }
+
+.working-time-message {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.working-time-message.is-error { color: #8b2635; background: #fdecef; }
+.working-time-message.is-success { color: #17603a; background: #e8f7ee; }
+
+.hr-signature-panel {
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid #d7e2e9;
+  border-radius: 10px;
+  background: #f9fbfc;
+}
+.hr-signature-panel > header,
+.hr-signature-current,
+.hr-signature-mode,
+.hr-signature-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hr-signature-panel > header span {
+  color: #0c6074;
+  font-size: .72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.hr-signature-panel > header h3 { margin: 2px 0 0; color: #182132; font-size: 1rem; }
+.hr-signature-panel > header strong { display: inline-flex; align-items: center; gap: 6px; color: #17603a; font-size: .78rem; }
+.hr-signature-panel > header em { color: #8b2635; font-size: .78rem; font-style: normal; font-weight: 750; }
+.hr-signature-current {
+  justify-content: flex-start;
+  padding: 12px;
+  border: 1px solid #cfe1df;
+  border-radius: 9px;
+  background: #fff;
+}
+.hr-signature-current img,
+.hr-signature-file img {
+  width: min(220px, 45%);
+  height: 76px;
+  border: 1px solid #e0e6ea;
+  border-radius: 6px;
+  object-fit: contain;
+  background: #fff;
+}
+.hr-signature-current > div { display: grid; gap: 4px; min-width: 0; }
+.hr-signature-current span { color: #617381; font-size: .76rem; }
+.hr-signature-current code,
+.hr-signature-history code { color: #36505d; font-size: .7rem; overflow-wrap: anywhere; }
+.hr-signature-editor { display: grid; gap: 11px; }
+.hr-signature-mode { justify-content: flex-start; }
+.hr-signature-mode button,
+.hr-signature-drawing button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #b9cbd4;
+  border-radius: 7px;
+  color: #36505d;
+  background: #fff;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 750;
+}
+.hr-signature-mode button.is-active { border-color: #0c6074; color: #fff; background: #0c6074; }
+.hr-signature-file { display: grid; gap: 8px; color: #536b79; font-size: .78rem; font-weight: 750; }
+.hr-signature-file input { padding: 8px; border: 1px dashed #9db8c3; border-radius: 8px; background: #fff; }
+.hr-signature-drawing { display: grid; gap: 8px; }
+.hr-signature-drawing canvas {
+  width: 100%;
+  max-height: 220px;
+  border: 1px solid #9db8c3;
+  border-radius: 8px;
+  background: #fff;
+  touch-action: none;
+}
+.hr-signature-drawing button { justify-self: start; }
+.hr-signature-consent-note { margin: 0; color: #617381; font-size: .76rem; }
+.hr-signature-history summary { cursor: pointer; color: #36505d; font-size: .8rem; font-weight: 750; }
+.hr-signature-history ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
+.hr-signature-history li { justify-content: flex-start; padding: 7px 9px; border-radius: 6px; background: #eef3f5; font-size: .74rem; }
+.hr-signature-history li em { margin-left: auto; color: #617381; font-style: normal; }
+
+.working-time-workflow {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.working-time-section-heading,
+.working-time-register-detail > header,
+.working-time-subheading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.working-time-section-heading p,
+.working-time-section-heading h2,
+.working-time-register-detail > header p,
+.working-time-register-detail > header h3,
+.working-time-subheading h4,
+.working-time-subheading span { margin: 0; }
+.working-time-section-heading p,
+.working-time-register-detail > header p { color: #0c5598; font-size: .74rem; font-weight: 800; text-transform: uppercase; }
+.working-time-section-heading h2 { margin-top: 2px; color: #182132; font-size: 1.16rem; }
+.working-time-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #617381;
+  font-size: .82rem;
+}
+.working-time-heading-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid #b8ccd4;
+  border-radius: 7px;
+  color: #124f60;
+  background: #fff;
+  font: inherit;
+  font-weight: 750;
+}
+
+.working-time-register-create {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(140px, .7fr) minmax(145px, .7fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e5ea;
+  border-radius: 9px;
+  background: #f5fafb;
+}
+
+.working-time-register-create label,
+.working-time-interval-form label,
+.working-time-void-form label,
+.working-time-reopen-form label,
+.working-time-non-compliance label {
+  display: grid;
+  gap: 5px;
+  color: #536b79;
+  font-size: .75rem;
+  font-weight: 750;
+}
+
+.working-time-register-create input,
+.working-time-register-create select,
+.working-time-interval-form input,
+.working-time-interval-form select,
+.working-time-void-form input,
+.working-time-reopen-form input,
+.working-time-non-compliance textarea,
+.working-time-non-compliance select {
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid #b9c9d4;
+  border-radius: 7px;
+  color: #182132;
+  background: #fff;
+  font: inherit;
+}
+
+.working-time-register-create button,
+.working-time-interval-form button,
+.working-time-void-form button,
+.working-time-reopen-form button,
+.working-time-non-compliance button,
+.working-time-workflow-actions button,
+.working-time-row-actions button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid #b8ccd4;
+  border-radius: 7px;
+  color: #124f60;
+  background: #fff;
+  font: inherit;
+  font-size: .79rem;
+  font-weight: 750;
+}
+.working-time-register-create > button,
+.working-time-interval-form button[type="submit"],
+.working-time-workflow-actions > button,
+.working-time-sign-action > button { border-color: #0b6075; color: #fff; background: #0b6075; }
+.working-time-workflow button:disabled { cursor: not-allowed; opacity: .5; }
+
+.working-time-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.working-time-register-list { display: grid; gap: 8px; }
+.working-time-register-list > button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d5e0e7;
+  border-radius: 8px;
+  color: #263b48;
+  background: #fff;
+  text-align: left;
+}
+.working-time-register-list > button.is-active { border-color: #0b6075; box-shadow: inset 3px 0 #0b6075; background: #f2f9fa; }
+.working-time-register-list span { font-weight: 800; }
+.working-time-register-list small { color: #617381; }
+.working-time-register-list em,
+.working-time-status {
+  justify-self: start;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #425c69;
+  background: #eef2f5;
+  font-size: .69rem;
+  font-style: normal;
+  font-weight: 800;
+}
+.working-time-register-list .is-submitted,
+.working-time-status.is-submitted { color: #81520b; background: #fff3d6; }
+.working-time-register-list .is-validated,
+.working-time-status.is-validated { color: #17603a; background: #e3f6ea; }
+.working-time-register-list .is-reopened,
+.working-time-status.is-reopened { color: #8b2635; background: #fdecef; }
+
+.working-time-register-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 285px;
+  gap: 14px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #dbe3ed;
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+.working-time-register-detail > header,
+.working-time-register-detail > .working-time-lock-note { grid-column: 1 / -1; }
+.working-time-register-detail > .working-time-signatures { grid-column: 2; grid-row: 3; grid-template-columns: 1fr; align-self: start; }
+.working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 3; }
+.working-time-register-detail > .working-time-non-compliance { grid-column: 1; }
+.working-time-register-detail > .working-time-workflow-actions {
+  grid-column: 2;
+  grid-row: 4;
+  align-self: start;
+  position: sticky;
+  top: 12px;
+  padding: 13px;
+  border: 1px solid #d4e1e7;
+  border-radius: 9px;
+  background: #fff;
+}
+.working-time-register-detail > header h3 { margin-top: 2px; color: #182132; font-size: 1.08rem; }
+.working-time-register-detail > header span { color: #617381; font-size: .82rem; }
+.working-time-register-header-actions { display: flex; align-items: center; gap: 9px; }
+.working-time-register-header-actions > button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid #b8ccd4;
+  border-radius: 7px;
+  color: #124f60;
+  background: #fff;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+.working-time-lock-note,
+.working-time-separation-note,
+.working-time-validated-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  color: #4c5963;
+  background: #eef2f5;
+  font-size: .82rem;
+}
+.working-time-separation-note { color: #7a4c08; background: #fff3d6; }
+.working-time-validated-note { color: #17603a; background: #e3f6ea; }
+
+.working-time-signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.working-time-signature-card {
+  display: grid;
+  min-height: 86px;
+  align-content: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px dashed #c6d2da;
+  border-radius: 8px;
+  background: #fff;
+}
+.working-time-signature-card > span { color: #617381; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+.working-time-signature-card strong { display: flex; align-items: center; gap: 6px; color: #17603a; font-size: .8rem; }
+.working-time-signature-card.is-missing strong { color: #8b2635; }
+.working-time-signature-card img { width: 100%; max-width: 210px; height: 54px; object-fit: contain; object-position: left center; }
+.working-time-signature-card small { color: #617381; font-size: .7rem; }
+.working-time-signature-card code { color: #36505d; font-size: .66rem; overflow-wrap: anywhere; }
+
+.working-time-intervals,
+.working-time-non-compliance,
+.working-time-workflow-actions { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid #dbe3ed; }
+.working-time-subheading h4,
+.working-time-workflow-actions h4 { display: flex; align-items: center; gap: 6px; margin: 0; color: #263b48; font-size: .9rem; }
+.working-time-subheading span { color: #617381; font-size: .76rem; }
+.working-time-interval-list { display: grid; gap: 7px; }
+.working-time-interval-list > div {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.3fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #e0e7ec;
+  border-radius: 7px;
+  background: #fff;
+  font-size: .79rem;
+}
+.working-time-interval-list small { color: #617381; }
+.working-time-row-actions { display: flex; gap: 5px; }
+.working-time-row-actions button { min-height: 32px; padding: 5px 7px; font-size: .72rem; }
+.working-time-empty { margin: 0; color: #70818c; font-size: .82rem; }
+
+.working-time-interval-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 9px;
+  padding: 11px;
+  border-radius: 8px;
+  background: #eef6f8;
+}
+.working-time-interval-form .is-wide { grid-column: span 2; }
+.working-time-form-actions { display: flex; grid-column: 1 / -1; gap: 7px; }
+
+.working-time-entry-board {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #cddfe6;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #f8fcfd 0%, #edf6f8 100%);
+}
+.working-time-entry-heading,
+.working-time-timeline-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.working-time-entry-heading p,
+.working-time-entry-heading h4 { margin: 0; }
+.working-time-entry-heading p { color: #0c5598; font-size: .69rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.working-time-entry-heading h4 { margin-top: 2px; color: #182132; font-size: 1rem; }
+.working-time-compliance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #425c69;
+  background: #e7edf0;
+  font-size: .72rem;
+  font-weight: 850;
+}
+.working-time-compliance-badge.is-conforme { color: #17603a; background: #dff4e7; }
+.working-time-compliance-badge.is-alerte { color: #80520d; background: #fff0c7; }
+.working-time-compliance-badge.is-non_conforme { color: #8b2635; background: #fde5e9; }
+
+.working-time-day-strip {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 5px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.working-time-day-strip button {
+  display: grid;
+  min-width: 72px;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid #ccdae1;
+  border-radius: 8px;
+  color: #4a626e;
+  background: #fff;
+  font: inherit;
+  text-align: center;
+}
+.working-time-day-strip button span { font-size: .66rem; font-weight: 800; text-transform: uppercase; }
+.working-time-day-strip button strong { font-size: .75rem; }
+.working-time-day-strip button.is-active { border-color: #0b6075; color: #fff; background: #0b6075; box-shadow: 0 4px 12px rgb(11 96 117 / 18%); }
+
+.working-time-entry-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, .8fr);
+  gap: 12px;
+  align-items: start;
+}
+.working-time-timeline-panel { min-width: 0; overflow-x: auto; border: 1px solid #d5e2e7; border-radius: 9px; background: #fff; }
+.working-time-timeline-legend { min-width: 920px; padding: 9px 11px; border-bottom: 1px solid #dce6ea; color: #536b79; font-size: .69rem; }
+.working-time-timeline-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.working-time-timeline-legend i { width: 11px; height: 11px; border-radius: 3px; background: #d7e5e9; }
+.working-time-timeline-legend i.is-selected { background: #17a6b8; }
+.working-time-timeline-legend i.is-pending { background: #f0a229; }
+.working-time-timeline {
+  display: grid;
+  min-width: 920px;
+  grid-template-columns: repeat(48, minmax(18px, 1fr));
+  padding: 25px 10px 10px;
+}
+.working-time-timeline button {
+  position: relative;
+  height: 82px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid #dde6ea;
+  background: #f5f8f9;
+  cursor: crosshair;
+  touch-action: none;
+}
+.working-time-timeline button.is-hour { border-left: 1px solid #aebfc7; }
+.working-time-timeline button.is-occupied { background: #bdd4db; }
+.working-time-timeline button.is-pending { background: #f6c66f; box-shadow: inset 0 0 0 1px #cb7d0b; }
+.working-time-timeline button.is-selected { background: #17a6b8; box-shadow: inset 0 0 0 1px #087789; }
+.working-time-timeline button:disabled { cursor: default; opacity: 1; }
+.working-time-timeline time {
+  position: absolute;
+  top: -19px;
+  left: -2px;
+  color: #5e747f;
+  font-size: .58rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.working-time-recommendation-panel { display: grid; gap: 10px; }
+.working-time-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.working-time-kpi-grid article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #d6e2e7;
+  border-radius: 8px;
+  background: #fff;
+}
+.working-time-kpi-grid article svg { grid-row: 1 / 3; color: #0b6075; }
+.working-time-kpi-grid article span { color: #617381; font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.working-time-kpi-grid article strong { color: #18343f; font-size: .88rem; }
+.working-time-kpi-grid article small { grid-column: 1 / -1; color: #6b7e88; font-size: .65rem; overflow-wrap: anywhere; }
+.working-time-guidance { padding: 11px; border-radius: 9px; color: #31515e; background: #e4f3f5; }
+.working-time-guidance > span { display: block; font-size: .69rem; font-weight: 800; text-transform: uppercase; }
+.working-time-guidance > strong { display: block; margin-top: 2px; color: #075d71; font-size: 1.45rem; }
+.working-time-guidance.is-non_conforme { color: #762535; background: #fde9ed; }
+.working-time-guidance.is-non_conforme > strong { color: #a1243d; }
+.working-time-guidance.is-alerte { color: #69480f; background: #fff1cf; }
+.working-time-guidance > p { margin: 5px 0 0; font-size: .72rem; }
+.working-time-guidance dl { display: grid; gap: 5px; margin: 10px 0 0; }
+.working-time-guidance dl > div { display: flex; justify-content: space-between; gap: 10px; padding-top: 5px; border-top: 1px solid rgb(58 105 118 / 18%); }
+.working-time-guidance dt,
+.working-time-guidance dd { margin: 0; font-size: .7rem; }
+.working-time-guidance dd { text-align: right; font-weight: 800; }
+.working-time-entry-form { background: #fff; }
+.working-time-pending-phases { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; }
+.working-time-pending-phases span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #e0ad54; border-radius: 999px; color: #65420d; background: #fff4dc; font-size: .72rem; }
+.working-time-pending-phases button { min-width: 20px; min-height: 20px; padding: 0; border-radius: 50%; }
+
+.working-time-hse-panel { display: grid; gap: 12px; padding: 16px; border: 1px solid #cadde4; border-radius: 10px; background: #f8fcfd; }
+.working-time-hse-panel > header { display: flex; align-items: center; justify-content: space-between; color: #0b6075; }
+.working-time-hse-panel > header p,
+.working-time-hse-panel > header h2 { margin: 0; }
+.working-time-hse-panel > header p { font-size: .7rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.working-time-hse-panel > header h2 { margin-top: 2px; color: #182132; font-size: 1.05rem; }
+.working-time-hse-note { margin: 0; color: #536b79; font-size: .8rem; }
+.working-time-hse-filters { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 8px; }
+.working-time-hse-filters label { display: grid; min-width: 0; gap: 4px; }
+.working-time-hse-filters input,
+.working-time-hse-filters select { width: 100%; min-width: 0; }
+.working-time-hse-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.working-time-hse-kpis { display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); gap: 7px; }
+.working-time-hse-kpis article { display: grid; gap: 3px; padding: 9px; border: 1px solid #d6e2e7; border-radius: 8px; background: #fff; }
+.working-time-hse-kpis span { color: #617381; font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.working-time-hse-kpis strong { color: #123f50; font-size: 1rem; }
+.working-time-hse-summary { display: flex; align-items: center; gap: 5px; margin: 0; color: #425c69; font-size: .76rem; }
+
+.working-time-entry-board button:focus-visible,
+.working-time-entry-board input:focus-visible,
+.working-time-entry-board select:focus-visible,
+.working-time-range button:focus-visible,
+.working-time-range input:focus-visible {
+  outline: 3px solid #f0a229;
+  outline-offset: 2px;
+}
+.working-time-void-form,
+.working-time-reopen-form { display: flex; align-items: end; gap: 7px; padding: 9px; border-radius: 8px; background: #fff4f1; }
+.working-time-void-form label,
+.working-time-reopen-form label { flex: 1; }
+
+.working-time-non-compliance { padding: 12px; border: 1px solid #f0c8a7; border-radius: 8px; background: #fff8ef; }
+.working-time-non-compliance > p { margin: 0; color: #6e5741; font-size: .8rem; }
+.working-time-non-compliance-card { display: grid; gap: 9px; padding: 11px; border: 1px solid #efc391; border-radius: 8px; background: #fff; }
+.working-time-non-compliance-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.working-time-non-compliance-card > header strong { color: #263b48; font-size: .84rem; }
+.working-time-non-compliance-card > header span { padding: 3px 7px; border-radius: 999px; color: #8b2635; background: #fdecef; font-size: .68rem; font-weight: 850; }
+.working-time-non-compliance-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.working-time-non-compliance-fields .is-wide { grid-column: 1 / -1; }
+.working-time-non-compliance textarea { min-height: 68px; resize: vertical; }
+.working-time-non-compliance-card > button { justify-self: start; }
+
+.working-time-workflow-actions > button { justify-self: start; }
+.working-time-sign-action { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.working-time-sign-action label { display: flex; align-items: center; gap: 7px; color: #364f5c; font-size: .82rem; }
+.working-time-reopen-form { margin-top: 2px; background: #f2f5f7; }
+
+.planning-p13-panel.is-page {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 560px;
+  overflow: visible;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.planning-p13-panel.is-page .planning-p13-content {
+  max-height: none;
+  overflow: visible;
+}
+
+.planning-p13-panel.is-page > header small { white-space: normal; overflow-wrap: anywhere; }
+
+@media (max-width: 1200px) {
+  .working-time-register-detail { grid-template-columns: 1fr; }
+  .working-time-register-detail > .working-time-signatures,
+  .working-time-register-detail > .working-time-intervals,
+  .working-time-register-detail > .working-time-non-compliance,
+  .working-time-register-detail > .working-time-workflow-actions { grid-column: 1; grid-row: auto; }
+  .working-time-register-detail > .working-time-signatures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-register-detail > .working-time-workflow-actions { position: static; }
+}
+
+@media (max-width: 900px) {
+  .working-time-header { align-items: stretch; flex-direction: column; }
+  .working-time-heading,
+  .working-time-range { flex: 0 1 auto; }
+  .working-time-range { width: 100%; flex-wrap: wrap; }
+  .working-time-range label { flex: 1 1 150px; }
+  .working-time-range input { width: 100%; }
+  .working-time-register-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-workspace-grid { grid-template-columns: 1fr; }
+  .working-time-register-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-interval-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-entry-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .working-time-header { padding: 15px; }
+  .working-time-heading-icon { width: 40px; height: 40px; flex-basis: 40px; }
+  .working-time-range { justify-content: stretch; }
+  .working-time-range > button { flex: 1 1 auto; }
+  .working-time-range-mode { width: 100%; }
+  .working-time-range-mode button { width: 50%; }
+  .working-time-workflow { padding: 12px; }
+  .working-time-section-heading,
+  .working-time-register-detail > header { align-items: flex-start; flex-direction: column; }
+  .working-time-register-create,
+  .working-time-register-list,
+  .working-time-interval-form,
+  .working-time-signatures { grid-template-columns: 1fr; }
+  .working-time-register-create > button { width: 100%; }
+  .working-time-interval-form .is-wide { grid-column: auto; }
+  .working-time-interval-list > div { grid-template-columns: 1fr; }
+  .working-time-row-actions { justify-content: flex-start; }
+  .working-time-void-form,
+  .working-time-reopen-form,
+  .working-time-non-compliance-fields { grid-template-columns: 1fr; }
+  .working-time-non-compliance-fields .is-wide { grid-column: auto; }
+  .working-time-register-header-actions { align-items: flex-end; flex-direction: column-reverse; }
+  .working-time-kpi-grid { grid-template-columns: 1fr; }
+  .working-time-hse-filters,
+  .working-time-hse-kpis { grid-template-columns: 1fr; }
+  .planning-p13-panel.is-page { min-height: 500px; border-radius: 8px; }
+  .planning-p13-panel.is-page .planning-p13-toolbar { flex-direction: column; }
+  .planning-p13-panel.is-page .planning-p13-toolbar > button { width: 100%; }
 }
 
 /* Planning P2.1 — assistant maritime explicable */
