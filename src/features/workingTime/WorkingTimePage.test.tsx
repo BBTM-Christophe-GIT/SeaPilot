@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
+import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
 
 vi.mock('../planning/PlanningP13Panel', () => ({
   PlanningP13Panel: vi.fn(() => <section data-testid="work-rest-surface">Surface P1.3</section>),
@@ -15,6 +16,10 @@ vi.mock('../planning/usePlanningOverview', async (importOriginal) => {
   return { ...original, usePlanningOverview: vi.fn() };
 });
 
+vi.mock('./WorkingTimeWorkflowPanel', () => ({
+  WorkingTimeWorkflowPanel: vi.fn(() => <section data-testid="workflow-surface">Workflow</section>),
+}));
+
 const client = {} as SupabaseClient;
 const reload = vi.fn().mockResolvedValue(true);
 
@@ -23,6 +28,7 @@ function renderPage(roles: Array<'admin' | 'marin'> = ['admin']) {
     <MemoryRouter>
       <WorkingTimePage
         client={client}
+        currentPerson={{ id: 42, firstName: 'Alex', lastName: 'Marin', functionLabel: 'Matelot', gradeLabel: '' }}
         initialRange={{ start: '2026-08-01', end: '2026-08-31' }}
         roles={roles}
       />
@@ -50,6 +56,13 @@ describe('WorkingTimePage', () => {
     expect(screen.getByRole('heading', { name: 'Suivi du Temps de Travail' })).toBeInTheDocument();
     expect(screen.getByText(/planning_work_rest_policies/)).toBeInTheDocument();
     expect(screen.getByTestId('work-rest-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('workflow-surface')).toBeInTheDocument();
+    expect(WorkingTimeWorkflowPanel).toHaveBeenCalledWith(expect.objectContaining({
+      client,
+      currentPerson: expect.objectContaining({ id: 42 }),
+      range: { start: '2026-08-01', end: '2026-08-31' },
+      roles: ['admin'],
+    }), undefined);
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       presentation: 'page',

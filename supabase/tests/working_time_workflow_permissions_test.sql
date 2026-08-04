@@ -1,0 +1,450 @@
+begin;
+
+select plan(40);
+
+select has_function(
+  'public', 'working_time_entry_context', array['date', 'date'],
+  'the workflow exposes a server-authorized entry context'
+);
+select has_function(
+  'public', 'get_or_create_working_time_register', array['bigint', 'text', 'date'],
+  'register creation is controlled by an RPC'
+);
+select has_function(
+  'public', 'save_working_time_interval',
+  array['bigint', 'timestamp with time zone', 'timestamp with time zone', 'text', 'bigint', 'text', 'text', 'bigint'],
+  'interval mutations are controlled by an RPC'
+);
+select has_function(
+  'public', 'save_working_time_day_comment', array['bigint', 'date', 'text'],
+  'captain comments are controlled by an RPC'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.working_time_intervals', 'INSERT'),
+  'authenticated clients cannot bypass the interval RPC'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.working_time_intervals', 'UPDATE'),
+  'authenticated clients cannot bypass interval correction rules'
+);
+select ok(
+  (
+    select count(*) = 3
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'working_time_intervals'
+      and policyname like 'working_time_intervals_%_guard'
+  ),
+  'RLS contains insert, update and delete workflow guards'
+);
+
+insert into auth.users (id, email)
+values
+  ('79000000-0000-0000-0000-000000000001', 'workflow-captain-a@example.invalid'),
+  ('79000000-0000-0000-0000-000000000002', 'workflow-captain-b@example.invalid'),
+  ('79000000-0000-0000-0000-000000000003', 'workflow-sailor@example.invalid'),
+  ('79000000-0000-0000-0000-000000000004', 'workflow-armement@example.invalid'),
+  ('79000000-0000-0000-0000-000000000005', 'workflow-admin@example.invalid'),
+  ('79000000-0000-0000-0000-000000000006', 'workflow-direction@example.invalid');
+
+insert into public.profiles (id, email, display_name, active_company_id)
+select fixture.id, fixture.email, fixture.display_name, company.id
+from (
+  values
+    ('79000000-0000-0000-0000-000000000001'::uuid, 'workflow-captain-a@example.invalid', 'Capitaine A'),
+    ('79000000-0000-0000-0000-000000000002'::uuid, 'workflow-captain-b@example.invalid', 'Capitaine B'),
+    ('79000000-0000-0000-0000-000000000003'::uuid, 'workflow-sailor@example.invalid', 'Marin Workflow'),
+    ('79000000-0000-0000-0000-000000000004'::uuid, 'workflow-armement@example.invalid', 'Armement Workflow'),
+    ('79000000-0000-0000-0000-000000000005'::uuid, 'workflow-admin@example.invalid', 'Admin Workflow'),
+    ('79000000-0000-0000-0000-000000000006'::uuid, 'workflow-direction@example.invalid', 'Direction Workflow')
+) fixture(id, email, display_name)
+cross join public.companies company
+where company.code = 'bbtm';
+
+insert into public.user_roles (user_id, company_id, role_key)
+select fixture.user_id, company.id, fixture.role_key
+from (
+  values
+    ('79000000-0000-0000-0000-000000000001'::uuid, 'capitaine'),
+    ('79000000-0000-0000-0000-000000000002'::uuid, 'capitaine'),
+    ('79000000-0000-0000-0000-000000000003'::uuid, 'marin'),
+    ('79000000-0000-0000-0000-000000000004'::uuid, 'armement'),
+    ('79000000-0000-0000-0000-000000000005'::uuid, 'admin'),
+    ('79000000-0000-0000-0000-000000000006'::uuid, 'direction')
+) fixture(user_id, role_key)
+cross join public.companies company
+where company.code = 'bbtm';
+
+insert into public.people (
+  company_id, user_id, first_name, last_name, function_label, sailor_number, active
+)
+select company.id, fixture.user_id, fixture.first_name, fixture.last_name,
+       fixture.function_label, fixture.sailor_number, true
+from (
+  values
+    ('79000000-0000-0000-0000-000000000001'::uuid, 'Camille', 'CAPITAINE A', 'Capitaine', 'WF-CAPA'),
+    ('79000000-0000-0000-0000-000000000002'::uuid, 'Morgan', 'CAPITAINE B', 'Capitaine', 'WF-CAPB'),
+    ('79000000-0000-0000-0000-000000000003'::uuid, 'Alex', 'MARIN', 'Matelot', 'WF-MARIN'),
+    ('79000000-0000-0000-0000-000000000004'::uuid, 'Alice', 'ARMEMENT', 'Armement', 'WF-ARM'),
+    ('79000000-0000-0000-0000-000000000005'::uuid, 'Ariane', 'ADMIN', 'Administrateur', 'WF-ADM'),
+    ('79000000-0000-0000-0000-000000000006'::uuid, 'Diane', 'DIRECTION', 'Direction', 'WF-DIR')
+) fixture(user_id, first_name, last_name, function_label, sailor_number)
+cross join public.companies company
+where company.code = 'bbtm';
+
+insert into public.vessels (company_id, name, acronym, active)
+select company.id, 'WORKFLOW TEST VESSEL', 'WFW', true
+from public.companies company where company.code = 'bbtm';
+
+insert into public.planning_assignments (
+  company_id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on,
+  starts_at, ends_at, assignment_role, status_label, confirmation_status,
+  watch_group, source_label
+)
+select company.id, vessel.id, fixture.captain_id, fixture.crew_id,
+       '2026-09-01', '2026-09-30',
+       '2026-09-01 00:00:00+02'::timestamptz,
+       '2026-09-30 23:59:59+02'::timestamptz,
+       fixture.assignment_role, 'En mer', 'confirmed', 'Bordée Workflow', 'workflow_test'
+from public.companies company
+join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WFW'
+cross join lateral (
+  select captain_a.id as captain_id, captain_a.id as crew_id, 'Capitaine'::text as assignment_role
+  from public.people captain_a where captain_a.sailor_number = 'WF-CAPA'
+  union all
+  select captain_b.id, captain_b.id, 'Capitaine'
+  from public.people captain_b where captain_b.sailor_number = 'WF-CAPB'
+  union all
+  select captain_a.id, sailor.id, 'Matelot'
+  from public.people captain_a
+  cross join public.people sailor
+  where captain_a.sailor_number = 'WF-CAPA' and sailor.sailor_number = 'WF-MARIN'
+) fixture
+where company.code = 'bbtm';
+
+insert into public.planning_publications (
+  vessel_id, scope_key, starts_on, ends_on, status, current_version,
+  created_by, updated_by
+)
+select vessel.id, 'vessel:' || vessel.id, '2026-09-01', '2026-09-30',
+       'validated', 1, captain.user_id, captain.user_id
+from public.vessels vessel
+join public.people captain on captain.company_id = vessel.company_id and captain.sailor_number = 'WF-CAPA'
+where vessel.acronym = 'WFW';
+
+insert into public.planning_work_rest_policies (
+  company_id, name, scope, vessel_id, effective_from, effective_to,
+  max_work_24h, min_rest_24h, max_work_7d, min_rest_7d,
+  min_consecutive_rest_hours, max_rest_periods_24h,
+  night_starts_at, night_ends_at, max_night_work_24h,
+  include_handover, active, created_by, updated_by
+)
+select company.id, 'Workflow test policy', 'vessel', vessel.id,
+       '2026-09-01', '2026-09-30', 4, 20, 28, 140, 12, 2,
+       '22:00', '06:00', 4, true, true, admin_profile.id, admin_profile.id
+from public.companies company
+join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WFW'
+join public.profiles admin_profile on admin_profile.active_company_id = company.id
+  and admin_profile.id = '79000000-0000-0000-0000-000000000005'
+where company.code = 'bbtm';
+
+insert into public.working_time_profile_signatures (
+  company_id, person_id, version_number, storage_path, mime_type,
+  file_size_bytes, sha256, created_by
+)
+select company.id, person.id, 1, company.id || '/' || person.id || '/workflow.png',
+       'image/png', 128, repeat(fixture.hash_character, 64), person.user_id
+from public.companies company
+join public.people person on person.company_id = company.id
+join (
+  values
+    ('WF-CAPA', 'a'), ('WF-CAPB', 'b'), ('WF-ARM', 'c'), ('WF-ADM', 'd')
+) fixture(sailor_number, hash_character) on fixture.sailor_number = person.sailor_number
+where company.code = 'bbtm';
+
+select set_config(
+  'test.workflow.captain_a_id',
+  (select id::text from public.people where sailor_number = 'WF-CAPA'), true
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
+select lives_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-MARIN'), 'weekly', '2026-09-07'
+  )$$,
+  'a sailor can create their own draft register'
+);
+select throws_ok(
+  $$select public.get_or_create_working_time_register(
+    current_setting('test.workflow.captain_a_id')::bigint, 'weekly', '2026-09-07'
+  )$$,
+  '42501', null,
+  'a sailor cannot create another person register'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-07', '2026-09-13')->'editable_people'),
+  1,
+  'an unpublished planning exposes only the captain themselves'
+);
+select throws_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-MARIN'), 'weekly', '2026-09-14'
+  )$$,
+  '42501', null,
+  'a captain cannot enter crew time before the planning is published'
+);
+
+reset role;
+update public.planning_publications
+set status = 'published', published_at = now(), locked_at = now()
+where vessel_id = (select id from public.vessels where acronym = 'WFW');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
+select ok(
+  jsonb_array_length(
+    public.working_time_entry_context('2026-09-07', '2026-09-13')->'editable_people'
+  ) >= 3,
+  'a published planning exposes the captain watch members'
+);
+select lives_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-MARIN'), 'weekly', '2026-09-07'
+  )$$,
+  'a captain can open the published-watch sailor register'
+);
+select lives_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-CAPA'), 'weekly', '2026-09-07'
+  )$$,
+  'a captain can create their own register'
+);
+
+select set_config(
+  'test.workflow.sailor_register_id',
+  (select id::text from public.working_time_registers
+   where person_id = (select id from public.people where sailor_number = 'WF-MARIN')
+     and period_start = '2026-09-07'), true
+);
+select set_config(
+  'test.workflow.captain_register_id',
+  (select id::text from public.working_time_registers
+   where person_id = (select id from public.people where sailor_number = 'WF-CAPA')
+     and period_start = '2026-09-07'), true
+);
+
+select lives_ok(
+  $$select public.save_working_time_interval(
+    current_setting('test.workflow.sailor_register_id')::bigint,
+    '2026-09-07 08:00:00+02', '2026-09-07 16:00:00+02', 'Europe/Paris',
+    (select id from public.vessels where acronym = 'WFW'), 'Bordée Workflow', 'Quart de jour'
+  )$$,
+  'the captain can enter an interval for a sailor in the published watch'
+);
+select lives_ok(
+  $$select public.save_working_time_interval(
+    current_setting('test.workflow.captain_register_id')::bigint,
+    '2026-09-07 08:00:00+02', '2026-09-07 10:00:00+02', 'Europe/Paris',
+    (select id from public.vessels where acronym = 'WFW'), 'Bordée Workflow', 'Passerelle'
+  )$$,
+  'the captain can enter their own interval'
+);
+select is(
+  (select utc_offset_minutes::integer from public.working_time_intervals
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint),
+  120,
+  'the server derives the captured UTC offset'
+);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'request_sailor_signature'
+  )$$,
+  'the captain can request the sailor signature'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
+select throws_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'sailor_sign'
+  )$$,
+  '23514', 'WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED.',
+  'submission requires the sailor explicit profile signature'
+);
+
+reset role;
+insert into public.working_time_profile_signatures (
+  company_id, person_id, version_number, storage_path, mime_type,
+  file_size_bytes, sha256, created_by
+)
+select company.id, person.id, 1, company.id || '/' || person.id || '/workflow.png',
+       'image/png', 128, repeat('e', 64), person.user_id
+from public.companies company
+join public.people person on person.company_id = company.id and person.sailor_number = 'WF-MARIN'
+where company.code = 'bbtm';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'sailor_sign'
+  )$$,
+  'the sailor explicitly signs and submits the register'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000006', true);
+select throws_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-DIR'), 'weekly', '2026-09-07'
+  )$$,
+  '42501', null,
+  'Direction cannot create a personal working-time register'
+);
+select throws_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'captain_validate'
+  )$$,
+  '42501', null,
+  'Direction cannot validate working-time registers'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
+select throws_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'captain_validate'
+  )$$,
+  '23514', 'WORKING_TIME_NON_COMPLIANT_COMMENT_REQUIRED.',
+  'a non-compliant register cannot be validated without captain comments'
+);
+select is(
+  (select count(*)::integer from public.working_time_intervals
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint and voided_at is null),
+  1,
+  'a non-conformity never removes worked hours'
+);
+select lives_ok(
+  $$
+    select public.save_working_time_day_comment(
+      current_setting('test.workflow.sailor_register_id')::bigint,
+      non_compliant_day.local_window_end_date,
+      'Dépassement expliqué par une opération de sécurité.'
+    )
+    from (
+      select distinct calculation.local_window_end_date
+      from public.working_time_calculation_windows calculation
+      where calculation.person_id = (select id from public.people where sailor_number = 'WF-MARIN')
+        and calculation.local_window_end_date between '2026-09-07' and '2026-09-13'
+        and calculation.is_compliant is false
+    ) non_compliant_day
+  $$,
+  'the assigned captain comments every non-compliant day'
+);
+select ok(
+  (select bool_and(authored_by = '79000000-0000-0000-0000-000000000001')
+   from public.working_time_day_comments
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint),
+  'non-conformity comments retain the captain identity'
+);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.sailor_register_id')::bigint, 'captain_validate'
+  )$$,
+  'the captain validates the commented sailor register'
+);
+select is(
+  (select count(*)::integer from public.working_time_intervals
+   where register_id = current_setting('test.workflow.sailor_register_id')::bigint and voided_at is null),
+  1,
+  'validation preserves all submitted hours'
+);
+select throws_ok(
+  $$update public.working_time_intervals
+    set comment = 'Tentative après validation'
+    where register_id = current_setting('test.workflow.sailor_register_id')::bigint$$,
+  '42501', null,
+  'authenticated users cannot directly alter a validated interval'
+);
+
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'request_sailor_signature'
+  )$$,
+  'a captain can request signature for their personal register'
+);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'sailor_sign'
+  )$$,
+  'a captain signs their personal register as its subject'
+);
+select throws_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'captain_validate'
+  )$$,
+  '42501', 'WORKING_TIME_SELF_VALIDATION_FORBIDDEN.',
+  'a captain cannot validate their own register'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000002', true);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'captain_validate'
+  )$$,
+  'another captain from the published watch can validate the captain register'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000004', true);
+select throws_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'reopen', ' '
+  )$$,
+  '22023', 'WORKING_TIME_REOPEN_COMMENT_REQUIRED.',
+  'reopening requires a reason'
+);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'reopen', 'Correction demandée par l’armement'
+  )$$,
+  'armement can reopen a validated register with a reason'
+);
+select ok(
+  exists (
+    select 1 from public.working_time_validations validation
+    where validation.register_id = current_setting('test.workflow.captain_register_id')::bigint
+      and validation.event_type = 'reopened'
+      and validation.comment = 'Correction demandée par l’armement'
+  ),
+  'the motivated reopening creates an immutable validation event'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'request_sailor_signature'
+  )$$,
+  'the reopened register can restart the signature workflow'
+);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'sailor_sign'
+  )$$,
+  'the captain signs the corrected personal register again'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
+select lives_ok(
+  $$select public.transition_working_time_register(
+    current_setting('test.workflow.captain_register_id')::bigint, 'captain_validate'
+  )$$,
+  'an administrator can validate a captain register without self-validation'
+);
+select is(
+  (select status from public.working_time_registers
+   where id = current_setting('test.workflow.captain_register_id')::bigint),
+  'validated',
+  'the final validated status is locked'
+);
+
+rollback;

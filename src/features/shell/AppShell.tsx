@@ -147,7 +147,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
   const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
   const [currentPerson, setCurrentPerson] = useState<CurrentPersonSummary | null>(null);
-  const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride);
+  const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride || previewMode);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -210,7 +210,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }, [client, rolesOverride, sessionUserId]);
 
   useEffect(() => {
-    if (rolesOverride || !sessionUserId) {
+    if ((rolesOverride && !previewMode) || (!sessionUserId && !previewMode)) {
       setCurrentPerson(null);
       setIsLoadingPerson(false);
       return;
@@ -222,7 +222,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       .catch(() => { if (isMounted) setCurrentPerson(null); })
       .finally(() => { if (isMounted) setIsLoadingPerson(false); });
     return () => { isMounted = false; };
-  }, [client, rolesOverride, sessionUserId]);
+  }, [client, previewMode, rolesOverride, sessionUserId]);
 
   const isActualAdmin = roles.includes('admin');
   const simulatedRole = isActualAdmin && adminProfileView !== 'actual' ? adminProfileView : null;

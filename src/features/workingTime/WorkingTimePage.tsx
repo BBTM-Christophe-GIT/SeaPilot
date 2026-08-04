@@ -9,11 +9,14 @@ import { getPlanningPermissions } from '../planning/planningPermissions';
 import { PlanningP13Panel, type P13Tab } from '../planning/PlanningP13Panel';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
 import { usePlanningOverview } from '../planning/usePlanningOverview';
+import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
 
 interface WorkingTimePageProps {
   client?: SupabaseClient;
   roles?: RoleKey[];
+  currentPerson?: CurrentPersonSummary | null;
   initialRange?: { start: string; end: string };
 }
 
@@ -28,10 +31,11 @@ function currentMonthRange(referenceDate: string): { start: string; end: string 
   };
 }
 
-export function WorkingTimePage({ client, roles, initialRange }: WorkingTimePageProps) {
+export function WorkingTimePage({ client, roles, currentPerson, initialRange }: WorkingTimePageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
+  const effectiveCurrentPerson = currentPerson === undefined ? outletContext?.currentPerson || null : currentPerson;
   const previewMode = outletContext?.previewMode || false;
   const permissions = getPlanningPermissions(effectiveRoles);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
@@ -89,6 +93,16 @@ export function WorkingTimePage({ client, roles, initialRange }: WorkingTimePage
       {!rangeIsValid ? <p className="working-time-message is-error" role="alert">La date de fin doit être postérieure ou égale à la date de début.</p> : null}
       {loadErrorMessage ? <p className="working-time-message is-error" role="alert">{loadErrorMessage}</p> : null}
       {isInitialLoading ? <div className="admin-state" role="status"><RefreshCw aria-hidden="true" className="is-spinning" size={18} />Chargement des données de travail et repos…</div> : null}
+
+      {rangeIsValid ? (
+        <WorkingTimeWorkflowPanel
+          client={effectiveClient}
+          currentPerson={effectiveCurrentPerson}
+          previewMode={previewMode}
+          range={range}
+          roles={effectiveRoles}
+        />
+      ) : null}
 
       {hasLoaded && rangeIsValid ? (
         <PlanningP13Panel

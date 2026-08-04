@@ -618,6 +618,52 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     notes: 'Valeurs synthétiques réservées à la préversion SeaPilot.',
     updated_at: '2026-08-01T08:00:00Z',
   }],
+  working_time_registers: [
+    {
+      id: 9801, company_id: 1, person_id: 9301, period_kind: 'weekly',
+      period_start: '2026-08-03', period_end: '2026-08-09', status: 'draft',
+      work_rest_policy_id: 9701,
+      people: { first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine' },
+    },
+    {
+      id: 9802, company_id: 1, person_id: 9304, period_kind: 'weekly',
+      period_start: '2026-08-03', period_end: '2026-08-09', status: 'submitted',
+      work_rest_policy_id: 9701,
+      people: { first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot' },
+    },
+  ],
+  working_time_intervals: [
+    {
+      id: 9811, register_id: 9801, company_id: 1, person_id: 9301,
+      local_work_date: '2026-08-03', starts_at: '2026-08-03T06:00:00Z', ends_at: '2026-08-03T14:00:00Z',
+      timezone_name: 'Europe/Paris', utc_offset_minutes: 120, vessel_id: 9201,
+      watch_group: 'Bordée 1', comment: 'Quart passerelle', author_user_id: 'preview-user',
+      author_person_id: 9301, source_type: 'manual', source_reference: null, source_record_key: null,
+      voided_at: null,
+    },
+    {
+      id: 9812, register_id: 9802, company_id: 1, person_id: 9304,
+      local_work_date: '2026-08-03', starts_at: '2026-08-03T06:00:00Z', ends_at: '2026-08-03T18:00:00Z',
+      timezone_name: 'Europe/Paris', utc_offset_minutes: 120, vessel_id: 9201,
+      watch_group: 'Bordée 1', comment: 'Opération pont', author_user_id: 'preview-user',
+      author_person_id: 9301, source_type: 'manual', source_reference: null, source_record_key: null,
+      voided_at: null,
+    },
+  ],
+  working_time_calculation_windows: [{
+    id: 9821, company_id: 1, person_id: 9304, window_end: '2026-08-03T20:00:00Z',
+    local_window_end_date: '2026-08-03', timezone_name: 'Europe/Paris', vessel_id: 9201,
+    work_rest_policy_id: 9701, work_24h_seconds: 43200, rest_24h_seconds: 43200,
+    longest_rest_24h_seconds: 43200, rest_period_count_24h: 1,
+    work_7d_seconds: 43200, rest_7d_seconds: 561600, night_work_24h_seconds: 0,
+    is_compliant: false, violation_codes: ['rest_24h'], calculation_version: 1,
+    calculated_at: '2026-08-03T20:01:00Z',
+  }],
+  working_time_day_comments: [],
+  working_time_profile_signatures: [
+    { id: 9831, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', valid_from: '2026-01-01T00:00:00Z', valid_to: null },
+    { id: 9832, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', valid_from: '2026-01-01T00:00:00Z', valid_to: null },
+  ],
   planning_notifications: [],
   planning_dependencies: [],
   project_billing_periods: [],
@@ -707,6 +753,19 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'working_time_entry_context') {
+    return createPreviewQuery({
+      data: {
+        current_person_id: 9301,
+        editable_people: [
+          { person_id: 9301, first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine', is_self: true },
+          { person_id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', is_self: false },
+          { person_id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', is_self: false },
+        ],
+      },
+      error: null,
+    });
+  }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const people = previewRows('people')

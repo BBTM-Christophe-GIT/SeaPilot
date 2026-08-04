@@ -148,6 +148,18 @@ join public.people sailor
   on sailor.company_id = company.id and sailor.user_id = '76000000-0000-0000-0000-000000000002'
 where company.code = 'bbtm';
 
+insert into public.planning_publications (
+  vessel_id, scope_key, starts_on, ends_on, status, current_version,
+  published_at, locked_at, created_by, updated_by
+)
+select vessel.id, 'vessel:' || vessel.id, '2026-08-01', '2026-08-31',
+       'published', 1, now(), now(), captain.user_id, captain.user_id
+from public.vessels vessel
+join public.people captain
+  on captain.company_id = vessel.company_id
+ and captain.user_id = '76000000-0000-0000-0000-000000000001'
+where vessel.name = 'WORKING TIME TEST VESSEL';
+
 insert into public.working_time_profile_signatures (
   company_id, person_id, version_number, storage_path, mime_type,
   file_size_bytes, sha256, created_by
