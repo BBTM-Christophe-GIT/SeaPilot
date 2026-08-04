@@ -20,6 +20,10 @@ vi.mock('./WorkingTimeWorkflowPanel', () => ({
   WorkingTimeWorkflowPanel: vi.fn(() => <section data-testid="workflow-surface">Workflow</section>),
 }));
 
+vi.mock('./WorkingTimeHseKpiPanel', () => ({
+  WorkingTimeHseKpiPanel: vi.fn(() => <section data-testid="hse-kpi-surface">KPI HSE</section>),
+}));
+
 const client = {} as SupabaseClient;
 const reload = vi.fn().mockResolvedValue(true);
 
@@ -57,6 +61,7 @@ describe('WorkingTimePage', () => {
     expect(screen.getByText(/planning_work_rest_policies/)).toBeInTheDocument();
     expect(screen.getByTestId('work-rest-surface')).toBeInTheDocument();
     expect(screen.getByTestId('workflow-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('hse-kpi-surface')).toBeInTheDocument();
     expect(WorkingTimeWorkflowPanel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       currentPerson: expect.objectContaining({ id: 42 }),
