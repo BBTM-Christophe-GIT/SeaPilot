@@ -98,10 +98,13 @@ describe('working-time PDF', () => {
       audit: workspace.validations,
     });
     const bytes = new Uint8Array(generated.document.output('arraybuffer'));
+    if (process.env.WORKING_TIME_PDF_QA_PATH) {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(process.env.WORKING_TIME_PDF_QA_PATH!, bytes));
+    }
     const prefix = new TextDecoder().decode(bytes.slice(0, 4));
 
     expect(prefix).toBe('%PDF');
     expect(bytes.byteLength).toBeGreaterThan(2_000);
-    expect(generated.filename).toBe('temps-travail-Alex-MARIN-2026-08-03-2026-08-09.pdf');
+    expect(generated.filename).toBe('registre-mensuel-temps-travail-Alex-MARIN-2026-08.pdf');
   });
 });

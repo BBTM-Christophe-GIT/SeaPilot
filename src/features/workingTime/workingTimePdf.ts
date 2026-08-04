@@ -63,6 +63,24 @@ function safeFilename(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9-]+/gi, '-').replace(/^-|-$/g, '');
 }
 
+function dateValues(start: string, end: string): string[] {
+  const values: string[] = [];
+  const current = new Date(`${start}T12:00:00`);
+  const last = new Date(`${end}T12:00:00`);
+  while (current <= last && values.length < 31) {
+    values.push(current.toISOString().slice(0, 10));
+    current.setDate(current.getDate() + 1);
+  }
+  return values;
+}
+
+function dayWorkSeconds(day: string, intervals: WorkingTimePdfInput['workspace']['intervals']): number {
+  const start = new Date(`${day}T00:00:00`).getTime();
+  const end = new Date(`${day}T24:00:00`).getTime();
+  return intervals.reduce((total, interval) => total + Math.max(0,
+    Math.min(end, Date.parse(interval.endsAt)) - Math.max(start, Date.parse(interval.startsAt))), 0) / 1000;
+}
+
 function latestSignatureEvent(events: WorkingTimeValidationEvent[], eventType: string) {
   return events.find((event) => event.eventType === eventType)?.signatureSnapshot || null;
 }
@@ -105,15 +123,19 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const document = new jsPDF({ compress: true, format: 'a4', orientation: 'portrait', unit: 'mm' });
   const { register, workspace } = input;
-  const intervals = workspace.intervals.filter((interval) => interval.registerId === register.id);
+  const intervals = workspace.intervals.filter((interval) => interval.personId === register.personId
+    && interval.localWorkDate >= register.periodStart && interval.localWorkDate <= register.periodEnd);
   const calculations = workspace.calculations.filter((calculation) => calculation.personId === register.personId
     && calculation.localWindowEndDate >= register.periodStart
     && calculation.localWindowEndDate <= register.periodEnd);
-  const comments = workspace.dayComments.filter((comment) => comment.registerId === register.id);
+  const comments = workspace.dayComments.filter((comment) => comment.personId === register.personId
+    && comment.localWorkDate >= register.periodStart && comment.localWorkDate <= register.periodEnd);
   const nonCompliantDates = Array.from(new Set(calculations
     .filter((calculation) => calculation.isCompliant === false)
     .map((calculation) => calculation.localWindowEndDate))).sort();
   let cursor = 18;
+  const primaryVessel = workspace.vessels.find((item) => item.id === intervals.find((item) => item.vesselId)?.vesselId);
+  const validatorName = input.audit.find((event) => event.eventType === 'captain_validated')?.actorName || 'Non validé';
 
   const ensureSpace = (height: number) => {
     if (cursor + height <= 280) return;
@@ -144,6 +166,8 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.setFontSize(9);
   document.setFont('helvetica', 'normal');
   document.text(`${register.functionLabel || 'Personnel maritime'} - ${register.periodStart} au ${register.periodEnd}`, 14, cursor + 6);
+  document.setFontSize(7.5);
+  document.text(`${primaryVessel?.name || 'Sans navire'} · OMI ${primaryVessel?.imoNumber || 'non renseigné'} · Pavillon ${primaryVessel?.flagState || 'non renseigné'} · Validateur ${validatorName}`, 14, cursor + 10);
   document.setFont('helvetica', 'bold');
   document.setTextColor(register.status === 'validated' ? 23 : 129, register.status === 'validated' ? 96 : 82, register.status === 'validated' ? 58 : 11);
   document.text(STATUS_LABELS[register.status] || register.status, 196, cursor, { align: 'right' });
@@ -169,6 +193,44 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     margin: { left: 14, right: 14 },
   });
   cursor = ((document as typeof document & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || cursor + 12) + 8;
+
+  document.addPage('a4', 'landscape');
+  document.setFillColor(10, 65, 82);
+  document.rect(0, 0, 297, 13, 'F');
+  document.setTextColor(255, 255, 255);
+  document.setFont('helvetica', 'bold');
+  document.setFontSize(11);
+  document.text(`Grille mensuelle par demi-heures · ${register.personName} · ${register.periodStart.slice(0, 7)}`, 10, 9);
+  const gridDays = dateValues(register.periodStart, register.periodEnd);
+  const halfHourLabels = Array.from({ length: 48 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, '0')}${index % 2 ? '30' : '00'}`);
+  autoTable(document, {
+    startY: 17,
+    head: [['Jour', ...halfHourLabels, 'Total', 'Cumul 7 j']],
+    body: gridDays.map((day) => {
+      const start = new Date(`${day}T00:00:00`).getTime();
+      const slots = Array.from({ length: 48 }, (_, index) => {
+        const slotStart = start + index * 1_800_000;
+        const slotEnd = slotStart + 1_800_000;
+        return intervals.some((interval) => slotStart < Date.parse(interval.endsAt) && slotEnd > Date.parse(interval.startsAt)) ? '■' : '';
+      });
+      const serverWindow = calculations.filter((item) => item.localWindowEndDate === day).at(-1);
+      return [day.slice(8), ...slots, hours(dayWorkSeconds(day, intervals)), serverWindow ? hours(serverWindow.work7dSeconds) : '—'];
+    }),
+    theme: 'grid',
+    styles: { cellPadding: .35, fontSize: 3.3, halign: 'center', valign: 'middle' },
+    headStyles: { fillColor: [12, 96, 116], fontSize: 3.1, textColor: [255, 255, 255] },
+    columnStyles: { 0: { cellWidth: 7, fontStyle: 'bold' }, 49: { cellWidth: 10 }, 50: { cellWidth: 11 } },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 0 && nonCompliantDates.includes(gridDays[data.row.index])) {
+        data.cell.styles.fillColor = [253, 229, 233];
+        data.cell.styles.textColor = [139, 38, 53];
+      }
+      if (data.section === 'body' && data.cell.raw === '■') data.cell.styles.fillColor = [23, 166, 184];
+    },
+    margin: { left: 7, right: 7 },
+  });
+  document.addPage('a4', 'portrait');
+  cursor = 18;
 
   sectionTitle('Conformité - fenêtres glissantes 24 h et 7 jours');
   if (nonCompliantDates.length === 0) {
@@ -280,12 +342,14 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setPage(page);
     document.setTextColor(97, 115, 129);
     document.setFontSize(6.5);
-    document.text(`SeaPilot - généré le ${formatDateTime(new Date().toISOString())}`, 14, 291);
-    document.text(`Page ${page}/${pageCount}`, 196, 291, { align: 'right' });
+    const pageHeight = document.internal.pageSize.getHeight();
+    const pageWidth = document.internal.pageSize.getWidth();
+    document.text(`SeaPilot - généré le ${formatDateTime(new Date().toISOString())}`, 14, pageHeight - 6);
+    document.text(`Page ${page}/${pageCount}`, pageWidth - 14, pageHeight - 6, { align: 'right' });
   }
 
   return {
     document,
-    filename: `temps-travail-${safeFilename(register.personName)}-${register.periodStart}-${register.periodEnd}.pdf`,
+    filename: `registre-mensuel-temps-travail-${safeFilename(register.personName)}-${register.periodStart.slice(0, 7)}.pdf`,
   };
 }

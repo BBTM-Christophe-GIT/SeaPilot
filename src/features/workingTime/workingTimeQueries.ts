@@ -119,6 +119,8 @@ interface VesselRow {
   id: number | string;
   name: string;
   acronym: string | null;
+  imo_number?: string | null;
+  flag_state?: string | null;
 }
 
 export interface WorkingTimeEditablePerson {
@@ -211,6 +213,8 @@ export interface WorkingTimeVesselOption {
   id: number;
   name: string;
   acronym: string;
+  imoNumber?: string;
+  flagState?: string;
 }
 
 export interface WorkingTimeWorkspace {
@@ -280,6 +284,29 @@ export interface WorkingTimeRecommendationInput {
   vesselId: number | null;
   watchGroup: string | null;
   excludeIntervalId?: number | null;
+}
+
+export interface WorkingTimePhaseInput {
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface WorkingTimePhasesRecommendationInput {
+  personId: number;
+  phases: WorkingTimePhaseInput[];
+  timezoneName: string;
+  vesselId: number | null;
+  watchGroup: string | null;
+  excludeIntervalId?: number | null;
+}
+
+export interface SaveWorkingTimePhasesInput {
+  registerId: number;
+  phases: WorkingTimePhaseInput[];
+  timezoneName: string;
+  vesselId: number | null;
+  watchGroup: string | null;
+  comment: string | null;
 }
 
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
@@ -422,7 +449,7 @@ export async function fetchWorkingTimeWorkspace(
     client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
       .is('valid_to', null).order('version_number', { ascending: false }),
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
-    client.from('vessels').select('id,name,acronym').eq('active', true).order('name'),
+    client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
   ]);
 
   assertResult(contextResult.error, 'Impossible de déterminer le périmètre de saisie.');
@@ -482,6 +509,8 @@ export async function fetchWorkingTimeWorkspace(
       id: Number(vessel.id),
       name: vessel.name,
       acronym: vessel.acronym || '',
+      imoNumber: vessel.imo_number || '',
+      flagState: vessel.flag_state || '',
     })),
   };
 }
@@ -552,6 +581,56 @@ export async function fetchWorkingTimeEntryRecommendation(
   };
 }
 
+export async function fetchWorkingTimePhasesRecommendation(
+  client: SupabaseClient,
+  input: WorkingTimePhasesRecommendationInput,
+): Promise<WorkingTimeEntryRecommendation> {
+  const { data, error } = await client.rpc('working_time_phases_recommendation', {
+    p_person_id: input.personId,
+    p_phases: input.phases.map((phase) => ({ starts_at: phase.startsAt, ends_at: phase.endsAt })),
+    p_timezone_name: input.timezoneName,
+    p_vessel_id: input.vesselId,
+    p_watch_group: input.watchGroup,
+    p_exclude_interval_id: input.excludeIntervalId ?? null,
+  });
+  assertResult(error, 'Impossible de calculer la recommandation des phases de travail.');
+  const value = (data || {}) as Record<string, unknown>;
+  return {
+    status: String(value.status || 'sans_politique') as WorkingTimeRecommendationStatus,
+    policyId: numberOrNull(value.policy_id as number | string | null),
+    policyName: value.policy_name ? String(value.policy_name) : null,
+    alreadyNonCompliant: Boolean(value.already_non_compliant),
+    available24hSeconds: Number(value.available_24h_seconds || 0),
+    available7dSeconds: Number(value.available_7d_seconds || 0),
+    work24hSeconds: Number(value.work_24h_seconds || 0),
+    work7dSeconds: Number(value.work_7d_seconds || 0),
+    rest24hSeconds: Number(value.rest_24h_seconds || 0),
+    longestRest24hSeconds: Number(value.longest_rest_24h_seconds || 0),
+    restImpactSeconds: Number(value.rest_impact_seconds || 0),
+    consecutiveRestImpactSeconds: Number(value.consecutive_rest_impact_seconds || 0),
+    maxAdditionalSeconds: Number(value.max_additional_seconds || 0),
+    latestEndAt: value.latest_end_at ? String(value.latest_end_at) : null,
+    nextResumeAt: value.next_resume_at ? String(value.next_resume_at) : null,
+    violationCodes: textArray(value.violation_codes),
+  };
+}
+
+export async function saveWorkingTimePhases(
+  client: SupabaseClient,
+  input: SaveWorkingTimePhasesInput,
+): Promise<number[]> {
+  const { data, error } = await client.rpc('save_working_time_phases', {
+    p_register_id: input.registerId,
+    p_phases: input.phases.map((phase) => ({ starts_at: phase.startsAt, ends_at: phase.endsAt })),
+    p_timezone_name: input.timezoneName,
+    p_vessel_id: input.vesselId,
+    p_watch_group: input.watchGroup,
+    p_comment: input.comment,
+  });
+  assertResult(error, 'Impossible d’enregistrer les phases de travail.');
+  return Array.isArray(data) ? data.map(Number) : [];
+}
+
 export async function voidWorkingTimeInterval(
   client: SupabaseClient,
   intervalId: number,
@@ -605,6 +684,12 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_PERMISSION_DENIED', 'Cette action n’est pas autorisée pour votre profil ou votre bordée publiée.'],
   ['WORKING_TIME_POLICY_NOT_FOUND', 'Aucune politique de travail et repos datée ne couvre ce créneau.'],
   ['WORKING_TIME_INVALID_INTERVAL', 'La fin doit être postérieure au début, dans une limite de 24 heures.'],
+  ['WORKING_TIME_PHASES_INVALID', 'Les phases doivent être valides, disjointes et rattachées à la même journée.'],
+  ['WORKING_TIME_PHASES_OVERLAP', 'Deux phases de travail se chevauchent.'],
+  ['WORKING_TIME_PHASES_EXISTING_OVERLAP', 'Une phase recouvre un créneau déjà enregistré.'],
+  ['HSE_EXPOSURE_METHODOLOGY_REQUIRED', 'Sélectionnez une méthodologie HSE datée.'],
+  ['HSE_EXPOSURE_FORBIDDEN', 'Votre rôle ne permet pas de recalculer les heures d’exposition.'],
+  ['HSE_KPI_FORBIDDEN', 'Votre rôle ne permet pas de consulter ces indicateurs HSE.'],
 ];
 
 export function workingTimeErrorMessage(error: unknown): string {

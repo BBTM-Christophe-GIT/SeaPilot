@@ -12,6 +12,7 @@ import { usePlanningOverview } from '../planning/usePlanningOverview';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
+import { WorkingTimeHseKpiPanel } from './WorkingTimeHseKpiPanel';
 
 interface WorkingTimePageProps {
   client?: SupabaseClient;
@@ -128,6 +129,10 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           range={range}
           roles={effectiveRoles}
         />
+      ) : null}
+
+      {rangeIsValid && effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine') ? (
+        <WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} />
       ) : null}
 
       {hasLoaded && rangeIsValid ? (

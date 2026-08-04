@@ -10848,6 +10848,7 @@ button.planning-p12-conflict-card {
 .working-time-timeline-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .working-time-timeline-legend i { width: 11px; height: 11px; border-radius: 3px; background: #d7e5e9; }
 .working-time-timeline-legend i.is-selected { background: #17a6b8; }
+.working-time-timeline-legend i.is-pending { background: #f0a229; }
 .working-time-timeline {
   display: grid;
   min-width: 920px;
@@ -10866,6 +10867,7 @@ button.planning-p12-conflict-card {
 }
 .working-time-timeline button.is-hour { border-left: 1px solid #aebfc7; }
 .working-time-timeline button.is-occupied { background: #bdd4db; }
+.working-time-timeline button.is-pending { background: #f6c66f; box-shadow: inset 0 0 0 1px #cb7d0b; }
 .working-time-timeline button.is-selected { background: #17a6b8; box-shadow: inset 0 0 0 1px #087789; }
 .working-time-timeline button:disabled { cursor: default; opacity: 1; }
 .working-time-timeline time {
@@ -10907,6 +10909,27 @@ button.planning-p12-conflict-card {
 .working-time-guidance dd { margin: 0; font-size: .7rem; }
 .working-time-guidance dd { text-align: right; font-weight: 800; }
 .working-time-entry-form { background: #fff; }
+.working-time-pending-phases { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; }
+.working-time-pending-phases span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #e0ad54; border-radius: 999px; color: #65420d; background: #fff4dc; font-size: .72rem; }
+.working-time-pending-phases button { min-width: 20px; min-height: 20px; padding: 0; border-radius: 50%; }
+
+.working-time-hse-panel { display: grid; gap: 12px; padding: 16px; border: 1px solid #cadde4; border-radius: 10px; background: #f8fcfd; }
+.working-time-hse-panel > header { display: flex; align-items: center; justify-content: space-between; color: #0b6075; }
+.working-time-hse-panel > header p,
+.working-time-hse-panel > header h2 { margin: 0; }
+.working-time-hse-panel > header p { font-size: .7rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.working-time-hse-panel > header h2 { margin-top: 2px; color: #182132; font-size: 1.05rem; }
+.working-time-hse-note { margin: 0; color: #536b79; font-size: .8rem; }
+.working-time-hse-filters { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 8px; }
+.working-time-hse-filters label { display: grid; min-width: 0; gap: 4px; }
+.working-time-hse-filters input,
+.working-time-hse-filters select { width: 100%; min-width: 0; }
+.working-time-hse-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.working-time-hse-kpis { display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); gap: 7px; }
+.working-time-hse-kpis article { display: grid; gap: 3px; padding: 9px; border: 1px solid #d6e2e7; border-radius: 8px; background: #fff; }
+.working-time-hse-kpis span { color: #617381; font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.working-time-hse-kpis strong { color: #123f50; font-size: 1rem; }
+.working-time-hse-summary { display: flex; align-items: center; gap: 5px; margin: 0; color: #425c69; font-size: .76rem; }
 
 .working-time-entry-board button:focus-visible,
 .working-time-entry-board input:focus-visible,
@@ -11003,6 +11026,8 @@ button.planning-p12-conflict-card {
   .working-time-non-compliance-fields .is-wide { grid-column: auto; }
   .working-time-register-header-actions { align-items: flex-end; flex-direction: column-reverse; }
   .working-time-kpi-grid { grid-template-columns: 1fr; }
+  .working-time-hse-filters,
+  .working-time-hse-kpis { grid-template-columns: 1fr; }
   .planning-p13-panel.is-page { min-height: 500px; border-radius: 8px; }
   .planning-p13-panel.is-page .planning-p13-toolbar { flex-direction: column; }
   .planning-p13-panel.is-page .planning-p13-toolbar > button { width: 100%; }

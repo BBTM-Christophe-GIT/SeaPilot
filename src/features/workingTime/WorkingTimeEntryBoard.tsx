@@ -11,9 +11,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
-  fetchWorkingTimeEntryRecommendation,
+  fetchWorkingTimePhasesRecommendation,
   workingTimeErrorMessage,
   type WorkingTimeEntryRecommendation,
+  type WorkingTimePhaseInput,
   type WorkingTimeVesselOption,
 } from './workingTimeQueries';
 
@@ -32,12 +33,14 @@ interface WorkingTimeEntryBoardProps {
   watchGroup: string;
   comment: string;
   editingIntervalId: number | null;
+  pendingPhases?: WorkingTimePhaseInput[];
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onVesselIdChange: (value: string) => void;
   onWatchGroupChange: (value: string) => void;
   onCommentChange: (value: string) => void;
-  onSubmit: () => void;
+  onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
+  onSubmit: (phases: WorkingTimePhaseInput[]) => void;
   onCancelEdit: () => void;
 }
 
@@ -117,11 +120,13 @@ export function WorkingTimeEntryBoard({
   watchGroup,
   comment,
   editingIntervalId,
+  pendingPhases = [],
   onStartsAtChange,
   onEndsAtChange,
   onVesselIdChange,
   onWatchGroupChange,
   onCommentChange,
+  onPendingPhasesChange = () => undefined,
   onSubmit,
   onCancelEdit,
 }: WorkingTimeEntryBoardProps) {
@@ -133,9 +138,20 @@ export function WorkingTimeEntryBoard({
   const dragStart = useRef<number | null>(null);
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
+  const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
+  const combinedPhases = useMemo(() => {
+    const phases = [...pendingPhases];
+    if (activePhase && !phases.some((phase) => phase.startsAt === activePhase.startsAt && phase.endsAt === activePhase.endsAt)) phases.push(activePhase);
+    return phases.sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+  }, [activePhase?.endsAt, activePhase?.startsAt, pendingPhases]);
+  const phasesOverlap = combinedPhases.some((phase, index) => index > 0
+    && new Date(phase.startsAt).getTime() < new Date(combinedPhases[index - 1].endsAt).getTime());
+  const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
+    && new Date(phase.startsAt).getTime() < new Date(interval.endsAt).getTime()
+    && new Date(phase.endsAt).getTime() > new Date(interval.startsAt).getTime()));
 
   useEffect(() => {
-    if (!validProposal(startsAt, endsAt)) {
+    if (!combinedPhases.length || phasesOverlap) {
       setRecommendation(null);
       setRecommendationError(null);
       return;
@@ -144,10 +160,9 @@ export function WorkingTimeEntryBoard({
     const timer = window.setTimeout(() => {
       setIsCalculating(true);
       setRecommendationError(null);
-      void fetchWorkingTimeEntryRecommendation(client, {
+      void fetchWorkingTimePhasesRecommendation(client, {
         personId,
-        proposedStart: new Date(startsAt).toISOString(),
-        proposedEnd: new Date(endsAt).toISOString(),
+        phases: combinedPhases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() })),
         timezoneName,
         vesselId: vesselId ? Number(vesselId) : null,
         watchGroup: watchGroup.trim() || null,
@@ -167,7 +182,7 @@ export function WorkingTimeEntryBoard({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [client, editingIntervalId, endsAt, personId, startsAt, timezoneName, vesselId, watchGroup]);
+  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, timezoneName, vesselId, watchGroup]);
 
   const selectedSlots = useMemo(() => {
     const start = new Date(startsAt).getTime();
@@ -186,6 +201,13 @@ export function WorkingTimeEntryBoard({
       && slotStart < new Date(interval.endsAt).getTime()
       && slotEnd > new Date(interval.startsAt).getTime());
   }), [editingIntervalId, intervals, selectedDay]);
+
+  const pendingSlots = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
+    const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
+    const slotEnd = new Date(slotLocalValue(selectedDay, slot + 1)).getTime();
+    return pendingPhases.some((phase) => slotStart < new Date(phase.endsAt).getTime()
+      && slotEnd > new Date(phase.startsAt).getTime());
+  }), [pendingPhases, selectedDay]);
 
   function selectSlots(first: number, last: number) {
     if (!canEdit) return;
@@ -248,14 +270,14 @@ export function WorkingTimeEntryBoard({
 
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
-          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-selected" />Sélection</span><small>Clic-glissé ou clavier · pas de 30 min</small></div>
+          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />Phase conservée</span><span><i className="is-selected" />Sélection</span><small>Clic-glissé ou clavier · pas de 30 min</small></div>
           <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
             {Array.from({ length: 48 }, (_, slot) => {
               const label = slotLocalValue(selectedDay, slot).slice(11);
-              const className = [occupiedSlots[slot] ? 'is-occupied' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
+              const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
               return (
                 <button
-                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
+                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré' : pendingSlots[slot] ? 'phase conservée' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                   aria-selected={selectedSlots[slot]}
                   className={className}
                   disabled={!canEdit}
@@ -294,19 +316,23 @@ export function WorkingTimeEntryBoard({
               <div><dt>Prochaine reprise compatible</dt><dd>{formatDateTime(recommendation?.nextResumeAt || null)}</dd></div>
             </dl>
           </div>
+          {phasesOverlap ? <p className="working-time-message is-error" role="alert">Les phases de travail ne peuvent pas se chevaucher.</p> : null}
+          {phasesConflictExisting ? <p className="working-time-message is-error" role="alert">Une phase recouvre un créneau déjà enregistré.</p> : null}
           {recommendationError ? <p className="working-time-message is-error" role="alert">{recommendationError}</p> : null}
         </div>
       </div>
 
       {canEdit ? (
-        <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+        <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => { event.preventDefault(); onSubmit(combinedPhases); }}>
           <label>Début<input aria-label="Début du travail" onChange={(event) => onStartsAtChange(event.target.value)} required step="1800" type="datetime-local" value={startsAt} /></label>
           <label>Fin<input aria-label="Fin du travail" onChange={(event) => onEndsAtChange(event.target.value)} required step="1800" type="datetime-local" value={endsAt} /></label>
           <label>Navire<select aria-label="Filtrer et affecter le navire" onChange={(event) => onVesselIdChange(event.target.value)} value={vesselId}><option value="">Sans navire</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
           <label>Bordée<input aria-label="Filtrer et affecter la bordée" onChange={(event) => onWatchGroupChange(event.target.value)} value={watchGroup} /></label>
           <label className="is-wide">Commentaire<input onChange={(event) => onCommentChange(event.target.value)} value={comment} /></label>
+          {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Phases conservées">{pendingPhases.map((phase, index) => <span key={`${phase.startsAt}-${phase.endsAt}`}><strong>Phase {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)} <button aria-label={`Retirer la phase ${index + 1}`} onClick={() => onPendingPhasesChange(pendingPhases.filter((_, phaseIndex) => phaseIndex !== index))} type="button">×</button></span>)}</div> : null}
           <div className="working-time-form-actions">
-            <button disabled={isSaving || !validProposal(startsAt, endsAt)} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : 'Ajouter au brouillon'}</button>
+            {!editingIntervalId ? <button disabled={isSaving || !activePhase || phasesOverlap || phasesConflictExisting || pendingPhases.some((phase) => phase.startsAt === startsAt && phase.endsAt === endsAt)} onClick={() => activePhase && onPendingPhasesChange([...pendingPhases, activePhase].sort((left, right) => left.startsAt.localeCompare(right.startsAt)))} type="button">Conserver cette phase</button> : null}
+            <button disabled={isSaving || !combinedPhases.length || phasesOverlap || phasesConflictExisting} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : `Enregistrer ${combinedPhases.length} phase${combinedPhases.length > 1 ? 's' : ''}`}</button>
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>
         </form>

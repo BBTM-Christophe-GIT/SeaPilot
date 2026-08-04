@@ -688,6 +688,12 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
     interval_snapshot: [], non_compliance_snapshot: [], comment: 'Signature explicite du marin.', occurred_at: '2026-08-03T20:10:00Z',
   }],
+  hse_exposure_methodologies: [{
+    id: 9851, name: 'Méthode HSE démo', version_label: '2026-08', effective_from: '2026-01-01',
+    sedentary_day_hours: 8, offshore_actual_hour_factor: 1,
+  }],
+  hse_exposure_hours: [],
+  hse_safety_events: [],
   planning_notifications: [],
   planning_dependencies: [],
   project_billing_periods: [],
@@ -790,10 +796,10 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       error: null,
     });
   }
-  if (functionName === 'working_time_interval_recommendation') {
-    const startsAt = new Date(String(args.p_proposed_start || ''));
-    const endsAt = new Date(String(args.p_proposed_end || ''));
-    const proposedSeconds = Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 1000);
+  if (functionName === 'working_time_interval_recommendation' || functionName === 'working_time_phases_recommendation') {
+    const phases = Array.isArray(args.p_phases) ? args.p_phases as Array<{ starts_at: string; ends_at: string }> : [{ starts_at: String(args.p_proposed_start || ''), ends_at: String(args.p_proposed_end || '') }];
+    const endsAt = new Date(phases.at(-1)?.ends_at || '');
+    const proposedSeconds = phases.reduce((sum, phase) => sum + Math.max(0, (new Date(phase.ends_at).getTime() - new Date(phase.starts_at).getTime()) / 1000), 0);
     const existingSeconds = 4 * 3600;
     const work24hSeconds = existingSeconds + proposedSeconds;
     const available24hSeconds = Math.max(0, 12 * 3600 - work24hSeconds);
@@ -816,9 +822,19 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
         latest_end_at: new Date(endsAt.getTime() + available24hSeconds * 1000).toISOString(),
         next_resume_at: new Date(endsAt.getTime() + 8 * 3600 * 1000).toISOString(),
         violation_codes: [],
+        phase_count: phases.length,
       },
       error: null,
     });
+  }
+  if (functionName === 'hse_kpi_summary') {
+    return createPreviewQuery({ data: {
+      methodology_id: 9851, methodology_version: '2026-08', exposure_hours: 12480,
+      FAT: 0, LWDC: 1, RWC: 1, MTC: 2, FAC: 3, near_miss: 8, safety_observation: 42,
+      LTI: 1, LTIFR: null, TRIR: null, FAR: null, FAC_rate: null, MTC_rate: null,
+      RWC_rate: null, SOFR: null, french_frequency_rate: null, french_severity_rate: null,
+      configuration_complete: false,
+    }, error: null });
   }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');

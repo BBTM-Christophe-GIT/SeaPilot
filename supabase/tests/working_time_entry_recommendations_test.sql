@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(19);
 
 select has_function(
   'public',
@@ -216,6 +216,28 @@ select is(
   )->>'already_non_compliant')::boolean,
   false,
   'correcting an interval excludes its previous version from the baseline recommendation'
+);
+
+select has_function('public', 'working_time_phases_recommendation', array['bigint','jsonb','text','bigint','text','bigint'], 'multi-phase recommendation RPC exists');
+select has_function('public', 'save_working_time_phases', array['bigint','jsonb','text','bigint','text','text'], 'atomic multi-phase save RPC exists');
+select ok(not has_function_privilege('anon', 'public.save_working_time_phases(bigint,jsonb,text,bigint,text,text)', 'EXECUTE'), 'anonymous batch writes are denied');
+select is(
+  (public.working_time_phases_recommendation(
+    current_setting('test.wtr_person_id')::bigint,
+    '[{"starts_at":"2026-10-03T08:00:00+02:00","ends_at":"2026-10-03T10:00:00+02:00"},{"starts_at":"2026-10-03T14:00:00+02:00","ends_at":"2026-10-03T16:00:00+02:00"}]'::jsonb,
+    'Europe/Paris', current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
+  )->>'phase_count')::integer,
+  2,
+  'two disjoint phases are evaluated together'
+);
+select is(
+  cardinality(public.save_working_time_phases(
+    (select id from public.working_time_registers where person_id=current_setting('test.wtr_person_id')::bigint),
+    '[{"starts_at":"2026-10-04T08:00:00+02:00","ends_at":"2026-10-04T10:00:00+02:00"},{"starts_at":"2026-10-04T14:00:00+02:00","ends_at":"2026-10-04T16:00:00+02:00"}]'::jsonb,
+    'Europe/Paris', current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', 'Deux quarts'
+  )),
+  2,
+  'two disjoint phases are persisted atomically'
 );
 
 rollback;

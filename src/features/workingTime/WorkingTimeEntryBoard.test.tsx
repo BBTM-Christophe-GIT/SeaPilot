@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchWorkingTimeEntryRecommendation } from './workingTimeQueries';
+import { fetchWorkingTimePhasesRecommendation, type WorkingTimePhaseInput } from './workingTimeQueries';
 import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
 
 vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
-  return { ...original, fetchWorkingTimeEntryRecommendation: vi.fn() };
+  return { ...original, fetchWorkingTimePhasesRecommendation: vi.fn() };
 });
 
 const recommendation = {
@@ -30,9 +30,10 @@ const recommendation = {
   violationCodes: [],
 };
 
-function Harness({ onSubmit = vi.fn() }: { onSubmit?: () => void }) {
+function Harness({ onSubmit = vi.fn() }: { onSubmit?: (phases: WorkingTimePhaseInput[]) => void }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
+  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
   return (
     <WorkingTimeEntryBoard
       canEdit
@@ -45,6 +46,7 @@ function Harness({ onSubmit = vi.fn() }: { onSubmit?: () => void }) {
       onCancelEdit={vi.fn()}
       onCommentChange={vi.fn()}
       onEndsAtChange={setEndsAt}
+      onPendingPhasesChange={setPendingPhases}
       onStartsAtChange={setStartsAt}
       onSubmit={onSubmit}
       onVesselIdChange={vi.fn()}
@@ -52,6 +54,7 @@ function Harness({ onSubmit = vi.fn() }: { onSubmit?: () => void }) {
       periodEnd="2026-08-09"
       periodStart="2026-08-03"
       personId={42}
+      pendingPhases={pendingPhases}
       startsAt={startsAt}
       vesselId="7"
       vessels={[{ id: 7, name: 'Navire Test', acronym: 'NT' }]}
@@ -63,14 +66,14 @@ function Harness({ onSubmit = vi.fn() }: { onSubmit?: () => void }) {
 describe('WorkingTimeEntryBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(fetchWorkingTimeEntryRecommendation).mockResolvedValue(recommendation);
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockResolvedValue(recommendation);
   });
 
   it('shows authoritative quota guidance and all 48 half-hour cells', async () => {
     render(<Harness />);
 
     expect(screen.getAllByRole('gridcell')).toHaveLength(48);
-    await waitFor(() => expect(fetchWorkingTimeEntryRecommendation).toHaveBeenCalled());
+    await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalled());
     expect(await screen.findByText('4 h 00', { selector: '.working-time-guidance > strong' })).toBeInTheDocument();
     expect(screen.getByText('Politique datée')).toBeInTheDocument();
     expect(screen.getByText('Aucun écart détecté')).toBeInTheDocument();
@@ -110,7 +113,25 @@ describe('WorkingTimeEntryBoard', () => {
 
     await user.clear(screen.getByLabelText('Début du travail'));
     await user.type(screen.getByLabelText('Début du travail'), '2026-08-03T09:00');
-    await user.click(screen.getByRole('button', { name: 'Ajouter au brouillon' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer 1 phase' }));
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('keeps and submits multiple disjoint phases for the same day', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: 'Conserver cette phase' }));
+    await user.clear(screen.getByLabelText('Début du travail'));
+    await user.type(screen.getByLabelText('Début du travail'), '2026-08-03T14:00');
+    await user.clear(screen.getByLabelText('Fin du travail'));
+    await user.type(screen.getByLabelText('Fin du travail'), '2026-08-03T16:00');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer 2 phases' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([
+      { startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' },
+      { startsAt: '2026-08-03T14:00', endsAt: '2026-08-03T16:00' },
+    ]);
   });
 });

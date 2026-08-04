@@ -18,14 +18,17 @@ import type { RoleKey } from '../permissions/roles';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { WorkingTimeInterval, WorkingTimePeriodKind, WorkingTimeRegisterStatus } from './workingTimeModel';
 import {
+  fetchWorkingTimeWorkspace,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   saveWorkingTimeInterval,
+  saveWorkingTimePhases,
   transitionWorkingTimeRegister,
   voidWorkingTimeInterval,
   workingTimeErrorMessage,
   type WorkingTimeActiveSignature,
   type WorkingTimeNonComplianceCause,
+  type WorkingTimePhaseInput,
   type WorkingTimeRange,
   type WorkingTimeSignatureSnapshot,
 } from './workingTimeQueries';
@@ -182,6 +185,7 @@ export function WorkingTimeWorkflowPanel({
   const [watchGroup, setWatchGroup] = useState('');
   const [intervalComment, setIntervalComment] = useState('');
   const [editingIntervalId, setEditingIntervalId] = useState<number | null>(null);
+  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
   const [voidCandidateId, setVoidCandidateId] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
@@ -287,6 +291,7 @@ export function WorkingTimeWorkflowPanel({
       }])));
     setSignatureConsent(false);
     setReopenReason('');
+    setPendingPhases([]);
   }, [selectedRegister?.id, workspace]);
 
   useEffect(() => {
@@ -316,10 +321,22 @@ export function WorkingTimeWorkflowPanel({
     setIsExporting(true);
     setActionError(null);
     try {
-      const prepared = await prepareWorkingTimePdf(client, workspace, selectedRegister);
+      const monthStart = `${selectedRegister.periodStart.slice(0, 7)}-01`;
+      const monthDate = new Date(`${monthStart}T12:00:00`);
+      monthDate.setMonth(monthDate.getMonth() + 1, 0);
+      const monthEnd = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(monthDate.getDate()).padStart(2, '0')}`;
+      const monthlyWorkspace = selectedRegister.periodStart === monthStart && selectedRegister.periodEnd === monthEnd
+        ? workspace
+        : await fetchWorkingTimeWorkspace(client, { start: monthStart, end: monthEnd });
+      const prepared = await prepareWorkingTimePdf(client, monthlyWorkspace, {
+        ...selectedRegister,
+        periodKind: 'monthly',
+        periodStart: monthStart,
+        periodEnd: monthEnd,
+      });
       const { document, filename } = await buildWorkingTimePdf(prepared);
       document.save(filename);
-      setActionMessage('Le registre PDF a été généré avec ses signatures et son audit.');
+      setActionMessage('Le registre PDF mensuel a été généré à la demande, sans copie permanente.');
     } catch (error) {
       setActionError(workingTimeErrorMessage(error));
     } finally {
@@ -344,6 +361,7 @@ export function WorkingTimeWorkflowPanel({
 
   function resetIntervalForm() {
     setEditingIntervalId(null);
+    setPendingPhases([]);
     setStartsAt(`${selectedRegister?.periodStart || range.start}T08:00`);
     setEndsAt(`${selectedRegister?.periodStart || range.start}T16:00`);
     setVesselId('');
@@ -352,6 +370,7 @@ export function WorkingTimeWorkflowPanel({
   }
 
   function editInterval(interval: WorkingTimeInterval) {
+    setPendingPhases([]);
     setEditingIntervalId(interval.id);
     setStartsAt(dateTimeLocal(interval.startsAt));
     setEndsAt(dateTimeLocal(interval.endsAt));
@@ -440,7 +459,7 @@ export function WorkingTimeWorkflowPanel({
                   </div>
                   <div className="working-time-register-header-actions">
                     <button disabled={isExporting} onClick={() => void handlePdfDownload()} type="button">
-                      <Download aria-hidden="true" size={16} /> {isExporting ? 'Génération…' : 'Télécharger le PDF'}
+                      <Download aria-hidden="true" size={16} /> {isExporting ? 'Génération…' : 'Registre PDF mensuel'}
                     </button>
                     <strong className={`working-time-status is-${selectedRegister.status}`}>{STATUS_LABELS[selectedRegister.status]}</strong>
                   </div>
@@ -478,18 +497,29 @@ export function WorkingTimeWorkflowPanel({
                     onCancelEdit={resetIntervalForm}
                     onCommentChange={setIntervalComment}
                     onEndsAtChange={setEndsAt}
+                    onPendingPhasesChange={setPendingPhases}
                     onStartsAtChange={setStartsAt}
-                    onSubmit={() => void runAction(async () => {
-                      await saveWorkingTimeInterval(client, {
+                    onSubmit={(phases) => void runAction(async () => {
+                      const common = {
                         registerId: selectedRegister.id,
-                        startsAt: localInputToIso(startsAt),
-                        endsAt: localInputToIso(endsAt),
                         timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
                         vesselId: vesselId ? Number(vesselId) : null,
                         watchGroup: watchGroup.trim() || null,
                         comment: intervalComment.trim() || null,
-                        intervalId: editingIntervalId,
-                      });
+                      };
+                      if (editingIntervalId) {
+                        await saveWorkingTimeInterval(client, {
+                          ...common,
+                          startsAt: localInputToIso(phases[0].startsAt),
+                          endsAt: localInputToIso(phases[0].endsAt),
+                          intervalId: editingIntervalId,
+                        });
+                      } else {
+                        await saveWorkingTimePhases(client, {
+                          ...common,
+                          phases: phases.map((phase) => ({ startsAt: localInputToIso(phase.startsAt), endsAt: localInputToIso(phase.endsAt) })),
+                        });
+                      }
                       resetIntervalForm();
                     }, editingIntervalId ? 'Le créneau a été corrigé.' : 'Les heures ont été ajoutées au brouillon.')}
                     onVesselIdChange={setVesselId}
@@ -497,6 +527,7 @@ export function WorkingTimeWorkflowPanel({
                     periodEnd={selectedRegister.periodEnd}
                     periodStart={selectedRegister.periodStart}
                     personId={selectedRegister.personId}
+                    pendingPhases={pendingPhases}
                     startsAt={startsAt}
                     vesselId={vesselId}
                     vessels={workspace.vessels}

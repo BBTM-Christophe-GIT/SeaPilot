@@ -2,10 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   fetchWorkingTimeEntryRecommendation,
+  fetchWorkingTimePhasesRecommendation,
   fetchWorkingTimeWorkspace,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   saveWorkingTimeInterval,
+  saveWorkingTimePhases,
   transitionWorkingTimeRegister,
   workingTimeErrorMessage,
 } from './workingTimeQueries';
@@ -162,6 +164,25 @@ describe('working-time workflow queries', () => {
       maxAdditionalSeconds: 14400,
       latestEndAt: '2026-08-03T16:00:00Z',
     });
+  });
+
+  it('sends disjoint phases as one authoritative recommendation and one atomic save', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: 'conforme', phase_count: 2 }, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    const phases = [
+      { startsAt: '2026-08-03T08:00:00Z', endsAt: '2026-08-03T10:00:00Z' },
+      { startsAt: '2026-08-03T14:00:00Z', endsAt: '2026-08-03T16:00:00Z' },
+    ];
+
+    await fetchWorkingTimePhasesRecommendation(client, { personId: 42, phases, timezoneName: 'Europe/Paris', vesselId: 7, watchGroup: 'A' });
+    rpc.mockResolvedValueOnce({ data: [31, 32], error: null });
+    await expect(saveWorkingTimePhases(client, { registerId: 10, phases, timezoneName: 'Europe/Paris', vesselId: 7, watchGroup: 'A', comment: null })).resolves.toEqual([31, 32]);
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'working_time_phases_recommendation', expect.objectContaining({
+      p_person_id: 42,
+      p_phases: [{ starts_at: phases[0].startsAt, ends_at: phases[0].endsAt }, { starts_at: phases[1].startsAt, ends_at: phases[1].endsAt }],
+    }));
+    expect(rpc).toHaveBeenNthCalledWith(2, 'save_working_time_phases', expect.objectContaining({ p_register_id: 10 }));
   });
 
   it('uses explicit RPCs for register creation, captain comments and workflow transitions', async () => {
