@@ -6,6 +6,7 @@ import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
+import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
 
 vi.mock('../planning/PlanningP13Panel', () => ({
   PlanningP13Panel: vi.fn(() => <section data-testid="work-rest-surface">Surface P1.3</section>),
@@ -22,6 +23,10 @@ vi.mock('./WorkingTimeWorkflowPanel', () => ({
 
 vi.mock('./WorkingTimeHseKpiPanel', () => ({
   WorkingTimeHseKpiPanel: vi.fn(() => <section data-testid="hse-kpi-surface">KPI HSE</section>),
+}));
+
+vi.mock('./WorkingTimeImportWizard', () => ({
+  WorkingTimeImportWizard: vi.fn(() => <section data-testid="xlsm-import-surface">Import XLSM</section>),
 }));
 
 const client = {} as SupabaseClient;
@@ -62,6 +67,8 @@ describe('WorkingTimePage', () => {
     expect(screen.getByTestId('work-rest-surface')).toBeInTheDocument();
     expect(screen.getByTestId('workflow-surface')).toBeInTheDocument();
     expect(screen.getByTestId('hse-kpi-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('xlsm-import-surface')).toBeInTheDocument();
+    expect(WorkingTimeImportWizard).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
     expect(WorkingTimeWorkflowPanel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       currentPerson: expect.objectContaining({ id: 42 }),
@@ -86,6 +93,7 @@ describe('WorkingTimePage', () => {
       canManageWorkRestPolicies: false,
       canViewWorkRest: true,
     }), undefined);
+    expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
   });
 
   it('validates the selected period and refreshes the shared planning overview', () => {

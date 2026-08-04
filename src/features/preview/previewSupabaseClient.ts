@@ -827,6 +827,45 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       error: null,
     });
   }
+  if (functionName === 'working_time_import_upload_context') {
+    return createPreviewQuery({
+      data: { batch_id: 9901, storage_bucket: 'working-time-imports', storage_path: `1/preview-user/9901/${String(args.p_file_name || 'registre.xlsm')}` },
+      error: null,
+    });
+  }
+  if (functionName === 'preview_working_time_import') {
+    const rows = (Array.isArray(args.p_rows) ? args.p_rows : []) as Array<Record<string, unknown>>;
+    const previewRows = rows.map((row, index) => {
+      const phases = (Array.isArray(row.phases) ? row.phases : []) as Array<Record<string, unknown>>;
+      const effectiveSeconds = phases.reduce((total, phase) => total + Math.max(0, Number(phase.end_minute || 0) - Number(phase.start_minute || 0)) * 60, 0);
+      return {
+        id: 9910 + index,
+        local_work_date: row.date,
+        effective_work_seconds: effectiveSeconds,
+        vessel_name: row.vessel_name || 'Navire Test',
+        watch_group: index % 2 === 0 ? 'Bordée 1' : 'Bordée 2',
+        status: row.excluded ? 'excluded' : 'ready',
+        issue_codes: [],
+      };
+    });
+    const readyRows = previewRows.filter((row) => row.status === 'ready');
+    return createPreviewQuery({
+      data: {
+        batch_id: Number(args.p_batch_id || 9901), status: 'preview_ready', rows: previewRows,
+        summary: {
+          total_rows: previewRows.length, ready_rows: readyRows.length,
+          excluded_rows: previewRows.length - readyRows.length, duplicate_rows: 0,
+          inconsistent_rows: 0, blocked_rows: 0,
+          reported_work_seconds: rows.reduce((total, row) => total + Number(row.reported_work_seconds || 0), 0),
+          effective_work_seconds: readyRows.reduce((total, row) => total + row.effective_work_seconds, 0),
+        },
+      },
+      error: null,
+    });
+  }
+  if (functionName === 'commit_working_time_import') {
+    return createPreviewQuery({ data: { batch_id: Number(args.p_batch_id || 9901), status: 'imported', summary: { ready_rows: 2 } }, error: null });
+  }
   if (functionName === 'hse_kpi_summary') {
     return createPreviewQuery({ data: {
       methodology_id: 9851, methodology_version: '2026-08', exposure_hours: 12480,
@@ -944,10 +983,12 @@ export const previewSupabaseClient = {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
   },
   storage: {
-    from: () => ({
+    from: (bucket: string) => ({
       createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
       download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
-      upload: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12'
+        ? Promise.resolve({ data: { path: _path }, error: null })
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
       remove: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
     }),
   },

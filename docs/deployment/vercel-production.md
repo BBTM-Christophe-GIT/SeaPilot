@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.12.8` ajoute l'assistant d'import annuel XLSM du module Temps de Travail et complète la recette des
+fenêtres glissantes, des autorisations, des signatures et du PDF. Appliquer
+`supabase/migrations/20260804224824_working_time_excel_import.sql` avant le client. Voir
+[working-time-v3-12-8-excel-import-tests.md](./working-time-v3-12-8-excel-import-tests.md).
+
 Version `3.11.0` ajoute les états quotidiens « Arrêt Maladie » et « Accident du Travail » dans l’éditeur de cases
 du Planning. Les deux états sont persistés par les RPC unitaires et groupés et disposent de couleurs dédiées dans
 la grille. Appliquer `supabase/migrations/20260801185157_planning_health_statuses.sql` avant le client. Voir

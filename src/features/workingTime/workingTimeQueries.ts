@@ -675,6 +675,14 @@ export async function transitionWorkingTimeRegister(
 }
 
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
+  ['WORKING_TIME_IMPORT_PERMISSION_DENIED', 'Seuls l’administrateur et l’armement peuvent importer un registre XLSM.'],
+  ['WORKING_TIME_IMPORT_XLSM_REQUIRED', 'Le fichier source doit être un classeur annuel XLSM.'],
+  ['WORKING_TIME_IMPORT_MIME_INVALID', 'Le type du fichier XLSM n’est pas valide.'],
+  ['WORKING_TIME_IMPORT_FILE_SIZE_INVALID', 'Le classeur XLSM doit peser 20 Mo maximum.'],
+  ['WORKING_TIME_IMPORT_SOURCE_NOT_UPLOADED', 'Le fichier source n’a pas été retrouvé dans l’espace privé.'],
+  ['WORKING_TIME_IMPORT_BATCH_LOCKED', 'Cet import a déjà été validé ou annulé.'],
+  ['WORKING_TIME_IMPORT_DUPLICATE_SOURCE_DATES', 'Le classeur contient plusieurs lignes pour une même date.'],
+  ['WORKING_TIME_IMPORT_NO_READY_ROWS', 'Aucune journée contrôlée ne peut être importée.'],
   ['WORKING_TIME_SELF_VALIDATION_FORBIDDEN', 'Un capitaine ne peut pas valider son propre registre.'],
   ['WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED', 'Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.'],
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
