@@ -383,7 +383,7 @@ select is(
 );
 
 reset role;
-select throws_ok(
+select lives_ok(
   $$
     insert into public.working_time_intervals (
       company_id, register_id, person_id, local_work_date, starts_at, ends_at,
@@ -397,9 +397,7 @@ select throws_ok(
            work_interval.author_user_id, work_interval.author_person_id, 'manual'
     from public.working_time_intervals work_interval limit 1
   $$,
-  '23P01',
-  null,
-  'overlapping work intervals are rejected'
+  'overlapping work intervals are preserved for server-side merging'
 );
 select throws_ok(
   $$

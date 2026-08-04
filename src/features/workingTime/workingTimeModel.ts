@@ -62,6 +62,41 @@ export interface WorkingTimeInterval {
   sourceRecordKey: string | null;
 }
 
+export const WORKING_TIME_VIOLATION_CODES = [
+  'work_24h',
+  'rest_24h',
+  'consecutive_rest',
+  'rest_periods_24h',
+  'work_7d',
+  'rest_7d',
+  'night_work_24h',
+] as const;
+
+export type WorkingTimeViolationCode = typeof WORKING_TIME_VIOLATION_CODES[number];
+
+/** Read-only projection produced by the database calculation engine. */
+export interface WorkingTimeCalculationWindow {
+  id: number;
+  companyId: number;
+  personId: number;
+  windowEnd: string;
+  localWindowEndDate: string;
+  timezoneName: string;
+  vesselId: number | null;
+  workRestPolicyId: number | null;
+  work24hSeconds: number;
+  rest24hSeconds: number;
+  longestRest24hSeconds: number;
+  restPeriodCount24h: number;
+  work7dSeconds: number;
+  rest7dSeconds: number;
+  nightWork24hSeconds: number | null;
+  isCompliant: boolean | null;
+  violationCodes: WorkingTimeViolationCode[];
+  calculationVersion: number;
+  calculatedAt: string;
+}
+
 export interface WorkingTimeSignatureSnapshot {
   signatureId: number;
   versionNumber: number;
