@@ -1,6 +1,6 @@
 begin;
 
-select plan(56);
+select plan(62);
 
 select has_function(
   'public', 'working_time_entry_context', array['date', 'date'],
@@ -241,6 +241,55 @@ where company.code = 'bbtm';
 select set_config(
   'test.workflow.captain_a_id',
   (select id::text from public.people where sailor_number = 'WF-CAPA'), true
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-21', '2026-09-27')->'editable_people'),
+  6,
+  'an administrator can select every active HR person in the company'
+);
+select lives_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-DIR'), 'weekly', '2026-09-21'
+  )$$,
+  'an administrator can prepare a draft register for any active HR person'
+);
+select set_config(
+  'test.workflow.management_register_id',
+  (select id::text from public.working_time_registers
+   where person_id = (select id from public.people where sailor_number = 'WF-DIR')
+     and period_start = '2026-09-21'), true
+);
+select lives_ok(
+  $$select public.save_working_time_interval(
+    current_setting('test.workflow.management_register_id')::bigint,
+    '2026-09-21 08:00:00+02', '2026-09-21 16:00:00+02', 'Europe/Paris',
+    null, null, 'Saisie administrateur'
+  )$$,
+  'an administrator can enter hours without a published-watch assignment'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000004', true);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-21', '2026-09-27')->'editable_people'),
+  6,
+  'armement can select every active HR person in the company'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000006', true);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-21', '2026-09-27')->'editable_people'),
+  0,
+  'direction remains read-only and receives no entry scope'
+);
+select throws_ok(
+  $$select public.get_or_create_working_time_register(
+    (select id from public.people where sailor_number = 'WF-MARIN'), 'weekly', '2026-09-21'
+  )$$,
+  '42501', null,
+  'direction cannot prepare another person register'
 );
 
 set local role authenticated;

@@ -2,6 +2,8 @@
 
 Le module `/modules/workingTime` conserve les intervalles horodatés comme source de vérité pour les contrôles de travail et de repos. Plusieurs phases disjointes peuvent être saisies le même jour ; elles sont contrôlées ensemble puis enregistrées atomiquement par Supabase.
 
+Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le marin et le capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. La signature du titulaire demeure obligatoirement explicite et l’auto-validation d’un capitaine reste interdite.
+
 ## Saisie multi-périodes
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
@@ -36,13 +38,14 @@ L’assistant d’import est visible uniquement par les rôles `admin` et `armem
 
 Le parcours est volontairement séparé en dépôt privé, détection, aperçu, contrôle des totaux, recherche de doublons, correction ou exclusion, validation et traçabilité. La grille source est convertie en phases de 30 minutes ; plusieurs phases disjointes restent plusieurs intervalles. Une différence entre l’année du nom de fichier et celle des dates mises en cache dans Excel est affichée avant validation et conservée dans les métadonnées.
 
+Pour les imports historiques BBTM, le total journalier déclaré dans le XLSM est la source de vérité métier. Dans le modèle annuel, les deux cellules d’en-tête `00h` sont les bornes de la frise : les 48 demi-heures sont lues de la cellule suivant le premier `00h` jusqu’à la cellule du second `00h` incluse. Ce repérage évite de décaler toutes les phases de 30 minutes et conserve correctement la dernière demi-heure se terminant à `24:00`. Tout écart résiduel avec le total déclaré reste `inconsistent` jusqu’à correction.
+
 Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée déjà validée, soumise ou déjà saisie n’est jamais remplacée.
 
 Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. La migration à appliquer est `20260804224824_working_time_excel_import.sql`.
 
-Les écarts entre total déclaré et demi-heures détectées sont des avertissements avant contrôle : ils n’empêchent
-plus de lancer l’analyse serveur. Ils deviennent des lignes `inconsistent` qui doivent être corrigées ou exclues
-avant la validation finale. Le bucket accepte les deux casses équivalentes du type MIME XLSM produites par les
+Les écarts résiduels entre total déclaré et demi-heures détectées sont des avertissements avant contrôle : ils n’empêchent
+pas de lancer l’analyse serveur. Ils deviennent des lignes `inconsistent` qui doivent être corrigées avant la validation finale. Le bucket accepte les deux casses équivalentes du type MIME XLSM produites par les
 navigateurs et Windows. Les comptes historiques sont associés à leur fiche RH uniquement lorsqu’un e-mail unique
 correspond dans la même société ; toute ambiguïté reste à traiter manuellement.
 

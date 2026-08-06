@@ -11,7 +11,7 @@ const workbook: WorkingTimeImportWorkbook = {
   sourceFileName: 'Alexandre ROUPSARD - 2026.xlsm', detectedPersonName: 'Alexandre ROUPSARD',
   detectedYear: 2026, gridYear: 2025, fileNameYear: 2026,
   warnings: ['année de grille différente'], macroPresent: true, macroExecution: 'disabled',
-  parserVersion: 'seapilot-xlsm-v1', sheetNames: ['Janvier'], rows: [],
+  parserVersion: 'seapilot-xlsm-v2', sheetNames: ['Janvier'], rows: [],
   detectedWorkSeconds: 7200, reportedWorkSeconds: 7200,
 };
 

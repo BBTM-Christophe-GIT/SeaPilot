@@ -21,7 +21,7 @@ const workbook: WorkingTimeImportWorkbook = {
   sourceFileName: 'Alexandre ROUPSARD - 2026.xlsm', detectedPersonName: 'Alexandre ROUPSARD',
   detectedYear: 2026, gridYear: 2025, fileNameYear: 2026,
   warnings: ['L’année du fichier diffère de la grille.'], macroPresent: true, macroExecution: 'disabled',
-  parserVersion: 'seapilot-xlsm-v1', sheetNames: ['Janvier'], detectedWorkSeconds: 7200, reportedWorkSeconds: 7200,
+  parserVersion: 'seapilot-xlsm-v2', sheetNames: ['Janvier'], detectedWorkSeconds: 7200, reportedWorkSeconds: 7200,
   rows: [{ date: '2026-01-01', sourceSheet: 'Janvier', sourceRow: 5, detectedPhases: [{ startMinute: 480, endMinute: 600 }], reportedWorkSeconds: 7200, detectedWorkSeconds: 7200, captainName: 'Capitaine', vesselName: 'GOURY', imoNumber: '9213870', flagState: 'France', sourceComment: '', issues: ['source_year_mismatch'] }],
 };
 

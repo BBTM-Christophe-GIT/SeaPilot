@@ -164,11 +164,14 @@ function parseMonthlySheet(sheet: ParsedSheet, fillByStyle: number[]): { person:
   const [headerRow, headers] = header;
   const midnightColumns = [...headers.entries()].filter(([, cell]) => normalizeLabel(cell.value) === '00h').map(([column]) => column).sort((a, b) => a - b);
   if (midnightColumns.length < 2 || midnightColumns[1] - midnightColumns[0] !== 48) return null;
-  const gridStart = midnightColumns[0];
-  const gridEnd = midnightColumns[1] - 1;
+  // In the BBTM register, the two 00h cells are timeline boundaries: the
+  // first half-hour is stored after the first label and the last half-hour is
+  // stored in the second 00h column. The 48 work cells are therefore ]00h,00h].
+  const gridStart = midnightColumns[0] + 1;
+  const gridEnd = midnightColumns[1];
   const totalColumn = findColumn(headers, 'heures travaillees');
   if (!totalColumn) return null;
-  const dateColumn = gridStart - 1;
+  const dateColumn = midnightColumns[0] - 1;
   const captainColumn = findColumn(headers, 'capitaine');
   const vesselColumn = findColumn(headers, 'navire');
   const imoColumn = findColumn(headers, 'omi');
