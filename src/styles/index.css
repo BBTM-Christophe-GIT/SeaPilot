@@ -16969,8 +16969,10 @@ button.planning-p12-conflict-card {
 .working-time-import-table th { position: sticky; z-index: 2; top: 0; padding: 10px 12px; background: #0a4152; color: #fff; text-align: left; }
 .working-time-import-table td { padding: 9px 12px; border-bottom: 1px solid #e8eef0; vertical-align: top; }
 .working-time-import-table tr.has-error { background: #fff6f7; }
+.working-time-import-table tr.has-warning { background: #fffaf0; }
 .working-time-import-table td > small { display: block; margin-top: 4px; color: #6f858e; }
 .working-time-import-table small.is-error { color: #8b2635; }
+.working-time-import-table small.is-warning { color: #80520b; }
 .working-time-import-table input[type='text'], .working-time-import-table td > input { width: min(100%, 310px); min-height: 34px; border: 1px solid #bdcfd6; border-radius: 7px; padding: 0 8px; }
 .working-time-import-exclude { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
 .working-time-import-status { display: inline-flex; border-radius: 999px; padding: 3px 7px; background: #e5f5ef; color: #17603a; font-size: .65rem; font-weight: 800; }

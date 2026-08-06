@@ -380,7 +380,8 @@ export function WorkingTimeWorkflowPanel({
   }
 
   if (!currentPerson) {
-    return <section className="working-time-workflow"><p className="working-time-message is-error">Votre compte doit être relié à une fiche RH pour saisir ou valider des heures.</p></section>;
+    const canManageImports = roles.some((role) => role === 'admin' || role === 'armement');
+    return <section className="working-time-workflow"><p className="working-time-message is-warning">Votre compte n’est pas encore associé à une fiche RH. Cette association est nécessaire uniquement pour saisir, signer ou valider vos propres heures.{canManageImports ? ' L’import administrateur reste disponible ci-dessous.' : ''}</p></section>;
   }
 
   return (

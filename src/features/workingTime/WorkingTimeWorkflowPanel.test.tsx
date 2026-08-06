@@ -100,6 +100,14 @@ describe('WorkingTimeWorkflowPanel', () => {
     reload.mockResolvedValue(true);
   });
 
+  it('explains that an unlinked administrator can still use the import assistant', () => {
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: null, isLoading: false, errorMessage: null, reload });
+    render(<WorkingTimeWorkflowPanel client={client} currentPerson={null} previewMode range={{ start: '2026-08-01', end: '2026-08-31' }} roles={['admin']} />);
+
+    expect(screen.getByText(/association est nécessaire uniquement pour saisir, signer ou valider vos propres heures/)).toBeInTheDocument();
+    expect(screen.getByText(/L’import administrateur reste disponible/)).toBeInTheDocument();
+  });
+
   it('requires explicit profile-signature consent before the subject submits', async () => {
     const user = userEvent.setup();
     renderPanel(['capitaine'], workspace('awaiting_sailor_signature'));

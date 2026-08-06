@@ -30,7 +30,10 @@ interface WorkingTimeImportWizardProps {
 interface EditableRow extends WorkingTimeImportEditableRow {
   phaseText: string;
   localError: string;
+  localWarning: string;
 }
+
+const TOTAL_MISMATCH_WARNING = 'Le total du classeur diffère des demi-heures détectées. Corrigez les phases ou excluez cette journée après le contrôle.';
 
 const STATUS_LABELS: Record<WorkingTimeImportRowStatus, string> = {
   ready: 'Prête', corrected: 'Corrigée', excluded: 'Exclue', duplicate: 'Doublon',
@@ -44,6 +47,14 @@ function normalizeName(value: string): string {
 
 function formatHours(seconds: number): string {
   return `${(seconds / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h`;
+}
+
+function phaseSeconds(phases: WorkingTimeImportEditableRow['phases']): number {
+  return phases.reduce((total, phase) => total + (phase.endMinute - phase.startMinute) * 60, 0);
+}
+
+function totalMismatchWarning(reportedWorkSeconds: number | null, phases: WorkingTimeImportEditableRow['phases']): string {
+  return reportedWorkSeconds !== null && reportedWorkSeconds !== phaseSeconds(phases) ? TOTAL_MISMATCH_WARNING : '';
 }
 
 function defaultParser(file: File): Promise<WorkingTimeImportWorkbook> {
@@ -74,7 +85,20 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
 
   const rowStatus = useMemo(() => new Map(preview?.rows.map((row) => [row.localWorkDate, row])), [preview]);
   const localErrors = rows.filter((row) => row.localError).length;
+  const localWarnings = rows.filter((row) => row.localWarning).length;
   const canCommit = Boolean(preview && !previewStale && preview.summary.readyRows > 0 && preview.summary.inconsistentRows === 0 && !busy);
+  const canControl = Boolean(personId && !localErrors && !busy && preview?.status !== 'imported');
+  const actionMessage = !personId
+    ? 'Sélectionnez la personne RH associée avant de lancer le contrôle.'
+    : localErrors
+      ? `Corrigez ${localErrors} erreur(s) de format dans les phases de travail.`
+      : previewStale
+        ? 'Des corrections ont été faites : relancez le contrôle serveur.'
+        : preview?.summary.inconsistentRows
+          ? `${preview.summary.inconsistentRows} journée(s) incohérente(s) : corrigez les phases ou excluez-les, puis relancez le contrôle.`
+          : localWarnings
+            ? `${localWarnings} écart(s) de total seront analysés par le serveur. Vous pouvez lancer le contrôle.`
+            : 'Les journées déjà validées ne seront jamais remplacées.';
 
   if (!canImport) return null;
 
@@ -111,7 +135,8 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         vesselName: row.vesselName, imoNumber: row.imoNumber, flagState: row.flagState,
         comment: row.sourceComment, userNote: '', excluded: false,
         phaseText: formatWorkingTimeImportPhases(row.detectedPhases),
-        localError: row.issues.includes('total_mismatch') ? 'Le total du classeur diffère des demi-heures détectées.' : '',
+        localError: '',
+        localWarning: totalMismatchWarning(row.reportedWorkSeconds, row.detectedPhases),
       })));
     } catch (caught) {
       setError(workingTimeErrorMessage(caught));
@@ -124,7 +149,8 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     setRows((current) => current.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
       try {
-        return { ...row, phaseText: value, phases: parseWorkingTimeImportPhaseText(value), localError: '' };
+        const phases = parseWorkingTimeImportPhaseText(value);
+        return { ...row, phaseText: value, phases, localError: '', localWarning: totalMismatchWarning(row.reportedWorkSeconds, phases) };
       } catch (caught) {
         return { ...row, phaseText: value, localError: workingTimeErrorMessage(caught) };
       }
@@ -201,12 +227,12 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
 
       {rows.length ? <div className="working-time-import-table-wrap"><table className="working-time-import-table"><thead><tr><th>Date</th><th>Phases de travail</th><th>Total détecté / déclaré</th><th>Navire</th><th>Décision</th></tr></thead><tbody>{rows.map((row, index) => {
         const server = rowStatus.get(row.date);
-        return <tr className={row.localError ? 'has-error' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}</td><td>{formatHours(row.phases.reduce((total, phase) => total + (phase.endMinute - phase.startMinute) * 60, 0))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{server?.issueCodes.length ? <small>{server.issueCodes.join(', ')}</small> : null}</td></tr>;
+        return <tr className={row.localError ? 'has-error' : row.localWarning ? 'has-warning' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}{row.localWarning ? <small className="is-warning">{row.localWarning}</small> : null}</td><td>{formatHours(phaseSeconds(row.phases))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{server?.issueCodes.length ? <small>{server.issueCodes.join(', ')}</small> : null}</td></tr>;
       })}</tbody></table></div> : null}
 
       {preview ? <div className="working-time-import-summary"><span><strong>{preview.summary.readyRows}</strong> à importer</span><span><strong>{preview.summary.duplicateRows}</strong> doublons</span><span><strong>{preview.summary.blockedRows}</strong> verrouillées</span><span><strong>{preview.summary.inconsistentRows}</strong> incohérentes</span><span><strong>{formatHours(preview.summary.effectiveWorkSeconds)}</strong> retenues</span></div> : null}
 
-      {workbook ? <footer className="working-time-import-actions"><p>{previewStale ? 'Des corrections ont été faites : relancez le contrôle serveur.' : 'Les journées déjà validées ne seront jamais remplacées.'}</p><button disabled={!personId || Boolean(localErrors) || busy || preview?.status === 'imported'} onClick={() => void controlImport()} type="button">{busy ? <LoaderCircle aria-hidden="true" className="is-spinning" size={17} /> : null}Contrôler l’import</button><button className="is-primary" disabled={!canCommit} onClick={() => void commitImport()} type="button">Valider l’import</button></footer> : null}
+      {workbook ? <footer className="working-time-import-actions"><p id="working-time-import-action-help">{actionMessage}</p><button aria-describedby="working-time-import-action-help" disabled={!canControl} onClick={() => void controlImport()} type="button">{busy ? <LoaderCircle aria-hidden="true" className="is-spinning" size={17} /> : null}Contrôler l’import</button><button aria-describedby="working-time-import-action-help" className="is-primary" disabled={!canCommit} onClick={() => void commitImport()} type="button">Valider l’import</button></footer> : null}
     </section>
   );
 }

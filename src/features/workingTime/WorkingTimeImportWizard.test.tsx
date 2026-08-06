@@ -57,6 +57,37 @@ describe('WorkingTimeImportWizard', () => {
     expect(screen.getByText(/1 journée\(s\) importée\(s\)/)).toBeInTheDocument();
   });
 
+  it('allows the server control when declared totals differ from detected phases', async () => {
+    const mismatchWorkbook: WorkingTimeImportWorkbook = {
+      ...workbook,
+      detectedWorkSeconds: 7200,
+      reportedWorkSeconds: 9000,
+      rows: [{
+        ...workbook.rows[0],
+        reportedWorkSeconds: 9000,
+        issues: ['source_year_mismatch', 'total_mismatch'],
+      }],
+    };
+    vi.mocked(previewWorkingTimeImport).mockResolvedValueOnce({
+      batchId: 42,
+      status: 'preview_ready',
+      summary: { totalRows: 1, readyRows: 0, excludedRows: 0, duplicateRows: 0, inconsistentRows: 1, blockedRows: 0, reportedWorkSeconds: 9000, effectiveWorkSeconds: 0 },
+      rows: [{ id: 1, localWorkDate: '2026-01-01', effectiveWorkSeconds: 7200, vesselName: 'GOURY', watchGroup: 'Bordée 1', status: 'inconsistent', issueCodes: ['total_mismatch'] }],
+    });
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(mismatchWorkbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], mismatchWorkbook.sourceFileName)] } });
+    await screen.findByText(/1 écart\(s\) de total seront analysés/);
+    const controlButton = screen.getByRole('button', { name: 'Contrôler l’import' });
+    expect(controlButton).toBeEnabled();
+
+    fireEvent.click(controlButton);
+    await screen.findByText('Incohérente');
+    expect(screen.getByText(/corrigez les phases ou excluez-les/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeDisabled();
+  });
+
   it('is not rendered for a sailor', () => {
     const { container } = render(<WorkingTimeImportWizard client={{} as SupabaseClient} roles={['marin']} />);
     expect(container).toBeEmptyDOMElement();
