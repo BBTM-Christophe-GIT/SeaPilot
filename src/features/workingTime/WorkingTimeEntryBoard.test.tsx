@@ -74,7 +74,7 @@ describe('WorkingTimeEntryBoard', () => {
 
     expect(screen.getAllByRole('gridcell')).toHaveLength(48);
     await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalled());
-    expect(await screen.findByText('4 h 00', { selector: '.working-time-guidance > strong' })).toBeInTheDocument();
+    expect(await screen.findByText('4 h 00', { selector: '.working-time-guidance-summary > strong' })).toBeInTheDocument();
     expect(screen.getByText('Politique datée')).toBeInTheDocument();
     expect(screen.getByText('Aucun écart détecté')).toBeInTheDocument();
   });
@@ -104,6 +104,7 @@ describe('WorkingTimeEntryBoard', () => {
 
     expect(screen.getByLabelText('Début du travail')).toHaveValue('2026-08-03T08:00');
     expect(screen.getByLabelText('Fin du travail')).toHaveValue('2026-08-03T10:00');
+    expect(screen.getByText('1 période prête')).toBeInTheDocument();
   });
 
   it('keeps manual start/end entry and draft submission available', async () => {
@@ -113,25 +114,58 @@ describe('WorkingTimeEntryBoard', () => {
 
     await user.clear(screen.getByLabelText('Début du travail'));
     await user.type(screen.getByLabelText('Début du travail'), '2026-08-03T09:00');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer 1 phase' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la sélection · 1 période' }));
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
-  it('keeps and submits multiple disjoint phases for the same day', async () => {
+  it('adds multiple disjoint pointer selections and submits them in one action', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
+    const cells = screen.getAllByRole('gridcell');
 
-    await user.click(screen.getByRole('button', { name: 'Conserver cette phase' }));
-    await user.clear(screen.getByLabelText('Début du travail'));
-    await user.type(screen.getByLabelText('Début du travail'), '2026-08-03T14:00');
-    await user.clear(screen.getByLabelText('Fin du travail'));
-    await user.type(screen.getByLabelText('Fin du travail'), '2026-08-03T16:00');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer 2 phases' }));
+    fireEvent.pointerDown(cells[16]);
+    fireEvent.pointerEnter(cells[23]);
+    fireEvent.pointerUp(cells[23]);
+    fireEvent.pointerDown(cells[28]);
+    fireEvent.pointerEnter(cells[31]);
+    fireEvent.pointerUp(cells[31]);
+
+    expect(screen.queryByRole('button', { name: 'Conserver cette phase' })).not.toBeInTheDocument();
+    expect(screen.getByText('2 périodes prêtes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la sélection · 2 périodes' }));
 
     expect(onSubmit).toHaveBeenCalledWith([
       { startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' },
       { startsAt: '2026-08-03T14:00', endsAt: '2026-08-03T16:00' },
     ]);
+  });
+
+  it('merges adjacent pointer selections into one continuous period', () => {
+    render(<Harness />);
+    const cells = screen.getAllByRole('gridcell');
+
+    fireEvent.pointerDown(cells[16]);
+    fireEvent.pointerEnter(cells[19]);
+    fireEvent.pointerUp(cells[19]);
+    fireEvent.pointerDown(cells[20]);
+    fireEvent.pointerEnter(cells[23]);
+    fireEvent.pointerUp(cells[23]);
+
+    expect(screen.getByText('1 période prête')).toBeInTheDocument();
+    expect(screen.getByText('08:00–12:00')).toBeInTheDocument();
+  });
+
+  it('clears all pending periods without keeping the last active range', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const cells = screen.getAllByRole('gridcell');
+
+    fireEvent.pointerDown(cells[12]);
+    fireEvent.pointerUp(cells[12]);
+    await user.click(screen.getByRole('button', { name: 'Effacer la sélection' }));
+
+    expect(screen.queryByText('1 période prête')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer la sélection · 0 période' })).toBeDisabled();
   });
 });

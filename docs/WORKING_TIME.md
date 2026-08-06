@@ -2,6 +2,12 @@
 
 Le module `/modules/workingTime` conserve les intervalles horodatés comme source de vérité pour les contrôles de travail et de repos. Plusieurs phases disjointes peuvent être saisies le même jour ; elles sont contrôlées ensemble puis enregistrées atomiquement par Supabase.
 
+## Saisie multi-périodes
+
+La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
+
+Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Enregistrer la sélection », persiste atomiquement toutes les périodes. La saisie précise début/fin reste disponible et modifie la période active.
+
 ## Exports mensuels
 
 Le PDF est généré à la demande dans le navigateur et n’est pas conservé par SeaPilot. Il comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées.
@@ -51,4 +57,5 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
 | RLS/RPC et non-écrasement d’une journée validée | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
+| Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
 | PDF avec les deux signatures figées | `workingTimePdf.test.ts` |
