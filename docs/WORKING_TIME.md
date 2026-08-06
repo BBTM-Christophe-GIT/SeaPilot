@@ -34,6 +34,12 @@ Le navigateur ne décide jamais si une ligne est importable. `preview_working_ti
 
 Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. La migration à appliquer est `20260804224824_working_time_excel_import.sql`.
 
+Les écarts entre total déclaré et demi-heures détectées sont des avertissements avant contrôle : ils n’empêchent
+plus de lancer l’analyse serveur. Ils deviennent des lignes `inconsistent` qui doivent être corrigées ou exclues
+avant la validation finale. Le bucket accepte les deux casses équivalentes du type MIME XLSM produites par les
+navigateurs et Windows. Les comptes historiques sont associés à leur fiche RH uniquement lorsqu’un e-mail unique
+correspond dans la même société ; toute ambiguïté reste à traiter manuellement.
+
 ## Matrice de recette
 
 | Exigence | Couverture automatisée |

@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.12.9` répare l’association des comptes aux fiches RH par correspondance d’e-mail unique, accepte les
+deux casses du type MIME XLSM émises par Windows et permet de lancer le contrôle serveur malgré des écarts de
+totaux. La validation reste interdite tant que ces écarts ne sont pas corrigés ou exclus. Appliquer
+`supabase/migrations/20260806222704_link_profiles_and_unlock_working_time_import.sql` avant le client. Voir
+[working-time-v3-12-9-import-fixes.md](./working-time-v3-12-9-import-fixes.md).
+
 Version `3.12.8` ajoute l'assistant d'import annuel XLSM du module Temps de Travail et complète la recette des
 fenêtres glissantes, des autorisations, des signatures et du PDF. Appliquer
 `supabase/migrations/20260804224824_working_time_excel_import.sql` avant le client. Voir

@@ -838,24 +838,28 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     const previewRows = rows.map((row, index) => {
       const phases = (Array.isArray(row.phases) ? row.phases : []) as Array<Record<string, unknown>>;
       const effectiveSeconds = phases.reduce((total, phase) => total + Math.max(0, Number(phase.end_minute || 0) - Number(phase.start_minute || 0)) * 60, 0);
+      const reportedSeconds = row.reported_work_seconds === null || row.reported_work_seconds === undefined ? null : Number(row.reported_work_seconds);
+      const hasTotalMismatch = reportedSeconds !== null && reportedSeconds !== effectiveSeconds;
       return {
         id: 9910 + index,
         local_work_date: row.date,
         effective_work_seconds: effectiveSeconds,
         vessel_name: row.vessel_name || 'Navire Test',
         watch_group: index % 2 === 0 ? 'Bordée 1' : 'Bordée 2',
-        status: row.excluded ? 'excluded' : 'ready',
-        issue_codes: [],
+        status: row.excluded ? 'excluded' : hasTotalMismatch ? 'inconsistent' : 'ready',
+        issue_codes: hasTotalMismatch ? ['total_mismatch'] : [],
       };
     });
     const readyRows = previewRows.filter((row) => row.status === 'ready');
+    const excludedRows = previewRows.filter((row) => row.status === 'excluded');
+    const inconsistentRows = previewRows.filter((row) => row.status === 'inconsistent');
     return createPreviewQuery({
       data: {
         batch_id: Number(args.p_batch_id || 9901), status: 'preview_ready', rows: previewRows,
         summary: {
           total_rows: previewRows.length, ready_rows: readyRows.length,
-          excluded_rows: previewRows.length - readyRows.length, duplicate_rows: 0,
-          inconsistent_rows: 0, blocked_rows: 0,
+          excluded_rows: excludedRows.length, duplicate_rows: 0,
+          inconsistent_rows: inconsistentRows.length, blocked_rows: 0,
           reported_work_seconds: rows.reduce((total, row) => total + Number(row.reported_work_seconds || 0), 0),
           effective_work_seconds: readyRows.reduce((total, row) => total + row.effective_work_seconds, 0),
         },

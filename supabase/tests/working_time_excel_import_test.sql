@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(28);
 
 select has_table('public', 'working_time_import_batches', 'annual XLSM import batches are audited');
 select has_table('public', 'working_time_import_rows', 'detected and corrected import rows are retained');
@@ -8,12 +8,33 @@ select ok((select relrowsecurity from pg_class where oid = 'public.working_time_
 select ok((select relrowsecurity from pg_class where oid = 'public.working_time_import_rows'::regclass), 'RLS protects import rows');
 select is((select public from storage.buckets where id = 'working-time-imports'), false, 'source XLSM files stay private');
 select is((select file_size_limit::bigint from storage.buckets where id = 'working-time-imports'), 20971520::bigint, 'XLSM uploads are limited to 20 MB');
-select is((select allowed_mime_types from storage.buckets where id = 'working-time-imports'), array['application/vnd.ms-excel.sheet.macroEnabled.12']::text[], 'only XLSM MIME files are accepted');
+select is(
+  (select allowed_mime_types from storage.buckets where id = 'working-time-imports'),
+  array['application/vnd.ms-excel.sheet.macroEnabled.12', 'application/vnd.ms-excel.sheet.macroenabled.12']::text[],
+  'XLSM MIME casing emitted by browsers and Windows is accepted'
+);
 select has_function('public', 'working_time_import_upload_context', array['text','text','bigint','text'], 'upload context RPC exists');
 select has_function('public', 'preview_working_time_import', array['bigint','bigint','integer','text','text','text','jsonb','jsonb'], 'server preview RPC exists');
 select has_function('public', 'commit_working_time_import', array['bigint'], 'transactional commit RPC exists');
 select ok(not has_function_privilege('anon', 'public.working_time_import_upload_context(text,text,bigint,text)', 'EXECUTE'), 'anonymous imports are denied');
 select ok(not has_table_privilege('authenticated', 'public.working_time_import_rows', 'INSERT'), 'the browser cannot inject import decisions directly');
+select is(
+  (
+    select count(*)::integer
+    from public.profiles profile
+    join public.people person on lower(trim(person.email)) = lower(trim(profile.email))
+    where person.user_id is null
+      and nullif(trim(profile.email), '') is not null
+      and exists (
+        select 1 from public.user_roles user_role
+        where user_role.user_id = profile.id and user_role.company_id = person.company_id
+      )
+      and 1 = (select count(*) from public.profiles candidate where lower(trim(candidate.email)) = lower(trim(profile.email)))
+      and 1 = (select count(*) from public.people candidate where lower(trim(candidate.email)) = lower(trim(person.email)))
+  ),
+  0,
+  'unique same-company email matches are linked to their RH person'
+);
 
 insert into auth.users (id, email) values
   ('78700000-0000-0000-0000-000000000001', 'import-admin@example.invalid'),
