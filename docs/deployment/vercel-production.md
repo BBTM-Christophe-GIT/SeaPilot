@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.12.10` affiche toute la frise journalière sur les panneaux étroits et permet d’ajouter plusieurs périodes
+par clic-glissé avant un enregistrement atomique unique. Aucune migration Supabase n’est requise. Voir
+[working-time-v3-12-10-multi-period-entry.md](./working-time-v3-12-10-multi-period-entry.md).
+
 Version `3.12.9` répare l’association des comptes aux fiches RH par correspondance d’e-mail unique, accepte les
 deux casses du type MIME XLSM émises par Windows et permet de lancer le contrôle serveur malgré des écarts de
 totaux. La validation reste interdite tant que ces écarts ne sont pas corrigés ou exclus. Appliquer

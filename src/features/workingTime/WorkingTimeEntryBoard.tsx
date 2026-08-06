@@ -95,6 +95,21 @@ function validProposal(startsAt: string, endsAt: string): boolean {
   return Boolean(startsAt && endsAt && Number.isFinite(start) && Number.isFinite(end) && end > start && end - start <= 86_400_000);
 }
 
+function mergePhases(phases: WorkingTimePhaseInput[]): WorkingTimePhaseInput[] {
+  return phases
+    .filter((phase) => validProposal(phase.startsAt, phase.endsAt))
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+    .reduce<WorkingTimePhaseInput[]>((merged, phase) => {
+      const previous = merged.at(-1);
+      if (!previous || phase.startsAt > previous.endsAt) {
+        merged.push({ ...phase });
+        return merged;
+      }
+      previous.endsAt = previous.endsAt > phase.endsAt ? previous.endsAt : phase.endsAt;
+      return merged;
+    }, []);
+}
+
 const VIOLATION_LABELS: Record<string, string> = {
   work_24h: 'Travail sur 24 h',
   rest_24h: 'Repos sur 24 h',
@@ -135,15 +150,16 @@ export function WorkingTimeEntryBoard({
   const [recommendation, setRecommendation] = useState<WorkingTimeEntryRecommendation | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
   const combinedPhases = useMemo(() => {
-    const phases = [...pendingPhases];
-    if (activePhase && !phases.some((phase) => phase.startsAt === activePhase.startsAt && phase.endsAt === activePhase.endsAt)) phases.push(activePhase);
-    return phases.sort((left, right) => left.startsAt.localeCompare(right.startsAt));
-  }, [activePhase?.endsAt, activePhase?.startsAt, pendingPhases]);
+    if (editingIntervalId) return activePhase ? [activePhase] : [];
+    if (pendingPhases.length) return [...pendingPhases].sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+    return activePhase ? [activePhase] : [];
+  }, [editingIntervalId, endsAt, pendingPhases, startsAt]);
   const phasesOverlap = combinedPhases.some((phase, index) => index > 0
     && new Date(phase.startsAt).getTime() < new Date(combinedPhases[index - 1].endsAt).getTime());
   const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
@@ -217,10 +233,53 @@ export function WorkingTimeEntryBoard({
     onEndsAtChange(slotLocalValue(selectedDay, to));
   }
 
+  function commitSlots(first: number, last: number) {
+    if (!canEdit) return;
+    const from = Math.max(0, Math.min(first, last));
+    const to = Math.min(48, Math.max(first, last) + 1);
+    const phase = { startsAt: slotLocalValue(selectedDay, from), endsAt: slotLocalValue(selectedDay, to) };
+    onStartsAtChange(phase.startsAt);
+    onEndsAtChange(phase.endsAt);
+    if (editingIntervalId) return;
+
+    const merged = mergePhases([...pendingPhases, phase]);
+    onPendingPhasesChange(merged);
+    const nextActiveIndex = merged.findIndex((candidate) => candidate.startsAt <= phase.startsAt && candidate.endsAt >= phase.endsAt);
+    setActivePendingIndex(nextActiveIndex >= 0 ? nextActiveIndex : null);
+    if (nextActiveIndex >= 0) {
+      onStartsAtChange(merged[nextActiveIndex].startsAt);
+      onEndsAtChange(merged[nextActiveIndex].endsAt);
+    }
+  }
+
+  function updateActivePhase(field: 'startsAt' | 'endsAt', value: string) {
+    if (field === 'startsAt') onStartsAtChange(value);
+    else onEndsAtChange(value);
+    if (editingIntervalId || activePendingIndex === null || !pendingPhases[activePendingIndex]) return;
+    onPendingPhasesChange(pendingPhases.map((phase, index) => index === activePendingIndex
+      ? { ...phase, [field]: value }
+      : phase));
+  }
+
+  function removePendingPhase(index: number) {
+    const remaining = pendingPhases.filter((_, phaseIndex) => phaseIndex !== index);
+    onPendingPhasesChange(remaining);
+    const nextIndex = remaining.length ? Math.min(index, remaining.length - 1) : null;
+    setActivePendingIndex(nextIndex);
+    if (nextIndex !== null) {
+      onStartsAtChange(remaining[nextIndex].startsAt);
+      onEndsAtChange(remaining[nextIndex].endsAt);
+    } else {
+      onStartsAtChange(`${selectedDay}T00:00`);
+      onEndsAtChange(`${selectedDay}T00:00`);
+    }
+  }
+
   function selectDay(day: string) {
     const startTime = startsAt.slice(11, 16) || '08:00';
     const endTime = endsAt.slice(11, 16) || '16:00';
     const crossesMidnight = endsAt.slice(0, 10) > startsAt.slice(0, 10) || endTime <= startTime;
+    setActivePendingIndex(null);
     onStartsAtChange(`${day}T${startTime}`);
     onEndsAtChange(`${crossesMidnight ? addDays(day, 1) : day}T${endTime}`);
   }
@@ -233,7 +292,10 @@ export function WorkingTimeEntryBoard({
     else if (event.key === 'End') target = 47;
     else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      selectSlots(slot, slot);
+      const selectionStart = selectedSlots.findIndex(Boolean);
+      const selectionEnd = selectedSlots.lastIndexOf(true);
+      if (selectionStart >= 0 && selectedSlots[slot]) commitSlots(selectionStart, selectionEnd);
+      else commitSlots(slot, slot);
       return;
     } else return;
     event.preventDefault();
@@ -270,27 +332,30 @@ export function WorkingTimeEntryBoard({
 
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
-          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />Phase conservée</span><span><i className="is-selected" />Sélection</span><small>Clic-glissé ou clavier · pas de 30 min</small></div>
+          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span><small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small></div>
           <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
             {Array.from({ length: 48 }, (_, slot) => {
               const label = slotLocalValue(selectedDay, slot).slice(11);
               const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
               return (
                 <button
-                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré' : pendingSlots[slot] ? 'phase conservée' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
+                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                   aria-selected={selectedSlots[slot]}
                   className={className}
                   disabled={!canEdit}
                   key={slot}
                   onKeyDown={(event) => handleSlotKeyDown(event, slot)}
-                  onPointerDown={() => { dragStart.current = slot; selectSlots(slot, slot); }}
+                  onPointerDown={() => { dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot); }}
                   onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
-                  onPointerUp={() => { dragStart.current = null; }}
+                  onPointerUp={() => {
+                    if (dragStart.current !== null) commitSlots(dragStart.current, slot);
+                    dragStart.current = null;
+                  }}
                   ref={(element) => { slotRefs.current[slot] = element; }}
                   role="gridcell"
                   type="button"
                 >
-                  <time>{slot % 2 === 0 ? label : ''}</time><span />
+                  <time>{slot % 6 === 0 ? label : ''}</time><span />
                 </button>
               );
             })}
@@ -306,9 +371,11 @@ export function WorkingTimeEntryBoard({
           </div>
 
           <div className={`working-time-guidance is-${status}`}>
-            <span>Durée supplémentaire maximale recommandée</span>
-            <strong>{formatDuration(maxRecommended)}</strong>
-            {recommendation?.alreadyNonCompliant ? <p>La personne est déjà non conforme : aucune heure supplémentaire recommandée.</p> : null}
+            <div className="working-time-guidance-summary">
+              <span>Durée supplémentaire maximale recommandée</span>
+              <strong>{formatDuration(maxRecommended)}</strong>
+              {recommendation?.alreadyNonCompliant ? <p>La personne est déjà non conforme : aucune heure supplémentaire recommandée.</p> : null}
+            </div>
             <dl>
               <div><dt>Disponible sur 24 h</dt><dd>{recommendation ? formatDuration(recommendation.available24hSeconds) : '—'}</dd></div>
               <div><dt>Impact repos total</dt><dd>{recommendation ? formatSignedDuration(recommendation.restImpactSeconds) : '—'}</dd></div>
@@ -324,15 +391,18 @@ export function WorkingTimeEntryBoard({
 
       {canEdit ? (
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => { event.preventDefault(); onSubmit(combinedPhases); }}>
-          <label>Début<input aria-label="Début du travail" onChange={(event) => onStartsAtChange(event.target.value)} required step="1800" type="datetime-local" value={startsAt} /></label>
-          <label>Fin<input aria-label="Fin du travail" onChange={(event) => onEndsAtChange(event.target.value)} required step="1800" type="datetime-local" value={endsAt} /></label>
+          <label>Début<input aria-label="Début du travail" onChange={(event) => updateActivePhase('startsAt', event.target.value)} required step="1800" type="datetime-local" value={startsAt} /></label>
+          <label>Fin<input aria-label="Fin du travail" onChange={(event) => updateActivePhase('endsAt', event.target.value)} required step="1800" type="datetime-local" value={endsAt} /></label>
           <label>Navire<select aria-label="Filtrer et affecter le navire" onChange={(event) => onVesselIdChange(event.target.value)} value={vesselId}><option value="">Sans navire</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
           <label>Bordée<input aria-label="Filtrer et affecter la bordée" onChange={(event) => onWatchGroupChange(event.target.value)} value={watchGroup} /></label>
           <label className="is-wide">Commentaire<input onChange={(event) => onCommentChange(event.target.value)} value={comment} /></label>
-          {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Phases conservées">{pendingPhases.map((phase, index) => <span key={`${phase.startsAt}-${phase.endsAt}`}><strong>Phase {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)} <button aria-label={`Retirer la phase ${index + 1}`} onClick={() => onPendingPhasesChange(pendingPhases.filter((_, phaseIndex) => phaseIndex !== index))} type="button">×</button></span>)}</div> : null}
+          {!editingIntervalId ? <div className="working-time-selection-summary">
+            <div><strong>{pendingPhases.length ? `${pendingPhases.length} période${pendingPhases.length > 1 ? 's' : ''} prête${pendingPhases.length > 1 ? 's' : ''}` : 'Sélection directe'}</strong><small>{pendingPhases.length ? 'Vous pouvez encore glisser sur la frise pour en ajouter.' : 'Glissez sur la frise ; chaque nouvelle plage est ajoutée automatiquement.'}</small></div>
+            {pendingPhases.length ? <button onClick={() => { onPendingPhasesChange([]); setActivePendingIndex(null); onStartsAtChange(`${selectedDay}T00:00`); onEndsAtChange(`${selectedDay}T00:00`); }} type="button">Effacer la sélection</button> : null}
+          </div> : null}
+          {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
           <div className="working-time-form-actions">
-            {!editingIntervalId ? <button disabled={isSaving || !activePhase || phasesOverlap || phasesConflictExisting || pendingPhases.some((phase) => phase.startsAt === startsAt && phase.endsAt === endsAt)} onClick={() => activePhase && onPendingPhasesChange([...pendingPhases, activePhase].sort((left, right) => left.startsAt.localeCompare(right.startsAt)))} type="button">Conserver cette phase</button> : null}
-            <button disabled={isSaving || !combinedPhases.length || phasesOverlap || phasesConflictExisting} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : `Enregistrer ${combinedPhases.length} phase${combinedPhases.length > 1 ? 's' : ''}`}</button>
+            <button disabled={isSaving || !combinedPhases.length || phasesOverlap || phasesConflictExisting} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : `Enregistrer la sélection · ${combinedPhases.length} période${combinedPhases.length > 1 ? 's' : ''}`}</button>
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>
         </form>
