@@ -23,6 +23,7 @@ interface WorkingTimePageProps {
 }
 
 const WORK_REST_TAB: P13Tab[] = ['rest'];
+const WORK_REST_NOTIFICATION_TABS: P13Tab[] = ['notifications', 'rest'];
 
 function currentMonthRange(referenceDate: string): { start: string; end: string } {
   const [year, month] = referenceDate.split('-').map(Number);
@@ -33,18 +34,7 @@ function currentMonthRange(referenceDate: string): { start: string; end: string 
   };
 }
 
-function currentWeekRange(referenceDate: string): { start: string; end: string } {
-  const date = new Date(`${referenceDate}T12:00:00`);
-  const mondayOffset = (date.getDay() + 6) % 7;
-  const start = addPlanningDays(referenceDate, -mondayOffset);
-  return { start, end: addPlanningDays(start, 6) };
-}
-
-function shiftRange(range: { start: string; end: string }, mode: 'week' | 'month', direction: -1 | 1) {
-  if (mode === 'week') {
-    const start = addPlanningDays(range.start, direction * 7);
-    return { start, end: addPlanningDays(start, 6) };
-  }
+function shiftMonthRange(range: { start: string; end: string }, direction: -1 | 1) {
   const date = new Date(`${range.start}T12:00:00`);
   date.setMonth(date.getMonth() + direction, 1);
   const anchor = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
@@ -59,13 +49,13 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
   const previewMode = outletContext?.previewMode || false;
   const permissions = getPlanningPermissions(effectiveRoles);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+  const canReceiveManagementAlerts = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const referenceDate = useMemo(() => todayPlanningDate(), []);
   const previewOverview = useMemo(
     () => previewMode ? createPlanningPreviewOverview(referenceDate) : undefined,
     [previewMode, referenceDate],
   );
-  const [rangeMode, setRangeMode] = useState<'week' | 'month'>(() => !initialRange || addPlanningDays(initialRange.start, 6) === initialRange.end ? 'week' : 'month');
-  const [range, setRange] = useState(() => initialRange || currentWeekRange(referenceDate));
+  const [range, setRange] = useState(() => currentMonthRange(initialRange?.start || referenceDate));
   const {
     overview,
     reload,
@@ -97,15 +87,10 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           </div>
         </div>
         <div aria-label="Période analysée" className="working-time-range" role="group">
-          <div className="working-time-range-mode" role="group" aria-label="Vue du registre">
-            <button aria-pressed={rangeMode === 'week'} onClick={() => { setRangeMode('week'); setRange(currentWeekRange(range.start)); }} type="button">Semaine</button>
-            <button aria-pressed={rangeMode === 'month'} onClick={() => { setRangeMode('month'); setRange(currentMonthRange(range.start)); }} type="button">Mois</button>
-          </div>
-          <button aria-label="Période précédente" onClick={() => setRange((current) => shiftRange(current, rangeMode, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
-          <label>Du<input onChange={(event) => setRange((current) => ({ ...current, start: event.target.value }))} type="date" value={range.start} /></label>
-          <label>Au<input min={range.start} onChange={(event) => setRange((current) => ({ ...current, end: event.target.value }))} type="date" value={range.end} /></label>
-          <button aria-label="Période suivante" onClick={() => setRange((current) => shiftRange(current, rangeMode, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
-          <button onClick={() => setRange(rangeMode === 'week' ? currentWeekRange(referenceDate) : currentMonthRange(referenceDate))} type="button"><CalendarDays aria-hidden="true" size={17} />Aujourd’hui</button>
+          <button aria-label="Mois précédent" onClick={() => setRange((current) => shiftMonthRange(current, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
+          <label>Mois et année<input aria-label="Mois et année affichés" onChange={(event) => event.target.value && setRange(currentMonthRange(`${event.target.value}-01`))} type="month" value={range.start.slice(0, 7)} /></label>
+          <button aria-label="Mois suivant" onClick={() => setRange((current) => shiftMonthRange(current, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
+          <button onClick={() => setRange(currentMonthRange(referenceDate))} type="button"><CalendarDays aria-hidden="true" size={17} />Mois en cours</button>
           <button aria-label="Actualiser le suivi" disabled={isInitialLoading || isRefreshing} onClick={() => void reload()} type="button">
             <RefreshCw aria-hidden="true" className={isRefreshing ? 'is-spinning' : ''} size={17} />
             Actualiser
@@ -144,9 +129,9 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
         <PlanningP13Panel
           canManageDependencies={false}
           canManageWorkRestPolicies={permissions.canManageWorkRestPolicies}
-          canRefreshNotifications={false}
+          canRefreshNotifications={canReceiveManagementAlerts}
           canViewDashboard={false}
-          canViewNotifications={false}
+          canViewNotifications={canReceiveManagementAlerts}
           canViewWorkRest={permissions.canViewWorkRest}
           client={effectiveClient}
           initialTab="rest"
@@ -156,7 +141,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           range={range}
           subtitle="Seuils administrés, contrôles sur 24 heures et 7 jours, repos consécutif, fractionnement et travail de nuit."
           title="Contrôles travail et repos"
-          visibleTabs={WORK_REST_TAB}
+          visibleTabs={canReceiveManagementAlerts ? WORK_REST_NOTIFICATION_TABS : WORK_REST_TAB}
         />
       ) : null}
     </section>

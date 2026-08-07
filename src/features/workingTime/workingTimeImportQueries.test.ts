@@ -31,13 +31,14 @@ describe('working-time import queries', () => {
   it('sends detected and corrected disjoint phases and maps server conflict statuses', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: {
       batch_id: 42, status: 'preview_ready',
-      summary: { total_rows: 1, ready_rows: 0, duplicate_rows: 1, excluded_rows: 0, inconsistent_rows: 0, blocked_rows: 0, reported_work_seconds: 7200, effective_work_seconds: 0 },
+      summary: { total_rows: 1, ready_rows: 0, replacement_rows: 0, duplicate_rows: 1, excluded_rows: 0, inconsistent_rows: 0, blocked_rows: 0, reported_work_seconds: 7200, effective_work_seconds: 0 },
       rows: [{ id: 7, local_work_date: '2026-01-01', effective_work_seconds: 7200, vessel_name: 'GOURY', watch_group: 'Bordée A', status: 'duplicate', issue_codes: ['existing_day'] }],
     }, error: null });
     const client = { rpc } as unknown as SupabaseClient;
 
     const result = await previewWorkingTimeImport(client, {
       batchId: 42, personId: 9, timezoneName: 'Europe/Paris', workbook,
+      replaceExistingDays: false, replacementReason: '',
       rows: [{
         date: '2026-01-01', sheet: 'Janvier', row: 5,
         detectedPhases: [{ startMinute: 480, endMinute: 600 }],
@@ -48,7 +49,10 @@ describe('working-time import queries', () => {
     });
 
     expect(rpc).toHaveBeenCalledWith('preview_working_time_import', expect.objectContaining({
-      p_workbook_metadata: expect.objectContaining({ macro_execution: 'disabled', grid_year: 2025 }),
+      p_workbook_metadata: expect.objectContaining({
+        macro_execution: 'disabled', grid_year: 2025,
+        approval_mode: 'approved_xlsm', replace_existing_days: false,
+      }),
       p_rows: [expect.objectContaining({ phases: [{ start_minute: 480, end_minute: 540 }, { start_minute: 600, end_minute: 660 }] })],
     }));
     expect(result.summary.duplicateRows).toBe(1);
@@ -56,9 +60,12 @@ describe('working-time import queries', () => {
   });
 
   it('commits only through the authoritative RPC', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: { summary: { ready_rows: 3, effective_work_seconds: 86400 } }, error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: { summary: {
+      imported_rows: 3, imported_intervals: 4, replaced_rows: 1, replaced_intervals: 2,
+      identical_rows: 2, approved_registers: 1, blocked_during_commit: 0, remaining_rows: 2,
+    } }, error: null });
     const summary = await commitWorkingTimeImport({ rpc } as unknown as SupabaseClient, 42);
     expect(rpc).toHaveBeenCalledWith('commit_working_time_import', { p_batch_id: 42 });
-    expect(summary.readyRows).toBe(3);
+    expect(summary).toMatchObject({ importedRows: 3, replacedRows: 1, identicalRows: 2, approvedRegisters: 1 });
   });
 });

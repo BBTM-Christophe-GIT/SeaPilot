@@ -74,6 +74,7 @@ function workspaceClient() {
     rpc: vi.fn().mockResolvedValue({
       data: {
         current_person_id: 42,
+        readable_people: [{ person_id: 42, first_name: 'Alex', last_name: 'MARIN', function_label: 'Matelot', is_self: true }],
         editable_people: [{ person_id: 42, first_name: 'Alex', last_name: 'MARIN', function_label: 'Matelot', is_self: true }],
       },
       error: null,
@@ -87,6 +88,7 @@ describe('working-time workflow queries', () => {
     const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
 
     expect(workspace.currentPersonId).toBe(42);
+    expect(workspace.readablePeople[0]).toMatchObject({ personId: 42, isSelf: true });
     expect(workspace.editablePeople[0]).toMatchObject({ personId: 42, isSelf: true });
     expect(workspace.registers[0]).toMatchObject({ id: 10, personName: 'Alex MARIN', status: 'draft' });
     expect(workspace.intervals[0]).toMatchObject({ id: 20, timezoneName: 'Europe/Paris' });

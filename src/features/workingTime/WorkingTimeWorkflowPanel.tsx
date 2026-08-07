@@ -9,16 +9,19 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   Trash2,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { RoleKey } from '../permissions/roles';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
-import type { WorkingTimeInterval, WorkingTimePeriodKind, WorkingTimeRegisterStatus } from './workingTimeModel';
+import type { WorkingTimeInterval, WorkingTimeRegisterStatus } from './workingTimeModel';
 import {
   fetchWorkingTimeWorkspace,
+  discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   saveWorkingTimeInterval,
@@ -140,6 +143,13 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatMonthLabel(monthStart: string): string {
+  const date = new Date(`${monthStart}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return monthStart;
+  const label = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(date);
+  return label.charAt(0).toLocaleUpperCase('fr-FR') + label.slice(1);
+}
+
 function formatPerson(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim();
 }
@@ -173,12 +183,12 @@ export function WorkingTimeWorkflowPanel({
   range,
   previewMode = false,
 }: WorkingTimeWorkflowPanelProps) {
-  const enabled = Boolean(currentPerson && range.start && range.end && range.start <= range.end);
+  const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+  const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
   const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range);
-  const [selectedRegisterId, setSelectedRegisterId] = useState<number | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
   const [personId, setPersonId] = useState<number | null>(currentPerson?.id || null);
-  const [periodKind, setPeriodKind] = useState<WorkingTimePeriodKind>('weekly');
-  const [periodStart, setPeriodStart] = useState(range.start);
+  const [registerSearch, setRegisterSearch] = useState('');
   const [startsAt, setStartsAt] = useState(`${range.start}T08:00`);
   const [endsAt, setEndsAt] = useState(`${range.start}T16:00`);
   const [vesselId, setVesselId] = useState('');
@@ -204,14 +214,39 @@ export function WorkingTimeWorkflowPanel({
     () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.registers],
   );
+  const visibleReadablePeople = useMemo(() => {
+    const readable = workspace?.readablePeople || [];
+    const fallback = visibleRegisters.map((register) => ({
+      personId: register.personId,
+      firstName: register.personName.split(' ')[0] || register.personName,
+      lastName: register.personName.split(' ').slice(1).join(' '),
+      functionLabel: register.functionLabel,
+      isSelf: register.personId === currentPersonId,
+    }));
+    const people = readable.length ? readable : fallback;
+    return people.filter((person) => !isSailorOnlyView || person.personId === currentPersonId);
+  }, [currentPersonId, isSailorOnlyView, visibleRegisters, workspace?.readablePeople]);
   const visibleEditablePeople = useMemo(
     () => workspace?.editablePeople.filter((person) => !isSailorOnlyView || person.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.editablePeople],
   );
-  const selectedRegister = visibleRegisters.find((register) => register.id === selectedRegisterId) || null;
+  const monthlyRegisters = useMemo(() => visibleRegisters.filter((register) => register.periodKind === 'monthly'
+    && register.periodStart === range.start
+    && register.periodEnd === range.end), [range.end, range.start, visibleRegisters]);
+  const monthlyRegisterByPerson = useMemo(
+    () => new Map(monthlyRegisters.map((register) => [register.personId, register])),
+    [monthlyRegisters],
+  );
+  const normalizedSearch = registerSearch.trim().toLocaleLowerCase('fr-FR');
+  const catalogPeople = useMemo(() => visibleReadablePeople.filter((person) => !normalizedSearch
+    || `${person.firstName} ${person.lastName} ${person.functionLabel}`.toLocaleLowerCase('fr-FR').includes(normalizedSearch)),
+  [normalizedSearch, visibleReadablePeople]);
+  const selectedRegister = selectedPersonId ? monthlyRegisterByPerson.get(selectedPersonId) || null : null;
+  const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
+  const displayedMonthLabel = formatMonthLabel(range.start);
   const selectedIntervals = useMemo(
-    () => workspace?.intervals.filter((interval) => interval.registerId === selectedRegisterId) || [],
-    [selectedRegisterId, workspace?.intervals],
+    () => workspace?.intervals.filter((interval) => interval.registerId === selectedRegister?.id) || [],
+    [selectedRegister?.id, workspace?.intervals],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = roles.includes('capitaine');
@@ -271,13 +306,17 @@ export function WorkingTimeWorkflowPanel({
     setPersonId((current) => current && visibleEditablePeople.some((person) => person.personId === current)
       ? current
       : visibleEditablePeople[0]?.personId || null);
-    setSelectedRegisterId((current) => {
-      if (current && visibleRegisters.some((register) => register.id === current)) return current;
-      return visibleRegisters.find((register) => register.personId === workspace.currentPersonId)?.id
-        || visibleRegisters[0]?.id
+    setSelectedPersonId((current) => {
+      if (current
+        && visibleReadablePeople.some((person) => person.personId === current)
+        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0)) return current;
+      return (monthlyRegisterByPerson.has(workspace.currentPersonId) ? workspace.currentPersonId : null)
+        || monthlyRegisters[0]?.personId
+        || visibleReadablePeople.find((person) => person.personId === workspace.currentPersonId)?.personId
+        || visibleReadablePeople[0]?.personId
         || null;
     });
-  }, [currentPerson?.id, visibleEditablePeople, visibleRegisters, workspace]);
+  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, visibleEditablePeople, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!workspace || !selectedRegister) {
@@ -383,7 +422,7 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment(interval.comment || '');
   }
 
-  if (!currentPerson) {
+  if (!currentPerson && !canBrowseWithoutProfile) {
     const canManageImports = roles.some((role) => role === 'admin' || role === 'armement');
     return <section className="working-time-workflow"><p className="working-time-message is-warning">Votre compte n’est pas encore associé à une fiche RH. Cette association est nécessaire uniquement pour saisir, signer ou valider vos propres heures.{canManageImports ? ' L’import administrateur reste disponible ci-dessous.' : ''}</p></section>;
   }
@@ -393,7 +432,7 @@ export function WorkingTimeWorkflowPanel({
       <header className="working-time-section-heading">
         <div><p>Registres individuels</p><h2 id="working-time-registers-title">Saisie, signature et validation</h2></div>
         <div className="working-time-heading-actions">
-          <span>{visibleRegisters.length} registre(s) sur la période</span>
+          <span>{catalogPeople.length} marin(s) affiché(s) · {displayedMonthLabel}</span>
           <button disabled={isLoading || isSaving} onClick={() => void reload()} type="button">
             <RefreshCw aria-hidden="true" size={15} /> Actualiser
           </button>
@@ -403,12 +442,13 @@ export function WorkingTimeWorkflowPanel({
       {errorMessage ? <p className="working-time-message is-error" role="alert">{errorMessage}</p> : null}
       {actionError ? <p className="working-time-message is-error" role="alert">{actionError}</p> : null}
       {actionMessage ? <p className="working-time-message is-success" role="status">{actionMessage}</p> : null}
+      {!currentPerson && canBrowseWithoutProfile ? <p className="working-time-message is-warning">Vous pouvez consulter et rechercher tous les registres. Une fiche RH liée à votre compte reste requise pour saisir, signer ou valider des heures.</p> : null}
       {isLoading && !workspace ? <div className="admin-state" role="status">Chargement des registres…</div> : null}
 
       {workspace ? (
         <>
           <div className="working-time-register-create">
-            <label>Personne
+            <label>Marin
               <select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
                 {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
                 {visibleEditablePeople.map((person) => (
@@ -418,42 +458,60 @@ export function WorkingTimeWorkflowPanel({
                 ))}
               </select>
             </label>
-            <label>Période
-              <select onChange={(event) => {
-                const nextKind = event.target.value as WorkingTimePeriodKind;
-                setPeriodKind(nextKind);
-                if (nextKind === 'monthly') setPeriodStart((current) => `${current.slice(0, 7)}-01`);
-              }} value={periodKind}>
-                <option value="weekly">Hebdomadaire</option>
-                <option value="monthly">Mensuelle</option>
-              </select>
+            <label>Mois et année
+              <input aria-label="Mois du registre" disabled type="month" value={range.start.slice(0, 7)} />
             </label>
-            <label>Début
-              <input onChange={(event) => setPeriodStart(event.target.value)} type="date" value={periodStart} />
-            </label>
-            <button disabled={isSaving || !personId} onClick={() => void runAction(async () => {
-              const registerId = await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind, periodStart });
-              setSelectedRegisterId(registerId);
+            <button disabled={isSaving || !currentPerson || !personId} onClick={() => void runAction(async () => {
+              await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind: 'monthly', periodStart: range.start });
+              setSelectedPersonId(personId);
             }, 'Le registre est prêt pour la saisie.')} type="button">
-              <Plus aria-hidden="true" size={17} /> Ouvrir le registre
+              <Plus aria-hidden="true" size={17} /> Ouvrir ce mois
             </button>
           </div>
           {!visibleEditablePeople.length ? <p className="working-time-message is-warning">Aucune fiche RH n’est accessible en saisie pour votre rôle et cette période.</p> : null}
 
           <div className="working-time-workspace-grid">
             <nav aria-label="Registres accessibles" className="working-time-register-list">
-              {visibleRegisters.length ? visibleRegisters.map((register) => (
-                <button
-                  className={register.id === selectedRegisterId ? 'is-active' : ''}
-                  key={register.id}
-                  onClick={() => setSelectedRegisterId(register.id)}
-                  type="button"
-                >
-                  <span>{register.personName}</span>
-                  <small>{register.periodStart} → {register.periodEnd}</small>
-                  <em className={`is-${register.status}`}>{STATUS_LABELS[register.status]}</em>
-                </button>
-              )) : <p>Aucun registre sur cette période.</p>}
+              <label className="working-time-register-search">
+                <span>Rechercher un marin</span>
+                <span><Search aria-hidden="true" size={16} /><input aria-label="Rechercher un marin" onChange={(event) => setRegisterSearch(event.target.value)} placeholder="Nom ou fonction" type="search" value={registerSearch} /></span>
+              </label>
+              {catalogPeople.length ? catalogPeople.map((person) => {
+                const register = monthlyRegisterByPerson.get(person.personId);
+                const personName = formatPerson(person.firstName, person.lastName);
+                return (
+                <div className={`working-time-register-card ${person.personId === selectedPersonId ? 'is-active' : ''}`} key={person.personId}>
+                  <button
+                    className="working-time-register-select"
+                    onClick={() => {
+                      setSelectedPersonId(person.personId);
+                      if (visibleEditablePeople.some((editable) => editable.personId === person.personId)) setPersonId(person.personId);
+                    }}
+                    type="button"
+                  >
+                    <span>{personName}</span>
+                    <small>{person.functionLabel || 'Personnel maritime'} · {displayedMonthLabel}</small>
+                    {register ? <em className={`is-${register.status}`}>{STATUS_LABELS[register.status]}</em> : <em>Aucun registre ce mois</em>}
+                  </button>
+                  {register?.status === 'draft' ? (
+                    <button
+                      aria-label={`Supprimer le brouillon de ${personName} du ${register.periodStart} au ${register.periodEnd}`}
+                      className="working-time-register-discard"
+                      disabled={isSaving}
+                      onClick={() => {
+                        if (!window.confirm(`Retirer ce brouillon de ${personName} et abandonner ses modifications non enregistrées ?`)) return;
+                        void runAction(async () => {
+                          await discardWorkingTimeDraft(client, register.id);
+                        }, 'Le brouillon a été retiré sans enregistrer ses modifications.');
+                      }}
+                      title="Supprimer ce brouillon"
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                    </button>
+                  ) : null}
+                </div>
+              ); }) : <p>Aucun marin ne correspond à la recherche.</p>}
             </nav>
 
             {selectedRegister ? (
@@ -657,7 +715,26 @@ export function WorkingTimeWorkflowPanel({
                   {selectedRegister.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Validation terminée — historique et signatures figés.</p> : null}
                 </section>
               </article>
-            ) : <div className="working-time-register-detail working-time-empty"><p>Ouvrez un registre pour commencer la saisie.</p></div>}
+            ) : (
+              <div className="working-time-register-detail working-time-empty">
+                <div>
+                  <h3>{selectedCatalogPerson ? formatPerson(selectedCatalogPerson.firstName, selectedCatalogPerson.lastName) : 'Aucun marin sélectionné'}</h3>
+                  <p>{selectedCatalogPerson ? `Aucun registre mensuel pour ${displayedMonthLabel}.` : 'Sélectionnez un marin dans le catalogue.'}</p>
+                  {selectedCatalogPerson && currentPerson && visibleEditablePeople.some((person) => person.personId === selectedCatalogPerson.personId) ? (
+                    <button disabled={isSaving} onClick={() => void runAction(async () => {
+                      await getOrCreateWorkingTimeRegister(client, {
+                        personId: selectedCatalogPerson.personId,
+                        periodKind: 'monthly',
+                        periodStart: range.start,
+                      });
+                      setPersonId(selectedCatalogPerson.personId);
+                    }, 'Le registre mensuel est prêt pour la saisie.')} type="button">
+                      <Plus aria-hidden="true" size={17} /> Ouvrir {displayedMonthLabel}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </div>
         </>
       ) : null}

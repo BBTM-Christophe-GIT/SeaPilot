@@ -79,7 +79,9 @@ describe('WorkingTimePage', () => {
       client,
       presentation: 'page',
       initialTab: 'rest',
-      visibleTabs: ['rest'],
+      visibleTabs: ['notifications', 'rest'],
+      canViewNotifications: true,
+      canRefreshNotifications: true,
       canManageWorkRestPolicies: true,
       canViewWorkRest: true,
       range: { start: '2026-08-01', end: '2026-08-31' },
@@ -92,18 +94,21 @@ describe('WorkingTimePage', () => {
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       canManageWorkRestPolicies: false,
       canViewWorkRest: true,
+      canViewNotifications: false,
+      visibleTabs: ['rest'],
     }), undefined);
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
   });
 
-  it('validates the selected period and refreshes the shared planning overview', () => {
+  it('switches complete calendar months and refreshes the shared planning overview', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: 'Actualiser le suivi' }));
     expect(reload).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-07-31' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('La date de fin doit être postérieure ou égale à la date de début.');
-    expect(screen.queryByTestId('work-rest-surface')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Mois et année affichés'), { target: { value: '2026-09' } });
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({
+      range: { start: '2026-09-01', end: '2026-09-30' },
+    }), undefined);
   });
 });

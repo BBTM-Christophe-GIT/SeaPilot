@@ -10293,7 +10293,7 @@ button.planning-p12-conflict-card {
   display: grid;
   gap: 14px;
   width: 100%;
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
 }
 
@@ -10563,7 +10563,7 @@ button.planning-p12-conflict-card {
 
 .working-time-register-create {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(140px, .7fr) minmax(145px, .7fr) auto;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, .7fr) auto;
   align-items: end;
   gap: 10px;
   padding: 12px;
@@ -10635,19 +10635,85 @@ button.planning-p12-conflict-card {
   align-items: start;
 }
 
-.working-time-register-list { display: grid; gap: 8px; }
-.working-time-register-list > button {
+.working-time-register-list {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  max-height: calc(100vh - 150px);
+  gap: 8px;
+  padding-right: 3px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.working-time-register-search {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #d5e0e7;
+  border-radius: 8px;
+  color: #536b79;
+  background: #f5fafb;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.working-time-register-search > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid #b9c9d4;
+  border-radius: 7px;
+  color: #0b6075;
+  background: #fff;
+}
+.working-time-register-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 0;
+  border: 0;
+  outline: 0;
+  color: #182132;
+  background: transparent;
+  font: inherit;
+}
+.working-time-register-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #d5e0e7;
+  border-radius: 8px;
+  background: #fff;
+}
+.working-time-register-card.is-active { border-color: #0b6075; box-shadow: inset 3px 0 #0b6075; background: #f2f9fa; }
+.working-time-register-select {
   display: grid;
   gap: 4px;
   width: 100%;
-  padding: 11px 12px;
-  border: 1px solid #d5e0e7;
-  border-radius: 8px;
+  min-height: 100%;
+  padding: 11px 42px 11px 12px;
+  border: 0;
   color: #263b48;
-  background: #fff;
+  background: transparent;
   text-align: left;
+  cursor: pointer;
 }
-.working-time-register-list > button.is-active { border-color: #0b6075; box-shadow: inset 3px 0 #0b6075; background: #f2f9fa; }
+.working-time-register-discard {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #71838e;
+  cursor: pointer;
+}
+.working-time-register-discard:hover { border-color: #e6b6bd; background: #fff1f3; color: #8b2635; }
+.working-time-register-discard:focus-visible { outline: 3px solid rgba(139, 38, 53, .22); outline-offset: 1px; }
 .working-time-register-list span { font-weight: 800; }
 .working-time-register-list small { color: #617381; }
 .working-time-register-list em,
@@ -10677,6 +10743,28 @@ button.planning-p12-conflict-card {
   border: 1px solid #dbe3ed;
   border-radius: 9px;
   background: #fbfcfd;
+}
+.working-time-register-detail.working-time-empty {
+  grid-template-columns: 1fr;
+  min-height: 250px;
+  place-items: center;
+  color: #617381;
+  text-align: center;
+}
+.working-time-register-detail.working-time-empty h3 { margin: 0; color: #263b48; }
+.working-time-register-detail.working-time-empty button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid #0b6075;
+  border-radius: 7px;
+  color: #fff;
+  background: #0b6075;
+  font: inherit;
+  font-weight: 750;
 }
 .working-time-register-detail > header,
 .working-time-register-detail > .working-time-lock-note { grid-column: 1 / -1; }
@@ -10848,7 +10936,7 @@ button.planning-p12-conflict-card {
   gap: 12px;
   align-items: start;
 }
-.working-time-timeline-panel { order: 2; min-width: 0; overflow: hidden; border: 1px solid #d5e2e7; border-radius: 9px; background: #fff; }
+.working-time-timeline-panel { order: 1; min-width: 0; overflow: hidden; border: 1px solid #d5e2e7; border-radius: 9px; background: #fff; }
 .working-time-timeline-legend { min-width: 0; padding: 9px 11px; border-bottom: 1px solid #dce6ea; color: #536b79; font-size: .69rem; }
 .working-time-timeline-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .working-time-timeline-legend i { width: 11px; height: 11px; border-radius: 3px; background: #d7e5e9; }
@@ -10867,13 +10955,13 @@ button.planning-p12-conflict-card {
   top: 7px;
   right: 7px;
   color: #5e747f;
-  content: '24:00';
+  content: '24h';
   font-size: .58rem;
   font-weight: 750;
 }
 .working-time-timeline button {
   position: relative;
-  height: 82px;
+  height: 94px;
   padding: 0;
   border: 0;
   border-right: 1px solid #dde6ea;
@@ -10896,7 +10984,7 @@ button.planning-p12-conflict-card {
   white-space: nowrap;
 }
 
-.working-time-recommendation-panel { order: 1; display: grid; gap: 8px; }
+.working-time-recommendation-panel { order: 2; display: grid; gap: 8px; }
 .working-time-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
 .working-time-kpi-grid article {
   display: grid;
@@ -11006,7 +11094,7 @@ button.planning-p12-conflict-card {
 
 .planning-p13-panel.is-page > header small { white-space: normal; overflow-wrap: anywhere; }
 
-@media (max-width: 1200px) {
+@media (max-width: 1450px) {
   .working-time-register-detail { grid-template-columns: 1fr; }
   .working-time-register-detail > .working-time-signatures,
   .working-time-register-detail > .working-time-intervals,
@@ -11025,7 +11113,8 @@ button.planning-p12-conflict-card {
   .working-time-range input { width: 100%; }
   .working-time-register-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .working-time-workspace-grid { grid-template-columns: 1fr; }
-  .working-time-register-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-register-list { position: static; max-height: none; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .working-time-register-search { grid-column: 1 / -1; }
   .working-time-interval-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .working-time-entry-layout { grid-template-columns: 1fr; }
 }
@@ -16991,6 +17080,24 @@ button.planning-p12-conflict-card {
 .working-time-import-detection { display: grid; align-content: center; gap: 4px; min-height: 88px; padding: 12px; border-radius: 12px; background: #f6f8f9; color: #526871; font-size: .74rem; }
 .working-time-import-detection strong { color: #18313b; font-size: .9rem; }
 .working-time-import-detection .is-safe { display: flex; align-items: center; gap: 5px; color: #17603a; font-weight: 800; }
+.working-time-import-replacement {
+  display: grid;
+  grid-template-columns: minmax(260px, auto) minmax(260px, 1fr) minmax(300px, .8fr);
+  gap: 14px;
+  align-items: center;
+  margin: 0 20px 16px;
+  padding: 12px 14px;
+  border: 1px solid #c8d9df;
+  border-radius: 10px;
+  background: #f7fafb;
+}
+.working-time-import-replacement.is-active { border-color: #d29a2e; background: #fff9ed; }
+.working-time-import-replacement > label { display: grid; gap: 5px; color: #405963; font-size: .72rem; font-weight: 800; }
+.working-time-import-replacement > label:first-child { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.working-time-import-replacement > label:first-child span { display: inline-flex; align-items: center; gap: 7px; color: #18313b; }
+.working-time-import-replacement > p { margin: 0; color: #607681; font-size: .72rem; line-height: 1.45; }
+.working-time-import-replacement input[type='text'],
+.working-time-import-replacement label:last-child > input { min-height: 38px; border: 1px solid #bfd0d7; border-radius: 8px; background: #fff; padding: 0 10px; color: #18313b; }
 .working-time-import > .working-time-message { margin: 0 20px 14px; }
 .working-time-import-table-wrap { max-height: 480px; overflow: auto; border-block: 1px solid #dce7eb; }
 .working-time-import-table { width: 100%; border-collapse: collapse; font-size: .73rem; }
@@ -17007,7 +17114,7 @@ button.planning-p12-conflict-card {
 .working-time-import-status:is(.is-duplicate,.is-blocked_workflow,.is-blocked_validated) { background: #fff1d6; color: #80520b; }
 .working-time-import-status.is-inconsistent { background: #fdecef; color: #8b2635; }
 .working-time-import-status.is-excluded { background: #edf1f3; color: #607681; }
-.working-time-import-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: #dbe7eb; }
+.working-time-import-summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: #dbe7eb; }
 .working-time-import-summary span { display: grid; gap: 2px; padding: 13px 16px; background: #f7fafb; color: #607681; font-size: .68rem; }
 .working-time-import-summary strong { color: #18313b; font-size: 1.05rem; }
 .working-time-import-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 15px 20px; }
@@ -17020,6 +17127,8 @@ button.planning-p12-conflict-card {
 @media (max-width: 1100px) {
   .working-time-import-controls { grid-template-columns: 1fr 1fr; }
   .working-time-import-summary { grid-template-columns: repeat(3, 1fr); }
+  .working-time-import-replacement { grid-template-columns: 1fr 1fr; }
+  .working-time-import-replacement > p { grid-column: 1 / -1; grid-row: 2; }
 }
 
 @media (max-width: 720px) {
@@ -17027,6 +17136,8 @@ button.planning-p12-conflict-card {
   .working-time-import-steps { grid-template-columns: repeat(4, 1fr); row-gap: 12px; }
   .working-time-import-steps li:nth-child(5)::before { display: none; }
   .working-time-import-controls { grid-template-columns: 1fr; padding-inline: 12px; }
+  .working-time-import-replacement { grid-template-columns: 1fr; margin-inline: 12px; }
+  .working-time-import-replacement > p { grid-column: auto; grid-row: auto; }
   .working-time-import-summary { grid-template-columns: 1fr 1fr; }
   .working-time-import-actions { align-items: stretch; flex-direction: column; }
   .working-time-import-actions p { margin-bottom: 4px; }

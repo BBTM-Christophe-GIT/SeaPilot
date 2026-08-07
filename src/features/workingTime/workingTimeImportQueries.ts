@@ -46,8 +46,20 @@ export interface WorkingTimeImportSummary {
   duplicateRows: number;
   inconsistentRows: number;
   blockedRows: number;
+  replacementRows: number;
   reportedWorkSeconds: number;
   effectiveWorkSeconds: number;
+}
+
+export interface WorkingTimeImportCommitSummary {
+  importedRows: number;
+  importedIntervals: number;
+  replacedRows: number;
+  replacedIntervals: number;
+  identicalRows: number;
+  approvedRegisters: number;
+  blockedDuringCommit: number;
+  remainingRows: number;
 }
 
 export interface WorkingTimeImportPreviewResult {
@@ -80,6 +92,7 @@ function mapSummary(value: Record<string, unknown> = {}): WorkingTimeImportSumma
     duplicateRows: asNumber(value.duplicate_rows),
     inconsistentRows: asNumber(value.inconsistent_rows),
     blockedRows: asNumber(value.blocked_rows),
+    replacementRows: asNumber(value.replacement_rows),
     reportedWorkSeconds: asNumber(value.reported_work_seconds),
     effectiveWorkSeconds: asNumber(value.effective_work_seconds),
   };
@@ -134,6 +147,8 @@ export async function previewWorkingTimeImport(
     timezoneName: string;
     workbook: WorkingTimeImportWorkbook;
     rows: WorkingTimeImportEditableRow[];
+    replaceExistingDays: boolean;
+    replacementReason: string;
   },
 ): Promise<WorkingTimeImportPreviewResult> {
   const { data, error } = await client.rpc('preview_working_time_import', {
@@ -152,6 +167,9 @@ export async function previewWorkingTimeImport(
       grid_year: input.workbook.gridYear,
       file_name_year: input.workbook.fileNameYear,
       warnings: input.workbook.warnings,
+      replace_existing_days: input.replaceExistingDays,
+      replacement_reason: input.replacementReason,
+      approval_mode: 'approved_xlsm',
     },
     p_rows: input.rows.map((row) => ({
       date: row.date,
@@ -187,8 +205,18 @@ export async function previewWorkingTimeImport(
   };
 }
 
-export async function commitWorkingTimeImport(client: SupabaseClient, batchId: number): Promise<WorkingTimeImportSummary> {
+export async function commitWorkingTimeImport(client: SupabaseClient, batchId: number): Promise<WorkingTimeImportCommitSummary> {
   const { data, error } = await client.rpc('commit_working_time_import', { p_batch_id: batchId });
   assertResult(error, 'Impossible de valider l’import.');
-  return mapSummary((((data || {}) as Record<string, unknown>).summary || {}) as Record<string, unknown>);
+  const value = ((((data || {}) as Record<string, unknown>).summary || {}) as Record<string, unknown>);
+  return {
+    importedRows: asNumber(value.imported_rows),
+    importedIntervals: asNumber(value.imported_intervals),
+    replacedRows: asNumber(value.replaced_rows),
+    replacedIntervals: asNumber(value.replaced_intervals),
+    identicalRows: asNumber(value.identical_rows),
+    approvedRegisters: asNumber(value.approved_registers),
+    blockedDuringCommit: asNumber(value.blocked_during_commit),
+    remainingRows: asNumber(value.remaining_rows),
+  };
 }

@@ -355,7 +355,7 @@ export function WorkingTimeEntryBoard({
                   role="gridcell"
                   type="button"
                 >
-                  <time>{slot % 6 === 0 ? label : ''}</time><span />
+                  <time>{slot % 2 === 0 ? `${label.slice(0, 2)}h` : ''}</time><span />
                 </button>
               );
             })}

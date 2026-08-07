@@ -31,8 +31,11 @@ describe('WorkingTimeImportWizard', () => {
     vi.mocked(fetchWorkingTimeImportPeople).mockResolvedValue([{ id: 9, name: 'Alexandre ROUPSARD', functionLabel: 'Marin' }]);
     vi.mocked(sha256WorkingTimeImportFile).mockResolvedValue('a'.repeat(64));
     vi.mocked(createWorkingTimeImportBatchAndUpload).mockResolvedValue({ batchId: 42, storageBucket: 'working-time-imports', storagePath: '1/user/42/file.xlsm' });
-    vi.mocked(previewWorkingTimeImport).mockResolvedValue({ batchId: 42, status: 'preview_ready', summary: { totalRows: 1, readyRows: 1, excludedRows: 0, duplicateRows: 0, inconsistentRows: 0, blockedRows: 0, reportedWorkSeconds: 7200, effectiveWorkSeconds: 7200 }, rows: [{ id: 1, localWorkDate: '2026-01-01', effectiveWorkSeconds: 7200, vesselName: 'GOURY', watchGroup: 'Bordée 1', status: 'ready', issueCodes: [] }] });
-    vi.mocked(commitWorkingTimeImport).mockResolvedValue({ totalRows: 1, readyRows: 1, excludedRows: 0, duplicateRows: 0, inconsistentRows: 0, blockedRows: 0, reportedWorkSeconds: 7200, effectiveWorkSeconds: 7200 });
+    vi.mocked(previewWorkingTimeImport).mockResolvedValue({ batchId: 42, status: 'preview_ready', summary: { totalRows: 1, readyRows: 1, replacementRows: 0, excludedRows: 0, duplicateRows: 0, inconsistentRows: 0, blockedRows: 0, reportedWorkSeconds: 7200, effectiveWorkSeconds: 7200 }, rows: [{ id: 1, localWorkDate: '2026-01-01', effectiveWorkSeconds: 7200, vesselName: 'GOURY', watchGroup: 'Bordée 1', status: 'ready', issueCodes: [] }] });
+    vi.mocked(commitWorkingTimeImport).mockResolvedValue({
+      importedRows: 1, importedIntervals: 1, replacedRows: 0, replacedIntervals: 0,
+      identicalRows: 0, approvedRegisters: 1, blockedDuringCommit: 0, remainingRows: 0,
+    });
   });
 
   it('requires an explicit server preview before the final import', async () => {
@@ -49,12 +52,31 @@ describe('WorkingTimeImportWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' }));
     await screen.findByText('Prête');
     expect(createWorkingTimeImportBatchAndUpload).toHaveBeenCalledTimes(1);
-    expect(previewWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ personId: 9 }));
+    expect(previewWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      personId: 9, replaceExistingDays: false, replacementReason: 'Remplacement par le registre XLSM approuvé',
+    }));
     expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
     await waitFor(() => expect(commitWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), 42));
-    expect(screen.getByText(/1 journée\(s\) importée\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText(/1 journée\(s\) approuvée\(s\) importée\(s\)/)).toBeInTheDocument();
+  });
+
+  it('requires an audit reason before replacing a different existing day', async () => {
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Remplacer les journées existantes différentes/ }));
+    const reason = screen.getByLabelText('Motif d’audit');
+    fireEvent.change(reason, { target: { value: 'Registre annuel approuvé par l’armement' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' }));
+
+    await waitFor(() => expect(previewWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      replaceExistingDays: true,
+      replacementReason: 'Registre annuel approuvé par l’armement',
+    })));
   });
 
   it('allows the server control when declared totals differ from detected phases', async () => {
@@ -71,7 +93,7 @@ describe('WorkingTimeImportWizard', () => {
     vi.mocked(previewWorkingTimeImport).mockResolvedValueOnce({
       batchId: 42,
       status: 'preview_ready',
-      summary: { totalRows: 1, readyRows: 0, excludedRows: 0, duplicateRows: 0, inconsistentRows: 1, blockedRows: 0, reportedWorkSeconds: 9000, effectiveWorkSeconds: 0 },
+      summary: { totalRows: 1, readyRows: 0, replacementRows: 0, excludedRows: 0, duplicateRows: 0, inconsistentRows: 1, blockedRows: 0, reportedWorkSeconds: 9000, effectiveWorkSeconds: 0 },
       rows: [{ id: 1, localWorkDate: '2026-01-01', effectiveWorkSeconds: 7200, vesselName: 'GOURY', watchGroup: 'Bordée 1', status: 'inconsistent', issueCodes: ['total_mismatch'] }],
     });
     render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(mismatchWorkbook)} roles={['admin']} />);

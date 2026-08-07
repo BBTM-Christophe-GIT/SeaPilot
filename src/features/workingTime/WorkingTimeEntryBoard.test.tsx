@@ -73,6 +73,8 @@ describe('WorkingTimeEntryBoard', () => {
     render(<Harness />);
 
     expect(screen.getAllByRole('gridcell')).toHaveLength(48);
+    expect(screen.getByText('00h')).toBeInTheDocument();
+    expect(screen.getByText('23h')).toBeInTheDocument();
     await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalled());
     expect(await screen.findByText('4 h 00', { selector: '.working-time-guidance-summary > strong' })).toBeInTheDocument();
     expect(screen.getByText('Politique datée')).toBeInTheDocument();

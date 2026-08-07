@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
+  discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   transitionWorkingTimeRegister,
@@ -17,6 +18,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
   return {
     ...original,
     getOrCreateWorkingTimeRegister: vi.fn(),
+    discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
     voidWorkingTimeInterval: vi.fn(),
     saveWorkingTimeDayComment: vi.fn().mockResolvedValue(1),
@@ -31,6 +33,10 @@ const reload = vi.fn().mockResolvedValue(true);
 function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], personId = 10): WorkingTimeWorkspace {
   return {
     currentPersonId: 10,
+    readablePeople: [
+      { personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', isSelf: true },
+      { personId: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', isSelf: false },
+    ],
     editablePeople: [
       { personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', isSelf: true },
       { personId: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', isSelf: false },
@@ -41,9 +47,9 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
       personId,
       personName: personId === 10 ? 'Camille CAPITAINE' : 'Alex MARIN',
       functionLabel: personId === 10 ? 'Capitaine' : 'Matelot',
-      periodKind: 'weekly',
-      periodStart: '2026-08-03',
-      periodEnd: '2026-08-09',
+      periodKind: 'monthly',
+      periodStart: '2026-08-01',
+      periodEnd: '2026-08-31',
       status,
       workRestPolicyId: 1,
     }],
@@ -101,12 +107,11 @@ describe('WorkingTimeWorkflowPanel', () => {
     reload.mockResolvedValue(true);
   });
 
-  it('explains that an unlinked administrator can still use the import assistant', () => {
+  it('lets an unlinked administrator browse the catalogue while keeping mutations protected', () => {
     vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: null, isLoading: false, errorMessage: null, reload });
     render(<WorkingTimeWorkflowPanel client={client} currentPerson={null} previewMode range={{ start: '2026-08-01', end: '2026-08-31' }} roles={['admin']} />);
 
-    expect(screen.getByText(/association est nécessaire uniquement pour saisir, signer ou valider vos propres heures/)).toBeInTheDocument();
-    expect(screen.getByText(/L’import administrateur reste disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/Vous pouvez consulter et rechercher tous les registres/)).toBeInTheDocument();
   });
 
   it('requires explicit profile-signature consent before the subject submits', async () => {
@@ -131,7 +136,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['admin'], data);
 
     expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ouvrir le registre' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ouvrir ce mois' })).toBeDisabled();
     expect(screen.getByText(/Aucune fiche RH n’est accessible/)).toBeInTheDocument();
     expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
   });
@@ -141,6 +146,34 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
+  });
+
+  it('shows one catalogue card per sailor even when legacy weekly and monthly registers overlap', () => {
+    const data = workspace('draft', 20);
+    data.registers.push({
+      ...data.registers[0],
+      id: 101,
+      periodKind: 'weekly',
+      periodStart: '2026-08-03',
+      periodEnd: '2026-08-09',
+    });
+    renderPanel(['admin'], data);
+
+    expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(2);
+    expect(screen.getByRole('navigation', { name: 'Registres accessibles' })).toHaveTextContent('Alex MARIN');
+    expect(screen.getByRole('navigation', { name: 'Registres accessibles' }).textContent?.match(/Alex MARIN/g)).toHaveLength(1);
+  });
+
+  it('discards an unsigned draft from its card without saving its changes', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderPanel(['admin'], workspace('draft', 20));
+
+    await user.click(screen.getByRole('button', { name: /Supprimer le brouillon de Alex MARIN/ }));
+
+    expect(discardWorkingTimeDraft).toHaveBeenCalledWith(client, 100);
+    expect(reload).toHaveBeenCalled();
+    expect(screen.getByText(/retiré sans enregistrer ses modifications/)).toBeInTheDocument();
   });
 
   it('shows separation of duties and never offers self-validation to a captain', () => {

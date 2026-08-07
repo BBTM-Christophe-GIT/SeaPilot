@@ -1,10 +1,14 @@
 begin;
 
-select plan(62);
+select plan(72);
 
 select has_function(
   'public', 'working_time_entry_context', array['date', 'date'],
   'the workflow exposes a server-authorized entry context'
+);
+select has_function(
+  'public', 'refresh_working_time_notifications', array['date'],
+  'management can idempotently refresh monthly work/rest notifications'
 );
 select has_function(
   'public', 'get_or_create_working_time_register', array['bigint', 'text', 'date'],
@@ -76,7 +80,8 @@ values
   ('79000000-0000-0000-0000-000000000003', 'workflow-sailor@example.invalid'),
   ('79000000-0000-0000-0000-000000000004', 'workflow-armement@example.invalid'),
   ('79000000-0000-0000-0000-000000000005', 'workflow-admin@example.invalid'),
-  ('79000000-0000-0000-0000-000000000006', 'workflow-direction@example.invalid');
+  ('79000000-0000-0000-0000-000000000006', 'workflow-direction@example.invalid'),
+  ('79000000-0000-0000-0000-000000000007', 'workflow-unlinked-admin@example.invalid');
 
 insert into public.profiles (id, email, display_name, active_company_id)
 select fixture.id, fixture.email, fixture.display_name, company.id
@@ -87,7 +92,8 @@ from (
     ('79000000-0000-0000-0000-000000000003'::uuid, 'workflow-sailor@example.invalid', 'Marin Workflow'),
     ('79000000-0000-0000-0000-000000000004'::uuid, 'workflow-armement@example.invalid', 'Armement Workflow'),
     ('79000000-0000-0000-0000-000000000005'::uuid, 'workflow-admin@example.invalid', 'Admin Workflow'),
-    ('79000000-0000-0000-0000-000000000006'::uuid, 'workflow-direction@example.invalid', 'Direction Workflow')
+    ('79000000-0000-0000-0000-000000000006'::uuid, 'workflow-direction@example.invalid', 'Direction Workflow'),
+    ('79000000-0000-0000-0000-000000000007'::uuid, 'workflow-unlinked-admin@example.invalid', 'Admin sans fiche RH')
 ) fixture(id, email, display_name)
 cross join public.companies company
 where company.code = 'bbtm';
@@ -101,7 +107,8 @@ from (
     ('79000000-0000-0000-0000-000000000003'::uuid, 'marin'),
     ('79000000-0000-0000-0000-000000000004'::uuid, 'armement'),
     ('79000000-0000-0000-0000-000000000005'::uuid, 'admin'),
-    ('79000000-0000-0000-0000-000000000006'::uuid, 'direction')
+    ('79000000-0000-0000-0000-000000000006'::uuid, 'direction'),
+    ('79000000-0000-0000-0000-000000000007'::uuid, 'admin')
 ) fixture(user_id, role_key)
 cross join public.companies company
 where company.code = 'bbtm';
@@ -122,6 +129,20 @@ from (
 ) fixture(user_id, first_name, last_name, function_label, sailor_number)
 cross join public.companies company
 where company.code = 'bbtm';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000007', true);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-01', '2026-09-30')->'readable_people'),
+  6,
+  'an unlinked administrator can browse the complete HR register catalogue'
+);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-01', '2026-09-30')->'editable_people'),
+  0,
+  'an unlinked administrator does not receive a mutation scope'
+);
+reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
@@ -283,6 +304,11 @@ select is(
   jsonb_array_length(public.working_time_entry_context('2026-09-21', '2026-09-27')->'editable_people'),
   0,
   'direction remains read-only and receives no entry scope'
+);
+select is(
+  jsonb_array_length(public.working_time_entry_context('2026-09-21', '2026-09-27')->'readable_people'),
+  6,
+  'direction can browse every sailor as one register catalogue entry'
 );
 select throws_ok(
   $$select public.get_or_create_working_time_register(
@@ -529,6 +555,38 @@ select ok(
   ),
   'the structured response never cancels the server non-compliance'
 );
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000005', true);
+select ok(
+  exists (select 1 from public.planning_notifications where notification_type = 'working_time_non_compliance'),
+  'administrators receive work/rest non-compliance notifications'
+);
+select is(
+  (select count(*)::integer from public.planning_notifications where recipient_user_id <> auth.uid()),
+  0,
+  'notification RLS hides alerts belonging to other recipients'
+);
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000006', true);
+select ok(
+  exists (select 1 from public.planning_notifications where notification_type = 'working_time_non_compliance'),
+  'direction receives work/rest non-compliance notifications'
+);
+select lives_ok(
+  $$select public.refresh_working_time_notifications('2026-09-01')$$,
+  'direction can refresh the monthly work/rest notification inbox'
+);
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000004', true);
+select ok(
+  exists (select 1 from public.planning_notifications where notification_type = 'working_time_non_compliance'),
+  'armement receives work/rest non-compliance notifications'
+);
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
+select is(
+  (select count(*)::integer from public.planning_notifications where notification_type = 'working_time_non_compliance'),
+  0,
+  'sailors do not receive management-only work/rest alerts'
+);
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
 select throws_ok(
   $$update public.working_time_intervals
     set comment = 'Tentative après validation'
