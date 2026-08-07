@@ -216,7 +216,11 @@ export function WorkingTimeWorkflowPanel({
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = roles.includes('capitaine');
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
-  const canEdit = selectedRegister?.status === 'draft' || selectedRegister?.status === 'reopened';
+  const canEdit = Boolean(
+    selectedRegister
+      && (selectedRegister.status === 'draft' || selectedRegister.status === 'reopened')
+      && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId),
+  );
 
   const nonCompliantDates = useMemo(() => {
     if (!workspace || !selectedRegister) return [];
@@ -266,7 +270,7 @@ export function WorkingTimeWorkflowPanel({
     if (!workspace) return;
     setPersonId((current) => current && visibleEditablePeople.some((person) => person.personId === current)
       ? current
-      : visibleEditablePeople[0]?.personId || currentPerson?.id || null);
+      : visibleEditablePeople[0]?.personId || null);
     setSelectedRegisterId((current) => {
       if (current && visibleRegisters.some((register) => register.id === current)) return current;
       return visibleRegisters.find((register) => register.personId === workspace.currentPersonId)?.id
@@ -405,7 +409,8 @@ export function WorkingTimeWorkflowPanel({
         <>
           <div className="working-time-register-create">
             <label>Personne
-              <select onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
+              <select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
+                {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
                 {visibleEditablePeople.map((person) => (
                   <option key={person.personId} value={person.personId}>
                     {formatPerson(person.firstName, person.lastName)}{person.isSelf ? ' — moi' : ''}
@@ -433,6 +438,7 @@ export function WorkingTimeWorkflowPanel({
               <Plus aria-hidden="true" size={17} /> Ouvrir le registre
             </button>
           </div>
+          {!visibleEditablePeople.length ? <p className="working-time-message is-warning">Aucune fiche RH n’est accessible en saisie pour votre rôle et cette période.</p> : null}
 
           <div className="working-time-workspace-grid">
             <nav aria-label="Registres accessibles" className="working-time-register-list">

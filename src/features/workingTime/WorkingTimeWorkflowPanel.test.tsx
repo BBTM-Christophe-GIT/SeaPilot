@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
+  getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   transitionWorkingTimeRegister,
 } from './workingTimeQueries';
@@ -122,6 +123,24 @@ describe('WorkingTimeWorkflowPanel', () => {
       registerId: 100,
       action: 'sailor_sign',
     });
+  });
+
+  it('does not retain a hidden person id when the server exposes no editable HR person', () => {
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    renderPanel(['admin'], data);
+
+    expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ouvrir le registre' })).toBeDisabled();
+    expect(screen.getByText(/Aucune fiche RH n’est accessible/)).toBeInTheDocument();
+    expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
+  });
+
+  it('lets management prepare a draft when the server exposes the HR person', () => {
+    renderPanel(['admin'], workspace('draft', 20));
+
+    expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toHaveTextContent('Alex MARIN');
+    expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
   });
 
   it('shows separation of duties and never offers self-validation to a captain', () => {

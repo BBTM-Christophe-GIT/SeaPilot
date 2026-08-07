@@ -1,5 +1,5 @@
 export const WORKING_TIME_XLSM_MIME = 'application/vnd.ms-excel.sheet.macroEnabled.12';
-export const WORKING_TIME_XLSM_PARSER_VERSION = 'seapilot-xlsm-v1';
+export const WORKING_TIME_XLSM_PARSER_VERSION = 'seapilot-xlsm-v2';
 
 export interface WorkingTimeImportPhase {
   startMinute: number;
