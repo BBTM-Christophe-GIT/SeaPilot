@@ -79,6 +79,22 @@ describe('WorkingTimeImportWizard', () => {
     })));
   });
 
+  it('replaces the previous control success with an actionable validation error', async () => {
+    vi.mocked(commitWorkingTimeImport).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' }));
+    await screen.findByText(/Contrôle serveur terminé/);
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+
+    expect(await screen.findByText(/La validation de l’import a dépassé le délai serveur/)).toBeInTheDocument();
+    expect(screen.queryByText(/Contrôle serveur terminé/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeEnabled();
+  });
+
   it('allows the server control when declared totals differ from detected phases', async () => {
     const mismatchWorkbook: WorkingTimeImportWorkbook = {
       ...workbook,

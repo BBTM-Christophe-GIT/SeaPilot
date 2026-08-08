@@ -692,6 +692,7 @@ export async function transitionWorkingTimeRegister(
 }
 
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
+  ['canceling statement due to statement timeout', 'La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.'],
   ['WORKING_TIME_IMPORT_PERMISSION_DENIED', 'Seuls l’administrateur et l’armement peuvent importer un registre XLSM.'],
   ['WORKING_TIME_IMPORT_XLSM_REQUIRED', 'Le fichier source doit être un classeur annuel XLSM.'],
   ['WORKING_TIME_IMPORT_MIME_INVALID', 'Le type du fichier XLSM n’est pas valide.'],

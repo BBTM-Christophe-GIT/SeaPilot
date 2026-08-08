@@ -211,6 +211,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     if (!batchId || !canCommit) return;
     setBusy(true);
     setError('');
+    setSuccess('');
     try {
       const summary = await commitWorkingTimeImport(client, batchId);
       setSuccess(`${summary.importedRows} journée(s) approuvée(s) importée(s), dont ${summary.replacedRows} remplacée(s). ${summary.identicalRows} journée(s) strictement identique(s) conservée(s) sans nouvel import.`);

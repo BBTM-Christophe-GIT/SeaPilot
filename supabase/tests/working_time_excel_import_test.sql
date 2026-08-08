@@ -1,6 +1,6 @@
 begin;
 
-select plan(44);
+select plan(50);
 
 select has_table('public', 'working_time_import_batches', 'annual XLSM import batches are audited');
 select has_table('public', 'working_time_import_rows', 'detected and corrected import rows are retained');
@@ -336,6 +336,86 @@ select throws_ok(
   '55000', null, 'an imported batch cannot be committed twice'
 );
 
+select set_config(
+  'test.import.annual_batch_id',
+  (public.working_time_import_upload_context(
+    'Alexandre ROUPSARD - 2027.xlsm',
+    'application/vnd.ms-excel.sheet.macroEnabled.12',
+    370759,
+    repeat('b', 64)
+  )->>'batch_id'),
+  true
+);
+reset role;
+
+insert into storage.objects (bucket_id, name, metadata)
+select source_storage_bucket, source_storage_path,
+       jsonb_build_object('mimetype', source_mime_type, 'size', source_file_size_bytes)
+from public.working_time_import_batches
+where id = current_setting('test.import.annual_batch_id')::bigint;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  format(
+    'select public.preview_working_time_import(%s, %s, 2027, %L, %L, %L, %L::jsonb, %L::jsonb)',
+    current_setting('test.import.annual_batch_id')::bigint,
+    (select id from public.people where sailor_number = 'IMP-MARIN'),
+    'Europe/Paris',
+    'Alexandre ROUPSARD',
+    'seapilot-xlsm-v2',
+    '{"macro_present":true,"macro_execution":"disabled"}',
+    (
+      select jsonb_agg(jsonb_build_object(
+        'sheet', to_char(day_value, 'TMMonth'),
+        'row', 10 + day_offset,
+        'date', day_value,
+        'detected_phases', '[{"start_minute":0,"end_minute":120},{"start_minute":480,"end_minute":720},{"start_minute":1080,"end_minute":1200}]'::jsonb,
+        'phases', '[{"start_minute":0,"end_minute":120},{"start_minute":480,"end_minute":720},{"start_minute":1080,"end_minute":1200}]'::jsonb,
+        'reported_work_seconds', 28800,
+        'vessel_name', 'IMPORT VESSEL',
+        'imo_number', '9213870'
+      ) order by day_value)
+      from (
+        select day_offset, '2027-01-01'::date + day_offset as day_value
+        from generate_series(0, 103) day_offset
+      ) annual_days
+    )
+  ),
+  'the server previews a 104-day annual workbook in one request'
+);
+select is(
+  (select (preview_summary->>'ready_rows')::integer
+   from public.working_time_import_batches
+   where id = current_setting('test.import.annual_batch_id')::bigint),
+  104,
+  'all 104 annual source days are ready before commit'
+);
+select set_config('test.import.commit_started_at', clock_timestamp()::text, true);
+select lives_ok(
+  $$select public.commit_working_time_import(current_setting('test.import.annual_batch_id')::bigint)$$,
+  'the approved 104-day workbook commits without a statement timeout'
+);
+select ok(
+  clock_timestamp() - current_setting('test.import.commit_started_at')::timestamptz < interval '8 seconds',
+  'batched rolling-window recalculation keeps the annual commit below the authenticated timeout budget'
+);
+select is(
+  (select count(*)::integer from public.working_time_import_rows
+   where batch_id = current_setting('test.import.annual_batch_id')::bigint and status = 'imported'),
+  104,
+  'the annual commit imports every approved day atomically'
+);
+select ok(
+  exists (
+    select 1 from public.working_time_calculation_windows calculation
+    join public.people person on person.id = calculation.person_id
+    where person.sailor_number = 'IMP-MARIN'
+      and calculation.local_window_end_date >= '2027-01-01'
+  ),
+  'authoritative rolling windows are rebuilt after the deferred annual import'
+);
+
 reset role;
 insert into public.working_time_registers (
   company_id, person_id, period_kind, period_start, period_end, status, created_by
@@ -371,7 +451,7 @@ select is(
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000003', true);
 select is((select count(*)::integer from public.working_time_import_batches), 0, 'a sailor cannot read import audit batches through RLS');
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000002', true);
-select is((select count(*)::integer from public.working_time_import_batches), 1, 'armement can review the company import audit');
+select is((select count(*)::integer from public.working_time_import_batches), 2, 'armement can review the company import audit');
 
 select * from finish();
 rollback;

@@ -225,5 +225,7 @@ describe('working-time workflow queries', () => {
       .toBe('Un capitaine ne peut pas valider son propre registre.');
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.')))
       .toBe('Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.');
+    expect(workingTimeErrorMessage(new Error('canceling statement due to statement timeout')))
+      .toBe('La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.');
   });
 });

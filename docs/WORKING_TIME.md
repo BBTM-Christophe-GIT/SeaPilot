@@ -40,9 +40,11 @@ Le parcours est volontairement séparé en dépôt privé, détection, aperçu, 
 
 Pour les imports historiques BBTM, le total journalier déclaré dans le XLSM est la source de vérité métier. Dans le modèle annuel, les deux cellules d’en-tête `00h` sont les bornes de la frise : les 48 demi-heures sont lues de la cellule suivant le premier `00h` jusqu’à la cellule du second `00h` incluse. Ce repérage évite de décaler toutes les phases de 30 minutes et conserve correctement la dernière demi-heure se terminant à `24:00`. Tout écart résiduel avec le total déclaré reste `inconsistent` jusqu’à correction.
 
-Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée déjà validée, soumise ou déjà saisie n’est jamais remplacée.
+Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée strictement identique est conservée sans nouvel intervalle. Une journée différente peut remplacer l’existant lorsque l’option dédiée et son motif d’audit ont été confirmés ; les anciennes valeurs restent historisées.
 
-Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. La migration à appliquer est `20260804224824_working_time_excel_import.sql`.
+La validation d’un lot annuel diffère les recalculs des fenêtres glissantes pendant l’insertion, puis reconstruit une seule fois les calculs autoritatifs de la personne avant de terminer la transaction. Le RPC de validation dispose d’un délai ciblé de 60 secondes, sans modifier les limites globales des autres requêtes. Si la transaction expire malgré tout, aucune journée partielle n’est conservée et l’interface propose de relancer la validation.
+
+Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. Les migrations d’import sont `20260804224824_working_time_excel_import.sql`, `20260807002926_working_time_replace_validated_days_discard_drafts.sql` et `20260808113643_working_time_batch_import_timeout.sql`.
 
 Les écarts résiduels entre total déclaré et demi-heures détectées sont des avertissements avant contrôle : ils n’empêchent
 pas de lancer l’analyse serveur. Ils deviennent des lignes `inconsistent` qui doivent être corrigées avant la validation finale. Le bucket accepte les deux casses équivalentes du type MIME XLSM produites par les
@@ -58,7 +60,7 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
 | Droits Marin/Capitaine/Admin, auto-validation interdite | `working_time_workflow_permissions_test.sql` |
 | Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
-| RLS/RPC et non-écrasement d’une journée validée | `working_time_excel_import_test.sql` |
+| RLS/RPC, remplacement audité et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
 | PDF avec les deux signatures figées | `workingTimePdf.test.ts` |
