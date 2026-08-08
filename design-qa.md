@@ -115,3 +115,34 @@ final result: passed
 - Erreurs de console observées pendant le chargement et la vérification : aucune.
 
 final result: passed
+
+---
+
+# Design QA — Suivi du temps de travail v3.12.17
+
+## Résultat
+
+**Bloqué pour la comparaison visuelle automatisée.** La page locale répond correctement sur `/modules/workingTime?preview=1`, mais la connexion au navigateur de contrôle Codex n’a pas abouti après plusieurs tentatives. Il n’a donc pas été possible de produire la capture du prototype nécessaire à une comparaison côte à côte avec la référence `C:/Users/chris/Downloads/f51565b6-4814-4c2c-85ad-2d59516e279a.png`.
+
+## Contrôles exécutés
+
+- Référence et consignes de la pièce jointe relues intégralement.
+- Route locale vérifiée avec une réponse HTTP `200`.
+- Structure DOM couverte par les tests : barre de commandes, catalogue groupé, calendrier mensuel, 48 demi-heures, analyse automatique, conformité, historique et filtres.
+- Régression couverte : deux phases importées pour une même journée, y compris lorsqu’elles proviennent de registres historiques distincts.
+- Points de rupture CSS relus pour ordinateur, écran intermédiaire et tablette/mobile (`1450 px`, `1050 px`, `760 px`).
+- Accessibilité vérifiée par rôles et libellés dans les tests Testing Library.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun écart fonctionnel détecté par les tests automatisés.
+- P1 : aucun écart structurel détecté par la revue DOM/CSS.
+- P2 : état visuel non qualifiable sans capture rendue ; une recette visuelle reste requise dès que le navigateur de contrôle est de nouveau disponible.
+
+## États à reprendre visuellement
+
+1. écran 1366 × 768 avec Pierre AUGUIN, août 2026, journée du 3 août sélectionnée ;
+2. frise affichant `10:00–12:30` et `13:30–18:00` ;
+3. filtre personnel actif/sorti et accordéons de services ;
+4. tablette paysage ;
+5. historique ouvert et export PDF déclenché.

@@ -4,6 +4,12 @@ Le module `/modules/workingTime` conserve les intervalles horodatés comme sourc
 
 Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le marin et le capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. La signature du titulaire demeure obligatoirement explicite et l’auto-validation d’un capitaine reste interdite.
 
+## Cockpit mensuel
+
+L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel actif et le personnel sorti ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
+
+Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
+
 ## Saisie multi-périodes
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
@@ -13,6 +19,8 @@ Chaque clic-glissé ajoute immédiatement une période à la sélection. Les pé
 ## Exports mensuels
 
 Le PDF est généré à la demande dans le navigateur et n’est pas conservé par SeaPilot. Il comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées.
+
+Les bibliothèques PDF sont préchargées avec la page du module afin d’éviter un téléchargement différé vers un ancien fichier haché après déploiement. Si Vite détecte malgré tout un module préchargé devenu obsolète, SeaPilot effectue une unique actualisation de récupération avant de rendre l’erreur à l’utilisateur.
 
 ## Exposition HSE / IMCA
 
@@ -64,3 +72,4 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
 | PDF avec les deux signatures figées | `workingTimePdf.test.ts` |
+| Consolidation de deux créneaux importés issus de registres historiques différents | `WorkingTimeWorkflowPanel.test.tsx` |

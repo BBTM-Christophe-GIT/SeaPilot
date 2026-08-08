@@ -116,11 +116,10 @@ describe('WorkingTimeWorkflowPanel', () => {
 
   it('requires explicit profile-signature consent before the subject submits', async () => {
     const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPanel(['capitaine'], workspace('awaiting_sailor_signature'));
 
     const submitButton = screen.getByRole('button', { name: 'Signer et soumettre' });
-    expect(submitButton).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: /J’appose explicitement/ }));
     expect(submitButton).toBeEnabled();
     await user.click(submitButton);
 
@@ -130,20 +129,24 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
   });
 
-  it('does not retain a hidden person id when the server exposes no editable HR person', () => {
+  it('does not retain a hidden person id when the server exposes no editable HR person', async () => {
+    const user = userEvent.setup();
     const data = workspace('draft', 20);
     data.editablePeople = [];
     renderPanel(['admin'], data);
 
+    await user.click(screen.getByRole('button', { name: 'Ouvrir un registre' }));
     expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ouvrir ce mois' })).toBeDisabled();
     expect(screen.getByText(/Aucune fiche RH n’est accessible/)).toBeInTheDocument();
     expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
   });
 
-  it('lets management prepare a draft when the server exposes the HR person', () => {
+  it('lets management prepare a draft when the server exposes the HR person', async () => {
+    const user = userEvent.setup();
     renderPanel(['admin'], workspace('draft', 20));
 
+    await user.click(screen.getByRole('button', { name: 'Ouvrir un registre' }));
     expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
   });
@@ -162,6 +165,28 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(2);
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' }).textContent?.match(/Alex MARIN/g)).toHaveLength(1);
+  });
+
+  it('consolidates every imported interval for the sailor and month, including legacy registers', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.intervals[0] = {
+      ...data.intervals[0],
+      startsAt: '2026-08-03T08:00:00Z',
+      endsAt: '2026-08-03T10:30:00Z',
+    };
+    data.intervals.push({
+      ...data.intervals[0],
+      id: 201,
+      registerId: 101,
+      startsAt: '2026-08-03T11:30:00Z',
+      endsAt: '2026-08-03T16:00:00Z',
+    });
+    renderPanel(['admin'], data);
+
+    await user.click(screen.getByRole('tab', { name: /lun03 août/ }));
+    expect(screen.getByRole('gridcell', { name: /10:00, travail enregistré/ })).toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: /13:30, travail enregistré/ })).toBeInTheDocument();
   });
 
   it('discards an unsigned draft from its card without saving its changes', async () => {
@@ -209,14 +234,14 @@ describe('WorkingTimeWorkflowPanel', () => {
     }];
     renderPanel(['capitaine'], data);
 
-    expect(screen.getByRole('button', { name: 'Contrôler et valider le registre' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
     expect(screen.getByText(/Réponses de non-conformité incomplètes : 2026-08-03/)).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Catégorie de cause'), 'safety_emergency');
     await user.type(screen.getByLabelText('Contexte opérationnel'), 'Opération de sécurité prolongée.');
     await user.type(screen.getByLabelText('Action immédiate'), 'Relève organisée.');
     await user.type(screen.getByLabelText('Repos compensateur prévu'), 'Repos planifié demain.');
     await user.type(screen.getByLabelText('Commentaire obligatoire'), 'Écart documenté par le capitaine.');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la réponse' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
 
     expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
       registerId: 100,
@@ -231,13 +256,12 @@ describe('WorkingTimeWorkflowPanel', () => {
 
   it('locks validated data and requires a reason before reopening', async () => {
     const user = userEvent.setup();
+    vi.spyOn(window, 'prompt').mockReturnValue('Correction demandée');
     renderPanel(['armement'], workspace('validated', 20));
 
     expect(screen.getByText(/heures et commentaires sont verrouillés/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
     const reopenButton = screen.getByRole('button', { name: 'Réouvrir' });
-    expect(reopenButton).toBeDisabled();
-    await user.type(screen.getByLabelText('Motif obligatoire'), 'Correction demandée');
     await user.click(reopenButton);
 
     expect(transitionWorkingTimeRegister).toHaveBeenCalledWith(client, {

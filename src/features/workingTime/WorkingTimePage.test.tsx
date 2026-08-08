@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
@@ -63,7 +63,6 @@ describe('WorkingTimePage', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Suivi du Temps de Travail' })).toBeInTheDocument();
-    expect(screen.getByText(/planning_work_rest_policies/)).toBeInTheDocument();
     expect(screen.getByTestId('work-rest-surface')).toBeInTheDocument();
     expect(screen.getByTestId('workflow-surface')).toBeInTheDocument();
     expect(screen.getByTestId('hse-kpi-surface')).toBeInTheDocument();
@@ -100,15 +99,25 @@ describe('WorkingTimePage', () => {
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
   });
 
-  it('switches complete calendar months and refreshes the shared planning overview', () => {
+  it('switches complete calendar months and refreshes both workspaces from the command bar callbacks', async () => {
     renderPage();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Actualiser le suivi' }));
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    await act(async () => { await commandProps?.onRefresh?.(); });
     expect(reload).toHaveBeenCalledTimes(1);
-
-    fireEvent.change(screen.getByLabelText('Mois et année affichés'), { target: { value: '2026-09' } });
+    act(() => commandProps?.onMonthChange?.(1));
     expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({
       range: { start: '2026-09-01', end: '2026-09-30' },
     }), undefined);
+  });
+
+  it('refreshes the working-time workspace immediately after an XLSM import', async () => {
+    renderPage();
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({ refreshToken: 0 }), undefined);
+    const importProps = vi.mocked(WorkingTimeImportWizard).mock.calls.at(-1)?.[0];
+
+    await act(async () => { await importProps?.onImported?.(); });
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({ refreshToken: 1 }), undefined);
   });
 });

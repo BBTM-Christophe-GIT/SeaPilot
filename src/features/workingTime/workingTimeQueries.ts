@@ -18,6 +18,9 @@ interface EditablePersonRow {
   first_name?: string;
   last_name?: string;
   function_label?: string;
+  grade_label?: string;
+  departed_on?: string | null;
+  active?: boolean;
   is_self?: boolean;
 }
 
@@ -129,6 +132,9 @@ export interface WorkingTimeEditablePerson {
   firstName: string;
   lastName: string;
   functionLabel: string;
+  gradeLabel?: string;
+  departedOn?: string | null;
+  active?: boolean;
   isSelf: boolean;
 }
 
@@ -470,6 +476,9 @@ export async function fetchWorkingTimeWorkspace(
     firstName: String(person.first_name || ''),
     lastName: String(person.last_name || ''),
     functionLabel: String(person.function_label || ''),
+    gradeLabel: String(person.grade_label || ''),
+    departedOn: person.departed_on ? String(person.departed_on).slice(0, 10) : null,
+    active: person.active !== false,
     isSelf: Boolean(person.is_self),
   }));
   const editablePeople = mapPeople(context.editable_people || []);

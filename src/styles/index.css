@@ -17143,3 +17143,134 @@ button.planning-p12-conflict-card {
   .working-time-import-actions p { margin-bottom: 4px; }
   .working-time-import-actions button { justify-content: center; }
 }
+
+/* Suivi du temps de travail — cockpit mensuel compact */
+.working-time-page { max-width: 2200px; gap: 12px; }
+.working-time-workflow { position: relative; gap: 12px; padding: 0; border: 0; background: transparent; }
+.working-time-workflow > .working-time-section-heading,
+.working-time-register-create { display: none; }
+.working-time-command-bar { position: sticky; z-index: 20; top: 0; display: flex; min-width: 0; overflow: visible; border: 1px solid #d9e3ed; border-radius: 9px; background: #fff; box-shadow: 0 2px 8px rgb(21 55 84 / 4%); }
+.working-time-command-group { display: grid; min-width: 0; padding: 10px 14px 8px; border-right: 1px solid #e2e8ef; }
+.working-time-command-group:last-child { border-right: 0; }
+.working-time-command-group > span { color: #0b3275; font-size: .67rem; font-weight: 850; letter-spacing: .03em; text-transform: uppercase; }
+.working-time-command-group > div { display: flex; align-items: stretch; gap: 4px; }
+.working-time-command-group button { position: relative; display: grid; min-width: 62px; min-height: 64px; place-items: center; align-content: center; gap: 4px; padding: 7px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 6px; color: #0642b4; background: transparent; font: inherit; cursor: pointer; }
+.working-time-command-group button small { color: #103b78; font-size: .66rem; font-weight: 760; line-height: 1.15; text-align: center; }
+.working-time-command-group button:hover { background: #f2f8fa; }
+.working-time-command-group button.is-active { border-bottom-color: #078397; color: #08758b; background: #f0f7f8; }
+.working-time-command-group button:disabled { cursor: not-allowed; opacity: .42; }
+.working-time-command-group button em { position: absolute; top: 3px; right: 5px; min-width: 18px; padding: 2px 5px; border-radius: 999px; color: #fff; background: #ed314f; font-size: .6rem; font-style: normal; }
+.working-time-command-popover-anchor { position: relative; display: inline-flex; }
+.working-time-command-popover { position: absolute; z-index: 40; top: calc(100% + 7px); right: 0; display: grid; width: 230px; gap: 9px; padding: 14px; border: 1px solid #cddbe5; border-radius: 9px; color: #203a57; background: #fff; box-shadow: 0 12px 30px rgb(28 60 86 / 16%); }
+.working-time-command-popover.is-register { width: 300px; }
+.working-time-command-popover label { display: flex; align-items: center; gap: 8px; font-size: .76rem; }
+.working-time-command-popover.is-register label { display: grid; }
+.working-time-command-popover select { min-height: 38px; border: 1px solid #b9cbd7; border-radius: 7px; padding: 6px 8px; }
+.working-time-command-popover > button { min-height: 36px; border-radius: 7px; color: #fff; background: #08758b; }
+.working-time-history-drawer { position: fixed; z-index: 60; top: 78px; right: 22px; display: grid; width: min(520px, calc(100vw - 40px)); max-height: calc(100dvh - 100px); gap: 12px; overflow: auto; padding: 16px; border: 1px solid #cad9e4; border-radius: 10px; background: #fff; box-shadow: 0 20px 54px rgb(18 49 71 / 22%); }
+.working-time-history-drawer > header { display: flex; align-items: center; justify-content: space-between; }
+.working-time-history-drawer > header div { display: grid; gap: 3px; }
+.working-time-history-drawer > header span { color: #08758b; font-size: .68rem; font-weight: 850; text-transform: uppercase; }
+.working-time-history-drawer > header button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #cad9e4; border-radius: 7px; background: #fff; }
+.working-time-history-list { display: grid; border: 1px solid #dbe5ec; border-radius: 8px; }
+.working-time-history-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border-bottom: 1px solid #e6edf2; }
+.working-time-history-list article:last-child { border-bottom: 0; }
+.working-time-history-list article > div { display: grid; gap: 3px; }
+.working-time-history-list article small { color: #687b8b; }
+.working-time-history-list article > span { display: flex; gap: 5px; }
+.working-time-history-list button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #c8d7e1; border-radius: 6px; padding: 5px 7px; color: #0a6073; background: #fff; }
+.working-time-history-drawer ol { display: grid; gap: 5px; margin: 0; padding-left: 18px; font-size: .73rem; }
+.working-time-history-drawer li span { display: block; color: #687b8b; }
+.working-time-workspace-grid { grid-template-columns: 270px minmax(0, 1fr); gap: 10px; }
+.working-time-register-list { top: 94px; gap: 0; max-height: calc(100dvh - 130px); padding: 14px; border: 1px solid #d9e3ed; border-radius: 9px; background: #fff; }
+.working-time-register-list > h3 { margin: 0 0 10px; color: #12346f; font-size: .72rem; letter-spacing: .03em; text-transform: uppercase; }
+.working-time-register-search { margin-bottom: 10px; padding: 0; border: 0; background: transparent; }
+.working-time-register-search > span:last-child { border-color: #cbd8e2; }
+.working-time-crew-group { display: grid; }
+.working-time-crew-group-toggle { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; width: 100%; min-height: 38px; padding: 6px 2px; border: 0; color: #12346f; background: transparent; font: inherit; text-align: left; }
+.working-time-crew-group-toggle[aria-expanded='false'] svg { transform: rotate(-90deg); }
+.working-time-crew-group-toggle span { font-size: .78rem; }
+.working-time-crew-group-toggle strong { font-size: .72rem; }
+.working-time-crew-rows { overflow: hidden; border: 1px solid #d8e2ea; border-radius: 7px; }
+.working-time-register-card { border: 0; border-bottom: 1px solid #e0e8ee; border-radius: 0; }
+.working-time-register-card:last-child { border-bottom: 0; }
+.working-time-register-card.is-active { border-color: #e0e8ee; box-shadow: inset 4px 0 #078397; background: #f0f8fa; }
+.working-time-register-select { position: relative; gap: 3px; padding: 9px 34px 9px 11px; }
+.working-time-register-select > span { color: #18314e; font-size: .78rem; }
+.working-time-register-select > small { color: #60768a; font-size: .69rem; }
+.working-time-register-select > i { position: absolute; top: 15px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: #a4afb9; }
+.working-time-register-select > i.is-available { background: #13945f; }
+.working-time-register-discard { top: 30px; right: 3px; width: 25px; height: 25px; }
+.working-time-register-detail { grid-template-columns: minmax(0, 1fr) 210px; gap: 12px; padding: 14px; border-radius: 9px; background: #fff; }
+.working-time-register-detail > header { align-items: center; }
+.working-time-register-detail > header h3 { color: #113474; font-size: 1.15rem; }
+.working-time-register-detail > header h3 span { color: #315987; font-size: .78rem; font-weight: 500; }
+.working-time-month-title { color: #12346f; font-size: .9rem; text-transform: lowercase; }
+.working-time-register-detail > .working-time-signatures { grid-column: 2; grid-row: 2 / span 3; align-self: stretch; }
+.working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 2; padding-top: 0; border-top: 0; }
+.working-time-signatures { align-content: start; gap: 5px; padding: 12px; border: 1px solid #dce6ed; border-radius: 8px; }
+.working-time-signatures > h4 { margin: 0 0 8px; color: #12346f; font-size: .72rem; text-transform: uppercase; }
+.working-time-conformity-item { display: grid; grid-template-columns: 25px 1fr; gap: 2px 8px; padding: 10px 0; border-bottom: 1px dotted #cbd8e2; }
+.working-time-conformity-item svg { grid-row: 1 / 4; color: #0642b4; }
+.working-time-conformity-item span { color: #315987; font-size: .68rem; font-weight: 760; }
+.working-time-conformity-item strong { color: #12346f; font-size: .88rem; }
+.working-time-conformity-item small { color: #647b8d; font-size: .62rem; }
+.working-time-signature-card { min-height: 0; margin-top: 8px; padding: 9px 0; border: 0; border-radius: 0; }
+.working-time-subheading { align-items: end; }
+.working-time-subheading > div { display: grid; gap: 4px; }
+.working-time-subheading h4 { color: #12346f; font-size: 1rem; }
+.working-time-subheading > div > span { color: #12346f; font-weight: 780; }
+.working-time-entry-board { gap: 9px; padding: 0; border: 0; border-radius: 0; background: #fff; }
+.working-time-entry-heading { display: none; }
+.working-time-day-strip { gap: 3px; padding: 8px 5px; border: 1px solid #dbe5ed; border-radius: 8px; }
+.working-time-day-strip button { min-width: 43px; flex-basis: 43px; padding: 6px 4px; border: 0; border-radius: 6px; }
+.working-time-day-strip button.is-active { box-shadow: none; }
+.working-time-timeline-panel { border-radius: 8px; }
+.working-time-timeline-legend { min-height: 31px; padding: 6px 10px; }
+.working-time-timeline { padding: 23px 7px 6px; }
+.working-time-timeline button { height: 44px; }
+.working-time-timeline time { top: -17px; }
+.working-time-recommendation-panel { gap: 5px; }
+.working-time-analysis-bar { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: stretch; border: 1px solid #cedde7; border-radius: 8px; background: #f9fbfc; }
+.working-time-analysis-bar > span { display: grid; place-items: center; padding: 10px; color: #12346f; font-size: .65rem; font-weight: 850; text-transform: uppercase; }
+.working-time-analysis-bar dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; }
+.working-time-analysis-bar dl > div { display: grid; align-content: center; gap: 4px; padding: 9px 12px; border-left: 1px solid #dce5ec; }
+.working-time-analysis-bar dt { color: #315987; font-size: .63rem; }
+.working-time-analysis-bar dd { margin: 0; color: #12346f; font-size: .82rem; font-weight: 800; }
+.working-time-interval-form { padding: 12px; border: 1px solid #dce6ed; background: #fff; }
+.working-time-selection-summary > button,
+.working-time-form-actions,
+.working-time-interval-list,
+.working-time-intervals > .working-time-void-form,
+.working-time-workflow-actions,
+.working-time-non-compliance-card > button { display: none; }
+
+@media (max-width: 1450px) {
+  .working-time-command-bar { overflow-x: auto; }
+  .working-time-command-group { flex: 0 0 auto; }
+  .working-time-register-detail { grid-template-columns: minmax(0, 1fr) 190px; }
+  .working-time-register-detail > .working-time-signatures { grid-column: 2; grid-row: 2 / span 3; grid-template-columns: 1fr; }
+  .working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 2; }
+}
+@media (max-width: 1050px) {
+  .working-time-workspace-grid { grid-template-columns: 220px minmax(0, 1fr); }
+  .working-time-register-detail { grid-template-columns: 1fr; }
+  .working-time-register-detail > .working-time-signatures,
+  .working-time-register-detail > .working-time-intervals,
+  .working-time-register-detail > .working-time-non-compliance { grid-column: 1; grid-row: auto; }
+  .working-time-register-detail > .working-time-signatures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .working-time-signatures > h4 { grid-column: 1 / -1; }
+  .working-time-analysis-bar { grid-template-columns: 1fr; }
+  .working-time-analysis-bar > span { justify-content: start; }
+}
+@media (max-width: 760px) {
+  .working-time-command-bar { position: static; }
+  .working-time-command-group button { min-width: 58px; }
+  .working-time-workspace-grid { grid-template-columns: 1fr; }
+  .working-time-register-list { position: static; max-height: 330px; display: block; overflow: auto; }
+  .working-time-register-search { display: grid; }
+  .working-time-register-detail > .working-time-signatures { grid-template-columns: 1fr; }
+  .working-time-analysis-bar dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-analysis-bar dl > div { border-top: 1px solid #dce5ec; }
+  .working-time-interval-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

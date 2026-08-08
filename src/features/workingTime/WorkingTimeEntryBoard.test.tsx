@@ -76,9 +76,9 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('00h')).toBeInTheDocument();
     expect(screen.getByText('23h')).toBeInTheDocument();
     await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalled());
-    expect(await screen.findByText('4 h 00', { selector: '.working-time-guidance-summary > strong' })).toBeInTheDocument();
-    expect(screen.getByText('Politique datée')).toBeInTheDocument();
-    expect(screen.getByText('Aucun écart détecté')).toBeInTheDocument();
+    expect(await screen.findByText('4 h 00', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
+    expect(screen.getByText('Conformité repos')).toBeInTheDocument();
+    expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
   });
 
   it('supports day navigation and keyboard slot selection', async () => {

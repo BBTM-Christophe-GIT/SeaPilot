@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, RefreshCw, ShieldCheck } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -56,12 +56,12 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     [previewMode, referenceDate],
   );
   const [range, setRange] = useState(() => currentMonthRange(initialRange?.start || referenceDate));
+  const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const {
     overview,
     reload,
     hasLoaded,
     isInitialLoading,
-    isRefreshing,
     loadErrorMessage,
   } = usePlanningOverview(
     effectiveClient,
@@ -70,6 +70,13 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     !usesLivePlanning && !previewMode,
   );
   const rangeIsValid = Boolean(range.start && range.end && range.start <= range.end);
+  const changeMonth = (direction: -1 | 0 | 1) => setRange((current) => direction === 0
+    ? currentMonthRange(referenceDate)
+    : shiftMonthRange(current, direction));
+  const refreshAll = async () => {
+    setWorkspaceRefreshToken((value) => value + 1);
+    await reload();
+  };
 
   if (!permissions.canRead || !permissions.canViewWorkRest) {
     return <section className="working-time-page"><div className="admin-state">Vous n’avez pas accès au suivi du temps de travail.</div></section>;
@@ -77,31 +84,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
 
   return (
     <section className="working-time-page">
-      <header className="working-time-header">
-        <div className="working-time-heading">
-          <span className="working-time-heading-icon"><Clock3 aria-hidden="true" size={24} /></span>
-          <div>
-            <p>Ressources Humaines</p>
-            <h1>Suivi du Temps de Travail</h1>
-            <span>Contrôles de travail et de repos issus du moteur Planning P1.3.</span>
-          </div>
-        </div>
-        <div aria-label="Période analysée" className="working-time-range" role="group">
-          <button aria-label="Mois précédent" onClick={() => setRange((current) => shiftMonthRange(current, -1))} type="button"><ChevronLeft aria-hidden="true" size={18} /></button>
-          <label>Mois et année<input aria-label="Mois et année affichés" onChange={(event) => event.target.value && setRange(currentMonthRange(`${event.target.value}-01`))} type="month" value={range.start.slice(0, 7)} /></label>
-          <button aria-label="Mois suivant" onClick={() => setRange((current) => shiftMonthRange(current, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
-          <button onClick={() => setRange(currentMonthRange(referenceDate))} type="button"><CalendarDays aria-hidden="true" size={17} />Mois en cours</button>
-          <button aria-label="Actualiser le suivi" disabled={isInitialLoading || isRefreshing} onClick={() => void reload()} type="button">
-            <RefreshCw aria-hidden="true" className={isRefreshing ? 'is-spinning' : ''} size={17} />
-            Actualiser
-          </button>
-        </div>
-      </header>
-
-      <aside className="working-time-foundation-note">
-        <ShieldCheck aria-hidden="true" size={19} />
-        <p><strong>Socle partagé avec le Planning.</strong> Les politiques, seuils et calculs affichés ici sont ceux de <code>planning_work_rest_policies</code> et du moteur P1.3.</p>
-      </aside>
+      <h1 className="sr-only">Suivi du Temps de Travail</h1>
 
       {!rangeIsValid ? <p className="working-time-message is-error" role="alert">La date de fin doit être postérieure ou égale à la date de début.</p> : null}
       {loadErrorMessage ? <p className="working-time-message is-error" role="alert">{loadErrorMessage}</p> : null}
@@ -113,20 +96,23 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           currentPerson={effectiveCurrentPerson}
           previewMode={previewMode}
           range={range}
+          refreshToken={workspaceRefreshToken}
+          onMonthChange={changeMonth}
+          onRefresh={refreshAll}
           roles={effectiveRoles}
         />
       ) : null}
 
       {rangeIsValid && effectiveRoles.some((role) => role === 'admin' || role === 'armement') ? (
-        <WorkingTimeImportWizard client={effectiveClient} onImported={async () => { await reload(); }} roles={effectiveRoles} />
+        <WorkingTimeImportWizard client={effectiveClient} onImported={refreshAll} roles={effectiveRoles} />
       ) : null}
 
       {rangeIsValid && effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine') ? (
-        <WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} />
+        <div id="working-time-hse"><WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} /></div>
       ) : null}
 
       {hasLoaded && rangeIsValid ? (
-        <PlanningP13Panel
+        <div id="working-time-p13"><PlanningP13Panel
           canManageDependencies={false}
           canManageWorkRestPolicies={permissions.canManageWorkRestPolicies}
           canRefreshNotifications={canReceiveManagementAlerts}
@@ -142,7 +128,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           subtitle="Seuils administrés, contrôles sur 24 heures et 7 jours, repos consécutif, fractionnement et travail de nuit."
           title="Contrôles travail et repos"
           visibleTabs={canReceiveManagementAlerts ? WORK_REST_NOTIFICATION_TABS : WORK_REST_TAB}
-        />
+        /></div>
       ) : null}
     </section>
   );

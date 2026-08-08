@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { jsPDF } from 'jspdf';
+import { jsPDF } from 'jspdf';
+import { autoTable } from 'jspdf-autotable';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import type {
   WorkingTimeSignatureSnapshot,
@@ -172,7 +173,6 @@ export async function prepareWorkingTimePdf(
 }
 
 export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<WorkingTimeGeneratedPdf> {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const document = new jsPDF({ compress: true, format: 'a4', orientation: 'landscape', unit: 'mm' });
   const { register, workspace } = input;
   const intervals = workspace.intervals.filter((interval) => interval.personId === register.personId
