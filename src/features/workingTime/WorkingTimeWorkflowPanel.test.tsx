@@ -29,6 +29,9 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
 const client = {} as SupabaseClient;
 const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '' };
 const reload = vi.fn().mockResolvedValue(true);
+const onOpenHse = vi.fn();
+const onOpenImport = vi.fn();
+const onOpenWorkRest = vi.fn();
 
 function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], personId = 10): WorkingTimeWorkspace {
   return {
@@ -96,6 +99,9 @@ function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
       currentPerson={currentPerson}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
+      onOpenHse={onOpenHse}
+      onOpenImport={onOpenImport}
+      onOpenWorkRest={onOpenWorkRest}
       roles={roles}
     />,
   );
@@ -112,6 +118,25 @@ describe('WorkingTimeWorkflowPanel', () => {
     render(<WorkingTimeWorkflowPanel client={client} currentPerson={null} previewMode range={{ start: '2026-08-01', end: '2026-08-31' }} roles={['admin']} />);
 
     expect(screen.getByText(/Vous pouvez consulter et rechercher tous les registres/)).toBeInTheDocument();
+  });
+
+  it('uses the simplified menu and opens the three secondary cards on demand', async () => {
+    const user = userEvent.setup();
+    renderPanel(['admin'], workspace('draft', 20));
+
+    expect(screen.queryByRole('button', { name: 'Cockpit métier P1.3' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Historique' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registres' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    await user.click(screen.getByRole('button', { name: 'Exposition HSE / IMCA' }));
+    await user.click(screen.getByRole('button', { name: 'Contrôles travail et repos' }));
+    expect(onOpenImport).toHaveBeenCalledOnce();
+    expect(onOpenHse).toHaveBeenCalledOnce();
+    expect(onOpenWorkRest).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole('button', { name: 'Filtrer le personnel' }));
+    expect(screen.getByText('Personnel ancien')).toBeInTheDocument();
   });
 
   it('requires explicit profile-signature consent before the subject submits', async () => {

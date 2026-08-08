@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
-import { autoTable } from 'jspdf-autotable';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import type {
   WorkingTimeSignatureSnapshot,
@@ -38,14 +37,6 @@ const STATUS_LABELS: Record<string, string> = {
   submitted: 'Soumis au contrôle',
   validated: 'Validé',
   reopened: 'Rouvert pour correction',
-};
-
-const EVENT_LABELS: Record<string, string> = {
-  signature_requested: 'Signature demandée',
-  sailor_signed: 'Signé et soumis',
-  captain_validated: 'Validé par le capitaine',
-  reopened: 'Rouvert',
-  approved_import: 'Import XLSM approuvé',
 };
 
 const CAUSE_LABELS: Record<string, string> = {
@@ -199,7 +190,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.setTextColor(255, 255, 255);
   document.setFont('helvetica', 'bold');
   document.setFontSize(11);
-  document.text('SEAPILOT - REGISTRE MENSUEL DES HEURES DE TRAVAIL ET DE REPOS', 7, 6.8);
+  document.text('REGISTRE MENSUEL DES HEURES DE TRAVAIL ET DE REPOS', 7, 6.8);
 
   const metadata = [
     ['Marin', register.personName],
@@ -228,17 +219,42 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setFontSize(5.9);
   }
 
+  input.signatures.forEach((signature, index) => {
+    const signatureX = index === 0 ? 7 : 150;
+    const signatureY = 32;
+    document.setDrawColor(170, 191, 200);
+    document.setFillColor(250, 252, 253);
+    document.roundedRect(signatureX, signatureY, 140, 12, 1.2, 1.2, 'FD');
+    document.setTextColor(65, 93, 108);
+    document.setFont('helvetica', 'bold');
+    document.setFontSize(5.4);
+    document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 2.8);
+    if (signature.snapshot && signature.png) {
+      document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 3.7, 28, 6.5, undefined, 'FAST');
+      document.setTextColor(23, 39, 50);
+      document.setFont('helvetica', 'normal');
+      document.setFontSize(5.4);
+      document.text(fitText(document, `${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, 104), signatureX + 32, signatureY + 6.5);
+      document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 32, signatureY + 9.5);
+    } else {
+      document.setTextColor(83, 107, 121);
+      document.setFont('helvetica', 'normal');
+      document.setFontSize(5.8);
+      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 32, signatureY + 7.5);
+    }
+  });
+
   document.setTextColor(45, 58, 66);
   document.setFont('helvetica', 'normal');
   document.setFontSize(6.2);
-  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 34);
+  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 47);
   if (sourceFiles.length) {
     document.setFont('helvetica', 'bold');
-    document.text(`Source approuvée : ${fitText(document, sourceFiles.join(', '), 108)}`, 290, 34, { align: 'right' });
+    document.text(`Source approuvée : ${fitText(document, sourceFiles.join(', '), 108)}`, 290, 47, { align: 'right' });
   }
 
   const x = 7;
-  const tableTop = 37;
+  const tableTop = 50;
   const dateWidth = 10;
   const slotWidth = 2.55;
   const timelineWidth = slotWidth * 48;
@@ -248,7 +264,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   const work7Width = 36;
   const groupHeaderHeight = 5;
   const hourHeaderHeight = 9;
-  const rowHeight = 4.45;
+  const rowHeight = 4;
   const bottomHeaderHeight = 5;
   const timelineX = x + dateWidth;
   const restX = timelineX + timelineWidth;
@@ -373,134 +389,12 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.text(String(hour).padStart(2, '0'), timelineX + hour * slotWidth * 2 + slotWidth, bodyBottom + 3.3, { align: 'center' });
   }
 
-  document.addPage('a4', 'portrait');
-  let cursor = 18;
-  const ensureSpace = (height: number) => {
-    if (cursor + height <= 280) return;
-    document.addPage('a4', 'portrait');
-    cursor = 18;
-  };
-  const sectionTitle = (title: string) => {
-    ensureSpace(12);
-    document.setTextColor(12, 96, 116);
-    document.setFont('helvetica', 'bold');
-    document.setFontSize(11);
-    document.text(title, 14, cursor);
-    document.setDrawColor(188, 210, 218);
-    document.line(14, cursor + 2, 196, cursor + 2);
-    cursor += 8;
-  };
-
-  document.setFillColor(...SEA_BLUE);
-  document.rect(0, 0, 210, 12, 'F');
-  document.setTextColor(255, 255, 255);
-  document.setFont('helvetica', 'bold');
-  document.setFontSize(12);
-  document.text('SeaPilot - Synthèse, commentaires, signatures et audit', 14, 8);
-  document.setTextColor(23, 39, 50);
-  document.setFontSize(10);
-  document.text(`${register.personName} - ${formatMonth(register.periodStart)}`, 14, cursor);
-  cursor += 8;
-
-  sectionTitle('Conformité des fenêtres glissantes');
-  const nonCompliantList = [...nonCompliantDates].sort();
-  if (!nonCompliantList.length) {
-    document.setTextColor(23, 96, 58);
-    document.setFont('helvetica', 'bold');
-    document.text('CONFORME - aucune règle enfreinte sur la période calculée.', 14, cursor);
-    cursor += 9;
-  } else {
-    autoTable(document, {
-      startY: cursor,
-      head: [['Date', 'État', 'Règles enfreintes', 'Travail 24 h', 'Repos 24 h', 'Travail 7 j', 'Repos 7 j']],
-      body: nonCompliantList.map((date) => {
-        const dateCalculations = calculations.filter((calculation) => calculation.localWindowEndDate === date && calculation.isCompliant === false);
-        const latest = dateCalculations.sort((left, right) => left.windowEnd.localeCompare(right.windowEnd)).at(-1);
-        return [
-          date, 'NON CONFORME', Array.from(new Set(dateCalculations.flatMap((calculation) => calculation.violationCodes))).join(', '),
-          latest ? compactHours(latest.work24hSeconds) : '', latest ? compactHours(latest.rest24hSeconds) : '',
-          latest ? compactHours(latest.work7dSeconds) : '', latest ? compactHours(latest.rest7dSeconds) : '',
-        ];
-      }),
-      styles: { cellPadding: 1.4, fontSize: 6.8 },
-      headStyles: { fillColor: NON_COMPLIANT },
-      margin: { left: 14, right: 14 },
-    });
-    cursor = ((document as typeof document & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || cursor + 12) + 7;
-    for (const date of nonCompliantList) {
-      const response = comments.find((comment) => comment.localWorkDate === date);
-      ensureSpace(32);
-      document.setFillColor(254, 247, 235);
-      document.roundedRect(14, cursor, 182, 27, 2, 2, 'F');
-      document.setTextColor(...NON_COMPLIANT);
-      document.setFont('helvetica', 'bold');
-      document.text(`${date} - NON CONFORME`, 17, cursor + 5);
-      document.setTextColor(24, 33, 50);
-      document.setFontSize(7);
-      const details = response ? [
-        `Cause : ${CAUSE_LABELS[response.causeCategory || ''] || response.causeCategory || 'Non renseignée'}`,
-        `Contexte : ${response.operationalContext || 'Non renseigné'}`,
-        `Action immédiate : ${response.immediateAction || 'Non renseignée'}`,
-        `Repos compensateur : ${response.compensatoryRestPlan || 'Non renseigné'}`,
-        `Commentaire : ${response.comment || 'Non renseigné'}`,
-      ] : ['Réponse structurée du capitaine non enregistrée.'];
-      document.text(document.splitTextToSize(details.join('  |  '), 174) as string[], 17, cursor + 10);
-      cursor += 32;
-    }
-  }
-
-  sectionTitle('Signatures et approbation');
-  ensureSpace(48);
-  input.signatures.forEach((signature, index) => {
-    const signatureX = index === 0 ? 14 : 107;
-    document.setDrawColor(188, 210, 218);
-    document.roundedRect(signatureX, cursor, 89, 42, 2, 2);
-    document.setTextColor(83, 107, 121);
-    document.setFontSize(7.5);
-    document.setFont('helvetica', 'bold');
-    document.text(signature.label.toUpperCase(), signatureX + 4, cursor + 5);
-    if (signature.snapshot && signature.png) {
-      document.addImage(signature.png, 'PNG', signatureX + 4, cursor + 8, 50, 17, undefined, 'FAST');
-    } else {
-      document.setFont('helvetica', 'normal');
-      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 4, cursor + 17);
-    }
-    if (signature.snapshot) {
-      document.setFont('helvetica', 'normal');
-      document.setTextColor(24, 33, 50);
-      document.text(`${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, signatureX + 4, cursor + 29);
-      document.text(`${formatDateTime(signature.snapshot.signedAt)} - version ${signature.snapshot.versionNumber}`, signatureX + 4, cursor + 33);
-      document.setFontSize(6);
-      document.text(`SHA-256 ${signature.snapshot.sha256}`, signatureX + 4, cursor + 37, { maxWidth: 81 });
-    }
-  });
-  cursor += 49;
-
-  sectionTitle('Journal d’audit des décisions');
-  autoTable(document, {
-    startY: cursor,
-    head: [['Date', 'Événement', 'Acteur', 'Rôle(s)', 'Transition', 'Signature', 'Motif / source']],
-    body: input.audit.map((event) => [
-      formatDateTime(event.occurredAt), EVENT_LABELS[event.eventType] || event.eventType,
-      event.actorName, event.actorRoles.join(', '), `${event.previousStatus} -> ${event.newStatus}`,
-      event.signatureSnapshot ? `v${event.signatureSnapshot.versionNumber} / ${event.signatureSnapshot.sha256.slice(0, 12)}…` : '',
-      event.comment,
-    ]),
-    styles: { cellPadding: 1.4, fontSize: 6.5 },
-    headStyles: { fillColor: [12, 96, 116] },
-    margin: { left: 14, right: 14 },
-  });
-
-  const pageCount = document.getNumberOfPages();
-  for (let page = 1; page <= pageCount; page += 1) {
-    document.setPage(page);
-    document.setTextColor(97, 115, 129);
-    document.setFontSize(6.5);
-    const pageHeight = document.internal.pageSize.getHeight();
-    const pageWidth = document.internal.pageSize.getWidth();
-    document.text(`SeaPilot - généré le ${formatDateTime(new Date().toISOString())}`, 7, pageHeight - 4);
-    document.text(`Page ${page}/${pageCount}`, pageWidth - 7, pageHeight - 4, { align: 'right' });
-  }
+  document.setTextColor(97, 115, 129);
+  document.setFontSize(6.5);
+  const pageHeight = document.internal.pageSize.getHeight();
+  const pageWidth = document.internal.pageSize.getWidth();
+  document.text(`Généré le ${formatDateTime(new Date().toISOString())}`, 7, pageHeight - 4);
+  document.text('Page 1/1', pageWidth - 7, pageHeight - 4, { align: 'right' });
 
   return {
     document,

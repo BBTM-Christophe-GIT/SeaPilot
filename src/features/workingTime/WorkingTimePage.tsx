@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { RefreshCw } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { RefreshCw, X } from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -41,6 +41,30 @@ function shiftMonthRange(range: { start: string; end: string }, direction: -1 | 
   return currentMonthRange(anchor);
 }
 
+type WorkingTimeModalKey = 'import' | 'hse' | 'workRest';
+
+function WorkingTimeModal({ children, onClose, subtitle, title }: {
+  children: ReactNode;
+  onClose: () => void;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="working-time-modal-backdrop"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section aria-label={title} aria-modal="true" className="working-time-modal" role="dialog">
+        <header className="working-time-modal-header">
+          <div><span>Suivi du temps de travail</span><h2>{title}</h2><p>{subtitle}</p></div>
+          <button aria-label={`Fermer la fenêtre ${title}`} onClick={onClose} type="button"><X aria-hidden="true" size={21} /></button>
+        </header>
+        <div className="working-time-modal-body">{children}</div>
+      </section>
+    </div>
+  );
+}
+
 export function WorkingTimePage({ client, roles, currentPerson, initialRange }: WorkingTimePageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -57,6 +81,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
   );
   const [range, setRange] = useState(() => currentMonthRange(initialRange?.start || referenceDate));
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const [activeModal, setActiveModal] = useState<WorkingTimeModalKey | null>(null);
   const {
     overview,
     reload,
@@ -70,6 +95,8 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     !usesLivePlanning && !previewMode,
   );
   const rangeIsValid = Boolean(range.start && range.end && range.start <= range.end);
+  const canImport = effectiveRoles.includes('admin');
+  const canViewHse = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
   const changeMonth = (direction: -1 | 0 | 1) => setRange((current) => direction === 0
     ? currentMonthRange(referenceDate)
     : shiftMonthRange(current, direction));
@@ -77,6 +104,20 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     setWorkspaceRefreshToken((value) => value + 1);
     await reload();
   };
+
+  useEffect(() => {
+    if (!activeModal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActiveModal(null);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeModal]);
 
   if (!permissions.canRead || !permissions.canViewWorkRest) {
     return <section className="working-time-page"><div className="admin-state">Vous n’avez pas accès au suivi du temps de travail.</div></section>;
@@ -98,21 +139,41 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           range={range}
           refreshToken={workspaceRefreshToken}
           onMonthChange={changeMonth}
+          onOpenHse={canViewHse ? () => setActiveModal('hse') : undefined}
+          onOpenImport={canImport ? () => setActiveModal('import') : undefined}
+          onOpenWorkRest={hasLoaded ? () => setActiveModal('workRest') : undefined}
           onRefresh={refreshAll}
           roles={effectiveRoles}
         />
       ) : null}
 
-      {rangeIsValid && effectiveRoles.some((role) => role === 'admin' || role === 'armement') ? (
-        <WorkingTimeImportWizard client={effectiveClient} onImported={refreshAll} roles={effectiveRoles} />
+      {activeModal === 'import' && canImport && rangeIsValid ? (
+        <WorkingTimeModal
+          onClose={() => setActiveModal(null)}
+          subtitle="Importez un registre annuel approuvé sans exécuter les macros du classeur."
+          title="Import annuel XLSM"
+        >
+          <WorkingTimeImportWizard client={effectiveClient} onImported={refreshAll} roles={effectiveRoles} />
+        </WorkingTimeModal>
       ) : null}
 
-      {rangeIsValid && effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine') ? (
-        <div id="working-time-hse"><WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} /></div>
+      {activeModal === 'hse' && canViewHse && rangeIsValid ? (
+        <WorkingTimeModal
+          onClose={() => setActiveModal(null)}
+          subtitle="Analysez les heures d’exposition et les indicateurs de sécurité."
+          title="Exposition HSE / IMCA"
+        >
+          <WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} />
+        </WorkingTimeModal>
       ) : null}
 
-      {hasLoaded && rangeIsValid ? (
-        <div id="working-time-p13"><PlanningP13Panel
+      {activeModal === 'workRest' && hasLoaded && rangeIsValid ? (
+        <WorkingTimeModal
+          onClose={() => setActiveModal(null)}
+          subtitle="Consultez les contrôles, politiques et alertes issus du moteur Planning P1.3."
+          title="Contrôles travail et repos"
+        >
+          <PlanningP13Panel
           canManageDependencies={false}
           canManageWorkRestPolicies={permissions.canManageWorkRestPolicies}
           canRefreshNotifications={canReceiveManagementAlerts}
@@ -128,7 +189,8 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           subtitle="Seuils administrés, contrôles sur 24 heures et 7 jours, repos consécutif, fractionnement et travail de nuit."
           title="Contrôles travail et repos"
           visibleTabs={canReceiveManagementAlerts ? WORK_REST_NOTIFICATION_TABS : WORK_REST_TAB}
-        /></div>
+          />
+        </WorkingTimeModal>
       ) : null}
     </section>
   );

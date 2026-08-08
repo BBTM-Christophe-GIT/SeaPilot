@@ -6,7 +6,9 @@ Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour
 
 ## Cockpit mensuel
 
-L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel actif et le personnel sorti ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
+L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel en poste et le personnel ancien ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
+
+La barre de commandes reste centrée sur les actions utiles. Les anciennes entrées « Cockpit métier P1.3 », « Registres » et « Historique » ont été retirées. Les fonctions secondaires s’ouvrent désormais dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
 
 Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
 
@@ -18,9 +20,9 @@ Chaque clic-glissé ajoute immédiatement une période à la sélection. Les pé
 
 ## Exports mensuels
 
-Le PDF est généré à la demande dans le navigateur et n’est pas conservé par SeaPilot. Il comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées.
+Le PDF est généré à la demande dans le navigateur et n’est pas conservé. Il tient sur une seule page paysage et comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées dans des cases placées au-dessus du tableau. Aucune page de synthèse supplémentaire n’est créée et le nom du produit n’apparaît pas dans le document.
 
-Les bibliothèques PDF sont préchargées avec la page du module afin d’éviter un téléchargement différé vers un ancien fichier haché après déploiement. Si Vite détecte malgré tout un module préchargé devenu obsolète, SeaPilot effectue une unique actualisation de récupération avant de rendre l’erreur à l’utilisateur.
+Les bibliothèques PDF sont préchargées avec la page du module afin d’éviter un téléchargement différé vers un ancien fichier haché après déploiement. Si Vite détecte malgré tout un module préchargé devenu obsolète, l’application effectue une unique actualisation de récupération avant de rendre l’erreur à l’utilisateur.
 
 ## Exposition HSE / IMCA
 
@@ -71,5 +73,5 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
-| PDF avec les deux signatures figées | `workingTimePdf.test.ts` |
+| PDF français d’une page avec les deux signatures figées en première page | `workingTimePdf.test.ts` |
 | Consolidation de deux créneaux importés issus de registres historiques différents | `WorkingTimeWorkflowPanel.test.tsx` |

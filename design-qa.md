@@ -146,3 +146,37 @@ final result: passed
 3. filtre personnel actif/sorti et accordéons de services ;
 4. tablette paysage ;
 5. historique ouvert et export PDF déclenché.
+
+final result: blocked
+
+---
+
+# Design QA — Suivi du temps de travail v3.12.18
+
+## Résultat
+
+**Bloqué pour la comparaison visuelle interactive.** La route locale `/modules/workingTime?preview=1` répond en HTTP `200`, mais la connexion au navigateur de contrôle intégré n’a pas abouti lors des tentatives de sélection et de diagnostic. Aucune capture fiable des fenêtres métier n’a donc pu être produite.
+
+## Contrôles exécutés
+
+- tests DOM des commandes supprimées, du libellé « Personnel ancien » et des trois ouvertures de fenêtres ;
+- fermeture des fenêtres couverte par leur structure de dialogue, leur bouton nominatif et la gestion de la touche Échap ;
+- règles de visibilité vérifiées : import réservé à l’administrateur, HSE / IMCA réservé aux rôles habilités, contrôles travail/repos selon les droits Planning ;
+- lint et build de production réussis ;
+- export PDF généré, rasterisé avec Poppler et inspecté à sa résolution originale.
+
+## PDF
+
+- fichier contrôlé : `C:/Users/chris/AppData/Local/Temp/seapilot-working-time-qa/registre.pdf` ;
+- rendu contrôlé : `C:/Users/chris/AppData/Local/Temp/seapilot-working-time-qa/registre-page.png` ;
+- A4 paysage, exactement une page ;
+- deux cases de signature visibles au-dessus de la grille ;
+- aucune seconde page, aucun chevauchement et aucune mention du nom du produit.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun écart fonctionnel détecté par les 657 tests automatisés ;
+- P1 : aucun écart PDF détecté lors de l’inspection du rendu final ;
+- P2 : disposition réelle des fenêtres à qualifier visuellement dès que le navigateur intégré redevient disponible.
+
+final result: blocked

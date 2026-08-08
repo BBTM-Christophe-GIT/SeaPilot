@@ -17167,6 +17167,18 @@ button.planning-p12-conflict-card {
 .working-time-command-popover.is-register label { display: grid; }
 .working-time-command-popover select { min-height: 38px; border: 1px solid #b9cbd7; border-radius: 7px; padding: 6px 8px; }
 .working-time-command-popover > button { min-height: 36px; border-radius: 7px; color: #fff; background: #08758b; }
+.working-time-modal-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(9 27 45 / 55%); backdrop-filter: blur(3px); }
+.working-time-modal { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1800px, 96vw); max-height: 94dvh; overflow: hidden; border: 1px solid #c7d7e2; border-radius: 12px; background: #f7fafc; box-shadow: 0 28px 80px rgb(6 27 46 / 32%); }
+.working-time-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 15px 18px; border-bottom: 1px solid #d8e4ec; background: #fff; }
+.working-time-modal-header > div { display: grid; gap: 2px; }
+.working-time-modal-header span { color: #08758b; font-size: .67rem; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.working-time-modal-header h2 { margin: 0; color: #12346f; font-size: 1.15rem; }
+.working-time-modal-header p { margin: 0; color: #62788a; font-size: .75rem; }
+.working-time-modal-header button { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #c8d8e3; border-radius: 8px; color: #0a5266; background: #fff; cursor: pointer; }
+.working-time-modal-header button:hover { background: #eff7f9; }
+.working-time-modal-body { min-height: 0; overflow: auto; padding: 14px; }
+.working-time-modal-body > :is(.working-time-import, .working-time-hse-panel, .planning-p13-panel) { margin: 0; }
+.working-time-modal :is(button, input, select, textarea):focus-visible { outline: 3px solid rgb(23 166 184 / 35%); outline-offset: 2px; }
 .working-time-history-drawer { position: fixed; z-index: 60; top: 78px; right: 22px; display: grid; width: min(520px, calc(100vw - 40px)); max-height: calc(100dvh - 100px); gap: 12px; overflow: auto; padding: 16px; border: 1px solid #cad9e4; border-radius: 10px; background: #fff; box-shadow: 0 20px 54px rgb(18 49 71 / 22%); }
 .working-time-history-drawer > header { display: flex; align-items: center; justify-content: space-between; }
 .working-time-history-drawer > header div { display: grid; gap: 3px; }
@@ -17264,6 +17276,11 @@ button.planning-p12-conflict-card {
   .working-time-analysis-bar > span { justify-content: start; }
 }
 @media (max-width: 760px) {
+  .working-time-modal-backdrop { padding: 8px; }
+  .working-time-modal { width: 100%; max-height: 97dvh; border-radius: 9px; }
+  .working-time-modal-header { padding: 12px; }
+  .working-time-modal-header p { display: none; }
+  .working-time-modal-body { padding: 8px; }
   .working-time-command-bar { position: static; }
   .working-time-command-group button { min-width: 58px; }
   .working-time-workspace-grid { grid-template-columns: 1fr; }

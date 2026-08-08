@@ -12,8 +12,6 @@ import {
   FileClock,
   FileSignature,
   Filter,
-  Gauge,
-  History,
   LockKeyhole,
   PenLine,
   Plus,
@@ -21,9 +19,10 @@ import {
   RotateCcw,
   Search,
   Send,
+  ShieldCheck,
   Trash2,
+  Upload,
   UserCheck,
-  Users,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -60,6 +59,9 @@ interface WorkingTimeWorkflowPanelProps {
   refreshToken?: number;
   onMonthChange?: (direction: -1 | 0 | 1) => void;
   onRefresh?: () => Promise<void> | void;
+  onOpenImport?: () => void;
+  onOpenHse?: () => void;
+  onOpenWorkRest?: () => void;
 }
 
 type PersonnelFilter = 'active' | 'departed';
@@ -225,6 +227,9 @@ export function WorkingTimeWorkflowPanel({
   refreshToken = 0,
   onMonthChange,
   onRefresh,
+  onOpenImport,
+  onOpenHse,
+  onOpenWorkRest,
 }: WorkingTimeWorkflowPanelProps) {
   const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
@@ -252,7 +257,6 @@ export function WorkingTimeWorkflowPanel({
   const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
   const [filterOpen, setFilterOpen] = useState(false);
   const [openRegisterMenu, setOpenRegisterMenu] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<CrewGroup>>(new Set());
   const [selectedDay, setSelectedDay] = useState(range.start);
 
@@ -577,7 +581,6 @@ export function WorkingTimeWorkflowPanel({
         <div className="working-time-command-group">
           <span>Armement</span>
           <div>
-            <button onClick={() => document.getElementById('working-time-p13')?.scrollIntoView({ behavior: 'smooth' })} type="button"><Gauge aria-hidden="true" size={21} /><small>Cockpit métier P1.3</small></button>
             <button aria-label="Mois précédent" onClick={() => onMonthChange?.(-1)} type="button"><ChevronLeft aria-hidden="true" size={21} /><small>Mois précédent</small></button>
             <button onClick={() => onMonthChange?.(0)} type="button"><CalendarDays aria-hidden="true" size={21} /><small>Mois en cours</small></button>
             <button aria-label="Mois suivant" onClick={() => onMonthChange?.(1)} type="button"><ChevronRight aria-hidden="true" size={21} /><small>Mois suivant</small></button>
@@ -587,7 +590,7 @@ export function WorkingTimeWorkflowPanel({
               {filterOpen ? <span className="working-time-command-popover" role="dialog">
                 <strong>Personnel affiché</strong>
                 <label><input checked={personnelFilter === 'active'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('active')} type="radio" /> Personnel en poste</label>
-                <label><input checked={personnelFilter === 'departed'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('departed')} type="radio" /> Personnel sorti</label>
+                <label><input checked={personnelFilter === 'departed'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('departed')} type="radio" /> Personnel ancien</label>
               </span> : null}
             </span>
           </div>
@@ -627,8 +630,9 @@ export function WorkingTimeWorkflowPanel({
         <div className="working-time-command-group">
           <span>Aide à la décision</span>
           <div>
-            <button onClick={() => document.getElementById('working-time-p13')?.scrollIntoView({ behavior: 'smooth' })} type="button"><Bell aria-hidden="true" size={21} /><small>Alertes</small>{nonCompliantDates.length ? <em>{nonCompliantDates.length}</em> : null}</button>
-            <button onClick={() => document.getElementById('working-time-hse')?.scrollIntoView({ behavior: 'smooth' })} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Analyses</small></button>
+            {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><Bell aria-hidden="true" size={21} /><small>Alertes</small>{nonCompliantDates.length ? <em>{nonCompliantDates.length}</em> : null}</button> : null}
+            {onOpenHse ? <button onClick={onOpenHse} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Exposition HSE / IMCA</small></button> : null}
+            {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
             {selectedRegister?.status === 'awaiting_sailor_signature' && isOwnRegister ? <button disabled={isSaving || !currentSignature} onClick={() => {
               if (!window.confirm('Apposer explicitement votre signature de profil et soumettre ce registre ?')) return;
               setSignatureConsent(true);
@@ -649,22 +653,11 @@ export function WorkingTimeWorkflowPanel({
         <div className="working-time-command-group">
           <span>Documents</span>
           <div>
-            <button onClick={() => setOpenRegisterMenu(true)} type="button"><Users aria-hidden="true" size={21} /><small>Registres</small></button>
+            {onOpenImport ? <button onClick={onOpenImport} type="button"><Upload aria-hidden="true" size={21} /><small>Import</small></button> : null}
             <button disabled={!selectedRegister || isExporting} onClick={() => void handlePdfDownload()} type="button"><Download aria-hidden="true" size={21} /><small>{isExporting ? 'Génération…' : 'Export PDF'}</small></button>
-            <button disabled={!selectedRegister} onClick={() => setHistoryOpen((open) => !open)} type="button"><History aria-hidden="true" size={21} /><small>Historique</small></button>
           </div>
         </div>
       </nav>
-
-      {historyOpen && selectedRegister ? <aside aria-label="Historique du registre" className="working-time-history-drawer">
-        <header><div><span>Historique</span><strong>{selectedRegister.personName} · {displayedMonthLabel}</strong></div><button aria-label="Fermer l’historique" onClick={() => setHistoryOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
-        <div className="working-time-history-list">
-          {selectedIntervals.map((interval) => <article key={interval.id}><div><strong>{formatDateTime(interval.startsAt)} → {formatDateTime(interval.endsAt)}</strong><small>{workspace?.vessels.find((vessel) => vessel.id === interval.vesselId)?.name || 'Sans navire'}{interval.watchGroup ? ` · ${interval.watchGroup}` : ''}</small></div>{canEdit ? <span><button onClick={() => { editInterval(interval); setHistoryOpen(false); }} type="button"><PenLine aria-hidden="true" size={15} />Corriger</button><button onClick={() => { setVoidCandidateId(interval.id); setVoidReason(''); }} type="button"><Trash2 aria-hidden="true" size={15} />Retirer</button></span> : null}</article>)}
-          {!selectedIntervals.length ? <p>Aucun créneau enregistré sur ce mois.</p> : null}
-        </div>
-        {voidCandidateId ? <div className="working-time-void-form"><label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label><button disabled={voidReason.trim().length < 2} onClick={() => void runAction(async () => { await voidWorkingTimeInterval(client, voidCandidateId, voidReason); setVoidCandidateId(null); setVoidReason(''); }, 'Le créneau a été retiré sans effacer son historique.')} type="button">Confirmer</button></div> : null}
-        <ol>{selectedValidations.map((event) => <li key={event.id}><strong>{formatDateTime(event.occurredAt)}</strong><span>{event.eventType} · {event.actorName}</span></li>)}</ol>
-      </aside> : null}
       <header className="working-time-section-heading" hidden>
         <div><p>Registres individuels</p><h2 id="working-time-registers-title">Saisie, signature et validation</h2></div>
         <div className="working-time-heading-actions">

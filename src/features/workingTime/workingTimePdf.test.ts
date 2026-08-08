@@ -109,7 +109,7 @@ describe('working-time PDF', () => {
       .rejects.toThrow('Impossible de charger la signature figée de Alex MARIN.');
   });
 
-  it('generates the French maritime monthly grid with compliance, approved import and audit', async () => {
+  it('generates a single-page French maritime monthly grid with both signatures', async () => {
     const generated = await buildWorkingTimePdf({
       register,
       workspace,
@@ -127,6 +127,7 @@ describe('working-time PDF', () => {
 
     expect(prefix).toBe('%PDF');
     expect(bytes.byteLength).toBeGreaterThan(2_000);
+    expect(generated.document.getNumberOfPages()).toBe(1);
     expect(generated.filename).toBe('registre-mensuel-temps-travail-Alex-MARIN-2026-08.pdf');
   });
 });
