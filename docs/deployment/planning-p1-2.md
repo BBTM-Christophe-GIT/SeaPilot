@@ -34,11 +34,11 @@ Le centre détecte en lecture les doubles affectations, absences, indisponibilit
 4. Exécuter :
 
 ```powershell
-npm ci
+pnpm install --frozen-lockfile
 npx tsc -b --pretty false
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 npx supabase migration list --linked
 npx supabase db push --dry-run --linked
 npx supabase db lint --linked --level warning

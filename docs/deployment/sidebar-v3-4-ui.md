@@ -24,9 +24,9 @@ Aucune migration Supabase ni nouvelle variable d'environnement n'est requise. D�
 contrôles suivants :
 
 ```powershell
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 ## Contrôles visuels

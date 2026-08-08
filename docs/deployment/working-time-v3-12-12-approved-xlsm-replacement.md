@@ -47,9 +47,9 @@ Vérifications locales :
 ```text
 npx supabase db reset --local
 npx supabase test db --local supabase/tests/working_time_excel_import_test.sql
-npm test
-npm run lint
-npm run build
+pnpm test
+pnpm lint
+pnpm build
 ```
 
 Le test pgTAP couvre 44 assertions, dont la comparaison stricte, le remplacement,

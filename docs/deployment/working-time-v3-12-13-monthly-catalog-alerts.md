@@ -78,9 +78,9 @@ Commandes de recette locales :
 ```text
 npx supabase db reset --local
 npx supabase test db supabase/tests/working_time_workflow_permissions_test.sql
-npm test
-npm run lint
-npm run build
+pnpm test
+pnpm lint
+pnpm build
 ```
 
 La migration conserve les données historiques. Un retour arrière applicatif ne doit

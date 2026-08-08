@@ -34,9 +34,9 @@ Les dates civiles sont stockées en `date` (`YYYY-MM-DD`). Les heures techniques
 
 ```powershell
 npx tsc -b --pretty false
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 supabase db push --linked
 ```
 

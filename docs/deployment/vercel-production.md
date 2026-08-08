@@ -171,8 +171,8 @@ The previous custom domain `app.bbtm.fr` is no longer the deployment target. It 
 - Vercel project: `sea-pilot`
 - Project id: `prj_2t0n3Kr8g3cclLWi5TawCAmDHnjj`
 - Production alias: `https://sea-pilot-ten.vercel.app`
-- Install command: `npm ci`
-- Build command: `npm run build`
+- Install command: automatic pnpm detection from `pnpm-lock.yaml`
+- Build command: `pnpm build`
 - Output directory: `dist`
 
 The repository includes `vercel.json` so direct links like `/login` and `/modules/planning` are rewritten to `index.html`.
@@ -189,7 +189,7 @@ As of 2026-07-15:
 - `VITE_PLANNING_ASSISTANT_ENABLED` defaults to `false`; set it to `true` only for an approved pilot environment.
 - `VITE_PLANNING_PREDICTIONS_ENABLED` defaults to `false`; set it to `true` only after the V3 data-quality and access review.
 - Production opens the SeaPilot login page at `https://sea-pilot-ten.vercel.app/login`.
-- The Supabase CLI is installed on this workstation through npm global and was updated to `2.109.1`.
+- The Supabase CLI version used for this deployment was `2.109.1`; future invocations must use the pnpm toolchain.
 - The Supabase CLI is logged in to Supabase Cloud.
 - The local project is linked to Supabase project `szlvyrrmvdvhzixilymh` (`SeaPilot`, `eu-west-3`).
 - The v3.5 target contains 44 local migrations through `202607150005_user_invitation_lint_cleanup.sql`. Verify local/remote alignment with `supabase migration list --linked` before each deployment.

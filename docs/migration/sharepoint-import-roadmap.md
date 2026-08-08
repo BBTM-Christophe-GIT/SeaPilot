@@ -38,7 +38,7 @@ Exporter la liste RH depuis SharePoint avec Microsoft 365 CLI:
 
 ```powershell
 pnpm --package=@pnp/cli-microsoft365 dlx m365 login --authType browser
-npm run export:sharepoint:rh
+pnpm export:sharepoint:rh
 ```
 
 L'export RH est ecrit dans `.data/sharepoint-rh-personnel-bbtm.json`. Le dossier `.data/` est ignore par git car il peut contenir des donnees personnelles.
@@ -46,13 +46,13 @@ L'export RH est ecrit dans `.data/sharepoint-rh-personnel-bbtm.json`. Le dossier
 Exporter la liste RH et la bibliotheque `Brevets et Visites Medicales` dans un seul bundle:
 
 ```powershell
-npm run export:sharepoint:rh-full
+pnpm export:sharepoint:rh-full
 ```
 
 Si les fichiers `.iqy` de SharePoint sont disponibles, les fournir au script permet d'utiliser les vues exactes de SharePoint, par exemple `Personnel Actif`:
 
 ```powershell
-npm run export:sharepoint:rh-full -- --iqy "list-rh-personnel-bbtm=C:\Users\chris\Downloads\RH - Personnel BBTM.iqy" --iqy "library-brevets-visites-medicales=C:\Users\chris\Downloads\Brevets et Visites Médicales.iqy"
+pnpm export:sharepoint:rh-full -- --iqy "list-rh-personnel-bbtm=C:\Users\chris\Downloads\RH - Personnel BBTM.iqy" --iqy "library-brevets-visites-medicales=C:\Users\chris\Downloads\Brevets et Visites Médicales.iqy"
 ```
 
 L'export complet est ecrit dans `.data/sharepoint-rh-full.json`.
@@ -60,9 +60,9 @@ L'export complet est ecrit dans `.data/sharepoint-rh-full.json`.
 Exporter puis importer le lot Planning complet (flotte, projets, journees Slot365 et periodes historiques):
 
 ```powershell
-npm run export:sharepoint:planning
-npm run import:sharepoint -- --file .data/sharepoint-planning-historical.json --dry-run
-npm run import:sharepoint:planning
+pnpm export:sharepoint:planning
+pnpm import:sharepoint -- --file .data/sharepoint-planning-historical.json --dry-run
+pnpm import:sharepoint:planning
 supabase db query "select * from public.resolve_sharepoint_planning_links();" --linked
 ```
 
@@ -71,7 +71,7 @@ Le lot est idempotent : les quatre tables utilisent le couple `sharepoint_list_i
 Verifier un export sans ecrire en base:
 
 ```powershell
-npm run import:sharepoint -- --file docs/migration/sample-sharepoint-export.json --dry-run
+pnpm import:sharepoint -- --file docs/migration/sample-sharepoint-export.json --dry-run
 ```
 
 Importer dans Supabase local:
@@ -79,13 +79,13 @@ Importer dans Supabase local:
 ```powershell
 $env:SUPABASE_URL = "http://127.0.0.1:54321"
 $env:SUPABASE_SERVICE_ROLE_KEY = "<service-role-key>"
-npm run import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json
+pnpm import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json
 ```
 
 Importer le RH dans le projet Supabase Cloud lie via la CLI Supabase:
 
 ```powershell
-npm run import:sharepoint:linked -- --file .data/sharepoint-rh-personnel-bbtm.json
+pnpm import:sharepoint:linked -- --file .data/sharepoint-rh-personnel-bbtm.json
 ```
 
 Cette variante genere un SQL d'upsert puis appelle `supabase db query --linked`; elle n'a pas besoin de stocker une cle service-role dans le depot.
@@ -93,20 +93,20 @@ Cette variante genere un SQL d'upsert puis appelle `supabase db query --linked`;
 Importer le bundle RH complet puis rattacher les documents aux collaborateurs:
 
 ```powershell
-npm run import:sharepoint:linked -- --file .data/sharepoint-rh-full.json
+pnpm import:sharepoint:linked -- --file .data/sharepoint-rh-full.json
 supabase db query "select * from public.resolve_sharepoint_hr_document_links();" --linked
 ```
 
 Importer puis rattacher automatiquement les lignes Planning aux marins/navires deja importes:
 
 ```powershell
-npm run import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json --resolve-planning-links
+pnpm import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json --resolve-planning-links
 ```
 
 Importer puis rattacher automatiquement le Planning, les documents RH, les certificats flotte, les PDF QSMS, les projets, leurs documents, DPR, achats, actions et bibliotheques documentaires aux donnees deja importees:
 
 ```powershell
-npm run import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json --resolve-planning-links --resolve-hr-document-links --resolve-fleet-certificate-links --resolve-published-procedure-links --resolve-project-links --resolve-project-document-links --resolve-dpr-links --resolve-operation-links --resolve-document-links
+pnpm import:sharepoint -- --file C:\chemin\vers\export-sharepoint.json --resolve-planning-links --resolve-hr-document-links --resolve-fleet-certificate-links --resolve-published-procedure-links --resolve-project-links --resolve-project-document-links --resolve-dpr-links --resolve-operation-links --resolve-document-links
 ```
 
 Le script accepte aussi `VITE_SUPABASE_URL`, `SUPABASE_ANON_KEY` et `VITE_SUPABASE_ANON_KEY`, mais la cle `SUPABASE_SERVICE_ROLE_KEY` est recommandee pour les imports administratifs.

@@ -43,7 +43,7 @@ exposent `id`, `name` et `active`. Il peut être fourni explicitement pour figer
 l'audit ou être lu en mode consultation depuis le projet Supabase lié.
 
 ```powershell
-npm run import:bbtm:preview -- `
+pnpm import:bbtm:preview -- `
   --source "$env:USERPROFILE\Downloads\BBTM - PLANNING 2024.xlsx" `
   --source "$env:USERPROFILE\Downloads\BBTM PLANNING.xlsx" `
   --decisions ".\outputs\BBTM_Planning_2024_2026 corrigé.xlsx" `

@@ -40,7 +40,7 @@ Les dossiers renvoyés par l’API de liste sont ignorés par l’import. L’up
 La commande suivante étend la chaîne d’export/import existante et ne récupère que les champs de liste des deux bibliothèques :
 
 ```powershell
-npm run refresh:sharepoint:project-documents
+pnpm refresh:sharepoint:project-documents
 ```
 
 Le comportement par défaut est un dry-run :
@@ -52,7 +52,7 @@ Le comportement par défaut est un dry-run :
 Après contrôle de l’export et des volumes, l’application explicite est :
 
 ```powershell
-npm run refresh:sharepoint:project-documents -- --apply
+pnpm refresh:sharepoint:project-documents -- --apply
 ```
 
 Prérequis : session CLI Microsoft 365 authentifiée avec accès en lecture aux deux bibliothèques, `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` fournis hors Git. L’application effectue les upserts puis appelle `resolve_sharepoint_project_document_links()`. La commande ne contient aucune opération de suppression et n’appelle aucune API de téléchargement de fichier.

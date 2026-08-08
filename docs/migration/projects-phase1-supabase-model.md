@@ -215,9 +215,9 @@ Commandes de référence :
 supabase db reset --local
 supabase test db --local supabase/tests/projects_phase1_model_test.sql
 supabase db lint --local --level warning
-npm test
-npm run lint
-npm run build
+pnpm test
+pnpm lint
+pnpm build
 ```
 
 Le test pgTAP couvre 54 assertions : existence et typage, clés/index, validation JSON, verrou de numérotation, monotonie du compteur, droits positifs/négatifs par rôle, adhésion active, isolation inter-société, interdiction de suppression, anti-usurpation et immutabilité de provenance, documents, audit et archivage.
