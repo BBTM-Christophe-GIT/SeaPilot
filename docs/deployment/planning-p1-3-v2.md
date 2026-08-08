@@ -59,11 +59,11 @@ npx supabase db push --dry-run --linked
 5. Exécuter les validations applicatives :
 
 ```powershell
-npm ci
+pnpm install --frozen-lockfile
 npx tsc -b --pretty false
-npm run lint
-npm test -- --maxWorkers=4
-npm run build
+pnpm lint
+pnpm test -- --maxWorkers=4
+pnpm build
 ```
 
 ## Application

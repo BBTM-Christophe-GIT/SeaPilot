@@ -11,6 +11,7 @@ export function useWorkingTimeWorkspace(
   client: SupabaseClient,
   enabled: boolean,
   range: WorkingTimeRange,
+  refreshToken = 0,
 ) {
   const [workspace, setWorkspace] = useState<WorkingTimeWorkspace | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,7 +43,7 @@ export function useWorkingTimeWorkspace(
     }
     void reload();
     return () => { requestId.current += 1; };
-  }, [enabled, reload]);
+  }, [enabled, refreshToken, reload]);
 
   return { workspace, isLoading, errorMessage, reload };
 }

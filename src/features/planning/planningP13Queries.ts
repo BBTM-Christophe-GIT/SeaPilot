@@ -256,9 +256,12 @@ export function markPlanningNotificationRead(client: SupabaseClient, notificatio
   });
 }
 
-export function refreshPlanningNotifications(client: SupabaseClient, referenceDate: string): Promise<number> {
+export async function refreshPlanningNotifications(client: SupabaseClient, referenceDate: string): Promise<number> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) throw new Error('La date de référence est invalide.');
-  return callRpc(client, 'refresh-planning-notifications', 'Impossible d’actualiser les notifications.', 'refresh_planning_notifications', {
-    p_reference_date: referenceDate,
-  });
+  const parameters = { p_reference_date: referenceDate };
+  const [planningCount, workingTimeCount] = await Promise.all([
+    callRpc<number>(client, 'refresh-planning-notifications', 'Impossible d’actualiser les notifications.', 'refresh_planning_notifications', parameters),
+    callRpc<number>(client, 'refresh-working-time-notifications', 'Impossible d’actualiser les alertes de temps de travail.', 'refresh_working_time_notifications', parameters),
+  ]);
+  return planningCount + workingTimeCount;
 }

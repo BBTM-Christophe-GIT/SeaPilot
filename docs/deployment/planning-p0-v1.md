@@ -62,11 +62,11 @@ union all select 'planning_change_log', count(*) from public.planning_change_log
 6. Exécuter les contrôles du client :
 
 ```powershell
-npm ci
+pnpm install --frozen-lockfile
 npx tsc -b --pretty false
-npm run lint
-npm test -- --maxWorkers=2 --reporter=dot
-npm run build
+pnpm lint
+pnpm test -- --maxWorkers=2 --reporter=dot
+pnpm build
 npx supabase db lint --linked
 npx supabase migration list
 npx supabase db push --dry-run --linked

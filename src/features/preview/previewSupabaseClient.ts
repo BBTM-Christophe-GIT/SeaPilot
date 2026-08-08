@@ -11,7 +11,7 @@ function previewSignaturePng(): Blob {
   return new Blob([bytes], { type: 'image/png' });
 }
 
-type PreviewResult = { data: unknown[] | Record<string, unknown> | null; error: typeof PREVIEW_WRITE_ERROR | null };
+type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
   15: 'CRO',
@@ -627,14 +627,14 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   working_time_registers: [
     {
-      id: 9801, company_id: 1, person_id: 9301, period_kind: 'weekly',
-      period_start: '2026-08-03', period_end: '2026-08-09', status: 'draft',
+      id: 9801, company_id: 1, person_id: 9301, period_kind: 'monthly',
+      period_start: '2026-08-01', period_end: '2026-08-31', status: 'draft',
       work_rest_policy_id: 9701,
       people: { first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine' },
     },
     {
-      id: 9802, company_id: 1, person_id: 9304, period_kind: 'weekly',
-      period_start: '2026-08-03', period_end: '2026-08-09', status: 'submitted',
+      id: 9802, company_id: 1, person_id: 9304, period_kind: 'monthly',
+      period_start: '2026-08-01', period_end: '2026-08-31', status: 'submitted',
       work_rest_policy_id: 9701,
       people: { first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot' },
     },
@@ -694,7 +694,22 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   hse_exposure_hours: [],
   hse_safety_events: [],
-  planning_notifications: [],
+  planning_notifications: [{
+    id: 9891,
+    company_id: 1,
+    recipient_user_id: 'preview-user',
+    notification_type: 'working_time_non_compliance',
+    severity: 'critical',
+    title: 'Temps de travail dépassé et repos insuffisant',
+    body: 'Emilien LAFFAITEUR · GOURY · 06/08/2026 : travail 24 h 14 h / 12 h, repos 24 h 10 h / 11 h, travail 7 jours 78 h / 72 h et repos 7 jours 90 h / 96 h.',
+    entity_kind: 'working_time_calculation_window',
+    entity_id: 9821,
+    person_id: 9304,
+    vessel_id: 1,
+    due_on: '2026-08-06',
+    created_at: '2026-08-06T20:01:00Z',
+    read_at: null,
+  }],
   planning_dependencies: [],
   project_billing_periods: [],
   project_billing_services: [],
@@ -783,10 +798,18 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'refresh_planning_notifications' || functionName === 'refresh_working_time_notifications') {
+    return createPreviewQuery({ data: 0, error: null });
+  }
   if (functionName === 'working_time_entry_context') {
     return createPreviewQuery({
       data: {
         current_person_id: 9301,
+        readable_people: [
+          { person_id: 9301, first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine', is_self: true },
+          { person_id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', is_self: false },
+          { person_id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', is_self: false },
+        ],
         editable_people: [
           { person_id: 9301, first_name: 'Arthur', last_name: 'DEMO', function_label: 'Capitaine', is_self: true },
           { person_id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', is_self: false },

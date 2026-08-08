@@ -1,5 +1,14 @@
 # Project delivery workflow
 
+## Node package manager
+
+Use pnpm 10.34.5 exclusively for Node.js dependencies and scripts. Do not use npm and do not create `package-lock.json`.
+
+- Install dependencies with `pnpm install --frozen-lockfile`.
+- Run scripts with `pnpm <script>`.
+- Commit `pnpm-lock.yaml` whenever dependency metadata changes.
+- Keep dependency lifecycle scripts blocked unless they are explicitly reviewed in `pnpm-workspace.yaml`.
+
 After completing any coding request in this repository, unless the user explicitly asks otherwise:
 
 1. Update any documentation, database migrations, configuration examples, or deployment metadata required by the change.

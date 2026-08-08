@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CheckCircle2, FileSpreadsheet, LoaderCircle, ShieldAlert, Upload } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, LoaderCircle, Replace, ShieldAlert, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { RoleKey } from '../permissions/roles';
 import {
@@ -41,6 +41,15 @@ const STATUS_LABELS: Record<WorkingTimeImportRowStatus, string> = {
   blocked_validated: 'Déjà validée', imported: 'Importée',
 };
 
+const ISSUE_LABELS: Record<string, string> = {
+  identical_existing_day: 'Journée strictement identique - conservée',
+  will_replace_existing_day: 'Sera remplacée par le XLSM approuvé',
+  validated_day: 'Journée déjà validée',
+  register_not_editable: 'Registre verrouillé',
+  existing_day: 'Journée déjà saisie',
+  total_mismatch: 'Écart entre les phases et le total déclaré',
+};
+
 function normalizeName(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z]+/g, ' ').trim().toLowerCase();
 }
@@ -62,13 +71,14 @@ function defaultParser(file: File): Promise<WorkingTimeImportWorkbook> {
 }
 
 export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbook = defaultParser }: WorkingTimeImportWizardProps) {
-  const canImport = roles.some((role) => role === 'admin' || role === 'armement');
+  const canImport = roles.includes('admin');
   const [people, setPeople] = useState<WorkingTimeImportPerson[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [workbook, setWorkbook] = useState<WorkingTimeImportWorkbook | null>(null);
   const [rows, setRows] = useState<EditableRow[]>([]);
   const [personId, setPersonId] = useState<number>(0);
   const [timezoneName, setTimezoneName] = useState('Europe/Paris');
+  const [replaceExistingDays, setReplaceExistingDays] = useState(true);
   const [batchId, setBatchId] = useState<number | null>(null);
   const [preview, setPreview] = useState<WorkingTimeImportPreviewResult | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
@@ -90,15 +100,17 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   const canControl = Boolean(personId && !localErrors && !busy && preview?.status !== 'imported');
   const actionMessage = !personId
     ? 'Sélectionnez la personne RH associée avant de lancer le contrôle.'
-    : localErrors
-      ? `Corrigez ${localErrors} erreur(s) de format dans les phases de travail.`
-      : previewStale
+      : localErrors
+        ? `Corrigez ${localErrors} erreur(s) de format dans les phases de travail.`
+        : previewStale
         ? 'Des corrections ont été faites : relancez le contrôle serveur.'
         : preview?.summary.inconsistentRows
           ? `${preview.summary.inconsistentRows} journée(s) incohérente(s) : corrigez les phases ou excluez-les, puis relancez le contrôle.`
           : localWarnings
             ? `${localWarnings} écart(s) de total seront analysés par le serveur. Vous pouvez lancer le contrôle.`
-            : 'Les journées déjà validées ne seront jamais remplacées.';
+            : replaceExistingDays
+              ? 'Les journées différentes seront remplacées par le XLSM approuvé. Les journées strictement identiques seront ignorées.'
+              : 'Les journées existantes sont comparées côté serveur. Activez le remplacement pour appliquer les différences du XLSM approuvé.';
 
   if (!canImport) return null;
 
@@ -117,6 +129,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     setPreviewStale(false);
     setError('');
     setSuccess('');
+    setReplaceExistingDays(true);
     if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.xlsm') || selected.size > 20 * 1024 * 1024) {
       setError('Le fichier doit être un classeur XLSM de 20 Mo maximum.');
@@ -170,7 +183,14 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         targetBatchId = (await createWorkingTimeImportBatchAndUpload(client, file, hash)).batchId;
         setBatchId(targetBatchId);
       }
-      const result = await previewWorkingTimeImport(client, { batchId: targetBatchId, personId, timezoneName, workbook, rows });
+      const result = await previewWorkingTimeImport(client, {
+        batchId: targetBatchId,
+        personId,
+        timezoneName,
+        workbook,
+        rows,
+        replaceExistingDays,
+      });
       setPreview(result);
       setPreviewStale(false);
       setSuccess('Contrôle serveur terminé. Vérifiez les statuts avant de valider l’import.');
@@ -185,10 +205,11 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     if (!batchId || !canCommit) return;
     setBusy(true);
     setError('');
+    setSuccess('');
     try {
       const summary = await commitWorkingTimeImport(client, batchId);
-      setSuccess(`${summary.readyRows} journée(s) importée(s). Les doublons et journées verrouillées ont été conservés sans modification.`);
-      setPreview((current) => current ? { ...current, status: 'imported', summary } : current);
+      setSuccess(`${summary.importedRows} journée(s) approuvée(s) importée(s), dont ${summary.replacedRows} remplacée(s). ${summary.identicalRows} journée(s) strictement identique(s) conservée(s) sans nouvel import.`);
+      setPreview((current) => current ? { ...current, status: 'imported' } : current);
       await onImported?.();
     } catch (caught) {
       setError(workingTimeErrorMessage(caught));
@@ -220,6 +241,21 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         {workbook ? <label>Fuseau horaire<input onChange={(event) => { setTimezoneName(event.target.value); markChanged(); }} value={timezoneName} /></label> : null}
       </div>
 
+      {workbook ? (
+        <div className={`working-time-import-replacement ${replaceExistingDays ? 'is-active' : ''}`}>
+          <label>
+            <input
+              checked={replaceExistingDays}
+              disabled={preview?.status === 'imported'}
+              onChange={(event) => { setReplaceExistingDays(event.target.checked); markChanged(); }}
+              type="checkbox"
+            />
+            <span><Replace aria-hidden="true" size={18} /><strong>Remplacer les journées existantes différentes</strong></span>
+          </label>
+          <p>Le fichier XLSM est considéré comme déjà approuvé. Le serveur ignore les journées strictement identiques et remplace les différences, quel que soit le statut du registre, sans réouverture ni justification. Chaque remplacement reste automatiquement tracé.</p>
+        </div>
+      ) : null}
+
       {workbook?.warnings.map((warning) => <p className="working-time-message is-warning" key={warning} role="alert">{warning}</p>)}
 
       {error ? <p className="working-time-message is-error" role="alert">{error}</p> : null}
@@ -227,10 +263,11 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
 
       {rows.length ? <div className="working-time-import-table-wrap"><table className="working-time-import-table"><thead><tr><th>Date</th><th>Phases de travail</th><th>Total retenu / déclaré</th><th>Navire</th><th>Décision</th></tr></thead><tbody>{rows.map((row, index) => {
         const server = rowStatus.get(row.date);
-        return <tr className={row.localError ? 'has-error' : row.localWarning ? 'has-warning' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}{row.localWarning ? <small className="is-warning">{row.localWarning}</small> : null}</td><td>{formatHours(phaseSeconds(row.phases))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{server?.issueCodes.length ? <small>{server.issueCodes.join(', ')}</small> : null}</td></tr>;
+        const issueText = server?.issueCodes.map((issue) => ISSUE_LABELS[issue] || issue).join(' · ');
+        return <tr className={row.localError ? 'has-error' : row.localWarning ? 'has-warning' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}{row.localWarning ? <small className="is-warning">{row.localWarning}</small> : null}</td><td>{formatHours(phaseSeconds(row.phases))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{issueText ? <small>{issueText}</small> : null}</td></tr>;
       })}</tbody></table></div> : null}
 
-      {preview ? <div className="working-time-import-summary"><span><strong>{preview.summary.readyRows}</strong> à importer</span><span><strong>{preview.summary.duplicateRows}</strong> doublons</span><span><strong>{preview.summary.blockedRows}</strong> verrouillées</span><span><strong>{preview.summary.inconsistentRows}</strong> incohérentes</span><span><strong>{formatHours(preview.summary.effectiveWorkSeconds)}</strong> retenues</span></div> : null}
+      {preview ? <div className="working-time-import-summary"><span><strong>{preview.summary.readyRows}</strong> à importer</span><span><strong>{preview.summary.replacementRows}</strong> à remplacer</span><span><strong>{preview.summary.duplicateRows}</strong> identiques / doublons</span><span><strong>{preview.summary.blockedRows}</strong> verrouillées</span><span><strong>{preview.summary.inconsistentRows}</strong> incohérentes</span><span><strong>{formatHours(preview.summary.effectiveWorkSeconds)}</strong> retenues</span></div> : null}
 
       {workbook ? <footer className="working-time-import-actions"><p id="working-time-import-action-help">{actionMessage}</p><button aria-describedby="working-time-import-action-help" disabled={!canControl} onClick={() => void controlImport()} type="button">{busy ? <LoaderCircle aria-hidden="true" className="is-spinning" size={17} /> : null}Contrôler l’import</button><button aria-describedby="working-time-import-action-help" className="is-primary" disabled={!canCommit} onClick={() => void commitImport()} type="button">Valider l’import</button></footer> : null}
     </section>

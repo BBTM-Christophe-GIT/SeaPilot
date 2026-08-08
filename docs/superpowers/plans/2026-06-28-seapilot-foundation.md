@@ -53,7 +53,7 @@
 Run:
 
 ```powershell
-npm create vite@latest . -- --template react-ts
+pnpm create vite@latest . -- --template react-ts
 ```
 
 Expected: Vite creates `package.json`, `index.html`, `src`, TypeScript config, and Vite config without deleting `docs/`.
@@ -63,11 +63,11 @@ Expected: Vite creates `package.json`, `index.html`, `src`, TypeScript config, a
 Run:
 
 ```powershell
-npm install @supabase/supabase-js react-router-dom lucide-react clsx
-npm install -D vitest jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event
+pnpm add @supabase/supabase-js react-router-dom lucide-react clsx
+pnpm add -D vitest jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event
 ```
 
-Expected: `package-lock.json` is created and dependencies are added.
+Expected: `pnpm-lock.yaml` is created and dependencies are added.
 
 - [ ] **Step 3: Replace `package.json` scripts with app scripts**
 
@@ -143,7 +143,7 @@ a {
 Run:
 
 ```powershell
-npm run build
+pnpm build
 ```
 
 Expected: build succeeds and `dist/` is generated.
@@ -153,7 +153,7 @@ Expected: build succeeds and `dist/` is generated.
 Run:
 
 ```powershell
-git add package.json package-lock.json index.html vite.config.ts tsconfig.json tsconfig.node.json .gitignore src
+git add package.json pnpm-lock.yaml index.html vite.config.ts tsconfig.json tsconfig.node.json .gitignore src
 git commit -m "chore: scaffold SeaPilot web app"
 ```
 
@@ -210,7 +210,7 @@ describe('readRequiredEnv', () => {
 Run:
 
 ```powershell
-npm test -- src/lib/env.test.ts
+pnpm test -- src/lib/env.test.ts
 ```
 
 Expected: FAIL because `src/lib/env.ts` does not exist.
@@ -271,7 +271,7 @@ export const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
 Run:
 
 ```powershell
-npm test -- src/lib/env.test.ts
+pnpm test -- src/lib/env.test.ts
 ```
 
 Expected: PASS.
@@ -605,7 +605,7 @@ describe('AuthProvider', () => {
 Run:
 
 ```powershell
-npm test -- src/features/auth/AuthProvider.test.tsx
+pnpm test -- src/features/auth/AuthProvider.test.tsx
 ```
 
 Expected: FAIL because `AuthProvider.tsx` does not exist.
@@ -730,7 +730,7 @@ export function RequireAuth() {
 Run:
 
 ```powershell
-npm test -- src/features/auth/AuthProvider.test.tsx
+pnpm test -- src/features/auth/AuthProvider.test.tsx
 ```
 
 Expected: PASS.
@@ -784,7 +784,7 @@ describe('module access', () => {
 Run:
 
 ```powershell
-npm test -- src/features/permissions/moduleAccess.test.ts
+pnpm test -- src/features/permissions/moduleAccess.test.ts
 ```
 
 Expected: FAIL because permission files do not exist.
@@ -874,7 +874,7 @@ export function getVisibleModules(roles: RoleKey[]): AppModule[] {
 Run:
 
 ```powershell
-npm test -- src/features/permissions/moduleAccess.test.ts
+pnpm test -- src/features/permissions/moduleAccess.test.ts
 ```
 
 Expected: PASS.
@@ -1132,8 +1132,8 @@ describe('AppShell', () => {
 Run:
 
 ```powershell
-npm test -- src/features/shell/AppShell.test.tsx
-npm run build
+pnpm test -- src/features/shell/AppShell.test.tsx
+pnpm build
 ```
 
 Expected: PASS and build succeeds.
@@ -1178,7 +1178,7 @@ describe('mapRoleRows', () => {
 Run:
 
 ```powershell
-npm test -- src/features/profiles/profileQueries.test.ts
+pnpm test -- src/features/profiles/profileQueries.test.ts
 ```
 
 Expected: FAIL because `profileQueries.ts` does not exist.
@@ -1329,7 +1329,7 @@ with:
 Run:
 
 ```powershell
-npm test -- src/features/profiles/profileQueries.test.ts src/features/shell/AppShell.test.tsx
+pnpm test -- src/features/profiles/profileQueries.test.ts src/features/shell/AppShell.test.tsx
 ```
 
 Expected: PASS.
@@ -1423,7 +1423,7 @@ git commit -m "docs: add app domain deployment notes"
 Run:
 
 ```powershell
-npm test
+pnpm test
 ```
 
 Expected: all Vitest suites pass.
@@ -1433,7 +1433,7 @@ Expected: all Vitest suites pass.
 Run:
 
 ```powershell
-npm run build
+pnpm build
 ```
 
 Expected: TypeScript and Vite build succeed.

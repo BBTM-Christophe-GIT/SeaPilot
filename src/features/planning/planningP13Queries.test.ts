@@ -50,7 +50,8 @@ describe('Planning P1.3 query contracts', () => {
     await refreshPlanningNotifications(client, '2026-08-01');
     await markPlanningNotificationRead(client, 42, true);
     expect(rpc).toHaveBeenNthCalledWith(1, 'refresh_planning_notifications', { p_reference_date: '2026-08-01' });
-    expect(rpc).toHaveBeenNthCalledWith(2, 'mark_planning_notification_read', { p_notification_id: 42, p_read: true });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'refresh_working_time_notifications', { p_reference_date: '2026-08-01' });
+    expect(rpc).toHaveBeenNthCalledWith(3, 'mark_planning_notification_read', { p_notification_id: 42, p_read: true });
   });
 
   it('maps recipient state and typed dependencies', () => {

@@ -2,23 +2,38 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   BadgeCheck,
+  BarChart3,
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
+  FileClock,
   FileSignature,
+  Filter,
+  Gauge,
+  History,
   LockKeyhole,
   PenLine,
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   Trash2,
   UserCheck,
+  Users,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { RoleKey } from '../permissions/roles';
+import { todayPlanningDate } from '../planning/planningDates';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
-import type { WorkingTimeInterval, WorkingTimePeriodKind, WorkingTimeRegisterStatus } from './workingTimeModel';
+import type { WorkingTimeInterval } from './workingTimeModel';
 import {
   fetchWorkingTimeWorkspace,
+  discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   saveWorkingTimeInterval,
@@ -42,15 +57,31 @@ interface WorkingTimeWorkflowPanelProps {
   currentPerson: CurrentPersonSummary | null;
   range: WorkingTimeRange;
   previewMode?: boolean;
+  refreshToken?: number;
+  onMonthChange?: (direction: -1 | 0 | 1) => void;
+  onRefresh?: () => Promise<void> | void;
 }
 
-const STATUS_LABELS: Record<WorkingTimeRegisterStatus, string> = {
-  draft: 'Brouillon',
-  awaiting_sailor_signature: 'Signature du marin attendue',
-  submitted: 'Soumis au contrôle',
-  validated: 'Validé et verrouillé',
-  reopened: 'Rouvert pour correction',
-};
+type PersonnelFilter = 'active' | 'departed';
+type CrewGroup = 'Officiers' | 'Pont' | 'Machine' | 'Électrotechnique' | 'Cuisine' | 'Services généraux';
+
+const CREW_GROUPS: CrewGroup[] = ['Officiers', 'Pont', 'Machine', 'Électrotechnique', 'Cuisine', 'Services généraux'];
+
+function crewGroup(functionLabel: string, gradeLabel?: string): CrewGroup {
+  const value = `${functionLabel} ${gradeLabel}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR');
+  if (/capitaine|officier|lieutenant|commandant|second/.test(value)) return 'Officiers';
+  if (/electro|electric/.test(value)) return 'Électrotechnique';
+  if (/mecan|motoriste|machine|graisseur/.test(value)) return 'Machine';
+  if (/cuisin|chef de cuisine/.test(value)) return 'Cuisine';
+  if (/steward|hotel|service general|administr|direction|responsable/.test(value)) return 'Services généraux';
+  return 'Pont';
+}
+
+function isVisibleForPersonnelFilter(person: { departedOn?: string | null; active?: boolean }, filter: PersonnelFilter, today: string) {
+  const departed = person.departedOn?.slice(0, 10) || null;
+  const isDeparted = Boolean(departed && departed < today);
+  return filter === 'departed' ? isDeparted : !isDeparted && person.active !== false;
+}
 
 interface NonComplianceDraft {
   causeCategory: WorkingTimeNonComplianceCause | '';
@@ -140,8 +171,27 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatMonthLabel(monthStart: string): string {
+  const date = new Date(`${monthStart}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return monthStart;
+  const label = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(date);
+  return label.charAt(0).toLocaleUpperCase('fr-FR') + label.slice(1);
+}
+
 function formatPerson(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim();
+}
+
+function compactDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '—';
+  const safe = Math.max(0, Math.round(seconds));
+  return `${Math.floor(safe / 3600)} h ${String(Math.floor((safe % 3600) / 60)).padStart(2, '0')}`;
+}
+
+function formatSelectedDay(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  const label = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(date);
+  return label.charAt(0).toLocaleUpperCase('fr-FR') + label.slice(1);
 }
 
 function SignatureCard({ signature, imageUrl, label }: {
@@ -172,15 +222,18 @@ export function WorkingTimeWorkflowPanel({
   currentPerson,
   range,
   previewMode = false,
+  refreshToken = 0,
+  onMonthChange,
+  onRefresh,
 }: WorkingTimeWorkflowPanelProps) {
-  const enabled = Boolean(currentPerson && range.start && range.end && range.start <= range.end);
-  const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range);
-  const [selectedRegisterId, setSelectedRegisterId] = useState<number | null>(null);
+  const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+  const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
+  const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
   const [personId, setPersonId] = useState<number | null>(currentPerson?.id || null);
-  const [periodKind, setPeriodKind] = useState<WorkingTimePeriodKind>('weekly');
-  const [periodStart, setPeriodStart] = useState(range.start);
-  const [startsAt, setStartsAt] = useState(`${range.start}T08:00`);
-  const [endsAt, setEndsAt] = useState(`${range.start}T16:00`);
+  const [registerSearch, setRegisterSearch] = useState('');
+  const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
+  const [endsAt, setEndsAt] = useState(`${range.start}T00:00`);
   const [vesselId, setVesselId] = useState('');
   const [watchGroup, setWatchGroup] = useState('');
   const [intervalComment, setIntervalComment] = useState('');
@@ -196,6 +249,12 @@ export function WorkingTimeWorkflowPanel({
   const [isExporting, setIsExporting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [openRegisterMenu, setOpenRegisterMenu] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<CrewGroup>>(new Set());
+  const [selectedDay, setSelectedDay] = useState(range.start);
 
   const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
   const isSailorOnlyView = roles.includes('marin')
@@ -204,15 +263,60 @@ export function WorkingTimeWorkflowPanel({
     () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.registers],
   );
+  const visibleReadablePeople = useMemo(() => {
+    const readable = workspace?.readablePeople || [];
+    const fallback = visibleRegisters.map((register) => ({
+      personId: register.personId,
+      firstName: register.personName.split(' ')[0] || register.personName,
+      lastName: register.personName.split(' ').slice(1).join(' '),
+      functionLabel: register.functionLabel,
+      gradeLabel: '',
+      departedOn: null,
+      active: true,
+      isSelf: register.personId === currentPersonId,
+    }));
+    const people = readable.length ? readable : fallback;
+    return people.filter((person) => !isSailorOnlyView || person.personId === currentPersonId);
+  }, [currentPersonId, isSailorOnlyView, visibleRegisters, workspace?.readablePeople]);
   const visibleEditablePeople = useMemo(
     () => workspace?.editablePeople.filter((person) => !isSailorOnlyView || person.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.editablePeople],
   );
-  const selectedRegister = visibleRegisters.find((register) => register.id === selectedRegisterId) || null;
-  const selectedIntervals = useMemo(
-    () => workspace?.intervals.filter((interval) => interval.registerId === selectedRegisterId) || [],
-    [selectedRegisterId, workspace?.intervals],
+  const monthlyRegisters = useMemo(() => visibleRegisters.filter((register) => register.periodKind === 'monthly'
+    && register.periodStart === range.start
+    && register.periodEnd === range.end), [range.end, range.start, visibleRegisters]);
+  const monthlyRegisterByPerson = useMemo(
+    () => new Map(monthlyRegisters.map((register) => [register.personId, register])),
+    [monthlyRegisters],
   );
+  const normalizedSearch = registerSearch.trim().toLocaleLowerCase('fr-FR');
+  const localToday = useMemo(() => todayPlanningDate(), []);
+  const catalogPeople = useMemo(() => visibleReadablePeople.filter((person) => (
+    isVisibleForPersonnelFilter(person, personnelFilter, localToday)
+    && (!normalizedSearch
+      || `${person.firstName} ${person.lastName} ${person.functionLabel} ${person.gradeLabel}`.toLocaleLowerCase('fr-FR').includes(normalizedSearch))
+  )), [localToday, normalizedSearch, personnelFilter, visibleReadablePeople]);
+  const groupedPeople = useMemo(() => CREW_GROUPS.map((label) => ({
+    label,
+    people: catalogPeople.filter((person) => crewGroup(person.functionLabel, person.gradeLabel) === label),
+  })).filter((group) => group.people.length), [catalogPeople]);
+  const selectedRegister = selectedPersonId ? monthlyRegisterByPerson.get(selectedPersonId) || null : null;
+  const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
+  const displayedMonthLabel = formatMonthLabel(range.start);
+  const selectedIntervals = useMemo(
+    () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId
+      && interval.localWorkDate >= range.start
+      && interval.localWorkDate <= range.end) || [],
+    [range.end, range.start, selectedPersonId, workspace?.intervals],
+  );
+  const selectedDayIntervals = useMemo(
+    () => selectedIntervals.filter((interval) => interval.localWorkDate === selectedDay),
+    [selectedDay, selectedIntervals],
+  );
+  const selectedCalculation = useMemo(() => workspace?.calculations
+    .filter((calculation) => calculation.personId === selectedPersonId && calculation.localWindowEndDate === selectedDay)
+    .sort((left, right) => left.windowEnd.localeCompare(right.windowEnd)).at(-1) || null,
+  [selectedDay, selectedPersonId, workspace?.calculations]);
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = roles.includes('capitaine');
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
@@ -271,13 +375,38 @@ export function WorkingTimeWorkflowPanel({
     setPersonId((current) => current && visibleEditablePeople.some((person) => person.personId === current)
       ? current
       : visibleEditablePeople[0]?.personId || null);
-    setSelectedRegisterId((current) => {
-      if (current && visibleRegisters.some((register) => register.id === current)) return current;
-      return visibleRegisters.find((register) => register.personId === workspace.currentPersonId)?.id
-        || visibleRegisters[0]?.id
+    setSelectedPersonId((current) => {
+      if (current
+        && visibleReadablePeople.some((person) => person.personId === current)
+        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0)) return current;
+      return (monthlyRegisterByPerson.has(workspace.currentPersonId) ? workspace.currentPersonId : null)
+        || monthlyRegisters[0]?.personId
+        || visibleReadablePeople.find((person) => person.personId === workspace.currentPersonId)?.personId
+        || visibleReadablePeople[0]?.personId
         || null;
     });
-  }, [currentPerson?.id, visibleEditablePeople, visibleRegisters, workspace]);
+  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, visibleEditablePeople, visibleReadablePeople, workspace]);
+
+  useEffect(() => {
+    if (!workspace || !catalogPeople.length) return;
+    setSelectedPersonId((current) => current && catalogPeople.some((person) => person.personId === current)
+      ? current
+      : catalogPeople[0].personId);
+  }, [catalogPeople, workspace]);
+
+  useEffect(() => {
+    const selectedPerson = catalogPeople.find((person) => person.personId === selectedPersonId);
+    const selectedGroup = selectedPerson ? crewGroup(selectedPerson.functionLabel, selectedPerson.gradeLabel) : groupedPeople[0]?.label;
+    if (!selectedGroup) return;
+    setExpandedGroups((current) => current.has(selectedGroup) ? current : new Set([...current, selectedGroup]));
+  }, [catalogPeople, groupedPeople, selectedPersonId]);
+
+  useEffect(() => {
+    setSelectedDay(range.start);
+    setStartsAt(`${range.start}T00:00`);
+    setEndsAt(`${range.start}T00:00`);
+    setPendingPhases([]);
+  }, [range.start]);
 
   useEffect(() => {
     if (!workspace || !selectedRegister) {
@@ -366,11 +495,65 @@ export function WorkingTimeWorkflowPanel({
   function resetIntervalForm() {
     setEditingIntervalId(null);
     setPendingPhases([]);
-    setStartsAt(`${selectedRegister?.periodStart || range.start}T08:00`);
-    setEndsAt(`${selectedRegister?.periodStart || range.start}T16:00`);
+    setStartsAt(`${selectedDay}T00:00`);
+    setEndsAt(`${selectedDay}T00:00`);
     setVesselId('');
     setWatchGroup('');
     setIntervalComment('');
+  }
+
+  async function persistPendingSelection() {
+    if (!selectedRegister) return;
+    const phases = editingIntervalId
+      ? [{ startsAt, endsAt }]
+      : pendingPhases;
+    if (!phases.length) return;
+    const common = {
+      registerId: selectedRegister.id,
+      timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
+      vesselId: vesselId ? Number(vesselId) : null,
+      watchGroup: watchGroup.trim() || null,
+      comment: intervalComment.trim() || null,
+    };
+    if (editingIntervalId) {
+      await saveWorkingTimeInterval(client, {
+        ...common,
+        startsAt: localInputToIso(phases[0].startsAt),
+        endsAt: localInputToIso(phases[0].endsAt),
+        intervalId: editingIntervalId,
+      });
+    } else {
+      await saveWorkingTimePhases(client, {
+        ...common,
+        phases: phases.map((phase) => ({
+          startsAt: localInputToIso(phase.startsAt),
+          endsAt: localInputToIso(phase.endsAt),
+        })),
+      });
+    }
+    resetIntervalForm();
+  }
+
+  async function persistCompleteCaptainResponses() {
+    if (!selectedRegister || !hasCaptainRole) return;
+    await Promise.all(nonCompliantDates.map(async (date) => {
+      const response = dayResponses[date];
+      if (!response || !nonComplianceComplete(response)) return;
+      await saveWorkingTimeDayComment(client, {
+        registerId: selectedRegister.id,
+        localWorkDate: date,
+        causeCategory: response.causeCategory as WorkingTimeNonComplianceCause,
+        operationalContext: response.operationalContext,
+        immediateAction: response.immediateAction,
+        compensatoryRestPlan: response.compensatoryRestPlan,
+        comment: response.comment,
+      });
+    }));
+  }
+
+  async function refreshEverything() {
+    if (onRefresh) await onRefresh();
+    else await reload();
   }
 
   function editInterval(interval: WorkingTimeInterval) {
@@ -383,17 +566,109 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment(interval.comment || '');
   }
 
-  if (!currentPerson) {
+  if (!currentPerson && !canBrowseWithoutProfile) {
     const canManageImports = roles.some((role) => role === 'admin' || role === 'armement');
     return <section className="working-time-workflow"><p className="working-time-message is-warning">Votre compte n’est pas encore associé à une fiche RH. Cette association est nécessaire uniquement pour saisir, signer ou valider vos propres heures.{canManageImports ? ' L’import administrateur reste disponible ci-dessous.' : ''}</p></section>;
   }
 
   return (
     <section aria-labelledby="working-time-registers-title" className="working-time-workflow">
-      <header className="working-time-section-heading">
+      <nav aria-label="Actions du suivi du temps de travail" className="working-time-command-bar">
+        <div className="working-time-command-group">
+          <span>Armement</span>
+          <div>
+            <button onClick={() => document.getElementById('working-time-p13')?.scrollIntoView({ behavior: 'smooth' })} type="button"><Gauge aria-hidden="true" size={21} /><small>Cockpit métier P1.3</small></button>
+            <button aria-label="Mois précédent" onClick={() => onMonthChange?.(-1)} type="button"><ChevronLeft aria-hidden="true" size={21} /><small>Mois précédent</small></button>
+            <button onClick={() => onMonthChange?.(0)} type="button"><CalendarDays aria-hidden="true" size={21} /><small>Mois en cours</small></button>
+            <button aria-label="Mois suivant" onClick={() => onMonthChange?.(1)} type="button"><ChevronRight aria-hidden="true" size={21} /><small>Mois suivant</small></button>
+            <button aria-current="page" className="is-active" type="button"><FileClock aria-hidden="true" size={22} /><small>Temps de travail</small></button>
+            <span className="working-time-command-popover-anchor">
+              <button aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} type="button"><Filter aria-hidden="true" size={21} /><small>Filtrer le personnel</small></button>
+              {filterOpen ? <span className="working-time-command-popover" role="dialog">
+                <strong>Personnel affiché</strong>
+                <label><input checked={personnelFilter === 'active'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('active')} type="radio" /> Personnel en poste</label>
+                <label><input checked={personnelFilter === 'departed'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('departed')} type="radio" /> Personnel sorti</label>
+              </span> : null}
+            </span>
+          </div>
+        </div>
+
+        <div className="working-time-command-group">
+          <span>Gestion des congés</span>
+          <div>
+            <button disabled={isLoading || isSaving} onClick={() => void refreshEverything()} type="button"><RefreshCw aria-hidden="true" className={isLoading ? 'is-spinning' : ''} size={21} /><small>Actualiser</small></button>
+            <span className="working-time-command-popover-anchor">
+              <button aria-expanded={openRegisterMenu} onClick={() => setOpenRegisterMenu((open) => !open)} type="button"><Plus aria-hidden="true" size={21} /><small>Ouvrir un registre</small></button>
+              {openRegisterMenu ? <span className="working-time-command-popover is-register" role="dialog">
+                <strong>Ouvrir {displayedMonthLabel}</strong>
+                <label>Marin<select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
+                  {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
+                  {visibleEditablePeople.map((person) => <option key={person.personId} value={person.personId}>{formatPerson(person.firstName, person.lastName)}{person.isSelf ? ' — moi' : ''}</option>)}
+                </select></label>
+                <button disabled={isSaving || !currentPerson || !personId} onClick={() => void runAction(async () => {
+                  await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind: 'monthly', periodStart: range.start });
+                  setSelectedPersonId(personId);
+                  setOpenRegisterMenu(false);
+                }, 'Le registre est prêt pour la saisie.')} type="button">Ouvrir ce mois</button>
+              </span> : null}
+            </span>
+            <button disabled={isSaving || (!canEdit && !hasCaptainRole) || (!pendingPhases.length && !editingIntervalId && !Object.values(dayResponses).some(nonComplianceComplete))} onClick={() => void runAction(async () => {
+              await persistPendingSelection();
+              await persistCompleteCaptainResponses();
+            }, 'Le brouillon et les commentaires complets ont été enregistrés.')} type="button"><FileSignature aria-hidden="true" size={21} /><small>Enregistrer le brouillon</small></button>
+            <button disabled={!canEdit || isSaving || (!selectedIntervals.length && !pendingPhases.length)} onClick={() => void runAction(async () => {
+              await persistPendingSelection();
+              await persistCompleteCaptainResponses();
+              await transitionWorkingTimeRegister(client, { registerId: selectedRegister!.id, action: 'request_sailor_signature' });
+            }, 'Le registre attend maintenant la signature du marin.')} type="button"><Send aria-hidden="true" size={21} /><small>Demander la signature</small></button>
+          </div>
+        </div>
+
+        <div className="working-time-command-group">
+          <span>Aide à la décision</span>
+          <div>
+            <button onClick={() => document.getElementById('working-time-p13')?.scrollIntoView({ behavior: 'smooth' })} type="button"><Bell aria-hidden="true" size={21} /><small>Alertes</small>{nonCompliantDates.length ? <em>{nonCompliantDates.length}</em> : null}</button>
+            <button onClick={() => document.getElementById('working-time-hse')?.scrollIntoView({ behavior: 'smooth' })} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Analyses</small></button>
+            {selectedRegister?.status === 'awaiting_sailor_signature' && isOwnRegister ? <button disabled={isSaving || !currentSignature} onClick={() => {
+              if (!window.confirm('Apposer explicitement votre signature de profil et soumettre ce registre ?')) return;
+              setSignatureConsent(true);
+              void runAction(() => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'sailor_sign' }), 'Votre registre a été signé et soumis.');
+            }} type="button"><FileSignature aria-hidden="true" size={21} /><small>Signer et soumettre</small></button> : null}
+            {selectedRegister?.status === 'submitted' && !isOwnRegister && (hasCaptainRole || hasManagementValidationRole) ? <button disabled={isSaving || !canValidate} onClick={() => void runAction(
+              () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'captain_validate' }),
+              'Le registre est validé et verrouillé.',
+            )} type="button"><UserCheck aria-hidden="true" size={21} /><small>Valider</small></button> : null}
+            {canReopen ? <button disabled={isSaving} onClick={() => {
+              const reason = window.prompt('Motif de la réouverture :', reopenReason);
+              if (!reason?.trim()) return;
+              void runAction(() => transitionWorkingTimeRegister(client, { registerId: selectedRegister!.id, action: 'reopen', comment: reason.trim() }), 'Le registre a été rouvert et le motif ajouté à l’audit.');
+            }} type="button"><LockKeyhole aria-hidden="true" size={21} /><small>Réouvrir</small></button> : null}
+          </div>
+        </div>
+
+        <div className="working-time-command-group">
+          <span>Documents</span>
+          <div>
+            <button onClick={() => setOpenRegisterMenu(true)} type="button"><Users aria-hidden="true" size={21} /><small>Registres</small></button>
+            <button disabled={!selectedRegister || isExporting} onClick={() => void handlePdfDownload()} type="button"><Download aria-hidden="true" size={21} /><small>{isExporting ? 'Génération…' : 'Export PDF'}</small></button>
+            <button disabled={!selectedRegister} onClick={() => setHistoryOpen((open) => !open)} type="button"><History aria-hidden="true" size={21} /><small>Historique</small></button>
+          </div>
+        </div>
+      </nav>
+
+      {historyOpen && selectedRegister ? <aside aria-label="Historique du registre" className="working-time-history-drawer">
+        <header><div><span>Historique</span><strong>{selectedRegister.personName} · {displayedMonthLabel}</strong></div><button aria-label="Fermer l’historique" onClick={() => setHistoryOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
+        <div className="working-time-history-list">
+          {selectedIntervals.map((interval) => <article key={interval.id}><div><strong>{formatDateTime(interval.startsAt)} → {formatDateTime(interval.endsAt)}</strong><small>{workspace?.vessels.find((vessel) => vessel.id === interval.vesselId)?.name || 'Sans navire'}{interval.watchGroup ? ` · ${interval.watchGroup}` : ''}</small></div>{canEdit ? <span><button onClick={() => { editInterval(interval); setHistoryOpen(false); }} type="button"><PenLine aria-hidden="true" size={15} />Corriger</button><button onClick={() => { setVoidCandidateId(interval.id); setVoidReason(''); }} type="button"><Trash2 aria-hidden="true" size={15} />Retirer</button></span> : null}</article>)}
+          {!selectedIntervals.length ? <p>Aucun créneau enregistré sur ce mois.</p> : null}
+        </div>
+        {voidCandidateId ? <div className="working-time-void-form"><label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label><button disabled={voidReason.trim().length < 2} onClick={() => void runAction(async () => { await voidWorkingTimeInterval(client, voidCandidateId, voidReason); setVoidCandidateId(null); setVoidReason(''); }, 'Le créneau a été retiré sans effacer son historique.')} type="button">Confirmer</button></div> : null}
+        <ol>{selectedValidations.map((event) => <li key={event.id}><strong>{formatDateTime(event.occurredAt)}</strong><span>{event.eventType} · {event.actorName}</span></li>)}</ol>
+      </aside> : null}
+      <header className="working-time-section-heading" hidden>
         <div><p>Registres individuels</p><h2 id="working-time-registers-title">Saisie, signature et validation</h2></div>
         <div className="working-time-heading-actions">
-          <span>{visibleRegisters.length} registre(s) sur la période</span>
+          <span>{catalogPeople.length} marin(s) affiché(s) · {displayedMonthLabel}</span>
           <button disabled={isLoading || isSaving} onClick={() => void reload()} type="button">
             <RefreshCw aria-hidden="true" size={15} /> Actualiser
           </button>
@@ -403,12 +678,13 @@ export function WorkingTimeWorkflowPanel({
       {errorMessage ? <p className="working-time-message is-error" role="alert">{errorMessage}</p> : null}
       {actionError ? <p className="working-time-message is-error" role="alert">{actionError}</p> : null}
       {actionMessage ? <p className="working-time-message is-success" role="status">{actionMessage}</p> : null}
+      {!currentPerson && canBrowseWithoutProfile ? <p className="working-time-message is-warning">Vous pouvez consulter et rechercher tous les registres. Une fiche RH liée à votre compte reste requise pour saisir, signer ou valider des heures.</p> : null}
       {isLoading && !workspace ? <div className="admin-state" role="status">Chargement des registres…</div> : null}
 
       {workspace ? (
         <>
-          <div className="working-time-register-create">
-            <label>Personne
+          <div className="working-time-register-create" hidden>
+            <label>Marin
               <select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
                 {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
                 {visibleEditablePeople.map((person) => (
@@ -418,58 +694,57 @@ export function WorkingTimeWorkflowPanel({
                 ))}
               </select>
             </label>
-            <label>Période
-              <select onChange={(event) => {
-                const nextKind = event.target.value as WorkingTimePeriodKind;
-                setPeriodKind(nextKind);
-                if (nextKind === 'monthly') setPeriodStart((current) => `${current.slice(0, 7)}-01`);
-              }} value={periodKind}>
-                <option value="weekly">Hebdomadaire</option>
-                <option value="monthly">Mensuelle</option>
-              </select>
+            <label>Mois et année
+              <input aria-label="Mois du registre" disabled type="month" value={range.start.slice(0, 7)} />
             </label>
-            <label>Début
-              <input onChange={(event) => setPeriodStart(event.target.value)} type="date" value={periodStart} />
-            </label>
-            <button disabled={isSaving || !personId} onClick={() => void runAction(async () => {
-              const registerId = await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind, periodStart });
-              setSelectedRegisterId(registerId);
+            <button disabled={isSaving || !currentPerson || !personId} onClick={() => void runAction(async () => {
+              await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind: 'monthly', periodStart: range.start });
+              setSelectedPersonId(personId);
             }, 'Le registre est prêt pour la saisie.')} type="button">
-              <Plus aria-hidden="true" size={17} /> Ouvrir le registre
+              <Plus aria-hidden="true" size={17} /> Ouvrir ce mois
             </button>
           </div>
           {!visibleEditablePeople.length ? <p className="working-time-message is-warning">Aucune fiche RH n’est accessible en saisie pour votre rôle et cette période.</p> : null}
 
           <div className="working-time-workspace-grid">
             <nav aria-label="Registres accessibles" className="working-time-register-list">
-              {visibleRegisters.length ? visibleRegisters.map((register) => (
-                <button
-                  className={register.id === selectedRegisterId ? 'is-active' : ''}
-                  key={register.id}
-                  onClick={() => setSelectedRegisterId(register.id)}
-                  type="button"
-                >
-                  <span>{register.personName}</span>
-                  <small>{register.periodStart} → {register.periodEnd}</small>
-                  <em className={`is-${register.status}`}>{STATUS_LABELS[register.status]}</em>
-                </button>
-              )) : <p>Aucun registre sur cette période.</p>}
+              <h3>Équipage</h3>
+              <label className="working-time-register-search">
+                <span><Search aria-hidden="true" size={16} /><input aria-label="Rechercher un marin" onChange={(event) => setRegisterSearch(event.target.value)} placeholder="Rechercher un marin…" type="search" value={registerSearch} /></span>
+              </label>
+              {groupedPeople.length ? groupedPeople.map((group) => {
+                const expanded = expandedGroups.has(group.label);
+                return <section className="working-time-crew-group" key={group.label}>
+                  <button aria-expanded={expanded} className="working-time-crew-group-toggle" onClick={() => setExpandedGroups((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.label)) next.delete(group.label); else next.add(group.label);
+                    return next;
+                  })} type="button"><ChevronDown aria-hidden="true" size={15} /><span>{group.label}</span><strong>{group.people.length}</strong></button>
+                  {expanded ? <div className="working-time-crew-rows">{group.people.map((person) => {
+                    const register = monthlyRegisterByPerson.get(person.personId);
+                    const personName = formatPerson(person.firstName, person.lastName);
+                    return <div className={`working-time-register-card ${person.personId === selectedPersonId ? 'is-active' : ''}`} key={person.personId}>
+                      <button className="working-time-register-select" onClick={() => {
+                        setSelectedPersonId(person.personId);
+                        if (visibleEditablePeople.some((editable) => editable.personId === person.personId)) setPersonId(person.personId);
+                      }} type="button"><span>{personName}</span><small>{person.functionLabel || person.gradeLabel || 'Personnel maritime'}</small><i className={person.active !== false ? 'is-available' : ''} title={person.active !== false ? 'Disponible' : 'Indisponible'} /></button>
+                      {register?.status === 'draft' ? <button aria-label={`Supprimer le brouillon de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
+                        if (!window.confirm(`Retirer ce brouillon de ${personName} et abandonner ses modifications non enregistrées ?`)) return;
+                        void runAction(() => discardWorkingTimeDraft(client, register.id), 'Le brouillon a été retiré sans enregistrer ses modifications.');
+                      }} title="Supprimer ce brouillon" type="button"><X aria-hidden="true" size={16} /></button> : null}
+                    </div>;
+                  })}</div> : null}
+                </section>;
+              }) : <p>Aucun marin ne correspond à la recherche.</p>}
             </nav>
 
             {selectedRegister ? (
               <article className="working-time-register-detail">
                 <header>
                   <div>
-                    <p>{selectedRegister.functionLabel || 'Personnel maritime'}</p>
-                    <h3>{selectedRegister.personName}</h3>
-                    <span>{selectedRegister.periodStart} → {selectedRegister.periodEnd}</span>
+                    <h3>{selectedRegister.personName} <span>· {selectedRegister.functionLabel || 'Personnel maritime'}</span></h3>
                   </div>
-                  <div className="working-time-register-header-actions">
-                    <button disabled={isExporting} onClick={() => void handlePdfDownload()} type="button">
-                      <Download aria-hidden="true" size={16} /> {isExporting ? 'Génération…' : 'Registre PDF mensuel'}
-                    </button>
-                    <strong className={`working-time-status is-${selectedRegister.status}`}>{STATUS_LABELS[selectedRegister.status]}</strong>
-                  </div>
+                  <strong className="working-time-month-title">{displayedMonthLabel}</strong>
                 </header>
 
                 {selectedRegister.status === 'validated' ? (
@@ -477,6 +752,10 @@ export function WorkingTimeWorkflowPanel({
                 ) : null}
 
                 <div className="working-time-signatures">
+                  <h4>Conformité</h4>
+                  <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedRegister.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
+                  <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
+                  <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{selectedCalculation?.violationCodes.length || 0}</strong><small>{selectedCalculation?.isCompliant === false ? 'Journée non conforme' : 'Aucune alerte détectée'}</small></article>
                   <SignatureCard
                     imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined}
                     label="Titulaire du registre"
@@ -492,7 +771,7 @@ export function WorkingTimeWorkflowPanel({
                 </div>
 
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
-                  <div className="working-time-subheading"><h4>Créneaux horodatés</h4><span>{selectedIntervals.length} créneau(x)</span></div>
+                  <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
                   <WorkingTimeEntryBoard
                     canEdit={canEdit}
                     client={client}
@@ -505,6 +784,7 @@ export function WorkingTimeWorkflowPanel({
                     onCommentChange={setIntervalComment}
                     onEndsAtChange={setEndsAt}
                     onPendingPhasesChange={setPendingPhases}
+                    onSelectedDayChange={setSelectedDay}
                     onStartsAtChange={setStartsAt}
                     onSubmit={(phases) => void runAction(async () => {
                       const common = {
@@ -536,12 +816,14 @@ export function WorkingTimeWorkflowPanel({
                     personId={selectedRegister.personId}
                     pendingPhases={pendingPhases}
                     startsAt={startsAt}
+                    selectedDay={selectedDay}
+                    showSubmitActions={false}
                     vesselId={vesselId}
                     vessels={workspace.vessels}
                     watchGroup={watchGroup}
                   />
                   {selectedIntervals.length ? (
-                    <div className="working-time-interval-list">
+                    <div className="working-time-interval-list" hidden>
                       {selectedIntervals.map((interval) => (
                         <div key={interval.id}>
                           <span><strong>{formatDateTime(interval.startsAt)}</strong> → {formatDateTime(interval.endsAt)}</span>
@@ -556,7 +838,7 @@ export function WorkingTimeWorkflowPanel({
                   ) : <p className="working-time-empty">Aucune heure saisie.</p>}
 
                   {voidCandidateId ? (
-                    <div className="working-time-void-form">
+                    <div className="working-time-void-form" hidden>
                       <label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
                       <button disabled={isSaving || voidReason.trim().length < 2} onClick={() => void runAction(async () => {
                         await voidWorkingTimeInterval(client, voidCandidateId, voidReason);
@@ -595,7 +877,7 @@ export function WorkingTimeWorkflowPanel({
                             <label>Repos compensateur prévu<textarea disabled={disabled} onChange={(event) => update('compensatoryRestPlan', event.target.value)} value={response.compensatoryRestPlan} /></label>
                             <label className="is-wide">Commentaire obligatoire<textarea disabled={disabled} onChange={(event) => update('comment', event.target.value)} value={response.comment} /></label>
                           </div>
-                          {hasCaptainRole && selectedRegister.status !== 'validated' ? <button disabled={isSaving || !nonComplianceComplete(response)} onClick={() => void runAction(
+                          {hasCaptainRole && selectedRegister.status !== 'validated' ? <button hidden disabled={isSaving || !nonComplianceComplete(response)} onClick={() => void runAction(
                             () => saveWorkingTimeDayComment(client, {
                               registerId: selectedRegister.id,
                               localWorkDate: date,
@@ -613,7 +895,7 @@ export function WorkingTimeWorkflowPanel({
                   </section>
                 ) : null}
 
-                <section className="working-time-workflow-actions" aria-label="Workflow du registre">
+                <section className="working-time-workflow-actions" aria-label="Workflow du registre" hidden>
                   <h4>Signature et décision</h4>
                   {canEdit ? <button disabled={isSaving || selectedIntervals.length === 0} onClick={() => void runAction(
                     () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'request_sailor_signature' }),
@@ -657,7 +939,26 @@ export function WorkingTimeWorkflowPanel({
                   {selectedRegister.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Validation terminée — historique et signatures figés.</p> : null}
                 </section>
               </article>
-            ) : <div className="working-time-register-detail working-time-empty"><p>Ouvrez un registre pour commencer la saisie.</p></div>}
+            ) : (
+              <div className="working-time-register-detail working-time-empty">
+                <div>
+                  <h3>{selectedCatalogPerson ? formatPerson(selectedCatalogPerson.firstName, selectedCatalogPerson.lastName) : 'Aucun marin sélectionné'}</h3>
+                  <p>{selectedCatalogPerson ? `Aucun registre mensuel pour ${displayedMonthLabel}.` : 'Sélectionnez un marin dans le catalogue.'}</p>
+                  {selectedCatalogPerson && currentPerson && visibleEditablePeople.some((person) => person.personId === selectedCatalogPerson.personId) ? (
+                    <button hidden disabled={isSaving} onClick={() => void runAction(async () => {
+                      await getOrCreateWorkingTimeRegister(client, {
+                        personId: selectedCatalogPerson.personId,
+                        periodKind: 'monthly',
+                        periodStart: range.start,
+                      });
+                      setPersonId(selectedCatalogPerson.personId);
+                    }, 'Le registre mensuel est prêt pour la saisie.')} type="button">
+                      <Plus aria-hidden="true" size={17} /> Ouvrir {displayedMonthLabel}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </div>
         </>
       ) : null}

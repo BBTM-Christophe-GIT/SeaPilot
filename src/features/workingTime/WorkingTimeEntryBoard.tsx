@@ -2,11 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   CheckCircle2,
-  Clock3,
-  Gauge,
-  MoonStar,
   Save,
-  ShieldAlert,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
@@ -34,12 +30,15 @@ interface WorkingTimeEntryBoardProps {
   comment: string;
   editingIntervalId: number | null;
   pendingPhases?: WorkingTimePhaseInput[];
+  selectedDay?: string;
+  showSubmitActions?: boolean;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onVesselIdChange: (value: string) => void;
   onWatchGroupChange: (value: string) => void;
   onCommentChange: (value: string) => void;
   onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
+  onSelectedDayChange?: (day: string) => void;
   onSubmit: (phases: WorkingTimePhaseInput[]) => void;
   onCancelEdit: () => void;
 }
@@ -69,11 +68,6 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   return `${hours} h ${pad(minutes)}`;
-}
-
-function formatSignedDuration(seconds: number): string {
-  if (!seconds) return 'Aucun impact';
-  return `${seconds < 0 ? '−' : '+'}${formatDuration(Math.abs(seconds))}`;
 }
 
 function formatDateTime(value: string | null): string {
@@ -110,16 +104,6 @@ function mergePhases(phases: WorkingTimePhaseInput[]): WorkingTimePhaseInput[] {
     }, []);
 }
 
-const VIOLATION_LABELS: Record<string, string> = {
-  work_24h: 'Travail sur 24 h',
-  rest_24h: 'Repos sur 24 h',
-  consecutive_rest: 'Repos consécutif',
-  rest_periods_24h: 'Fractionnement du repos',
-  work_7d: 'Travail sur 7 jours',
-  rest_7d: 'Repos sur 7 jours',
-  night_work_24h: 'Travail de nuit',
-};
-
 export function WorkingTimeEntryBoard({
   client,
   personId,
@@ -136,17 +120,20 @@ export function WorkingTimeEntryBoard({
   comment,
   editingIntervalId,
   pendingPhases = [],
+  selectedDay: controlledSelectedDay,
+  showSubmitActions = true,
   onStartsAtChange,
   onEndsAtChange,
   onVesselIdChange,
   onWatchGroupChange,
   onCommentChange,
   onPendingPhasesChange = () => undefined,
+  onSelectedDayChange = () => undefined,
   onSubmit,
   onCancelEdit,
 }: WorkingTimeEntryBoardProps) {
   const days = useMemo(() => periodDays(periodStart, periodEnd), [periodEnd, periodStart]);
-  const selectedDay = startsAt.slice(0, 10) || days[0] || periodStart;
+  const selectedDay = controlledSelectedDay || startsAt.slice(0, 10) || days[0] || periodStart;
   const [recommendation, setRecommendation] = useState<WorkingTimeEntryRecommendation | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -276,6 +263,13 @@ export function WorkingTimeEntryBoard({
   }
 
   function selectDay(day: string) {
+    onSelectedDayChange(day);
+    if (!validProposal(startsAt, endsAt)) {
+      setActivePendingIndex(null);
+      onStartsAtChange(`${day}T00:00`);
+      onEndsAtChange(`${day}T00:00`);
+      return;
+    }
     const startTime = startsAt.slice(11, 16) || '08:00';
     const endTime = endsAt.slice(11, 16) || '16:00';
     const crossesMidnight = endsAt.slice(0, 10) > startsAt.slice(0, 10) || endTime <= startTime;
@@ -355,7 +349,7 @@ export function WorkingTimeEntryBoard({
                   role="gridcell"
                   type="button"
                 >
-                  <time>{slot % 6 === 0 ? label : ''}</time><span />
+                  <time>{slot % 2 === 0 ? `${label.slice(0, 2)}h` : ''}</time><span />
                 </button>
               );
             })}
@@ -363,24 +357,14 @@ export function WorkingTimeEntryBoard({
         </div>
 
         <div className="working-time-recommendation-panel" aria-live="polite">
-          <div className="working-time-kpi-grid">
-            <article><Gauge aria-hidden="true" size={18} /><span>Travail 7 jours</span><strong>{recommendation ? formatDuration(recommendation.work7dSeconds) : '—'}</strong><small>{recommendation ? `${formatDuration(recommendation.available7dSeconds)} disponibles` : 'Calcul serveur'}</small></article>
-            <article><MoonStar aria-hidden="true" size={18} /><span>Repos consécutif</span><strong>{recommendation ? formatDuration(recommendation.longestRest24hSeconds) : '—'}</strong><small>{recommendation ? formatSignedDuration(recommendation.consecutiveRestImpactSeconds) : 'Impact en attente'}</small></article>
-            <article><ShieldAlert aria-hidden="true" size={18} /><span>Alertes</span><strong>{recommendation?.violationCodes.length || 0}</strong><small>{recommendation?.violationCodes.map((code) => VIOLATION_LABELS[code] || code).join(', ') || 'Aucun écart détecté'}</small></article>
-            <article><Clock3 aria-hidden="true" size={18} /><span>Statut</span><strong>{statusLabel}</strong><small>{recommendation?.policyName || 'Politique datée non résolue'}</small></article>
-          </div>
-
-          <div className={`working-time-guidance is-${status}`}>
-            <div className="working-time-guidance-summary">
-              <span>Durée supplémentaire maximale recommandée</span>
-              <strong>{formatDuration(maxRecommended)}</strong>
-              {recommendation?.alreadyNonCompliant ? <p>La personne est déjà non conforme : aucune heure supplémentaire recommandée.</p> : null}
-            </div>
+          <div className={`working-time-analysis-bar is-${status}`}>
+            <span>Analyse automatique</span>
             <dl>
-              <div><dt>Disponible sur 24 h</dt><dd>{recommendation ? formatDuration(recommendation.available24hSeconds) : '—'}</dd></div>
-              <div><dt>Impact repos total</dt><dd>{recommendation ? formatSignedDuration(recommendation.restImpactSeconds) : '—'}</dd></div>
-              <div><dt>Heure limite de fin</dt><dd>{formatDateTime(recommendation?.latestEndAt || null)}</dd></div>
-              <div><dt>Prochaine reprise compatible</dt><dd>{formatDateTime(recommendation?.nextResumeAt || null)}</dd></div>
+              <div><dt>Travail sur 7 jours</dt><dd>{recommendation ? formatDuration(recommendation.work7dSeconds) : '—'}</dd></div>
+              <div><dt>Repos consécutif actuel</dt><dd>{recommendation ? formatDuration(recommendation.longestRest24hSeconds) : '—'}</dd></div>
+              <div><dt>Conformité repos</dt><dd>{statusLabel}</dd></div>
+              <div><dt>Repos disponibles</dt><dd>{recommendation ? formatDuration(maxRecommended) : '—'}</dd></div>
+              <div><dt>Prochaine reprise</dt><dd>{formatDateTime(recommendation?.nextResumeAt || null)}</dd></div>
             </dl>
           </div>
           {phasesOverlap ? <p className="working-time-message is-error" role="alert">Les phases de travail ne peuvent pas se chevaucher.</p> : null}
@@ -401,10 +385,10 @@ export function WorkingTimeEntryBoard({
             {pendingPhases.length ? <button onClick={() => { onPendingPhasesChange([]); setActivePendingIndex(null); onStartsAtChange(`${selectedDay}T00:00`); onEndsAtChange(`${selectedDay}T00:00`); }} type="button">Effacer la sélection</button> : null}
           </div> : null}
           {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
-          <div className="working-time-form-actions">
+          {showSubmitActions ? <div className="working-time-form-actions">
             <button disabled={isSaving || !combinedPhases.length || phasesOverlap || phasesConflictExisting} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : `Enregistrer la sélection · ${combinedPhases.length} période${combinedPhases.length > 1 ? 's' : ''}`}</button>
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
-          </div>
+          </div> : null}
         </form>
       ) : <p className="working-time-lock-note">Ce registre est en lecture seule pour son statut actuel.</p>}
     </section>

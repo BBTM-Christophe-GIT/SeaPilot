@@ -53,9 +53,9 @@ Les écritures directes sont révoquées. `set_planning_assistant_pilot` exige l
 
 ```powershell
 npx tsc -b --pretty false
-npm run lint
+pnpm lint
 npx vitest run --maxWorkers=2
-npm run build
+pnpm build
 git diff --check
 ```
 

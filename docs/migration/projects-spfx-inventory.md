@@ -1044,7 +1044,7 @@ Références :
 - contrat de frontière : `docs/migration/projects-phase5-sharepoint-documents.md` ;
 - migration : `supabase/migrations/202607160002_projects_phase5_sharepoint_documents.sql` ;
 - interface : `src/features/projects/projectDocuments.ts` et `ProjectsPage.tsx` ;
-- rafraîchissement : `npm run refresh:sharepoint:project-documents`.
+- rafraîchissement : `pnpm refresh:sharepoint:project-documents`.
 
 ### 20.1 Parité documentaire effective
 

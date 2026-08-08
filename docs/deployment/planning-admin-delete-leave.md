@@ -30,9 +30,9 @@ Elle ajoute la RPC `public.delete_planning_leave(bigint)`. Aucun privilège dire
 ## Validation
 
 ```powershell
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 npx supabase test db --local supabase/tests/planning_global_distribution_test.sql
 ```
 

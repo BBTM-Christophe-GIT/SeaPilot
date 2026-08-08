@@ -60,7 +60,7 @@ Protéger ce fichier comme une donnée métier sensible. Ne jamais le joindre à
 ## 3. Exporter les données et uniquement les métadonnées des fichiers
 
 ```powershell
-npm run export:sharepoint:list -- `
+pnpm export:sharepoint:list -- `
   --source-key list-bbtm-clients `
   --source-key list-bbtm-flotte `
   --source-key list-remorque `
@@ -75,7 +75,7 @@ Le fichier `.data/sharepoint-projects-cutover.json` peut contenir des données m
 ## 4. Dry-run obligatoire
 
 ```powershell
-npm run import:sharepoint -- --file .data/sharepoint-projects-cutover.json --dry-run
+pnpm import:sharepoint -- --file .data/sharepoint-projects-cutover.json --dry-run
 ```
 
 Le dry-run doit reconnaître six sources. Arrêter en présence d’un mapping inconnu, d’un identifiant SharePoint de liste/item/drive/drive-item manquant, d’un dossier interprété comme fichier, ou d’un volume inattendu.
@@ -85,7 +85,7 @@ Le dry-run doit reconnaître six sources. Arrêter en présence d’un mapping i
 Fournir `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` dans la session opérateur ou le coffre de déploiement, jamais dans un fichier versionné. Exécuter :
 
 ```powershell
-npm run import:sharepoint -- `
+pnpm import:sharepoint -- `
   --file .data/sharepoint-projects-cutover.json `
   --resolve-project-links `
   --resolve-project-document-links `
@@ -98,7 +98,7 @@ Le bundle place les clients et la flotte avant les projets, puis les documents. 
 Sans clé service locale, l’import lié approuvé est équivalent et exécute dans la même transaction les upserts, la résolution client/navires, la création des contrats typés, le relèvement monotone du compteur et la résolution documentaire :
 
 ```powershell
-npm run import:sharepoint:linked -- --file .data/sharepoint-projects-live.json
+pnpm import:sharepoint:linked -- --file .data/sharepoint-projects-live.json
 ```
 
 Rejouer exactement la même commande. Les volumes et nombres de doublons doivent rester identiques. Une variation sans changement de source, un nouveau doublon ou une suppression est un No-Go. Ne pas appeler `--resolve-planning-links` pour rapprocher les lignes historiques : seul le lien explicite créé par `projects_create_planning_occurrence` est autorisé.
@@ -174,13 +174,13 @@ Sinon, conserver SharePoint comme source active et noter `NO-GO`. Ne jamais tran
 Dry-run normal :
 
 ```powershell
-npm run refresh:sharepoint:project-documents
+pnpm refresh:sharepoint:project-documents
 ```
 
 Après contrôle des volumes :
 
 ```powershell
-npm run refresh:sharepoint:project-documents -- --apply
+pnpm refresh:sharepoint:project-documents -- --apply
 ```
 
 La commande exporte uniquement les métadonnées et résout les rattachements. Un fichier déplacé ou supprimé peut laisser une référence obsolète : elle est signalée et traitée manuellement, jamais supprimée par un prune implicite.
