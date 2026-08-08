@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.3 seconds
+Output:
 # Design QA - Daily Progress Report v3.7.8
 
 ## Comparison targets
@@ -180,3 +183,24 @@ final result: blocked
 - P2 : disposition réelle des fenêtres à qualifier visuellement dès que le navigateur intégré redevient disponible.
 
 final result: blocked
+
+## Suivi du temps de travail — rapport de conformité (2026-08-09)
+
+### Références
+
+- `C:/Users/chris/AppData/Local/Temp/codex-clipboard-e21a0094-11c7-429b-887a-795d9bfd5fbc.png`
+- `C:/Users/chris/AppData/Local/Temp/codex-clipboard-c32314d7-5958-4387-a2f3-5f64d126c998.png`
+
+### Contrôles réalisés
+
+- Le menu **Armement** est supprimé.
+- Le filtre de population est intégré à la carte **Équipage**.
+- Le regroupement et le tri utilisent les helpers de la carte RH **Marins par fonction**.
+- Les commandes de navigation mensuelle et le commutateur **Jour / Mois** sont placés dans l’en-tête du registre.
+- Les journées non conformes possèdent un état rouge explicite et accessible.
+- Le rapport PDF BBTM a été généré, rendu en images et contrôlé visuellement : hiérarchie, graphiques, pagination et chapitre final des formules sont lisibles.
+- La grille horaire conserve 48 cellules de 30 minutes et affiche la journée complète sans défilement horizontal interne.
+
+### État de la comparaison visuelle
+
+**Bloquée — non validée.** Le navigateur intégré est resté bloqué pendant l’initialisation de la session locale. Aucune capture fiable de l’implémentation n’a donc pu être placée côte à côte avec les références. Les tests de rendu, la compilation et le contrôle visuel du PDF sont passés, mais ce document ne revendique pas une validation visuelle finale de l’écran.

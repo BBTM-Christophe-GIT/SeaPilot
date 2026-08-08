@@ -12,6 +12,7 @@ import { usePlanningOverview } from '../planning/usePlanningOverview';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
+import { WorkingTimeComplianceReport } from './WorkingTimeComplianceReport';
 import { WorkingTimeHseKpiPanel } from './WorkingTimeHseKpiPanel';
 import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
 
@@ -41,7 +42,7 @@ function shiftMonthRange(range: { start: string; end: string }, direction: -1 | 
   return currentMonthRange(anchor);
 }
 
-type WorkingTimeModalKey = 'import' | 'hse' | 'workRest';
+type WorkingTimeModalKey = 'import' | 'hse' | 'report' | 'workRest';
 
 function WorkingTimeModal({ children, onClose, subtitle, title }: {
   children: ReactNode;
@@ -97,6 +98,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
   const rangeIsValid = Boolean(range.start && range.end && range.start <= range.end);
   const canImport = effectiveRoles.includes('admin');
   const canViewHse = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const canViewComplianceReport = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const changeMonth = (direction: -1 | 0 | 1) => setRange((current) => direction === 0
     ? currentMonthRange(referenceDate)
     : shiftMonthRange(current, direction));
@@ -141,6 +143,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           onMonthChange={changeMonth}
           onOpenHse={canViewHse ? () => setActiveModal('hse') : undefined}
           onOpenImport={canImport ? () => setActiveModal('import') : undefined}
+          onOpenReport={canViewComplianceReport ? () => setActiveModal('report') : undefined}
           onOpenWorkRest={hasLoaded ? () => setActiveModal('workRest') : undefined}
           onRefresh={refreshAll}
           roles={effectiveRoles}
@@ -164,6 +167,16 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           title="Exposition HSE / IMCA"
         >
           <WorkingTimeHseKpiPanel client={effectiveClient} range={range} roles={effectiveRoles} />
+        </WorkingTimeModal>
+      ) : null}
+
+      {activeModal === 'report' && canViewComplianceReport ? (
+        <WorkingTimeModal
+          onClose={() => setActiveModal(null)}
+          subtitle="Consolidez les indicateurs, les non-conformités et l’analyse sur le périmètre choisi."
+          title="Rapport de conformité"
+        >
+          <WorkingTimeComplianceReport client={effectiveClient} initialYear={Number(range.start.slice(0, 4))} />
         </WorkingTimeModal>
       ) : null}
 

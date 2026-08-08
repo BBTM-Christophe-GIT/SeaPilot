@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
+import { WorkingTimeComplianceReport } from './WorkingTimeComplianceReport';
 import { WorkingTimeHseKpiPanel } from './WorkingTimeHseKpiPanel';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
 import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
@@ -28,6 +29,10 @@ vi.mock('./WorkingTimeHseKpiPanel', () => ({
 
 vi.mock('./WorkingTimeImportWizard', () => ({
   WorkingTimeImportWizard: vi.fn(() => <section data-testid="xlsm-import-surface">Import XLSM</section>),
+}));
+
+vi.mock('./WorkingTimeComplianceReport', () => ({
+  WorkingTimeComplianceReport: vi.fn(() => <section data-testid="compliance-report-surface">Rapport de conformité</section>),
 }));
 
 const client = {} as SupabaseClient;
@@ -60,7 +65,7 @@ describe('WorkingTimePage', () => {
     });
   });
 
-  it('opens the import, HSE and work/rest cards in dedicated modal windows', () => {
+  it('opens the import, HSE, report and work/rest cards in dedicated modal windows', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Suivi du Temps de Travail' })).toBeInTheDocument();
@@ -68,6 +73,7 @@ describe('WorkingTimePage', () => {
     expect(screen.queryByTestId('work-rest-surface')).not.toBeInTheDocument();
     expect(screen.queryByTestId('hse-kpi-surface')).not.toBeInTheDocument();
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('compliance-report-surface')).not.toBeInTheDocument();
     expect(WorkingTimeWorkflowPanel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       currentPerson: expect.objectContaining({ id: 42 }),
@@ -95,6 +101,11 @@ describe('WorkingTimePage', () => {
     expect(WorkingTimeHseKpiPanel).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
 
     commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenReport?.());
+    expect(screen.getByRole('dialog', { name: 'Rapport de conformité' })).toBeInTheDocument();
+    expect(WorkingTimeComplianceReport).toHaveBeenCalledWith(expect.objectContaining({ client, initialYear: 2026 }), undefined);
+
+    commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
     act(() => commandProps?.onOpenImport?.());
     expect(screen.getByRole('dialog', { name: 'Import annuel XLSM' })).toBeInTheDocument();
     expect(WorkingTimeImportWizard).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
@@ -106,6 +117,7 @@ describe('WorkingTimePage', () => {
     const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
     expect(commandProps?.onOpenImport).toBeUndefined();
     expect(commandProps?.onOpenHse).toBeUndefined();
+    expect(commandProps?.onOpenReport).toBeUndefined();
     act(() => commandProps?.onOpenWorkRest?.());
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       canManageWorkRestPolicies: false,
