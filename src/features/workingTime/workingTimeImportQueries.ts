@@ -148,7 +148,6 @@ export async function previewWorkingTimeImport(
     workbook: WorkingTimeImportWorkbook;
     rows: WorkingTimeImportEditableRow[];
     replaceExistingDays: boolean;
-    replacementReason: string;
   },
 ): Promise<WorkingTimeImportPreviewResult> {
   const { data, error } = await client.rpc('preview_working_time_import', {
@@ -168,7 +167,6 @@ export async function previewWorkingTimeImport(
       file_name_year: input.workbook.fileNameYear,
       warnings: input.workbook.warnings,
       replace_existing_days: input.replaceExistingDays,
-      replacement_reason: input.replacementReason,
       approval_mode: 'approved_xlsm',
     },
     p_rows: input.rows.map((row) => ({

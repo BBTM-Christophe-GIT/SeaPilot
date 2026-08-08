@@ -38,7 +38,7 @@ describe('working-time import queries', () => {
 
     const result = await previewWorkingTimeImport(client, {
       batchId: 42, personId: 9, timezoneName: 'Europe/Paris', workbook,
-      replaceExistingDays: false, replacementReason: '',
+      replaceExistingDays: false,
       rows: [{
         date: '2026-01-01', sheet: 'Janvier', row: 5,
         detectedPhases: [{ startMinute: 480, endMinute: 600 }],
@@ -57,6 +57,8 @@ describe('working-time import queries', () => {
     }));
     expect(result.summary.duplicateRows).toBe(1);
     expect(result.rows[0]).toMatchObject({ status: 'duplicate', watchGroup: 'Bordée A' });
+    const metadata = rpc.mock.calls[0][1].p_workbook_metadata;
+    expect(metadata).not.toHaveProperty('replacement_reason');
   });
 
   it('commits only through the authoritative RPC', async () => {

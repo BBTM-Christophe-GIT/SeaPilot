@@ -1,6 +1,6 @@
 begin;
 
-select plan(50);
+select plan(53);
 
 select has_table('public', 'working_time_import_batches', 'annual XLSM import batches are audited');
 select has_table('public', 'working_time_import_rows', 'detected and corrected import rows are retained');
@@ -137,11 +137,39 @@ from public.companies company
 join public.people person on person.company_id = company.id and person.sailor_number = 'IMP-MARIN'
 join public.profiles admin on admin.id = '78700000-0000-0000-0000-000000000001';
 
+-- Attach the existing 3 January interval to the validated register. This
+-- reproduces the production lock that an approved administrator import must
+-- bypass without changing the register status.
+update public.working_time_registers
+set status = 'draft'
+where period_kind = 'weekly'
+  and period_start = '2026-01-03'
+  and person_id = (select id from public.people where sailor_number = 'IMP-MARIN');
+update public.working_time_intervals
+set register_id = (
+  select id from public.working_time_registers
+  where period_kind = 'weekly'
+    and period_start = '2026-01-03'
+    and person_id = (select id from public.people where sailor_number = 'IMP-MARIN')
+)
+where source_record_key = 'import-validated-existing';
+update public.working_time_registers
+set status = 'validated'
+where period_kind = 'weekly'
+  and period_start = '2026-01-03'
+  and person_id = (select id from public.people where sailor_number = 'IMP-MARIN');
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000003', true);
 select throws_ok(
   $$select public.working_time_import_upload_context('Alexandre ROUPSARD - 2026.xlsm','application/vnd.ms-excel.sheet.macroEnabled.12',370759,repeat('a',64))$$,
   '42501', null, 'a sailor cannot start an annual import'
+);
+
+select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000002', true);
+select throws_ok(
+  $$select public.working_time_import_upload_context('Alexandre ROUPSARD - 2026.xlsm','application/vnd.ms-excel.sheet.macroEnabled.12',370759,repeat('a',64))$$,
+  '42501', null, 'an armement profile cannot start an annual import'
 );
 
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000001', true);
@@ -235,7 +263,7 @@ select lives_ok(
     'Europe/Paris',
     'Alexandre ROUPSARD',
     'seapilot-xlsm-v1',
-    '{"macro_present":true,"macro_execution":"disabled","replace_existing_days":true,"replacement_reason":"Registre XLSM approuve","approval_mode":"approved_xlsm"}'::jsonb,
+    '{"macro_present":true,"macro_execution":"disabled","replace_existing_days":true,"approval_mode":"approved_xlsm"}'::jsonb,
     '[
       {"sheet":"Janvier","row":5,"date":"2026-01-01","detected_phases":[{"start_minute":240,"end_minute":480}],"phases":[{"start_minute":240,"end_minute":480}],"reported_work_seconds":14400,"vessel_name":"IMPORT VESSEL","imo_number":"9213870"},
       {"sheet":"Janvier","row":6,"date":"2026-01-02","detected_phases":[{"start_minute":480,"end_minute":720},{"start_minute":780,"end_minute":1020}],"phases":[{"start_minute":480,"end_minute":720},{"start_minute":780,"end_minute":1020}],"reported_work_seconds":28800,"vessel_name":"IMPORT VESSEL","imo_number":"9213870"},
@@ -308,7 +336,7 @@ select is(
    join public.working_time_import_rows row_item on row_item.register_id = validation.register_id
    where row_item.batch_id = current_setting('test.import.batch_id')::bigint
      and validation.event_type = 'approved_import'),
-  1,
+  2,
   'the approved import creates one immutable validation event per touched register'
 );
 select is(
@@ -321,6 +349,21 @@ select is(
   'validated',
   'the imported register is immediately validated'
 );
+select is(
+  (select status from public.working_time_registers
+   where period_kind = 'weekly' and period_start = '2026-01-03'
+     and person_id = (select id from public.people where sailor_number = 'IMP-MARIN')),
+  'validated',
+  'a validated register remains validated after its day is replaced'
+);
+select is(
+  (select count(*)::integer from public.working_time_validations validation
+   join public.working_time_registers register on register.id = validation.register_id
+   where register.period_kind = 'weekly' and register.period_start = '2026-01-03'
+     and validation.event_type = 'reopened'),
+  0,
+  'the administrator replacement does not reopen the validated register'
+);
 select results_eq(
   $$select
       (import_summary->>'replaced_rows')::integer,
@@ -328,7 +371,7 @@ select results_eq(
       (import_summary->>'approved_registers')::integer
     from public.working_time_import_batches
     where id = current_setting('test.import.batch_id')::bigint$$,
-  $$values (1, 1, 1)$$,
+  $$values (1, 1, 2)$$,
   'the import summary exposes replacements, exact matches and approved registers'
 );
 select throws_ok(
@@ -451,7 +494,7 @@ select is(
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000003', true);
 select is((select count(*)::integer from public.working_time_import_batches), 0, 'a sailor cannot read import audit batches through RLS');
 select set_config('request.jwt.claim.sub', '78700000-0000-0000-0000-000000000002', true);
-select is((select count(*)::integer from public.working_time_import_batches), 2, 'armement can review the company import audit');
+select is((select count(*)::integer from public.working_time_import_batches), 0, 'armement cannot review administrator import audit batches');
 
 select * from finish();
 rollback;

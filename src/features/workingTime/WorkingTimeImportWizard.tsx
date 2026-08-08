@@ -71,15 +71,14 @@ function defaultParser(file: File): Promise<WorkingTimeImportWorkbook> {
 }
 
 export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbook = defaultParser }: WorkingTimeImportWizardProps) {
-  const canImport = roles.some((role) => role === 'admin' || role === 'armement');
+  const canImport = roles.includes('admin');
   const [people, setPeople] = useState<WorkingTimeImportPerson[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [workbook, setWorkbook] = useState<WorkingTimeImportWorkbook | null>(null);
   const [rows, setRows] = useState<EditableRow[]>([]);
   const [personId, setPersonId] = useState<number>(0);
   const [timezoneName, setTimezoneName] = useState('Europe/Paris');
-  const [replaceExistingDays, setReplaceExistingDays] = useState(false);
-  const [replacementReason, setReplacementReason] = useState('Remplacement par le registre XLSM approuvé');
+  const [replaceExistingDays, setReplaceExistingDays] = useState(true);
   const [batchId, setBatchId] = useState<number | null>(null);
   const [preview, setPreview] = useState<WorkingTimeImportPreviewResult | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
@@ -98,15 +97,12 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   const localErrors = rows.filter((row) => row.localError).length;
   const localWarnings = rows.filter((row) => row.localWarning).length;
   const canCommit = Boolean(preview && !previewStale && preview.summary.readyRows > 0 && preview.summary.inconsistentRows === 0 && !busy);
-  const replacementReady = !replaceExistingDays || replacementReason.trim().length >= 2;
-  const canControl = Boolean(personId && !localErrors && replacementReady && !busy && preview?.status !== 'imported');
+  const canControl = Boolean(personId && !localErrors && !busy && preview?.status !== 'imported');
   const actionMessage = !personId
     ? 'Sélectionnez la personne RH associée avant de lancer le contrôle.'
       : localErrors
         ? `Corrigez ${localErrors} erreur(s) de format dans les phases de travail.`
-        : !replacementReady
-          ? 'Indiquez le motif du remplacement des journées existantes.'
-      : previewStale
+        : previewStale
         ? 'Des corrections ont été faites : relancez le contrôle serveur.'
         : preview?.summary.inconsistentRows
           ? `${preview.summary.inconsistentRows} journée(s) incohérente(s) : corrigez les phases ou excluez-les, puis relancez le contrôle.`
@@ -133,8 +129,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     setPreviewStale(false);
     setError('');
     setSuccess('');
-    setReplaceExistingDays(false);
-    setReplacementReason('Remplacement par le registre XLSM approuvé');
+    setReplaceExistingDays(true);
     if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.xlsm') || selected.size > 20 * 1024 * 1024) {
       setError('Le fichier doit être un classeur XLSM de 20 Mo maximum.');
@@ -195,7 +190,6 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         workbook,
         rows,
         replaceExistingDays,
-        replacementReason,
       });
       setPreview(result);
       setPreviewStale(false);
@@ -258,16 +252,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
             />
             <span><Replace aria-hidden="true" size={18} /><strong>Remplacer les journées existantes différentes</strong></span>
           </label>
-          <p>Le fichier XLSM est considéré comme déjà approuvé. Le serveur ignore les journées strictement identiques et conserve une trace complète des valeurs remplacées.</p>
-          {replaceExistingDays ? (
-            <label>Motif d’audit
-              <input
-                disabled={preview?.status === 'imported'}
-                onChange={(event) => { setReplacementReason(event.target.value); markChanged(); }}
-                value={replacementReason}
-              />
-            </label>
-          ) : null}
+          <p>Le fichier XLSM est considéré comme déjà approuvé. Le serveur ignore les journées strictement identiques et remplace les différences, quel que soit le statut du registre, sans réouverture ni justification. Chaque remplacement reste automatiquement tracé.</p>
         </div>
       ) : null}
 

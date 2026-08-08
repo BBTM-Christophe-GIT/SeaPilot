@@ -53,7 +53,7 @@ describe('WorkingTimeImportWizard', () => {
     await screen.findByText('Prête');
     expect(createWorkingTimeImportBatchAndUpload).toHaveBeenCalledTimes(1);
     expect(previewWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      personId: 9, replaceExistingDays: false, replacementReason: 'Remplacement par le registre XLSM approuvé',
+      personId: 9, replaceExistingDays: true,
     }));
     expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeEnabled();
 
@@ -62,20 +62,19 @@ describe('WorkingTimeImportWizard', () => {
     expect(screen.getByText(/1 journée\(s\) approuvée\(s\) importée\(s\)/)).toBeInTheDocument();
   });
 
-  it('requires an audit reason before replacing a different existing day', async () => {
+  it('replaces existing days without asking for a reason or reopening', async () => {
     render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
     await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
     await screen.findByText('Alexandre ROUPSARD');
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /Remplacer les journées existantes différentes/ }));
-    const reason = screen.getByLabelText('Motif d’audit');
-    fireEvent.change(reason, { target: { value: 'Registre annuel approuvé par l’armement' } });
+    expect(screen.getByRole('checkbox', { name: /Remplacer les journées existantes différentes/ })).toBeChecked();
+    expect(screen.queryByLabelText('Motif d’audit')).not.toBeInTheDocument();
+    expect(screen.getByText(/quel que soit le statut du registre, sans réouverture ni justification/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' }));
 
     await waitFor(() => expect(previewWorkingTimeImport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       replaceExistingDays: true,
-      replacementReason: 'Registre annuel approuvé par l’armement',
     })));
   });
 
@@ -128,6 +127,11 @@ describe('WorkingTimeImportWizard', () => {
 
   it('is not rendered for a sailor', () => {
     const { container } = render(<WorkingTimeImportWizard client={{} as SupabaseClient} roles={['marin']} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('is not rendered for an armement profile', () => {
+    const { container } = render(<WorkingTimeImportWizard client={{} as SupabaseClient} roles={['armement']} />);
     expect(container).toBeEmptyDOMElement();
   });
 });
