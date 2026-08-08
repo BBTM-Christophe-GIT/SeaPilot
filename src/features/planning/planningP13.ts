@@ -34,7 +34,8 @@ export type PlanningNotificationType =
   | 'absence'
   | 'critical_conflict'
   | 'expiring_certificate'
-  | 'vacant_position';
+  | 'vacant_position'
+  | 'working_time_non_compliance';
 
 export interface PlanningNotificationRecord {
   id: number;
@@ -169,6 +170,7 @@ export const PLANNING_NOTIFICATION_LABELS: Record<PlanningNotificationType, stri
   critical_conflict: 'Conflit critique',
   expiring_certificate: 'Certificat expirant',
   vacant_position: 'Poste vacant',
+  working_time_non_compliance: 'Temps de travail / repos',
 };
 
 function personName(person: PlanningPerson | undefined, fallbackId: number): string {

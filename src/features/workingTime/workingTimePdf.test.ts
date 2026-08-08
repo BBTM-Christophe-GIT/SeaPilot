@@ -9,9 +9,9 @@ const register: WorkingTimeWorkspace['registers'][number] = {
   personId: 20,
   personName: 'Alex MARIN',
   functionLabel: 'Matelot',
-  periodKind: 'weekly',
-  periodStart: '2026-08-03',
-  periodEnd: '2026-08-09',
+  periodKind: 'monthly',
+  periodStart: '2026-08-01',
+  periodEnd: '2026-08-31',
   status: 'validated',
   workRestPolicyId: 1,
 };
@@ -49,6 +49,7 @@ const signaturePng = Uint8Array.from(
 
 const workspace: WorkingTimeWorkspace = {
   currentPersonId: 10,
+  readablePeople: [],
   editablePeople: [],
   registers: [register],
   intervals: [{
@@ -71,6 +72,10 @@ const workspace: WorkingTimeWorkspace = {
   }],
   signatures: [],
   validations: [{
+    id: 502, registerId: 100, eventType: 'approved_import', previousStatus: 'draft', newStatus: 'validated',
+    actorName: 'Import Admin', actorRoles: ['admin'], signatureSnapshot: null, intervalSnapshot: [],
+    nonComplianceSnapshot: [], comment: 'Import XLSM approuvé #42 - Alex MARIN - 2026.xlsm', occurredAt: '2026-08-04T09:00:00Z',
+  }, {
     id: 501, registerId: 100, eventType: 'captain_validated', previousStatus: 'submitted', newStatus: 'validated',
     actorName: 'Camille CAPITAINE', actorRoles: ['capitaine'], signatureSnapshot: validatorSnapshot, intervalSnapshot: [],
     nonComplianceSnapshot: [], comment: 'Validation explicite', occurredAt: '2026-08-04T08:00:00Z',
@@ -79,7 +84,7 @@ const workspace: WorkingTimeWorkspace = {
     actorName: 'Alex MARIN', actorRoles: ['marin'], signatureSnapshot: snapshot, intervalSnapshot: [],
     nonComplianceSnapshot: [], comment: 'Signature explicite', occurredAt: '2026-08-03T18:00:00Z',
   }],
-  vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
+  vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT', imoNumber: '9213870', flagState: 'France' }],
 };
 
 describe('working-time PDF', () => {
@@ -104,7 +109,7 @@ describe('working-time PDF', () => {
       .rejects.toThrow('Impossible de charger la signature figée de Alex MARIN.');
   });
 
-  it('generates a readable PDF containing a non-compliance section and audit', async () => {
+  it('generates a single-page French maritime monthly grid with both signatures', async () => {
     const generated = await buildWorkingTimePdf({
       register,
       workspace,
@@ -122,6 +127,7 @@ describe('working-time PDF', () => {
 
     expect(prefix).toBe('%PDF');
     expect(bytes.byteLength).toBeGreaterThan(2_000);
+    expect(generated.document.getNumberOfPages()).toBe(1);
     expect(generated.filename).toBe('registre-mensuel-temps-travail-Alex-MARIN-2026-08.pdf');
   });
 });

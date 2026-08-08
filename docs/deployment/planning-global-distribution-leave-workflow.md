@@ -46,10 +46,10 @@ Les demandes de congé restent stockées dans `planning_absences`. La migration 
 Avant migration :
 
 ```powershell
-npm ci
-npm run lint
-npm test
-npm run build
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm test
+pnpm build
 npx supabase db reset --local
 npx supabase test db --local
 npx supabase db push --linked --dry-run

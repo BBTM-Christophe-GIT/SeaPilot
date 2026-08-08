@@ -35,11 +35,11 @@ Les deux flags sont indépendants. `VITE_PLANNING_PREDICTIONS_ENABLED=true` rend
 ## Contrôles avant déploiement
 
 ```powershell
-npm ci
+pnpm install --frozen-lockfile
 npx tsc -b --pretty false
-npm run lint -- --max-warnings=0
+pnpm lint -- --max-warnings=0
 npx vitest run --maxWorkers=2
-npm run build
+pnpm build
 git diff --check
 ```
 

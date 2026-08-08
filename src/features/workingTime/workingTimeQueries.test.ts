@@ -74,7 +74,8 @@ function workspaceClient() {
     rpc: vi.fn().mockResolvedValue({
       data: {
         current_person_id: 42,
-        editable_people: [{ person_id: 42, first_name: 'Alex', last_name: 'MARIN', function_label: 'Matelot', is_self: true }],
+        readable_people: [{ person_id: 42, first_name: 'Alex', last_name: 'MARIN', function_label: 'Matelot', grade_label: 'Pont', departed_on: null, active: true, is_self: true }],
+        editable_people: [{ person_id: 42, first_name: 'Alex', last_name: 'MARIN', function_label: 'Matelot', grade_label: 'Pont', departed_on: null, active: true, is_self: true }],
       },
       error: null,
     }),
@@ -87,7 +88,8 @@ describe('working-time workflow queries', () => {
     const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
 
     expect(workspace.currentPersonId).toBe(42);
-    expect(workspace.editablePeople[0]).toMatchObject({ personId: 42, isSelf: true });
+    expect(workspace.readablePeople[0]).toMatchObject({ personId: 42, gradeLabel: 'Pont', departedOn: null, active: true, isSelf: true });
+    expect(workspace.editablePeople[0]).toMatchObject({ personId: 42, gradeLabel: 'Pont', active: true, isSelf: true });
     expect(workspace.registers[0]).toMatchObject({ id: 10, personName: 'Alex MARIN', status: 'draft' });
     expect(workspace.intervals[0]).toMatchObject({ id: 20, timezoneName: 'Europe/Paris' });
     expect(workspace.calculations[0]).toMatchObject({ isCompliant: false, violationCodes: ['work_24h'] });
@@ -223,5 +225,7 @@ describe('working-time workflow queries', () => {
       .toBe('Un capitaine ne peut pas valider son propre registre.');
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.')))
       .toBe('Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.');
+    expect(workingTimeErrorMessage(new Error('canceling statement due to statement timeout')))
+      .toBe('La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.');
   });
 });

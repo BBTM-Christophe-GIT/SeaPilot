@@ -4,6 +4,14 @@ Le module `/modules/workingTime` conserve les intervalles horodatés comme sourc
 
 Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le marin et le capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. La signature du titulaire demeure obligatoirement explicite et l’auto-validation d’un capitaine reste interdite.
 
+## Cockpit mensuel
+
+L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel en poste et le personnel ancien ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
+
+La barre de commandes reste centrée sur les actions utiles. Les anciennes entrées « Cockpit métier P1.3 », « Registres » et « Historique » ont été retirées. Les fonctions secondaires s’ouvrent désormais dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
+
+Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
+
 ## Saisie multi-périodes
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
@@ -12,7 +20,9 @@ Chaque clic-glissé ajoute immédiatement une période à la sélection. Les pé
 
 ## Exports mensuels
 
-Le PDF est généré à la demande dans le navigateur et n’est pas conservé par SeaPilot. Il comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées.
+Le PDF est généré à la demande dans le navigateur et n’est pas conservé. Il tient sur une seule page paysage et comprend l’identité, le navire, l’OMI, le pavillon, le validateur, les commentaires, une grille de 48 demi-heures, les totaux journaliers, le cumul glissant 7 jours calculé côté serveur, les anomalies et les deux signatures figées dans des cases placées au-dessus du tableau. Aucune page de synthèse supplémentaire n’est créée et le nom du produit n’apparaît pas dans le document.
+
+Les bibliothèques PDF sont préchargées avec la page du module afin d’éviter un téléchargement différé vers un ancien fichier haché après déploiement. Si Vite détecte malgré tout un module préchargé devenu obsolète, l’application effectue une unique actualisation de récupération avant de rendre l’erreur à l’utilisateur.
 
 ## Exposition HSE / IMCA
 
@@ -34,15 +44,17 @@ Les politiques RLS limitent les lectures à la société active. La gestion des 
 
 ## Import annuel XLSM
 
-L’assistant d’import est visible uniquement par les rôles `admin` et `armement`. Il lit les parties OpenXML du classeur avec JSZip et ne charge jamais `xl/vbaProject.bin` : les macros sont détectées pour information mais ne sont ni interprétées ni exécutées.
+L’assistant d’import est visible uniquement par le rôle `admin`. Le même contrôle est appliqué dans les RPC et les politiques RLS : les rôles `armement`, `direction`, `capitaine` et `marin` ne peuvent ni déposer un fichier, ni lancer un import, ni consulter ses lots d’audit. L’assistant lit les parties OpenXML du classeur avec JSZip et ne charge jamais `xl/vbaProject.bin` : les macros sont détectées pour information mais ne sont ni interprétées ni exécutées.
 
 Le parcours est volontairement séparé en dépôt privé, détection, aperçu, contrôle des totaux, recherche de doublons, correction ou exclusion, validation et traçabilité. La grille source est convertie en phases de 30 minutes ; plusieurs phases disjointes restent plusieurs intervalles. Une différence entre l’année du nom de fichier et celle des dates mises en cache dans Excel est affichée avant validation et conservée dans les métadonnées.
 
 Pour les imports historiques BBTM, le total journalier déclaré dans le XLSM est la source de vérité métier. Dans le modèle annuel, les deux cellules d’en-tête `00h` sont les bornes de la frise : les 48 demi-heures sont lues de la cellule suivant le premier `00h` jusqu’à la cellule du second `00h` incluse. Ce repérage évite de décaler toutes les phases de 30 minutes et conserve correctement la dernière demi-heure se terminant à `24:00`. Tout écart résiduel avec le total déclaré reste `inconsistent` jusqu’à correction.
 
-Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée déjà validée, soumise ou déjà saisie n’est jamais remplacée.
+Le navigateur ne décide jamais si une ligne est importable. `preview_working_time_import` revalide les phases, les totaux, la personne, l’année, le fuseau, le navire et la bordée du Planning publié. Il classe chaque journée en `ready`, `corrected`, `excluded`, `duplicate`, `inconsistent`, `blocked_workflow` ou `blocked_validated`. `commit_working_time_import` reprend un verrou par personne, refait les contrôles et n’insère que les journées `ready` ou `corrected`. Une journée strictement identique est conservée sans nouvel intervalle. Une journée différente peut être remplacée par l’administrateur quel que soit le statut du registre, sans justification et sans transition `reopened`. Le statut reste `validated` lorsqu’il l’était déjà ; un événement `approved_import`, l’empreinte du fichier et les anciennes valeurs annulées assurent automatiquement la traçabilité. Le verrou ordinaire continue de protéger toute modification effectuée hors de cette transaction d’import.
 
-Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. La migration à appliquer est `20260804224824_working_time_excel_import.sql`.
+La validation d’un lot annuel diffère les recalculs des fenêtres glissantes pendant l’insertion, puis reconstruit une seule fois les calculs autoritatifs de la personne avant de terminer la transaction. Le RPC de validation dispose d’un délai ciblé de 60 secondes, sans modifier les limites globales des autres requêtes. Si la transaction expire malgré tout, aucune journée partielle n’est conservée et l’interface propose de relancer la validation.
+
+Le fichier source est conservé dans le bucket privé `working-time-imports` avec son SHA-256, sa taille, sa version de parseur et le lien de chaque intervalle vers le lot et la ligne source. Les migrations d’import sont `20260804224824_working_time_excel_import.sql`, `20260807002926_working_time_replace_validated_days_discard_drafts.sql`, `20260808113643_working_time_batch_import_timeout.sql` et `20260808153712_working_time_admin_import_override_validated.sql`.
 
 Les écarts résiduels entre total déclaré et demi-heures détectées sont des avertissements avant contrôle : ils n’empêchent
 pas de lancer l’analyse serveur. Ils deviennent des lignes `inconsistent` qui doivent être corrigées avant la validation finale. Le bucket accepte les deux casses équivalentes du type MIME XLSM produites par les
@@ -58,7 +70,8 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
 | Droits Marin/Capitaine/Admin, auto-validation interdite | `working_time_workflow_permissions_test.sql` |
 | Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
-| RLS/RPC et non-écrasement d’une journée validée | `working_time_excel_import_test.sql` |
+| RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
-| PDF avec les deux signatures figées | `workingTimePdf.test.ts` |
+| PDF français d’une page avec les deux signatures figées en première page | `workingTimePdf.test.ts` |
+| Consolidation de deux créneaux importés issus de registres historiques différents | `WorkingTimeWorkflowPanel.test.tsx` |

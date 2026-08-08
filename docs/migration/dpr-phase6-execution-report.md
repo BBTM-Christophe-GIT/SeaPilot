@@ -46,7 +46,7 @@ Le replay final du meme manifeste a produit :
 - 335 fichiers reutilises ;
 - reconciliation finale `ok = true`.
 
-Le rapport machine est genere localement par `npm run validate:dpr:phase6`. Il controle les volumes, les fichiers, les identites source, les totaux navire/projet et le replay.
+Le rapport machine est genere localement par `pnpm validate:dpr:phase6`. Il controle les volumes, les fichiers, les identites source, les totaux navire/projet et le replay.
 
 ## Transformations et anomalies traitees
 
@@ -84,10 +84,10 @@ La reserve visuelle de `DPR-1001` appartient au document historique source. Aucu
 ## Commandes de verification
 
 ```powershell
-npm run migrate:dpr:dry-run -- --input .data/sharepoint-dpr-full.json
-npm run verify:dpr:source-files -- .data/dpr-migration-manifest.json .data/dpr-source-files .data/dpr-source-files-inventory.json
-npm run migrate:dpr:apply -- --input .data/sharepoint-dpr-full.json --source-files .data/dpr-source-files
-npm run validate:dpr:phase6
+pnpm migrate:dpr:dry-run -- --input .data/sharepoint-dpr-full.json
+pnpm verify:dpr:source-files -- .data/dpr-migration-manifest.json .data/dpr-source-files .data/dpr-source-files-inventory.json
+pnpm migrate:dpr:apply -- --input .data/sharepoint-dpr-full.json --source-files .data/dpr-source-files
+pnpm validate:dpr:phase6
 supabase test db supabase/tests/dpr_core_model_test.sql supabase/tests/dpr_role_matrix_test.sql
 ```
 

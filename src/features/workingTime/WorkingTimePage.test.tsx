@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
+import { WorkingTimeHseKpiPanel } from './WorkingTimeHseKpiPanel';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
 import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
 
@@ -59,51 +60,83 @@ describe('WorkingTimePage', () => {
     });
   });
 
-  it('renders the dedicated route surface with the existing P1.3 work/rest controls', () => {
+  it('opens the import, HSE and work/rest cards in dedicated modal windows', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Suivi du Temps de Travail' })).toBeInTheDocument();
-    expect(screen.getByText(/planning_work_rest_policies/)).toBeInTheDocument();
-    expect(screen.getByTestId('work-rest-surface')).toBeInTheDocument();
     expect(screen.getByTestId('workflow-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('hse-kpi-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('xlsm-import-surface')).toBeInTheDocument();
-    expect(WorkingTimeImportWizard).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
+    expect(screen.queryByTestId('work-rest-surface')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('hse-kpi-surface')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
     expect(WorkingTimeWorkflowPanel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       currentPerson: expect.objectContaining({ id: 42 }),
       range: { start: '2026-08-01', end: '2026-08-31' },
       roles: ['admin'],
     }), undefined);
+
+    let commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenWorkRest?.());
+    expect(screen.getByRole('dialog', { name: 'Contrôles travail et repos' })).toBeInTheDocument();
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       client,
       presentation: 'page',
       initialTab: 'rest',
-      visibleTabs: ['rest'],
+      visibleTabs: ['notifications', 'rest'],
+      canViewNotifications: true,
+      canRefreshNotifications: true,
       canManageWorkRestPolicies: true,
       canViewWorkRest: true,
       range: { start: '2026-08-01', end: '2026-08-31' },
     }), undefined);
+
+    act(() => commandProps?.onOpenHse?.());
+    expect(screen.getByRole('dialog', { name: 'Exposition HSE / IMCA' })).toBeInTheDocument();
+    expect(WorkingTimeHseKpiPanel).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
+
+    commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenImport?.());
+    expect(screen.getByRole('dialog', { name: 'Import annuel XLSM' })).toBeInTheDocument();
+    expect(WorkingTimeImportWizard).toHaveBeenCalledWith(expect.objectContaining({ client, roles: ['admin'] }), undefined);
   });
 
   it('keeps policy administration restricted to administrators', () => {
     renderPage(['marin']);
 
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    expect(commandProps?.onOpenImport).toBeUndefined();
+    expect(commandProps?.onOpenHse).toBeUndefined();
+    act(() => commandProps?.onOpenWorkRest?.());
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       canManageWorkRestPolicies: false,
       canViewWorkRest: true,
+      canViewNotifications: false,
+      visibleTabs: ['rest'],
     }), undefined);
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
   });
 
-  it('validates the selected period and refreshes the shared planning overview', () => {
+  it('switches complete calendar months and refreshes both workspaces from the command bar callbacks', async () => {
     renderPage();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Actualiser le suivi' }));
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    await act(async () => { await commandProps?.onRefresh?.(); });
     expect(reload).toHaveBeenCalledTimes(1);
+    act(() => commandProps?.onMonthChange?.(1));
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({
+      range: { start: '2026-09-01', end: '2026-09-30' },
+    }), undefined);
+  });
 
-    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-07-31' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('La date de fin doit être postérieure ou égale à la date de début.');
-    expect(screen.queryByTestId('work-rest-surface')).not.toBeInTheDocument();
+  it('refreshes the working-time workspace immediately after an XLSM import', async () => {
+    renderPage();
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({ refreshToken: 0 }), undefined);
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenImport?.());
+    const importProps = vi.mocked(WorkingTimeImportWizard).mock.calls.at(-1)?.[0];
+
+    await act(async () => { await importProps?.onImported?.(); });
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({ refreshToken: 1 }), undefined);
   });
 });

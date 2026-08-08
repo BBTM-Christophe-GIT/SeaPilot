@@ -480,11 +480,11 @@ Tests Planning couverts :
 Commandes de validation :
 
 ```powershell
-npm ci
+pnpm install --frozen-lockfile
 npx tsc -b --pretty false
-npm run lint
-npm test -- --maxWorkers=2 --reporter=dot
-npm run build
+pnpm lint
+pnpm test -- --maxWorkers=2 --reporter=dot
+pnpm build
 supabase db lint --linked
 ```
 

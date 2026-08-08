@@ -9,6 +9,7 @@ import type {
 
 interface EntryContextRow {
   current_person_id?: number | string;
+  readable_people?: unknown[];
   editable_people?: unknown[];
 }
 
@@ -17,6 +18,9 @@ interface EditablePersonRow {
   first_name?: string;
   last_name?: string;
   function_label?: string;
+  grade_label?: string;
+  departed_on?: string | null;
+  active?: boolean;
   is_self?: boolean;
 }
 
@@ -128,6 +132,9 @@ export interface WorkingTimeEditablePerson {
   firstName: string;
   lastName: string;
   functionLabel: string;
+  gradeLabel?: string;
+  departedOn?: string | null;
+  active?: boolean;
   isSelf: boolean;
 }
 
@@ -219,6 +226,7 @@ export interface WorkingTimeVesselOption {
 
 export interface WorkingTimeWorkspace {
   currentPersonId: number;
+  readablePeople: WorkingTimeEditablePerson[];
   editablePeople: WorkingTimeEditablePerson[];
   registers: WorkingTimeWorkspaceRegister[];
   intervals: WorkingTimeInterval[];
@@ -439,6 +447,7 @@ export async function fetchWorkingTimeWorkspace(
   const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, vesselResult] = await Promise.all([
     client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
     client.from('working_time_registers').select(REGISTER_SELECT)
+      .is('discarded_at', null)
       .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false }),
     client.from('working_time_intervals').select(INTERVAL_SELECT)
       .gte('local_work_date', range.start).lte('local_work_date', range.end).is('voided_at', null).order('starts_at'),
@@ -462,16 +471,22 @@ export async function fetchWorkingTimeWorkspace(
   assertResult(vesselResult.error, 'Impossible de charger les navires.');
 
   const context = (contextResult.data || {}) as EntryContextRow;
-  const editablePeople = ((context.editable_people || []) as EditablePersonRow[]).map((person) => ({
+  const mapPeople = (rows: unknown[]) => (rows as EditablePersonRow[]).map((person) => ({
     personId: Number(person.person_id),
     firstName: String(person.first_name || ''),
     lastName: String(person.last_name || ''),
     functionLabel: String(person.function_label || ''),
+    gradeLabel: String(person.grade_label || ''),
+    departedOn: person.departed_on ? String(person.departed_on).slice(0, 10) : null,
+    active: person.active !== false,
     isSelf: Boolean(person.is_self),
   }));
+  const editablePeople = mapPeople(context.editable_people || []);
+  const readablePeople = mapPeople(context.readable_people || context.editable_people || []);
 
   return {
     currentPersonId: Number(context.current_person_id || 0),
+    readablePeople,
     editablePeople,
     registers: ((registerResult.data || []) as RegisterRow[]).map(mapRegister)
       .filter((register) => register.periodStart <= range.end && register.periodEnd >= range.start),
@@ -644,6 +659,17 @@ export async function voidWorkingTimeInterval(
   return Number(data);
 }
 
+export async function discardWorkingTimeDraft(
+  client: SupabaseClient,
+  registerId: number,
+): Promise<number> {
+  const { data, error } = await client.rpc('discard_working_time_draft', {
+    p_register_id: registerId,
+  });
+  assertResult(error, 'Impossible de supprimer le brouillon.');
+  return Number(data);
+}
+
 export async function saveWorkingTimeDayComment(
   client: SupabaseClient,
   input: SaveWorkingTimeDayCommentInput,
@@ -675,6 +701,7 @@ export async function transitionWorkingTimeRegister(
 }
 
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
+  ['canceling statement due to statement timeout', 'La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.'],
   ['WORKING_TIME_IMPORT_PERMISSION_DENIED', 'Seuls l’administrateur et l’armement peuvent importer un registre XLSM.'],
   ['WORKING_TIME_IMPORT_XLSM_REQUIRED', 'Le fichier source doit être un classeur annuel XLSM.'],
   ['WORKING_TIME_IMPORT_MIME_INVALID', 'Le type du fichier XLSM n’est pas valide.'],
@@ -688,6 +715,7 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
   ['WORKING_TIME_REGISTER_LOCKED', 'Ce registre validé est verrouillé. Réouvrez-le avec un motif pour le corriger.'],
   ['WORKING_TIME_REGISTER_NOT_EDITABLE', 'Ce registre doit être rouvert avant toute correction.'],
+  ['WORKING_TIME_DRAFT_DISCARD_FORBIDDEN', 'Seul un brouillon non signé peut être supprimé.'],
   ['WORKING_TIME_REOPEN_COMMENT_REQUIRED', 'Le motif de réouverture est obligatoire.'],
   ['WORKING_TIME_PERMISSION_DENIED', 'Cette action n’est pas autorisée pour votre profil ou votre bordée publiée.'],
   ['WORKING_TIME_POLICY_NOT_FOUND', 'Aucune politique de travail et repos datée ne couvre ce créneau.'],
