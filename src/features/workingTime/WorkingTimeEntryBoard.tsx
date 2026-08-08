@@ -30,6 +30,7 @@ interface WorkingTimeEntryBoardProps {
   comment: string;
   editingIntervalId: number | null;
   pendingPhases?: WorkingTimePhaseInput[];
+  nonCompliantDates?: string[];
   selectedDay?: string;
   showSubmitActions?: boolean;
   onStartsAtChange: (value: string) => void;
@@ -120,6 +121,7 @@ export function WorkingTimeEntryBoard({
   comment,
   editingIntervalId,
   pendingPhases = [],
+  nonCompliantDates = [],
   selectedDay: controlledSelectedDay,
   showSubmitActions = true,
   onStartsAtChange,
@@ -133,6 +135,7 @@ export function WorkingTimeEntryBoard({
   onCancelEdit,
 }: WorkingTimeEntryBoardProps) {
   const days = useMemo(() => periodDays(periodStart, periodEnd), [periodEnd, periodStart]);
+  const nonCompliantDaySet = useMemo(() => new Set(nonCompliantDates), [nonCompliantDates]);
   const selectedDay = controlledSelectedDay || startsAt.slice(0, 10) || days[0] || periodStart;
   const [recommendation, setRecommendation] = useState<WorkingTimeEntryRecommendation | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
@@ -320,7 +323,9 @@ export function WorkingTimeEntryBoard({
       <div aria-label="Jours du registre" className="working-time-day-strip" role="tablist">
         {days.map((day) => {
           const label = dateLabel(day);
-          return <button aria-selected={day === selectedDay} className={day === selectedDay ? 'is-active' : ''} key={day} onClick={() => selectDay(day)} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong></button>;
+          const isNonCompliant = nonCompliantDaySet.has(day);
+          const className = [day === selectedDay ? 'is-active' : '', isNonCompliant ? 'is-non-compliant' : ''].filter(Boolean).join(' ');
+          return <button aria-label={`${label.weekday} ${label.day}${isNonCompliant ? ', journée non conforme' : ''}`} aria-selected={day === selectedDay} className={className} key={day} onClick={() => selectDay(day)} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong>{isNonCompliant ? <AlertTriangle aria-hidden="true" className="working-time-day-alert" size={13} /> : null}</button>;
         })}
       </div>
 

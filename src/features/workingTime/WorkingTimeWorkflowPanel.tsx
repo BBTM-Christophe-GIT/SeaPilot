@@ -9,9 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileChartColumn,
   FileClock,
   FileSignature,
-  Filter,
+  LayoutList,
   LockKeyhole,
   PenLine,
   Plus,
@@ -20,12 +21,15 @@ import {
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
+  TableProperties,
   Trash2,
   Upload,
   UserCheck,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
 import { todayPlanningDate } from '../planning/planningDates';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
@@ -48,6 +52,7 @@ import {
 } from './workingTimeQueries';
 import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
 import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
+import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
 interface WorkingTimeWorkflowPanelProps {
@@ -61,23 +66,11 @@ interface WorkingTimeWorkflowPanelProps {
   onRefresh?: () => Promise<void> | void;
   onOpenImport?: () => void;
   onOpenHse?: () => void;
+  onOpenReport?: () => void;
   onOpenWorkRest?: () => void;
 }
 
 type PersonnelFilter = 'active' | 'departed';
-type CrewGroup = 'Officiers' | 'Pont' | 'Machine' | 'Électrotechnique' | 'Cuisine' | 'Services généraux';
-
-const CREW_GROUPS: CrewGroup[] = ['Officiers', 'Pont', 'Machine', 'Électrotechnique', 'Cuisine', 'Services généraux'];
-
-function crewGroup(functionLabel: string, gradeLabel?: string): CrewGroup {
-  const value = `${functionLabel} ${gradeLabel}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR');
-  if (/capitaine|officier|lieutenant|commandant|second/.test(value)) return 'Officiers';
-  if (/electro|electric/.test(value)) return 'Électrotechnique';
-  if (/mecan|motoriste|machine|graisseur/.test(value)) return 'Machine';
-  if (/cuisin|chef de cuisine/.test(value)) return 'Cuisine';
-  if (/steward|hotel|service general|administr|direction|responsable/.test(value)) return 'Services généraux';
-  return 'Pont';
-}
 
 function isVisibleForPersonnelFilter(person: { departedOn?: string | null; active?: boolean }, filter: PersonnelFilter, today: string) {
   const departed = person.departedOn?.slice(0, 10) || null;
@@ -229,6 +222,7 @@ export function WorkingTimeWorkflowPanel({
   onRefresh,
   onOpenImport,
   onOpenHse,
+  onOpenReport,
   onOpenWorkRest,
 }: WorkingTimeWorkflowPanelProps) {
   const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
@@ -257,8 +251,9 @@ export function WorkingTimeWorkflowPanel({
   const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
   const [filterOpen, setFilterOpen] = useState(false);
   const [openRegisterMenu, setOpenRegisterMenu] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<CrewGroup>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedDay, setSelectedDay] = useState(range.start);
+  const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
 
   const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
   const isSailorOnlyView = roles.includes('marin')
@@ -300,10 +295,16 @@ export function WorkingTimeWorkflowPanel({
     && (!normalizedSearch
       || `${person.firstName} ${person.lastName} ${person.functionLabel} ${person.gradeLabel}`.toLocaleLowerCase('fr-FR').includes(normalizedSearch))
   )), [localToday, normalizedSearch, personnelFilter, visibleReadablePeople]);
-  const groupedPeople = useMemo(() => CREW_GROUPS.map((label) => ({
-    label,
-    people: catalogPeople.filter((person) => crewGroup(person.functionLabel, person.gradeLabel) === label),
-  })).filter((group) => group.people.length), [catalogPeople]);
+  const groupedPeople = useMemo(() => Array.from(catalogPeople.reduce<Map<string, typeof catalogPeople>>((groups, person) => {
+    const label = normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée';
+    groups.set(label, [...(groups.get(label) || []), person]);
+    return groups;
+  }, new Map()))
+    .map(([label, people]) => ({
+      label,
+      people: people.sort((left, right) => formatPerson(left.firstName, left.lastName).localeCompare(formatPerson(right.firstName, right.lastName), 'fr')),
+    }))
+    .sort((left, right) => compareHrFunctionLabels(left.label, right.label)), [catalogPeople]);
   const selectedRegister = selectedPersonId ? monthlyRegisterByPerson.get(selectedPersonId) || null : null;
   const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
   const displayedMonthLabel = formatMonthLabel(range.start);
@@ -321,6 +322,9 @@ export function WorkingTimeWorkflowPanel({
     .filter((calculation) => calculation.personId === selectedPersonId && calculation.localWindowEndDate === selectedDay)
     .sort((left, right) => left.windowEnd.localeCompare(right.windowEnd)).at(-1) || null,
   [selectedDay, selectedPersonId, workspace?.calculations]);
+  const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId
+    && calculation.localWindowEndDate >= range.start
+    && calculation.localWindowEndDate <= range.end) || [], [range.end, range.start, selectedPersonId, workspace?.calculations]);
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = roles.includes('capitaine');
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
@@ -400,7 +404,7 @@ export function WorkingTimeWorkflowPanel({
 
   useEffect(() => {
     const selectedPerson = catalogPeople.find((person) => person.personId === selectedPersonId);
-    const selectedGroup = selectedPerson ? crewGroup(selectedPerson.functionLabel, selectedPerson.gradeLabel) : groupedPeople[0]?.label;
+    const selectedGroup = selectedPerson ? normalizeHrFunctionLabel(selectedPerson.functionLabel) || selectedPerson.gradeLabel || 'Fonction non renseignée' : groupedPeople[0]?.label;
     if (!selectedGroup) return;
     setExpandedGroups((current) => current.has(selectedGroup) ? current : new Set([...current, selectedGroup]));
   }, [catalogPeople, groupedPeople, selectedPersonId]);
@@ -579,24 +583,6 @@ export function WorkingTimeWorkflowPanel({
     <section aria-labelledby="working-time-registers-title" className="working-time-workflow">
       <nav aria-label="Actions du suivi du temps de travail" className="working-time-command-bar">
         <div className="working-time-command-group">
-          <span>Armement</span>
-          <div>
-            <button aria-label="Mois précédent" onClick={() => onMonthChange?.(-1)} type="button"><ChevronLeft aria-hidden="true" size={21} /><small>Mois précédent</small></button>
-            <button onClick={() => onMonthChange?.(0)} type="button"><CalendarDays aria-hidden="true" size={21} /><small>Mois en cours</small></button>
-            <button aria-label="Mois suivant" onClick={() => onMonthChange?.(1)} type="button"><ChevronRight aria-hidden="true" size={21} /><small>Mois suivant</small></button>
-            <button aria-current="page" className="is-active" type="button"><FileClock aria-hidden="true" size={22} /><small>Temps de travail</small></button>
-            <span className="working-time-command-popover-anchor">
-              <button aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} type="button"><Filter aria-hidden="true" size={21} /><small>Filtrer le personnel</small></button>
-              {filterOpen ? <span className="working-time-command-popover" role="dialog">
-                <strong>Personnel affiché</strong>
-                <label><input checked={personnelFilter === 'active'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('active')} type="radio" /> Personnel en poste</label>
-                <label><input checked={personnelFilter === 'departed'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('departed')} type="radio" /> Personnel ancien</label>
-              </span> : null}
-            </span>
-          </div>
-        </div>
-
-        <div className="working-time-command-group">
           <span>Gestion des congés</span>
           <div>
             <button disabled={isLoading || isSaving} onClick={() => void refreshEverything()} type="button"><RefreshCw aria-hidden="true" className={isLoading ? 'is-spinning' : ''} size={21} /><small>Actualiser</small></button>
@@ -655,6 +641,7 @@ export function WorkingTimeWorkflowPanel({
           <div>
             {onOpenImport ? <button onClick={onOpenImport} type="button"><Upload aria-hidden="true" size={21} /><small>Import</small></button> : null}
             <button disabled={!selectedRegister || isExporting} onClick={() => void handlePdfDownload()} type="button"><Download aria-hidden="true" size={21} /><small>{isExporting ? 'Génération…' : 'Export PDF'}</small></button>
+            {onOpenReport ? <button onClick={onOpenReport} type="button"><FileChartColumn aria-hidden="true" size={21} /><small>Rapport de conformité</small></button> : null}
           </div>
         </div>
       </nav>
@@ -701,10 +688,15 @@ export function WorkingTimeWorkflowPanel({
 
           <div className="working-time-workspace-grid">
             <nav aria-label="Registres accessibles" className="working-time-register-list">
-              <h3>Équipage</h3>
+              <div className="working-time-roster-title"><h3>Équipage</h3><button aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} type="button"><SlidersHorizontal aria-hidden="true" size={16} />Filtrer</button></div>
               <label className="working-time-register-search">
                 <span><Search aria-hidden="true" size={16} /><input aria-label="Rechercher un marin" onChange={(event) => setRegisterSearch(event.target.value)} placeholder="Rechercher un marin…" type="search" value={registerSearch} /></span>
               </label>
+              {filterOpen ? <fieldset className="working-time-roster-filters">
+                <legend>Personnel affiché</legend>
+                <label><input checked={personnelFilter === 'active'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('active')} type="radio" />Personnel en poste</label>
+                <label><input checked={personnelFilter === 'departed'} name="working-time-personnel-filter" onChange={() => setPersonnelFilter('departed')} type="radio" />Personnel ancien</label>
+              </fieldset> : null}
               {groupedPeople.length ? groupedPeople.map((group) => {
                 const expanded = expandedGroups.has(group.label);
                 return <section className="working-time-crew-group" key={group.label}>
@@ -737,7 +729,17 @@ export function WorkingTimeWorkflowPanel({
                   <div>
                     <h3>{selectedRegister.personName} <span>· {selectedRegister.functionLabel || 'Personnel maritime'}</span></h3>
                   </div>
-                  <strong className="working-time-month-title">{displayedMonthLabel}</strong>
+                  <div className="working-time-register-header-tools">
+                    <div className="working-time-month-navigation" aria-label="Navigation mensuelle">
+                      <button aria-label="Mois précédent" onClick={() => onMonthChange?.(-1)} type="button"><ChevronLeft aria-hidden="true" size={17} /></button>
+                      <button onClick={() => onMonthChange?.(0)} type="button"><CalendarDays aria-hidden="true" size={16} /><strong className="working-time-month-title">{displayedMonthLabel}</strong></button>
+                      <button aria-label="Mois suivant" onClick={() => onMonthChange?.(1)} type="button"><ChevronRight aria-hidden="true" size={17} /></button>
+                    </div>
+                    <div className="working-time-view-toggle" aria-label="Affichage du registre">
+                      <button aria-pressed={registerView === 'daily'} className={registerView === 'daily' ? 'is-active' : ''} onClick={() => setRegisterView('daily')} type="button"><LayoutList aria-hidden="true" size={16} />Jour</button>
+                      <button aria-pressed={registerView === 'monthly'} className={registerView === 'monthly' ? 'is-active' : ''} onClick={() => setRegisterView('monthly')} type="button"><TableProperties aria-hidden="true" size={16} />Mois</button>
+                    </div>
+                  </div>
                 </header>
 
                 {selectedRegister.status === 'validated' ? (
@@ -764,8 +766,9 @@ export function WorkingTimeWorkflowPanel({
                 </div>
 
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
-                  <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
-                  <WorkingTimeEntryBoard
+                  {registerView === 'daily' ? <>
+                    <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
+                    <WorkingTimeEntryBoard
                     canEdit={canEdit}
                     client={client}
                     comment={intervalComment}
@@ -808,14 +811,15 @@ export function WorkingTimeWorkflowPanel({
                     periodStart={selectedRegister.periodStart}
                     personId={selectedRegister.personId}
                     pendingPhases={pendingPhases}
+                    nonCompliantDates={nonCompliantDates}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
                     showSubmitActions={false}
                     vesselId={vesselId}
                     vessels={workspace.vessels}
                     watchGroup={watchGroup}
-                  />
-                  {selectedIntervals.length ? (
+                    />
+                    {selectedIntervals.length ? (
                     <div className="working-time-interval-list" hidden>
                       {selectedIntervals.map((interval) => (
                         <div key={interval.id}>
@@ -828,9 +832,9 @@ export function WorkingTimeWorkflowPanel({
                         </div>
                       ))}
                     </div>
-                  ) : <p className="working-time-empty">Aucune heure saisie.</p>}
+                    ) : <p className="working-time-empty">Aucune heure saisie.</p>}
 
-                  {voidCandidateId ? (
+                    {voidCandidateId ? (
                     <div className="working-time-void-form" hidden>
                       <label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
                       <button disabled={isSaving || voidReason.trim().length < 2} onClick={() => void runAction(async () => {
@@ -840,7 +844,16 @@ export function WorkingTimeWorkflowPanel({
                       }, 'Le créneau a été retiré sans effacer son historique.')} type="button">Confirmer</button>
                       <button onClick={() => setVoidCandidateId(null)} type="button">Annuler</button>
                     </div>
-                  ) : null}
+                    ) : null}
+                  </> : <WorkingTimeMonthlyView
+                    calculations={selectedCalculations}
+                    intervals={selectedIntervals}
+                    nonCompliantDates={nonCompliantDates}
+                    onSelectDay={(day) => { setSelectedDay(day); setRegisterView('daily'); }}
+                    periodEnd={selectedRegister.periodEnd}
+                    periodStart={selectedRegister.periodStart}
+                    vessels={workspace.vessels}
+                  />}
 
                 </section>
 

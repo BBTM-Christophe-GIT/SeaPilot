@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
@@ -31,6 +31,7 @@ const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', fun
 const reload = vi.fn().mockResolvedValue(true);
 const onOpenHse = vi.fn();
 const onOpenImport = vi.fn();
+const onOpenReport = vi.fn();
 const onOpenWorkRest = vi.fn();
 
 function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], personId = 10): WorkingTimeWorkspace {
@@ -101,6 +102,7 @@ function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
       range={{ start: '2026-08-01', end: '2026-08-31' }}
       onOpenHse={onOpenHse}
       onOpenImport={onOpenImport}
+      onOpenReport={onOpenReport}
       onOpenWorkRest={onOpenWorkRest}
       roles={roles}
     />,
@@ -120,22 +122,25 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/Vous pouvez consulter et rechercher tous les registres/)).toBeInTheDocument();
   });
 
-  it('uses the simplified menu and opens the three secondary cards on demand', async () => {
+  it('removes the Armement section, moves personnel filters into Équipage and opens document tools', async () => {
     const user = userEvent.setup();
     renderPanel(['admin'], workspace('draft', 20));
 
     expect(screen.queryByRole('button', { name: 'Cockpit métier P1.3' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Historique' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Registres' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Armement')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Import' }));
     await user.click(screen.getByRole('button', { name: 'Exposition HSE / IMCA' }));
     await user.click(screen.getByRole('button', { name: 'Contrôles travail et repos' }));
+    await user.click(screen.getByRole('button', { name: 'Rapport de conformité' }));
     expect(onOpenImport).toHaveBeenCalledOnce();
     expect(onOpenHse).toHaveBeenCalledOnce();
     expect(onOpenWorkRest).toHaveBeenCalledOnce();
+    expect(onOpenReport).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole('button', { name: 'Filtrer le personnel' }));
+    await user.click(screen.getByRole('button', { name: 'Filtrer' }));
     expect(screen.getByText('Personnel ancien')).toBeInTheDocument();
   });
 
@@ -209,9 +214,28 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
     renderPanel(['admin'], data);
 
-    await user.click(screen.getByRole('tab', { name: /lun03 août/ }));
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     expect(screen.getByRole('gridcell', { name: /10:00, travail enregistré/ })).toBeInTheDocument();
     expect(screen.getByRole('gridcell', { name: /13:30, travail enregistré/ })).toBeInTheDocument();
+  });
+
+  it('opens a detailed monthly view and highlights non-compliant days in the daily strip', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.calculations = [{
+      id: 401, companyId: 1, personId: 20, windowEnd: '2026-08-03T18:00:00Z', localWindowEndDate: '2026-08-03',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 28_800, rest24hSeconds: 57_600,
+      longestRest24hSeconds: 36_000, restPeriodCount24h: 2, work7dSeconds: 120_000, rest7dSeconds: 484_800,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['consecutive_rest'], calculationVersion: 1,
+      calculatedAt: '2026-08-03T18:00:01Z',
+    }];
+    renderPanel(['admin'], data);
+
+    expect(screen.getByRole('tab', { name: /lun 03 août, journée non conforme/ })).toHaveClass('is-non-compliant');
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('heading', { name: 'Détail des heures du registre' })).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveTextContent('08:00–16:00');
+    expect(screen.getByRole('table')).toHaveTextContent('Non conforme');
   });
 
   it('discards an unsigned draft from its card without saving its changes', async () => {
@@ -261,11 +285,11 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
     expect(screen.getByText(/Réponses de non-conformité incomplètes : 2026-08-03/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Catégorie de cause'), 'safety_emergency');
-    await user.type(screen.getByLabelText('Contexte opérationnel'), 'Opération de sécurité prolongée.');
-    await user.type(screen.getByLabelText('Action immédiate'), 'Relève organisée.');
-    await user.type(screen.getByLabelText('Repos compensateur prévu'), 'Repos planifié demain.');
-    await user.type(screen.getByLabelText('Commentaire obligatoire'), 'Écart documenté par le capitaine.');
+    fireEvent.change(screen.getByLabelText('Catégorie de cause'), { target: { value: 'safety_emergency' } });
+    fireEvent.change(screen.getByLabelText('Contexte opérationnel'), { target: { value: 'Opération de sécurité prolongée.' } });
+    fireEvent.change(screen.getByLabelText('Action immédiate'), { target: { value: 'Relève organisée.' } });
+    fireEvent.change(screen.getByLabelText('Repos compensateur prévu'), { target: { value: 'Repos planifié demain.' } });
+    fireEvent.change(screen.getByLabelText('Commentaire obligatoire'), { target: { value: 'Écart documenté par le capitaine.' } });
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
 
     expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
