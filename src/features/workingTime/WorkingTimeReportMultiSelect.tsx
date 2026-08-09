@@ -67,7 +67,7 @@ export function WorkingTimeReportMultiSelect({
 
   const closeAndFocus = () => {
     onOpenChange(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
+    triggerRef.current?.focus();
   };
 
   return (
