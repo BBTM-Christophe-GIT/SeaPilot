@@ -102,7 +102,7 @@ describe('WorkingTimePage', () => {
 
     commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
     act(() => commandProps?.onOpenReport?.());
-    expect(screen.getByRole('dialog', { name: 'Rapport de conformité' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Générer un rapport de conformité' })).toBeInTheDocument();
     expect(WorkingTimeComplianceReport).toHaveBeenCalledWith(expect.objectContaining({ client, initialYear: 2026 }), undefined);
 
     commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];

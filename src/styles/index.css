@@ -17297,23 +17297,66 @@ button.planning-p12-conflict-card {
 .working-time-month-status.is-compliant { color: #137746; }
 .working-time-month-status.is-non-compliant { color: #b52b40; font-weight: 800; }
 
-.working-time-compliance-report { display: grid; gap: 14px; color: #28445c; }
-.working-time-compliance-report > header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; }
-.working-time-compliance-report > header p,
-.working-time-compliance-report > header h2,
-.working-time-compliance-report > header span { margin: 0; }
-.working-time-compliance-report > header p { color: #08758b; font-size: .68rem; font-weight: 850; text-transform: uppercase; }
-.working-time-compliance-report > header h2 { color: #12346f; font-size: 1.15rem; }
-.working-time-compliance-report > header span { color: #687e90; font-size: .74rem; }
-.working-time-compliance-report > header > svg { color: #08758b; }
-.working-time-report-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.working-time-report-filter-grid fieldset { display: grid; align-content: start; gap: 8px; min-width: 0; margin: 0; padding: 12px; border: 1px solid #cfdee8; border-radius: 8px; background: #fff; }
-.working-time-report-filter-grid legend { padding: 0 5px; color: #12346f; font-size: .72rem; font-weight: 850; }
-.working-time-report-filter-grid label { display: grid; gap: 4px; color: #4d6578; font-size: .69rem; }
-.working-time-report-metrics label { grid-template-columns: auto 1fr; align-items: center; }
-.working-time-report-filter-grid select { width: 100%; min-height: 36px; border: 1px solid #bdceda; border-radius: 6px; padding: 5px 7px; color: #203c54; background: #fff; }
-.working-time-report-filter-grid select[multiple] { min-height: 92px; }
-.working-time-report-filter-grid small { color: #718596; font-size: .65rem; }
+.working-time-compliance-report { display: grid; gap: 12px; color: #28445c; }
+.working-time-report-builder { display: grid; grid-template-columns: minmax(0, 2.15fr) minmax(280px, 1fr); gap: 16px; align-items: stretch; }
+.working-time-report-steps { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.working-time-report-step { display: grid; align-content: start; gap: 10px; min-width: 0; margin: 0; padding: 12px 16px 15px; border: 1px solid #cfdee8; border-radius: 12px; background: #fff; }
+.working-time-report-step legend { display: inline-flex; align-items: center; gap: 10px; padding: 0 6px 0 0; color: #12346f; font-size: .84rem; font-weight: 850; }
+.working-time-report-step legend > span { display: inline-grid; width: 28px; height: 28px; place-items: center; border-radius: 999px; color: #fff; background: #087f95; font-size: .78rem; }
+.working-time-report-step label,
+.working-time-report-multiselect__label { display: grid; gap: 5px; color: #49627a; font-size: .72rem; }
+.working-time-report-step select { width: 100%; min-height: 42px; border: 1px solid #bdceda; border-radius: 8px; padding: 7px 10px; color: #17375e; background: #fff; font: inherit; }
+.working-time-report-step select[multiple] { min-height: 116px; }
+.working-time-report-period-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.working-time-report-population-scope { max-width: 100%; }
+.working-time-report-scope-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.working-time-report-scope-grid > * { min-width: 0; }
+.working-time-report-scope-grid > :last-child { padding-left: 20px; border-left: 1px solid #dce6ed; }
+.working-time-report-scope-note { display: grid; min-height: 42px; gap: 3px; margin: 0; padding: 7px 10px; border: 1px solid #d6e2ea; border-radius: 8px; background: #f8fbfc; }
+.working-time-report-scope-note strong { color: #49627a; font-size: .72rem; }
+.working-time-report-scope-note span { color: #667d90; font-size: .69rem; }
+.working-time-report-metrics label { grid-template-columns: auto 1fr; align-items: center; min-height: 28px; }
+
+.working-time-report-multiselect { position: relative; min-width: 0; }
+.working-time-report-multiselect__label { margin-bottom: 5px; }
+.working-time-report-multiselect__trigger { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #bdceda; border-radius: 8px; padding: 7px 10px; color: #17375e; background: #fff; font: inherit; font-size: .73rem; text-align: left; cursor: pointer; }
+.working-time-report-multiselect__trigger svg { flex: 0 0 auto; color: #12346f; transition: transform .16s ease; }
+.working-time-report-multiselect.is-open .working-time-report-multiselect__trigger { border-color: #087f95; box-shadow: 0 0 0 3px rgb(8 127 149 / 13%); }
+.working-time-report-multiselect.is-open .working-time-report-multiselect__trigger svg { transform: rotate(180deg); }
+.working-time-report-multiselect__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.working-time-report-multiselect__chip { display: inline-flex; min-height: 40px; align-items: center; gap: 3px; max-width: 100%; border: 1px solid #c8e3eb; border-radius: 8px; padding-left: 10px; color: #12346f; background: #edf8fb; font-size: .69rem; }
+.working-time-report-multiselect__chip > button { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 0; color: #12346f; background: transparent; cursor: pointer; }
+.working-time-report-multiselect__empty-note { display: block; margin-top: 6px; color: #667d90; font-size: .66rem; }
+.working-time-report-multiselect__panel { display: grid; gap: 7px; margin-top: 7px; overflow: hidden; border: 1px solid #cbd9e3; border-radius: 10px; background: #fff; box-shadow: 0 10px 24px rgb(18 52 111 / 12%); }
+.working-time-report-multiselect__search { display: flex !important; min-height: 42px; align-items: center; gap: 8px !important; margin: 9px 9px 0; border: 1px solid #c7d6e1; border-radius: 7px; padding: 0 9px; background: #fff; }
+.working-time-report-multiselect__search svg { flex: 0 0 auto; color: #597187; }
+.working-time-report-multiselect__search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #17375e; background: transparent; font: inherit; font-size: .72rem; }
+.working-time-report-multiselect__actions { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+.working-time-report-multiselect__actions button { min-height: 40px; border: 0; padding: 5px 2px; color: #075ec0; background: transparent; font: inherit; font-size: .68rem; font-weight: 750; cursor: pointer; }
+.working-time-report-multiselect__actions button:disabled { color: #9aabb8; cursor: not-allowed; }
+.working-time-report-multiselect__list { max-height: 230px; overflow-y: auto; border-top: 1px solid #e2e9ee; padding: 4px; }
+.working-time-report-multiselect__list > label { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); min-height: 48px; align-items: center; gap: 9px; border-radius: 7px; padding: 5px 8px; cursor: pointer; }
+.working-time-report-multiselect__list > label:hover,
+.working-time-report-multiselect__list > label:focus-within { background: #f0f8fa; }
+.working-time-report-multiselect__list > label:focus-within { box-shadow: inset 0 0 0 2px rgb(8 127 149 / 38%); }
+.working-time-report-multiselect__list > label > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.working-time-report-multiselect__check { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid #b9cbd8; border-radius: 4px; color: transparent; background: #fff; }
+.working-time-report-multiselect__list .is-selected .working-time-report-multiselect__check { border-color: #087f95; color: #fff; background: #087f95; }
+.working-time-report-multiselect__list label > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.working-time-report-multiselect__list strong { overflow: hidden; color: #16375e; font-size: .71rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.working-time-report-multiselect__list small { color: #60778a; font-size: .64rem; }
+.working-time-report-multiselect__list > p { margin: 0; padding: 14px 10px; color: #758999; font-size: .7rem; text-align: center; }
+
+.working-time-report-summary { display: grid; grid-template-rows: auto 1fr auto; gap: 12px; min-height: 100%; padding: 18px; border: 1px solid #cfdee8; border-radius: 12px; background: #f7fbfd; }
+.working-time-report-summary > header { display: flex; align-items: center; gap: 12px; color: #087f95; }
+.working-time-report-summary h3 { margin: 0; color: #12346f; font-size: .92rem; }
+.working-time-report-summary dl { display: grid; align-content: start; margin: 0; }
+.working-time-report-summary dl > div { display: grid; grid-template-columns: 30px 1fr; min-height: 76px; align-content: center; column-gap: 12px; border-bottom: 1px solid #d9e4eb; }
+.working-time-report-summary dl > div > svg { grid-row: 1 / span 2; align-self: center; color: #087f95; }
+.working-time-report-summary dt { color: #50677b; font-size: .71rem; }
+.working-time-report-summary dd { margin: 2px 0 0; color: #12346f; font-size: .75rem; font-weight: 850; }
+.working-time-report-summary > p { display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 12px; border: 1px solid #cfdee8; border-radius: 9px; color: #355471; background: #fff; font-size: .69rem; line-height: 1.45; }
+.working-time-report-summary > p svg { flex: 0 0 auto; color: #12346f; }
 .working-time-report-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 12px; border: 1px solid #cfdee7; border-radius: 8px; background: #eef6f8; }
 .working-time-report-actions > span { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: #486379; font-size: .69rem; }
 .working-time-report-actions button { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid #08758b; border-radius: 7px; color: #fff; background: #08758b; font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
@@ -17351,7 +17394,7 @@ button.planning-p12-conflict-card {
   .working-time-register-detail { grid-template-columns: minmax(0, 1fr) 190px; }
   .working-time-register-detail > .working-time-signatures { grid-column: 2; grid-row: 2 / span 3; grid-template-columns: 1fr; }
   .working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 2; }
-  .working-time-report-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-report-builder { grid-template-columns: minmax(0, 2fr) minmax(250px, .8fr); }
 }
 @media (max-width: 1050px) {
   .working-time-workspace-grid { grid-template-columns: 220px minmax(0, 1fr); }
@@ -17384,10 +17427,17 @@ button.planning-p12-conflict-card {
   .working-time-interval-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .working-time-register-detail > header { display: grid; }
   .working-time-register-header-tools { justify-content: start; }
-  .working-time-report-filter-grid { grid-template-columns: 1fr; }
+  .working-time-report-builder { grid-template-columns: 1fr; }
+  .working-time-report-summary { min-height: 0; }
   .working-time-report-actions { align-items: stretch; flex-direction: column; }
   .working-time-report-actions > span { margin: 0; }
   .working-time-report-trend label,
   .working-time-report-breakdown label { grid-template-columns: 85px minmax(0, 1fr) 52px; }
   .working-time-monthly-table-wrap { max-height: 520px; }
+}
+@media (max-width: 620px) {
+  .working-time-report-period-grid,
+  .working-time-report-scope-grid { grid-template-columns: 1fr; }
+  .working-time-report-scope-grid > :last-child { padding-top: 12px; padding-left: 0; border-top: 1px solid #dce6ed; border-left: 0; }
+  .working-time-report-step { padding-inline: 11px; }
 }

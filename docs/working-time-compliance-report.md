@@ -21,6 +21,8 @@ Le rapport peut être configuré :
 
 ## Contenu et export
 
+Dans l’étape **Périmètre**, les listes **Marins** et **Navires** utilisent des sélecteurs multiples accessibles : recherche, cases à cocher, sélection globale, effacement et pastilles supprimables. Un seul menu est ouvert à la fois ; il reste dans le flux de la modale afin de ne pas recouvrir les indicateurs. Les menus se ferment par clic extérieur ou avec `Échap` et restent utilisables au clavier. Une sélection de navires vide signifie explicitement que tous les navires sont inclus.
+
 L’aperçu comprend un résumé exécutif modifiable, les chiffres clés, une évolution temporelle, une répartition des journées non conformes, les hypothèses et les formules. Le PDF reprend le logo BBTM en haut à gauche et le titre **Rapport de suivi du temps de travail**.
 
 Pour préserver les performances sur un rapport annuel, les filtres marin, navire et bordée sont appliqués directement aux requêtes Supabase. Les périodes longues sont ensuite chargées par tranches mensuelles avant consolidation, sans modifier les règles RLS ni les formules du rapport.

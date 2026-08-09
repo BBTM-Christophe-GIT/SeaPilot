@@ -173,8 +173,8 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
       {activeModal === 'report' && canViewComplianceReport ? (
         <WorkingTimeModal
           onClose={() => setActiveModal(null)}
-          subtitle="Consolidez les indicateurs, les non-conformités et l’analyse sur le périmètre choisi."
-          title="Rapport de conformité"
+          subtitle="Choisissez le périmètre et les indicateurs à analyser."
+          title="Générer un rapport de conformité"
         >
           <WorkingTimeComplianceReport client={effectiveClient} initialYear={Number(range.start.slice(0, 4))} />
         </WorkingTimeModal>
