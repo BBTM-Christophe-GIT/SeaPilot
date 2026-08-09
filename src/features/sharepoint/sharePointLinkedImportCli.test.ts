@@ -106,6 +106,19 @@ describe('buildSharePointImportSqlFromExport', () => {
     expect(sql).toContain('set vessel_name = vessel.name');
     expect(sql.indexOf('resolve_sharepoint_operation_links')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
   });
+
+  it("reconciles purchase request vessels and attachments inside the import transaction", () => {
+    const sql = buildSharePointImportSqlFromExport({
+      sources: [{
+        sourceKey: 'list-demande-achat',
+        items: [{ ID: '95', Title: 'Moteur de commande', Navire: 'GOURY', AttachmentFiles: [] }],
+      }],
+    });
+
+    expect(sql).toContain('insert into public."purchase_requests"');
+    expect(sql).toContain('perform public.resolve_sharepoint_purchase_request_links();');
+    expect(sql.indexOf('resolve_sharepoint_purchase_request_links')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
+  });
 });
 
 describe('runSharePointLinkedImportCli', () => {

@@ -1,173 +1,142 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PurchaseRequestsPage } from './PurchaseRequestsPage';
 
-const capteursRequestRow = {
-  id: 700,
-  request_number: 'DA-2026-001',
-  title: 'DA-2026-001',
-  requested_on: '2026-07-02',
+const baseRequest = {
+  id: 95,
+  request_number: '95',
+  title: 'Moteur de commande régulation GE1',
+  requested_on: '2026-07-29',
   requester_name: 'Julien LECOCQ',
-  supplier_name: 'Chantier Naval Manche',
-  project_id: 880,
-  project_sharepoint_item_id: '880',
-  project_code: 'P-2026-014',
-  project_title: 'Campagne Atlantique 2026',
-  amount_ht: 12500.5,
+  supplier_name: 'CATERPILLAR',
+  project_id: null,
+  project_sharepoint_item_id: null,
+  project_code: null,
+  project_title: null,
+  vessel_id: 1,
+  vessel_sharepoint_item_id: '1',
+  vessel_name: 'GOURY',
+  reference: '4W-7773',
+  quantity: 1,
+  unit_label: 'Unité',
+  unit_price_ht: 0,
+  amount_ht: 0,
   currency: 'EUR',
-  status: 'En cours',
-  description: 'Achat capteurs',
+  status: 'Approbation en attente',
+  description: 'Remplacement du moteur de commande régulation GE1 défectueux.',
+  urgent: false,
+  urgency_reason: null,
+  owner_name: null,
+  ordered_on: null,
+  expected_delivery_on: null,
+  received_on: null,
+  delivery_location: 'Brest',
+  delivery_details: 'Déposer à l’atelier machine.',
+  rebilling_label: null,
+  category_label: 'Approvisionnement',
+  processing_comment: null,
+  approval_status: 'En attente',
+  approval_reason: null,
+  approver_name: null,
+  approval_history: null,
+  website_url: null,
   source_label: 'SharePoint',
+  sharepoint_encoded_abs_url: 'https://example.test/95',
+  created_at: '2026-07-29T17:39:00Z',
+  updated_at: '2026-07-29T17:39:00Z',
 };
 
-const piecesRequestRow = {
-  id: 701,
-  request_number: 'DA-2026-002',
-  title: 'DA-2026-002',
-  requested_on: '2026-08-03',
-  requester_name: 'Arthur MAREST',
-  supplier_name: 'Marine Supplies',
-  project_id: 881,
-  project_sharepoint_item_id: '881',
-  project_code: 'P-2026-015',
-  project_title: 'Campagne Manche 2026',
-  amount_ht: 4200,
-  currency: 'EUR',
-  status: 'Recu',
-  description: 'Pieces machine',
-  source_label: 'SharePoint',
+const urgentRequest = {
+  ...baseRequest,
+  id: 86,
+  request_number: '86',
+  title: 'Ampoule feu de navigation',
+  urgent: true,
+  urgency_reason: 'Sécurité navigation',
 };
 
-function createClient(requests: unknown[] = [capteursRequestRow, piecesRequestRow]) {
-  const insert = vi.fn().mockReturnValue({
+function orderedResult(data: unknown[]) {
+  return {
     select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: capteursRequestRow, error: null }),
-    }),
-  });
-  const client = {
-    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
-    from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'purchase_requests') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: requests, error: null }),
-            }),
-          }),
-          insert,
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+      order: vi.fn().mockImplementation(() => ({
+        order: vi.fn().mockResolvedValue({ data, error: null }),
+        then: (resolve: (value: unknown) => unknown) => resolve({ data, error: null }),
+      })),
     }),
   };
-
-  return { client, insert };
 }
 
-function createClientWithCreatedRequest(createdRequest: unknown) {
-  const insert = vi.fn().mockReturnValue({
-    select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: createdRequest, error: null }),
-    }),
-  });
+function createClient(requests: unknown[] = [baseRequest, urgentRequest]) {
+  const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
   const client = {
-    rpc: vi.fn().mockResolvedValue({ data: [{ id: 880, project_code: 'P-2026-014', title: 'Campagne Atlantique 2026' }], error: null }),
+    rpc,
+    storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'purchase_requests') {
+      if (table === 'purchase_requests') return orderedResult(requests);
+      if (table === 'purchase_request_attachments' || table === 'purchase_request_events') {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === 'vessels') {
         return {
           select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
-            }),
+            eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }], error: null }) }),
           }),
-          insert,
         };
       }
-
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-
-  return { client, insert };
+  return { client, rpc };
 }
 
 describe('PurchaseRequestsPage', () => {
-  it('filters purchase requests by status, project, supplier, dates and search text', async () => {
+  it('renders the modern master-detail cockpit and filters by search and urgency', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
 
     render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
 
-    expect(await screen.findByRole('heading', { name: "Demandes d'achat" })).toBeInTheDocument();
-    expect(screen.getByText('Pieces machine')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Demandes d.achat/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /À traiter 2/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Remplacement du moteur de commande régulation GE1 défectueux.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText('Filtre statut achat'), 'En cours');
-    await user.selectOptions(screen.getByLabelText('Filtre projet achat'), 'P-2026-014');
-    await user.selectOptions(screen.getByLabelText('Filtre fournisseur achat'), 'Chantier Naval Manche');
-    fireEvent.change(screen.getByLabelText('Achat depuis'), { target: { value: '2026-07-01' } });
-    fireEvent.change(screen.getByLabelText("Achat jusqu'au"), { target: { value: '2026-07-31' } });
-    fireEvent.change(screen.getByLabelText('Recherche achats'), { target: { value: 'capteurs' } });
+    fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'ampoule' } });
+    expect(screen.getByRole('heading', { name: /#86.*Ampoule feu de navigation/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /#95/i })).not.toBeInTheDocument();
 
-    expect(screen.getByText('Achat capteurs')).toBeInTheDocument();
-    expect(screen.queryByText('Pieces machine')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Demandes achat')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Demandes en cours')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Montant HT')).toHaveTextContent('12');
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    expect(screen.getByLabelText('Urgences uniquement')).toBeInTheDocument();
   });
 
-  it('creates a purchase request for office roles', async () => {
+  it('runs the take-charge transition through the secured workflow RPC', async () => {
     const user = userEvent.setup();
-    const createdRequest = {
-      ...capteursRequestRow,
-      id: 710,
-      request_number: 'DA-2026-010',
-      title: 'DA-2026-010',
-      requested_on: '2026-09-05',
-      requester_name: 'Julien LECOCQ',
-      supplier_name: 'Chantier Naval Manche',
-      project_code: 'P-2026-014',
-      project_title: 'Campagne Atlantique 2026',
-      amount_ht: 9800.75,
-      currency: 'EUR',
-      status: 'A valider',
-      description: 'Treuil remplacement',
-      source_label: 'seapilot',
-    };
-    const { client, insert } = createClientWithCreatedRequest(createdRequest);
+    const { client, rpc } = createClient([baseRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: /#95.*Moteur de commande/i });
+    await user.click(screen.getByRole('button', { name: 'Prendre en charge' }));
 
-    await screen.findByRole('heading', { name: "Demandes d'achat" });
-    fireEvent.change(screen.getByLabelText('Numero demande'), { target: { value: 'DA-2026-010' } });
-    fireEvent.change(screen.getByLabelText('Titre demande'), { target: { value: 'DA-2026-010' } });
-    fireEvent.change(screen.getByLabelText('Date demande'), { target: { value: '2026-09-05' } });
-    fireEvent.change(screen.getByLabelText('Demandeur'), { target: { value: 'Julien LECOCQ' } });
-    fireEvent.change(screen.getByLabelText('Fournisseur'), { target: { value: 'Chantier Naval Manche' } });
-    await user.selectOptions(screen.getByLabelText('Projet du catalogue achat'), '880');
-    fireEvent.change(screen.getByLabelText('Montant HT demande'), { target: { value: '9800,75' } });
-    fireEvent.change(screen.getByLabelText('Devise demande'), { target: { value: 'EUR' } });
-    await user.selectOptions(screen.getByLabelText('Statut achat'), 'A valider');
-    fireEvent.change(screen.getByLabelText('Objet achat'), { target: { value: 'Treuil remplacement' } });
-    await user.click(screen.getByRole('button', { name: 'Ajouter demande' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
+      p_request_id: 95,
+      p_action: 'take_charge',
+      p_comment: null,
+      p_effective_date: null,
+    }));
+  });
 
-    expect(insert).toHaveBeenCalledWith({
-      request_number: 'DA-2026-010',
-      title: 'DA-2026-010',
-      requested_on: '2026-09-05',
-      requester_name: 'Julien LECOCQ',
-      supplier_name: 'Chantier Naval Manche',
-      project_id: 880,
-      project_code: 'P-2026-014',
-      project_title: 'Campagne Atlantique 2026',
-      amount_ht: 9800.75,
-      currency: 'EUR',
-      status: 'A valider',
-      description: 'Treuil remplacement',
-      source_label: 'seapilot',
-    });
-    expect(await screen.findByText('Demande ajoutee.')).toBeInTheDocument();
-    expect(screen.getByText('Treuil remplacement')).toBeInTheDocument();
+  it('opens the six-step creation wizard with vessel and attachment support', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+
+    render(<PurchaseRequestsPage client={client as never} roles={['capitaine']} />);
+    await screen.findByRole('heading', { name: /Demandes d.achat/i });
+    await user.click(screen.getByRole('button', { name: 'Nouvelle demande' }));
+
+    expect(screen.getByRole('heading', { name: /Créer une demande d.achat/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /6.*Pièces jointes/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Navire')).toHaveTextContent('GOURY');
   });
 });

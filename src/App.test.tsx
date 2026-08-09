@@ -553,15 +553,45 @@ describe('App', () => {
                     project_sharepoint_item_id: '880',
                     project_code: 'P-2026-014',
                     project_title: 'Campagne Atlantique 2026',
+                    vessel_id: 14,
+                    vessel_sharepoint_item_id: '14',
+                    vessel_name: 'GOURY',
+                    reference: 'CT-400',
+                    quantity: 2,
+                    unit_label: 'Unité',
+                    unit_price_ht: 6250.25,
                     amount_ht: 12500.5,
                     currency: 'EUR',
                     status: 'En cours',
                     description: 'Achat capteurs',
+                    urgent: false,
+                    ordered_on: '2026-07-03',
+                    category_label: 'Approvisionnement',
                     source_label: 'SharePoint',
+                    created_at: '2026-07-02T08:00:00Z',
+                    updated_at: '2026-07-03T08:00:00Z',
                   },
                 ],
                 error: null,
               }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'purchase_request_attachments' || table === 'purchase_request_events') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+
+      if (table === 'vessels') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [{ id: 14, name: 'GOURY' }], error: null }),
             }),
           }),
         };
@@ -579,15 +609,13 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: "Demandes d'achat" })).toBeInTheDocument();
-    expect(screen.getByLabelText('Demandes achat')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Demandes en cours')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Montant HT')).toHaveTextContent('12');
-    expect(screen.getByLabelText('Fournisseurs achats')).toHaveTextContent('1');
+    expect(await screen.findByRole('heading', { name: /Demandes d.achat/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /En commande 1/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /En commande 1/i }));
+    expect(await screen.findByRole('heading', { name: /#DA-2026-001/i })).toBeInTheDocument();
     expect(screen.getAllByText('DA-2026-001').length).toBeGreaterThan(0);
     expect(screen.getByText('Achat capteurs')).toBeInTheDocument();
-    expect(screen.getAllByText('Chantier Naval Manche').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('P-2026-014').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 

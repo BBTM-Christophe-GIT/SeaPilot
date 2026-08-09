@@ -169,6 +169,11 @@ type SourceRowValidator = (row: SharePointImportRow) => boolean;
 
 const CONFLICT_COLUMNS = ['sharepoint_list_id', 'sharepoint_item_id'] as const;
 const DOCUMENT_DRIVE_CONFLICT_COLUMNS = ['sharepoint_drive_id', 'sharepoint_drive_item_id'] as const;
+const PURCHASE_ATTACHMENT_CONFLICT_COLUMNS = [
+  'sharepoint_list_id',
+  'purchase_sharepoint_item_id',
+  'sharepoint_server_relative_url',
+] as const;
 
 const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'library-alerte-securite': mapGenericDocumentPayload,
@@ -1161,6 +1166,7 @@ function inferActionCategory(actionType: string | null): string {
 
 function mapPurchaseRequestPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   const requestNumber = text(item, [
+    'ID',
     'NumeroDemande',
     'Num_x00e9_roDemande',
     'Num_x00e9_ro_x0020_demande',
@@ -1172,18 +1178,116 @@ function mapPurchaseRequestPayload(item: SharePointListItem, source: SharePointM
     request_number: requestNumber,
     title: requiredText(item, ['Title', 'Objet', 'Description'], requestNumber || ''),
     requested_on: dateOnly(item, ['DateDemande', 'Date_x0020_demande', 'RequestedOn', 'Created']),
-    requester_name: text(item, ['Demandeur', 'Requester', 'Author']),
-    supplier_name: text(item, ['Fournisseur', 'Supplier']),
+    requester_name: text(item, ['Emetteur']) || text(item, ['Demandeur', 'Requester', 'Author']),
+    supplier_name: text(item, ['Fournisseur_x002d_Prestataire'])
+      || text(item, ['NouveauFournisseur', 'Fournisseur', 'Supplier']),
     project_id: null,
     project_sharepoint_item_id: text(item, ['ProjetId', 'ProjectId', 'ProjetLookupId']),
     project_code: text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']),
     project_title: text(item, ['Projet', 'Project', 'ProjetLookupValue', 'ProjectTitle']),
-    amount_ht: numeric(item, ['MontantHT', 'Montant_x0020_HT', 'AmountHT']),
-    currency: text(item, ['Devise', 'Currency']),
-    status: text(item, ['Statut', 'Status']),
-    description: text(item, ['Objet', 'Description', 'Commentaires', 'Comments']),
+    vessel_id: null,
+    vessel_sharepoint_item_id: text(item, ['NavireId', 'VesselId']),
+    vessel_name: text(item, ['Navire', 'Navire_x003a__x0020_Titre', 'VesselName']),
+    reference: text(item, ['R_x00e9_f_x00e9_rence', 'Reference']),
+    quantity: numeric(item, ['Quantit_x00e9_', 'Quantite', 'Quantity']),
+    unit_label: text(item, ['Unit_x00e9__x002d_Conditionnemen', 'Unite', 'Unit']),
+    unit_price_ht: numeric(item, ['PrixUnitaireHT', 'UnitPriceHT']),
+    amount_ht: numeric(item, ['Prix_x0020_Total_x0020_HT', 'MontantHT', 'Montant_x0020_HT', 'AmountHT']),
+    currency: text(item, ['Devise', 'Currency']) || 'EUR',
+    status: text(item, ['Statut_x0020_commande', 'Statut', 'Status']),
+    description: text(item, ['Commentaire', 'Objet', 'Description', 'Commentaires', 'Comments']),
+    urgent: booleanValue(item, ['CommandeUrgente', 'Urgent'], false),
+    urgency_reason: text(item, ['Justifierlurgence', 'UrgencyReason']),
+    owner_name: text(item, ['ResponsableduTraitement', 'Owner']),
+    ordered_on: dateOnly(item, ['DateCommande', 'OrderedOn']),
+    expected_delivery_on: dateOnly(item, ['DateLivraison', 'ExpectedDeliveryOn']),
+    received_on: dateOnly(item, ['R_x00e9_ceptionn_x00e9_le', 'ReceivedOn']),
+    delivery_location: text(item, ['LieudeLivraison', 'DeliveryLocation']),
+    delivery_details: text(item, ['Pr_x00e9_cisionLieudeLivraison', 'DeliveryDetails']),
+    rebilling_label: text(item, ['Refacturation', 'Rebilling']),
+    category_label: text(item, ['Cat_x00e9_gorie', 'Categorie', 'Category']),
+    processing_comment: text(item, ['RT_x002d_Commentaire', 'ProcessingComment']),
+    approval_status: text(item, ['Approbation', 'ApprovalStatus']),
+    approval_reason: text(item, ['JustificationduRefus', 'ApprovalReason']),
+    approver_name: text(item, ['NomApprobateur', 'ApproverName']),
+    approval_history: text(item, ['HistoriqueApprobation', 'ApprovalHistory']),
+    website_url: text(item, ['Lien_x002d_Mod_x00e8_leExact', 'WebsiteUrl']),
     source_label: 'sharepoint',
   });
+}
+
+function inferAttachmentContentType(fileName: string): string | null {
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  const contentTypes: Record<string, string> = {
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    heic: 'image/heic',
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    pdf: 'application/pdf',
+    png: 'image/png',
+    webp: 'image/webp',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+
+  return extension ? contentTypes[extension] || null : null;
+}
+
+function mapPurchaseRequestAttachmentRows(
+  item: SharePointListItem,
+  source: SharePointMigrationSource,
+): SharePointImportRow[] {
+  const itemId = sourceItemId(item);
+  const rawAttachments = fieldValue(item, ['AttachmentFiles']);
+
+  if (!itemId || !Array.isArray(rawAttachments)) {
+    return [];
+  }
+
+  return rawAttachments.flatMap((rawAttachment) => {
+    if (!rawAttachment || typeof rawAttachment !== 'object' || Array.isArray(rawAttachment)) {
+      return [];
+    }
+
+    const attachment = rawAttachment as SharePointFieldObject;
+    const fileName = stringifyValue(attachment.fileName as SharePointFieldValue | undefined)
+      || stringifyValue(attachment.FileName as SharePointFieldValue | undefined);
+    const serverRelativeUrl = stringifyValue(attachment.serverRelativeUrl as SharePointFieldValue | undefined)
+      || stringifyValue(attachment.ServerRelativeUrl as SharePointFieldValue | undefined);
+    const fileUrl = stringifyValue(attachment.fileUrl as SharePointFieldValue | undefined)
+      || (serverRelativeUrl ? buildSharePointAbsoluteUrl(source, serverRelativeUrl) : null);
+
+    if (!fileName || !serverRelativeUrl || !fileUrl) {
+      return [];
+    }
+
+    return [{
+      purchase_request_id: null,
+      purchase_sharepoint_item_id: itemId,
+      title: fileName,
+      content_type: inferAttachmentContentType(fileName),
+      source_kind: 'sharepoint',
+      file_url: fileUrl,
+      storage_bucket: null,
+      storage_path: null,
+      sharepoint_list_id: source.listId || source.key,
+      sharepoint_server_relative_url: serverRelativeUrl,
+      source_modified_at: text(item, ['Modified', 'LastModifiedDateTime']),
+    }];
+  });
+}
+
+function buildPurchaseRequestAttachmentBatch(
+  items: SharePointListItem[],
+  source: SharePointMigrationSource,
+): SharePointUpsertBatch {
+  return {
+    sourceKey: source.key,
+    targetTable: 'purchase_request_attachments',
+    conflictColumns: PURCHASE_ATTACHMENT_CONFLICT_COLUMNS,
+    rows: items.flatMap((item) => mapPurchaseRequestAttachmentRows(item, source)),
+  };
 }
 
 function mapActionItemPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
@@ -1408,11 +1512,19 @@ export function buildSharePointImportBatches(
   itemsBySource: Record<string, SharePointListItem[]>,
 ): SharePointUpsertBatch[] {
   return Object.entries(itemsBySource)
-    .map(([sourceKey, items]) => buildSharePointUpsertBatch(sourceKey, items))
+    .flatMap(([sourceKey, items]) => {
+      const primaryBatch = buildSharePointUpsertBatch(sourceKey, items);
+      const source = getSharePointSourceByKey(sourceKey);
+
+      return sourceKey === 'list-demande-achat' && source
+        ? [primaryBatch, buildPurchaseRequestAttachmentBatch(items, source)]
+        : [primaryBatch];
+    })
     .sort((left, right) => {
       const leftSource = getSharePointSourceByKey(left.sourceKey);
       const rightSource = getSharePointSourceByKey(right.sourceKey);
-      return (leftSource?.importPriority || 0) - (rightSource?.importPriority || 0);
+      return (leftSource?.importPriority || 0) - (rightSource?.importPriority || 0)
+        || (left.targetTable === 'purchase_requests' ? -1 : right.targetTable === 'purchase_requests' ? 1 : 0);
     });
 }
 
