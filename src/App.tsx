@@ -21,6 +21,7 @@ import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
+const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -60,6 +61,8 @@ export default function App({ previewModeOverride }: AppProps) {
               element={
                 module.key === 'admin' ? (
                   <AdminPage />
+                ) : module.key === 'kpi' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (
                   <ActionPlanPage />
                 ) : module.key === 'dpr' ? (

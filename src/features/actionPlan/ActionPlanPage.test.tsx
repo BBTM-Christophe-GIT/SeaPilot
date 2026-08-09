@@ -117,7 +117,7 @@ function renderWithProfile(client: unknown) {
 }
 
 describe('ActionPlanPage', () => {
-  it('shows the SharePoint hierarchy, filters and exposure-linked indicators', async () => {
+  it('shows the SharePoint hierarchy and filters without an HSE indicators tab', async () => {
     const { client } = createClient();
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
 
@@ -126,6 +126,7 @@ describe('ActionPlanPage', () => {
     expect(screen.getByLabelText('Non-conformités majeures')).toHaveTextContent('1');
     expect(screen.getByLabelText('Heures travaillées')).toHaveTextContent('124 500 h');
     expect(screen.queryByRole('button', { name: 'Sources importées' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Indicateurs HSE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Date - titre')).not.toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
 
@@ -144,20 +145,6 @@ describe('ActionPlanPage', () => {
     expect(screen.getByText("Réaliser une analyse d'eau")).toBeInTheDocument();
     expect(screen.queryByText('Vérifier la filtration machine')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Indicateurs HSE' }));
-    expect(screen.getAllByText('124 500 h').length).toBeGreaterThan(0);
-    expect(screen.getByText('Accidents avec arrêt')).toBeInTheDocument();
-    expect(screen.getByLabelText('Année des indicateurs HSE')).toHaveValue('2026');
-    expect(screen.getByText('Taux de fréquence et taux de gravité')).toBeInTheDocument();
-    expect(screen.getByText('Accidents enregistrables')).toBeInTheDocument();
-    expect(screen.getByText('Prévention, soins et travail adapté')).toBeInTheDocument();
-    expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3');
-    expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3 au total');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Définitions et formules' }));
-    const definitions = within(screen.getByRole('dialog', { name: 'Définitions et formules' }));
-    expect(definitions.getByText('FAC')).toBeInTheDocument();
-    expect(definitions.getByText(/FAT \+ LWDC \+ RWC \+ MTC/)).toBeInTheDocument();
   });
 
   it("defaults the issuer to the current profile and creates an exposure-linked action", async () => {

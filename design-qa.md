@@ -50,6 +50,39 @@ final result: passed
 
 ---
 
+# Design QA — QHSE KPI / Indicateurs HSE v3.12.24 (2026-08-09)
+
+## Cibles et état comparés
+
+- Référence du tableau HSE : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-9c4fdd65-f0aa-46d8-941e-15cb3b912bdb.png`.
+- Référence de navigation QHSE : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-41370d2e-6ffb-4861-af3b-98f4739280d1.png`.
+- Implémentation locale : `http://127.0.0.1:4173/modules/kpi?preview=1`.
+- Capture d’implémentation : `C:/CODEX/SeaPilot/.data/qhse-kpi-preview.png`.
+- État : préversion bureau, QHSE déplié, KPI actif, année 2024 sélectionnée, aucune modale ouverte.
+- Les deux références et la capture d’implémentation ont été ouvertes ensemble dans la même comparaison visuelle.
+
+## Findings
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Le tableau de bord quitte le Plan d’action et possède désormais sa propre page `QHSE → KPI`.
+- L’entrée KPI est active dans la navigation latérale et le fil d’Ariane affiche `QHSE › KPI`.
+- La hiérarchie visuelle, les quatre cartes de synthèse, le filtre annuel, les définitions, les indicateurs HSE et les courbes françaises/IMCA conservent les composants et tokens SeaPilot existants.
+- Le bouton `Indicateurs HSE` n’est plus rendu sur la page Plan d’action ; les commandes Actions, Actualiser et Nouvelle action restent inchangées.
+- La page KPI conserve les calculs et sources existants sans dupliquer la logique métier : elle appelle les mêmes requêtes versionnées HSE et le même registre d’heures travaillées.
+
+## Vérification des interactions
+
+- Navigation réelle depuis le lien latéral `KPI` jusqu’à `/modules/kpi`.
+- Le sélecteur annuel charge 2024 et met à jour heures, cartes et courbes.
+- Le dialogue `Définitions et formules` s’ouvre, affiche notamment FAC et TRIR, puis se ferme correctement.
+- Les courbes `Fréquence et gravité`, `Accidents enregistrables` et `Prévention, soins et travail adapté` sont présentes.
+- Erreurs et avertissements console : aucun.
+
+final result: passed
+
+---
+
 # Design QA — Plan d'action : tableau HSE annuel (2026-08-09)
 
 ## Cibles

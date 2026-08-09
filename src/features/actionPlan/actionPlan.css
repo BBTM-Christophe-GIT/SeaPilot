@@ -82,6 +82,15 @@
   color: #1f58cf;
 }
 
+.action-plan-kpi-location {
+  padding: 0 10px;
+  color: var(--ap-muted);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
 .action-plan-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
