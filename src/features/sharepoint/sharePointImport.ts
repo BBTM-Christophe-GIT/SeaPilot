@@ -191,6 +191,7 @@ const SOURCE_MAPPERS: Record<string, SourcePayloadMapper> = {
   'library-suivi-temps-travail': mapGenericDocumentPayload,
   'library-vehicules': mapGenericDocumentPayload,
   'list-audit': mapActionItemPayload,
+  'list-indicateurs-qhse': mapHseIndicatorActionPayload,
   'list-administration-prestataires-fournisseurs': mapServiceProviderPayload,
   'list-bbtm-clients': mapClientPayload,
   'list-remorque': mapTowageOptionPayload,
@@ -1186,7 +1187,9 @@ function mapPurchaseRequestPayload(item: SharePointListItem, source: SharePointM
 }
 
 function mapActionItemPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
-  const actionType = text(item, ['Audit_x002f_VisiteHSE', 'ActionType', 'Type']);
+  const primaryActionType = text(item, ['Audit_x002f_VisiteHSE', 'ActionType', 'Type']);
+  const typedAudit = text(item, ['TypedAudit', 'TypeAudit', 'AuditType']);
+  const actionType = primaryActionType || typedAudit;
 
   return withReconciliation(item, source, {
     project_id: null,
@@ -1194,25 +1197,126 @@ function mapActionItemPayload(item: SharePointListItem, source: SharePointMigrat
     project_code: text(item, ['NumeroProjet', 'Num_x00e9_roProjet', 'ProjectCode', 'CodeProjet', 'Code']),
     project_title: text(item, ['Projet', 'Project', 'ProjetLookupValue', 'ProjectTitle']),
     vessel_id: null,
-    vessel_sharepoint_item_id: text(item, ['NavireId', 'VesselId', 'NavireLookupId']),
+    vessel_sharepoint_item_id: text(item, ['Navire_x002d_LieuId', 'NavireId', 'VesselId', 'NavireLookupId']),
     vessel_name: text(item, ['Navire', 'NomNavire', 'VesselName', 'NavireLookupValue']),
     category_key: inferActionCategory(actionType),
     action_type: actionType,
-    audit_type: text(item, ['TypedAudit', 'TypeAudit', 'AuditType']),
+    action_type_key: inferActionTypeKey(actionType),
+    audit_type: primaryActionType ? typedAudit : null,
     title: requiredText(item, ['Title'], ''),
     status: text(item, ['Statut', 'Status']),
     priority_label: text(item, ['Priorite', 'Priority']),
-    opened_on: dateOnly(item, ['DateAudit', 'Date', 'OpenedOn', 'Created']),
-    due_on: dateOnly(item, ['Echeance', 'DueOn', 'DateEcheance']),
-    owner_name: text(item, ['Responsable', 'Owner', 'AssignedTo']),
+    opened_on: dateOnly(item, ['DateduConstat', 'DateAudit', 'Date', 'OpenedOn', 'Created']),
+    due_on: dateOnly(item, ['Atraiteravant', 'Echeance', 'DueOn', 'DateEcheance']),
+    closed_on: dateOnly(item, ['Ecartsold_x00e9_', 'ClosedOn']),
+    issuer_name: text(item, ['Emetteur', 'Author', 'Auteur']),
+    owner_name: text(item, ['ResponsableduTraitement', 'Responsable', 'Owner', 'AssignedTo']),
     auditor_name: text(item, [
       'Auditeur_x0028_s_x0029_',
       'Auditeur_x0028_s_x0029__x003a__x',
       'Auditeur',
       'Auditor',
     ]),
-    description: text(item, ['Description', 'Constat', 'Commentaires']),
-    corrective_action: text(item, ['ActionCorrective', 'Action_x0020_corrective', 'CorrectiveAction']),
+    description: text(item, ['Description', 'Constat', 'Title']),
+    corrective_action: text(item, ['PropositiondAction', 'ActionCorrective', 'Action_x0020_corrective', 'CorrectiveAction']),
+    deviation_type: text(item, ['Typed_x00e9_cart', 'DeviationType']),
+    level_label: text(item, ['Niveau', 'Level']),
+    location_detail: text(item, ['Local', 'Location']),
+    realized_action: text(item, ['Actionr_x00e9_alis_x00e9_e', 'RealizedAction']),
+    anomaly_cause: text(item, ['Causedelanomalie', 'AnomalyCause']),
+    comments: text(item, ['Commentaire', 'Commentaires', 'Comments']),
+    source_label: 'sharepoint',
+  });
+}
+
+function inferActionTypeKey(value: string | null): string | null {
+  const normalized = normalizeSearchText(value || '');
+
+  const exactMappings: Array<[string, string]> = [
+    ['action de progres', 'action_progress'],
+    ['audit client', 'audit_client'],
+    ['audit ecmid', 'audit_ecmid'],
+    ['audit interne', 'audit_internal'],
+    ['plan de decarbonation', 'decarbonation_plan'],
+    ['visite bossoir', 'visit_davit'],
+    ['visite grue', 'visit_crane'],
+    ['visite hse', 'visit_hse'],
+    ['visite radio', 'visit_radio'],
+    ['visite societe de classification', 'visit_classification'],
+    ['arret technique', 'technical_stop'],
+    ['deces', 'fatality'],
+    ['fatal', 'fatality'],
+    ['lost time injury', 'lost_time_injury'],
+    ['accident avec arret', 'lost_time_injury'],
+    ['restricted work', 'restricted_work_case'],
+    ['travail adapte', 'restricted_work_case'],
+    ['medical treatment', 'medical_treatment_case'],
+    ['traitement medical', 'medical_treatment_case'],
+    ['first aid case', 'first_aid_case'],
+    ['sans arret', 'first_aid_case'],
+    ['presque accident', 'near_miss'],
+    ["carte d'observation", 'safety_observation'],
+    ['observation securite', 'safety_observation'],
+    ['situation dangereuse', 'dangerous_situation'],
+    ['casse materielle', 'material_damage'],
+    ['avarie t1', 'equipment_failure_t1'],
+    ['avarie t2', 'equipment_failure_t2'],
+    ['commuting accident', 'commuting_accident'],
+    ['accident de trajet', 'commuting_accident'],
+    ['rapport de mer', 'marine_report'],
+    ['environnement', 'environmental_event'],
+  ];
+
+  return exactMappings.find(([needle]) => normalized.includes(needle))?.[1] || null;
+}
+
+function mapHseIndicatorActionPayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
+  const actionType = text(item, ['Typedenregistrement', 'TypeEnregistrement', 'ActionType', 'Type']);
+  const actionTypeKey = inferActionTypeKey(actionType);
+  const lostDays = numeric(item, ['Nb_x0020_Jours_x0020_d_x0027_Arr', 'LostDays']) || 0;
+
+  return withReconciliation(item, source, {
+    project_id: null,
+    project_sharepoint_item_id: null,
+    project_code: null,
+    project_title: null,
+    vessel_id: null,
+    vessel_sharepoint_item_id: text(item, ['NavireId', 'VesselId', 'NavireLookupId']),
+    vessel_name: text(item, ['Navire', 'NomNavire', 'VesselName', 'NavireLookupValue']),
+    category_key: 'hse_event',
+    action_type: actionType,
+    action_type_key: actionTypeKey,
+    audit_type: null,
+    title: requiredText(item, ['Title'], ''),
+    status: text(item, ['Statut', 'Status']),
+    priority_label: text(item, ['Gravit_x00e9_', 'Gravite', 'Severity']),
+    opened_on: dateOnly(item, ['Datedel_x00e9_v_x00e8_nement', 'EventDate', 'Created']),
+    due_on: null,
+    closed_on: dateOnly(item, ['Datedecl_x00f4_ture', 'ClosedOn']),
+    issuer_name: text(item, ['Emetteur', 'Issuer', 'Author']),
+    owner_name: text(item, ['ResponsableduTraitement', 'Responsable', 'Owner']),
+    auditor_name: null,
+    description: text(item, ['Descriptiondel_x00e9_v_x00e8_nem', 'Description']),
+    corrective_action: text(item, ['ActionPr_x00e9_ventive_x002d_Cor', 'CorrectiveAction']),
+    anomaly_cause: text(item, ['Cause']),
+    victim_person_id: null,
+    victim_sharepoint_item_id: text(item, ['VictimeId', 'VictimId']),
+    lost_days: lostDays,
+    safety_event_details: {
+      probability: text(item, ['Probabilit_x00e9_', 'Probability']),
+      score: numeric(item, ['Score_x002d_Incident', 'IncidentScore']),
+      workStopStartedOn: dateOnly(item, ['D_x00e9_butAT', 'WorkStopStartedOn']),
+      workStopEndedOn: dateOnly(item, ['FinAT', 'WorkStopEndedOn']),
+      injuryLocation: text(item, ['Si_x00e8_gedelal_x00e9_sion', 'InjuryLocation']),
+      accidentLocation: text(item, ['LieudelAccident', 'AccidentLocation']),
+      vesselPosition: text(item, ['Positiondunavire', 'VesselPosition']),
+      navigationConditions: text(item, ['Conditionsdenavigation', 'NavigationConditions']),
+      victimActivity: text(item, ['Occupationdubless_x00e9_aumoment', 'VictimActivity']),
+      accidentKind: text(item, ['Genred_x2019_accident', 'AccidentKind']),
+      materialElement: text(item, ['OData__x00c9_l_x00e9_mentmat_x00e9_rie', 'MaterialElement']),
+      consequences: text(item, ['Cons_x00e9_quencesdel_x2019_acci', 'Consequences']),
+      equipment: text(item, ['Equipement', 'Equipementconcern_x00e9_', 'Equipment']),
+    },
     source_label: 'sharepoint',
   });
 }

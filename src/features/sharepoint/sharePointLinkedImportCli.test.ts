@@ -93,6 +93,18 @@ describe('buildSharePointImportSqlFromExport', () => {
     expect(sql).toContain('perform public.resolve_sharepoint_project_document_links();');
     expect(sql.indexOf('sync_sharepoint_project_contracts')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
   });
+
+  it('reconciles action plan vessel and project links inside the import transaction', () => {
+    const sql = buildSharePointImportSqlFromExport({
+      sources: [
+        { sourceKey: 'list-audit', items: [{ ID: '101', Title: 'Action test', Navire: 'GOURY' }] },
+        { sourceKey: 'list-indicateurs-qhse', items: [{ ID: '33', Title: 'FAC', Navire: 'GOURY' }] },
+      ],
+    });
+
+    expect(sql).toContain('perform public.resolve_sharepoint_operation_links();');
+    expect(sql.indexOf('resolve_sharepoint_operation_links')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
+  });
 });
 
 describe('runSharePointLinkedImportCli', () => {

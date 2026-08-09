@@ -694,6 +694,72 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   hse_exposure_hours: [],
   hse_safety_events: [],
+  action_type_catalog: [
+    { type_key: 'progress-action', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, sort_order: 10, active: true },
+    { type_key: 'internal-audit', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 20, active: true },
+    { type_key: 'fatality', label: 'Décès (FAT)', family: 'event', hse_classification: 'FAT', tracks_exposure_rate: true, sort_order: 100, active: true },
+    { type_key: 'lost-time-injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, sort_order: 110, active: true },
+    { type_key: 'restricted-work-case', label: 'Blessure - Travail adapté (RWC)', family: 'event', hse_classification: 'RWC', tracks_exposure_rate: true, sort_order: 120, active: true },
+    { type_key: 'medical-treatment-case', label: 'Accident avec traitement médical (MTC)', family: 'event', hse_classification: 'MTC', tracks_exposure_rate: true, sort_order: 130, active: true },
+    { type_key: 'first-aid-case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, sort_order: 140, active: true },
+    { type_key: 'near-miss', label: 'Presque-accident', family: 'event', hse_classification: 'NEAR_MISS', tracks_exposure_rate: true, sort_order: 150, active: true },
+    { type_key: 'safety-observation', label: 'Observation sécurité', family: 'event', hse_classification: 'SAFETY_OBSERVATION', tracks_exposure_rate: true, sort_order: 160, active: true },
+  ],
+  action_items: [
+    {
+      id: 9861, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
+      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
+      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'audit',
+      action_type_key: 'internal-audit', action_type: 'Audit Interne - BBTM', audit_type: 'Audit interne',
+      title: 'Contrôler la protection du poste de manœuvre', status: 'Non soldé', priority_label: 'Haute',
+      deviation_type: 'Non Conformité Majeure', opened_on: '2026-07-28', due_on: '2026-08-14', closed_on: null,
+      issuer_name: 'Arthur DEMO', owner_name: 'Luc MARTIN', auditor_name: 'Arthur DEMO',
+      description: 'La protection latérale du poste de manœuvre doit être remise en conformité.',
+      corrective_action: 'Remplacer le garde-corps et consigner le contrôle final.', realized_action: null,
+      anomaly_cause: 'Usure constatée pendant la ronde pont.', comments: 'Action issue de la liste Audit SharePoint.',
+      level_label: 'Majeur', location_detail: 'Pont arrière', photo_1_path: null, photo_2_path: null,
+      closure_photo_path: null, victim_person_id: null, victim_sharepoint_item_id: null, lost_days: 0,
+      safety_event_details: {}, source_label: 'sharepoint-list-audit', sharepoint_list_title: "Plan d'Action",
+      sharepoint_item_id: 'preview-action-101', source_modified_at: '2026-08-08T08:30:00Z',
+    },
+    {
+      id: 9862, company_id: 1, project_id: null, project_sharepoint_item_id: null, project_code: null,
+      project_title: null, vessel_id: 9201, vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration',
+      category_key: 'event', action_type_key: 'first-aid-case', action_type: 'Accident sans arrêt de travail (FAC)',
+      audit_type: 'Indicateur QHSE', title: 'Coupure superficielle pendant une manutention', status: 'Soldé',
+      priority_label: 'Normale', deviation_type: 'Remarque', opened_on: '2026-07-19', due_on: '2026-07-19',
+      closed_on: '2026-07-19', issuer_name: 'Arthur DEMO', owner_name: 'Hugo BERNARD', auditor_name: null,
+      description: 'Premiers soins réalisés à bord sans arrêt de travail.', corrective_action: 'Rappel port des gants anticoupure.',
+      realized_action: 'Brief sécurité réalisé à la relève.', anomaly_cause: 'Gants inadaptés à la tâche.', comments: null,
+      level_label: 'Mineur', location_detail: 'Zone de manutention', photo_1_path: null, photo_2_path: null,
+      closure_photo_path: null, victim_person_id: 9304, victim_sharepoint_item_id: 'preview-person-4', lost_days: 0,
+      safety_event_details: { treatment: 'Premiers soins' }, source_label: 'sharepoint-list-indicateurs-qhse',
+      sharepoint_list_title: 'Indicateurs QHSE', sharepoint_item_id: 'preview-kpi-12', source_modified_at: '2026-08-07T09:15:00Z',
+    },
+    {
+      id: 9863, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
+      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
+      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'action',
+      action_type_key: 'progress-action', action_type: 'Action de Progrès - BBTM', audit_type: 'Ronde QHSE',
+      title: 'Mettre à jour le balisage de la zone grue', status: 'Non soldé', priority_label: 'Normale',
+      deviation_type: "Proposition d'Amélioration", opened_on: '2026-08-02', due_on: '2026-08-21', closed_on: null,
+      issuer_name: 'Arthur DEMO', owner_name: 'Hugo BERNARD', auditor_name: null,
+      description: 'Le balisage au sol est partiellement effacé.', corrective_action: 'Refaire le marquage et contrôler la signalétique.',
+      realized_action: null, anomaly_cause: null, comments: null, level_label: 'Amélioration', location_detail: 'Pont de travail',
+      photo_1_path: null, photo_2_path: null, closure_photo_path: null, victim_person_id: null,
+      victim_sharepoint_item_id: null, lost_days: 0, safety_event_details: {}, source_label: 'sharepoint-list-audit',
+      sharepoint_list_title: "Plan d'Action", sharepoint_item_id: 'preview-action-102', source_modified_at: '2026-08-08T10:00:00Z',
+    },
+  ],
+  action_documents: [
+    {
+      id: 9871, action_item_id: 9861, action_sharepoint_item_id: 'preview-action-101',
+      action_title: 'Contrôler la protection du poste de manœuvre', category_key: 'progress-sheet',
+      title: 'FP protection poste de manœuvre.pdf', source_label: 'SharePoint · Fiche Progrès',
+      source_sharepoint_id: 'preview-document-1', file_url: 'https://example.invalid/preview-action-plan.pdf',
+      notes: 'Pièce de démonstration non téléchargeable.',
+    },
+  ],
   planning_notifications: [{
     id: 9891,
     company_id: 1,
@@ -724,6 +790,13 @@ function createPreviewQuery(result: PreviewResult): object {
       if (property === 'then') {
         return (resolve: (value: PreviewResult) => unknown, reject?: (reason: unknown) => unknown) =>
           Promise.resolve(result).then(resolve, reject);
+      }
+
+      if (property === 'maybeSingle') {
+        return () => createPreviewQuery({
+          data: Array.isArray(result.data) ? result.data[0] || null : result.data,
+          error: result.error,
+        });
       }
 
       return () => query;
