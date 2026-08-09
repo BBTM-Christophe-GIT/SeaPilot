@@ -409,7 +409,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
 
       {hseLoading && <div className="action-plan-hse-loading" role="status"><RefreshCw size={18} />Calcul des indicateurs {hseYear}…</div>}
       {!hseLoading && data.hseDashboard && <>
-        <div className="action-plan-hse-summary"><div><small>Heures travaillées</small><strong>{formatHours(data.hseDashboard.totals.exposureHours)}</strong><span>Du 1er janvier à la dernière période disponible</span></div><div><small>Méthodologie</small><strong>{data.hseDashboard.methodologyVersion || 'SeaPilot HSE'}</strong><span>{data.hseDashboard.exposureRefreshed ? 'Registre des heures actualisé' : 'Dernier registre des heures disponible'}</span></div></div>
+        <div className="action-plan-hse-summary"><div><small>Heures travaillées</small><strong>{formatHours(data.hseDashboard.totals.exposureHours)}</strong><span>Du 1er janvier à la dernière période disponible</span></div><div><small>Méthodologie</small><strong>{data.hseDashboard.methodologyVersion || 'SeaPilot HSE'}</strong><span>{data.hseDashboard.exposureRefreshed ? 'Heures réelles, sinon 11 h par jour planifié' : 'Dernier registre des heures disponible'}</span></div></div>
         <div className="action-plan-indicator-grid">{[
           ['FAT', 'Décès', data.hseDashboard.totals.FAT, data.hseDashboard.historicalTotals.FAT],
           ['LTI', 'Accidents avec arrêt', data.hseDashboard.totals.LTI, data.hseDashboard.historicalTotals.LTI],
@@ -436,7 +436,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
             { key: 'FACRate', label: 'FAC', color: '#2383a8' }, { key: 'SOFR', label: 'SOFR', color: '#19875b', axis: 'right' },
           ]} title="Prévention, soins et travail adapté" /></div>
         </section>
-        <div className="action-plan-rate-note"><Clock3 size={20} /><div><strong>Dénominateur commun et traçable</strong><p>Tous les taux sont calculés côté serveur à partir du registre des heures travaillées. Les courbes sont cumulées mois par mois pour l’année {hseYear}.</p></div></div>
+        <div className="action-plan-rate-note"><Clock3 size={20} /><div><strong>Dénominateur commun et traçable</strong><p>Chaque journée du planning reprend les heures du registre lorsqu’elles existent, sinon 11 heures. Les courbes sont cumulées mois par mois pour l’année {hseYear}.</p></div></div>
       </>}
       {!hseLoading && !data.hseDashboard && <div className="action-plan-empty">Aucune méthodologie HSE disponible pour cette année.</div>}
     </section>}
