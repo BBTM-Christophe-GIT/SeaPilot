@@ -154,6 +154,67 @@ final result: blocked
 
 ---
 
+# Design QA — Plan d'action : alignement des lignes (2026-08-09)
+
+## Cibles et état comparés
+
+- Source visuelle : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-67b90a45-63d6-4456-94e3-0141eb3a7808.png`.
+- Implémentation : `http://127.0.0.1:4173/modules/actionPlan?preview=1`.
+- Capture bureau : `C:/CODEX/SeaPilot/.data/action-plan-row-alignment-preview.png`.
+- Capture mobile : `C:/CODEX/SeaPilot/.data/action-plan-row-alignment-mobile.png`.
+- Viewport bureau CSS : 2048 × 1001 px ; capture rendue : 2047 × 1001 px.
+- Source : 3449 × 1676 px, affichée avec réduction proportionnelle pour la comparaison globale ; aucune normalisation de densité n'était nécessaire pour juger l'alignement des lignes.
+- Viewport mobile CSS demandé : 390 × 844 px ; zone de page mesurée : 375 × 812 px à cause du chrome du navigateur.
+- État : onglet Actions, groupes ouverts, données de préversion, aucune modale.
+- La source et la capture bureau ont été ouvertes ensemble dans la même comparaison visuelle.
+
+## Résultat de la comparaison
+
+**Findings**
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Typographie : famille, graisse, hiérarchie et retours à la ligne SeaPilot sont préservés ; le titre de chaque action est désormais aligné à gauche.
+- Espacement et rythme : les cinq contenus suivent des colonnes stables — titre, échéance, responsable, type d'écart et statut — sans regroupement au centre.
+- Couleurs et tokens : couleurs de sévérité, bordures, fonds et états de statut sont inchangés.
+- Images et actifs : aucun actif visuel n'est concerné par cette correction ; les icônes existantes sont conservées.
+- Copie : aucun texte métier n'a été modifié.
+
+## Évidence ciblée
+
+Une mesure DOM sur les trois lignes de démonstration confirme `display: grid`, `justify-content: stretch` et `text-align: left`. Les débuts de colonnes sont constants à 12, 598, 777, 1060 et 1303 px dans la ligne. Le contrôle mobile confirme `display: flex`, `flex-direction: column`, `text-align: left` et aucun débordement horizontal (`scrollWidth = clientWidth = 375`). La capture globale est suffisamment lisible pour vérifier les titres et métadonnées ; aucun recadrage supplémentaire n'était nécessaire.
+
+## Historique de correction
+
+- Constat initial P1 : la règle générique des boutons imposait `inline-flex` et `justify-content: center` aux lignes, regroupant leur contenu au centre.
+- Correctif : restauration explicite de la grille sur `.action-plan-page button.action-plan-row-main`, alignement à gauche de chaque cellule et conservation du mode colonne mobile avec une spécificité équivalente.
+- Preuve après correctif : capture bureau ci-dessus, mesures DOM cohérentes et capture mobile sans débordement.
+
+## Vérifications
+
+- Interaction principale : ouverture/fermeture des groupes déjà présente et non modifiée ; trois lignes d'action rendues dans la préversion.
+- Erreurs console sur la capture bureau : aucune.
+- Vue mobile : hiérarchie verticale conservée et aucun débordement horizontal.
+
+**Open Questions**
+
+- Aucune.
+
+**Implementation Checklist**
+
+- [x] Rétablir la grille de colonnes sur les lignes d'action.
+- [x] Aligner à gauche le titre et chaque métadonnée.
+- [x] Préserver l'empilement mobile sans débordement.
+- [x] Comparer la référence et le rendu local.
+
+**Follow-up Polish**
+
+- Aucun raffinement P3 nécessaire pour cette correction ciblée.
+
+final result: passed
+
+---
+
 # Design QA — Suivi du temps de travail v3.12.18
 
 ## Résultat
@@ -228,3 +289,11 @@ final result: blocked
 Le contrôleur Chrome persistant de Codex est resté indisponible malgré une réinitialisation et plusieurs tentatives avec délai borné. La capture du rendu local et la comparaison visuelle côte à côte avec la référence n’ont donc pas pu être exécutées dans cette session. La recette fonctionnelle automatisée est complète, mais la validation pixeluelle reste à confirmer sur le déploiement Vercel.
 
 final result: blocked
+
+---
+
+## Dernier contrôle — Plan d'action
+
+Le contrôle le plus récent est **Design QA — Plan d'action : alignement des lignes (2026-08-09)**, documenté ci-dessus avec ses chemins de référence, captures bureau/mobile, mesures DOM, comparaison visuelle et historique de correction.
+
+final result: passed

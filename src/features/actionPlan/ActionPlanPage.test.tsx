@@ -109,7 +109,17 @@ describe('ActionPlanPage', () => {
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
     expect(screen.getByLabelText('Actions non soldées')).toHaveTextContent('1');
     expect(screen.getByLabelText('Non-conformités majeures')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Heures travaillées')).toHaveTextContent('124 500 h');
+    expect(screen.queryByRole('button', { name: 'Sources importées' })).not.toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
+
+    const openRow = screen.getByText("Réaliser une analyse d'eau").closest('article');
+    expect(openRow).not.toBeNull();
+    expect(within(openRow!).getByText("Réaliser une analyse d'eau").parentElement).toHaveTextContent("31/08/2026 - Réaliser une analyse d'eau");
+
+    const closedRow = screen.getByText('Vérifier la filtration machine').closest('article');
+    expect(closedRow).not.toBeNull();
+    expect(within(closedRow!).queryByRole('button', { name: 'Traiter' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Type d'action"), { target: { value: 'Audit Interne - BBTM' } });
     expect(screen.getByText("Réaliser une analyse d'eau")).toBeInTheDocument();
