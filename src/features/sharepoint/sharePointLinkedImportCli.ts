@@ -108,6 +108,14 @@ export function buildSharePointImportSqlFromExport(bundle: SharePointExportBundl
     reconciliationStatements.push('perform public.resolve_sharepoint_project_document_links();');
   }
 
+  if (
+    sourceKeys.has('list-audit')
+    || sourceKeys.has('list-indicateurs-qhse')
+    || sourceKeys.has('library-fiche-progres')
+  ) {
+    reconciliationStatements.push('perform public.resolve_sharepoint_operation_links();');
+  }
+
   const body = [...statements, ...reconciliationStatements]
     .join('\n\n')
     .split('\n')
