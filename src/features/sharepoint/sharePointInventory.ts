@@ -306,9 +306,12 @@ const CRITICAL_APPLICATION_SOURCES: SharePointMigrationSource[] = [
     sourceType: 'list',
     moduleKey: 'purchaseRequests',
     siteUrl: SHAREPOINT_SITE_URL,
+    listId: '3dce17c3-a634-4c04-ab77-18d47d717642',
+    serverRelativeUrl: '/sites/QHSE/Lists/Demande dAchat',
+    browserUrl: 'https://bbtm668.sharepoint.com/sites/QHSE/Lists/Demande%20dAchat/AllItems.aspx',
     targetTable: 'purchase_requests',
     importPriority: 140,
-    notes: 'List ID and exact choice values must be exported live.',
+    notes: "Source Power Query Demande d'Achat.iqy, vue 540EA6D5-D078-4125-BFC4-0884D4977A44 ; pièces jointes incluses.",
   },
   {
     key: 'list-audit',

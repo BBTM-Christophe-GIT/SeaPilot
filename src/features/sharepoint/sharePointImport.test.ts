@@ -805,59 +805,84 @@ describe('SharePoint import mapping', () => {
   });
 
   it("maps Demande d'Achat list items to purchase request upserts", () => {
-    const batch = buildSharePointUpsertBatch('list-demande-achat', [
-      {
+    const item = {
         id: '700',
         fields: {
           ID: 700,
           UniqueId: 'purchase-700',
           Modified: '2026-06-30T08:15:00Z',
-          Title: 'DA-2026-001',
-          NumeroDemande: 'DA-2026-001',
+          Title: 'Capteurs de température',
           DateDemande: '2026-07-02T00:00:00Z',
-          Demandeur: 'Julien LECOCQ',
-          Fournisseur: 'Chantier Naval Manche',
+          Emetteur: 'Julien LECOCQ',
+          'Fournisseur_x002d_Prestataire': 'Chantier Naval Manche',
           ProjetId: 880,
           Projet: { LookupValue: 'Campagne Atlantique 2026' },
           NumeroProjet: 'P-2026-014',
-          MontantHT: '12500,50',
+          NavireId: 14,
+          Navire: 'GOURY',
+          R_x00e9_f_x00e9_rence: 'CT-400',
+          Quantit_x00e9_: 2,
+          Unit_x00e9__x002d_Conditionnemen: 'Unité',
+          PrixUnitaireHT: '6250,25',
+          Prix_x0020_Total_x0020_HT: '12500,50',
           Devise: 'EUR',
-          Statut: 'En cours',
-          Objet: 'Achat capteurs',
+          Statut_x0020_commande: 'En cours',
+          Commentaire: 'Achat capteurs',
+          CommandeUrgente: true,
+          Justifierlurgence: 'Sécurité machine',
+          Cat_x00e9_gorie: 'Approvisionnement',
+          AttachmentFiles: [{
+            FileName: 'capteur.jpg',
+            ServerRelativeUrl: "/sites/QHSE/Lists/Demande dAchat/Attachments/700/capteur.jpg",
+          }],
         },
-      },
-    ]);
+      };
+    const batch = buildSharePointUpsertBatch('list-demande-achat', [item]);
 
-    expect(batch).toEqual({
+    expect(batch).toMatchObject({
       sourceKey: 'list-demande-achat',
       targetTable: 'purchase_requests',
       conflictColumns: ['sharepoint_list_id', 'sharepoint_item_id'],
-      rows: [
-        {
-          request_number: 'DA-2026-001',
-          title: 'DA-2026-001',
+      rows: [{
+          request_number: '700',
+          title: 'Capteurs de température',
           requested_on: '2026-07-02',
           requester_name: 'Julien LECOCQ',
           supplier_name: 'Chantier Naval Manche',
-          project_id: null,
           project_sharepoint_item_id: '880',
           project_code: 'P-2026-014',
           project_title: 'Campagne Atlantique 2026',
+          vessel_sharepoint_item_id: '14',
+          vessel_name: 'GOURY',
+          reference: 'CT-400',
+          quantity: 2,
+          unit_label: 'Unité',
+          unit_price_ht: 6250.25,
           amount_ht: 12500.5,
           currency: 'EUR',
           status: 'En cours',
           description: 'Achat capteurs',
+          urgent: true,
+          urgency_reason: 'Sécurité machine',
+          category_label: 'Approvisionnement',
           source_label: 'sharepoint',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
+          sharepoint_list_id: '3dce17c3-a634-4c04-ab77-18d47d717642',
           sharepoint_list_title: "Demande d'Achat",
           sharepoint_item_id: '700',
           sharepoint_unique_id: 'purchase-700',
-          sharepoint_file_ref: null,
-          sharepoint_encoded_abs_url: null,
           source_modified_at: '2026-06-30T08:15:00Z',
-        },
-      ],
+        }],
+    });
+
+    const attachmentBatch = buildSharePointImportBatches({ 'list-demande-achat': [item] })
+      .find((candidate) => candidate.targetTable === 'purchase_request_attachments');
+    expect(attachmentBatch?.rows).toHaveLength(1);
+    expect(attachmentBatch?.rows[0]).toMatchObject({
+      purchase_sharepoint_item_id: '700',
+      title: 'capteur.jpg',
+      content_type: 'image/jpeg',
+      source_kind: 'sharepoint',
     });
   });
 

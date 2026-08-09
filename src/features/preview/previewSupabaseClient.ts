@@ -493,6 +493,53 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9201, name: 'M/V Démonstration', acronym: 'MVD', active: true, fleet_exit_on: null, sharepoint_item_id: 'preview-vessel-1' },
     { id: 9202, name: 'Support Démonstration', acronym: 'SD', active: true, fleet_exit_on: null, sharepoint_item_id: 'preview-vessel-2' },
   ],
+  purchase_requests: [
+    {
+      id: 9951, request_number: '95', title: 'Moteur de commande régulation GE1', requested_on: '2026-07-29',
+      requester_name: 'Julien LECOCQ', supplier_name: 'CATERPILLAR', vessel_id: 9201, vessel_name: 'M/V Démonstration',
+      reference: '4W-7773', quantity: 1, unit_label: 'Unité', amount_ht: 0, currency: 'EUR', status: 'Approbation en attente',
+      description: 'Remplacement du moteur de commande régulation GE1 défectueux. Indispensable pour garantir le bon fonctionnement de la régulation.',
+      urgent: false, ordered_on: null, expected_delivery_on: null, received_on: null, delivery_location: 'Brest',
+      delivery_details: 'Déposer à l’atelier machine.', category_label: 'Approvisionnement', approval_status: 'En attente',
+      source_label: 'preview', created_at: '2026-07-29T17:39:00Z', updated_at: '2026-07-29T17:40:00Z',
+    },
+    {
+      id: 9952, request_number: '86', title: 'Ampoule feu de navigation', requested_on: '2026-07-28',
+      requester_name: 'Arthur DEMO', supplier_name: 'SERVAUX', vessel_id: 9201, vessel_name: 'M/V Démonstration',
+      reference: 'NAV-24V', quantity: 4, unit_label: 'Unité', amount_ht: 152, currency: 'EUR', status: 'À traiter',
+      description: 'Remplacement préventif avant appareillage.', urgent: true, urgency_reason: 'Sécurité navigation',
+      ordered_on: null, expected_delivery_on: null, received_on: null, delivery_location: 'A bord', delivery_details: 'Passerelle',
+      category_label: 'Approvisionnement', approval_status: 'En attente', source_label: 'preview', created_at: '2026-07-28T08:15:00Z', updated_at: '2026-07-28T08:15:00Z',
+    },
+    {
+      id: 9953, request_number: '29', title: 'Visite grue et bossoir', requested_on: '2026-07-20', requester_name: 'Luc MARTIN',
+      supplier_name: 'Marine Services', vessel_id: 9201, vessel_name: 'M/V Démonstration', quantity: 1, unit_label: 'Prestation',
+      amount_ht: 2450, currency: 'EUR', status: 'Commande en cours', description: 'Visite annuelle réglementaire.', urgent: false,
+      owner_name: 'Camille DURAND', ordered_on: '2026-07-24', expected_delivery_on: null, received_on: null, delivery_location: 'Cherbourg',
+      category_label: 'Prestataire de Service', approval_status: 'Approuvée', source_label: 'preview', created_at: '2026-07-20T09:00:00Z', updated_at: '2026-07-24T10:30:00Z',
+    },
+    {
+      id: 9954, request_number: '74', title: 'Douilles inox M12', requested_on: '2026-07-18', requester_name: 'Arthur DEMO',
+      supplier_name: 'Marine Supplies', vessel_id: 9202, vessel_name: 'Support Démonstration', quantity: 24, unit_label: 'Unité',
+      amount_ht: 438, currency: 'EUR', status: 'Réception', description: 'Lot de douilles inox pour maintenance pont.', urgent: false,
+      owner_name: 'Camille DURAND', ordered_on: '2026-07-22', expected_delivery_on: '2026-08-10', received_on: null,
+      delivery_location: 'A bord', category_label: 'Approvisionnement', approval_status: 'Approuvée', source_label: 'preview', created_at: '2026-07-18T11:00:00Z', updated_at: '2026-07-22T14:00:00Z',
+    },
+    {
+      id: 9955, request_number: '53', title: 'Joint torique NBR 20x2', requested_on: '2026-07-12', requester_name: 'Luc MARTIN',
+      supplier_name: 'Atlantic Joints', vessel_id: 9201, vessel_name: 'M/V Démonstration', quantity: 10, unit_label: 'Unité',
+      amount_ht: 64, currency: 'EUR', status: 'Traitée', description: 'Stock machine.', urgent: false, owner_name: 'Camille DURAND',
+      ordered_on: '2026-07-14', expected_delivery_on: '2026-07-20', received_on: '2026-07-20', delivery_location: 'A bord',
+      category_label: 'Approvisionnement', approval_status: 'Approuvée', source_label: 'preview', created_at: '2026-07-12T10:00:00Z', updated_at: '2026-07-20T16:00:00Z',
+    },
+  ],
+  purchase_request_attachments: [
+    { id: 9961, purchase_request_id: 9951, title: 'photo-moteur-ge1.jpg', content_type: 'image/jpeg', file_size_bytes: 248000, source_kind: 'sharepoint', file_url: 'https://example.invalid/photo-moteur-ge1.jpg', storage_bucket: null, storage_path: null, created_at: '2026-07-29T17:39:00Z' },
+  ],
+  purchase_request_events: [
+    { id: 9971, purchase_request_id: 9951, event_type: 'created', status_label: 'Demande créée', actor_name: 'Julien LECOCQ', comment: null, effective_on: '2026-07-29', created_at: '2026-07-29T17:39:00Z' },
+    { id: 9972, purchase_request_id: 9951, event_type: 'information_requested', status_label: 'Envoyée pour approbation', actor_name: 'Julien LECOCQ', comment: null, effective_on: '2026-07-29', created_at: '2026-07-29T17:40:00Z' },
+  ],
   dpr_reports: [
     {
       id: 9908, dpr_number: 1062, status: 'validated', report_date: '2026-08-01',

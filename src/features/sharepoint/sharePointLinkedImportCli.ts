@@ -126,6 +126,10 @@ export function buildSharePointImportSqlFromExport(bundle: SharePointExportBundl
     );
   }
 
+  if (sourceKeys.has('list-demande-achat')) {
+    reconciliationStatements.push('perform public.resolve_sharepoint_purchase_request_links();');
+  }
+
   const body = [...statements, ...reconciliationStatements]
     .join('\n\n')
     .split('\n')
