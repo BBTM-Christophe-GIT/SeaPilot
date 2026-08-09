@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
-import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
+import { buildWorkingTimePdf, formatWorkingTimeTableHours, prepareWorkingTimePdf } from './workingTimePdf';
 
 const register: WorkingTimeWorkspace['registers'][number] = {
   id: 100,
@@ -88,6 +88,12 @@ const workspace: WorkingTimeWorkspace = {
 };
 
 describe('working-time PDF', () => {
+  it('formats the two compliance columns without NC or T/R prefixes', () => {
+    expect(formatWorkingTimeTableHours(48_600)).toBe('13h30');
+    expect(formatWorkingTimeTableHours(37_800)).toBe('10h30');
+    expect(`${formatWorkingTimeTableHours(91_800)} / ${formatWorkingTimeTableHours(513_000)}`).toBe('25h30 / 142h30');
+  });
+
   it('loads both frozen audit signatures, never the current profile versions', async () => {
     const download = vi.fn().mockResolvedValue({ data: new Blob(['png']), error: null });
     const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;

@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   fetchWorkingTimeComplianceOptions,
   fetchWorkingTimeComplianceReport,
-  reportWorkspaceWatchGroups,
   type ComplianceMetricKey,
+  type WorkingTimeComplianceOptions,
   type WorkingTimeComplianceReportData,
 } from './workingTimeComplianceReportModel';
 import { buildWorkingTimeCompliancePdf } from './workingTimeComplianceReportPdf';
-import { workingTimeErrorMessage, type WorkingTimeWorkspace } from './workingTimeQueries';
+import { workingTimeErrorMessage } from './workingTimeQueries';
 
 interface WorkingTimeComplianceReportProps {
   client: SupabaseClient;
@@ -49,6 +49,14 @@ function value(value: number | null | undefined, digits = 2) {
   return value === null || value === undefined ? 'Non configuré' : value.toLocaleString('fr-FR', { maximumFractionDigits: digits });
 }
 
+export function workingTimeComplianceErrorMessage(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason || '');
+  if (message.toLowerCase().includes('statement timeout')) {
+    return 'La génération du rapport a dépassé le délai serveur. Réduisez le périmètre ou relancez la génération.';
+  }
+  return workingTimeErrorMessage(reason);
+}
+
 export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTimeComplianceReportProps) {
   const [year, setYear] = useState(initialYear);
   const [periodMode, setPeriodMode] = useState<PeriodMode>('year');
@@ -59,7 +67,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   const [personIds, setPersonIds] = useState<number[]>([]);
   const [watchGroups, setWatchGroups] = useState<string[]>([]);
   const [vesselIds, setVesselIds] = useState<number[]>([]);
-  const [workspace, setWorkspace] = useState<WorkingTimeWorkspace | null>(null);
+  const [options, setOptions] = useState<WorkingTimeComplianceOptions | null>(null);
   const [methodologyLabel, setMethodologyLabel] = useState('');
   const [report, setReport] = useState<WorkingTimeComplianceReportData | null>(null);
   const [analysis, setAnalysis] = useState('');
@@ -69,21 +77,21 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   const [error, setError] = useState<string | null>(null);
   const range = useMemo(() => periodBounds(year, periodMode, month, quarter), [month, periodMode, quarter, year]);
   const years = useMemo(() => Array.from({ length: 7 }, (_, index) => initialYear + 1 - index), [initialYear]);
-  const people = workspace?.readablePeople || [];
-  const vessels = workspace?.vessels || [];
-  const availableWatchGroups = workspace ? reportWorkspaceWatchGroups(workspace) : [];
+  const people = options?.people || [];
+  const vessels = options?.vessels || [];
+  const availableWatchGroups = options?.watchGroups || [];
 
   useEffect(() => {
     let cancelled = false;
     setIsLoadingOptions(true);
     setError(null);
     void fetchWorkingTimeComplianceOptions(client, year)
-      .then(({ methodology, workspace: nextWorkspace }) => {
+      .then((nextOptions) => {
         if (cancelled) return;
-        setWorkspace(nextWorkspace);
-        setMethodologyLabel(methodology ? `${methodology.name} · ${methodology.version_label}` : 'Aucune méthodologie applicable');
+        setOptions(nextOptions);
+        setMethodologyLabel(nextOptions.methodology ? `${nextOptions.methodology.name} · ${nextOptions.methodology.version_label}` : 'Aucune méthodologie applicable');
       })
-      .catch((reason) => { if (!cancelled) setError(workingTimeErrorMessage(reason)); })
+      .catch((reason) => { if (!cancelled) setError(workingTimeComplianceErrorMessage(reason)); })
       .finally(() => { if (!cancelled) setIsLoadingOptions(false); });
     return () => { cancelled = true; };
   }, [client, year]);
@@ -114,7 +122,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
       setReport(nextReport);
       setAnalysis(nextReport.analysis);
     } catch (reason) {
-      setError(workingTimeErrorMessage(reason));
+      setError(workingTimeComplianceErrorMessage(reason));
     } finally {
       setIsGenerating(false);
     }
@@ -128,7 +136,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
       const generated = await buildWorkingTimeCompliancePdf(report, analysis);
       generated.document.save(generated.filename);
     } catch (reason) {
-      setError(workingTimeErrorMessage(reason));
+      setError(workingTimeComplianceErrorMessage(reason));
     } finally {
       setIsExporting(false);
     }

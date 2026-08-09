@@ -616,7 +616,6 @@ export function WorkingTimeWorkflowPanel({
         <div className="working-time-command-group">
           <span>Aide à la décision</span>
           <div>
-            {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><Bell aria-hidden="true" size={21} /><small>Alertes</small>{nonCompliantDates.length ? <em>{nonCompliantDates.length}</em> : null}</button> : null}
             {onOpenHse ? <button onClick={onOpenHse} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Exposition HSE / IMCA</small></button> : null}
             {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
             {selectedRegister?.status === 'awaiting_sailor_signature' && isOwnRegister ? <button disabled={isSaving || !currentSignature} onClick={() => {

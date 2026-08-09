@@ -17,6 +17,7 @@ Le rapport peut être configuré :
 - Les journées non conformes proviennent des fenêtres calculées côté serveur. Un couple marin/date est compté une seule fois, même si plusieurs fenêtres de calcul sont en écart.
 - Les heures d’exposition HSE et les événements de sécurité proviennent des tables HSE protégées par RLS.
 - La méthodologie HSE applicable est résolue selon sa période d’effet. Aucune valeur réglementaire n’est ajoutée lorsque la configuration est absente.
+- Le chargement du rapport utilise des requêtes paginées et ciblées. Il ne charge pas les signatures, validations, commentaires et registres qui ne participent pas au calcul du rapport.
 
 ## Contenu et export
 
@@ -28,4 +29,6 @@ Le dernier chapitre du PDF contient les formules et les multiplicateurs de la m�
 
 Chaque marin conserve un seul registre mensuel. La vue **Jour** reste la vue de saisie par défaut. La vue **Mois** présente chaque date, les phases de travail, le total, l’affectation navire/bordée, les repos, le cumul sur sept jours et le statut. Un clic sur une date ramène à la vue journalière.
 
-Les journées non conformes sont signalées en rouge dans le bandeau journalier et dans la table mensuelle.
+Les journées non conformes sont signalées en rouge dans le bandeau journalier et dans la table mensuelle, sans icône additionnelle dans le bandeau.
+
+Dans le PDF du registre mensuel, les dates conservent une présentation neutre. Les colonnes de contrôle affichent uniquement les couples travail/repos au format `13h30 / 10h30`, sans préfixes `NC`, `T` ou `R`. Les deux zones de signature sont placées sous le tableau sur la première page et le nom du fichier XLSM source n'est pas imprimé.
