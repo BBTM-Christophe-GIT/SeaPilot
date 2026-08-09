@@ -53,7 +53,6 @@ const SEA_BLUE: [number, number, number] = [10, 65, 82];
 const SEA_TEAL: [number, number, number] = [16, 143, 161];
 const GRID_BLUE: [number, number, number] = [65, 93, 108];
 const LIGHT_BLUE: [number, number, number] = [230, 241, 244];
-const NON_COMPLIANT: [number, number, number] = [139, 38, 53];
 
 function formatDateTime(value: string): string {
   if (!value) return '';
@@ -70,6 +69,13 @@ function compactHours(seconds: number): string {
   const hourValue = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return minutes ? `${hourValue} h ${String(minutes).padStart(2, '0')}` : `${hourValue} h`;
+}
+
+export function formatWorkingTimeTableHours(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.round(seconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h${String(minutes).padStart(2, '0')}`;
 }
 
 function safeFilename(value: string): string {
@@ -173,16 +179,10 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     && calculation.localWindowEndDate <= register.periodEnd);
   const comments = workspace.dayComments.filter((comment) => comment.personId === register.personId
     && comment.localWorkDate >= register.periodStart && comment.localWorkDate <= register.periodEnd);
-  const nonCompliantDates = new Set(calculations
-    .filter((calculation) => calculation.isCompliant === false)
-    .map((calculation) => calculation.localWindowEndDate));
   const primaryVessel = workspace.vessels.find((item) => item.id === intervals.find((item) => item.vesselId)?.vesselId);
   const approvedImport = input.audit.find((event) => event.eventType === 'approved_import');
   const captainValidation = input.audit.find((event) => event.eventType === 'captain_validated');
   const validatorName = approvedImport?.actorName || captainValidation?.actorName || 'Non renseigné';
-  const sourceFiles = Array.from(new Set(intervals
-    .filter((interval) => interval.sourceType === 'excel_import' && interval.sourceReference)
-    .map((interval) => interval.sourceReference as string)));
   const gridDays = dateValues(register.periodStart, register.periodEnd);
 
   document.setFillColor(...SEA_BLUE);
@@ -219,42 +219,13 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setFontSize(5.9);
   }
 
-  input.signatures.forEach((signature, index) => {
-    const signatureX = index === 0 ? 7 : 150;
-    const signatureY = 32;
-    document.setDrawColor(170, 191, 200);
-    document.setFillColor(250, 252, 253);
-    document.roundedRect(signatureX, signatureY, 140, 12, 1.2, 1.2, 'FD');
-    document.setTextColor(65, 93, 108);
-    document.setFont('helvetica', 'bold');
-    document.setFontSize(5.4);
-    document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 2.8);
-    if (signature.snapshot && signature.png) {
-      document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 3.7, 28, 6.5, undefined, 'FAST');
-      document.setTextColor(23, 39, 50);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(5.4);
-      document.text(fitText(document, `${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, 104), signatureX + 32, signatureY + 6.5);
-      document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 32, signatureY + 9.5);
-    } else {
-      document.setTextColor(83, 107, 121);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(5.8);
-      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 32, signatureY + 7.5);
-    }
-  });
-
   document.setTextColor(45, 58, 66);
   document.setFont('helvetica', 'normal');
   document.setFontSize(6.2);
-  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 47);
-  if (sourceFiles.length) {
-    document.setFont('helvetica', 'bold');
-    document.text(`Source approuvée : ${fitText(document, sourceFiles.join(', '), 108)}`, 290, 47, { align: 'right' });
-  }
+  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 34);
 
   const x = 7;
-  const tableTop = 50;
+  const tableTop = 37;
   const dateWidth = 10;
   const slotWidth = 2.55;
   const timelineWidth = slotWidth * 48;
@@ -340,13 +311,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
       ? `NON CONFORME - ${CAUSE_LABELS[dayComment.causeCategory || ''] || 'Cause'} - ${dayComment.comment}`
       : intervalComments.join(' / ');
 
-    if (nonCompliantDates.has(day)) {
-      document.setFillColor(253, 229, 233);
-      document.rect(x, rowY, dateWidth, rowHeight, 'F');
-      document.setTextColor(...NON_COMPLIANT);
-    } else {
-      document.setTextColor(23, 39, 50);
-    }
+    document.setTextColor(23, 39, 50);
     phases.forEach((phase) => {
       const firstSlot = Math.floor(phase.startMinute / 30);
       const lastSlot = Math.ceil(phase.endMinute / 30);
@@ -368,13 +333,12 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setFontSize(4.5);
     document.text(compactHours(86400 - workedSeconds), restX + restWidth / 2, rowY + 3.05, { align: 'center' });
     document.text(fitText(document, commentText, commentWidth - 2), commentX + 1, rowY + 3.05);
-    const complianceMark = dayCalculation?.isCompliant === false ? 'NC - ' : '';
     document.text(dayCalculation
-      ? `${complianceMark}T ${compactHours(dayCalculation.work24hSeconds)} / R ${compactHours(dayCalculation.rest24hSeconds)}`
-      : `T ${compactHours(workedSeconds)} / R ${compactHours(86400 - workedSeconds)}`,
+      ? `${formatWorkingTimeTableHours(dayCalculation.work24hSeconds)} / ${formatWorkingTimeTableHours(dayCalculation.rest24hSeconds)}`
+      : `${formatWorkingTimeTableHours(workedSeconds)} / ${formatWorkingTimeTableHours(86400 - workedSeconds)}`,
     work24X + work24Width / 2, rowY + 3.05, { align: 'center' });
     document.text(dayCalculation
-      ? `${complianceMark}T ${compactHours(dayCalculation.work7dSeconds)} / R ${compactHours(dayCalculation.rest7dSeconds)}`
+      ? `${formatWorkingTimeTableHours(dayCalculation.work7dSeconds)} / ${formatWorkingTimeTableHours(dayCalculation.rest7dSeconds)}`
       : '—',
     work7X + work7Width / 2, rowY + 3.05, { align: 'center' });
     document.setDrawColor(...GRID_BLUE);
@@ -388,6 +352,31 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   for (let hour = 0; hour < 24; hour += 1) {
     document.text(String(hour).padStart(2, '0'), timelineX + hour * slotWidth * 2 + slotWidth, bodyBottom + 3.3, { align: 'center' });
   }
+
+  const signatureY = tableBottom + 2.5;
+  input.signatures.forEach((signature, index) => {
+    const signatureX = index === 0 ? 7 : 150;
+    document.setDrawColor(170, 191, 200);
+    document.setFillColor(250, 252, 253);
+    document.roundedRect(signatureX, signatureY, 140, 15, 1.2, 1.2, 'FD');
+    document.setTextColor(65, 93, 108);
+    document.setFont('helvetica', 'bold');
+    document.setFontSize(5.4);
+    document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 3);
+    if (signature.snapshot && signature.png) {
+      document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 4, 30, 8.5, undefined, 'FAST');
+      document.setTextColor(23, 39, 50);
+      document.setFont('helvetica', 'normal');
+      document.setFontSize(5.4);
+      document.text(fitText(document, `${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, 102), signatureX + 34, signatureY + 7.5);
+      document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+    } else {
+      document.setTextColor(83, 107, 121);
+      document.setFont('helvetica', 'normal');
+      document.setFontSize(5.8);
+      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 34, signatureY + 8.5);
+    }
+  });
 
   document.setTextColor(97, 115, 129);
   document.setFontSize(6.5);

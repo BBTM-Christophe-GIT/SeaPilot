@@ -325,7 +325,7 @@ export function WorkingTimeEntryBoard({
           const label = dateLabel(day);
           const isNonCompliant = nonCompliantDaySet.has(day);
           const className = [day === selectedDay ? 'is-active' : '', isNonCompliant ? 'is-non-compliant' : ''].filter(Boolean).join(' ');
-          return <button aria-label={`${label.weekday} ${label.day}${isNonCompliant ? ', journée non conforme' : ''}`} aria-selected={day === selectedDay} className={className} key={day} onClick={() => selectDay(day)} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong>{isNonCompliant ? <AlertTriangle aria-hidden="true" className="working-time-day-alert" size={13} /> : null}</button>;
+          return <button aria-label={`${label.weekday} ${label.day}${isNonCompliant ? ', journée non conforme' : ''}`} aria-selected={day === selectedDay} className={className} key={day} onClick={() => selectDay(day)} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong></button>;
         })}
       </div>
 

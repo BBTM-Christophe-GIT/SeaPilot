@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { workingTimeIntervalMinutes, type WorkingTimeCalculationWindow, type WorkingTimeInterval, type WorkingTimeViolationCode } from './workingTimeModel';
-import { fetchWorkingTimeWorkspace, type WorkingTimeWorkspace } from './workingTimeQueries';
+import type { WorkingTimeEditablePerson, WorkingTimeVesselOption } from './workingTimeQueries';
 
 export type ComplianceMetricKey = 'imca' | 'french' | 'non_compliance';
 
@@ -43,6 +43,32 @@ interface SafetyEventRow {
   person_id: number | null;
   vessel_id: number | null;
   watch_group: string | null;
+}
+
+interface EntryContextPersonRow {
+  person_id: number | string;
+  first_name: string | null;
+  last_name: string | null;
+  function_label: string | null;
+  grade_label: string | null;
+  departed_on?: string | null;
+  active?: boolean | null;
+  is_self?: boolean | null;
+}
+
+interface VesselRow {
+  id: number | string;
+  name: string;
+  acronym: string | null;
+  imo_number: string | null;
+  flag_state: string | null;
+}
+
+export interface WorkingTimeComplianceOptions {
+  methodology: HseMethodologyRow | null;
+  people: WorkingTimeEditablePerson[];
+  vessels: WorkingTimeVesselOption[];
+  watchGroups: string[];
 }
 
 interface ReportIntervalRow {
@@ -194,6 +220,44 @@ function assertResult(error: { message?: string } | null, message: string): void
   if (error) throw new Error(error.message || message);
 }
 
+function mapContextPeople(rows: unknown[]): WorkingTimeEditablePerson[] {
+  return (rows as EntryContextPersonRow[]).map((person) => ({
+    personId: Number(person.person_id),
+    firstName: String(person.first_name || ''),
+    lastName: String(person.last_name || ''),
+    functionLabel: String(person.function_label || ''),
+    gradeLabel: String(person.grade_label || ''),
+    departedOn: person.departed_on ? String(person.departed_on).slice(0, 10) : null,
+    active: person.active !== false,
+    isSelf: Boolean(person.is_self),
+  }));
+}
+
+async function fetchComplianceReferenceData(client: SupabaseClient, start: string, end: string) {
+  const [contextResult, vesselResult, methodologyResult] = await Promise.all([
+    client.rpc('working_time_entry_context', { p_starts_on: start, p_ends_on: end }),
+    client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
+    client.from('hse_exposure_methodologies').select(METHODOLOGY_SELECT)
+      .lte('effective_from', end).or(`effective_to.is.null,effective_to.gte.${start}`)
+      .order('effective_from', { ascending: false }).limit(1),
+  ]);
+  assertResult(contextResult.error, 'Impossible de charger les personnes accessibles pour le rapport.');
+  assertResult(vesselResult.error, 'Impossible de charger les navires du rapport.');
+  assertResult(methodologyResult.error, 'Impossible de charger la méthodologie HSE / IMCA.');
+  const context = (contextResult.data || {}) as { readable_people?: unknown[]; editable_people?: unknown[] };
+  return {
+    people: mapContextPeople(context.readable_people || context.editable_people || []),
+    vessels: ((vesselResult.data || []) as VesselRow[]).map((vessel) => ({
+      id: Number(vessel.id),
+      name: vessel.name,
+      acronym: vessel.acronym || '',
+      imoNumber: vessel.imo_number || '',
+      flagState: vessel.flag_state || '',
+    })),
+    methodology: ((((methodologyResult.data || []) as unknown[])[0] || null) as HseMethodologyRow | null),
+  };
+}
+
 async function fetchAllPages<T>(fetchPage: (from: number, to: number) => PromiseLike<unknown>, errorMessage: string): Promise<T[]> {
   const rows: T[] = [];
   for (let from = 0; ; from += REPORT_PAGE_SIZE) {
@@ -209,7 +273,7 @@ async function fetchAllPages<T>(fetchPage: (from: number, to: number) => Promise
 async function fetchReportIntervals(client: SupabaseClient, start: string, end: string): Promise<WorkingTimeInterval[]> {
   const rows = await fetchAllPages<ReportIntervalRow>((from, to) => client.from('working_time_intervals')
     .select(REPORT_INTERVAL_SELECT).gte('local_work_date', start).lte('local_work_date', end)
-    .is('voided_at', null).order('local_work_date').order('starts_at').range(from, to), 'Impossible de charger toutes les heures du rapport.');
+    .is('voided_at', null).order('local_work_date').order('starts_at').order('id').range(from, to), 'Impossible de charger toutes les heures du rapport.');
   return rows.map((row) => ({
     id: Number(row.id), registerId: Number(row.register_id), companyId: Number(row.company_id), personId: Number(row.person_id),
     localWorkDate: row.local_work_date, startsAt: row.starts_at, endsAt: row.ends_at, timezoneName: row.timezone_name,
@@ -223,7 +287,7 @@ async function fetchReportIntervals(client: SupabaseClient, start: string, end: 
 async function fetchReportCalculations(client: SupabaseClient, start: string, end: string): Promise<WorkingTimeCalculationWindow[]> {
   const rows = await fetchAllPages<ReportCalculationRow>((from, to) => client.from('working_time_calculation_windows')
     .select(REPORT_CALCULATION_SELECT).gte('local_window_end_date', start).lte('local_window_end_date', end)
-    .order('local_window_end_date').order('window_end').range(from, to), 'Impossible de charger tous les calculs de conformité du rapport.');
+    .order('local_window_end_date').order('window_end').order('id').range(from, to), 'Impossible de charger tous les calculs de conformité du rapport.');
   return rows.map((row) => ({
     id: Number(row.id), companyId: Number(row.company_id), personId: Number(row.person_id), windowEnd: row.window_end,
     localWindowEndDate: row.local_window_end_date, timezoneName: row.timezone_name,
@@ -241,57 +305,55 @@ async function fetchExposureRows(client: SupabaseClient, methodologyId: number, 
   return fetchAllPages<ExposureRow>((from, to) => client.from('hse_exposure_hours')
     .select('exposure_date,exposure_seconds,person_id,vessel_id,watch_group')
     .eq('methodology_id', methodologyId).gte('exposure_date', start).lte('exposure_date', end)
-    .order('exposure_date').range(from, to), 'Impossible de charger toutes les heures d’exposition HSE.');
+    .order('exposure_date').order('id').range(from, to), 'Impossible de charger toutes les heures d’exposition HSE.');
 }
 
 async function fetchSafetyEventRows(client: SupabaseClient, start: string, end: string): Promise<SafetyEventRow[]> {
   return fetchAllPages<SafetyEventRow>((from, to) => client.from('hse_safety_events')
     .select('occurred_on,classification,lost_days,person_id,vessel_id,watch_group')
-    .gte('occurred_on', start).lte('occurred_on', end).order('occurred_on').range(from, to), 'Impossible de charger tous les événements HSE.');
+    .gte('occurred_on', start).lte('occurred_on', end).order('occurred_on').order('id').range(from, to), 'Impossible de charger tous les événements HSE.');
 }
 
 export async function fetchWorkingTimeComplianceOptions(client: SupabaseClient, year: number) {
   const start = `${year}-01-01`;
   const end = `${year}-12-31`;
-  const [workspace, intervals] = await Promise.all([
-    fetchWorkingTimeWorkspace(client, { start, end }),
-    fetchReportIntervals(client, start, end),
+  const [reference, watchRows] = await Promise.all([
+    fetchComplianceReferenceData(client, start, end),
+    fetchAllPages<{ watch_group: string | null }>((from, to) => client.from('working_time_intervals')
+      .select('watch_group').gte('local_work_date', start).lte('local_work_date', end)
+      .is('voided_at', null).order('local_work_date').order('id').range(from, to), 'Impossible de charger les bordées du rapport.'),
   ]);
-  const { data, error } = await client.from('hse_exposure_methodologies').select(METHODOLOGY_SELECT)
-    .lte('effective_from', `${year}-12-31`).or(`effective_to.is.null,effective_to.gte.${year}-01-01`)
-    .order('effective_from', { ascending: false }).limit(1);
-  assertResult(error, 'Impossible de charger la méthodologie HSE / IMCA.');
-  return { methodology: (((data || []) as unknown[])[0] || null) as HseMethodologyRow | null, workspace: { ...workspace, intervals } };
+  return {
+    ...reference,
+    watchGroups: Array.from(new Set(watchRows.map((row) => row.watch_group).filter((value): value is string => Boolean(value))))
+      .sort((left, right) => left.localeCompare(right, 'fr')),
+  } satisfies WorkingTimeComplianceOptions;
 }
 
 export async function fetchWorkingTimeComplianceReport(
   client: SupabaseClient,
   filters: WorkingTimeComplianceFilters,
 ): Promise<WorkingTimeComplianceReportData> {
-  const workspacePromise = Promise.all([
-    fetchWorkingTimeWorkspace(client, { start: filters.start, end: filters.end }),
+  const reportDataPromise = Promise.all([
+    fetchComplianceReferenceData(client, filters.start, filters.end),
     fetchReportIntervals(client, filters.start, filters.end),
     fetchReportCalculations(client, filters.start, filters.end),
-  ]).then(([workspace, intervals, calculations]) => ({ ...workspace, intervals, calculations }));
-  const methodologyPromise = client.from('hse_exposure_methodologies').select(METHODOLOGY_SELECT)
-    .lte('effective_from', filters.end).or(`effective_to.is.null,effective_to.gte.${filters.start}`)
-    .order('effective_from', { ascending: false }).limit(1);
-  const [workspace, methodologyResult] = await Promise.all([workspacePromise, methodologyPromise]);
-  assertResult(methodologyResult.error, 'Impossible de charger la méthodologie HSE / IMCA.');
-  const methodology = (((methodologyResult.data || []) as unknown[])[0] || null) as HseMethodologyRow | null;
+  ]).then(([reference, intervals, calculations]) => ({ ...reference, intervals, calculations }));
+  const reportData = await reportDataPromise;
+  const methodology = reportData.methodology;
 
   const [exposureRowsAll, eventRowsAll] = methodology ? await Promise.all([
     fetchExposureRows(client, methodology.id, filters.start, filters.end),
     fetchSafetyEventRows(client, filters.start, filters.end),
   ]) : [[], []];
 
-  const intervals = workspace.intervals.filter((interval) => (
+  const intervals = reportData.intervals.filter((interval) => (
     (!filters.personIds.length || filters.personIds.includes(interval.personId))
     && (!filters.vesselIds.length || (interval.vesselId !== null && filters.vesselIds.includes(interval.vesselId)))
     && (!filters.watchGroups.length || Boolean(interval.watchGroup && filters.watchGroups.includes(interval.watchGroup)))
   ));
   const intervalScopeKeys = new Set(intervals.map((interval) => `${interval.personId}:${interval.localWorkDate}`));
-  const calculations = workspace.calculations.filter((calculation) => (
+  const calculations = reportData.calculations.filter((calculation) => (
     (!filters.personIds.length || filters.personIds.includes(calculation.personId))
     && (!filters.vesselIds.length || (calculation.vesselId !== null && filters.vesselIds.includes(calculation.vesselId)))
     && (!filters.watchGroups.length || intervalScopeKeys.has(`${calculation.personId}:${calculation.localWindowEndDate}`))
@@ -300,8 +362,8 @@ export async function fetchWorkingTimeComplianceReport(
     .filter((calculation) => calculation.isCompliant === false)
     .map((calculation) => `${calculation.personId}:${calculation.localWindowEndDate}`));
   const affectedPersonIds = new Set(Array.from(nonComplianceKeys, (key) => Number(key.split(':')[0])));
-  const peopleById = new Map(workspace.readablePeople.map((person) => [person.personId, `${person.firstName} ${person.lastName}`.trim()]));
-  const vesselById = new Map(workspace.vessels.map((vessel) => [vessel.id, vessel.name]));
+  const peopleById = new Map(reportData.people.map((person) => [person.personId, `${person.firstName} ${person.lastName}`.trim()]));
+  const vesselById = new Map(reportData.vessels.map((vessel) => [vessel.id, vessel.name]));
 
   const breakdownPeople = new Map<number, number>();
   const breakdownVessels = new Map<string, number>();
@@ -401,9 +463,4 @@ export async function fetchWorkingTimeComplianceReport(
     trend,
     workHours,
   };
-}
-
-export function reportWorkspaceWatchGroups(workspace: WorkingTimeWorkspace): string[] {
-  return Array.from(new Set(workspace.intervals.map((interval) => interval.watchGroup).filter((value): value is string => Boolean(value))))
-    .sort((left, right) => left.localeCompare(right, 'fr'));
 }

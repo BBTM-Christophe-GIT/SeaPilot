@@ -129,6 +129,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByRole('button', { name: 'Cockpit métier P1.3' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Historique' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Registres' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Alertes' })).not.toBeInTheDocument();
     expect(screen.queryByText('Armement')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Import' }));
@@ -231,7 +232,9 @@ describe('WorkingTimeWorkflowPanel', () => {
     }];
     renderPanel(['admin'], data);
 
-    expect(screen.getByRole('tab', { name: /lun 03 août, journée non conforme/ })).toHaveClass('is-non-compliant');
+    const nonCompliantDay = screen.getByRole('tab', { name: /lun 03 août, journée non conforme/ });
+    expect(nonCompliantDay).toHaveClass('is-non-compliant');
+    expect(nonCompliantDay.querySelector('svg')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Mois' }));
     expect(screen.getByRole('heading', { name: 'Détail des heures du registre' })).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveTextContent('08:00–16:00');
