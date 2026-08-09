@@ -155,6 +155,11 @@ const REPORT_INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_d
 const REPORT_CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
 const REPORT_PAGE_SIZE = 1000;
 
+export interface WorkingTimeReportDateChunk {
+  end: string;
+  start: string;
+}
+
 const pad = (value: number) => String(value).padStart(2, '0');
 
 function dateAtNoon(value: string): Date {
@@ -165,6 +170,20 @@ function addDays(value: string, amount: number): string {
   const date = dateAtNoon(value);
   date.setDate(date.getDate() + amount);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function workingTimeReportDateChunks(start: string, end: string): WorkingTimeReportDateChunk[] {
+  const chunks: WorkingTimeReportDateChunk[] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    const cursorDate = dateAtNoon(cursor);
+    const monthEnd = new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0, 12);
+    const monthEndValue = `${monthEnd.getFullYear()}-${pad(monthEnd.getMonth() + 1)}-${pad(monthEnd.getDate())}`;
+    const chunkEnd = monthEndValue < end ? monthEndValue : end;
+    chunks.push({ start: cursor, end: chunkEnd });
+    cursor = addDays(chunkEnd, 1);
+  }
+  return chunks;
 }
 
 function formatPeriod(start: string, end: string): string {
@@ -270,10 +289,19 @@ async function fetchAllPages<T>(fetchPage: (from: number, to: number) => Promise
   return rows;
 }
 
-async function fetchReportIntervals(client: SupabaseClient, start: string, end: string): Promise<WorkingTimeInterval[]> {
-  const rows = await fetchAllPages<ReportIntervalRow>((from, to) => client.from('working_time_intervals')
-    .select(REPORT_INTERVAL_SELECT).gte('local_work_date', start).lte('local_work_date', end)
-    .is('voided_at', null).order('local_work_date').order('starts_at').order('id').range(from, to), 'Impossible de charger toutes les heures du rapport.');
+async function fetchReportIntervals(client: SupabaseClient, filters: WorkingTimeComplianceFilters): Promise<WorkingTimeInterval[]> {
+  const rows: ReportIntervalRow[] = [];
+  for (const chunk of workingTimeReportDateChunks(filters.start, filters.end)) {
+    const chunkRows = await fetchAllPages<ReportIntervalRow>((from, to) => {
+      let query = client.from('working_time_intervals').select(REPORT_INTERVAL_SELECT)
+        .gte('local_work_date', chunk.start).lte('local_work_date', chunk.end).is('voided_at', null);
+      if (filters.personIds.length) query = query.in('person_id', filters.personIds);
+      if (filters.vesselIds.length) query = query.in('vessel_id', filters.vesselIds);
+      if (filters.watchGroups.length) query = query.in('watch_group', filters.watchGroups);
+      return query.order('local_work_date').order('starts_at').order('id').range(from, to);
+    }, 'Impossible de charger toutes les heures du rapport.');
+    rows.push(...chunkRows);
+  }
   return rows.map((row) => ({
     id: Number(row.id), registerId: Number(row.register_id), companyId: Number(row.company_id), personId: Number(row.person_id),
     localWorkDate: row.local_work_date, startsAt: row.starts_at, endsAt: row.ends_at, timezoneName: row.timezone_name,
@@ -284,10 +312,18 @@ async function fetchReportIntervals(client: SupabaseClient, start: string, end: 
   }));
 }
 
-async function fetchReportCalculations(client: SupabaseClient, start: string, end: string): Promise<WorkingTimeCalculationWindow[]> {
-  const rows = await fetchAllPages<ReportCalculationRow>((from, to) => client.from('working_time_calculation_windows')
-    .select(REPORT_CALCULATION_SELECT).gte('local_window_end_date', start).lte('local_window_end_date', end)
-    .order('local_window_end_date').order('window_end').order('id').range(from, to), 'Impossible de charger tous les calculs de conformité du rapport.');
+async function fetchReportCalculations(client: SupabaseClient, filters: WorkingTimeComplianceFilters): Promise<WorkingTimeCalculationWindow[]> {
+  const rows: ReportCalculationRow[] = [];
+  for (const chunk of workingTimeReportDateChunks(filters.start, filters.end)) {
+    const chunkRows = await fetchAllPages<ReportCalculationRow>((from, to) => {
+      let query = client.from('working_time_calculation_windows').select(REPORT_CALCULATION_SELECT)
+        .gte('local_window_end_date', chunk.start).lte('local_window_end_date', chunk.end);
+      if (filters.personIds.length) query = query.in('person_id', filters.personIds);
+      if (filters.vesselIds.length) query = query.in('vessel_id', filters.vesselIds);
+      return query.order('local_window_end_date').order('window_end').order('id').range(from, to);
+    }, 'Impossible de charger tous les calculs de conformité du rapport.');
+    rows.push(...chunkRows);
+  }
   return rows.map((row) => ({
     id: Number(row.id), companyId: Number(row.company_id), personId: Number(row.person_id), windowEnd: row.window_end,
     localWindowEndDate: row.local_window_end_date, timezoneName: row.timezone_name,
@@ -301,17 +337,26 @@ async function fetchReportCalculations(client: SupabaseClient, start: string, en
   }));
 }
 
-async function fetchExposureRows(client: SupabaseClient, methodologyId: number, start: string, end: string): Promise<ExposureRow[]> {
-  return fetchAllPages<ExposureRow>((from, to) => client.from('hse_exposure_hours')
-    .select('exposure_date,exposure_seconds,person_id,vessel_id,watch_group')
-    .eq('methodology_id', methodologyId).gte('exposure_date', start).lte('exposure_date', end)
-    .order('exposure_date').order('id').range(from, to), 'Impossible de charger toutes les heures d’exposition HSE.');
+async function fetchExposureRows(client: SupabaseClient, methodologyId: number, filters: WorkingTimeComplianceFilters): Promise<ExposureRow[]> {
+  return fetchAllPages<ExposureRow>((from, to) => {
+    let query = client.from('hse_exposure_hours').select('exposure_date,exposure_seconds,person_id,vessel_id,watch_group')
+      .eq('methodology_id', methodologyId).gte('exposure_date', filters.start).lte('exposure_date', filters.end);
+    if (filters.personIds.length) query = query.in('person_id', filters.personIds);
+    if (filters.vesselIds.length) query = query.in('vessel_id', filters.vesselIds);
+    if (filters.watchGroups.length) query = query.in('watch_group', filters.watchGroups);
+    return query.order('exposure_date').order('id').range(from, to);
+  }, 'Impossible de charger toutes les heures d’exposition HSE.');
 }
 
-async function fetchSafetyEventRows(client: SupabaseClient, start: string, end: string): Promise<SafetyEventRow[]> {
-  return fetchAllPages<SafetyEventRow>((from, to) => client.from('hse_safety_events')
-    .select('occurred_on,classification,lost_days,person_id,vessel_id,watch_group')
-    .gte('occurred_on', start).lte('occurred_on', end).order('occurred_on').order('id').range(from, to), 'Impossible de charger tous les événements HSE.');
+async function fetchSafetyEventRows(client: SupabaseClient, filters: WorkingTimeComplianceFilters): Promise<SafetyEventRow[]> {
+  return fetchAllPages<SafetyEventRow>((from, to) => {
+    let query = client.from('hse_safety_events').select('occurred_on,classification,lost_days,person_id,vessel_id,watch_group')
+      .gte('occurred_on', filters.start).lte('occurred_on', filters.end);
+    if (filters.personIds.length) query = query.in('person_id', filters.personIds);
+    if (filters.vesselIds.length) query = query.in('vessel_id', filters.vesselIds);
+    if (filters.watchGroups.length) query = query.in('watch_group', filters.watchGroups);
+    return query.order('occurred_on').order('id').range(from, to);
+  }, 'Impossible de charger tous les événements HSE.');
 }
 
 export async function fetchWorkingTimeComplianceOptions(client: SupabaseClient, year: number) {
@@ -336,15 +381,15 @@ export async function fetchWorkingTimeComplianceReport(
 ): Promise<WorkingTimeComplianceReportData> {
   const reportDataPromise = Promise.all([
     fetchComplianceReferenceData(client, filters.start, filters.end),
-    fetchReportIntervals(client, filters.start, filters.end),
-    fetchReportCalculations(client, filters.start, filters.end),
+    fetchReportIntervals(client, filters),
+    fetchReportCalculations(client, filters),
   ]).then(([reference, intervals, calculations]) => ({ ...reference, intervals, calculations }));
   const reportData = await reportDataPromise;
   const methodology = reportData.methodology;
 
   const [exposureRowsAll, eventRowsAll] = methodology ? await Promise.all([
-    fetchExposureRows(client, methodology.id, filters.start, filters.end),
-    fetchSafetyEventRows(client, filters.start, filters.end),
+    fetchExposureRows(client, methodology.id, filters),
+    fetchSafetyEventRows(client, filters),
   ]) : [[], []];
 
   const intervals = reportData.intervals.filter((interval) => (

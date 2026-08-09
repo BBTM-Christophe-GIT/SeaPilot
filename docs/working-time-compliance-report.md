@@ -23,6 +23,8 @@ Le rapport peut être configuré :
 
 L’aperçu comprend un résumé exécutif modifiable, les chiffres clés, une évolution temporelle, une répartition des journées non conformes, les hypothèses et les formules. Le PDF reprend le logo BBTM en haut à gauche et le titre **Rapport de suivi du temps de travail**.
 
+Pour préserver les performances sur un rapport annuel, les filtres marin, navire et bordée sont appliqués directement aux requêtes Supabase. Les périodes longues sont ensuite chargées par tranches mensuelles avant consolidation, sans modifier les règles RLS ni les formules du rapport.
+
 Le dernier chapitre du PDF contient les formules et les multiplicateurs de la méthodologie sélectionnée. Les valeurs non configurées sont explicitement indiquées comme telles.
 
 ## Registre mensuel
