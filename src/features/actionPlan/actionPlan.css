@@ -168,24 +168,6 @@
   background: white;
 }
 
-.action-plan-list-head {
-  display: grid;
-  grid-template-columns: 78px 50px minmax(320px, 1fr) 205px 205px 94px;
-  gap: 12px;
-  align-items: center;
-}
-
-.action-plan-list-head {
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--ap-line);
-  background: #f7f9fc;
-  color: #6c7b90;
-  font-size: .66rem;
-  font-weight: 850;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-}
-
 .action-plan-list details { border-bottom: 1px solid #edf1f6; }
 .action-plan-list details:last-child { border-bottom: 0; }
 .action-plan-list details details { margin-left: 18px; border-left: 1px solid #dce6f1; border-bottom: 0; }
@@ -264,14 +246,38 @@
   background: white;
 }
 
-.action-plan-indicators > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.action-plan-indicators > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; margin-bottom: 22px; }
 .action-plan-indicators header p { margin: 6px 0 0; color: var(--ap-muted); }
-.action-plan-indicators > header > strong { color: #087d8f; font-size: 1.8rem; }
+.action-plan-eyebrow { display: block; margin-bottom: 5px; color: #2760c8; font-size: .68rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.action-plan-indicator-actions { display: flex; align-items: flex-end; gap: 9px; flex: 0 0 auto; }
+.action-plan-indicator-actions label { display: grid; gap: 5px; color: var(--ap-muted); font-size: .68rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.action-plan-indicator-actions select { width: 118px; min-height: 40px; padding-block: 7px; }
+.action-plan-hse-loading { display: flex; min-height: 260px; align-items: center; justify-content: center; gap: 9px; color: var(--ap-muted); font-weight: 750; }
+.action-plan-hse-loading svg { animation: action-plan-spin 1s linear infinite; }
+@keyframes action-plan-spin { to { transform: rotate(360deg); } }
+.action-plan-hse-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.action-plan-hse-summary > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 14px; padding: 14px 16px; border: 1px solid var(--ap-line); border-radius: 12px; background: #f7fafc; }
+.action-plan-hse-summary small { color: var(--ap-muted); font-size: .68rem; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.action-plan-hse-summary strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #087d8f; font-size: 1.25rem; text-align: right; }
+.action-plan-hse-summary span { color: var(--ap-muted); font-size: .72rem; }
 .action-plan-indicator-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .action-plan-indicator-grid article { display: grid; gap: 3px; min-height: 115px; padding: 14px; border: 1px solid var(--ap-line); border-radius: 12px; background: #f9fbfd; }
 .action-plan-indicator-grid small { color: #2461d3; font-weight: 900; }
 .action-plan-indicator-grid strong { font-size: 1.8rem; }
 .action-plan-indicator-grid span { align-self: end; color: var(--ap-muted); font-size: .72rem; }
+.action-plan-chart-section { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--ap-line); }
+.action-plan-chart-section > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.action-plan-chart-section > header p { max-width: 580px; font-size: .78rem; text-align: right; }
+.action-plan-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.action-plan-chart-card { min-width: 0; padding: 17px; border: 1px solid var(--ap-line); border-radius: 14px; background: #fbfcfe; }
+.action-plan-chart-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; min-height: 64px; }
+.action-plan-chart-card h3 { font-size: 1rem; }
+.action-plan-chart-card header p { max-width: 420px; font-size: .72rem; }
+.action-plan-chart-values { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.action-plan-chart-values > span { display: grid; min-width: 70px; padding: 6px 8px; border-left: 3px solid var(--series-color); border-radius: 6px; background: white; box-shadow: 0 1px 5px rgb(23 35 58 / 5%); }
+.action-plan-chart-values small { color: var(--ap-muted); font-size: .61rem; font-weight: 850; }
+.action-plan-chart-values strong { font-size: .9rem; }
+.action-plan-chart { height: 286px; margin-top: 8px; }
 .action-plan-rate-note { display: flex; gap: 12px; margin-top: 16px; padding: 15px; border-radius: 12px; background: #eaf8fa; color: #096d7c; }
 .action-plan-rate-note p { margin: 3px 0 0; color: #416b73; font-size: .8rem; }
 .action-plan-dialog-backdrop {
@@ -332,14 +338,31 @@
 .action-plan-treatment > label { margin: 18px 26px 0; }
 .action-plan-treatment footer { display: flex; justify-content: flex-end; gap: 9px; margin: 22px 26px 0; }
 .action-plan-treatment .action-plan-message { margin: 14px 26px 0; }
+.action-plan-definitions { width: min(980px, 96vw); max-height: min(820px, 94vh); overflow: auto; border: 1px solid var(--ap-line); border-radius: 20px; background: white; box-shadow: 0 30px 80px rgb(15 35 65 / 28%); }
+.action-plan-definitions > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 24px 28px; border-bottom: 1px solid var(--ap-line); }
+.action-plan-definitions > header span { color: var(--ap-muted); font-size: .7rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.action-plan-definitions > header h2 { margin-top: 4px; }
+.action-plan-definitions > header button { width: 44px; padding: 0; border-color: var(--ap-line); background: white; color: var(--ap-ink); }
+.action-plan-definitions-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; padding: 26px 28px; }
+.action-plan-definitions-body section { min-width: 0; }
+.action-plan-definitions-body h3 { margin-bottom: 16px; font-size: 1rem; }
+.action-plan-definitions-body dl { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 0; margin: 0; border: 1px solid var(--ap-line); border-radius: 12px; overflow: hidden; }
+.action-plan-definitions-body dt,
+.action-plan-definitions-body dd { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--ap-line); font-size: .76rem; }
+.action-plan-definitions-body dt { background: #f4f7fb; color: #2659b7; font-weight: 850; }
+.action-plan-definitions-body dd { color: #3f4f65; }
+.action-plan-definitions-body dt:nth-last-of-type(1),
+.action-plan-definitions-body dd:last-of-type { border-bottom: 0; }
+.action-plan-definitions-body p { margin: 14px 0 0; padding: 12px; border-radius: 10px; background: #eef7fb; color: #42606c; font-size: .75rem; line-height: 1.5; }
+.action-plan-definitions > footer { display: flex; justify-content: flex-end; padding: 16px 28px; border-top: 1px solid var(--ap-line); }
 
 @media (max-width: 1100px) {
   .action-plan-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-plan-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-plan-search { grid-column: 1 / -1; }
-  .action-plan-list-head { display: none; }
   .action-plan-page button.action-plan-row-main { grid-template-columns: minmax(260px, 1fr) 175px 160px 85px; }
   .action-plan-indicator-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .action-plan-chart-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -357,6 +380,15 @@
   .action-plan-row-details dd + dt { margin-top: 6px; }
   .action-plan-indicator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-plan-indicators > header { align-items: flex-start; flex-direction: column; }
+  .action-plan-indicator-actions { align-items: stretch; flex-direction: column; width: 100%; }
+  .action-plan-indicator-actions select { width: 100%; }
+  .action-plan-hse-summary { grid-template-columns: 1fr; }
+  .action-plan-chart-section > header,
+  .action-plan-chart-card > header { align-items: flex-start; flex-direction: column; }
+  .action-plan-chart-section > header p { text-align: left; }
+  .action-plan-chart-values { justify-content: flex-start; }
+  .action-plan-chart { height: 250px; }
+  .action-plan-definitions-body { grid-template-columns: 1fr; padding: 20px; }
   .action-plan-dialog-backdrop { padding: 0; }
   .action-plan-dialog,
   .action-plan-treatment { width: 100vw; max-height: 100vh; border-radius: 0; }

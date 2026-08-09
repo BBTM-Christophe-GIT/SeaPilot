@@ -73,7 +73,14 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
         data: paths.map((path) => ({ path, signedUrl: `https://evidence.example/${path}` })), error: null,
       })),
     }) },
-    rpc: vi.fn().mockResolvedValue({ data: { exposure_hours: 124500, FAT: 0, LTI: 1, RWC: 0, MTC: 1, FAC: 3, near_miss: 4 }, error: null }),
+    rpc: vi.fn().mockImplementation((functionName: string) => Promise.resolve(functionName === 'refresh_hse_exposure_hours'
+      ? { data: { actual_days: 24, planning_days: 0, methodology_id: 7 }, error: null }
+      : { data: {
+        methodology_version: '2026-08', configuration_complete: true, exposure_hours: 124500,
+        FAT: 0, LWDC: 1, LTI: 1, RWC: 0, MTC: 1, FAC: 3, near_miss: 4, safety_observation: 12, lost_days: 7,
+        LTIFR: 8.03, TRIR: 16.06, FAR: 0, FAC_rate: 24.1, MTC_rate: 8.03, RWC_rate: 0,
+        SOFR: 19.28, french_frequency_rate: 8.03, french_severity_rate: 0.056,
+      }, error: null })),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)), insert };
       if (table === 'action_documents') return { select: vi.fn().mockReturnValue(ordered([])) };
@@ -119,6 +126,7 @@ describe('ActionPlanPage', () => {
     expect(screen.getByLabelText('Non-conformités majeures')).toHaveTextContent('1');
     expect(screen.getByLabelText('Heures travaillées')).toHaveTextContent('124 500 h');
     expect(screen.queryByRole('button', { name: 'Sources importées' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Date - titre')).not.toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
 
     const openRow = screen.getByText("Réaliser une analyse d'eau").closest('article');
@@ -139,6 +147,16 @@ describe('ActionPlanPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Indicateurs HSE' }));
     expect(screen.getAllByText('124 500 h').length).toBeGreaterThan(0);
     expect(screen.getByText('Accidents avec arrêt')).toBeInTheDocument();
+    expect(screen.getByLabelText('Année des indicateurs HSE')).toHaveValue('2026');
+    expect(screen.getByText('Taux de fréquence et taux de gravité')).toBeInTheDocument();
+    expect(screen.getByText('Accidents enregistrables')).toBeInTheDocument();
+    expect(screen.getByText('Prévention, soins et travail adapté')).toBeInTheDocument();
+    expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Définitions et formules' }));
+    const definitions = within(screen.getByRole('dialog', { name: 'Définitions et formules' }));
+    expect(definitions.getByText('FAC')).toBeInTheDocument();
+    expect(definitions.getByText(/FAT \+ LWDC \+ RWC \+ MTC/)).toBeInTheDocument();
   });
 
   it("defaults the issuer to the current profile and creates an exposure-linked action", async () => {

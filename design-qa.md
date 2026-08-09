@@ -48,6 +48,30 @@ No actionable P0, P1 or P2 mismatch remains.
 
 final result: passed
 
+---
+
+# Design QA — Plan d'action : tableau HSE annuel (2026-08-09)
+
+## Cibles
+
+- En-tête à supprimer : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-a7febe0b-4154-472b-b803-5d9964dd1d33.png`.
+- Référence fonctionnelle des indicateurs : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-61f331a8-321c-49e8-9f8f-cdd064c6e140.png`.
+- Prototype local : `http://127.0.0.1:4173/modules/actionPlan?preview=1`.
+- Capture du tableau : `C:/CODEX/SeaPilot/tmp/action-plan-hse-dashboard.png`.
+- La référence de l'en-tête et l'écran Actions final ont été ouverts ensemble dans la même comparaison visuelle.
+
+## Vérifications réalisées
+
+- La bande d'en-tête `Photo / Date - titre / Responsable / Type d'écart / Statut` a entièrement disparu ; les lignes conservent leurs colonnes invisibles et leur alignement.
+- Le filtre annuel est visible et sélectionne l'année courante par défaut.
+- Les cartes HSE affichent bien `FAC = 3` dans la préversion, avec les heures et la méthodologie utilisées.
+- Les courbes cumulées TF/TG, LTIFR/TRIR/FAR et RWC/MTC/FAC/SOFR sont séparées en trois lectures explicites, avec axes, légendes et valeurs de fin de période.
+- Le dialogue `Définitions et formules` présente les classifications et les six formules sans chevauchement ni troncature.
+- Les contrôles Actions, Indicateurs HSE, année et dialogue ont été exercés dans le navigateur intégré.
+- Aucun défaut P0, P1 ou P2 ne reste visible.
+
+final result: passed
+
 # Design QA — Suivi du Temps de Travail v3.12.13
 
 ## Cibles de comparaison

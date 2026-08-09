@@ -100,6 +100,40 @@ export interface ActionPlanData {
   vessels: VesselOption[];
   exposureHours: number;
   hseKpis: Record<string, number | string | boolean | null> | null;
+  hseDashboard: ActionPlanHseDashboard | null;
+}
+
+export interface ActionPlanHsePoint {
+  month: number;
+  monthLabel: string;
+  exposureHours: number;
+  FAT: number;
+  LWDC: number;
+  LTI: number;
+  RWC: number;
+  MTC: number;
+  FAC: number;
+  nearMiss: number;
+  safetyObservation: number;
+  lostDays: number;
+  LTIFR: number | null;
+  TRIR: number | null;
+  FAR: number | null;
+  FACRate: number | null;
+  MTCRate: number | null;
+  RWCRate: number | null;
+  SOFR: number | null;
+  frequencyRate: number | null;
+  severityRate: number | null;
+}
+
+export interface ActionPlanHseDashboard {
+  year: number;
+  methodologyVersion: string;
+  configurationComplete: boolean;
+  exposureRefreshed: boolean;
+  totals: ActionPlanHsePoint;
+  monthly: ActionPlanHsePoint[];
 }
 
 export interface ActionPlanMetrics {
@@ -283,22 +317,94 @@ async function fetchVessels(client: SupabaseClient): Promise<VesselOption[]> {
   return (data || []).map((row) => ({ id: Number(row.id), name: String(row.name || '') })).filter((row) => row.name);
 }
 
-async function fetchHseSummary(client: SupabaseClient): Promise<{ exposureHours: number; hseKpis: ActionPlanData['hseKpis'] }> {
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function mapHsePoint(summary: Record<string, unknown>, month: number): ActionPlanHsePoint {
+  const monthLabels = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
+  return {
+    month,
+    monthLabel: monthLabels[month - 1] || '',
+    exposureHours: Number(summary.exposure_hours || 0),
+    FAT: Number(summary.FAT || 0),
+    LWDC: Number(summary.LWDC || 0),
+    LTI: Number(summary.LTI || 0),
+    RWC: Number(summary.RWC || 0),
+    MTC: Number(summary.MTC || 0),
+    FAC: Number(summary.FAC || 0),
+    nearMiss: Number(summary.near_miss || 0),
+    safetyObservation: Number(summary.safety_observation || 0),
+    lostDays: Number(summary.lost_days || 0),
+    LTIFR: numberOrNull(summary.LTIFR),
+    TRIR: numberOrNull(summary.TRIR),
+    FAR: numberOrNull(summary.FAR),
+    FACRate: numberOrNull(summary.FAC_rate),
+    MTCRate: numberOrNull(summary.MTC_rate),
+    RWCRate: numberOrNull(summary.RWC_rate),
+    SOFR: numberOrNull(summary.SOFR),
+    frequencyRate: numberOrNull(summary.french_frequency_rate),
+    severityRate: numberOrNull(summary.french_severity_rate),
+  };
+}
+
+function endOfMonth(year: number, month: number): string {
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: number): Promise<ActionPlanHseDashboard | null> {
   const { data: methods, error } = await client.from('hse_exposure_methodologies').select('id')
     .order('effective_from', { ascending: false }).limit(1);
-  if (error || !methods?.[0]) return { exposureHours: 0, hseKpis: null };
+  if (error || !methods?.[0]) return null;
+
+  const methodologyId = methods[0].id;
+  const startsOn = `${year}-01-01`;
   const now = new Date();
-  const { data, error: rpcError } = await client.rpc('hse_kpi_summary', {
-    p_starts_on: `${now.getFullYear()}-01-01`, p_ends_on: now.toISOString().slice(0, 10), p_methodology_id: methods[0].id,
-  });
-  if (rpcError || !data || typeof data !== 'object') return { exposureHours: 0, hseKpis: null };
-  const summary = data as Record<string, number | string | boolean | null>;
-  return { exposureHours: Number(summary.exposure_hours || 0), hseKpis: summary };
+  const isCurrentYear = year === now.getFullYear();
+  const lastMonth = isCurrentYear ? now.getMonth() + 1 : 12;
+  const endsOn = isCurrentYear ? now.toISOString().slice(0, 10) : `${year}-12-31`;
+  let exposureRefreshed = false;
+
+  try {
+    const { error: refreshError } = await client.rpc('refresh_hse_exposure_hours', {
+      p_starts_on: startsOn, p_ends_on: endsOn, p_methodology_id: methodologyId,
+    });
+    exposureRefreshed = !refreshError;
+  } catch {
+    // Capitaines may read the dashboard but cannot rebuild the exposure ledger.
+    // The summaries below still use the most recently materialised ledger.
+  }
+
+  const results = await Promise.all(Array.from({ length: lastMonth }, async (_, index) => {
+    const month = index + 1;
+    const monthEnd = isCurrentYear && month === lastMonth ? endsOn : endOfMonth(year, month);
+    const { data, error: rpcError } = await client.rpc('hse_kpi_summary', {
+      p_starts_on: startsOn, p_ends_on: monthEnd, p_methodology_id: methodologyId,
+    });
+    if (rpcError || !data || typeof data !== 'object') throw rpcError || new Error('HSE_KPI_EMPTY');
+    const raw = data as Record<string, unknown>;
+    return { point: mapHsePoint(raw, month), raw };
+  }));
+
+  const totals = results[results.length - 1].point;
+  const totalMetadata = results[results.length - 1].raw;
+
+  return {
+    year,
+    methodologyVersion: String(totalMetadata.methodology_version || ''),
+    configurationComplete: Boolean(totalMetadata.configuration_complete),
+    exposureRefreshed,
+    totals,
+    monthly: results.map((result) => result.point),
+  };
 }
 
 export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
+  const currentYear = new Date().getFullYear();
   const [actionsResult, documentsResult, typesResult, vesselsResult, hseResult] = await Promise.allSettled([
-    fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client), fetchHseSummary(client),
+    fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client), fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actions = await hydrateActionThumbnailUrls(client, actionsResult.value);
@@ -307,8 +413,9 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes: typesResult.status === 'fulfilled' ? typesResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
-    exposureHours: hseResult.status === 'fulfilled' ? hseResult.value.exposureHours : 0,
-    hseKpis: hseResult.status === 'fulfilled' ? hseResult.value.hseKpis : null,
+    exposureHours: hseResult.status === 'fulfilled' ? hseResult.value?.totals.exposureHours || 0 : 0,
+    hseKpis: hseResult.status === 'fulfilled' && hseResult.value ? hseResult.value.totals as unknown as ActionPlanData['hseKpis'] : null,
+    hseDashboard: hseResult.status === 'fulfilled' ? hseResult.value : null,
   };
 }
 
