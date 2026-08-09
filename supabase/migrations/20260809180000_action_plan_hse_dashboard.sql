@@ -13,8 +13,7 @@ set
   french_frequency_multiplier = coalesce(french_frequency_multiplier, 1000000),
   french_severity_multiplier = coalesce(french_severity_multiplier, 1000),
   notes = concat_ws(E'\n', nullif(notes, ''),
-    'Taux configurés : LTIFR/TRIR et taux de cas par 1 000 000 h, FAR par 100 000 000 h, SOFR par 200 000 h, TF INRS par 1 000 000 h et TG INRS par 1 000 h.'),
-  updated_at = now()
+    'Taux configurés : LTIFR/TRIR et taux de cas par 1 000 000 h, FAR par 100 000 000 h, SOFR par 200 000 h, TF INRS par 1 000 000 h et TG INRS par 1 000 h.')
 where name = 'SeaPilot HSE exposure';
 
 create or replace function public.sync_action_item_hse_event()
@@ -135,4 +134,3 @@ where event.action_item_id is not null
      and catalog.hse_classification is not null
     where action.id = event.action_item_id
   );
-
