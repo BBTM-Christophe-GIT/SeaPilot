@@ -127,6 +127,16 @@ describe('PurchaseRequestsPage', () => {
     }));
   });
 
+  it('opens the first non-empty workflow tab on initial load', async () => {
+    const orderedRequest = { ...baseRequest, status: 'Commande en cours', ordered_on: '2026-08-01' };
+    const { client } = createClient([orderedRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: /En commande 1/i })).toHaveAttribute('aria-selected', 'true'));
+    expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
+  });
+
   it('opens the six-step creation wizard with vessel and attachment support', async () => {
     const user = userEvent.setup();
     const { client } = createClient();

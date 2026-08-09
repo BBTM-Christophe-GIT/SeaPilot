@@ -22,7 +22,7 @@ import {
   Truck,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
@@ -187,6 +187,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [requestForm, setRequestForm] = useState<CreatePurchaseRequestInput>(EMPTY_FORM);
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
+  const initialStageResolved = useRef(false);
 
   const loadData = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true);
@@ -240,6 +241,15 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   useEffect(() => {
     setPage(1);
     const first = baseRequests.find((request) => request.stage === activeStage);
+    if (!initialStageResolved.current && baseRequests.length) {
+      initialStageResolved.current = true;
+      const initialStage = (Object.keys(STAGE_LABELS) as PurchaseRequestStage[])
+        .find((stage) => baseRequests.some((request) => request.stage === stage));
+      if (initialStage && initialStage !== activeStage) {
+        setActiveStage(initialStage);
+        return;
+      }
+    }
     setSelectedId(first?.id || null);
   }, [activeStage, baseRequests]);
 
