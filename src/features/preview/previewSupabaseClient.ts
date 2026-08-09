@@ -691,6 +691,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   hse_exposure_methodologies: [{
     id: 9851, name: 'Méthode HSE démo', version_label: '2026-08', effective_from: '2026-01-01',
     sedentary_day_hours: 8, offshore_actual_hour_factor: 1,
+    ltifr_multiplier: 1000000, trir_multiplier: 1000000, far_multiplier: 100000000,
+    fac_rate_multiplier: 1000000, mtc_rate_multiplier: 1000000, rwc_rate_multiplier: 1000000,
+    sofr_multiplier: 200000, french_frequency_multiplier: 1000000, french_severity_multiplier: 1000,
   }],
   hse_exposure_hours: [],
   hse_safety_events: [],
@@ -732,7 +735,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       description: 'Premiers soins réalisés à bord sans arrêt de travail.', corrective_action: 'Rappel port des gants anticoupure.',
       realized_action: 'Brief sécurité réalisé à la relève.', anomaly_cause: 'Gants inadaptés à la tâche.', comments: null,
       level_label: 'Mineur', location_detail: 'Zone de manutention', photo_1_path: null, photo_2_path: null,
-      closure_photo_path: null, victim_person_id: 9304, victim_sharepoint_item_id: 'preview-person-4', lost_days: 0,
+      closure_photo_path: 'demo/action-plan-closure-proof.webp', victim_person_id: 9304, victim_sharepoint_item_id: 'preview-person-4', lost_days: 0,
       safety_event_details: { treatment: 'Premiers soins' }, source_label: 'sharepoint-list-indicateurs-qhse',
       sharepoint_list_title: 'Indicateurs QHSE', sharepoint_item_id: 'preview-kpi-12', source_modified_at: '2026-08-07T09:15:00Z',
     },
@@ -966,13 +969,34 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'commit_working_time_import') {
     return createPreviewQuery({ data: { batch_id: Number(args.p_batch_id || 9901), status: 'imported', summary: { ready_rows: 2 } }, error: null });
   }
+  if (functionName === 'refresh_hse_exposure_hours') {
+    return createPreviewQuery({ data: { actual_days: 156, planning_days: 0, methodology_id: 9851 }, error: null });
+  }
   if (functionName === 'hse_kpi_summary') {
+    const endDate = new Date(`${String(args.p_ends_on || '2026-08-09')}T00:00:00Z`);
+    const month = Math.max(1, Math.min(12, endDate.getUTCMonth() + 1));
+    const exposureHours = 1560 * month;
+    const lwdc = month >= 4 ? 1 : 0;
+    const rwc = month >= 5 ? 1 : 0;
+    const mtc = month >= 6 ? 2 : month >= 3 ? 1 : 0;
+    const fac = month >= 7 ? 3 : month >= 5 ? 2 : month >= 2 ? 1 : 0;
+    const nearMiss = Math.min(8, month);
+    const observations = month * 5;
+    const lostDays = lwdc ? 12 : 0;
     return createPreviewQuery({ data: {
-      methodology_id: 9851, methodology_version: '2026-08', exposure_hours: 12480,
-      FAT: 0, LWDC: 1, RWC: 1, MTC: 2, FAC: 3, near_miss: 8, safety_observation: 42,
-      LTI: 1, LTIFR: null, TRIR: null, FAR: null, FAC_rate: null, MTC_rate: null,
-      RWC_rate: null, SOFR: null, french_frequency_rate: null, french_severity_rate: null,
-      configuration_complete: false,
+      methodology_id: 9851, methodology_version: '2026-08', exposure_hours: exposureHours,
+      FAT: 0, LWDC: lwdc, RWC: rwc, MTC: mtc, FAC: fac, near_miss: nearMiss, safety_observation: observations,
+      lost_days: lostDays, LTI: lwdc,
+      LTIFR: lwdc * 1000000 / exposureHours,
+      TRIR: (lwdc + rwc + mtc) * 1000000 / exposureHours,
+      FAR: 0,
+      FAC_rate: fac * 1000000 / exposureHours,
+      MTC_rate: mtc * 1000000 / exposureHours,
+      RWC_rate: rwc * 1000000 / exposureHours,
+      SOFR: observations * 200000 / exposureHours,
+      french_frequency_rate: lwdc * 1000000 / exposureHours,
+      french_severity_rate: lostDays * 1000 / exposureHours,
+      configuration_complete: true,
     }, error: null });
   }
   if (functionName === 'dpr_entry_context') {
@@ -1085,6 +1109,9 @@ export const previewSupabaseClient = {
   storage: {
     from: (bucket: string) => ({
       createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      createSignedUrls: (paths: string[]) => Promise.resolve({
+        data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
+      }),
       download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
       upload: (_path: string, _file: Blob, options?: { contentType?: string }) => bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12'
         ? Promise.resolve({ data: { path: _path }, error: null })
