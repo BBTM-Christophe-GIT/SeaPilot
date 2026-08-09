@@ -133,6 +133,7 @@ export interface ActionPlanHseDashboard {
   configurationComplete: boolean;
   exposureRefreshed: boolean;
   totals: ActionPlanHsePoint;
+  historicalTotals: ActionPlanHsePoint;
   monthly: ActionPlanHsePoint[];
 }
 
@@ -377,7 +378,8 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
     // The summaries below still use the most recently materialised ledger.
   }
 
-  const results = await Promise.all(Array.from({ length: lastMonth }, async (_, index) => {
+  const [results, historicalResult] = await Promise.all([
+    Promise.all(Array.from({ length: lastMonth }, async (_, index) => {
     const month = index + 1;
     const monthEnd = isCurrentYear && month === lastMonth ? endsOn : endOfMonth(year, month);
     const { data, error: rpcError } = await client.rpc('hse_kpi_summary', {
@@ -386,7 +388,15 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
     if (rpcError || !data || typeof data !== 'object') throw rpcError || new Error('HSE_KPI_EMPTY');
     const raw = data as Record<string, unknown>;
     return { point: mapHsePoint(raw, month), raw };
-  }));
+    })),
+    client.rpc('hse_kpi_summary', {
+      p_starts_on: '1900-01-01', p_ends_on: now.toISOString().slice(0, 10), p_methodology_id: methodologyId,
+    }),
+  ]);
+
+  if (historicalResult.error || !historicalResult.data || typeof historicalResult.data !== 'object') {
+    throw historicalResult.error || new Error('HSE_KPI_HISTORY_EMPTY');
+  }
 
   const totals = results[results.length - 1].point;
   const totalMetadata = results[results.length - 1].raw;
@@ -397,6 +407,7 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
     configurationComplete: Boolean(totalMetadata.configuration_complete),
     exposureRefreshed,
     totals,
+    historicalTotals: mapHsePoint(historicalResult.data as Record<string, unknown>, 0),
     monthly: results.map((result) => result.point),
   };
 }

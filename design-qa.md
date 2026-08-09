@@ -64,7 +64,8 @@ final result: passed
 
 - La bande d'en-tête `Photo / Date - titre / Responsable / Type d'écart / Statut` a entièrement disparu ; les lignes conservent leurs colonnes invisibles et leur alignement.
 - Le filtre annuel est visible et sélectionne l'année courante par défaut.
-- Les cartes HSE affichent bien `FAC = 3` dans la préversion, avec les heures et la méthodologie utilisées.
+- Les cartes HSE distinguent le nombre de l'année sélectionnée du total historique. La préversion affiche `FAC = 3` et `3 au total`.
+- La recette authentifiée de production confirme 2 FAC en 2024 et 1 FAC en 2025 ; l'année 2026 reste donc correctement à 0 tout en affichant `3 au total`.
 - Les courbes cumulées TF/TG, LTIFR/TRIR/FAR et RWC/MTC/FAC/SOFR sont séparées en trois lectures explicites, avec axes, légendes et valeurs de fin de période.
 - Le dialogue `Définitions et formules` présente les classifications et les six formules sans chevauchement ni troncature.
 - Les contrôles Actions, Indicateurs HSE, année et dialogue ont été exercés dans le navigateur intégré.
