@@ -411,10 +411,13 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       {!hseLoading && data.hseDashboard && <>
         <div className="action-plan-hse-summary"><div><small>Heures travaillées</small><strong>{formatHours(data.hseDashboard.totals.exposureHours)}</strong><span>Du 1er janvier à la dernière période disponible</span></div><div><small>Méthodologie</small><strong>{data.hseDashboard.methodologyVersion || 'SeaPilot HSE'}</strong><span>{data.hseDashboard.exposureRefreshed ? 'Registre des heures actualisé' : 'Dernier registre des heures disponible'}</span></div></div>
         <div className="action-plan-indicator-grid">{[
-          ['FAT', 'Décès', data.hseDashboard.totals.FAT], ['LTI', 'Accidents avec arrêt', data.hseDashboard.totals.LTI],
-          ['RWC', 'Travail adapté', data.hseDashboard.totals.RWC], ['MTC', 'Traitement médical', data.hseDashboard.totals.MTC],
-          ['FAC', 'Premiers soins', data.hseDashboard.totals.FAC], ['Near miss', 'Presqu’accidents', data.hseDashboard.totals.nearMiss],
-        ].map(([key, label, value]) => <article key={String(key)}><small>{key}</small><strong>{Number(value)}</strong><span>{label}</span></article>)}</div>
+          ['FAT', 'Décès', data.hseDashboard.totals.FAT, data.hseDashboard.historicalTotals.FAT],
+          ['LTI', 'Accidents avec arrêt', data.hseDashboard.totals.LTI, data.hseDashboard.historicalTotals.LTI],
+          ['RWC', 'Travail adapté', data.hseDashboard.totals.RWC, data.hseDashboard.historicalTotals.RWC],
+          ['MTC', 'Traitement médical', data.hseDashboard.totals.MTC, data.hseDashboard.historicalTotals.MTC],
+          ['FAC', 'Premiers soins', data.hseDashboard.totals.FAC, data.hseDashboard.historicalTotals.FAC],
+          ['Near miss', 'Presqu’accidents', data.hseDashboard.totals.nearMiss, data.hseDashboard.historicalTotals.nearMiss],
+        ].map(([key, label, value, historical]) => <article key={String(key)}><small>{key}</small><strong>{Number(value)}</strong><span>{label}<small>{Number(historical)} au total</small></span></article>)}</div>
 
         <section className="action-plan-chart-section"><header><div><span className="action-plan-eyebrow">Référentiel français</span><h2>Fréquence et gravité</h2></div><p>Évolution cumulée depuis le 1er janvier. Le taux de gravité utilise les jours perdus.</p></header>
           <RateChart description="TF par million d’heures · TG par millier d’heures" points={data.hseDashboard.monthly} series={[

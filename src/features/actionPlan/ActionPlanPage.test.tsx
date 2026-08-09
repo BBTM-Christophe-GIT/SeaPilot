@@ -152,6 +152,7 @@ describe('ActionPlanPage', () => {
     expect(screen.getByText('Accidents enregistrables')).toBeInTheDocument();
     expect(screen.getByText('Prévention, soins et travail adapté')).toBeInTheDocument();
     expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3');
+    expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3 au total');
 
     await userEvent.click(screen.getByRole('button', { name: 'Définitions et formules' }));
     const definitions = within(screen.getByRole('dialog', { name: 'Définitions et formules' }));

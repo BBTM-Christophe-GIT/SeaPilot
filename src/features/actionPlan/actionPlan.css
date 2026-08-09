@@ -265,6 +265,7 @@
 .action-plan-indicator-grid small { color: #2461d3; font-weight: 900; }
 .action-plan-indicator-grid strong { font-size: 1.8rem; }
 .action-plan-indicator-grid span { align-self: end; color: var(--ap-muted); font-size: .72rem; }
+.action-plan-indicator-grid span small { display: block; margin-top: 4px; color: #486782; font-size: .66rem; font-weight: 800; text-transform: none; }
 .action-plan-chart-section { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--ap-line); }
 .action-plan-chart-section > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .action-plan-chart-section > header p { max-width: 580px; font-size: .78rem; text-align: right; }
