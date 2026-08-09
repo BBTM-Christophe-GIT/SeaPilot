@@ -103,6 +103,7 @@ describe('buildSharePointImportSqlFromExport', () => {
     });
 
     expect(sql).toContain('perform public.resolve_sharepoint_operation_links();');
+    expect(sql).toContain('set vessel_name = vessel.name');
     expect(sql.indexOf('resolve_sharepoint_operation_links')).toBeLessThan(sql.indexOf('$sharepoint_import$;'));
   });
 });
