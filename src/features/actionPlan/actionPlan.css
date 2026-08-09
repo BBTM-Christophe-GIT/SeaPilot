@@ -210,8 +210,8 @@
 .action-plan-row.is-critical { border-left-color: #dc3434; background: #fff9f8; }
 .action-plan-row.is-warning { border-left-color: #e58422; }
 .action-plan-row.is-positive { border-left-color: #119657; }
-.action-plan-row-main { width: 100%; padding: 12px 92px 12px 12px; border: 0; background: transparent; color: var(--ap-ink); text-align: left; }
-.action-plan-row-main:hover { background: #f8faff; filter: none; }
+.action-plan-page button.action-plan-row-main { width: 100%; padding: 12px 92px 12px 12px; border: 0; background: transparent; color: var(--ap-ink); text-align: left; }
+.action-plan-page button.action-plan-row-main:hover { background: #f8faff; filter: none; }
 .action-plan-row-main > span { min-width: 0; font-size: .78rem; }
 .action-plan-row-main > span:first-child { display: flex; align-items: flex-start; gap: 8px; }
 .action-plan-row-main strong { overflow-wrap: anywhere; }
