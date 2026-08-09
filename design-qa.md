@@ -204,3 +204,27 @@ final result: blocked
 ### État de la comparaison visuelle
 
 **Bloquée — non validée.** Le navigateur intégré est resté bloqué pendant l’initialisation de la session locale. Aucune capture fiable de l’implémentation n’a donc pu être placée côte à côte avec les références. Les tests de rendu, la compilation et le contrôle visuel du PDF sont passés, mais ce document ne revendique pas une validation visuelle finale de l’écran.
+
+---
+
+# Design QA — Rapport de conformité / multi-sélections v3.12.20
+
+## Cible
+
+- Référence : `C:/Users/chris/Downloads/ChatGPT Image 9 août 2026, 08_55_09.png`
+- Vue : modale « Générer un rapport de conformité », étape « 2 — Périmètre »
+- Viewport de référence : 2048 × 1151 px
+
+## Vérifications réalisées
+
+- La mise en page conserve les cartes numérotées, les deux colonnes Marins/Navires, le panneau récapitulatif et les tokens SeaPilot existants.
+- Le menu est rendu dans le flux de la carte : son ouverture augmente la hauteur de l’étape et ne recouvre pas « Indicateurs inclus ».
+- Les états vide, sélection multiple, recherche, ouverture exclusive, fermeture par clic extérieur/Échap et synchronisation du récapitulatif sont couverts par les tests React.
+- Les zones interactives principales ont une hauteur minimale de 40 px, des libellés ARIA et un focus visible.
+- `pnpm test`, `pnpm lint` et `pnpm build` réussissent.
+
+## Limitation de la recette visuelle
+
+Le contrôleur Chrome persistant de Codex est resté indisponible malgré une réinitialisation et plusieurs tentatives avec délai borné. La capture du rendu local et la comparaison visuelle côte à côte avec la référence n’ont donc pas pu être exécutées dans cette session. La recette fonctionnelle automatisée est complète, mais la validation pixeluelle reste à confirmer sur le déploiement Vercel.
+
+final result: blocked

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BarChart3, Download, FileText, RefreshCw, ShieldAlert } from 'lucide-react';
+import { BarChart3, CalendarDays, Download, FileText, RefreshCw, ShieldAlert, ShipWheel, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   fetchWorkingTimeComplianceOptions,
@@ -10,6 +10,7 @@ import {
 } from './workingTimeComplianceReportModel';
 import { buildWorkingTimeCompliancePdf } from './workingTimeComplianceReportPdf';
 import { workingTimeErrorMessage } from './workingTimeQueries';
+import { WorkingTimeReportMultiSelect, type WorkingTimeReportMultiSelectOption } from './WorkingTimeReportMultiSelect';
 
 interface WorkingTimeComplianceReportProps {
   client: SupabaseClient;
@@ -35,10 +36,6 @@ function periodBounds(year: number, mode: PeriodMode, month: number, quarter: nu
     start: `${year}-${pad(startMonth)}-01`,
     end: `${year}-${pad(endMonth)}-${pad(endDate.getDate())}`,
   };
-}
-
-function selectedNumbers(select: HTMLSelectElement): number[] {
-  return Array.from(select.selectedOptions, (option) => Number(option.value));
 }
 
 function selectedStrings(select: HTMLSelectElement): string[] {
@@ -75,11 +72,31 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openMultiSelect, setOpenMultiSelect] = useState<'people' | 'vessels' | null>(null);
   const range = useMemo(() => periodBounds(year, periodMode, month, quarter), [month, periodMode, quarter, year]);
   const years = useMemo(() => Array.from({ length: 7 }, (_, index) => initialYear + 1 - index), [initialYear]);
   const people = options?.people || [];
   const vessels = options?.vessels || [];
   const availableWatchGroups = options?.watchGroups || [];
+  const peopleMultiSelectOptions = useMemo<WorkingTimeReportMultiSelectOption[]>(() => people.map((person) => ({
+    id: String(person.personId),
+    label: `${person.lastName} ${person.firstName}`.trim(),
+    description: person.functionLabel || person.gradeLabel || undefined,
+  })), [people]);
+  const vesselMultiSelectOptions = useMemo<WorkingTimeReportMultiSelectOption[]>(() => vessels.map((vessel) => ({
+    id: String(vessel.id),
+    label: vessel.name,
+  })), [vessels]);
+  const periodSummary = periodMode === 'year'
+    ? `Année ${year}`
+    : periodMode === 'quarter'
+      ? `T${quarter} ${year}`
+      : `${MONTHS[month - 1]} ${year}`;
+  const populationSummary = populationScope === 'company'
+    ? 'Compagnie entière'
+    : populationScope === 'watch'
+      ? (watchGroups.length ? `${watchGroups.length} bordée${watchGroups.length > 1 ? 's' : ''} sélectionnée${watchGroups.length > 1 ? 's' : ''}` : 'Aucune bordée sélectionnée')
+      : (personIds.length ? `${personIds.length} marin${personIds.length > 1 ? 's' : ''} sélectionné${personIds.length > 1 ? 's' : ''}` : 'Aucun marin sélectionné');
 
   useEffect(() => {
     let cancelled = false;
@@ -147,42 +164,79 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
 
   return (
     <section aria-labelledby="compliance-report-title" className="working-time-compliance-report">
-      <header>
-        <div><p>Documents</p><h2 id="compliance-report-title">Rapport de conformité</h2><span>Configurez le périmètre, générez l’analyse, puis adaptez le commentaire avant export.</span></div>
-        <FileText aria-hidden="true" size={25} />
-      </header>
+      <h2 className="sr-only" id="compliance-report-title">Générer un rapport de conformité</h2>
+      <div className="working-time-report-builder">
+        <div className="working-time-report-steps">
+          <fieldset className="working-time-report-step">
+            <legend><span>1</span>Période</legend>
+            <div className="working-time-report-period-grid">
+              <label>Découpage<select value={periodMode} onChange={(event) => setPeriodMode(event.target.value as PeriodMode)}><option value="year">Année</option><option value="quarter">Trimestre</option><option value="month">Mois</option></select></label>
+              <label>Année<select value={year} onChange={(event) => setYear(Number(event.target.value))}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              {periodMode === 'quarter' ? <label>Trimestre<select value={quarter} onChange={(event) => setQuarter(Number(event.target.value))}>{[1, 2, 3, 4].map((item) => <option key={item} value={item}>T{item}</option>)}</select></label> : null}
+              {periodMode === 'month' ? <label>Mois<select value={month} onChange={(event) => setMonth(Number(event.target.value))}>{MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label> : null}
+            </div>
+          </fieldset>
 
-      <div className="working-time-report-filter-grid">
-        <fieldset className="working-time-report-metrics">
-          <legend>Indicateurs inclus</legend>
-          {METRICS.map((metric) => <label key={metric.key}><input checked={metricKeys.includes(metric.key)} onChange={(event) => setMetricKeys((current) => event.target.checked ? [...current, metric.key] : current.filter((key) => key !== metric.key))} type="checkbox" />{metric.label}</label>)}
-        </fieldset>
-        <fieldset>
-          <legend>Période</legend>
-          <label>Découpage<select value={periodMode} onChange={(event) => setPeriodMode(event.target.value as PeriodMode)}><option value="year">Année</option><option value="quarter">Trimestre</option><option value="month">Mois</option></select></label>
-          <label>Année<select value={year} onChange={(event) => setYear(Number(event.target.value))}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          {periodMode === 'quarter' ? <label>Trimestre<select value={quarter} onChange={(event) => setQuarter(Number(event.target.value))}>{[1, 2, 3, 4].map((item) => <option key={item} value={item}>T{item}</option>)}</select></label> : null}
-          {periodMode === 'month' ? <label>Mois<select value={month} onChange={(event) => setMonth(Number(event.target.value))}>{MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label> : null}
-        </fieldset>
-        <fieldset>
-          <legend>Population</legend>
-          <label>Périmètre<select value={populationScope} onChange={(event) => setPopulationScope(event.target.value as PopulationScope)}><option value="company">Compagnie entière</option><option value="sailors">Marins sélectionnés</option><option value="watch">Bordées sélectionnées</option></select></label>
-          {populationScope === 'sailors' ? <label>Marins<select aria-label="Marins du rapport" multiple onChange={(event) => setPersonIds(selectedNumbers(event.target))} value={personIds.map(String)}>{people.map((person) => <option key={person.personId} value={person.personId}>{person.lastName} {person.firstName} · {person.functionLabel}</option>)}</select></label> : null}
-          {populationScope === 'watch' ? <label>Bordées<select aria-label="Bordées du rapport" multiple onChange={(event) => setWatchGroups(selectedStrings(event.target))} value={watchGroups}>{availableWatchGroups.map((watch) => <option key={watch} value={watch}>{watch}</option>)}</select></label> : null}
-        </fieldset>
-        <fieldset>
-          <legend>Navires</legend>
-          <label>Sélection multiple<select aria-label="Navires du rapport" multiple onChange={(event) => setVesselIds(selectedNumbers(event.target))} value={vesselIds.map(String)}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
-          <small>Aucune sélection signifie : tous les navires.</small>
-        </fieldset>
+          <fieldset className="working-time-report-step working-time-report-scope-step">
+            <legend><span>2</span>Périmètre</legend>
+            <label className="working-time-report-population-scope">Population<select value={populationScope} onChange={(event) => { setPopulationScope(event.target.value as PopulationScope); setOpenMultiSelect(null); }}><option value="company">Compagnie entière</option><option value="sailors">Marins sélectionnés</option><option value="watch">Bordées sélectionnées</option></select></label>
+            <div className="working-time-report-scope-grid">
+              <div>
+                {populationScope === 'sailors' ? (
+                  <WorkingTimeReportMultiSelect
+                    emptyLabel="Aucun marin sélectionné"
+                    isOpen={openMultiSelect === 'people'}
+                    label="Marins"
+                    onChange={(ids) => setPersonIds(ids.map(Number))}
+                    onOpenChange={(open) => setOpenMultiSelect(open ? 'people' : null)}
+                    options={peopleMultiSelectOptions}
+                    searchPlaceholder="Rechercher un marin…"
+                    selectedIds={personIds.map(String)}
+                    selectedLabel={(count) => `${count} marin${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''}`}
+                  />
+                ) : populationScope === 'watch' ? (
+                  <label>Bordées<select aria-label="Bordées du rapport" multiple onChange={(event) => setWatchGroups(selectedStrings(event.target))} value={watchGroups}>{availableWatchGroups.map((watch) => <option key={watch} value={watch}>{watch}</option>)}</select></label>
+                ) : <p className="working-time-report-scope-note"><strong>Marins</strong><span>Tous les marins accessibles sont inclus.</span></p>}
+              </div>
+              <WorkingTimeReportMultiSelect
+                allIncludedWhenEmpty
+                emptyLabel="Tous les navires"
+                isOpen={openMultiSelect === 'vessels'}
+                label="Navires"
+                onChange={(ids) => setVesselIds(ids.map(Number))}
+                onOpenChange={(open) => setOpenMultiSelect(open ? 'vessels' : null)}
+                options={vesselMultiSelectOptions}
+                searchPlaceholder="Rechercher un navire…"
+                selectedIds={vesselIds.map(String)}
+                selectedLabel={(count) => `${count} navire${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''}`}
+              />
+            </div>
+          </fieldset>
+
+          <fieldset className="working-time-report-step working-time-report-metrics">
+            <legend><span>3</span>Indicateurs inclus</legend>
+            {METRICS.map((metric) => <label key={metric.key}><input checked={metricKeys.includes(metric.key)} onChange={(event) => setMetricKeys((current) => event.target.checked ? [...current, metric.key] : current.filter((key) => key !== metric.key))} type="checkbox" />{metric.label}</label>)}
+          </fieldset>
+        </div>
+
+        <aside aria-live="polite" className="working-time-report-summary">
+          <header><FileText aria-hidden="true" size={28} /><h3>Rapport à générer</h3></header>
+          <dl>
+            <div><CalendarDays aria-hidden="true" size={24} /><dt>Période</dt><dd>{periodSummary}</dd></div>
+            <div><Users aria-hidden="true" size={24} /><dt>Population</dt><dd>{populationSummary}</dd></div>
+            <div><ShipWheel aria-hidden="true" size={24} /><dt>Navires</dt><dd>{vesselIds.length ? `${vesselIds.length} navire${vesselIds.length > 1 ? 's' : ''}` : 'Tous les navires'}</dd></div>
+            <div><BarChart3 aria-hidden="true" size={24} /><dt>Indicateurs</dt><dd>{metricKeys.length} indicateur{metricKeys.length > 1 ? 's' : ''} inclus</dd></div>
+          </dl>
+          <p><ShieldAlert aria-hidden="true" size={18} />La génération peut prendre quelques instants selon le périmètre sélectionné.</p>
+        </aside>
       </div>
 
+      {error ? <p className="working-time-message is-error" role="alert">{error}</p> : null}
       <div className="working-time-report-actions">
         <span><ShieldAlert aria-hidden="true" size={16} />Méthodologie : {isLoadingOptions ? 'Chargement…' : methodologyLabel}</span>
         <button disabled={isGenerating || isLoadingOptions} onClick={() => void generateReport()} type="button"><RefreshCw aria-hidden="true" className={isGenerating ? 'is-spinning' : ''} size={17} />{isGenerating ? 'Génération…' : 'Générer le rapport'}</button>
         <button disabled={!report || isExporting} onClick={() => void exportPdf()} type="button"><Download aria-hidden="true" size={17} />{isExporting ? 'Export…' : 'Exporter le PDF'}</button>
       </div>
-      {error ? <p className="working-time-message is-error" role="alert">{error}</p> : null}
 
       {report ? <article className="working-time-report-preview">
         <header>
