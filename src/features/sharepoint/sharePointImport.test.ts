@@ -904,20 +904,29 @@ describe('SharePoint import mapping', () => {
           vessel_name: 'COTENTIN',
           category_key: 'audit',
           action_type: 'Audit',
+          action_type_key: null,
           audit_type: 'Interne',
           title: 'Audit pont COTENTIN',
           status: 'Ouvert',
           priority_label: 'Haute',
           opened_on: '2026-07-03',
           due_on: '2026-07-31',
+          closed_on: null,
+          issuer_name: null,
           owner_name: 'Arthur MAREST',
           auditor_name: 'Jean MARTIN',
           description: 'Controle pont',
           corrective_action: 'Remplacer garde-corps',
+          deviation_type: null,
+          level_label: null,
+          location_detail: null,
+          realized_action: null,
+          anomaly_cause: null,
+          comments: null,
           source_label: 'sharepoint',
           sharepoint_site_url: 'https://bbtm668.sharepoint.com/sites/QHSE',
-          sharepoint_list_id: null,
-          sharepoint_list_title: 'Audit',
+          sharepoint_list_id: '8a1a31f5-e212-4a03-ae6b-bcc855ea029b',
+          sharepoint_list_title: "Plan d'Action",
           sharepoint_item_id: '810',
           sharepoint_unique_id: 'audit-810',
           sharepoint_file_ref: null,
@@ -926,6 +935,42 @@ describe('SharePoint import mapping', () => {
         },
       ],
     });
+  });
+
+  it('maps Indicateurs QHSE LTI rows into the unified action and exposure KPI model', () => {
+    const batch = buildSharePointUpsertBatch('list-indicateurs-qhse', [{
+      id: '35',
+      fields: {
+        ID: 35,
+        UniqueId: 'qhse-35',
+        Modified: '2026-08-01T09:30:00Z',
+        Title: 'Chute sur le pont arrière',
+        Typedenregistrement: 'Lost Time Injury',
+        NavireId: 12,
+        Statut: 'Ecart Non Soldé',
+        Datedel_x00e9_v_x00e8_nement: '2026-07-29T00:00:00Z',
+        Emetteur: 'Christophe MINASSIAN',
+        Descriptiondel_x00e9_v_x00e8_nem: 'Glissade pendant une manutention',
+        ActionPr_x00e9_ventive_x002d_Cor: 'Remplacer le revêtement antidérapant',
+        Nb_x0020_Jours_x0020_d_x0027_Arr: 10,
+        LieudelAccident: 'Pont arrière',
+      },
+    }]);
+
+    expect(batch.targetTable).toBe('action_items');
+    expect(batch.conflictColumns).toEqual(['sharepoint_list_id', 'sharepoint_item_id']);
+    expect(batch.rows[0]).toEqual(expect.objectContaining({
+      category_key: 'hse_event',
+      action_type: 'Lost Time Injury',
+      action_type_key: 'lost_time_injury',
+      title: 'Chute sur le pont arrière',
+      opened_on: '2026-07-29',
+      issuer_name: 'Christophe MINASSIAN',
+      lost_days: 10,
+      sharepoint_list_id: '833e4b0f-0f5a-4e9b-b1b0-885224a41282',
+      sharepoint_item_id: '35',
+    }));
+    expect(batch.rows[0].safety_event_details).toEqual(expect.objectContaining({ accidentLocation: 'Pont arrière' }));
   });
 
   it('maps Fiche de Progres library items to action document upserts', () => {

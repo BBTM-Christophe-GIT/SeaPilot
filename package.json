@@ -17,6 +17,7 @@
     "export:sharepoint:rh-full": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-rh-personnel-bbtm --source-key library-brevets-visites-medicales --output .data/sharepoint-rh-full.json",
     "export:sharepoint:planning": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-bbtm-flotte --source-key list-kpi-projets-planning --source-key list-smtr-journees-planning --source-key list-smtr-planning-periodes --output .data/sharepoint-planning-historical.json",
     "export:sharepoint:dpr": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-indicateurs-projet-p144emdt --source-key library-dpr --output .data/sharepoint-dpr-full.json",
+    "export:sharepoint:action-plan": "node --experimental-strip-types scripts/export-sharepoint-list.ts --source-key list-audit --source-key list-indicateurs-qhse --output .data/sharepoint-action-plan-qhse.json",
     "convert:sharepoint:dpr-atom": "node --experimental-strip-types scripts/convert-sharepoint-dpr-atom.ts",
     "migrate:dpr": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts",
     "migrate:dpr:dry-run": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode dry-run",

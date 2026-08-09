@@ -1,646 +1,319 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { AlertTriangle, CheckSquare, FileText, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import {
+  AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock3, Database,
+  FileImage, History, Plus, RefreshCw, Search, ShieldCheck, Upload, X,
+} from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { fetchProjectCatalogOptions, type ProjectCatalogOption } from '../projects/projectMutations';
 import {
-  buildActionPlanMetrics,
-  createActionItem,
-  fetchActionPlanData,
-  type ActionDocumentRecord,
-  type ActionItemRecord,
-  type ActionPlanData,
+  buildActionPlanMetrics, createActionItem, fetchActionPlanData, isActionClosed, normalizeActionLabel,
+  updateActionItemTreatment, type ActionItemRecord, type ActionPlanData, type ActionTreatmentInput,
   type CreateActionItemInput,
 } from './actionPlanQueries';
+import './actionPlan.css';
 
-interface ActionPlanPageProps {
-  client?: SupabaseClient;
-  roles?: RoleKey[];
-}
+interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
+type ActionPlanTab = 'actions' | 'indicators' | 'sources';
+type CreateStep = 'title' | 'issuer' | 'category' | 'proposal' | 'photos';
 
-interface ActionFilterState {
-  search: string;
-  status: string;
-  priority: string;
-  vesselName: string;
-  projectCode: string;
-  dateFrom: string;
-  dateTo: string;
-}
+interface Filters { search: string; status: string; vessel: string; actionType: string; deviationType: string }
 
 const EMPTY_DATA: ActionPlanData = {
-  actions: [],
-  documents: [],
+  actions: [], documents: [], actionTypes: [], vessels: [], exposureHours: 0, hseKpis: null,
 };
 
-const EMPTY_FILTERS: ActionFilterState = {
-  dateFrom: '',
-  dateTo: '',
-  priority: '',
-  projectCode: '',
-  search: '',
-  status: '',
-  vesselName: '',
-};
+const EMPTY_FILTERS: Filters = { search: '', status: '', vessel: '', actionType: '', deviationType: '' };
+const DEVIATION_TYPES = [
+  'Non Conformité Majeure', 'Non Conformité Mineure', 'Prescription', "Proposition d'Amélioration",
+  'Recommandation', 'Remarque', 'Remarque Positive',
+];
 
-const EMPTY_FORM: CreateActionItemInput = {
-  actionType: '',
-  auditType: '',
-  categoryKey: 'action',
-  correctiveAction: '',
-  description: '',
-  dueOn: '',
-  openedOn: '',
-  ownerName: '',
-  auditorName: '',
-  priorityLabel: 'Normale',
-  projectId: null,
-  projectCode: '',
-  projectTitle: '',
-  status: 'Ouvert',
-  title: '',
-  vesselName: '',
-};
+function newActionForm(issuerName = ''): CreateActionItemInput {
+  return {
+    title: '', issuerName, vesselId: null, vesselName: '', actionTypeKey: '', actionType: '',
+    deviationType: 'Remarque', openedOn: new Date().toISOString().slice(0, 10), dueOn: '',
+    ownerName: '', description: '', correctiveAction: '', lostDays: 0,
+  };
+}
 
-const ACTION_STATUS_OPTIONS = ['Ouvert', 'En cours', 'A verifier', 'Clos', 'Annule'];
-const ACTION_PRIORITY_OPTIONS = ['Basse', 'Normale', 'Haute', 'Critique'];
-
-function canManageActionPlan(roles: RoleKey[]): boolean {
+function canManage(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
 
-function normalizeSearchValue(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+function display(value: string, fallback = 'Non renseigné'): string { return value || fallback }
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-function uniqueSorted(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+function formatDate(value: string): string {
+  if (!value) return 'Sans échéance';
+  const [year, month, day] = value.slice(0, 10).split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
-function displayText(value: string): string {
-  return value || '-';
+function formatHours(value: number): string {
+  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value)} h`;
 }
 
-function sortActions(actions: ActionItemRecord[]): ActionItemRecord[] {
-  return [...actions].sort(
-    (left, right) =>
-      left.dueOn.localeCompare(right.dueOn) ||
-      left.openedOn.localeCompare(right.openedOn) ||
-      left.title.localeCompare(right.title, 'fr'),
+function actionTypeLabel(action: ActionItemRecord): string {
+  return action.actionType || action.auditType || 'Autre action';
+}
+
+function actionMatches(action: ActionItemRecord, filters: Filters): boolean {
+  if (filters.status === 'open' && isActionClosed(action)) return false;
+  if (filters.status === 'closed' && !isActionClosed(action)) return false;
+  if (filters.vessel && action.vesselName !== filters.vessel) return false;
+  if (filters.actionType && actionTypeLabel(action) !== filters.actionType) return false;
+  if (filters.deviationType && action.deviationType !== filters.deviationType) return false;
+  if (!filters.search) return true;
+  const haystack = normalizeActionLabel([
+    action.title, action.vesselName, actionTypeLabel(action), action.deviationType, action.ownerName,
+    action.issuerName, action.correctiveAction, action.comments, action.description,
+  ].join(' '));
+  return haystack.includes(normalizeActionLabel(filters.search));
+}
+
+function severityClass(value: string): string {
+  const normalized = normalizeActionLabel(value);
+  if (normalized.includes('majeure') || normalized.includes('deces') || normalized.includes('fatal')) return 'is-critical';
+  if (normalized.includes('mineure') || normalized.includes('prescription')) return 'is-warning';
+  if (normalized.includes('positive')) return 'is-positive';
+  return 'is-neutral';
+}
+
+function MetricCard({ icon, label, value, tone, detail }: {
+  icon: ReactNode; label: string; value: string | number; tone: string; detail: string;
+}) {
+  return (
+    <article className={`action-plan-metric ${tone}`} aria-label={label}>
+      <span className="action-plan-metric-icon">{icon}</span>
+      <span><small>{label}</small><strong>{value}</strong><em>{detail}</em></span>
+    </article>
   );
 }
 
-function sortDocuments(documents: ActionDocumentRecord[]): ActionDocumentRecord[] {
-  return [...documents].sort(
-    (left, right) => left.actionTitle.localeCompare(right.actionTitle, 'fr') || left.title.localeCompare(right.title, 'fr'),
-  );
-}
-
-function actionDateForFilter(action: ActionItemRecord): string {
-  return action.dueOn || action.openedOn;
-}
-
-function actionMatchesStructuredFilters(action: ActionItemRecord, filters: ActionFilterState): boolean {
-  if (filters.status && action.status !== filters.status) {
-    return false;
-  }
-
-  if (filters.priority && action.priorityLabel !== filters.priority) {
-    return false;
-  }
-
-  if (filters.vesselName && action.vesselName !== filters.vesselName) {
-    return false;
-  }
-
-  if (filters.projectCode && action.projectCode !== filters.projectCode) {
-    return false;
-  }
-
-  const actionDate = actionDateForFilter(action);
-
-  if (filters.dateFrom && actionDate && actionDate < filters.dateFrom) {
-    return false;
-  }
-
-  if (filters.dateTo && actionDate && actionDate > filters.dateTo) {
-    return false;
-  }
-
-  return true;
-}
-
-function actionMatchesFilters(action: ActionItemRecord, filters: ActionFilterState): boolean {
-  if (!actionMatchesStructuredFilters(action, filters)) {
-    return false;
-  }
-
-  if (!filters.search) {
-    return true;
-  }
-
-  const searchable = normalizeSearchValue(
-    [
-      action.title,
-      action.actionType,
-      action.auditType,
-      action.categoryKey,
-      action.status,
-      action.priorityLabel,
-      action.projectCode,
-      action.projectTitle,
-      action.vesselName,
-      action.ownerName,
-      action.auditorName,
-      action.description,
-      action.correctiveAction,
-      action.sourceLabel,
-    ].join(' '),
-  );
-
-  return searchable.includes(normalizeSearchValue(filters.search));
-}
-
-function findDocumentAction(document: ActionDocumentRecord, actions: ActionItemRecord[]): ActionItemRecord | undefined {
-  return actions.find((action) => (document.actionItemId && action.id === document.actionItemId) || document.actionTitle === action.title);
-}
-
-function documentMatchesFilters(
-  document: ActionDocumentRecord,
-  actions: ActionItemRecord[],
-  filters: ActionFilterState,
-): boolean {
-  const relatedAction = findDocumentAction(document, actions);
-  const hasStructuredFilters = Boolean(
-    filters.status || filters.priority || filters.vesselName || filters.projectCode || filters.dateFrom || filters.dateTo,
-  );
-
-  if (hasStructuredFilters && (!relatedAction || !actionMatchesStructuredFilters(relatedAction, filters))) {
-    return false;
-  }
-
-  if (!filters.search) {
-    return true;
-  }
-
-  const searchable = normalizeSearchValue(
-    [
-      document.title,
-      document.actionTitle,
-      document.categoryKey,
-      document.notes,
-      document.sourceLabel,
-      relatedAction?.title,
-      relatedAction?.description,
-      relatedAction?.correctiveAction,
-      relatedAction?.projectCode,
-      relatedAction?.vesselName,
-    ].join(' '),
-  );
-
-  return searchable.includes(normalizeSearchValue(filters.search));
-}
-
-function renderDocumentRows(documents: ActionDocumentRecord[]) {
-  return documents.map((document) => (
-    <tr key={document.id}>
-      <th scope="row">
-        <span className="action-title">
-          <FileText aria-hidden="true" size={16} />
-          {document.title}
-        </span>
-        {document.notes ? <small>{document.notes}</small> : null}
-      </th>
-      <td>{displayText(document.actionTitle)}</td>
-      <td>{displayText(document.categoryKey)}</td>
-      <td>{displayText(document.sourceLabel)}</td>
-      <td>
-        {document.fileUrl ? (
-          <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">
-            {`Ouvrir le fichier ${document.title}`}
-          </a>
-        ) : (
-          '-'
-        )}
-      </td>
-    </tr>
-  ));
-}
-
-export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
-  const outletContext = useOutletContext<AppShellOutletContext | undefined>();
-  const effectiveClient = client || outletContext?.client || supabase;
-  const effectiveRoles = roles || outletContext?.roles || [];
-  const isManager = canManageActionPlan(effectiveRoles);
-  const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
-  const [filters, setFilters] = useState<ActionFilterState>(EMPTY_FILTERS);
-  const [actionForm, setActionForm] = useState<CreateActionItemInput>(EMPTY_FORM);
-  const [catalogProjects, setCatalogProjects] = useState<ProjectCatalogOption[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+function CreateActionDialog({
+  open, issuerName, data, onClose, onCreated, client,
+}: {
+  open: boolean; issuerName: string; data: ActionPlanData; onClose(): void;
+  onCreated(action: ActionItemRecord): void; client: SupabaseClient;
+}) {
+  const [step, setStep] = useState<CreateStep>('title');
+  const [form, setForm] = useState<CreateActionItemInput>(() => newActionForm(issuerName));
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
+  useEffect(() => { if (open) setForm((current) => ({ ...current, issuerName: current.issuerName || issuerName })); }, [issuerName, open]);
+  if (!open) return null;
 
-    setIsLoading(true);
-    setErrorMessage(null);
+  const steps: Array<[CreateStep, string]> = [
+    ['title', 'Titre'], ['issuer', 'Émetteur'], ['category', 'Catégorie'],
+    ['proposal', "Proposition d'Action"], ['photos', 'Photos'],
+  ];
 
-    Promise.all([
-      fetchActionPlanData(effectiveClient),
-      isManager ? fetchProjectCatalogOptions(effectiveClient).catch(() => []) : Promise.resolve([]),
-    ])
-      .then(([loadedData, loadedProjects]) => {
-        if (isMounted) {
-          setData({
-            actions: sortActions(loadedData.actions),
-            documents: sortDocuments(loadedData.documents),
-          });
-          setCatalogProjects(loadedProjects);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setErrorMessage("Impossible de charger le plan d'action.");
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [effectiveClient, isManager]);
-
-  const filteredActions = useMemo(
-    () => data.actions.filter((action) => actionMatchesFilters(action, filters)),
-    [data.actions, filters],
-  );
-  const filteredDocuments = useMemo(
-    () => data.documents.filter((document) => documentMatchesFilters(document, data.actions, filters)),
-    [data.actions, data.documents, filters],
-  );
-  const metrics = useMemo(
-    () => buildActionPlanMetrics(filteredActions, filteredDocuments),
-    [filteredActions, filteredDocuments],
-  );
-  const statusOptions = useMemo(
-    () => uniqueSorted([...data.actions.map((action) => action.status), ...ACTION_STATUS_OPTIONS]),
-    [data.actions],
-  );
-  const priorityOptions = useMemo(
-    () => uniqueSorted([...data.actions.map((action) => action.priorityLabel), ...ACTION_PRIORITY_OPTIONS]),
-    [data.actions],
-  );
-  const vesselOptions = useMemo(() => uniqueSorted(data.actions.map((action) => action.vesselName)), [data.actions]);
-  const projectOptions = useMemo(
-    () => uniqueSorted([...data.actions.map((action) => action.projectCode), ...catalogProjects.map((project) => project.projectCode)]),
-    [catalogProjects, data.actions],
-  );
-  const hasActiveFilters = Object.values(filters).some(Boolean);
-  const hasVisibleData = filteredActions.length > 0 || filteredDocuments.length > 0;
-
-  function updateFilterValue(key: keyof ActionFilterState, value: string) {
-    setFilters((currentFilters) => ({
-      ...currentFilters,
-      [key]: value,
-    }));
+  function update<K extends keyof CreateActionItemInput>(key: K, value: CreateActionItemInput[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function updateFormValue(key: keyof CreateActionItemInput, value: string | number | null) {
-    setActionForm((currentForm) => ({
-      ...currentForm,
-      [key]: value,
-    }));
-  }
-
-  function selectCatalogProject(projectId: string) {
-    const project = catalogProjects.find((option) => option.id === Number(projectId));
-    setActionForm((currentForm) => ({
-      ...currentForm,
-      projectId: project?.id ?? null,
-      projectCode: project?.projectCode || '',
-      projectTitle: project?.title || '',
-    }));
-  }
-
-  async function handleCreateAction(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatusMessage(null);
-    setErrorMessage(null);
-    setIsSaving(true);
-
-    try {
-      const action = await createActionItem(effectiveClient, actionForm);
-      setData((currentData) => ({
-        ...currentData,
-        actions: sortActions([...currentData.actions, action]),
-      }));
-      setActionForm(EMPTY_FORM);
-      setStatusMessage('Action ajoutee.');
-    } catch {
-      setErrorMessage("Impossible d'ajouter cette action.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  if (isLoading) {
-    return <div className="admin-state">Chargement du plan d'action...</div>;
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setError(''); setIsSaving(true);
+    try { onCreated(await createActionItem(client, form, photos)); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Impossible d'enregistrer cette action."); }
+    finally { setIsSaving(false); }
   }
 
   return (
-    <section className="action-page">
-      <div className="admin-header">
-        <div>
-          <p className="module-family">QHSE</p>
-          <h1>Plan d'action</h1>
-        </div>
-        <div className="action-summary-grid">
-          <div className="planning-summary" aria-label="Actions ouvertes">
-            <CheckSquare aria-hidden="true" size={18} />
-            <strong>{metrics.openActionCount}</strong>
-            <span>ouvertes</span>
+    <div className="action-plan-dialog-backdrop" role="presentation">
+      <section className="action-plan-dialog" role="dialog" aria-modal="true" aria-labelledby="new-action-title">
+        <header><span>Création</span><h2 id="new-action-title">Nouvelle Action</h2>
+          <button aria-label="Fermer" onClick={onClose} type="button"><X size={22} /></button></header>
+        <form onSubmit={submit}>
+          <aside aria-label="Sections Action"><small>Sections</small><strong>Action</strong>
+            {steps.map(([key, label], index) => <button className={step === key ? 'is-active' : ''} key={key}
+              onClick={() => setStep(key)} type="button"><span>{index + 1}</span>{label}</button>)}
+          </aside>
+          <div className="action-plan-dialog-content">
+            {step === 'title' && <section><h3>Titre</h3><label>Constat <b>*</b>
+              <textarea autoFocus value={form.title} onChange={(e) => update('title', e.target.value)} /></label>
+              <label>Description complémentaire<textarea value={form.description} onChange={(e) => update('description', e.target.value)} /></label></section>}
+            {step === 'issuer' && <section><h3>Émetteur</h3><div className="action-plan-form-grid">
+              <label>Émetteur <input required value={form.issuerName} onChange={(e) => update('issuerName', e.target.value)} /></label>
+              <label>Navire / lieu <select value={form.vesselId || ''} onChange={(e) => { const vessel = data.vessels.find((v) => v.id === Number(e.target.value)); update('vesselId', vessel?.id || null); update('vesselName', vessel?.name || ''); }}>
+                <option value="">Sélectionner un navire</option>{data.vessels.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+              <label>Responsable du traitement<input value={form.ownerName} onChange={(e) => update('ownerName', e.target.value)} /></label>
+              <label>Date du constat<input type="date" value={form.openedOn} onChange={(e) => update('openedOn', e.target.value)} /></label>
+              <label>À traiter avant<input type="date" value={form.dueOn} onChange={(e) => update('dueOn', e.target.value)} /></label>
+            </div></section>}
+            {step === 'category' && <section><h3>Catégorie</h3><div className="action-plan-form-grid">
+              <label>Type d'action <b>*</b><select required value={form.actionTypeKey} onChange={(e) => { const type = data.actionTypes.find((item) => item.key === e.target.value); update('actionTypeKey', type?.key || ''); update('actionType', type?.label || ''); }}>
+                <option value="">Sélectionner un type</option>
+                <optgroup label="Actions, audits et visites">{data.actionTypes.filter((t) => t.family !== 'event').map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup>
+                <optgroup label="Événements liés aux indicateurs HSE">{data.actionTypes.filter((t) => t.family === 'event').map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup>
+              </select></label>
+              <label>Type d'écart<select value={form.deviationType} onChange={(e) => update('deviationType', e.target.value)}>{DEVIATION_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>
+              {data.actionTypes.find((t) => t.key === form.actionTypeKey)?.tracksExposureRate && <label>Jours d'arrêt<input min="0" step="0.5" type="number" value={form.lostDays} onChange={(e) => update('lostDays', Number(e.target.value))} /></label>}
+            </div><p className="action-plan-link-note"><Clock3 size={16} />Les événements HSE comptabilisés alimentent automatiquement les taux calculés à partir des heures d’exposition.</p></section>}
+            {step === 'proposal' && <section><h3>Proposition d'Action</h3><label>Proposition d'action<textarea value={form.correctiveAction} onChange={(e) => update('correctiveAction', e.target.value)} /></label></section>}
+            {step === 'photos' && <section><h3>Photos</h3><label className="action-plan-file-drop"><Upload size={24} /><strong>Ajouter jusqu'à deux photos</strong><span>PNG, JPEG, WebP ou HEIC · 10 Mo maximum</span><input accept="image/png,image/jpeg,image/webp,image/heic,image/heif" multiple type="file" onChange={(e) => setPhotos(Array.from(e.target.files || []).slice(0, 2))} /></label>
+              {photos.length > 0 && <ul className="action-plan-file-list">{photos.map((file) => <li key={`${file.name}-${file.size}`}><FileImage size={15} />{file.name}</li>)}</ul>}</section>}
+            {error && <p className="action-plan-message is-error" role="alert">{error}</p>}
           </div>
-          <div className="planning-summary" aria-label="Actions haute priorite">
-            <AlertTriangle aria-hidden="true" size={18} />
-            <strong>{metrics.highPriorityCount}</strong>
-            <span>priorite</span>
-          </div>
-          <div className="planning-summary" aria-label="Echeances actions">
-            <AlertTriangle aria-hidden="true" size={18} />
-            <strong>{metrics.dueActionCount}</strong>
-            <span>echeances</span>
-          </div>
-          <div className="planning-summary" aria-label="Fiches progres">
-            <FileText aria-hidden="true" size={18} />
-            <strong>{metrics.documentCount}</strong>
-            <span>fiches</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="admin-notices" aria-live="polite">
-        {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      </div>
-
-      <div className="planning-filter-panel action-filter-panel" aria-label="Filtres actions">
-        <label>
-          Recherche actions
-          <input
-            onChange={(event) => updateFilterValue('search', event.target.value)}
-            placeholder="Action, navire, correctif..."
-            value={filters.search}
-          />
-        </label>
-        <label>
-          Filtre statut action
-          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
-            <option value="">Tous les statuts</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre priorite action
-          <select onChange={(event) => updateFilterValue('priority', event.target.value)} value={filters.priority}>
-            <option value="">Toutes les priorites</option>
-            {priorityOptions.map((priority) => (
-              <option key={priority} value={priority}>
-                {priority}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre navire action
-          <select onChange={(event) => updateFilterValue('vesselName', event.target.value)} value={filters.vesselName}>
-            <option value="">Tous les navires</option>
-            {vesselOptions.map((vesselName) => (
-              <option key={vesselName} value={vesselName}>
-                {vesselName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre projet action
-          <select onChange={(event) => updateFilterValue('projectCode', event.target.value)} value={filters.projectCode}>
-            <option value="">Tous les projets</option>
-            {projectOptions.map((projectCode) => (
-              <option key={projectCode} value={projectCode}>
-                {projectCode}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Action depuis
-          <input onChange={(event) => updateFilterValue('dateFrom', event.target.value)} type="date" value={filters.dateFrom} />
-        </label>
-        <label>
-          Action jusqu'au
-          <input onChange={(event) => updateFilterValue('dateTo', event.target.value)} type="date" value={filters.dateTo} />
-        </label>
-        <button disabled={!hasActiveFilters} onClick={() => setFilters(EMPTY_FILTERS)} type="button">
-          Reinitialiser
-        </button>
-      </div>
-
-      <div className="planning-toolbar">
-        <span className={isManager ? 'planning-mode-write' : 'planning-mode-read'}>
-          {isManager ? 'Modification' : 'Lecture seule'}
-        </span>
-      </div>
-
-      {isManager ? (
-        <form className="planning-form action-form" onSubmit={handleCreateAction}>
-          <div className="planning-form-title">
-            <Upload aria-hidden="true" size={18} />
-            <strong>Nouvelle action</strong>
-          </div>
-          <label>
-            Titre action
-            <input onChange={(event) => updateFormValue('title', event.target.value)} required value={actionForm.title} />
-          </label>
-          <label>
-            Categorie action
-            <input onChange={(event) => updateFormValue('categoryKey', event.target.value)} value={actionForm.categoryKey} />
-          </label>
-          <label>
-            Type action
-            <input onChange={(event) => updateFormValue('actionType', event.target.value)} value={actionForm.actionType} />
-          </label>
-          <label>
-            Type audit
-            <input onChange={(event) => updateFormValue('auditType', event.target.value)} value={actionForm.auditType} />
-          </label>
-          <label>
-            Projet du catalogue action
-            <select onChange={(event) => selectCatalogProject(event.target.value)} value={actionForm.projectId ?? ''}>
-              <option value="">Aucun projet</option>
-              {catalogProjects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} - {project.title}</option>)}
-            </select>
-          </label>
-          <label>
-            Navire action
-            <input onChange={(event) => updateFormValue('vesselName', event.target.value)} value={actionForm.vesselName} />
-          </label>
-          <label>
-            Ouverture action
-            <input onChange={(event) => updateFormValue('openedOn', event.target.value)} type="date" value={actionForm.openedOn} />
-          </label>
-          <label>
-            Echeance action
-            <input onChange={(event) => updateFormValue('dueOn', event.target.value)} type="date" value={actionForm.dueOn} />
-          </label>
-          <label>
-            Statut action
-            <select onChange={(event) => updateFormValue('status', event.target.value)} value={actionForm.status}>
-              {ACTION_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Priorite action
-            <select onChange={(event) => updateFormValue('priorityLabel', event.target.value)} value={actionForm.priorityLabel}>
-              {ACTION_PRIORITY_OPTIONS.map((priority) => (
-                <option key={priority} value={priority}>
-                  {priority}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Responsable action
-            <input onChange={(event) => updateFormValue('ownerName', event.target.value)} value={actionForm.ownerName} />
-          </label>
-          <label>
-            Auditeur action
-            <input onChange={(event) => updateFormValue('auditorName', event.target.value)} value={actionForm.auditorName} />
-          </label>
-          <label>
-            Description action
-            <input onChange={(event) => updateFormValue('description', event.target.value)} value={actionForm.description} />
-          </label>
-          <label>
-            Correctif action
-            <input
-              onChange={(event) => updateFormValue('correctiveAction', event.target.value)}
-              value={actionForm.correctiveAction}
-            />
-          </label>
-          <button disabled={isSaving} type="submit">
-            Ajouter action
-          </button>
+          <footer><button className="is-secondary" onClick={onClose} type="button">Annuler</button><button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
         </form>
-      ) : null}
-
-      {!hasVisibleData ? (
-        <div className="admin-state">Aucune action a afficher.</div>
-      ) : (
-        <div className="action-sections">
-          {filteredActions.length > 0 ? (
-            <section className="action-panel" aria-labelledby="action-list-title">
-              <div className="procedures-section-heading">
-                <h2 id="action-list-title">Actions et audits</h2>
-                <span>{filteredActions.length} action(s)</span>
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table action-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Action</th>
-                      <th scope="col">Projet</th>
-                      <th scope="col">Navire</th>
-                      <th scope="col">Echeance</th>
-                      <th scope="col">Responsable</th>
-                      <th scope="col">Priorite</th>
-                      <th scope="col">Statut</th>
-                      <th scope="col">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredActions.map((action) => (
-                      <tr key={action.id}>
-                        <th scope="row">
-                          <span className="action-title">
-                            <CheckSquare aria-hidden="true" size={16} />
-                            {action.title}
-                          </span>
-                          {action.description ? <small>{action.description}</small> : null}
-                          {action.correctiveAction ? <small>{action.correctiveAction}</small> : null}
-                        </th>
-                        <td>
-                          <strong>{displayText(action.projectCode)}</strong>
-                          <small>{displayText(action.projectTitle)}</small>
-                        </td>
-                        <td>{displayText(action.vesselName)}</td>
-                        <td>
-                          {displayText(action.dueOn)}
-                          {action.openedOn ? <small>{`Ouvert ${action.openedOn}`}</small> : null}
-                        </td>
-                        <td>
-                          {displayText(action.ownerName)}
-                          {action.auditorName ? <small>{`Audit ${action.auditorName}`}</small> : null}
-                        </td>
-                        <td>
-                          <span className="action-priority-chip">{displayText(action.priorityLabel)}</span>
-                        </td>
-                        <td>
-                          <span className="action-status-chip">{displayText(action.status)}</span>
-                        </td>
-                        <td>{displayText(action.sourceLabel)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          {filteredDocuments.length > 0 ? (
-            <section className="action-panel" aria-labelledby="action-documents-title">
-              <div className="procedures-section-heading">
-                <h2 id="action-documents-title">Fiches de progres</h2>
-                <span>{filteredDocuments.length} fichier(s)</span>
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table action-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Fiche</th>
-                      <th scope="col">Action</th>
-                      <th scope="col">Categorie</th>
-                      <th scope="col">Source</th>
-                      <th scope="col">Fichier</th>
-                    </tr>
-                  </thead>
-                  <tbody>{renderDocumentRows(filteredDocuments)}</tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-        </div>
-      )}
-    </section>
+      </section>
+    </div>
   );
+}
+
+function TreatmentDialog({ action, client, onClose, onSaved }: {
+  action: ActionItemRecord | null; client: SupabaseClient; onClose(): void; onSaved(action: ActionItemRecord): void;
+}) {
+  const [input, setInput] = useState<ActionTreatmentInput>({ comments: '', realizedAction: '', closeAction: false });
+  const [photo, setPhoto] = useState<File>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { if (action) setInput({ comments: action.comments, realizedAction: action.realizedAction, closeAction: false }); }, [action]);
+  if (!action) return null;
+
+  async function save(closeAction: boolean) {
+    setSaving(true); setError('');
+    try { onSaved(await updateActionItemTreatment(client, action!, { ...input, closeAction }, photo)); }
+    catch { setError("Impossible d'enregistrer le traitement."); }
+    finally { setSaving(false); }
+  }
+
+  return <div className="action-plan-dialog-backdrop" role="presentation"><section className="action-plan-treatment" role="dialog" aria-modal="true" aria-labelledby="treatment-title">
+    <header><span>Traitement</span><h2 id="treatment-title">{action.title}</h2><button aria-label="Fermer" onClick={onClose}><X size={22} /></button></header>
+    <div className="action-plan-treatment-type">{actionTypeLabel(action)}</div>
+    <label>Action réalisée<textarea value={input.realizedAction} onChange={(e) => setInput((current) => ({ ...current, realizedAction: e.target.value }))} /></label>
+    <label>Commentaire<textarea value={input.comments} onChange={(e) => setInput((current) => ({ ...current, comments: e.target.value }))} /></label>
+    <label className="action-plan-file-drop is-compact"><Upload size={20} /><strong>Photo de clôture</strong><span>{photo?.name || 'Choisir un fichier'}</span><input accept="image/*" type="file" onChange={(e) => setPhoto(e.target.files?.[0])} /></label>
+    {error && <p className="action-plan-message is-error">{error}</p>}
+    <footer><button className="is-secondary" disabled={saving} onClick={onClose}>Annuler</button><button className="is-secondary" disabled={saving} onClick={() => void save(false)}>Enregistrer</button><button disabled={saving} onClick={() => void save(true)}>Clôturer l'Action</button></footer>
+  </section></div>;
+}
+
+export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
+  const context = useOutletContext<AppShellOutletContext | undefined>();
+  const effectiveClient = client || context?.client || supabase;
+  const effectiveRoles = roles || context?.roles || [];
+  const profileName = context?.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '';
+  const isManager = canManage(effectiveRoles);
+  const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [activeTab, setActiveTab] = useState<ActionPlanTab>('actions');
+  const [expandedActionId, setExpandedActionId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [treatmentAction, setTreatmentAction] = useState<ActionItemRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  async function load() {
+    setLoading(true); setError('');
+    try { setData(await fetchActionPlanData(effectiveClient)); }
+    catch { setError("Impossible de charger le plan d'action."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); }, [effectiveClient]);
+
+  const filtered = useMemo(() => data.actions.filter((action) => actionMatches(action, filters)), [data.actions, filters]);
+  const metrics = useMemo(() => buildActionPlanMetrics(filtered, data.exposureHours), [filtered, data.exposureHours]);
+  const vesselOptions = useMemo(() => unique(data.actions.map((a) => a.vesselName)), [data.actions]);
+  const typeOptions = useMemo(() => unique(data.actions.map(actionTypeLabel)), [data.actions]);
+  const deviationOptions = useMemo(() => unique([...DEVIATION_TYPES, ...data.actions.map((a) => a.deviationType)]), [data.actions]);
+  const vesselCount = unique(filtered.map((a) => a.vesselName)).length;
+
+  function updateFilter(key: keyof Filters, value: string) { setFilters((current) => ({ ...current, [key]: value })); }
+  function replaceAction(updated: ActionItemRecord) {
+    setData((current) => ({ ...current, actions: current.actions.map((action) => action.id === updated.id ? updated : action) }));
+    setTreatmentAction(null); setMessage('Action mise à jour.');
+  }
+
+  const groupedStatuses = [
+    { key: 'open', label: 'Écarts non soldés', actions: filtered.filter((a) => !isActionClosed(a)) },
+    { key: 'closed', label: 'Actions soldées', actions: filtered.filter(isActionClosed) },
+  ];
+
+  if (loading) return <div className="admin-state" role="status">Chargement du plan d'action…</div>;
+
+  return <section className="action-plan-page">
+    <header className="action-plan-header"><div><h1>Plan d'action</h1><p>Suivi des écarts, événements QHSE, actions correctives, responsables et échéances.</p></div></header>
+    <nav className="action-plan-toolbar" aria-label="Fonctionnalités du plan d'action">
+      <div>{([['actions', 'Actions'], ['indicators', 'Indicateurs HSE'], ['sources', 'Sources importées']] as Array<[ActionPlanTab, string]>).map(([key, label]) => <button aria-current={activeTab === key ? 'page' : undefined} className={activeTab === key ? 'is-active' : ''} key={key} onClick={() => setActiveTab(key)}>{key === 'indicators' ? <BarChart3 size={16} /> : key === 'sources' ? <Database size={16} /> : <ShieldCheck size={16} />}{label}</button>)}</div>
+      <span><button className="is-secondary" onClick={() => void load()}><RefreshCw size={16} />Actualiser</button>{isManager && <button onClick={() => setCreateOpen(true)}><Plus size={17} />Nouvelle action</button>}</span>
+    </nav>
+
+    {(message || error) && <p className={`action-plan-message${error ? ' is-error' : ' is-success'}`}>{error || message}</p>}
+
+    <div className="action-plan-metrics">
+      <MetricCard detail={`${vesselCount} navire(s) / lieu(x)`} icon={<Clock3 size={20} />} label="Actions non soldées" tone="is-orange" value={metrics.openActionCount} />
+      <MetricCard detail={`${metrics.overdueActionCount} action(s) en retard`} icon={<AlertTriangle size={20} />} label="Non-conformités majeures" tone="is-red" value={metrics.majorNonConformityCount} />
+      <MetricCard detail={`${filtered.length} action(s) affichée(s)`} icon={<CheckCircle2 size={20} />} label="Actions soldées" tone="is-green" value={metrics.closedActionCount} />
+      <MetricCard detail={`Période ${new Date().getFullYear()}`} icon={<History size={20} />} label="Heures d'exposition" tone="is-teal" value={formatHours(metrics.exposureHours)} />
+    </div>
+
+    {activeTab === 'actions' && <>
+      <div className="action-plan-filters">
+        <label>Navire / lieu<select value={filters.vessel} onChange={(e) => updateFilter('vessel', e.target.value)}><option value="">Tous les navires</option>{vesselOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Type d'action<select value={filters.actionType} onChange={(e) => updateFilter('actionType', e.target.value)}><option value="">Tous les types</option>{typeOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Statut<select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">Tous les statuts</option><option value="open">Non soldé</option><option value="closed">Soldé</option></select></label>
+        <label>Type d'écart<select value={filters.deviationType} onChange={(e) => updateFilter('deviationType', e.target.value)}><option value="">Tous les types d'écart</option>{deviationOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label className="action-plan-search"><span className="sr-only">Rechercher</span><Search size={17} /><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, responsable…" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} /></label>
+      </div>
+      <div className="action-plan-list" aria-label="Actions groupées">
+        <div className="action-plan-list-head"><span>Titre</span><span>Échéance</span><span>Responsable</span><span>Type d'écart</span><span>Statut</span><span /></div>
+        {groupedStatuses.map((statusGroup) => statusGroup.actions.length > 0 && <details key={statusGroup.key} open>
+          <summary><span className={`action-plan-count ${statusGroup.key}`}>{statusGroup.actions.length}</span>{statusGroup.label}</summary>
+          {unique(statusGroup.actions.map((a) => a.vesselName || 'Sans navire')).map((vessel) => {
+            const vesselActions = statusGroup.actions.filter((a) => (a.vesselName || 'Sans navire') === vessel);
+            return <details key={`${statusGroup.key}-${vessel}`} open><summary><span className="action-plan-count vessel">{vesselActions.length}</span>{vessel}</summary>
+              {unique(vesselActions.map(actionTypeLabel)).map((type) => { const typeActions = vesselActions.filter((a) => actionTypeLabel(a) === type);
+                return <details key={`${statusGroup.key}-${vessel}-${type}`} open><summary><span className="action-plan-count type">{typeActions.length}</span>{type}</summary>
+                  {typeActions.map((action) => <article className={`action-plan-row ${severityClass(action.deviationType)}`} key={action.id}>
+                    <button aria-expanded={expandedActionId === action.id} className="action-plan-row-main" onClick={() => setExpandedActionId(expandedActionId === action.id ? null : action.id)}>
+                      <span>{expandedActionId === action.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<strong>{action.title}</strong></span>
+                      <span className={action.dueOn && action.dueOn < new Date().toISOString().slice(0, 10) && !isActionClosed(action) ? 'is-overdue' : ''}>{formatDate(action.dueOn)}</span>
+                      <span><strong>{display(action.ownerName)}</strong><small>Responsable du traitement</small></span>
+                      <span>{display(action.deviationType, 'Remarque')}</span>
+                      <span><em className={isActionClosed(action) ? 'is-closed' : 'is-open'}>{isActionClosed(action) ? 'Soldé' : 'À traiter'}</em></span>
+                    </button>
+                    {isManager && <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>}
+                    {expandedActionId === action.id && <div className="action-plan-row-details"><dl>
+                      <dt>Constat</dt><dd>{display(action.description, action.title)}</dd>
+                      <dt>Proposition d'action</dt><dd>{display(action.correctiveAction, 'Aucune proposition renseignée.')}</dd>
+                      <dt>Commentaire</dt><dd>{display(action.comments, 'Aucun commentaire renseigné.')}</dd>
+                      {action.realizedAction && <><dt>Action réalisée</dt><dd>{action.realizedAction}</dd></>}
+                      <dt>Émetteur</dt><dd>{display(action.issuerName)}</dd>
+                      {(action.projectCode || action.projectTitle) && <><dt>Projet</dt><dd>{[action.projectCode, action.projectTitle].filter(Boolean).join(' · ')}</dd></>}
+                      {data.documents.filter((document) => document.actionItemId === action.id || (document.actionSharePointItemId && document.actionSharePointItemId === action.sourceItemId)).map((document) => <Fragment key={document.id}><dt>Fiche de progrès</dt><dd><a aria-label={`Ouvrir le fichier ${document.title}`} href={document.fileUrl} rel="noreferrer" target="_blank">{document.title}</a></dd></Fragment>)}
+                    </dl></div>}
+                  </article>)}
+                </details>; })}
+            </details>; })}
+        </details>)}
+        {filtered.length === 0 && <div className="action-plan-empty">Aucune action ne correspond aux filtres.</div>}
+      </div>
+    </>}
+
+    {activeTab === 'indicators' && <section className="action-plan-indicators"><header><div><h2>Indicateurs HSE liés au temps de travail</h2><p>Les événements saisis ici utilisent les mêmes heures d’exposition versionnées que le module Suivi du Temps de travail.</p></div><strong>{formatHours(data.exposureHours)}</strong></header>
+      <div className="action-plan-indicator-grid">{[
+        ['FAT', 'Décès'], ['LTI', 'Accidents avec arrêt'], ['RWC', 'Travail adapté'], ['MTC', 'Traitement médical'], ['FAC', 'Premiers soins'], ['near_miss', 'Presqu’accidents'],
+      ].map(([key, label]) => <article key={key}><small>{key}</small><strong>{Number(data.hseKpis?.[key] || 0)}</strong><span>{label}</span></article>)}</div>
+      <div className="action-plan-rate-note"><Clock3 size={20} /><div><strong>Dénominateur commun et traçable</strong><p>LTIFR, TRIR, FAR et les autres taux sont calculés par la fonction serveur HSE à partir du ledger d’exposition, jamais depuis les cartes affichées dans le navigateur.</p></div></div>
+    </section>}
+
+    {activeTab === 'sources' && <section className="action-plan-sources"><header><h2>Sources historiques consolidées</h2><p>Les deux vues Power Query alimentent une base unique et conservent leur identifiant SharePoint.</p></header>
+      {[{ title: "Plan d'Action.iqy", id: '8a1a31f5-e212-4a03-ae6b-bcc855ea029b', count: data.actions.filter((a) => normalizeActionLabel(a.sourceListTitle).includes('action')).length || 113 },
+        { title: 'Indicateurs QHSE.iqy', id: '833e4b0f-0f5a-4e9b-b1b0-885224a41282', count: data.actions.filter((a) => normalizeActionLabel(a.sourceListTitle).includes('indicateurs')).length || 35 }].map((source) => <article key={source.id}><Database size={20} /><div><strong>{source.title}</strong><span>Liste SharePoint · {source.id}</span></div><em>{source.count} enregistrements</em><CheckCircle2 size={18} /></article>)}
+    </section>}
+
+    <CreateActionDialog client={effectiveClient} data={data} issuerName={profileName} onClose={() => setCreateOpen(false)} onCreated={(action) => { setData((current) => ({ ...current, actions: [action, ...current.actions] })); setCreateOpen(false); setMessage('Action ajoutée.'); }} open={createOpen} />
+    <TreatmentDialog action={treatmentAction} client={effectiveClient} onClose={() => setTreatmentAction(null)} onSaved={replaceAction} />
+  </section>;
 }
