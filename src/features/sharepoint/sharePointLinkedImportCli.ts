@@ -113,7 +113,17 @@ export function buildSharePointImportSqlFromExport(bundle: SharePointExportBundl
     || sourceKeys.has('list-indicateurs-qhse')
     || sourceKeys.has('library-fiche-progres')
   ) {
-    reconciliationStatements.push('perform public.resolve_sharepoint_operation_links();');
+    reconciliationStatements.push(
+      'perform public.resolve_sharepoint_operation_links();',
+      [
+        'update public.action_items action',
+        'set vessel_name = vessel.name, updated_at = now()',
+        'from public.vessels vessel',
+        'where action.vessel_id = vessel.id',
+        '  and action.company_id = vessel.company_id',
+        "  and coalesce(btrim(action.vessel_name), '') = '';",
+      ].join('\n'),
+    );
   }
 
   const body = [...statements, ...reconciliationStatements]
