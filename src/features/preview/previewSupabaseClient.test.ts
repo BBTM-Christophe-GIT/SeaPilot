@@ -63,6 +63,7 @@ describe('previewSupabaseClient', () => {
     const actions = await previewSupabaseClient.from('action_items').select('*').order('due_on');
     const actionTypes = await previewSupabaseClient.from('action_type_catalog').select('*').eq('active', true);
     const summary = await previewSupabaseClient.rpc('hse_kpi_summary', { methodology_id: 9851 });
+    const profile = await previewSupabaseClient.from('people').select('id,first_name,last_name').eq('user_id', 'preview-user').maybeSingle();
 
     expect(actions.error).toBeNull();
     expect(actions.data).toEqual(expect.arrayContaining([
@@ -74,5 +75,6 @@ describe('previewSupabaseClient', () => {
       expect.objectContaining({ hse_classification: 'FAC', tracks_exposure_rate: true }),
     ]));
     expect(summary.data).toMatchObject({ exposure_hours: 12480, LWDC: 1, FAC: 3 });
+    expect(profile.data).toMatchObject({ first_name: 'Arthur', last_name: 'DEMO' });
   });
 });

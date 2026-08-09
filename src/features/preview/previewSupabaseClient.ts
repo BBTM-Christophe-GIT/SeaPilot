@@ -792,6 +792,13 @@ function createPreviewQuery(result: PreviewResult): object {
           Promise.resolve(result).then(resolve, reject);
       }
 
+      if (property === 'maybeSingle') {
+        return () => createPreviewQuery({
+          data: Array.isArray(result.data) ? result.data[0] || null : result.data,
+          error: result.error,
+        });
+      }
+
       return () => query;
     },
   });
