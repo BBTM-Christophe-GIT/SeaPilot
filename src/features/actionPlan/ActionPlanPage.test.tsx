@@ -20,6 +20,9 @@ const openAction = {
   issuer_name: 'Christophe MINASSIAN',
   owner_name: 'Arthur MAREST',
   corrective_action: 'Programmer le laboratoire',
+  photo_1_path: '1/810/photo-source.jpg',
+  photo_2_path: null,
+  closure_photo_path: null,
   source_label: 'sharepoint',
   sharepoint_list_title: "Plan d'Action",
 };
@@ -34,6 +37,7 @@ const closedAction = {
   status: 'Ecart Soldé',
   deviation_type: 'Remarque',
   closed_on: '2026-08-05',
+  closure_photo_path: '1/811/preuve-traitement.jpg',
 };
 
 const actionTypes = [
@@ -64,7 +68,11 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
   });
 
   const client = {
-    storage: { from: vi.fn() },
+    storage: { from: vi.fn().mockReturnValue({
+      createSignedUrls: vi.fn().mockImplementation((paths: string[]) => Promise.resolve({
+        data: paths.map((path) => ({ path, signedUrl: `https://evidence.example/${path}` })), error: null,
+      })),
+    }) },
     rpc: vi.fn().mockResolvedValue({ data: { exposure_hours: 124500, FAT: 0, LTI: 1, RWC: 0, MTC: 1, FAC: 3, near_miss: 4 }, error: null }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)), insert };
@@ -116,10 +124,13 @@ describe('ActionPlanPage', () => {
     const openRow = screen.getByText("Réaliser une analyse d'eau").closest('article');
     expect(openRow).not.toBeNull();
     expect(within(openRow!).getByText("Réaliser une analyse d'eau").parentElement).toHaveTextContent("31/08/2026 - Réaliser une analyse d'eau");
+    expect(within(openRow!).getByRole('button', { name: 'Traiter' })).toBeInTheDocument();
+    expect(within(openRow!).getByRole('img', { name: /Photo jointe/ })).toHaveAttribute('src', 'https://evidence.example/1/810/photo-source.jpg');
 
     const closedRow = screen.getByText('Vérifier la filtration machine').closest('article');
     expect(closedRow).not.toBeNull();
     expect(within(closedRow!).queryByRole('button', { name: 'Traiter' })).not.toBeInTheDocument();
+    expect(within(closedRow!).getByRole('img', { name: /Preuve de traitement/ })).toHaveAttribute('src', 'https://evidence.example/1/811/preuve-traitement.jpg');
 
     fireEvent.change(screen.getByLabelText("Type d'action"), { target: { value: 'Audit Interne - BBTM' } });
     expect(screen.getByText("Réaliser une analyse d'eau")).toBeInTheDocument();

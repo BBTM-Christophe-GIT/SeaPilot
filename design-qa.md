@@ -48,8 +48,6 @@ No actionable P0, P1 or P2 mismatch remains.
 
 final result: passed
 
----
-
 # Design QA — Suivi du Temps de Travail v3.12.13
 
 ## Cibles de comparaison
@@ -294,6 +292,34 @@ final result: blocked
 
 ## Dernier contrôle — Plan d'action
 
-Le contrôle le plus récent est **Design QA — Plan d'action : alignement des lignes (2026-08-09)**, documenté ci-dessus avec ses chemins de référence, captures bureau/mobile, mesures DOM, comparaison visuelle et historique de correction.
+Le contrôle le plus récent est **Design QA — Plan d'action : miniature et colonnes à droite (2026-08-09)**, documenté ci-dessous avec sa référence, sa comparaison visuelle et ses mesures DOM.
+
+final result: passed
+
+---
+
+# Design QA — Plan d'action : miniature et colonnes à droite (2026-08-09)
+
+## Cible
+
+- Référence : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-036a2f3b-28f8-4df5-a07c-75abe5d8ceb4.png`
+- Prototype local : `http://127.0.0.1:4173/modules/actionPlan?preview=1`
+- Contrôle visuel réalisé dans le navigateur intégré Codex, avec la référence et le rendu final placés dans la même comparaison.
+
+## Vérifications réalisées
+
+- Le bouton **Traiter** occupe la première colonne de la ligne, complètement à gauche.
+- La miniature de pièce jointe suit le bouton ; elle est recadrée avec `object-fit: cover` et ouvre l'image complète dans un nouvel onglet.
+- La date et le titre utilisent la colonne flexible ; Responsable, Type d'écart et Statut conservent des colonnes fixes alignées au bord droit.
+- Mesures DOM sur la première ligne à 2 560 px : Traiter x=395, Photo x=485, Titre x=547, Responsable x=1991, Type d'écart x=2208, Statut x=2425.
+- Une action soldée ne rend aucun bouton **Traiter** et sélectionne exclusivement `closure_photo_path` comme preuve de traitement.
+- La photo de démonstration soldée est chargée à 640 × 427 px, avec un rendu miniature net ; l'actif WebP de prévisualisation pèse 14 Ko.
+- 95 fichiers de tests / 670 tests passent, le lint complet et le build de production passent.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 : aucun.
 
 final result: passed

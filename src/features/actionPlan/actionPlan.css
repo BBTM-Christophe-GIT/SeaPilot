@@ -168,10 +168,9 @@
   background: white;
 }
 
-.action-plan-list-head,
-.action-plan-row-main {
+.action-plan-list-head {
   display: grid;
-  grid-template-columns: minmax(420px, 2.35fr) minmax(175px, 1fr) minmax(150px, .9fr) minmax(90px, .55fr) 78px;
+  grid-template-columns: 78px 50px minmax(320px, 1fr) 205px 205px 94px;
   gap: 12px;
   align-items: center;
 }
@@ -200,7 +199,12 @@
 
 .action-plan-row {
   position: relative;
+  display: grid;
+  grid-template-columns: 78px 50px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
   margin: 0 12px 8px 40px;
+  padding: 8px 10px;
   border: 1px solid #e0e7f0;
   border-left: 3px solid #91a4bb;
   border-radius: 11px;
@@ -212,8 +216,12 @@
 .action-plan-row.is-positive { border-left-color: #119657; }
 .action-plan-page button.action-plan-row-main {
   display: grid;
+  grid-template-columns: minmax(320px, 1fr) 205px 205px 94px;
+  grid-column: 3;
+  gap: 12px;
   width: 100%;
-  padding: 12px 92px 12px 12px;
+  min-height: 40px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--ap-ink);
@@ -231,8 +239,13 @@
 .action-plan-row-main em { display: inline-flex; justify-content: flex-start; padding: 4px 8px; border-radius: 99px; font-size: .7rem; font-style: normal; font-weight: 800; text-align: left; }
 .action-plan-row-main em.is-open { background: #fff0df; color: #aa4a00; }
 .action-plan-row-main em.is-closed { background: #dff6e8; color: #0d7a40; }
-.action-plan-treat { position: absolute; z-index: 1; top: 10px; right: 10px; min-height: 34px !important; padding: 0 11px !important; border-color: #cddcf0 !important; background: #f7fbff !important; color: #2056a8 !important; font-size: .73rem; }
-.action-plan-row-details { padding: 0 18px 16px 38px; }
+.action-plan-treat { grid-column: 1; min-height: 34px !important; padding: 0 11px !important; border-color: #cddcf0 !important; background: #f7fbff !important; color: #2056a8 !important; font-size: .73rem; }
+.action-plan-treat-spacer { grid-column: 1; width: 78px; }
+.action-plan-thumbnail { display: grid; grid-column: 2; width: 46px; height: 40px; place-items: center; overflow: hidden; border: 1px solid #d8e2ee; border-radius: 8px; background: #f4f7fb; color: #7b8da4; }
+.action-plan-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.action-plan-thumbnail:hover { border-color: #8eaddb; box-shadow: 0 0 0 3px rgb(42 100 202 / 10%); }
+.action-plan-thumbnail.is-empty { border-style: dashed; }
+.action-plan-row-details { grid-column: 3; padding: 0 8px 8px 38px; }
 .action-plan-row-details dl { display: grid; grid-template-columns: 155px 1fr; gap: 5px 12px; margin: 0; padding-top: 12px; border-top: 1px dashed #dce5ef; font-size: .78rem; }
 .action-plan-row-details dt { color: #5d6e85; font-weight: 800; }
 .action-plan-row-details dd { margin: 0; color: #34445b; }
@@ -325,7 +338,7 @@
   .action-plan-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-plan-search { grid-column: 1 / -1; }
   .action-plan-list-head { display: none; }
-  .action-plan-row-main { grid-template-columns: minmax(260px, 1.8fr) minmax(145px, 1fr) minmax(130px, .9fr) 85px 78px; }
+  .action-plan-page button.action-plan-row-main { grid-template-columns: minmax(260px, 1fr) 175px 160px 85px; }
   .action-plan-indicator-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -338,8 +351,8 @@
   .action-plan-search { grid-column: auto; }
   .action-plan-list details details { margin-left: 7px; }
   .action-plan-row { margin-left: 12px; }
-  .action-plan-page button.action-plan-row-main { display: flex; align-items: flex-start; flex-direction: column; gap: 7px; padding-right: 80px; }
-  .action-plan-row-details { padding-left: 16px; }
+  .action-plan-page button.action-plan-row-main { display: flex; grid-column: 1 / -1; align-items: flex-start; flex-direction: column; gap: 7px; padding: 8px 0 0; }
+  .action-plan-row-details { grid-column: 1 / -1; padding-left: 16px; }
   .action-plan-row-details dl { grid-template-columns: 1fr; }
   .action-plan-row-details dd + dt { margin-top: 6px; }
   .action-plan-indicator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

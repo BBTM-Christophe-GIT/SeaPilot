@@ -15,6 +15,9 @@ const ACTION_DOCUMENT_SELECT = [
   'source_label', 'source_sharepoint_id', 'file_url', 'notes',
 ].join(', ');
 
+const ACTION_PLAN_EVIDENCE_BUCKET = 'action-plan-evidence';
+const ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS = 60 * 60;
+
 type ActionItemRow = Record<string, unknown> & { id: number; title: string };
 type ActionDocumentRow = Record<string, unknown> & { id: number; title: string };
 
@@ -52,6 +55,7 @@ export interface ActionItemRecord {
   photo1Path: string;
   photo2Path: string;
   closurePhotoPath: string;
+  thumbnailUrl: string;
   victimPersonId: number | null;
   victimSharePointItemId: string;
   lostDays: number;
@@ -147,6 +151,12 @@ export function isActionClosed(action: Pick<ActionItemRecord, 'status' | 'closed
   return Boolean(action.closedOn) || status.includes('solde') || status.includes('clos') || status.includes('termine');
 }
 
+export function actionThumbnailPath(
+  action: Pick<ActionItemRecord, 'status' | 'closedOn' | 'photo1Path' | 'photo2Path' | 'closurePhotoPath'>,
+): string {
+  return isActionClosed(action) ? action.closurePhotoPath : action.photo1Path || action.photo2Path;
+}
+
 export function mapActionItemRows(rows: ActionItemRow[]): ActionItemRecord[] {
   return rows.map((row) => ({
     id: Number(row.id),
@@ -182,6 +192,7 @@ export function mapActionItemRows(rows: ActionItemRow[]): ActionItemRecord[] {
     photo1Path: nullableText(row.photo_1_path),
     photo2Path: nullableText(row.photo_2_path),
     closurePhotoPath: nullableText(row.closure_photo_path),
+    thumbnailUrl: '',
     victimPersonId: row.victim_person_id == null ? null : Number(row.victim_person_id),
     victimSharePointItemId: nullableText(row.victim_sharepoint_item_id),
     lostDays: Number(row.lost_days || 0),
@@ -228,6 +239,24 @@ async function fetchActionItems(client: SupabaseClient): Promise<ActionItemRecor
   return mapActionItemRows((data || []) as unknown as ActionItemRow[]);
 }
 
+async function hydrateActionThumbnailUrls(client: SupabaseClient, actions: ActionItemRecord[]): Promise<ActionItemRecord[]> {
+  const paths = Array.from(new Set(actions.map(actionThumbnailPath).filter(Boolean)));
+  if (paths.length === 0) return actions;
+
+  const { data, error } = await client.storage
+    .from(ACTION_PLAN_EVIDENCE_BUCKET)
+    .createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS);
+  if (error || !data) return actions;
+
+  const urlsByPath = new Map(data
+    .filter((item) => item.path && item.signedUrl)
+    .map((item) => [item.path, item.signedUrl]));
+  return actions.map((action) => ({
+    ...action,
+    thumbnailUrl: urlsByPath.get(actionThumbnailPath(action)) || '',
+  }));
+}
+
 async function fetchActionDocuments(client: SupabaseClient): Promise<ActionDocumentRecord[]> {
   const { data, error } = await client.from('action_documents').select(ACTION_DOCUMENT_SELECT)
     .order('action_title', { ascending: true, nullsFirst: false }).order('title', { ascending: true });
@@ -272,8 +301,9 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client), fetchHseSummary(client),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
+  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value);
   return {
-    actions: actionsResult.value,
+    actions,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes: typesResult.status === 'fulfilled' ? typesResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
@@ -288,7 +318,7 @@ function safeFileName(name: string): string {
 
 async function uploadEvidence(client: SupabaseClient, companyId: number, actionId: number, kind: string, file: File): Promise<string> {
   const path = `${companyId}/${actionId}/${kind}-${crypto.randomUUID()}-${safeFileName(file.name)}`;
-  const { error } = await client.storage.from('action-plan-evidence').upload(path, file, { contentType: file.type, upsert: false });
+  const { error } = await client.storage.from(ACTION_PLAN_EVIDENCE_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
   if (error) throw error;
   return path;
 }
@@ -324,7 +354,7 @@ export async function createActionItem(
     if (updateError) throw updateError;
     row = updated as unknown as ActionItemRow;
   }
-  return mapActionItemRows([row])[0];
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
 }
 
 export async function updateActionItemTreatment(
@@ -344,5 +374,5 @@ export async function updateActionItemTreatment(
   };
   const { data, error } = await client.from('action_items').update(payload).eq('id', action.id).select(ACTION_ITEM_SELECT).single();
   if (error) throw error;
-  return mapActionItemRows([data as unknown as ActionItemRow])[0];
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([data as unknown as ActionItemRow])))[0];
 }

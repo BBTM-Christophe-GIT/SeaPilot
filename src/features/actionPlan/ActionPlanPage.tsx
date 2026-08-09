@@ -267,7 +267,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
         <label className="action-plan-search"><span className="sr-only">Rechercher</span><Search size={17} /><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, responsable…" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} /></label>
       </div>
       <div className="action-plan-list" aria-label="Actions groupées">
-        <div className="action-plan-list-head"><span>Date - titre</span><span>Responsable</span><span>Type d'écart</span><span>Statut</span><span /></div>
+        <div className="action-plan-list-head"><span /><span>Photo</span><span>Date - titre</span><span>Responsable</span><span>Type d'écart</span><span>Statut</span></div>
         {groupedStatuses.map((statusGroup) => statusGroup.actions.length > 0 && <details key={statusGroup.key} open>
           <summary><span className={`action-plan-count ${statusGroup.key}`}>{statusGroup.actions.length}</span>{statusGroup.label}</summary>
           {unique(statusGroup.actions.map((a) => a.vesselName || 'Sans navire')).map((vessel) => {
@@ -276,13 +276,18 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
               {unique(vesselActions.map(actionTypeLabel)).map((type) => { const typeActions = vesselActions.filter((a) => actionTypeLabel(a) === type);
                 return <details key={`${statusGroup.key}-${vessel}-${type}`} open><summary><span className="action-plan-count type">{typeActions.length}</span>{type}</summary>
                   {typeActions.map((action) => <article className={`action-plan-row ${severityClass(action.deviationType)}`} key={action.id}>
+                    {isManager && !isActionClosed(action)
+                      ? <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>
+                      : <span aria-hidden="true" className="action-plan-treat-spacer" />}
+                    {action.thumbnailUrl
+                      ? <a aria-label={isActionClosed(action) ? `Ouvrir la preuve de traitement de ${action.title}` : `Ouvrir la photo jointe de ${action.title}`} className="action-plan-thumbnail" href={action.thumbnailUrl} rel="noreferrer" target="_blank"><img alt={isActionClosed(action) ? `Preuve de traitement — ${action.title}` : `Photo jointe — ${action.title}`} src={action.thumbnailUrl} /></a>
+                      : <span aria-hidden="true" className="action-plan-thumbnail is-empty"><FileImage size={18} /></span>}
                     <button aria-expanded={expandedActionId === action.id} className="action-plan-row-main" onClick={() => setExpandedActionId(expandedActionId === action.id ? null : action.id)}>
                       <span>{expandedActionId === action.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<strong><time className={action.dueOn && action.dueOn < new Date().toISOString().slice(0, 10) && !isActionClosed(action) ? 'is-overdue' : ''} dateTime={action.dueOn || undefined}>{formatDate(action.dueOn)}</time><span> - </span><span className="action-plan-row-title-text">{action.title}</span></strong></span>
                       <span><strong>{display(action.ownerName)}</strong><small>Responsable du traitement</small></span>
                       <span>{display(action.deviationType, 'Remarque')}</span>
                       <span><em className={isActionClosed(action) ? 'is-closed' : 'is-open'}>{isActionClosed(action) ? 'Soldé' : 'À traiter'}</em></span>
                     </button>
-                    {isManager && !isActionClosed(action) && <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>}
                     {expandedActionId === action.id && <div className="action-plan-row-details"><dl>
                       <dt>Constat</dt><dd>{display(action.description, action.title)}</dd>
                       <dt>Proposition d'action</dt><dd>{display(action.correctiveAction, 'Aucune proposition renseignée.')}</dd>

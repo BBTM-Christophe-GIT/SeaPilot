@@ -732,7 +732,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       description: 'Premiers soins réalisés à bord sans arrêt de travail.', corrective_action: 'Rappel port des gants anticoupure.',
       realized_action: 'Brief sécurité réalisé à la relève.', anomaly_cause: 'Gants inadaptés à la tâche.', comments: null,
       level_label: 'Mineur', location_detail: 'Zone de manutention', photo_1_path: null, photo_2_path: null,
-      closure_photo_path: null, victim_person_id: 9304, victim_sharepoint_item_id: 'preview-person-4', lost_days: 0,
+      closure_photo_path: 'demo/action-plan-closure-proof.webp', victim_person_id: 9304, victim_sharepoint_item_id: 'preview-person-4', lost_days: 0,
       safety_event_details: { treatment: 'Premiers soins' }, source_label: 'sharepoint-list-indicateurs-qhse',
       sharepoint_list_title: 'Indicateurs QHSE', sharepoint_item_id: 'preview-kpi-12', source_modified_at: '2026-08-07T09:15:00Z',
     },
@@ -1085,6 +1085,9 @@ export const previewSupabaseClient = {
   storage: {
     from: (bucket: string) => ({
       createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      createSignedUrls: (paths: string[]) => Promise.resolve({
+        data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
+      }),
       download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
       upload: (_path: string, _file: Blob, options?: { contentType?: string }) => bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12'
         ? Promise.resolve({ data: { path: _path }, error: null })
