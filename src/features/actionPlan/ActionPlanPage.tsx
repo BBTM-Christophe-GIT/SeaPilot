@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock3, Database,
+  AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, Clock3,
   FileImage, History, Plus, RefreshCw, Search, ShieldCheck, Upload, X,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
@@ -16,7 +16,7 @@ import {
 import './actionPlan.css';
 
 interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
-type ActionPlanTab = 'actions' | 'indicators' | 'sources';
+type ActionPlanTab = 'actions' | 'indicators';
 type CreateStep = 'title' | 'issuer' | 'category' | 'proposal' | 'photos';
 
 interface Filters { search: string; status: string; vessel: string; actionType: string; deviationType: string }
@@ -245,7 +245,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   return <section className="action-plan-page">
     <header className="action-plan-header"><div><h1>Plan d'action</h1><p>Suivi des écarts, événements QHSE, actions correctives, responsables et échéances.</p></div></header>
     <nav className="action-plan-toolbar" aria-label="Fonctionnalités du plan d'action">
-      <div>{([['actions', 'Actions'], ['indicators', 'Indicateurs HSE'], ['sources', 'Sources importées']] as Array<[ActionPlanTab, string]>).map(([key, label]) => <button aria-current={activeTab === key ? 'page' : undefined} className={activeTab === key ? 'is-active' : ''} key={key} onClick={() => setActiveTab(key)}>{key === 'indicators' ? <BarChart3 size={16} /> : key === 'sources' ? <Database size={16} /> : <ShieldCheck size={16} />}{label}</button>)}</div>
+      <div>{([['actions', 'Actions'], ['indicators', 'Indicateurs HSE']] as Array<[ActionPlanTab, string]>).map(([key, label]) => <button aria-current={activeTab === key ? 'page' : undefined} className={activeTab === key ? 'is-active' : ''} key={key} onClick={() => setActiveTab(key)}>{key === 'indicators' ? <BarChart3 size={16} /> : <ShieldCheck size={16} />}{label}</button>)}</div>
       <span><button className="is-secondary" onClick={() => void load()}><RefreshCw size={16} />Actualiser</button>{isManager && <button onClick={() => setCreateOpen(true)}><Plus size={17} />Nouvelle action</button>}</span>
     </nav>
 
@@ -255,7 +255,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       <MetricCard detail={`${vesselCount} navire(s) / lieu(x)`} icon={<Clock3 size={20} />} label="Actions non soldées" tone="is-orange" value={metrics.openActionCount} />
       <MetricCard detail={`${metrics.overdueActionCount} action(s) en retard`} icon={<AlertTriangle size={20} />} label="Non-conformités majeures" tone="is-red" value={metrics.majorNonConformityCount} />
       <MetricCard detail={`${filtered.length} action(s) affichée(s)`} icon={<CheckCircle2 size={20} />} label="Actions soldées" tone="is-green" value={metrics.closedActionCount} />
-      <MetricCard detail={`Période ${new Date().getFullYear()}`} icon={<History size={20} />} label="Heures d'exposition" tone="is-teal" value={formatHours(metrics.exposureHours)} />
+      <MetricCard detail={`Période ${new Date().getFullYear()}`} icon={<History size={20} />} label="Heures travaillées" tone="is-teal" value={formatHours(metrics.exposureHours)} />
     </div>
 
     {activeTab === 'actions' && <>
@@ -267,7 +267,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
         <label className="action-plan-search"><span className="sr-only">Rechercher</span><Search size={17} /><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, responsable…" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} /></label>
       </div>
       <div className="action-plan-list" aria-label="Actions groupées">
-        <div className="action-plan-list-head"><span>Titre</span><span>Échéance</span><span>Responsable</span><span>Type d'écart</span><span>Statut</span><span /></div>
+        <div className="action-plan-list-head"><span>Date - titre</span><span>Responsable</span><span>Type d'écart</span><span>Statut</span><span /></div>
         {groupedStatuses.map((statusGroup) => statusGroup.actions.length > 0 && <details key={statusGroup.key} open>
           <summary><span className={`action-plan-count ${statusGroup.key}`}>{statusGroup.actions.length}</span>{statusGroup.label}</summary>
           {unique(statusGroup.actions.map((a) => a.vesselName || 'Sans navire')).map((vessel) => {
@@ -277,13 +277,12 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
                 return <details key={`${statusGroup.key}-${vessel}-${type}`} open><summary><span className="action-plan-count type">{typeActions.length}</span>{type}</summary>
                   {typeActions.map((action) => <article className={`action-plan-row ${severityClass(action.deviationType)}`} key={action.id}>
                     <button aria-expanded={expandedActionId === action.id} className="action-plan-row-main" onClick={() => setExpandedActionId(expandedActionId === action.id ? null : action.id)}>
-                      <span>{expandedActionId === action.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<strong>{action.title}</strong></span>
-                      <span className={action.dueOn && action.dueOn < new Date().toISOString().slice(0, 10) && !isActionClosed(action) ? 'is-overdue' : ''}>{formatDate(action.dueOn)}</span>
+                      <span>{expandedActionId === action.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<strong><time className={action.dueOn && action.dueOn < new Date().toISOString().slice(0, 10) && !isActionClosed(action) ? 'is-overdue' : ''} dateTime={action.dueOn || undefined}>{formatDate(action.dueOn)}</time><span> - </span><span className="action-plan-row-title-text">{action.title}</span></strong></span>
                       <span><strong>{display(action.ownerName)}</strong><small>Responsable du traitement</small></span>
                       <span>{display(action.deviationType, 'Remarque')}</span>
                       <span><em className={isActionClosed(action) ? 'is-closed' : 'is-open'}>{isActionClosed(action) ? 'Soldé' : 'À traiter'}</em></span>
                     </button>
-                    {isManager && <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>}
+                    {isManager && !isActionClosed(action) && <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>}
                     {expandedActionId === action.id && <div className="action-plan-row-details"><dl>
                       <dt>Constat</dt><dd>{display(action.description, action.title)}</dd>
                       <dt>Proposition d'action</dt><dd>{display(action.correctiveAction, 'Aucune proposition renseignée.')}</dd>
@@ -306,11 +305,6 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
         ['FAT', 'Décès'], ['LTI', 'Accidents avec arrêt'], ['RWC', 'Travail adapté'], ['MTC', 'Traitement médical'], ['FAC', 'Premiers soins'], ['near_miss', 'Presqu’accidents'],
       ].map(([key, label]) => <article key={key}><small>{key}</small><strong>{Number(data.hseKpis?.[key] || 0)}</strong><span>{label}</span></article>)}</div>
       <div className="action-plan-rate-note"><Clock3 size={20} /><div><strong>Dénominateur commun et traçable</strong><p>LTIFR, TRIR, FAR et les autres taux sont calculés par la fonction serveur HSE à partir du ledger d’exposition, jamais depuis les cartes affichées dans le navigateur.</p></div></div>
-    </section>}
-
-    {activeTab === 'sources' && <section className="action-plan-sources"><header><h2>Sources historiques consolidées</h2><p>Les deux vues Power Query alimentent une base unique et conservent leur identifiant SharePoint.</p></header>
-      {[{ title: "Plan d'Action.iqy", id: '8a1a31f5-e212-4a03-ae6b-bcc855ea029b', count: data.actions.filter((a) => normalizeActionLabel(a.sourceListTitle).includes('action')).length || 113 },
-        { title: 'Indicateurs QHSE.iqy', id: '833e4b0f-0f5a-4e9b-b1b0-885224a41282', count: data.actions.filter((a) => normalizeActionLabel(a.sourceListTitle).includes('indicateurs')).length || 35 }].map((source) => <article key={source.id}><Database size={20} /><div><strong>{source.title}</strong><span>Liste SharePoint · {source.id}</span></div><em>{source.count} enregistrements</em><CheckCircle2 size={18} /></article>)}
     </section>}
 
     <CreateActionDialog client={effectiveClient} data={data} issuerName={profileName} onClose={() => setCreateOpen(false)} onCreated={(action) => { setData((current) => ({ ...current, actions: [action, ...current.actions] })); setCreateOpen(false); setMessage('Action ajoutée.'); }} open={createOpen} />
