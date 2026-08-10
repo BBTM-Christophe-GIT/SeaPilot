@@ -54,6 +54,29 @@ describe('planning P0.2 views', () => {
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
   });
 
+  it('shows one synchronized operation on every selected vessel lane without a vessel limit', () => {
+    const multiVesselOverview: PlanningOverview = {
+      ...overview,
+      vessels: [
+        ...overview.vessels,
+        { id: 3, name: 'LE ROZEL', acronym: 'LRZ', active: true },
+      ],
+      projects: [{
+        ...overview.projects[0],
+        eventType: 'operation',
+        vesselIds: [1, 2, 3],
+        vesselNames: ['COTENTIN', 'SUROIT', 'LE ROZEL'],
+      }],
+    };
+
+    const lanes = buildPlanningFleetLanes(multiVesselOverview, range, emptyFilters);
+    expect(lanes.filter((lane) => lane.projects.some((project) => project.id === 300)).map((lane) => lane.label)).toEqual([
+      'COTENTIN',
+      'LE ROZEL',
+      'SUROIT',
+    ]);
+  });
+
   it('patches, removes and replaces records without rebuilding the overview', () => {
     const event = getAllPlanningCrewEvents(overview).find((item) => item.kind === 'assignment')!;
     const patched = patchPlanningEvent(overview, event, {

@@ -115,6 +115,16 @@ import {
   type SavePlanningHandoverInput,
 } from './planningQueries';
 import { PROJECT_STATUSES, projectStatusToneClass, type ProjectStatus } from '../projects/projectStatus';
+import { ProjectPlanningEditor, type ProjectPlanningEditorProject } from '../projects/ProjectEditors';
+import { saveProjectPlanningOccurrence } from '../projects/projectMutations';
+import type { OperationDocumentUploadResult } from '../projects/projectDocumentStorage';
+import type {
+  ProjectOperationDocumentRecord,
+  ProjectPlanningOccurrenceRecord,
+  VesselRecord,
+} from '../projects/projectQueries';
+import { fetchProjectPlanningOccurrences } from '../projects/projectQueries';
+import type { PlanningProjectCatalogRecord } from './planningProjectCatalog';
 import {
   buildPlanningGridPaste,
   isPlanningGridStatus,
@@ -494,6 +504,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [projectContextMenu, setProjectContextMenu] = useState<{ project: PlanningProjectRecord; position: AppContextMenuPosition } | null>(null);
   const [projectConfirmation, setProjectConfirmation] = useState<{ kind: 'cancel' | 'delete'; project: PlanningProjectRecord } | null>(null);
   const [projectCellContext, setProjectCellContext] = useState<{ date: string; vessel: PlanningVessel } | null>(null);
+  const [planningOperationEditor, setPlanningOperationEditor] = useState<{
+    initialDate?: string;
+    initialVesselIds?: number[];
+    occurrence?: ProjectPlanningOccurrenceRecord;
+    project: ProjectPlanningEditorProject;
+  } | null>(null);
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
@@ -680,6 +696,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(timelineDays), [timelineDays]);
   const permissions = getPlanningPermissions(effectiveRoles);
+  const canManageCommercialProjects = effectiveRoles.includes('admin') || effectiveRoles.includes('direction');
+  const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
+  const projectEditorVessels = useMemo<VesselRecord[]>(() => activeVessels.map((vessel) => ({
+    acronym: vessel.acronym,
+    active: vessel.active,
+    fleetExitOn: '',
+    id: vessel.id,
+    name: vessel.name,
+    sharePointItemId: '',
+  })), [activeVessels]);
   const isPlanningAssistantEnabled = assistantFeatureEnabled ?? PLANNING_ASSISTANT_ENABLED;
   const isPlanningPredictionsEnabled = predictionsFeatureEnabled ?? PLANNING_PREDICTIONS_ENABLED;
   const { access: assistantAccess, isLoading: isAssistantAccessLoading } = usePlanningAssistantAccess(
@@ -746,7 +772,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
     [anchorDate, overview],
   );
-  const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
   const departedPeople = useMemo(
     () => overview.people
@@ -1541,23 +1566,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsAssignmentOpen(true);
   }
 
-  function openFleetEvent(lane?: PlanningFleetLane, date?: string, quick = false) {
-    if (!canEditPlanning) {
-      setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
-      return;
-    }
-    const startsOn = date || range.start || anchorDate;
-    setSelectedProject(null);
-    setProjectForm({
-      ...EMPTY_PROJECT_FORM,
-      startsOn,
-      endsOn: startsOn,
-      vesselId: lane?.vesselId ? String(lane.vesselId) : '',
-    });
-    setIsProjectQuick(quick);
-    setIsProjectOpen(true);
-  }
-
   function openProjectPicker(lane: PlanningFleetLane, date: string) {
     const vessel = activeVessels.find((item) => item.id === lane.vesselId || item.name === lane.vessel);
     if (!vessel) {
@@ -1567,11 +1575,45 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setProjectCellContext({ date, vessel });
   }
 
-  function handleCatalogProjectScheduled(project: PlanningProjectRecord) {
-    updateOverview((current) => replacePlanningProject(current, project));
-    setSelectedTimelineId(`project-${project.id}`);
+  function openCatalogOperationEditor(project: PlanningProjectCatalogRecord) {
+    const context = projectCellContext;
+    if (!context) return;
+    setPlanningOperationEditor({
+      initialDate: context.date,
+      initialVesselIds: [context.vessel.id],
+      project: {
+        id: project.id,
+        projectCode: project.projectCode,
+        title: project.title,
+      },
+    });
     setProjectCellContext(null);
-    setStatusMessage('Projet ajouté au planning.');
+  }
+
+  function createProjectFromPlanning() {
+    const parameters = new URLSearchParams({ newProject: '1' });
+    if (projectCellContext) {
+      parameters.set('operationDate', projectCellContext.date);
+      parameters.set('vesselId', String(projectCellContext.vessel.id));
+    }
+    window.history.pushState({}, '', `/modules/projects?${parameters.toString()}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
+  async function handlePlanningOperationSaved(
+    occurrenceId: number,
+    uploads: OperationDocumentUploadResult,
+  ) {
+    const projects = await fetchPlanningProjects(effectiveClient);
+    updateOverview((current) => ({ ...current, projects }));
+    setSelectedTimelineId(`project-${occurrenceId}`);
+    setPlanningOperationEditor(null);
+    setSelectedProject(null);
+    setStatusMessage(
+      uploads.failed.length > 0
+        ? `Opération enregistrée. ${uploads.failed.length} document(s) n’ont pas pu être classés.`
+        : 'Opération enregistrée et synchronisée sur chaque ligne navire.',
+    );
   }
 
   async function handleCreateAssignment(event: FormEvent<HTMLFormElement>) {
@@ -1789,11 +1831,54 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }, false);
   }
 
-  function openProjectEditor(project: PlanningProjectRecord) {
+  async function openProjectEditor(project: PlanningProjectRecord) {
     setSelectedProjectDocuments([]);
     setSelectedProjectDocumentsError('');
     setSelectedTimelineId(`project-${project.id}`);
     setSelectedProject(project);
+    if (project.catalogProjectId) {
+      let securedOccurrence: ProjectPlanningOccurrenceRecord | undefined;
+      if (canManageCommercialProjects) {
+        try {
+          securedOccurrence = (await fetchProjectPlanningOccurrences(effectiveClient))
+            .find((occurrence) => occurrence.id === project.id);
+        } catch (error) {
+          setSelectedProject(null);
+          setErrorMessage(planningErrorMessage(error, 'Impossible de charger les données financières de cette opération.'));
+          return;
+        }
+      }
+      const projectCode = /^P\d+/i.exec(project.title)?.[0] || '';
+      const vesselIds = project.vesselIds || [project.primaryVesselId, project.secondaryVesselId]
+        .filter((id): id is number => Boolean(id));
+      const vesselNames = project.vesselNames || [project.primaryVesselName, project.secondaryVesselName].filter(Boolean);
+      setPlanningOperationEditor({
+        occurrence: securedOccurrence || {
+          charterHire: null,
+          createdAt: '',
+          description: project.description,
+          endsOn: project.endsOn,
+          hireCurrency: '',
+          hireUnit: '',
+          id: project.id,
+          primaryVesselId: vesselIds[0] ?? null,
+          primaryVesselName: vesselNames[0] || '',
+          projectId: project.catalogProjectId,
+          sourceLabel: project.sourceLabel,
+          startsOn: project.startsOn,
+          status: project.status,
+          vesselIds,
+          vesselNames,
+        },
+        project: {
+          id: project.catalogProjectId,
+          projectCode,
+          title: project.title.replace(/^P\d+\s*[-·]\s*/i, ''),
+        },
+      });
+      setIsProjectOpen(false);
+      return;
+    }
     setProjectForm({
       title: project.title,
       startsOn: project.startsOn,
@@ -1809,37 +1894,73 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsProjectOpen(true);
   }
 
-  async function moveProject(projectId: number, lane: PlanningFleetLane, startsOn: string) {
+  async function moveProject(projectId: number, sourceVesselId: number | null, lane: PlanningFleetLane, startsOn: string) {
     const project = overview.projects.find((item) => item.id === projectId);
     const vessel = activeVessels.find((item) => item.id === lane.vesselId);
     if (!project || !vessel) return setErrorMessage('Cet événement ou ce navire ne peut pas être modifié.');
-    if (project.primaryVesselId !== vessel.id && !window.confirm(`Déplacer ${project.title} vers ${vessel.name} ?`)) return;
+    const currentVesselIds = project.vesselIds?.length
+      ? [...project.vesselIds]
+      : [project.primaryVesselId, project.secondaryVesselId].filter((id): id is number => Boolean(id));
+    const currentVesselNames = project.vesselNames?.length
+      ? [...project.vesselNames]
+      : [project.primaryVesselName, project.secondaryVesselName].filter(Boolean);
+    const sourceIndex = sourceVesselId ? currentVesselIds.indexOf(sourceVesselId) : 0;
+    const targetAlreadySelected = currentVesselIds.includes(vessel.id);
+    if (!targetAlreadySelected && !window.confirm(`Déplacer ${project.title} vers ${vessel.name} ?`)) return;
+    const replacedIndex = Math.max(sourceIndex, 0);
+    const nextVesselIds = targetAlreadySelected
+      ? currentVesselIds
+      : currentVesselIds.map((id, index) => index === replacedIndex ? vessel.id : id);
+    const nextVesselNames = targetAlreadySelected
+      ? currentVesselNames
+      : currentVesselNames.map((name, index) => index === replacedIndex ? vessel.name : name);
     const optimistic = {
       ...project,
       startsOn,
       endsOn: addPlanningDays(startsOn, daysBetween(project.startsOn, project.endsOn)),
-      primaryVesselId: vessel.id,
-      primaryVesselName: vessel.name,
+      vesselIds: nextVesselIds,
+      vesselNames: nextVesselNames,
+      primaryVesselId: nextVesselIds[0] || null,
+      primaryVesselName: nextVesselNames[0] || '',
+      secondaryVesselId: nextVesselIds[1] || null,
+      secondaryVesselName: nextVesselNames[1] || '',
     };
     const previous = overview;
     updateOverview(replacePlanningProject(previous, optimistic));
     setPendingMutationId(`project-${project.id}`);
     try {
-      const saved = await updatePlanningProject(effectiveClient, {
-        id: project.id,
-        title: optimistic.title,
-        startsOn: optimistic.startsOn,
-        endsOn: optimistic.endsOn,
-        status: optimistic.status,
-        eventType: optimistic.eventType,
-        vesselId: vessel.id,
-        vesselName: vessel.name,
-        responsibleName: optimistic.responsibleName,
-        clientName: optimistic.clientName,
-        description: optimistic.description,
-      });
-      updateOverview((current) => replacePlanningProject(current, saved));
-      setStatusMessage('Événement flotte déplacé sans rechargement.');
+      if (project.catalogProjectId) {
+        await saveProjectPlanningOccurrence(effectiveClient, {
+          occurrenceId: project.id,
+          projectId: project.catalogProjectId,
+          startsOn: optimistic.startsOn,
+          endsOn: optimistic.endsOn,
+          vesselIds: nextVesselIds,
+          status: optimistic.status,
+          description: optimistic.description,
+          charterHire: null,
+          hireCurrency: '',
+          hireUnit: '',
+        });
+        const projects = await fetchPlanningProjects(effectiveClient);
+        updateOverview((current) => ({ ...current, projects }));
+      } else {
+        const saved = await updatePlanningProject(effectiveClient, {
+          id: project.id,
+          title: optimistic.title,
+          startsOn: optimistic.startsOn,
+          endsOn: optimistic.endsOn,
+          status: optimistic.status,
+          eventType: optimistic.eventType,
+          vesselId: vessel.id,
+          vesselName: vessel.name,
+          responsibleName: optimistic.responsibleName,
+          clientName: optimistic.clientName,
+          description: optimistic.description,
+        });
+        updateOverview((current) => replacePlanningProject(current, saved));
+      }
+      setStatusMessage('Opération déplacée et synchronisée sur ses navires.');
     } catch (error) {
       updateOverview(previous);
       setErrorMessage(`${planningErrorMessage(error, 'Impossible de déplacer cet événement.')} Sa position a été restaurée.`);
@@ -1858,21 +1979,40 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     updateOverview(replacePlanningProject(previous, optimistic));
     setPendingMutationId(`project-${project.id}`);
     try {
-      const saved = await updatePlanningProject(effectiveClient, {
-        id: project.id,
-        title: optimistic.title,
-        startsOn,
-        endsOn,
-        status: optimistic.status,
-        eventType: optimistic.eventType,
-        vesselId: vessel.id,
-        vesselName: vessel.name,
-        responsibleName: optimistic.responsibleName,
-        clientName: optimistic.clientName,
-        description: optimistic.description,
-      });
-      updateOverview((current) => replacePlanningProject(current, saved));
-      setStatusMessage('Durée de l’événement mise à jour sans rechargement.');
+      if (project.catalogProjectId) {
+        await saveProjectPlanningOccurrence(effectiveClient, {
+          occurrenceId: project.id,
+          projectId: project.catalogProjectId,
+          startsOn,
+          endsOn,
+          vesselIds: project.vesselIds?.length
+            ? project.vesselIds
+            : [project.primaryVesselId, project.secondaryVesselId].filter((id): id is number => Boolean(id)),
+          status: optimistic.status,
+          description: optimistic.description,
+          charterHire: null,
+          hireCurrency: '',
+          hireUnit: '',
+        });
+        const projects = await fetchPlanningProjects(effectiveClient);
+        updateOverview((current) => ({ ...current, projects }));
+      } else {
+        const saved = await updatePlanningProject(effectiveClient, {
+          id: project.id,
+          title: optimistic.title,
+          startsOn,
+          endsOn,
+          status: optimistic.status,
+          eventType: optimistic.eventType,
+          vesselId: vessel.id,
+          vesselName: vessel.name,
+          responsibleName: optimistic.responsibleName,
+          clientName: optimistic.clientName,
+          description: optimistic.description,
+        });
+        updateOverview((current) => replacePlanningProject(current, saved));
+      }
+      setStatusMessage('Durée de l’opération synchronisée sur ses navires.');
     } catch (error) {
       updateOverview(previous);
       setErrorMessage(`${planningErrorMessage(error, 'Impossible de redimensionner cet événement.')} Sa durée a été restaurée.`);
@@ -1926,8 +2066,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     try {
       if (kind === 'cancel') {
         const saved = await cancelPlanningProject(effectiveClient, project.id);
-        updateOverview((current) => replacePlanningProject(current, saved));
-        setSelectedProject((current) => current?.id === saved.id ? saved : current);
+        if (project.catalogProjectId) {
+          const projects = await fetchPlanningProjects(effectiveClient);
+          const synchronized = projects.find((item) => item.id === saved.id) || saved;
+          updateOverview((current) => ({ ...current, projects }));
+          setSelectedProject((current) => current?.id === saved.id ? synchronized : current);
+        } else {
+          updateOverview((current) => replacePlanningProject(current, saved));
+          setSelectedProject((current) => current?.id === saved.id ? saved : current);
+        }
         setStatusMessage(`L’opération « ${project.title} » a été annulée.`);
       } else {
         await deletePlanningProject(effectiveClient, project.id);
@@ -1958,9 +2105,30 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setPendingMutationId(`project-${project.id}`);
     setErrorMessage(null);
     try {
-      const saved = await updatePlanningProjectStatus(effectiveClient, project.id, status);
-      updateOverview((current) => replacePlanningProject(current, saved));
-      setSelectedProject((current) => current?.id === saved.id ? saved : current);
+      if (project.catalogProjectId) {
+        await saveProjectPlanningOccurrence(effectiveClient, {
+          occurrenceId: project.id,
+          projectId: project.catalogProjectId,
+          startsOn: project.startsOn,
+          endsOn: project.endsOn,
+          vesselIds: project.vesselIds?.length
+            ? project.vesselIds
+            : [project.primaryVesselId, project.secondaryVesselId].filter((id): id is number => Boolean(id)),
+          status,
+          description: project.description,
+          charterHire: null,
+          hireCurrency: '',
+          hireUnit: '',
+        });
+        const projects = await fetchPlanningProjects(effectiveClient);
+        const saved = projects.find((item) => item.id === project.id) || { ...project, status };
+        updateOverview((current) => ({ ...current, projects }));
+        setSelectedProject((current) => current?.id === saved.id ? saved : current);
+      } else {
+        const saved = await updatePlanningProjectStatus(effectiveClient, project.id, status);
+        updateOverview((current) => replacePlanningProject(current, saved));
+        setSelectedProject((current) => current?.id === saved.id ? saved : current);
+      }
       setStatusMessage(`Statut de « ${project.title} » mis à jour : ${status}.`);
       setProjectContextMenu(null);
     } catch (error) {
@@ -2171,7 +2339,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <PlanningRibbonButton icon={<CalendarDays aria-hidden="true" size={22} />} label="Rotations et décision d’effectif" onClick={() => setIsP11Open(true)} />
               {permissions.canManageHandovers ? <PlanningRibbonButton icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Créer une relève" onClick={() => openHandover()} /> : null}
               {permissions.canManageVessels ? <PlanningRibbonButton icon={<Ship aria-hidden="true" size={22} />} label="Gérer les navires" onClick={() => setIsVesselsOpen(true)} /> : null}
-              {canEditPlanning ? <PlanningRibbonButton icon={<CalendarPlus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => openFleetEvent()} /> : null}
+              {canManageCommercialProjects ? <PlanningRibbonButton icon={<CalendarPlus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={createProjectFromPlanning} /> : null}
             </PlanningRibbonGroup>
 
             <PlanningRibbonGroup className="is-centered" label="Gestion des congés">
@@ -2309,7 +2477,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       onAddBoard={openNewBoard}
                       onAssignPerson={(personId, targetLane, watchGroup) => void assignPersonByDrop(personId, targetLane, watchGroup)}
                       onOpenCell={openProjectPicker}
-                      onMove={(projectId, targetLane, date) => void moveProject(projectId, targetLane, date)}
+                      onMove={(projectId, sourceVesselId, targetLane, date) => void moveProject(projectId, sourceVesselId, targetLane, date)}
                       onCreateVisit={openNewVesselVisit}
                       onOpen={openProjectEditor}
                       onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
@@ -2526,14 +2694,45 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           tone={projectConfirmation.kind === 'delete' ? 'danger' : 'warning'}
         />
       ) : null}
+      {planningOperationEditor ? (
+        <ProjectPlanningEditor
+          canViewCharterHire={canManageCommercialProjects}
+          client={effectiveClient}
+          initialEndsOn={planningOperationEditor.initialDate}
+          initialStartsOn={planningOperationEditor.initialDate}
+          initialVesselIds={planningOperationEditor.initialVesselIds}
+          occurrence={planningOperationEditor.occurrence}
+          onClose={() => {
+            setPlanningOperationEditor(null);
+            setSelectedProject(null);
+          }}
+          onSaved={(occurrenceId, uploads) => void handlePlanningOperationSaved(occurrenceId, uploads)}
+          operationDocuments={selectedProjectDocuments.map<ProjectOperationDocumentRecord>((document) => ({
+            createdAt: document.createdAt,
+            documentType: 'operation_attachment',
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+            id: document.id,
+            mimeType: document.mimeType,
+            planningOccurrenceId: document.planningOccurrenceId,
+            projectId: planningOperationEditor.project.id,
+            sharePointFolderPath: '',
+            sharePointWebUrl: document.sharePointWebUrl,
+          }))}
+          project={planningOperationEditor.project}
+          vessels={projectEditorVessels}
+        />
+      ) : null}
       {isProjectOpen ? <PlanningProjectDialog activeVessels={activeVessels} documents={selectedProjectDocuments} documentsError={selectedProjectDocumentsError} editable={canEditPlanning} form={projectForm} isQuick={isProjectQuick} isSaving={isSaving} onCancel={() => { if (selectedProject) requestCancelProject(selectedProject); }} onChange={setProjectForm} onClose={() => { setSelectedProject(null); setIsProjectOpen(false); }} onDuplicate={duplicateSelectedProject} onExpand={() => setIsProjectQuick(false)} onSave={() => void saveProject(projectForm)} project={selectedProject} /> : null}
       {projectCellContext ? (
         <PlanningProjectPickerDialog
+          canCreateProject={canManageCommercialProjects}
           client={effectiveClient}
           date={projectCellContext.date}
           editable={canEditPlanning}
           onClose={() => setProjectCellContext(null)}
-          onScheduled={handleCatalogProjectScheduled}
+          onCreateProject={createProjectFromPlanning}
+          onSelectProject={openCatalogOperationEditor}
           vessel={projectCellContext.vessel}
         />
       ) : null}

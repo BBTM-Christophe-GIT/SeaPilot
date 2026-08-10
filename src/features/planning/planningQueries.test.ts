@@ -455,7 +455,7 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
-      if (table === 'planning_projects') {
+      if (table === 'planning_operations_view') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
       }
 
@@ -598,7 +598,7 @@ describe('fetchPlanningOverview', () => {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
 
-      if (table === 'planning_projects') {
+      if (table === 'planning_operations_view') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
       }
 

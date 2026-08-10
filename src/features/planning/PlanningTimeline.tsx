@@ -114,7 +114,7 @@ export function PlanningFleetTimelineRow({
   touchDropTarget: { vesselId: number; watchGroup: string } | null;
   onAssignPerson: (personId: number, lane: PlanningFleetLane, watchGroup: string) => void;
   onOpenCell: (lane: PlanningFleetLane, date: string) => void;
-  onMove: (projectId: number, lane: PlanningFleetLane, date: string) => void;
+  onMove: (projectId: number, sourceVesselId: number | null, lane: PlanningFleetLane, date: string) => void;
   onOpen: (project: PlanningProjectRecord) => void;
   onOpenContextMenu?: (project: PlanningProjectRecord, position: { x: number; y: number }) => void;
   onResize: (project: PlanningProjectRecord, edge: 'start' | 'end', delta: number) => void;
@@ -265,7 +265,10 @@ export function PlanningFleetTimelineRow({
             setDragOver(null);
             setMovePreview(null);
             const id = Number(event.dataTransfer.getData('application/x-seapilot-project'));
-            if (Number.isSafeInteger(id) && id > 0) onMove(id, lane, day.date);
+            const sourceVesselId = Number(event.dataTransfer.getData('application/x-seapilot-project-vessel'));
+            if (Number.isSafeInteger(id) && id > 0) {
+              onMove(id, Number.isSafeInteger(sourceVesselId) && sourceVesselId > 0 ? sourceVesselId : null, lane, day.date);
+            }
           } : undefined,
           style: { gridColumn: index + 2, gridRow: 1 },
           title: editable ? `Double-cliquer pour planifier un projet sur ${lane.label}` : 'Planning en lecture seule',
@@ -323,6 +326,7 @@ export function PlanningFleetTimelineRow({
               setDraggingId(project.id);
               event.dataTransfer.effectAllowed = 'move';
               event.dataTransfer.setData('application/x-seapilot-project', String(project.id));
+              if (lane.vesselId) event.dataTransfer.setData('application/x-seapilot-project-vessel', String(lane.vesselId));
             }}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,

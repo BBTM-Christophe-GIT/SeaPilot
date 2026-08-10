@@ -42,6 +42,10 @@ const projectRow = {
 
 function createReadClient(results: Record<string, { data: unknown[] | null; error: unknown }>) {
   return {
+    rpc: vi.fn((functionName: string) => {
+      if (functionName === 'projects_planning_occurrences') return Promise.resolve(results.planning_projects);
+      throw new Error(`Unexpected RPC ${functionName}`);
+    }),
     from: vi.fn((table: string) => ({
       select: vi.fn(() => ({
         order: vi.fn(() => ({

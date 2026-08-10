@@ -22,7 +22,7 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -574,8 +574,8 @@ function ProjectDetail({
                   <th>Mission / opération</th>
                   <th>Début</th>
                   <th>Fin</th>
-                  <th>Navire</th>
-                  <th>Loyer d’affrètement</th>
+                  <th>Navires</th>
+                  {isManager ? <th>Loyer d’affrètement</th> : null}
                   <th>Documents</th>
                   <th>Statut Planning</th>
                   <th>Actions</th>
@@ -598,11 +598,13 @@ function ProjectDetail({
                       </td>
                       <td>{formatDate(occurrence.startsOn)}</td>
                       <td>{formatDate(occurrence.endsOn)}</td>
-                      <td>{displayText(occurrence.primaryVesselName)}</td>
-                      <td>
-                        <strong>{formatMoney(occurrence.charterHire, occurrence.hireCurrency, occurrence.hireUnit)}</strong>
-                        <small>{inheritedHire ? 'Loyer du contrat' : 'Modifié pour l’opération'}</small>
-                      </td>
+                      <td>{displayText((occurrence.vesselNames || [occurrence.primaryVesselName]).filter(Boolean).join(' / '))}</td>
+                      {isManager ? (
+                        <td>
+                          <strong>{formatMoney(occurrence.charterHire, occurrence.hireCurrency, occurrence.hireUnit)}</strong>
+                          <small>{inheritedHire ? 'Loyer du contrat' : 'Modifié pour l’opération'}</small>
+                        </td>
+                      ) : null}
                       <td>
                         {documents.length > 0 ? (
                           <div className="project-operation-document-links">
@@ -691,6 +693,18 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProjects(effectiveRoles);
+  const creationQueryHandled = useRef(false);
+  const creationRequest = useMemo(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const vesselId = Number(parameters.get('vesselId'));
+    const operationDate = parameters.get('operationDate') || '';
+    return {
+      open: parameters.get('newProject') === '1',
+      operation: operationDate && Number.isInteger(vesselId) && vesselId > 0
+        ? { endsOn: operationDate, startsOn: operationDate, vesselIds: [vesselId] }
+        : undefined,
+    };
+  }, []);
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -750,6 +764,12 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       isMounted = false;
     };
   }, [effectiveClient, loadAttempt]);
+
+  useEffect(() => {
+    if (isLoading || !isManager || !creationRequest.open || creationQueryHandled.current) return;
+    creationQueryHandled.current = true;
+    openProjectEditor();
+  }, [creationRequest.open, isLoading, isManager]);
 
   const effectiveFilters = useMemo(() => ({ ...filters, search: deferredSearch }), [deferredSearch, filters]);
   const projectDocumentSet = useMemo(
@@ -1225,6 +1245,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           clients={projectsData.clients}
           contract={editingProject ? projectsData.projectContracts.find((item) => item.projectId === editingProject.id && !item.archivedAt) : undefined}
           contractTypes={contractTypeOptions}
+          initialOperation={editingProject ? undefined : creationRequest.operation}
           onClose={() => setProjectEditorOpen(false)}
           onSaved={(result) => {
             setProjectEditorOpen(false);
@@ -1251,6 +1272,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       ) : null}
       {planningEditorOpen && selectedProject ? (
         <ProjectPlanningEditor
+          canViewCharterHire={isManager}
           client={effectiveClient}
           contract={selectedContract}
           occurrence={editingOccurrence}

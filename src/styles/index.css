@@ -11385,6 +11385,65 @@ button.planning-p12-conflict-card {
   border-radius: 10px;
   background: #f9fbfc;
 }
+
+.project-initial-operation {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: #f6f9ff;
+  border: 1px solid #cbd9f4;
+  border-radius: 10px;
+}
+
+.project-initial-operation-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.project-initial-operation-heading strong {
+  color: #172033;
+}
+
+.project-initial-operation-heading small {
+  color: #617381;
+}
+
+.project-operation-vessels {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.project-operation-vessels > span {
+  color: #425866;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.project-operation-vessel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.project-operation-vessel-row button,
+.project-operation-add-vessel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 10px;
+  color: #0b5e88;
+  background: #f5f9ff;
+  border: 1px solid #b9cbe7;
+  border-radius: 7px;
+  font-weight: 800;
+}
+
+.project-operation-add-vessel {
+  justify-self: start;
+}
 .hr-signature-panel > header,
 .hr-signature-current,
 .hr-signature-mode,

@@ -260,7 +260,11 @@ function createClient(
     return query;
   });
 
-  const rpc = vi.fn().mockResolvedValue(rpcResult);
+  const rpc = vi.fn().mockImplementation((functionName: string) => (
+    functionName === 'projects_planning_occurrences'
+      ? Promise.resolve({ data: atlantiquePlanningOccurrenceRows, error: null })
+      : Promise.resolve(rpcResult)
+  ));
   return { client: { from, rpc }, from, rpc };
 }
 
@@ -353,7 +357,6 @@ describe('ProjectsPage', () => {
           'contract_documents',
           'project_generated_documents',
           'clients',
-          'planning_projects',
           'project_billing_periods',
           'project_billing_services',
           'project_chargeable_expenses',
@@ -548,7 +551,7 @@ describe('ProjectsPage', () => {
       target_ends_on: '2026-09-05',
       target_hire_currency: 'EUR',
       target_hire_unit: 'jour',
-      target_primary_vessel_id: 12,
+      target_vessel_ids: [12],
       target_project_id: 880,
       target_starts_on: '2026-09-01',
       target_status: 'Non validé',
@@ -560,6 +563,9 @@ describe('ProjectsPage', () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient();
     rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'projects_planning_occurrences') {
+        return { data: atlantiquePlanningOccurrenceRows, error: null };
+      }
       if (functionName === 'projects_delete_planning_occurrence') {
         return { data: 1201, error: null };
       }
@@ -606,6 +612,8 @@ describe('ProjectsPage', () => {
     expect(documentStorageMocks.storeGeneratedProjectDocument).toHaveBeenCalledTimes(2);
     expect(documentGenerationMocks.downloadGeneratedProjectDocument).not.toHaveBeenCalled();
     expect(from.mock.calls.map(([table]) => table)).not.toContain('storage');
-    expect(rpc).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.map(([functionName]) => functionName)).toEqual(
+      expect.not.arrayContaining(['projects_save_planning_occurrence', 'projects_delete_planning_occurrence']),
+    );
   });
 });

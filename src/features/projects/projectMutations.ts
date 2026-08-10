@@ -19,7 +19,7 @@ export interface ProjectPlanningOccurrenceWriteInput {
   projectId: number;
   startsOn: string;
   endsOn: string;
-  primaryVesselId: number | null;
+  vesselIds: number[];
   status: string;
   description: string;
   charterHire: number | null;
@@ -259,8 +259,10 @@ export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOcc
   if (input.startsOn && input.endsOn && input.endsOn < input.startsOn) {
     errors.push("La fin de l'op\u00e9ration ne peut pas pr\u00e9c\u00e9der son d\u00e9but.");
   }
-  if (input.primaryVesselId === null || !Number.isInteger(input.primaryVesselId) || input.primaryVesselId <= 0) {
-    errors.push("Le navire de l'op\u00e9ration est obligatoire.");
+  const vesselIds = input.vesselIds.filter((vesselId) => Number.isInteger(vesselId) && vesselId > 0);
+  if (vesselIds.length === 0) errors.push("Au moins un navire est obligatoire pour l'op\u00e9ration.");
+  if (vesselIds.length !== input.vesselIds.length || new Set(vesselIds).size !== vesselIds.length) {
+    errors.push("Les navires de l'op\u00e9ration doivent \u00eatre valides et sans doublon.");
   }
   if (input.charterHire !== null && input.charterHire < 0) {
     errors.push("Le loyer d’affrètement de l’opération ne peut pas être négatif.");
@@ -286,7 +288,7 @@ export async function saveProjectPlanningOccurrence(
     target_project_id: input.projectId,
     target_starts_on: input.startsOn,
     target_ends_on: input.endsOn,
-    target_primary_vessel_id: input.primaryVesselId,
+    target_vessel_ids: input.vesselIds,
     target_status: normalizeProjectStatus(input.status),
     target_description: optionalText(input.description),
     target_charter_hire: input.charterHire,

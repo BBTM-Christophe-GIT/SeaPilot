@@ -25,6 +25,8 @@ export const PLANNING_ASSIGNMENT_NOTE_SOURCE = 'seapilot-assignment-note';
 const PLANNING_PERIOD_SELECT =
   'id, person_id, vessel_id, crew_name, vessel_name, manual_vessel_name, watch_group, function_label, sailor_status, starts_on, ends_on, year_number, comments, slot365_source_id, slot365_source_key, source_label';
 const PLANNING_PROJECT_SELECT =
+  'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, cancelled_at, cancellation_reason, source_label, vessel_ids, vessel_names';
+const PLANNING_PROJECT_MUTATION_SELECT =
   'id, catalog_project_id, title, starts_on, ends_on, description, client_name, primary_vessel_id, primary_vessel_name, secondary_vessel_id, secondary_vessel_name, event_type, responsible_name, status, cancelled_at, cancellation_reason, source_label';
 const PLANNING_OPERATION_DOCUMENT_SELECT =
   'id, planning_occurrence_id, file_name, mime_type, file_size_bytes, sharepoint_web_url, created_at';
@@ -168,6 +170,8 @@ interface PlanningProjectRow {
   primary_vessel_name: string | null;
   secondary_vessel_id: number | null;
   secondary_vessel_name: string | null;
+  vessel_ids?: number[] | null;
+  vessel_names?: string[] | null;
   event_type?: string | null;
   responsible_name?: string | null;
   status: string | null;
@@ -453,6 +457,8 @@ export interface PlanningProjectRecord {
   primaryVesselName: string;
   secondaryVesselId: number | null;
   secondaryVesselName: string;
+  vesselIds?: number[];
+  vesselNames?: string[];
   eventType: PlanningFleetEventType;
   responsibleName: string;
   status: string;
@@ -979,25 +985,38 @@ export function mapPlanningPeriodRows(rows: PlanningPeriodRow[]): PlanningPeriod
 }
 
 export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProjectRecord[] {
-  return rows.map((row) => ({
-    id: row.id,
-    catalogProjectId: row.catalog_project_id ?? null,
-    title: row.title,
-    startsOn: textOrEmpty(row.starts_on),
-    endsOn: textOrEmpty(row.ends_on || row.starts_on),
-    description: textOrEmpty(row.description),
-    clientName: textOrEmpty(row.client_name),
-    primaryVesselId: row.primary_vessel_id,
-    primaryVesselName: textOrEmpty(row.primary_vessel_name),
-    secondaryVesselId: row.secondary_vessel_id,
-    secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
-    eventType: planningFleetEventType(row.event_type),
-    responsibleName: textOrEmpty(row.responsible_name),
-    status: normalizeProjectStatus(row.status),
-    cancelledAt: textOrEmpty(row.cancelled_at),
-    cancellationReason: textOrEmpty(row.cancellation_reason),
-    sourceLabel: row.source_label,
-  }));
+  return rows.map((row) => {
+    const legacyVesselIds = [row.primary_vessel_id, row.secondary_vessel_id]
+      .filter((id): id is number => Number.isInteger(id) && Number(id) > 0);
+    const legacyVesselNames = [row.primary_vessel_name, row.secondary_vessel_name]
+      .map(textOrEmpty)
+      .filter(Boolean);
+    const vesselIds = (row.vessel_ids || legacyVesselIds)
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const vesselNames = (row.vessel_names || legacyVesselNames).map(textOrEmpty).filter(Boolean);
+    return {
+      id: row.id,
+      catalogProjectId: row.catalog_project_id ?? null,
+      title: row.title,
+      startsOn: textOrEmpty(row.starts_on),
+      endsOn: textOrEmpty(row.ends_on || row.starts_on),
+      description: textOrEmpty(row.description),
+      clientName: textOrEmpty(row.client_name),
+      primaryVesselId: row.primary_vessel_id,
+      primaryVesselName: textOrEmpty(row.primary_vessel_name),
+      secondaryVesselId: row.secondary_vessel_id,
+      secondaryVesselName: textOrEmpty(row.secondary_vessel_name),
+      vesselIds,
+      vesselNames,
+      eventType: planningFleetEventType(row.event_type),
+      responsibleName: textOrEmpty(row.responsible_name),
+      status: normalizeProjectStatus(row.status),
+      cancelledAt: textOrEmpty(row.cancelled_at),
+      cancellationReason: textOrEmpty(row.cancellation_reason),
+      sourceLabel: row.source_label,
+    };
+  });
 }
 
 export function mapPlanningCertificateRows(rows: PlanningCertificateRow[]): PlanningCertificateRecord[] {
@@ -1269,7 +1288,7 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
 
 export async function fetchPlanningProjects(client: SupabaseClient): Promise<PlanningProjectRecord[]> {
   const { data, error } = await client
-    .from('planning_projects')
+    .from('planning_operations_view')
     .select(PLANNING_PROJECT_SELECT)
     .order('starts_on', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true });
@@ -1912,7 +1931,7 @@ export async function createPlanningProject(
   const { data, error } = await client
     .from('planning_projects')
     .insert({ ...payload, created_at: new Date().toISOString() })
-    .select(PLANNING_PROJECT_SELECT)
+    .select(PLANNING_PROJECT_MUTATION_SELECT)
     .single();
   if (error) throwPlanningDataError('create-project', 'Impossible de créer cet événement flotte.', error);
   const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
@@ -1927,7 +1946,7 @@ export async function updatePlanningProject(client: SupabaseClient, input: Updat
     .from('planning_projects')
     .update(payload)
     .eq('id', projectId)
-    .select(PLANNING_PROJECT_SELECT)
+    .select(PLANNING_PROJECT_MUTATION_SELECT)
     .single();
   if (error) throwPlanningDataError('update-project', 'Impossible de modifier ce projet.', error);
   const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
@@ -1945,7 +1964,7 @@ export async function updatePlanningProjectStatus(
     .from('planning_projects')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select(PLANNING_PROJECT_SELECT)
+    .select(PLANNING_PROJECT_MUTATION_SELECT)
     .single();
   if (error) throwPlanningDataError('update-project-status', 'Impossible de modifier le statut du projet.', error);
   const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];
@@ -1969,7 +1988,7 @@ export async function cancelPlanningProject(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .select(PLANNING_PROJECT_SELECT)
+    .select(PLANNING_PROJECT_MUTATION_SELECT)
     .single();
   if (error) throwPlanningDataError('cancel-project', 'Impossible d’annuler cet événement.', error);
   const project = mapPlanningProjectRows([data as unknown as PlanningProjectRow])[0];

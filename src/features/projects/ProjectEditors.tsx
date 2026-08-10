@@ -30,6 +30,11 @@ interface ProjectEditorProps {
   clients: ClientRecord[];
   contract?: ProjectContractRecord;
   contractTypes: string[];
+  initialOperation?: {
+    endsOn: string;
+    startsOn: string;
+    vesselIds: number[];
+  };
   onClose: () => void;
   onSaved: (result: ProjectMutationResult) => void;
   project?: ProjectRecord;
@@ -44,14 +49,33 @@ interface ClientEditorProps {
   onSaved: (clientId: number, savedClient: ClientWriteInput) => void;
 }
 
+export interface ProjectPlanningEditorProject {
+  charterEndsAt?: string;
+  charterStartsAt?: string;
+  deliveryAt?: string;
+  description?: string;
+  endsOn?: string;
+  id: number;
+  primaryVesselId?: number | null;
+  projectCode: string;
+  redeliveryAt?: string;
+  secondaryVesselId?: number | null;
+  startsOn?: string;
+  title: string;
+}
+
 interface ProjectPlanningEditorProps {
+  canViewCharterHire?: boolean;
   client: SupabaseClient;
   contract?: ProjectContractRecord;
+  initialEndsOn?: string;
+  initialStartsOn?: string;
+  initialVesselIds?: number[];
   onClose: () => void;
   onSaved: (occurrenceId: number, uploads: OperationDocumentUploadResult) => void;
   occurrence?: ProjectPlanningOccurrenceRecord;
   operationDocuments?: ProjectOperationDocumentRecord[];
-  project: ProjectRecord;
+  project: ProjectPlanningEditorProject;
   vessels: VesselRecord[];
 }
 
@@ -172,6 +196,7 @@ export function ProjectEditor({
   clients,
   contract,
   contractTypes,
+  initialOperation,
   onClose,
   onSaved,
   project,
@@ -185,6 +210,21 @@ export function ProjectEditor({
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [initialOperationFiles, setInitialOperationFiles] = useState<File[]>([]);
+  const [initialOperationForm, setInitialOperationForm] = useState<ProjectPlanningOccurrenceWriteInput | null>(() => (
+    initialOperation ? {
+      charterHire: null,
+      description: '',
+      endsOn: initialOperation.endsOn,
+      hireCurrency: '',
+      hireUnit: '',
+      occurrenceId: null,
+      projectId: 0,
+      startsOn: initialOperation.startsOn,
+      status: 'Non validé',
+      vesselIds: initialOperation.vesselIds,
+    } : null
+  ));
   const [nextProjectCode, setNextProjectCode] = useState(project?.projectCode || 'P…');
   const eligibleVessels = vessels.filter(
     (vessel) => vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId,
@@ -219,9 +259,41 @@ export function ProjectEditor({
     event.preventDefault();
     setErrorMessage('');
     setIsSaving(true);
+    let savedProject: ProjectMutationResult | null = null;
     try {
-      onSaved(await saveProject(client, form));
+      const result = await saveProject(client, form);
+      savedProject = result;
+      if (initialOperationForm) {
+        const occurrenceId = await saveProjectPlanningOccurrence(client, {
+          ...initialOperationForm,
+          projectId: result.id,
+        });
+        setInitialOperationForm((current) => current ? {
+          ...current,
+          occurrenceId,
+          projectId: result.id,
+        } : null);
+        if (initialOperationFiles.length > 0) {
+          const uploads = await storeOperationDocuments(client, {
+            files: initialOperationFiles,
+            planningOccurrenceId: occurrenceId,
+            projectId: result.id,
+          });
+          if (uploads.failed.length > 0) {
+            throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
+          }
+        }
+      }
+      onSaved(result);
     } catch (error) {
+      if (savedProject && form.projectId === null) {
+        setForm((current) => ({
+          ...current,
+          expectedUpdatedAt: savedProject?.updatedAt || current.expectedUpdatedAt,
+          projectId: savedProject?.id || current.projectId,
+        }));
+        setNextProjectCode(savedProject.projectCode);
+      }
       setErrorMessage(error instanceof Error ? error.message : "Impossible d’enregistrer le projet.");
     } finally {
       setIsSaving(false);
@@ -311,6 +383,71 @@ export function ProjectEditor({
           <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>2</span> Planning</legend>
             <div className="project-editor-grid">
+              {initialOperationForm ? (
+                <section className="project-initial-operation is-wide" aria-label="Première opération">
+                  <div className="project-initial-operation-heading">
+                    <strong>Première opération</strong>
+                    <small>Cette opération sera créée et rattachée au nouveau Projet/Contrat.</small>
+                  </div>
+                  <div className="project-editor-grid">
+                    <Field label="Début de l’opération *">
+                      <input
+                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, startsOn: event.target.value } : null)}
+                        required
+                        type="date"
+                        value={initialOperationForm.startsOn}
+                      />
+                    </Field>
+                    <Field label="Fin de l’opération *">
+                      <input
+                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, endsOn: event.target.value } : null)}
+                        required
+                        type="date"
+                        value={initialOperationForm.endsOn}
+                      />
+                    </Field>
+                    <Field label="Navires de l’opération *" wide>
+                      <select
+                        aria-label="Navires de la première opération"
+                        multiple
+                        onChange={(event) => setInitialOperationForm((current) => current ? {
+                          ...current,
+                          vesselIds: Array.from(event.target.selectedOptions, (option) => Number(option.value)),
+                        } : null)}
+                        required
+                        size={Math.min(5, Math.max(2, eligibleVessels.length))}
+                        value={initialOperationForm.vesselIds.map(String)}
+                      >
+                        {eligibleVessels.map((vessel) => (
+                          <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Statut Planning">
+                      <select
+                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, status: event.target.value } : null)}
+                        value={initialOperationForm.status}
+                      >
+                        {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Description / mission" wide>
+                      <textarea
+                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, description: event.target.value } : null)}
+                        value={initialOperationForm.description}
+                      />
+                    </Field>
+                    <label className="project-operation-files is-wide">
+                      <span>Documents de l’opération</span>
+                      <span className="project-operation-file-picker">
+                        <FileUp aria-hidden="true" size={18} />
+                        <input multiple onChange={(event) => setInitialOperationFiles(Array.from(event.target.files || []))} type="file" />
+                        <strong>{initialOperationFiles.length > 0 ? `${initialOperationFiles.length} fichier(s) sélectionné(s)` : 'Ajouter un ou plusieurs documents'}</strong>
+                      </span>
+                    </label>
+                  </div>
+                </section>
+              ) : null}
               <Field label="Début du projet"><input onChange={(event) => update('startsOn', event.target.value)} type="date" value={form.startsOn} /></Field>
               <Field label="Fin du projet"><input onChange={(event) => update('endsOn', event.target.value)} type="date" value={form.endsOn} /></Field>
               <Field label="Livraison"><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
@@ -472,13 +609,17 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
   );
 }
 
-function dateOnly(value: string): string {
+function dateOnly(value?: string): string {
   return value ? value.slice(0, 10) : '';
 }
 
 export function ProjectPlanningEditor({
+  canViewCharterHire = true,
   client,
   contract,
+  initialEndsOn,
+  initialStartsOn,
+  initialVesselIds,
   onClose,
   onSaved,
   occurrence,
@@ -486,22 +627,45 @@ export function ProjectPlanningEditor({
   project,
   vessels,
 }: ProjectPlanningEditorProps) {
+  const defaultVesselIds = initialVesselIds?.length
+    ? initialVesselIds
+    : occurrence?.vesselIds?.length
+      ? occurrence.vesselIds
+      : [occurrence?.primaryVesselId ?? project.primaryVesselId].filter((id): id is number => Boolean(id));
   const [form, setForm] = useState<ProjectPlanningOccurrenceWriteInput>({
     occurrenceId: occurrence?.id ?? null,
     projectId: project.id,
-    startsOn: dateOnly(occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn),
-    endsOn: dateOnly(occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
-    primaryVesselId: occurrence?.primaryVesselId ?? project.primaryVesselId,
+    startsOn: dateOnly(initialStartsOn || occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn),
+    endsOn: dateOnly(initialEndsOn || occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
+    vesselIds: defaultVesselIds.length > 0 ? defaultVesselIds : [0],
     status: normalizeProjectStatus(occurrence?.status),
-    description: occurrence?.description || project.description,
-    charterHire: occurrence?.charterHire ?? contract?.charterHire ?? null,
-    hireCurrency: occurrence?.hireCurrency || contract?.hireCurrency || 'EUR',
-    hireUnit: occurrence?.hireUnit || contract?.hireUnit || 'jour',
+    description: occurrence?.description || project.description || '',
+    charterHire: canViewCharterHire ? occurrence?.charterHire ?? contract?.charterHire ?? null : null,
+    hireCurrency: canViewCharterHire ? occurrence?.hireCurrency || contract?.hireCurrency || 'EUR' : '',
+    hireUnit: canViewCharterHire ? occurrence?.hireUnit || contract?.hireUnit || 'jour' : '',
   });
   const [files, setFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const eligibleVessels = vessels.filter((vessel) => vessel.active || vessel.id === project.primaryVesselId);
+  const eligibleVessels = vessels.filter((vessel) => (
+    vessel.active
+    || defaultVesselIds.includes(vessel.id)
+    || vessel.id === project.primaryVesselId
+    || vessel.id === project.secondaryVesselId
+  ));
+
+  function updateVessel(index: number, vesselId: number) {
+    update('vesselIds', form.vesselIds.map((currentId, currentIndex) => currentIndex === index ? vesselId : currentId));
+  }
+
+  function removeVessel(index: number) {
+    update('vesselIds', form.vesselIds.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function addVessel() {
+    const nextVessel = eligibleVessels.find((vessel) => !form.vesselIds.includes(vessel.id));
+    update('vesselIds', [...form.vesselIds, nextVessel?.id ?? 0]);
+  }
 
   function update<K extends keyof ProjectPlanningOccurrenceWriteInput>(
     key: K,
@@ -554,23 +718,53 @@ export function ProjectPlanningEditor({
             <Field label="Projet" wide><input disabled value={`${project.projectCode || ''} - ${project.title}`.replace(/^ - /, '')} /></Field>
             <Field label="Début *"><input autoFocus onChange={(event) => update('startsOn', event.target.value)} required type="date" value={form.startsOn} /></Field>
             <Field label="Fin *"><input onChange={(event) => update('endsOn', event.target.value)} required type="date" value={form.endsOn} /></Field>
-            <Field label="Navire *">
-              <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} required value={form.primaryVesselId ?? ''}>
-                <option value="">Choisir un navire</option>
-                {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-              </select>
-            </Field>
+            <div className="project-operation-vessels is-wide">
+              <span>Navires *</span>
+              {form.vesselIds.map((vesselId, index) => (
+                <div className="project-operation-vessel-row" key={`${index}-${vesselId}`}>
+                  <select
+                    aria-label={`Navire ${index + 1}`}
+                    onChange={(event) => updateVessel(index, Number(event.target.value))}
+                    required
+                    value={vesselId || ''}
+                  >
+                    <option value="">Choisir un navire</option>
+                    {eligibleVessels.map((vessel) => (
+                      <option
+                        disabled={form.vesselIds.some((selectedId, selectedIndex) => selectedIndex !== index && selectedId === vessel.id)}
+                        key={vessel.id}
+                        value={vessel.id}
+                      >
+                        {vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {form.vesselIds.length > 1 ? (
+                    <button aria-label={`Retirer le navire ${index + 1}`} onClick={() => removeVessel(index)} type="button">
+                      <X aria-hidden="true" size={16} />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              <button className="project-operation-add-vessel" onClick={addVessel} type="button">
+                <Plus aria-hidden="true" size={15} /> Ajouter un navire
+              </button>
+            </div>
             <Field label="Statut"><select onChange={(event) => update('status', event.target.value)} value={form.status}>{PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></Field>
             <Field label="Description / mission" wide><textarea onChange={(event) => update('description', event.target.value)} value={form.description} /></Field>
-            <Field label="Loyer d’affrètement">
-              <input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} />
-            </Field>
-            <Field label="Devise">
-              <input maxLength={3} onChange={(event) => update('hireCurrency', event.target.value.toUpperCase())} value={form.hireCurrency} />
-            </Field>
-            <Field label="Unité">
-              <input onChange={(event) => update('hireUnit', event.target.value)} placeholder="jour" value={form.hireUnit} />
-            </Field>
+            {canViewCharterHire ? (
+              <>
+                <Field label="Loyer d’affrètement">
+                  <input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} />
+                </Field>
+                <Field label="Devise">
+                  <input maxLength={3} onChange={(event) => update('hireCurrency', event.target.value.toUpperCase())} value={form.hireCurrency} />
+                </Field>
+                <Field label="Unité">
+                  <input onChange={(event) => update('hireUnit', event.target.value)} placeholder="jour" value={form.hireUnit} />
+                </Field>
+              </>
+            ) : null}
             <label className="project-operation-files is-wide">
               <span>Documents de l’opération</span>
               <span className="project-operation-file-picker">
@@ -597,7 +791,8 @@ export function ProjectPlanningEditor({
             </ul>
           ) : null}
           <p className="project-editor-note">
-            Le loyer du contrat est recopié lors de la création puis reste propre à cette opération. Les documents sont classés dans SharePoint · Documents Projets.
+            {canViewCharterHire ? 'Le loyer du contrat est recopié lors de la création puis reste propre à cette opération. ' : ''}
+            Les documents sont classés dans SharePoint · Documents Projets.
           </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
       </div>
