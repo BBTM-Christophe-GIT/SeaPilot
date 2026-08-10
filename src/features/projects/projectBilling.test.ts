@@ -231,6 +231,19 @@ describe('billing operation export', () => {
     expect(rows[0].amountHt).toBe(5100);
   });
 
+  it('keeps selected operation rows when their financial amounts are hidden', () => {
+    const rows = billingOperationRows({
+      ...input,
+      period: { ...input.period, includeOperationsInPdf: false },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      date: '01/06/2026',
+      operation: '24/24 Crew Change',
+      comments: expect.stringContaining('Refueling'),
+    });
+  });
+
   it('renders a multiline operation as a single PDF table line', () => {
     const rows = billingOperationRows({
       ...input,

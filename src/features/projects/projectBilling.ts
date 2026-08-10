@@ -698,8 +698,7 @@ export async function fetchProjectBillingDprs(
 export function billingOperationRows(input: BillingExportInput): BillingOperationRow[] {
   return input.dprs
     .filter((dpr) => dpr.reportDate >= input.startDate && dpr.reportDate <= input.endDate)
-    .filter((dpr) => input.period.includeOperationsInPdf !== false
-      && !(input.period.excludedOperationKeys || []).includes(billingOperationKey(dpr)))
+    .filter((dpr) => !(input.period.excludedOperationKeys || []).includes(billingOperationKey(dpr)))
     .sort((left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id)
     .map((dpr) => ({
       date: formatDate(dpr.reportDate),
@@ -783,9 +782,11 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     .replace(/[\u00a0\u202f]/g, ' ')} €`;
   const operationRows = billingOperationRows(input);
-  const includeOperations = input.period.includeOperationsInPdf !== false;
+  const includeOperationAmounts = input.period.includeOperationsInPdf !== false;
   const includeExpenses = input.period.includeExpensesInPdf !== false;
-  const hiresTotal = operationRows.reduce((sum, row) => sum + row.amountHt, 0);
+  const hiresTotal = includeOperationAmounts
+    ? operationRows.reduce((sum, row) => sum + row.amountHt, 0)
+    : 0;
   const expenses = input.period.includeExpensesInPdf === false
     ? []
     : input.expenses.filter((expense) => expense.chargeable && expense.includeInPdf !== false);
@@ -920,21 +921,21 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.line(2153, 288, 2564, 288);
 
   setFont(40, 'bold');
-  if (includeOperations) pdf.text('Opérations', 672, 360, { align: 'center' });
+  pdf.text('Opérations', 672, 360, { align: 'center' });
   if (includeExpenses) pdf.text('Frais Imputables', 1951, 360, { align: 'center' });
   pdf.setDrawColor(96, 94, 92);
   pdf.setLineWidth(0.75);
-  if (includeOperations) pdf.line(73.5, 375.375, 1270.5, 375.375);
+  pdf.line(73.5, 375.375, 1270.5, 375.375);
   if (includeExpenses) pdf.line(1284, 375.375, 2619, 375.375);
 
   setFont(32, 'bold');
-  if (includeOperations) {
-    pdf.text('Date', 140.65, 423);
-    pdf.text('Operations', 389.06, 423);
+  pdf.text('Date', 140.65, 423);
+  pdf.text('Operations', 389.06, 423);
+  if (includeOperationAmounts) {
     pdf.text('Montant HT', 765.5, 423, { align: 'center' });
-    pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
-    drawSortArrow(82, 441, 'up');
   }
+  pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
+  drawSortArrow(82, 441, 'up');
   if (includeExpenses) {
     pdf.text('Date Facture', 1296, 423);
     pdf.text('N° Facture', 1504, 423);
@@ -946,7 +947,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
 
   setFont(28);
   let operationY = 486;
-  const operationSource = !includeOperations ? [] : operationRows.length ? operationRows : [{
+  const operationSource = operationRows.length ? operationRows : [{
     date: '—',
     operation: 'Aucune opération DPR sur la période',
     amountHt: 0,
@@ -955,8 +956,8 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   operationSource.forEach((row) => {
     const commentLines = row.comments ? row.comments.split('\n') : [];
     pdf.text(row.date, 81.75, operationY);
-    pdf.text(fitText(row.operation, 380), 277.5, operationY);
-    pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
+    pdf.text(fitText(row.operation, includeOperationAmounts ? 380 : 520), 277.5, operationY);
+    if (includeOperationAmounts) pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
     commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
     operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
   });
@@ -1010,7 +1011,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
 
   pdf.setFillColor(179, 179, 179);
   const subtotalDefinitions = [
-    ...(includeOperations ? [{ label: 'Total des Loyers journaliers', value: hiresTotal }] : []),
+    ...(includeOperationAmounts ? [{ label: 'Total des Loyers journaliers', value: hiresTotal }] : []),
     ...(includeExpenses ? [{ label: 'Total des Frais Imputables', value: expenseTotal }] : []),
     ...(includeBbtmService ? [{ label: 'Sous-total Prestation BBTM', value: serviceTotal }] : []),
   ];
