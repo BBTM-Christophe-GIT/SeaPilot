@@ -2,8 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   CalendarRange,
   Download,
-  Eye,
-  EyeOff,
   ExternalLink,
   FilePlus2,
   FileText,
@@ -525,15 +523,8 @@ export function ProjectBillingPanel({
 
       <article className="project-billing-card">
         <header className="project-billing-card-heading">
-          <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT à refacturer</small></span></div>
+          <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT à refacturer</small><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} type="checkbox" /> Inclure les services refacturables dans le PDF</label></span></div>
           <div className="project-billing-card-actions">
-            <button
-              aria-pressed={selectedPeriod?.includeExpensesInPdf !== false}
-              className={`project-billing-pdf-toggle${selectedPeriod?.includeExpensesInPdf !== false ? ' is-active' : ''}`}
-              disabled={!isManager || !selectedPeriod || Boolean(busy)}
-              onClick={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })}
-              type="button"
-            >{selectedPeriod?.includeExpensesInPdf !== false ? <><Eye size={16} /> Affichés dans le PDF</> : <><EyeOff size={16} /> Masqués du PDF</>}</button>
             {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => setExpenseEditor({ draft: expenseDraft(selectedMonth) })} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
         </header>
@@ -604,21 +595,10 @@ export function ProjectBillingPanel({
             <span>
               <strong>Prestation BBTM</strong>
               <small>{money(billingServicesTotal(serviceForExport))} HT</small>
+              <label className="project-billing-section-selection"><input checked={selectedPeriod?.includeBbtmInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })} type="checkbox" /> Inclure la prestation BBTM dans le PDF</label>
             </span>
           </div>
           <div className="project-billing-card-actions">
-            <button
-              aria-label={selectedPeriod?.includeBbtmInPdf !== false ? 'Masquer la prestation BBTM du PDF' : 'Afficher la prestation BBTM dans le PDF'}
-              aria-pressed={selectedPeriod?.includeBbtmInPdf !== false}
-              className={`project-billing-pdf-toggle${selectedPeriod?.includeBbtmInPdf !== false ? ' is-active' : ''}`}
-              disabled={!isManager || !selectedPeriod || Boolean(busy)}
-              onClick={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })}
-              type="button"
-            >
-              {selectedPeriod?.includeBbtmInPdf !== false
-                ? <><Eye aria-hidden="true" size={16} /> Affichée dans le PDF</>
-                : <><EyeOff aria-hidden="true" size={16} /> Masquée du PDF</>}
-            </button>
             {isManager ? (
               <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService()} type="button">
                 <Save aria-hidden="true" size={16} /> Enregistrer
@@ -659,7 +639,7 @@ export function ProjectBillingPanel({
       </article>
 
       <article className="project-billing-card project-billing-export">
-        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Le tableau Opérations reste toujours visible ; ce réglage affiche ou masque uniquement les loyers.</span></div><button aria-label={selectedPeriod?.includeOperationsInPdf !== false ? 'Masquer les loyers du PDF' : 'Afficher les loyers dans le PDF'} aria-pressed={selectedPeriod?.includeOperationsInPdf !== false} className={`project-billing-pdf-toggle${selectedPeriod?.includeOperationsInPdf !== false ? ' is-active' : ''}`} disabled={!isManager || !selectedPeriod || Boolean(busy)} onClick={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} type="button">{selectedPeriod?.includeOperationsInPdf !== false ? <><Eye size={16} /> Loyers affichés</> : <><EyeOff size={16} /> Loyers masqués</>}</button></header>
+        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.</span><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeOperationsInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} type="checkbox" /> Inclure les loyers dans le PDF</label></div></header>
         <div className="project-billing-export-controls">
           <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
           {periodMode === 'custom' ? <><label>Début<input onChange={(event) => setCustomStart(event.target.value)} type="date" value={customStart} /></label><label>Fin<input onChange={(event) => setCustomEnd(event.target.value)} type="date" value={customEnd} /></label></> : null}

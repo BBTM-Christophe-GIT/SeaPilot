@@ -17659,16 +17659,20 @@ button.planning-p12-conflict-card {
   justify-content: flex-end;
 }
 
-.project-billing button.project-billing-pdf-toggle {
-  background: #fff;
-  border-color: #cbd7e4;
-  color: #53657a;
+.project-billing-card > header .project-billing-section-selection {
+  align-items: center;
+  color: #40536a;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  margin-top: 6px;
 }
 
-.project-billing button.project-billing-pdf-toggle.is-active {
-  background: #eaf8f4;
-  border-color: #9edac8;
-  color: #08765e;
+.project-billing-card > header .project-billing-section-selection input {
+  accent-color: #0d67d5;
+  min-height: 0;
+  width: auto;
 }
 
 .project-billing-table-scroll {

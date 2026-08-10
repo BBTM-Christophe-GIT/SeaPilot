@@ -367,6 +367,10 @@ describe('ProjectsPage', () => {
     screen.getByRole('tab', { name: 'Opérations' }).focus();
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Inclure les services refacturables dans le PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure la prestation BBTM dans le PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure les loyers dans le PDF')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Affich.*PDF/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(from.mock.calls.map(([table]) => table)).toEqual(
