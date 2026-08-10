@@ -307,7 +307,6 @@ export function ProjectEditor({
     try {
       const firstHirePeriod = [...hirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
       const projectDetailsChanged = !project
-        || !contract
         || projectDetailsSnapshot(form) !== projectDetailsSnapshot(initialForm);
       const hirePeriodsChanged = !project
         || hirePeriodsSnapshot(hirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);

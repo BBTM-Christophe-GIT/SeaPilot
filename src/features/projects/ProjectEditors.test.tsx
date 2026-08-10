@@ -57,6 +57,37 @@ describe('ProjectPlanningEditor permissions', () => {
 });
 
 describe('ProjectEditor contract hire periods', () => {
+  it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn() } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+        project={{
+          ...project,
+          id: 60,
+          clientId: null,
+          projectCode: 'P268',
+          status: 'Non validé',
+          updatedAt: '2026-08-07T08:05:49Z',
+        } as never}
+        statuses={['Non validé']}
+        vessels={vessels}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    expect(mutationMocks.saveProjectContractHirePeriods).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 60, projectCode: 'P268' }));
+  });
+
   it('saves a changed hire schedule without rewriting an unchanged project', async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
