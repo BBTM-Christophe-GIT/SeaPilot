@@ -141,6 +141,44 @@ export function projectToWriteInput(
   };
 }
 
+function projectContractHirePeriodsToWriteInput(
+  project?: ProjectRecord,
+  contract?: ProjectContractRecord,
+): ProjectContractHirePeriodWriteInput[] {
+  if (contract?.hirePeriods?.length) {
+    return contract.hirePeriods.map((period) => ({
+      startsOn: period.startsOn,
+      endsOn: period.endsOn,
+      charterHire: period.charterHire,
+      hireCurrency: period.hireCurrency,
+      hireUnit: period.hireUnit,
+    }));
+  }
+  if (contract?.charterHire !== null && contract?.charterHire !== undefined) {
+    return [{
+      startsOn: project?.startsOn || new Date().toISOString().slice(0, 10),
+      endsOn: '',
+      charterHire: contract.charterHire,
+      hireCurrency: contract.hireCurrency || 'EUR',
+      hireUnit: contract.hireUnit || 'jour',
+    }];
+  }
+  return [];
+}
+
+function projectDetailsSnapshot(input: ProjectWriteInput): string {
+  return JSON.stringify({
+    ...input,
+    charterHire: null,
+    hireCurrency: '',
+    hireUnit: '',
+  });
+}
+
+function hirePeriodsSnapshot(periods: ProjectContractHirePeriodWriteInput[]): string {
+  return JSON.stringify(periods);
+}
+
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <label className={wide ? 'is-wide' : undefined}>
@@ -204,28 +242,10 @@ export function ProjectEditor({
   project,
   vessels,
 }: ProjectEditorProps) {
-  const [form, setForm] = useState(() => projectToWriteInput(project, contract));
-  const [hirePeriods, setHirePeriods] = useState<ProjectContractHirePeriodWriteInput[]>(() => {
-    if (contract?.hirePeriods?.length) {
-      return contract.hirePeriods.map((period) => ({
-        startsOn: period.startsOn,
-        endsOn: period.endsOn,
-        charterHire: period.charterHire,
-        hireCurrency: period.hireCurrency,
-        hireUnit: period.hireUnit,
-      }));
-    }
-    if (contract?.charterHire !== null && contract?.charterHire !== undefined) {
-      return [{
-        startsOn: project?.startsOn || new Date().toISOString().slice(0, 10),
-        endsOn: '',
-        charterHire: contract.charterHire,
-        hireCurrency: contract.hireCurrency || 'EUR',
-        hireUnit: contract.hireUnit || 'jour',
-      }];
-    }
-    return [];
-  });
+  const initialForm = projectToWriteInput(project, contract);
+  const initialHirePeriods = projectContractHirePeriodsToWriteInput(project, contract);
+  const [form, setForm] = useState(() => initialForm);
+  const [hirePeriods, setHirePeriods] = useState<ProjectContractHirePeriodWriteInput[]>(() => initialHirePeriods);
   const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
   const [availableClients, setAvailableClients] = useState<
     Pick<ClientRecord, 'active' | 'id' | 'name'>[]
@@ -286,14 +306,26 @@ export function ProjectEditor({
     let savedProject: ProjectMutationResult | null = null;
     try {
       const firstHirePeriod = [...hirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
-      const result = await saveProject(client, firstHirePeriod ? {
-        ...form,
-        charterHire: firstHirePeriod.charterHire,
-        hireCurrency: firstHirePeriod.hireCurrency,
-        hireUnit: firstHirePeriod.hireUnit,
-      } : form);
-      savedProject = result;
-      await saveProjectContractHirePeriods(client, result.id, hirePeriods);
+      const projectDetailsChanged = !project
+        || !contract
+        || projectDetailsSnapshot(form) !== projectDetailsSnapshot(initialForm);
+      const hirePeriodsChanged = !project
+        || hirePeriodsSnapshot(hirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
+      const result = projectDetailsChanged
+        ? await saveProject(client, firstHirePeriod ? {
+          ...form,
+          charterHire: firstHirePeriod.charterHire,
+          hireCurrency: firstHirePeriod.hireCurrency,
+          hireUnit: firstHirePeriod.hireUnit,
+        } : form)
+        : {
+          id: project.id,
+          projectCode: project.projectCode,
+          title: project.title,
+          updatedAt: project.updatedAt,
+        };
+      if (projectDetailsChanged) savedProject = result;
+      if (hirePeriodsChanged) await saveProjectContractHirePeriods(client, result.id, hirePeriods);
       if (initialOperationForm) {
         const occurrenceId = await saveProjectPlanningOccurrence(client, {
           ...initialOperationForm,
