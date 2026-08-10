@@ -335,9 +335,13 @@ function createClient(options: {
     if (table === 'planning_board_rows') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.boardRows ?? [], error: null }) }) };
     }
-    if (table === 'planning_projects') {
+    if (table === 'planning_operations_view') {
       return {
         select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.projects ?? [], error: null }) }) }),
+      };
+    }
+    if (table === 'planning_projects') {
+      return {
         insert: insertProject,
         update: updateProject,
       };
@@ -642,35 +646,23 @@ describe('PlanningPage cockpit', () => {
       name: `Planifier un projet pour COTENTIN le ${formatPlanningDate(date)}`,
     }));
 
-    expect(await screen.findByRole('dialog', { name: 'Planifier un projet' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Rattacher l’opération à un projet' })).toBeInTheDocument();
     expect(screen.getByLabelText('Rechercher un projet par mot-clé')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /P267.*Remorquage Cherbourg/ })).toBeInTheDocument();
   });
 
-  it('creates a fleet event from the complete side panel', async () => {
+  it('opens the full Projects assistant from the Planning toolbar', async () => {
     const user = userEvent.setup();
-    const createdProject = { ...planningProjectRow, id: 601, title: 'Maintenance annuelle', event_type: 'maintenance', status: 'A planifier' };
-    const { client, insertProject } = createClient({ projects: [], createdProject });
+    const previousUrl = window.location.href;
+    const { client, insertProject } = createClient({ projects: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
-    const dialog = screen.getByRole('dialog');
-    await user.type(within(dialog).getByLabelText('Titre'), 'Maintenance annuelle');
-    await user.selectOptions(within(dialog).getByLabelText('Navire'), '1');
-    await user.selectOptions(within(dialog).getByLabelText('Type'), 'maintenance');
-    fireEvent.change(within(dialog).getByLabelText('Début'), { target: { value: '2026-07-20' } });
-    fireEvent.change(within(dialog).getByLabelText('Fin'), { target: { value: '2026-07-22' } });
-    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
-
-    await waitFor(() => expect(insertProject).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Maintenance annuelle',
-      event_type: 'maintenance',
-      primary_vessel_id: 1,
-      starts_on: '2026-07-20',
-      ends_on: '2026-07-22',
-    })));
-    expect(await screen.findByText('Événement flotte créé.')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/modules/projects');
+    expect(new URLSearchParams(window.location.search).get('newProject')).toBe('1');
+    expect(insertProject).not.toHaveBeenCalled();
+    window.history.replaceState({}, '', previousUrl);
   }, 20_000);
 
   it('keeps fleet filters active and avoids a full reload after an event update', async () => {

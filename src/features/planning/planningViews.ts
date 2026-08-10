@@ -105,7 +105,7 @@ function normalizedEquals(left: string, right: string): boolean {
 
 function projectMatchesFilters(project: PlanningProjectRecord, filters: PlanningFilters): boolean {
   return (
-    (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName)
+    (!filters.vesselName || (project.vesselNames || [project.primaryVesselName, project.secondaryVesselName]).includes(filters.vesselName))
     && (!filters.eventType || project.eventType === filters.eventType)
     && (!filters.status || normalizedEquals(project.status, filters.status))
     && (!filters.responsible || project.responsibleName === filters.responsible)
@@ -134,7 +134,7 @@ export function buildPlanningFleetLanes(
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningFleetLane[] {
   const uniqueProjects = [...new Map(overview.projects.map((project) => [
-    `${normalizePlanningText(project.title)}:${project.primaryVesselId || ''}:${project.secondaryVesselId || ''}:${project.startsOn}:${project.endsOn}`,
+    `${project.id}:${(project.vesselIds || [project.primaryVesselId, project.secondaryVesselId]).join(',')}:${project.startsOn}:${project.endsOn}`,
     project,
   ])).values()];
   const projects = uniqueProjects.filter((project) => (
@@ -158,7 +158,8 @@ export function buildPlanningFleetLanes(
     && (!filters.vesselName || day.vesselName === filters.vesselName)
   ));
   const vesselNames = new Set(
-    eventPool
+    [
+      ...eventPool
       .filter((event) => (
         event.confirmationStatus !== 'cancelled'
         && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
@@ -167,6 +168,10 @@ export function buildPlanningFleetLanes(
       ))
       .map((event) => event.vessel)
       .filter(Boolean),
+      ...projects.flatMap((project) => (
+        project.vesselNames || [project.primaryVesselName, project.secondaryVesselName]
+      )).filter(Boolean),
+    ],
   );
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
 
@@ -180,7 +185,9 @@ export function buildPlanningFleetLanes(
         label: vesselName,
         detail: vesselDetail(vessel),
         vessel: vesselName,
-        projects: projects.filter((project) => project.primaryVesselName === vesselName || project.secondaryVesselName === vesselName),
+        projects: projects.filter((project) => (
+          project.vesselNames || [project.primaryVesselName, project.secondaryVesselName]
+        ).includes(vesselName)),
         assignments: assignments.filter((assignment) => assignment.vesselName === vesselName),
         locations: locations.filter((location) => location.vesselName === vesselName),
       };

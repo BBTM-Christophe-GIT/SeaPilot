@@ -111,22 +111,6 @@ const CLIENT_SELECT = [
   'updated_at',
 ].join(', ');
 
-const PROJECT_PLANNING_OCCURRENCE_SELECT = [
-  'id',
-  'catalog_project_id',
-  'starts_on',
-  'ends_on',
-  'primary_vessel_id',
-  'primary_vessel_name',
-  'status',
-  'description',
-  'charter_hire',
-  'hire_currency',
-  'hire_unit',
-  'source_label',
-  'created_at',
-].join(', ');
-
 const PROJECT_OPERATION_DOCUMENT_SELECT = [
   'id',
   'project_id',
@@ -260,8 +244,10 @@ interface ProjectPlanningOccurrenceRow {
   catalog_project_id: number | null;
   starts_on: string | null;
   ends_on: string | null;
-  primary_vessel_id: number | null;
-  primary_vessel_name: string | null;
+  vessel_ids: number[] | null;
+  vessel_names: string[] | null;
+  primary_vessel_id?: number | null;
+  primary_vessel_name?: string | null;
   status: string | null;
   description: string | null;
   charter_hire: number | string | null;
@@ -406,6 +392,8 @@ export interface ProjectPlanningOccurrenceRecord {
   endsOn: string;
   primaryVesselId: number | null;
   primaryVesselName: string;
+  vesselIds?: number[];
+  vesselNames?: string[];
   status: string;
   description: string;
   charterHire: number | null;
@@ -659,13 +647,19 @@ export function mapProjectPlanningOccurrenceRows(
 ): ProjectPlanningOccurrenceRecord[] {
   return rows.flatMap((row) => {
     if (!Number.isInteger(row.catalog_project_id) || Number(row.catalog_project_id) <= 0) return [];
+    const vesselIds = (row.vessel_ids || [row.primary_vessel_id])
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const vesselNames = (row.vessel_names || [row.primary_vessel_name]).map(nullableText).filter(Boolean);
     return [{
       id: row.id,
       projectId: Number(row.catalog_project_id),
       startsOn: nullableText(row.starts_on),
       endsOn: nullableText(row.ends_on || row.starts_on),
-      primaryVesselId: row.primary_vessel_id,
-      primaryVesselName: nullableText(row.primary_vessel_name),
+      primaryVesselId: vesselIds[0] ?? null,
+      primaryVesselName: vesselNames[0] || '',
+      vesselIds,
+      vesselNames,
       status: normalizeProjectStatus(row.status),
       description: nullableText(row.description),
       charterHire: nullableNumber(row.charter_hire),
@@ -740,8 +734,10 @@ export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord
 export async function fetchProjectPlanningOccurrences(
   client: SupabaseClient,
 ): Promise<ProjectPlanningOccurrenceRecord[]> {
+  const { data, error } = await client.rpc('projects_planning_occurrences');
+  if (error) throw new Error(error.message || 'Impossible de charger les opérations des projets.');
   return mapProjectPlanningOccurrenceRows(
-    (await fetchRowsById(client, 'planning_projects', PROJECT_PLANNING_OCCURRENCE_SELECT)) as ProjectPlanningOccurrenceRow[],
+    (data || []) as ProjectPlanningOccurrenceRow[],
   );
 }
 
