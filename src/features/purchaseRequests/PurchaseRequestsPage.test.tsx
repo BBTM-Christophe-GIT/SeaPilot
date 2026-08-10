@@ -105,8 +105,18 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.getByRole('navigation', { name: 'Menu des demandes d’achat' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Demandes' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Vues' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Décision' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Logistique et suivi' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Décision' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Logistique et suivi' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Actions de la demande' }));
+    expect(screen.getByRole('menuitem', { name: 'Approuver' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Refuser' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Demander un complément' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Pièces jointes \(0\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Historique \(1\)/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menuitem', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Actions de la demande' })).toHaveFocus();
 
     fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'ampoule' } });
     expect(screen.getByRole('heading', { name: /#86.*Ampoule feu de navigation/i })).toBeInTheDocument();
@@ -131,8 +141,8 @@ describe('PurchaseRequestsPage', () => {
 
     expect(screen.getByRole('tab', { name: /En commande 1/i })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: /#101.*Moteur de commande/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Planifier la livraison à bord' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Planifier la livraison' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
   });
 
   it('runs the take-charge transition through the secured workflow RPC', async () => {

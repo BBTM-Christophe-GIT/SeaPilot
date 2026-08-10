@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   Inbox,
   MessageSquareMore,
+  MoreHorizontal,
   PackageCheck,
   Paperclip,
   Plus,
@@ -192,9 +193,11 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [requestForm, setRequestForm] = useState<CreatePurchaseRequestInput>(EMPTY_FORM);
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
+  const [requestActionsOpen, setRequestActionsOpen] = useState(false);
   const initialStageResolved = useRef(false);
   const attachmentsRef = useRef<HTMLDetailsElement>(null);
   const activityRef = useRef<HTMLDivElement>(null);
+  const requestActionsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const loadData = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true);
@@ -260,6 +263,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setSelectedId(first?.id || null);
   }, [activeStage, baseRequests]);
 
+  useEffect(() => { setRequestActionsOpen(false); }, [selectedId]);
+
   function updateForm<K extends keyof CreatePurchaseRequestInput>(key: K, value: CreatePurchaseRequestInput[K]) {
     setRequestForm((current) => ({ ...current, [key]: value }));
   }
@@ -311,6 +316,10 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     node?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function closeRequestActions() {
+    setRequestActionsOpen(false);
+  }
+
   if (isLoading) return <div className="admin-state">Chargement des demandes d'achat…</div>;
 
   return (
@@ -338,20 +347,6 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           <ModuleRibbonCommand className={activeStage === 'ordered' ? 'is-active' : ''} count={stageCounts.ordered} icon={<ShoppingCart aria-hidden="true" size={22} />} label="En commande" onClick={() => setActiveStage('ordered')} />
           <ModuleRibbonCommand className={activeStage === 'receiving' ? 'is-active' : ''} count={stageCounts.receiving} icon={<PackageCheck aria-hidden="true" size={22} />} label="À réception" onClick={() => setActiveStage('receiving')} />
           <ModuleRibbonCommand className={activeStage === 'completed' ? 'is-active' : ''} count={stageCounts.completed} icon={<CheckCircle2 aria-hidden="true" size={22} />} label="Traitées" onClick={() => setActiveStage('completed')} />
-        </ModuleRibbonGroup>
-
-        <ModuleRibbonGroup label="Décision">
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Prendre en charge" onClick={() => void runAction('take_charge')} />
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ShieldCheck aria-hidden="true" size={22} />} label="Approuver" onClick={() => void runAction('approve')} />
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ShieldX aria-hidden="true" size={22} />} label="Refuser" onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} />
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<MessageSquareMore aria-hidden="true" size={22} />} label="Demander un complément" onClick={() => setActionDialog({ action: 'request_information', comment: '', effectiveDate: '', title: 'Demander un complément' })} />
-        </ModuleRibbonGroup>
-
-        <ModuleRibbonGroup label="Logistique et suivi">
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'ordered'} icon={<Truck aria-hidden="true" size={22} />} label="Planifier la livraison à bord" onClick={() => selectedRequest && setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} />
-          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'receiving'} icon={<PackageCheck aria-hidden="true" size={22} />} label="Reçu à bord" onClick={() => void runAction('mark_received')} />
-          <ModuleRibbonCommand count={selectedRequest?.attachments.length || 0} disabled={!selectedRequest} icon={<Paperclip aria-hidden="true" size={22} />} label="Pièces jointes" onClick={() => scrollDetailIntoView('attachments')} />
-          <ModuleRibbonCommand count={selectedRequest ? selectedRequest.events.length + 1 : 0} disabled={!selectedRequest} icon={<History aria-hidden="true" size={22} />} label="Historique" onClick={() => scrollDetailIntoView('activity')} />
         </ModuleRibbonGroup>
       </ModuleRibbon>
 
@@ -399,7 +394,24 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         <section className="purchase-detail-panel" aria-label={selectedRequest ? `Demande ${selectedRequest.requestNumber}` : 'Détail de la demande'}>
           {selectedRequest ? <>
             <header className="purchase-detail-header">
-              <div><h2>#{selectedRequest.requestNumber} · {selectedRequest.title}</h2><div className="purchase-detail-meta"><span><Ship size={15} />{selectedRequest.vesselName || 'Sans navire'}</span><em className={`purchase-category is-${categoryKind(selectedRequest.categoryLabel)}`}>{categoryKind(selectedRequest.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em><span><CircleUserRound size={15} />{selectedRequest.requesterName || 'Demandeur'}</span><span><CalendarDays size={15} />{formatDate(selectedRequest.requestedOn)}</span></div></div>
+              <div className="purchase-detail-heading">
+                <h2>#{selectedRequest.requestNumber} · {selectedRequest.title}</h2>
+                <div className="purchase-detail-meta-line">
+                  <div className="purchase-detail-meta"><span><Ship size={15} />{selectedRequest.vesselName || 'Sans navire'}</span><em className={`purchase-category is-${categoryKind(selectedRequest.categoryLabel)}`}>{categoryKind(selectedRequest.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em><span><CircleUserRound size={15} />{selectedRequest.requesterName || 'Demandeur'}</span><span><CalendarDays size={15} />{formatDate(selectedRequest.requestedOn)}</span></div>
+                  <div className="purchase-context-actions">
+                    {processingAllowed && selectedRequest.stage === 'to_process' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={15} />Prendre en charge</button> : null}
+                    {processingAllowed && selectedRequest.stage === 'ordered' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={15} />Planifier la livraison</button> : null}
+                    {processingAllowed && selectedRequest.stage === 'receiving' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={15} />Reçu à bord</button> : null}
+                    <div className={`purchase-context-menu${requestActionsOpen ? ' is-open' : ''}`} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeRequestActions(); }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeRequestActions(); requestActionsTriggerRef.current?.focus(); } }}>
+                      <button aria-controls="purchase-request-actions-menu" aria-expanded={requestActionsOpen} aria-haspopup="menu" aria-label="Actions de la demande" className="purchase-context-menu-trigger" onClick={() => setRequestActionsOpen((current) => !current)} ref={requestActionsTriggerRef} type="button"><MoreHorizontal aria-hidden="true" size={17} /><span>Actions</span></button>
+                      {requestActionsOpen ? <div className="purchase-context-menu-panel" id="purchase-request-actions-menu" role="menu">
+                        {processingAllowed && selectedRequest.stage === 'to_process' ? <div className="purchase-context-menu-section"><span>Décision</span><button onClick={() => { closeRequestActions(); void runAction('approve'); }} role="menuitem" type="button"><ShieldCheck size={16} />Approuver</button><button className="is-danger" onClick={() => { closeRequestActions(); setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' }); }} role="menuitem" type="button"><ShieldX size={16} />Refuser</button><button onClick={() => { closeRequestActions(); setActionDialog({ action: 'request_information', comment: '', effectiveDate: '', title: 'Demander un complément' }); }} role="menuitem" type="button"><MessageSquareMore size={16} />Demander un complément</button></div> : null}
+                        <div className="purchase-context-menu-section"><span>Suivi</span><button aria-label={`Pièces jointes (${selectedRequest.attachments.length})`} onClick={() => { closeRequestActions(); scrollDetailIntoView('attachments'); }} role="menuitem" type="button"><Paperclip size={16} />Pièces jointes<em>{selectedRequest.attachments.length}</em></button><button aria-label={`Historique (${selectedRequest.events.length + 1})`} onClick={() => { closeRequestActions(); scrollDetailIntoView('activity'); }} role="menuitem" type="button"><History size={16} />Historique<em>{selectedRequest.events.length + 1}</em></button></div>
+                      </div> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </header>
 
             <div className="purchase-workflow" aria-label="Avancement de la demande">
