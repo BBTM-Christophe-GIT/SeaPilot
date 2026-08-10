@@ -19,6 +19,7 @@ import { AppDialog } from '../../components/AppDialog';
 import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
 import {
   billingExpenseAttachmentName,
+  billingOperationKey,
   billingServicesTotal,
   completeBillingDprs,
   countDailyOperations,
@@ -29,8 +30,11 @@ import {
   generateBillingExportPackage,
   missingBillingDates,
   saveProjectBillingPeriod,
+  saveProjectBillingPdfSelection,
   saveProjectBillingService,
   saveProjectChargeableExpense,
+  setProjectBillingServicePdfInclusion,
+  setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
   uploadProjectBillingDocument,
   type BillingExpenseCategory,
@@ -80,6 +84,10 @@ function billingDraft(project: ProjectRecord, period?: ProjectBillingPeriod): Bi
     paidOn: period?.paidOn || '',
     amountHt: period?.amountHt || 0,
     comments: period?.comments || '',
+    includeOperationsInPdf: period?.includeOperationsInPdf !== false,
+    includeExpensesInPdf: period?.includeExpensesInPdf !== false,
+    includeBbtmInPdf: period?.includeBbtmInPdf !== false,
+    excludedOperationKeys: period?.excludedOperationKeys || [],
   };
 }
 
@@ -136,7 +144,6 @@ export function ProjectBillingPanel({
   const [completeMissingDays, setCompleteMissingDays] = useState(false);
   const [serviceDraft, setServiceDraft] = useState({ unitAmountHt: 0, quantity: 0 });
   const [serviceQuantityEdited, setServiceQuantityEdited] = useState(false);
-  const [includeBbtmService, setIncludeBbtmService] = useState(true);
   const [exportFormat, setExportFormat] = useState<BillingExportFormat>('pdf');
   const [previewUrl, setPreviewUrl] = useState('');
   const [busy, setBusy] = useState('');
@@ -162,7 +169,6 @@ export function ProjectBillingPanel({
     setDprs([]);
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
-    setIncludeBbtmService(true);
     void reload();
   }, [project.id]);
 
@@ -193,12 +199,11 @@ export function ProjectBillingPanel({
     || selectedOperation?.primaryVesselName
     || project.primaryVesselName
     || '';
-  const defaultHire = selectedOperation?.charterHire ?? contract?.charterHire ?? 0;
   const missingDates = missingBillingDates(dprs, exportRange.start, exportRange.end);
   const exportDprs = completeMissingDays
     ? completeBillingDprs(dprs, exportRange.start, exportRange.end, {
       vesselName: selectedVesselName,
-      amountHt: defaultHire,
+      amountHt: null,
     })
     : dprs;
   const defaultServiceQuantity = countDailyOperations(exportDprs);
@@ -208,6 +213,7 @@ export function ProjectBillingPanel({
     category: 'spread_antipollution',
     unitAmountHt: serviceDraft.unitAmountHt,
     quantity: serviceDraft.quantity,
+    includeInPdf: periodServices[0]?.includeInPdf !== false,
   }];
 
   useEffect(() => {
@@ -257,9 +263,75 @@ export function ProjectBillingPanel({
     setCustomEnd(range.end);
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
-    setIncludeBbtmService(true);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl('');
+  }
+
+  async function updatePeriodPdfSelection(
+    changes: Partial<Pick<BillingPeriodDraft,
+      'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'excludedOperationKeys'>>,
+  ) {
+    if (!selectedPeriod || !isManager || busy) return;
+    const selection = {
+      includeOperationsInPdf: changes.includeOperationsInPdf ?? selectedPeriod.includeOperationsInPdf !== false,
+      includeExpensesInPdf: changes.includeExpensesInPdf ?? selectedPeriod.includeExpensesInPdf !== false,
+      includeBbtmInPdf: changes.includeBbtmInPdf ?? selectedPeriod.includeBbtmInPdf !== false,
+      excludedOperationKeys: changes.excludedOperationKeys ?? selectedPeriod.excludedOperationKeys ?? [],
+    };
+    setBusy('selection');
+    setError('');
+    setData((current) => ({
+      ...current,
+      periods: current.periods.map((period) => period.id === selectedPeriod.id ? { ...period, ...selection } : period),
+    }));
+    setPeriodDraft((current) => ({ ...current, ...selection }));
+    try {
+      await saveProjectBillingPdfSelection(client, selectedPeriod.id, selection);
+      setMessage('Sélection du PDF enregistrée.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la sélection du PDF.');
+      await reload();
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function toggleExpensePdf(expense: ProjectChargeableExpense) {
+    if (!isManager || busy) return;
+    const includeInPdf = expense.includeInPdf === false;
+    setBusy('selection');
+    setData((current) => ({
+      ...current,
+      expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, includeInPdf } : item),
+    }));
+    try {
+      await setProjectChargeableExpensePdfInclusion(client, expense.id, includeInPdf);
+      setMessage('Sélection du PDF enregistrée.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible de modifier cette ligne du PDF.');
+      await reload();
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function toggleServicePdf(service: ProjectBillingService) {
+    if (!isManager || busy) return;
+    const includeInPdf = service.includeInPdf === false;
+    setBusy('selection');
+    setData((current) => ({
+      ...current,
+      services: current.services.map((item) => item.id === service.id ? { ...item, includeInPdf } : item),
+    }));
+    try {
+      await setProjectBillingServicePdfInclusion(client, service.id, includeInPdf);
+      setMessage('Sélection du PDF enregistrée.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible de modifier cette prestation dans le PDF.');
+      await reload();
+    } finally {
+      setBusy('');
+    }
   }
 
   async function savePeriod() {
@@ -415,7 +487,7 @@ export function ProjectBillingPanel({
         period: { ...selectedPeriod, clientReference: periodDraft.clientReference },
         expenses: periodExpenses,
         services: serviceForExport,
-        includeBbtmService,
+        includeBbtmService: selectedPeriod.includeBbtmInPdf !== false,
         dprs: exportDprs,
         selectedVesselName,
         startDate: exportRange.start,
@@ -454,16 +526,26 @@ export function ProjectBillingPanel({
       <article className="project-billing-card">
         <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT à refacturer</small></span></div>
-          {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => setExpenseEditor({ draft: expenseDraft(selectedMonth) })} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
+          <div className="project-billing-card-actions">
+            <button
+              aria-pressed={selectedPeriod?.includeExpensesInPdf !== false}
+              className={`project-billing-pdf-toggle${selectedPeriod?.includeExpensesInPdf !== false ? ' is-active' : ''}`}
+              disabled={!isManager || !selectedPeriod || Boolean(busy)}
+              onClick={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })}
+              type="button"
+            >{selectedPeriod?.includeExpensesInPdf !== false ? <><Eye size={16} /> Affichés dans le PDF</> : <><EyeOff size={16} /> Masqués du PDF</>}</button>
+            {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => setExpenseEditor({ draft: expenseDraft(selectedMonth) })} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
+          </div>
         </header>
         <div className="project-billing-table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Catégorie</th><th>Fournisseur</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
+            <thead><tr><th>PDF</th><th>Date</th><th>Catégorie</th><th>Fournisseur</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
             <tbody>
               {periodExpenses.map((expense) => {
                 const documents = periodDocuments.filter((document) => document.chargeableExpenseId === expense.id);
                 return (
                   <tr key={expense.id}>
+                    <td><input aria-label={`Inclure le frais ${expense.invoiceNumber || expense.supplier} dans le PDF`} checked={expense.includeInPdf !== false} disabled={!isManager || Boolean(busy)} onChange={() => void toggleExpensePdf(expense)} type="checkbox" /></td>
                     <td>{expense.invoiceDate}</td>
                     <td>{expense.category === 'other' ? expense.nature : CATEGORY_LABELS[expense.category]}</td>
                     <td>{expense.supplier}</td>
@@ -509,7 +591,7 @@ export function ProjectBillingPanel({
                   </tr>
                 );
               })}
-              {!periodExpenses.length ? <tr><td className="project-billing-empty" colSpan={8}>Aucun service refacturable pour ce mois.</td></tr> : null}
+              {!periodExpenses.length ? <tr><td className="project-billing-empty" colSpan={9}>Aucun service refacturable pour ce mois.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -526,14 +608,14 @@ export function ProjectBillingPanel({
           </div>
           <div className="project-billing-card-actions">
             <button
-              aria-label={includeBbtmService ? 'Masquer la prestation BBTM du PDF' : 'Afficher la prestation BBTM dans le PDF'}
-              aria-pressed={includeBbtmService}
-              className={`project-billing-pdf-toggle${includeBbtmService ? ' is-active' : ''}`}
-              disabled={Boolean(busy)}
-              onClick={() => setIncludeBbtmService((included) => !included)}
+              aria-label={selectedPeriod?.includeBbtmInPdf !== false ? 'Masquer la prestation BBTM du PDF' : 'Afficher la prestation BBTM dans le PDF'}
+              aria-pressed={selectedPeriod?.includeBbtmInPdf !== false}
+              className={`project-billing-pdf-toggle${selectedPeriod?.includeBbtmInPdf !== false ? ' is-active' : ''}`}
+              disabled={!isManager || !selectedPeriod || Boolean(busy)}
+              onClick={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })}
               type="button"
             >
-              {includeBbtmService
+              {selectedPeriod?.includeBbtmInPdf !== false
                 ? <><Eye aria-hidden="true" size={16} /> Affichée dans le PDF</>
                 : <><EyeOff aria-hidden="true" size={16} /> Masquée du PDF</>}
             </button>
@@ -572,11 +654,12 @@ export function ProjectBillingPanel({
             />
           </label>
           <label>Montant total HT<input disabled value={money(serviceDraft.unitAmountHt * serviceDraft.quantity)} /></label>
+          <label className="project-billing-line-selection"><input checked={periodServices[0]?.includeInPdf !== false} disabled={!isManager || !periodServices[0] || Boolean(busy)} onChange={() => periodServices[0] && void toggleServicePdf(periodServices[0])} type="checkbox" /> Inclure cette prestation dans le PDF</label>
         </div>
       </article>
 
       <article className="project-billing-card project-billing-export">
-        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Présentation inspirée du modèle P144 : opérations, frais et totaux HT.</span></div></header>
+        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Présentation inspirée du modèle P144 : opérations, frais et totaux HT.</span></div><button aria-pressed={selectedPeriod?.includeOperationsInPdf !== false} className={`project-billing-pdf-toggle${selectedPeriod?.includeOperationsInPdf !== false ? ' is-active' : ''}`} disabled={!isManager || !selectedPeriod || Boolean(busy)} onClick={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} type="button">{selectedPeriod?.includeOperationsInPdf !== false ? <><Eye size={16} /> Affichés dans le PDF</> : <><EyeOff size={16} /> Masqués du PDF</>}</button></header>
         <div className="project-billing-export-controls">
           <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
           {periodMode === 'custom' ? <><label>Début<input onChange={(event) => setCustomStart(event.target.value)} type="date" value={customStart} /></label><label>Fin<input onChange={(event) => setCustomEnd(event.target.value)} type="date" value={customEnd} /></label></> : null}
@@ -594,10 +677,20 @@ export function ProjectBillingPanel({
               />
               <span>
                 Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec
-                « 24/24 Operation » à {money(defaultHire)} HT par jour.
+                « 24/24 Operation » au tarif contractuel applicable à chaque journée.
               </span>
             </label>
           ) : <p className="project-billing-range-complete">Tous les jours de la période disposent d’un DPR.</p>}
+          {selectedPeriod && exportDprs.length ? (
+            <fieldset className="project-billing-operation-selection">
+              <legend>Journées et opérations incluses dans le PDF</legend>
+              {exportDprs.filter((dpr) => dpr.reportDate >= exportRange.start && dpr.reportDate <= exportRange.end).map((dpr) => {
+                const key = billingOperationKey(dpr);
+                const included = !(selectedPeriod.excludedOperationKeys || []).includes(key);
+                return <label key={key}><input checked={included} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ excludedOperationKeys: included ? [...(selectedPeriod.excludedOperationKeys || []), key] : (selectedPeriod.excludedOperationKeys || []).filter((item) => item !== key) })} type="checkbox" /><span>{new Date(`${dpr.reportDate}T12:00:00`).toLocaleDateString('fr-FR')} · {dpr.operation || '24/24 Operation'}{dpr.vesselName ? ` · ${dpr.vesselName}` : ''}</span></label>;
+              })}
+            </fieldset>
+          ) : null}
           <div className="project-billing-export-actions">
             {isManager ? <button disabled={Boolean(busy)} onClick={() => void savePeriod()} type="button"><Save aria-hidden="true" size={16} /> Enregistrer les paramètres</button> : null}
             <button disabled={busy === 'export'} onClick={() => void createExport('preview')} type="button">Actualiser l’aperçu</button>

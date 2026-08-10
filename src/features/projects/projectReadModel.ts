@@ -273,7 +273,11 @@ function canonicalSupplytimeValue(
     box15_declaration: money(contract?.demobilisationFee, contract?.feeCurrency || ''),
     box16_area_operation: project.operationArea,
     box17_employment: project.title,
-    box20_charter_hire: money(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit),
+    box20_charter_hire: contract?.hirePeriods?.length
+      ? contract.hirePeriods
+        .map((period) => `${period.startsOn}${period.endsOn ? ` au ${period.endsOn}` : ' et après'} : ${money(period.charterHire, period.hireCurrency, period.hireUnit)}`)
+        .join('\n')
+      : money(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit),
     box21_extension_hire: money(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit),
     box26_max_price: contract?.maxAuditPeriod || '',
   };

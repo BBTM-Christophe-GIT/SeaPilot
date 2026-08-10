@@ -38,31 +38,15 @@ const PROJECT_SELECT = [
   'updated_at',
 ].join(', ');
 
-const PROJECT_CONTRACT_SELECT = [
+const PROJECT_CONTRACT_HIRE_PERIOD_SELECT = [
   'id',
   'project_id',
-  'owner_identity',
-  'vessel_assignment_limit',
-  'extension_count',
-  'extension_duration',
-  'extension_unit',
-  'auto_extension_period',
-  'max_extension_days',
-  'mobilisation_fee',
-  'demobilisation_fee',
-  'fee_currency',
+  'contract_id',
+  'starts_on',
+  'ends_on',
   'charter_hire',
-  'extension_hire',
   'hire_currency',
   'hire_unit',
-  'max_audit_period',
-  'supplytime_schema_version',
-  'supplytime_data',
-  'source_label',
-  'sharepoint_list_title',
-  'sharepoint_item_id',
-  'source_modified_at',
-  'archived_at',
 ].join(', ');
 
 const VESSEL_SELECT = ['id', 'name', 'acronym', 'active', 'fleet_exit_on', 'sharepoint_item_id'].join(', ');
@@ -253,6 +237,7 @@ interface ProjectPlanningOccurrenceRow {
   charter_hire: number | string | null;
   hire_currency: string | null;
   hire_unit: string | null;
+  charter_hire_override: boolean | null;
   source_label: string | null;
   created_at: string;
 }
@@ -330,6 +315,18 @@ export interface ProjectContractRecord {
   sharePointItemId: string;
   sourceModifiedAt: string;
   archivedAt: string;
+  hirePeriods?: ProjectContractHirePeriodRecord[];
+}
+
+export interface ProjectContractHirePeriodRecord {
+  id: number;
+  projectId: number;
+  contractId: number;
+  startsOn: string;
+  endsOn: string;
+  charterHire: number;
+  hireCurrency: string;
+  hireUnit: string;
 }
 
 export interface ProjectDocumentRecord {
@@ -399,6 +396,7 @@ export interface ProjectPlanningOccurrenceRecord {
   charterHire: number | null;
   hireCurrency: string;
   hireUnit: string;
+  charterHireOverride?: boolean;
   sourceLabel: string;
   createdAt: string;
 }
@@ -419,6 +417,7 @@ export interface ProjectOperationDocumentRecord {
 export type ProjectsDataSource =
   | 'clients'
   | 'contractDocuments'
+  | 'contractHirePeriods'
   | 'operationDocuments'
   | 'planningOccurrences'
   | 'projectContracts'
@@ -433,6 +432,7 @@ export interface ProjectsDataWarning {
 export interface ProjectsData {
   projects: ProjectRecord[];
   projectContracts: ProjectContractRecord[];
+  contractHirePeriods: ProjectContractHirePeriodRecord[];
   projectDocuments: ProjectDocumentRecord[];
   contractDocuments: ProjectDocumentRecord[];
   operationDocuments: ProjectOperationDocumentRecord[];
@@ -583,6 +583,21 @@ export function mapProjectContractRows(rows: ProjectContractRow[]): ProjectContr
   }));
 }
 
+export function mapProjectContractHirePeriodRows(
+  rows: Array<Record<string, unknown>>,
+): ProjectContractHirePeriodRecord[] {
+  return rows.map((row) => ({
+    id: Number(row.id),
+    projectId: Number(row.project_id),
+    contractId: Number(row.contract_id),
+    startsOn: nullableText(row.starts_on as string | null),
+    endsOn: nullableText(row.ends_on as string | null),
+    charterHire: nullableNumber(row.charter_hire as number | string | null) ?? 0,
+    hireCurrency: nullableText(row.hire_currency as string | null),
+    hireUnit: nullableText(row.hire_unit as string | null),
+  }));
+}
+
 export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
   return rows.map((row) => ({
     id: row.id,
@@ -665,6 +680,7 @@ export function mapProjectPlanningOccurrenceRows(
       charterHire: nullableNumber(row.charter_hire),
       hireCurrency: nullableText(row.hire_currency),
       hireUnit: nullableText(row.hire_unit),
+      charterHireOverride: row.charter_hire_override ?? false,
       sourceLabel: nullableText(row.source_label),
       createdAt: nullableText(row.created_at),
     }];
@@ -706,8 +722,20 @@ export async function fetchProjects(client: SupabaseClient): Promise<ProjectReco
 }
 
 export async function fetchProjectContracts(client: SupabaseClient): Promise<ProjectContractRecord[]> {
-  return mapProjectContractRows(
-    (await fetchRowsById(client, 'project_contracts', PROJECT_CONTRACT_SELECT)) as ProjectContractRow[],
+  const { data, error } = await client.rpc('projects_contracts');
+  if (error) throw new Error(error.message || 'Impossible de charger les contrats des projets.');
+  return mapProjectContractRows((data || []) as ProjectContractRow[]);
+}
+
+export async function fetchProjectContractHirePeriods(
+  client: SupabaseClient,
+): Promise<ProjectContractHirePeriodRecord[]> {
+  return mapProjectContractHirePeriodRows(
+    (await fetchRowsById(
+      client,
+      'project_contract_hire_periods',
+      PROJECT_CONTRACT_HIRE_PERIOD_SELECT,
+    )) as Array<Record<string, unknown>>,
   );
 }
 
@@ -766,10 +794,11 @@ const OPTIONAL_SOURCES: Array<{
 ];
 
 export async function fetchProjectsData(client: SupabaseClient): Promise<ProjectsData> {
-  const [projectsResult, contractsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult] =
+  const [projectsResult, contractsResult, hirePeriodsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult] =
     await Promise.allSettled([
       fetchProjects(client),
       fetchProjectContracts(client),
+      fetchProjectContractHirePeriods(client),
       fetchProjectDocuments(client),
       fetchContractDocuments(client),
       fetchProjectOperationDocuments(client),
@@ -787,9 +816,18 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     result.status === 'rejected' ? [OPTIONAL_SOURCES[index]] : [],
   );
 
+  const contractHirePeriods = hirePeriodsResult.status === 'fulfilled' ? hirePeriodsResult.value : [];
+  const projectContracts = contractsResult.status === 'fulfilled'
+    ? contractsResult.value.map((contract) => ({
+      ...contract,
+      hirePeriods: contractHirePeriods.filter((period) => period.contractId === contract.id),
+    }))
+    : [];
+
   return {
     projects: projectsResult.value,
-    projectContracts: contractsResult.status === 'fulfilled' ? contractsResult.value : [],
+    projectContracts,
+    contractHirePeriods,
     projectDocuments: projectDocumentsResult.status === 'fulfilled' ? projectDocumentsResult.value : [],
     contractDocuments: contractDocumentsResult.status === 'fulfilled' ? contractDocumentsResult.value : [],
     operationDocuments: operationDocumentsResult.status === 'fulfilled' ? operationDocumentsResult.value : [],

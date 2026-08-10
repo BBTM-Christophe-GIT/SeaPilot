@@ -102,6 +102,15 @@ function extensionLabel(contract?: ProjectContractRecord): string {
   return `${contract.extensionCount} x ${contract.extensionDuration} ${contract.extensionUnit}`.trim();
 }
 
+function contractHireScheduleLabel(contract?: ProjectContractRecord): string {
+  if (!contract?.hirePeriods?.length) {
+    return formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit);
+  }
+  return contract.hirePeriods
+    .map((period) => `${formatDate(period.startsOn)}${period.endsOn ? ` - ${formatDate(period.endsOn)}` : ' et après'} : ${formatMoney(period.charterHire, period.hireCurrency, period.hireUnit)}`)
+    .join('\n');
+}
+
 export function buildProjectOfferRows({
   client,
   contract,
@@ -124,7 +133,7 @@ export function buildProjectOfferRows({
     { label: 'Dur\u00e9e ferme affr\u00e8tement', value: present(supplytime.box09_period) },
     { label: 'Dur\u00e9es optionnelles', value: extensionLabel(contract) },
     { label: 'Rythme', value: present(contract?.hireUnit) },
-    { label: 'Day rate normal', value: formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit) },
+    { label: 'Day rate normal', value: contractHireScheduleLabel(contract) },
     { label: 'Day rate extension', value: formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit) },
     { label: 'Fuel', value: present(supplytime.box14_bunker_delivery || supplytime.box19_special_fuel) },
     { label: 'Port / zone', value: present(project.operationArea || project.deliveryPort) },

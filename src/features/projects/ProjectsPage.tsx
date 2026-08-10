@@ -67,6 +67,7 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
   contractDocuments: [],
   operationDocuments: [],
   projectContracts: [],
+  contractHirePeriods: [],
   projectDocuments: [],
   planningOccurrences: [],
   projects: [],
@@ -586,10 +587,6 @@ function ProjectDetail({
                   const documents = operationDocuments.filter(
                     (document) => document.planningOccurrenceId === occurrence.id,
                   );
-                  const inheritedHire =
-                    occurrence.charterHire === contract?.charterHire
-                    && occurrence.hireCurrency === (contract?.hireCurrency || '')
-                    && occurrence.hireUnit === (contract?.hireUnit || '');
                   return (
                     <tr key={occurrence.id}>
                       <td>
@@ -602,7 +599,7 @@ function ProjectDetail({
                       {isManager ? (
                         <td>
                           <strong>{formatMoney(occurrence.charterHire, occurrence.hireCurrency, occurrence.hireUnit)}</strong>
-                          <small>{inheritedHire ? 'Loyer du contrat' : 'Modifié pour l’opération'}</small>
+                          <small>{occurrence.charterHireOverride ? 'Tarif personnalisé' : 'Barème contractuel'}</small>
                         </td>
                       ) : null}
                       <td>
