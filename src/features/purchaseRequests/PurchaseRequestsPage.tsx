@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   CalendarDays,
-  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -10,22 +10,27 @@ import {
   ClipboardCheck,
   FileCheck2,
   FileText,
+  Filter,
+  History,
   Image as ImageIcon,
+  Inbox,
+  MessageSquareMore,
   PackageCheck,
   Paperclip,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
+  ShieldX,
   Ship,
   ShoppingCart,
-  SlidersHorizontal,
   Truck,
-  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
+import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -188,6 +193,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
   const initialStageResolved = useRef(false);
+  const attachmentsRef = useRef<HTMLDetailsElement>(null);
+  const activityRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true);
@@ -298,11 +305,10 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     }
   }
 
-  function primaryAction(request: PurchaseRequestRecord) {
-    if (!processingAllowed || request.stage === 'completed') return null;
-    if (request.stage === 'to_process') return <button className="purchase-action-primary" onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={16} />Prendre en charge</button>;
-    if (request.stage === 'ordered') return <button className="purchase-action-primary" onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: request.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={16} />Planifier la livraison à bord</button>;
-    return <button className="purchase-action-primary" onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={16} />Reçu à bord</button>;
+  function scrollDetailIntoView(target: 'attachments' | 'activity') {
+    const node = target === 'attachments' ? attachmentsRef.current : activityRef.current;
+    if (target === 'attachments' && attachmentsRef.current) attachmentsRef.current.open = true;
+    node?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   if (isLoading) return <div className="admin-state">Chargement des demandes d'achat…</div>;
@@ -316,10 +322,38 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         </div>
         <div className="purchase-topbar-actions">
           <label className="purchase-search"><Search size={17} /><input aria-label="Rechercher les demandes" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher par demande, article, navire…" value={search} /></label>
-          <button className={showFilters ? 'is-active' : ''} onClick={() => setShowFilters((current) => !current)} type="button"><SlidersHorizontal size={17} />Filtres</button>
-          {creationAllowed ? <button className="purchase-new-button" onClick={() => setShowCreateDialog(true)} type="button"><Plus size={18} />Nouvelle demande</button> : null}
         </div>
       </header>
+
+      <ModuleRibbon ariaLabel="Menu des demandes d’achat" className="purchase-module-toolbar">
+        <ModuleRibbonGroup label="Demandes">
+          {creationAllowed ? <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Nouvelle demande" onClick={() => setShowCreateDialog(true)} /> : null}
+          <ModuleRibbonCommand className={showFilters ? 'is-active' : ''} icon={<Filter aria-hidden="true" size={22} />} label="Filtres" onClick={() => setShowFilters((current) => !current)} />
+          <ModuleRibbonCommand className={filters.urgentOnly ? 'is-active' : ''} count={metrics.urgentCount} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Urgences" onClick={() => setFilters((current) => ({ ...current, urgentOnly: !current.urgentOnly }))} />
+          <ModuleRibbonCommand disabled={isSaving} icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => void loadData()} />
+        </ModuleRibbonGroup>
+
+        <ModuleRibbonGroup label="Vues">
+          <ModuleRibbonCommand className={activeStage === 'to_process' ? 'is-active' : ''} count={stageCounts.to_process} icon={<Inbox aria-hidden="true" size={22} />} label="À traiter" onClick={() => setActiveStage('to_process')} />
+          <ModuleRibbonCommand className={activeStage === 'ordered' ? 'is-active' : ''} count={stageCounts.ordered} icon={<ShoppingCart aria-hidden="true" size={22} />} label="En commande" onClick={() => setActiveStage('ordered')} />
+          <ModuleRibbonCommand className={activeStage === 'receiving' ? 'is-active' : ''} count={stageCounts.receiving} icon={<PackageCheck aria-hidden="true" size={22} />} label="À réception" onClick={() => setActiveStage('receiving')} />
+          <ModuleRibbonCommand className={activeStage === 'completed' ? 'is-active' : ''} count={stageCounts.completed} icon={<CheckCircle2 aria-hidden="true" size={22} />} label="Traitées" onClick={() => setActiveStage('completed')} />
+        </ModuleRibbonGroup>
+
+        <ModuleRibbonGroup label="Décision">
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Prendre en charge" onClick={() => void runAction('take_charge')} />
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ShieldCheck aria-hidden="true" size={22} />} label="Approuver" onClick={() => void runAction('approve')} />
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<ShieldX aria-hidden="true" size={22} />} label="Refuser" onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} />
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'to_process'} icon={<MessageSquareMore aria-hidden="true" size={22} />} label="Demander un complément" onClick={() => setActionDialog({ action: 'request_information', comment: '', effectiveDate: '', title: 'Demander un complément' })} />
+        </ModuleRibbonGroup>
+
+        <ModuleRibbonGroup label="Logistique et suivi">
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'ordered'} icon={<Truck aria-hidden="true" size={22} />} label="Planifier la livraison à bord" onClick={() => selectedRequest && setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} />
+          <ModuleRibbonCommand disabled={isSaving || !processingAllowed || selectedRequest?.stage !== 'receiving'} icon={<PackageCheck aria-hidden="true" size={22} />} label="Reçu à bord" onClick={() => void runAction('mark_received')} />
+          <ModuleRibbonCommand count={selectedRequest?.attachments.length || 0} disabled={!selectedRequest} icon={<Paperclip aria-hidden="true" size={22} />} label="Pièces jointes" onClick={() => scrollDetailIntoView('attachments')} />
+          <ModuleRibbonCommand count={selectedRequest ? selectedRequest.events.length + 1 : 0} disabled={!selectedRequest} icon={<History aria-hidden="true" size={22} />} label="Historique" onClick={() => scrollDetailIntoView('activity')} />
+        </ModuleRibbonGroup>
+      </ModuleRibbon>
 
       {showFilters ? (
         <div className="purchase-modern-filters">
@@ -366,14 +400,6 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           {selectedRequest ? <>
             <header className="purchase-detail-header">
               <div><h2>#{selectedRequest.requestNumber} · {selectedRequest.title}</h2><div className="purchase-detail-meta"><span><Ship size={15} />{selectedRequest.vesselName || 'Sans navire'}</span><em className={`purchase-category is-${categoryKind(selectedRequest.categoryLabel)}`}>{categoryKind(selectedRequest.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em><span><CircleUserRound size={15} />{selectedRequest.requesterName || 'Demandeur'}</span><span><CalendarDays size={15} />{formatDate(selectedRequest.requestedOn)}</span></div></div>
-              <div className="purchase-detail-actions">
-                {processingAllowed && selectedRequest.stage === 'to_process' ? <>
-                  <button className="is-danger-ghost" onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} type="button"><X size={15} />Refuser</button>
-                  <button onClick={() => setActionDialog({ action: 'request_information', comment: '', effectiveDate: '', title: 'Demander un complément' })} type="button">Demander un complément</button>
-                  <button className="is-approve" onClick={() => void runAction('approve')} type="button"><Check size={15} />Approuver</button>
-                </> : null}
-                {primaryAction(selectedRequest)}
-              </div>
             </header>
 
             <div className="purchase-workflow" aria-label="Avancement de la demande">
@@ -388,8 +414,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
             <div className="purchase-detail-section"><h3>Besoin</h3><p>{htmlToText(selectedRequest.description) || selectedRequest.urgencyReason || 'Aucune description complémentaire.'}</p>{selectedRequest.reference ? <dl><div><dt>Référence</dt><dd>{selectedRequest.reference}</dd></div><div><dt>Quantité</dt><dd>{selectedRequest.quantity || '—'} {selectedRequest.unitLabel}</dd></div><div><dt>Fournisseur</dt><dd>{selectedRequest.supplierName || 'À définir'}</dd></div><div><dt>Montant HT</dt><dd>{selectedRequest.amountHt.toLocaleString('fr-FR', { style: 'currency', currency: selectedRequest.currency || 'EUR' })}</dd></div></dl> : null}</div>
             <div className="purchase-detail-section"><h3>Livraison à bord</h3><dl><div><dt>Navire</dt><dd>{selectedRequest.vesselName || '—'}</dd></div><div><dt>Lieu de livraison</dt><dd>{selectedRequest.deliveryLocation || '—'}</dd></div><div><dt>Date souhaitée</dt><dd>{formatDate(selectedRequest.expectedDeliveryOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedRequest.ownerName || 'Non attribué'}</dd></div><div><dt>Précision</dt><dd>{selectedRequest.deliveryDetails || '—'}</dd></div><div><dt>Traitement</dt><dd>{selectedRequest.processingComment || '—'}</dd></div></dl></div>
-            <details className="purchase-attachments" open><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'SeaPilot'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
-            <div className="purchase-activity"><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
+            <details className="purchase-attachments" open ref={attachmentsRef}><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'SeaPilot'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
+            <div className="purchase-activity" ref={activityRef}><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
           </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>Sélectionnez une demande pour afficher son suivi.</p></div>}
         </section>
       </div>
