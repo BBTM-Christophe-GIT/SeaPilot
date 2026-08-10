@@ -102,6 +102,11 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.getByRole('tab', { name: /À traiter 2/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Remplacement du moteur de commande régulation GE1 défectueux.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Menu des demandes d’achat' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Demandes' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Vues' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Décision' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Logistique et suivi' })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'ampoule' } });
     expect(screen.getByRole('heading', { name: /#86.*Ampoule feu de navigation/i })).toBeInTheDocument();
@@ -109,6 +114,25 @@ describe('PurchaseRequestsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
     expect(screen.getByLabelText('Urgences uniquement')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Urgences (1)' }));
+    expect(screen.getByRole('button', { name: 'Urgences (1)' })).toHaveClass('is-active');
+  });
+
+  it('uses the ribbon views to change the workflow stage', async () => {
+    const user = userEvent.setup();
+    const orderedRequest = { ...baseRequest, id: 101, request_number: '101', status: 'Commande en cours', ordered_on: '2026-08-01' };
+    const { client } = createClient([baseRequest, orderedRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: /#95.*Moteur de commande/i });
+
+    await user.click(screen.getByRole('button', { name: 'En commande (1)' }));
+
+    expect(screen.getByRole('tab', { name: /En commande 1/i })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('heading', { name: /#101.*Moteur de commande/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Planifier la livraison à bord' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeDisabled();
   });
 
   it('runs the take-charge transition through the secured workflow RPC', async () => {

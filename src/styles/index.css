@@ -2629,6 +2629,23 @@ button:disabled {
   font-weight: 700;
 }
 
+.purchase-module-toolbar {
+  width: 100%;
+}
+
+.purchase-module-toolbar .planning-ribbon-command.is-active {
+  border-color: #c9dcf4;
+  color: #0f57b7;
+  background: #edf5ff;
+  box-shadow: inset 0 -2px 0 #1769dc;
+}
+
+.purchase-module-toolbar .planning-ribbon-command:disabled:hover {
+  border-color: transparent;
+  color: #20344f;
+  background: transparent;
+}
+
 .purchase-topbar-actions {
   display: flex;
   align-items: center;
@@ -3513,7 +3530,6 @@ button:disabled {
 
 @media (max-width: 720px) {
   .purchase-modern-filters { grid-template-columns: 1fr; }
-  .purchase-topbar-actions > button { flex: 1 1 auto; }
   .purchase-tabs { overflow-x: auto; grid-template-columns: repeat(4, minmax(110px, 1fr)); }
   .purchase-list-head { display: none; }
   .purchase-list-row { grid-template-columns: minmax(155px, 1.5fr) 70px 82px; min-height: 78px; padding-inline: 14px; }
