@@ -369,6 +369,8 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Inclure les services refacturables dans le PDF')).toBeInTheDocument();
     expect(screen.getByLabelText('Inclure la prestation BBTM dans le PDF')).toBeInTheDocument();
+    expect(within(screen.getByText('Prestation BBTM').closest('article')!).getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les loyers dans le PDF')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Affich.*PDF/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();

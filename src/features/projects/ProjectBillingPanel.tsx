@@ -31,7 +31,6 @@ import {
   saveProjectBillingPdfSelection,
   saveProjectBillingService,
   saveProjectChargeableExpense,
-  setProjectBillingServicePdfInclusion,
   setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
   uploadProjectBillingDocument,
@@ -211,7 +210,7 @@ export function ProjectBillingPanel({
     category: 'spread_antipollution',
     unitAmountHt: serviceDraft.unitAmountHt,
     quantity: serviceDraft.quantity,
-    includeInPdf: periodServices[0]?.includeInPdf !== false,
+    includeInPdf: true,
   }];
 
   useEffect(() => {
@@ -307,25 +306,6 @@ export function ProjectBillingPanel({
       setMessage('Sélection du PDF enregistrée.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Impossible de modifier cette ligne du PDF.');
-      await reload();
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function toggleServicePdf(service: ProjectBillingService) {
-    if (!isManager || busy) return;
-    const includeInPdf = service.includeInPdf === false;
-    setBusy('selection');
-    setData((current) => ({
-      ...current,
-      services: current.services.map((item) => item.id === service.id ? { ...item, includeInPdf } : item),
-    }));
-    try {
-      await setProjectBillingServicePdfInclusion(client, service.id, includeInPdf);
-      setMessage('Sélection du PDF enregistrée.');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Impossible de modifier cette prestation dans le PDF.');
       await reload();
     } finally {
       setBusy('');
@@ -634,7 +614,6 @@ export function ProjectBillingPanel({
             />
           </label>
           <label>Montant total HT<input disabled value={money(serviceDraft.unitAmountHt * serviceDraft.quantity)} /></label>
-          <label className="project-billing-line-selection"><input checked={periodServices[0]?.includeInPdf !== false} disabled={!isManager || !periodServices[0] || Boolean(busy)} onChange={() => periodServices[0] && void toggleServicePdf(periodServices[0])} type="checkbox" /> Inclure cette prestation dans le PDF</label>
         </div>
       </article>
 
