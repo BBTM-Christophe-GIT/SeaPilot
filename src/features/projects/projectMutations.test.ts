@@ -9,9 +9,20 @@ import {
   saveProject,
   validateProjectWriteInput,
   validateProjectPlanningOccurrenceInput,
+  validateProjectContractHirePeriods,
 } from './projectMutations';
 
 describe('projectMutations', () => {
+  it('validates dated contract rates and rejects overlaps', () => {
+    expect(validateProjectContractHirePeriods([
+      { startsOn: '2026-01-01', endsOn: '2026-06-30', charterHire: 4000, hireCurrency: 'EUR', hireUnit: 'jour' },
+      { startsOn: '2026-06-30', endsOn: '', charterHire: 4500, hireCurrency: 'EUR', hireUnit: 'jour' },
+    ])).toContain('Les périodes tarifaires 1 et 2 se chevauchent.');
+    expect(validateProjectContractHirePeriods([
+      { startsOn: '2026-01-01', endsOn: '2026-06-30', charterHire: 4000, hireCurrency: 'EUR', hireUnit: 'jour' },
+      { startsOn: '2026-07-01', endsOn: '', charterHire: 4500, hireCurrency: 'EUR', hireUnit: 'jour' },
+    ])).toEqual([]);
+  });
   it('sends one atomic project and contract RPC and uses the server-allocated number', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { id: 901, project_code: 'P1107', title: 'Projet concurrent', updated_at: '2026-07-16T08:00:00Z' },

@@ -2,10 +2,12 @@ import { CalendarDays, CreditCard, ExternalLink, FileText, FileUp, FolderOpen, P
 import { useEffect, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
+  saveProjectContractHirePeriods,
   saveProjectPlanningOccurrence,
   saveClient,
   saveProject,
   type ClientWriteInput,
+  type ProjectContractHirePeriodWriteInput,
   type ProjectMutationResult,
   type ProjectPlanningOccurrenceWriteInput,
   type ProjectWriteInput,
@@ -203,6 +205,27 @@ export function ProjectEditor({
   vessels,
 }: ProjectEditorProps) {
   const [form, setForm] = useState(() => projectToWriteInput(project, contract));
+  const [hirePeriods, setHirePeriods] = useState<ProjectContractHirePeriodWriteInput[]>(() => {
+    if (contract?.hirePeriods?.length) {
+      return contract.hirePeriods.map((period) => ({
+        startsOn: period.startsOn,
+        endsOn: period.endsOn,
+        charterHire: period.charterHire,
+        hireCurrency: period.hireCurrency,
+        hireUnit: period.hireUnit,
+      }));
+    }
+    if (contract?.charterHire !== null && contract?.charterHire !== undefined) {
+      return [{
+        startsOn: project?.startsOn || new Date().toISOString().slice(0, 10),
+        endsOn: '',
+        charterHire: contract.charterHire,
+        hireCurrency: contract.hireCurrency || 'EUR',
+        hireUnit: contract.hireUnit || 'jour',
+      }];
+    }
+    return [];
+  });
   const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
   const [availableClients, setAvailableClients] = useState<
     Pick<ClientRecord, 'active' | 'id' | 'name'>[]
@@ -214,6 +237,7 @@ export function ProjectEditor({
   const [initialOperationForm, setInitialOperationForm] = useState<ProjectPlanningOccurrenceWriteInput | null>(() => (
     initialOperation ? {
       charterHire: null,
+      charterHireOverride: false,
       description: '',
       endsOn: initialOperation.endsOn,
       hireCurrency: '',
@@ -261,8 +285,15 @@ export function ProjectEditor({
     setIsSaving(true);
     let savedProject: ProjectMutationResult | null = null;
     try {
-      const result = await saveProject(client, form);
+      const firstHirePeriod = [...hirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
+      const result = await saveProject(client, firstHirePeriod ? {
+        ...form,
+        charterHire: firstHirePeriod.charterHire,
+        hireCurrency: firstHirePeriod.hireCurrency,
+        hireUnit: firstHirePeriod.hireUnit,
+      } : form);
       savedProject = result;
+      await saveProjectContractHirePeriods(client, result.id, hirePeriods);
       if (initialOperationForm) {
         const occurrenceId = await saveProjectPlanningOccurrence(client, {
           ...initialOperationForm,
@@ -470,10 +501,33 @@ export function ProjectEditor({
               <Field label="Frais de mobilisation"><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
               <Field label="Frais de démobilisation"><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
               <Field label="Devise des frais"><input maxLength={3} onChange={(event) => update('feeCurrency', event.target.value.toUpperCase())} placeholder="EUR" value={form.feeCurrency} /></Field>
-              <Field label="Loyer d’affrètement"><input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} /></Field>
               <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
-              <Field label="Devise des loyers"><input maxLength={3} onChange={(event) => update('hireCurrency', event.target.value.toUpperCase())} placeholder="EUR" value={form.hireCurrency} /></Field>
-              <Field label="Unité des loyers"><input onChange={(event) => update('hireUnit', event.target.value)} placeholder="jour" value={form.hireUnit} /></Field>
+              <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
+                <div className="project-hire-periods-heading">
+                  <div><strong>Barème des loyers d’affrètement</strong><small>Le tarif applicable est déterminé automatiquement pour chaque date d’opération.</small></div>
+                  <button
+                    onClick={() => setHirePeriods((periods) => [...periods, {
+                      startsOn: periods.at(-1)?.endsOn ? nextDate(periods.at(-1)?.endsOn || '') : form.startsOn || new Date().toISOString().slice(0, 10),
+                      endsOn: '',
+                      charterHire: periods.at(-1)?.charterHire ?? null,
+                      hireCurrency: periods.at(-1)?.hireCurrency || 'EUR',
+                      hireUnit: periods.at(-1)?.hireUnit || 'jour',
+                    }])}
+                    type="button"
+                  ><Plus aria-hidden="true" size={15} /> Ajouter une période</button>
+                </div>
+                {hirePeriods.map((period, index) => (
+                  <div className="project-hire-period-row" key={index}>
+                    <label>Début *<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, startsOn: event.target.value } : item))} required type="date" value={period.startsOn} /></label>
+                    <label>Fin<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, endsOn: event.target.value } : item))} type="date" value={period.endsOn} /></label>
+                    <label>Loyer *<input min="0" onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, charterHire: optionalNumber(event.target.value) } : item))} required step="0.01" type="number" value={period.charterHire ?? ''} /></label>
+                    <label>Devise *<input maxLength={3} onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, hireCurrency: event.target.value.toUpperCase() } : item))} required value={period.hireCurrency} /></label>
+                    <label>Unité *<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, hireUnit: event.target.value } : item))} required value={period.hireUnit} /></label>
+                    <button aria-label={`Supprimer la période tarifaire ${index + 1}`} onClick={() => setHirePeriods((periods) => periods.filter((_, itemIndex) => itemIndex !== index))} type="button"><X aria-hidden="true" size={16} /></button>
+                  </div>
+                ))}
+                {!hirePeriods.length ? <p>Aucune période tarifaire. Ajoutez-en une pour alimenter automatiquement les opérations.</p> : null}
+              </section>
             </div>
           </fieldset>
 
@@ -632,17 +686,20 @@ export function ProjectPlanningEditor({
     : occurrence?.vesselIds?.length
       ? occurrence.vesselIds
       : [occurrence?.primaryVesselId ?? project.primaryVesselId].filter((id): id is number => Boolean(id));
+  const operationStartsOn = dateOnly(initialStartsOn || occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn);
+  const defaultContractHire = contractHireAtDate(contract, operationStartsOn);
   const [form, setForm] = useState<ProjectPlanningOccurrenceWriteInput>({
     occurrenceId: occurrence?.id ?? null,
     projectId: project.id,
-    startsOn: dateOnly(initialStartsOn || occurrence?.startsOn || project.deliveryAt || project.charterStartsAt || project.startsOn),
+    startsOn: operationStartsOn,
     endsOn: dateOnly(initialEndsOn || occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
     vesselIds: defaultVesselIds.length > 0 ? defaultVesselIds : [0],
     status: normalizeProjectStatus(occurrence?.status),
     description: occurrence?.description || project.description || '',
-    charterHire: canViewCharterHire ? occurrence?.charterHire ?? contract?.charterHire ?? null : null,
-    hireCurrency: canViewCharterHire ? occurrence?.hireCurrency || contract?.hireCurrency || 'EUR' : '',
-    hireUnit: canViewCharterHire ? occurrence?.hireUnit || contract?.hireUnit || 'jour' : '',
+    charterHire: canViewCharterHire ? occurrence?.charterHire ?? defaultContractHire?.charterHire ?? null : null,
+    hireCurrency: canViewCharterHire ? occurrence?.hireCurrency || defaultContractHire?.hireCurrency || 'EUR' : '',
+    hireUnit: canViewCharterHire ? occurrence?.hireUnit || defaultContractHire?.hireUnit || 'jour' : '',
+    charterHireOverride: canViewCharterHire ? occurrence?.charterHireOverride ?? false : undefined,
   });
   const [files, setFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -653,6 +710,30 @@ export function ProjectPlanningEditor({
     || vessel.id === project.primaryVesselId
     || vessel.id === project.secondaryVesselId
   ));
+
+  useEffect(() => {
+    if (!canViewCharterHire || contract || !form.startsOn || form.charterHireOverride || typeof client.from !== 'function') return;
+    let active = true;
+    void client
+      .from('project_contract_hire_periods')
+      .select('charter_hire,hire_currency,hire_unit')
+      .eq('project_id', project.id)
+      .lte('starts_on', form.startsOn)
+      .or(`ends_on.is.null,ends_on.gte.${form.startsOn}`)
+      .order('starts_on', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!active || !data) return;
+        setForm((current) => current.charterHireOverride ? current : {
+          ...current,
+          charterHire: optionalNumber(String(data.charter_hire ?? '')),
+          hireCurrency: String(data.hire_currency || 'EUR'),
+          hireUnit: String(data.hire_unit || 'jour'),
+        });
+      });
+    return () => { active = false; };
+  }, [canViewCharterHire, client, contract, form.charterHireOverride, form.startsOn, project.id]);
 
   function updateVessel(index: number, vesselId: number) {
     update('vesselIds', form.vesselIds.map((currentId, currentIndex) => currentIndex === index ? vesselId : currentId));
@@ -672,6 +753,31 @@ export function ProjectPlanningEditor({
     value: ProjectPlanningOccurrenceWriteInput[K],
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateStartsOn(startsOn: string) {
+    setForm((current) => {
+      if (current.charterHireOverride) return { ...current, startsOn };
+      const rate = contractHireAtDate(contract, startsOn);
+      return {
+        ...current,
+        startsOn,
+        charterHire: rate?.charterHire ?? null,
+        hireCurrency: rate?.hireCurrency || 'EUR',
+        hireUnit: rate?.hireUnit || 'jour',
+      };
+    });
+  }
+
+  function resetContractHire() {
+    const rate = contractHireAtDate(contract, form.startsOn);
+    setForm((current) => ({
+      ...current,
+      charterHireOverride: false,
+      charterHire: rate?.charterHire ?? null,
+      hireCurrency: rate?.hireCurrency || 'EUR',
+      hireUnit: rate?.hireUnit || 'jour',
+    }));
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -716,7 +822,7 @@ export function ProjectPlanningEditor({
       <div className="project-editor is-planning is-shared-dialog">
           <div className="project-editor-grid">
             <Field label="Projet" wide><input disabled value={`${project.projectCode || ''} - ${project.title}`.replace(/^ - /, '')} /></Field>
-            <Field label="Début *"><input autoFocus onChange={(event) => update('startsOn', event.target.value)} required type="date" value={form.startsOn} /></Field>
+            <Field label="Début *"><input autoFocus onChange={(event) => updateStartsOn(event.target.value)} required type="date" value={form.startsOn} /></Field>
             <Field label="Fin *"><input onChange={(event) => update('endsOn', event.target.value)} required type="date" value={form.endsOn} /></Field>
             <div className="project-operation-vessels is-wide">
               <span>Navires *</span>
@@ -755,14 +861,18 @@ export function ProjectPlanningEditor({
             {canViewCharterHire ? (
               <>
                 <Field label="Loyer d’affrètement">
-                  <input min="0" onChange={(event) => update('charterHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.charterHire ?? ''} />
+                  <input min="0" onChange={(event) => setForm((current) => ({ ...current, charterHire: optionalNumber(event.target.value), charterHireOverride: true }))} step="0.01" type="number" value={form.charterHire ?? ''} />
                 </Field>
                 <Field label="Devise">
-                  <input maxLength={3} onChange={(event) => update('hireCurrency', event.target.value.toUpperCase())} value={form.hireCurrency} />
+                  <input maxLength={3} onChange={(event) => setForm((current) => ({ ...current, hireCurrency: event.target.value.toUpperCase(), charterHireOverride: true }))} value={form.hireCurrency} />
                 </Field>
                 <Field label="Unité">
-                  <input onChange={(event) => update('hireUnit', event.target.value)} placeholder="jour" value={form.hireUnit} />
+                  <input onChange={(event) => setForm((current) => ({ ...current, hireUnit: event.target.value, charterHireOverride: true }))} placeholder="jour" value={form.hireUnit} />
                 </Field>
+                <div className="project-operation-hire-source is-wide">
+                  <span>{form.charterHireOverride ? 'Tarif personnalisé pour cette opération' : 'Tarif contractuel applicable à la date de début'}</span>
+                  {form.charterHireOverride ? <button onClick={resetContractHire} type="button">Revenir au tarif contractuel</button> : null}
+                </div>
               </>
             ) : null}
             <label className="project-operation-files is-wide">
@@ -791,11 +901,28 @@ export function ProjectPlanningEditor({
             </ul>
           ) : null}
           <p className="project-editor-note">
-            {canViewCharterHire ? 'Le loyer du contrat est recopié lors de la création puis reste propre à cette opération. ' : ''}
+            {canViewCharterHire ? 'Le barème contractuel suit automatiquement la date de début, sauf lorsqu’un tarif personnalisé est activé. ' : ''}
             Les documents sont classés dans SharePoint · Documents Projets.
           </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
       </div>
     </AppDialog>
   );
+}
+
+function contractHireAtDate(contract: ProjectContractRecord | undefined, date: string) {
+  const period = [...(contract?.hirePeriods || [])]
+    .filter((candidate) => candidate.startsOn <= date && (!candidate.endsOn || candidate.endsOn >= date))
+    .sort((left, right) => right.startsOn.localeCompare(left.startsOn))[0];
+  return period || (contract ? {
+    charterHire: contract.charterHire,
+    hireCurrency: contract.hireCurrency,
+    hireUnit: contract.hireUnit,
+  } : undefined);
+}
+
+function nextDate(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().slice(0, 10);
 }

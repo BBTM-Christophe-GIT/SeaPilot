@@ -25,6 +25,15 @@ export interface ProjectPlanningOccurrenceWriteInput {
   charterHire: number | null;
   hireCurrency: string;
   hireUnit: string;
+  charterHireOverride?: boolean;
+}
+
+export interface ProjectContractHirePeriodWriteInput {
+  startsOn: string;
+  endsOn: string;
+  charterHire: number | null;
+  hireCurrency: string;
+  hireUnit: string;
 }
 
 export interface ProjectWriteInput {
@@ -276,6 +285,51 @@ export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOcc
   return errors;
 }
 
+export function validateProjectContractHirePeriods(
+  periods: ProjectContractHirePeriodWriteInput[],
+): string[] {
+  const errors: string[] = [];
+  const sorted = [...periods].sort((left, right) => left.startsOn.localeCompare(right.startsOn));
+  sorted.forEach((period, index) => {
+    if (!period.startsOn) errors.push(`La date de début du tarif ${index + 1} est obligatoire.`);
+    if (period.endsOn && period.endsOn < period.startsOn) {
+      errors.push(`La fin du tarif ${index + 1} ne peut pas précéder son début.`);
+    }
+    if (period.charterHire === null || period.charterHire < 0) {
+      errors.push(`Le montant du tarif ${index + 1} est obligatoire et doit être positif ou nul.`);
+    }
+    if (!/^[A-Za-z]{3}$/.test(period.hireCurrency.trim())) {
+      errors.push(`Une devise à trois lettres est obligatoire pour le tarif ${index + 1}.`);
+    }
+    if (!period.hireUnit.trim()) errors.push(`L’unité du tarif ${index + 1} est obligatoire.`);
+    const previous = sorted[index - 1];
+    if (previous && (!previous.endsOn || previous.endsOn >= period.startsOn)) {
+      errors.push(`Les périodes tarifaires ${index} et ${index + 1} se chevauchent.`);
+    }
+  });
+  return errors;
+}
+
+export async function saveProjectContractHirePeriods(
+  client: SupabaseClient,
+  projectId: number,
+  periods: ProjectContractHirePeriodWriteInput[],
+): Promise<void> {
+  const validationErrors = validateProjectContractHirePeriods(periods);
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
+  const { error } = await client.rpc('projects_replace_contract_hire_periods', {
+    target_project_id: projectId,
+    target_periods: periods.map((period) => ({
+      starts_on: period.startsOn,
+      ends_on: optionalText(period.endsOn),
+      charter_hire: period.charterHire,
+      hire_currency: period.hireCurrency.trim().toUpperCase(),
+      hire_unit: period.hireUnit.trim(),
+    })),
+  });
+  if (error) throw mutationError(error, 'Impossible d’enregistrer le barème contractuel.');
+}
+
 export async function saveProjectPlanningOccurrence(
   client: SupabaseClient,
   input: ProjectPlanningOccurrenceWriteInput,
@@ -300,7 +354,21 @@ export async function saveProjectPlanningOccurrence(
   if (!row || !Number.isInteger(Number(row.id))) {
     throw new Error("Supabase n'a retourn\u00e9 aucune op\u00e9ration apr\u00e8s l'enregistrement.");
   }
-  return Number(row.id);
+  const occurrenceId = Number(row.id);
+  if (input.charterHireOverride !== undefined) {
+    const { error: overrideError } = await client.rpc('projects_set_operation_hire_override', {
+      target_occurrence_id: occurrenceId,
+      target_project_id: input.projectId,
+      target_is_override: input.charterHireOverride,
+      target_charter_hire: input.charterHire,
+      target_hire_currency: optionalText(input.hireCurrency.toUpperCase()),
+      target_hire_unit: optionalText(input.hireUnit),
+    });
+    if (overrideError) {
+      throw mutationError(overrideError, 'Impossible d’appliquer le loyer de cette opération.');
+    }
+  }
+  return occurrenceId;
 }
 
 export async function deleteProjectPlanningOccurrence(

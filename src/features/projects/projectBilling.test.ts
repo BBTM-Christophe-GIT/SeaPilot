@@ -197,6 +197,40 @@ describe('billing operation export', () => {
     expect(rows[0].amountHt).toBe(4450);
   });
 
+  it('uses the contract rate applicable to each day across a tariff change', () => {
+    const scheduledContract = {
+      ...input.contract!,
+      hirePeriods: [
+        { id: 1, projectId: 144, contractId: 1, startsOn: '2026-06-01', endsOn: '2026-06-15', charterHire: 4000, hireCurrency: 'EUR', hireUnit: 'jour' },
+        { id: 2, projectId: 144, contractId: 1, startsOn: '2026-06-16', endsOn: '', charterHire: 4750, hireCurrency: 'EUR', hireUnit: 'jour' },
+      ],
+    };
+    const rows = billingOperationRows({
+      ...input,
+      contract: scheduledContract,
+      operations: input.operations.map((operation) => ({ ...operation, charterHireOverride: false })),
+      dprs: [
+        { ...input.dprs[0], id: 1, reportDate: '2026-06-15', amountHt: null },
+        { ...input.dprs[0], id: 2, reportDate: '2026-06-16', amountHt: null },
+      ],
+    });
+    expect(rows.map((row) => row.amountHt)).toEqual([4000, 4750]);
+  });
+
+  it('keeps a manual operation override and excludes deselected PDF lines', () => {
+    const rows = billingOperationRows({
+      ...input,
+      period: { ...input.period, excludedOperationKeys: ['dpr:2'] },
+      operations: input.operations.map((operation) => ({ ...operation, charterHire: 5100, charterHireOverride: true })),
+      dprs: [
+        { ...input.dprs[0], id: 1, amountHt: null },
+        { ...input.dprs[0], id: 2, reportDate: '2026-06-02', amountHt: null },
+      ],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amountHt).toBe(5100);
+  });
+
   it('renders a multiline operation as a single PDF table line', () => {
     const rows = billingOperationRows({
       ...input,

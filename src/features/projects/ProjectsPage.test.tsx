@@ -108,6 +108,17 @@ const atlantiqueContractRow = {
   vessel_assignment_limit: 'Europe occidentale',
 };
 
+const atlantiqueHirePeriodRow = {
+  id: 101,
+  project_id: 880,
+  contract_id: 10,
+  starts_on: '2026-07-01',
+  ends_on: null,
+  charter_hire: 12000,
+  hire_currency: 'EUR',
+  hire_unit: 'jour',
+};
+
 const atlantiqueProjectDocumentRow = {
   category_key: 'planning',
   file_extension: 'pdf',
@@ -233,6 +244,7 @@ function createClient(
     contract_documents: { data: [atlantiqueContractDocumentRow], error: null },
     planning_projects: { data: atlantiquePlanningOccurrenceRows, error: null },
     project_contracts: { data: [atlantiqueContractRow], error: null },
+    project_contract_hire_periods: { data: [atlantiqueHirePeriodRow], error: null },
     project_documents: { data: [atlantiqueProjectDocumentRow, mancheProjectDocumentRow], error: null },
     project_generated_documents: { data: [], error: null },
     projects: { data: [atlantiqueProjectRow, mancheProjectRow], error: null },
@@ -254,15 +266,23 @@ function createClient(
     };
     query.select = vi.fn(() => query);
     query.eq = vi.fn(() => query);
+    query.lte = vi.fn(() => query);
+    query.or = vi.fn(() => query);
     query.order = vi.fn(() => query);
     query.gt = vi.fn(() => query);
-    query.limit = vi.fn(() => promise);
+    query.limit = vi.fn(() => query);
+    query.maybeSingle = vi.fn(() => Promise.resolve({
+      data: Array.isArray(result.data) ? result.data[0] || null : result.data,
+      error: result.error,
+    }));
     return query;
   });
 
   const rpc = vi.fn().mockImplementation((functionName: string) => (
     functionName === 'projects_planning_occurrences'
       ? Promise.resolve({ data: atlantiquePlanningOccurrenceRows, error: null })
+      : functionName === 'projects_contracts'
+        ? Promise.resolve(sources.project_contracts)
       : Promise.resolve(rpcResult)
   ));
   return { client: { from, rpc }, from, rpc };
@@ -352,7 +372,7 @@ describe('ProjectsPage', () => {
       expect(from.mock.calls.map(([table]) => table)).toEqual(
         expect.arrayContaining([
           'projects',
-          'project_contracts',
+          'project_contract_hire_periods',
           'project_documents',
           'contract_documents',
           'project_generated_documents',
