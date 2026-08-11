@@ -160,6 +160,14 @@ describe('App', () => {
         };
       }
 
+      if (table === 'fleet_certificate_findings' || table === 'fleet_certificate_finding_attachments' || table === 'fleet_certificate_finding_events') {
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }
+
+      if (table === 'people') {
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
     const client = createAuthClient({ user: { id: 'user-1' } });
@@ -172,14 +180,14 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Suivi des certificats' })).toBeInTheDocument();
-    expect(screen.getByLabelText('CERTIFICATS À 3 MOIS')).toHaveTextContent('1');
-    const timeline = document.querySelector('.fc-timeline-card');
-    expect(timeline).not.toBeNull();
-    fireEvent.click(within(timeline as HTMLElement).getByRole('button', { name: /COTENTIN.*1 certificat/ }));
-    expect(screen.getByText('Permis de navigation COTENTIN')).toBeInTheDocument();
-    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /Permis de navigation COTENTIN, échéance/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Certificats flotte' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1 échéances à 90 jours/ })).toBeInTheDocument();
+    const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section');
+    expect(library).not.toBeNull();
+    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Permis de navigation COTENTIN/ }));
+    expect(await screen.findByRole('heading', { name: 'Permis de navigation COTENTIN' })).toBeInTheDocument();
+    expect(screen.getByText(/COTENTIN · Navigation/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ouvrir$/ })).toBeInTheDocument();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
