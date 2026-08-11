@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -128,15 +128,28 @@ describe('App', () => {
                 data: [
                   {
                     id: 42,
+                    company_id: 1,
                     vessel_id: 1,
                     vessel_name: 'COTENTIN',
+                    vessel: { acronym: 'CTN' },
                     category_key: 'navigation',
+                    category_label: 'Navigation',
+                    document_title: 'Permis de navigation COTENTIN',
                     title: 'Permis de navigation COTENTIN',
-                    status: 'valid',
+                    status: 'renew_due',
                     issued_on: '2025-01-10',
                     expires_on: '2026-09-15',
+                    planned_on: null,
+                    workflow_status: 'due',
+                    original_file_name: 'CTN - Permis de navigation - 2026.pdf',
+                    file_name: 'CTN - Permis de navigation - 2026.pdf',
                     source_label: 'SharePoint',
                     file_url: 'https://sharepoint.test/certificat.pdf',
+                    storage_bucket: 'fleet-certificates',
+                    storage_path: '1/CTN/legacy/certificat.pdf',
+                    current_version_no: 1,
+                    is_active_fleet: true,
+                    updated_at: '2026-08-11T11:42:00Z',
                     notes: 'Archive flotte',
                   },
                 ],
@@ -159,14 +172,14 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Certificats flotte' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Certificats valides')).toHaveTextContent('1');
+    expect(await screen.findByRole('heading', { name: 'Suivi des certificats' })).toBeInTheDocument();
+    expect(screen.getByLabelText('CERTIFICATS À 3 MOIS')).toHaveTextContent('1');
+    const timeline = document.querySelector('.fc-timeline-card');
+    expect(timeline).not.toBeNull();
+    fireEvent.click(within(timeline as HTMLElement).getByRole('button', { name: /COTENTIN.*1 certificat/ }));
     expect(screen.getByText('Permis de navigation COTENTIN')).toBeInTheDocument();
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Permis de navigation COTENTIN' })).toHaveAttribute(
-      'href',
-      'https://sharepoint.test/certificat.pdf',
-    );
+    expect(screen.getByRole('button', { name: /Permis de navigation COTENTIN, échéance/ })).toBeInTheDocument();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 

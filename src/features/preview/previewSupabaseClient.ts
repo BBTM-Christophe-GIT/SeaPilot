@@ -99,6 +99,78 @@ const PREVIEW_STCW_CERTIFICATES = PREVIEW_STCW_SOURCE_ROWS.map(
   }),
 );
 
+function createPreviewFleetCertificates(): unknown[] {
+  const categories = [
+    { key: '01-registre-international-francais', label: '01 - Registre International Français', titles: ['Acte de Francisation', "Permis d’Armement"] },
+    { key: '02-centre-de-securite-des-navires', label: '02 - Centre de Sécurité des Navires', titles: ['Permis de Navigation', 'Certificat de Franc-Bord', 'Rapport de visite de sécurité', 'Certificat national de sécurité'] },
+    { key: '03-societe-de-classification-dnv', label: '03 - Société de Classification - DNV', titles: ['Certificat de Classification', 'Certificat de jaugeage', 'Rapport annuel DNV'] },
+    { key: '03-societe-de-classification-bv', label: '03 - Société de Classification - BV', titles: ['Certificat de Classification', 'Rapport annuel BV'] },
+    { key: '04-assurance', label: '04 - Assurance', titles: ['Assurance Corps et Machine', 'Assurance P&I'] },
+    { key: '05-safety-plan', label: '05 - Safety Plan', titles: ['Safety Plan'] },
+    { key: '06-incendie', label: '06 - Incendie', titles: ['Visite Extinction Fixe et Portatif', 'Certificat extincteurs', 'Rapport installation incendie'] },
+    { key: '07-lsa', label: '07 - LSA', titles: ['Certificat Radeau', 'Certificat brassières', 'Rapport moyens de sauvetage'] },
+    { key: '08-grue-et-bossoir', label: '08 - Grue & Bossoir', titles: ['Registre des Apparaux de Levage', 'Certificat grue', 'Certificat bossoir', 'Rapport palans', 'Rapport accessoires de levage'] },
+    { key: '09-anfr', label: '09 - ANFR', titles: ['Licence Radio', 'Rapport Visite Radio'] },
+    { key: '10-dotation-medicale', label: '10 - Dotation Médicale', titles: ['Dotation médicale'] },
+    { key: '11-analyse-eau', label: '11 - Analyse Eau', titles: ['Analyse eau potable', 'Analyse légionelles', 'Rapport sanitaire'] },
+    { key: '12-dossier-de-stabilite', label: '12 - Dossier de Stabilité', titles: ['Dossier de Stabilité'] },
+    { key: '13-amiante', label: '13 - Amiante', titles: ['Dossier technique amiante'] },
+    { key: '14-ecmid', label: '14 - eCMID', titles: ['Rapport eCMID', 'Questionnaire eCMID'] },
+  ];
+  const vessels = [
+    { name: 'GOURY', acronym: 'GRY', counts: [2, 1, 3, 0, 2, 1, 3, 3, 5, 2, 1, 3, 1, 1, 1], dates: ['2026-04-12', '2026-04-20', '2026-09-15', '2026-11-28', '2026-12-10', '2026-12-28'] },
+    { name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', counts: [2, 2, 0, 0, 1, 0, 2, 1, 0, 2, 1, 0, 0, 0, 1], dates: ['2026-12-12'] },
+    { name: 'HOLENN EUSA', acronym: 'HE', counts: [2, 1, 0, 0, 1, 0, 2, 1, 1, 1, 0, 0, 0, 0, 0], dates: ['2026-10-10', '2026-11-22', '2026-12-18'] },
+    { name: 'KROKDUR', acronym: 'KDR', counts: [2, 4, 0, 0, 1, 1, 1, 2, 5, 2, 0, 0, 1, 1, 1], dates: ['2026-10-22', '2026-11-25', '2026-12-20'] },
+    { name: 'LANDEMER', acronym: 'LDM', counts: [0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0], dates: ['2026-06-14'] },
+    { name: 'LE ROZEL', acronym: 'RZL', counts: [2, 1, 0, 2, 2, 1, 2, 3, 4, 2, 0, 0, 1, 1, 1], dates: ['2026-11-20', '2026-12-08', '2026-12-22'] },
+    { name: 'SUROIT', acronym: 'SUR', counts: [2, 2, 0, 2, 2, 1, 1, 3, 5, 1, 0, 0, 0, 1, 2], dates: ['2026-01-18', '2026-02-14', '2026-03-21', '2026-04-16', '2026-05-20', '2026-06-24', '2026-07-16', '2026-12-16'] },
+  ];
+  let id = 5000;
+  return vessels.flatMap((vessel, vesselIndex) => vessel.counts.flatMap((count, categoryIndex) => Array.from({ length: count }, (_, categoryDocumentIndex) => {
+    const index = vessel.counts.slice(0, categoryIndex).reduce((total, value) => total + value, 0) + categoryDocumentIndex;
+    const expiresOn = vessel.dates[index] || null;
+    const expired = Boolean(expiresOn && expiresOn < '2026-08-11');
+    const renewalDue = Boolean(expiresOn && expiresOn >= '2026-08-11' && expiresOn <= '2026-11-09');
+    const category = categories[categoryIndex];
+    const title = category.titles[categoryDocumentIndex] || `${category.label.replace(/^\d+\s*-\s*/, '')} ${categoryDocumentIndex + 1}`;
+    const currentId = id++;
+    return {
+      id: currentId,
+      company_id: 1,
+      vessel_id: vesselIndex + 1,
+      vessel_name: vessel.name,
+      vessel: { acronym: vessel.acronym },
+      category_key: category.key,
+      category_label: category.label,
+      document_title: title,
+      title,
+      status: expired ? 'expired' : renewalDue ? 'renew_due' : 'valid',
+      issued_on: expiresOn ? `${Number(expiresOn.slice(0, 4)) - 1}${expiresOn.slice(4)}` : null,
+      expires_on: expiresOn,
+      planned_on: !renewalDue && index < 4 ? `2026-${String(Math.min(12, index + 8)).padStart(2, '0')}-05` : null,
+      alarm_on: null,
+      provider_name: index < 3 ? 'Prestataire de démonstration' : null,
+      visit_location: index < 3 ? 'Cherbourg' : null,
+      workflow_status: renewalDue || expired ? 'due' : index < 4 ? 'planned' : 'not_started',
+      renewal_notes: null,
+      renaming_rule_key: 'vessel-title-expiry-year',
+      original_file_name: `${vessel.acronym} - ${title}.pdf`,
+      file_name: `${vessel.acronym} - ${title}.pdf`,
+      source_label: 'prévisualisation',
+      file_url: null,
+      storage_bucket: 'fleet-certificates',
+      storage_path: `1/${vessel.acronym}/preview/${currentId}.pdf`,
+      mime_type: 'application/pdf',
+      file_size_bytes: 245000 + index * 2000,
+      current_version_no: 1,
+      is_active_fleet: true,
+      notes: null,
+      updated_at: '2026-08-11T11:42:00Z',
+    };
+  })));
+}
+
 const PREVIEW_ROWS: Record<string, unknown[]> = {
   profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration' }],
   people: [
@@ -927,6 +999,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     updated_at: '2026-08-05T12:00:00Z',
   }],
   project_billing_documents: [],
+  fleet_certificates: createPreviewFleetCertificates(),
+  fleet_certificate_versions: [],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
