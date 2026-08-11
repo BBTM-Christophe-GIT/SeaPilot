@@ -18962,8 +18962,10 @@ button.planning-p12-conflict-card {
 .fc-form-grid label { display: grid; gap: 5px; color: #536170; font-size: .66rem; font-weight: 750; }
 .fc-form-grid label.is-wide { grid-column: 1 / -1; }
 .fc-form-grid input,
+.fc-form-grid select,
 .fc-form-grid textarea { width: 100%; border: 1px solid #d2dbe3; border-radius: 7px; padding: 9px 10px; outline: 0; color: #24313c; background: #fff; font: inherit; font-size: .72rem; }
 .fc-form-grid input:focus,
+.fc-form-grid select:focus,
 .fc-form-grid textarea:focus { border-color: #1684da; box-shadow: 0 0 0 3px rgb(22 132 218 / 12%); }
 .fc-file-drop { position: relative; display: flex; min-height: 68px; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #9dbdd8; border-radius: 9px; padding: 12px; color: #24658f; background: #f5fbff; font-size: .7rem; font-weight: 700; cursor: pointer; }
 .fc-file-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -18979,6 +18981,52 @@ button.planning-p12-conflict-card {
 .fc-version small { color: #74808c; font-size: .62rem; }
 .fc-version > button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; border: 1px solid #dce3e9; border-radius: 7px; padding: 0 8px; color: #4b5d6e; background: #fff; font: inherit; font-size: .65rem; font-weight: 800; cursor: pointer; }
 .fc-version > button.fc-validate-action { border-color: #a9d8c1; color: #18704a; background: #effaf4; }
+
+.fc-document-library { overflow: hidden; border: 1px solid var(--fc-border); border-radius: 11px; background: #fff; box-shadow: 0 4px 18px rgb(20 36 54 / 5%); }
+.fc-document-toolbar { display: flex; min-height: 66px; align-items: center; gap: 18px; border-bottom: 1px solid #e6e9ed; padding: 9px 12px; background: #fff; }
+.fc-document-toolbar > div:first-child { display: grid; gap: 2px; }
+.fc-document-toolbar small { color: #747d88; font-size: .62rem; font-weight: 800; }
+.fc-document-toolbar strong { color: #171b20; font-size: .78rem; }
+.fc-document-toolbar__actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.fc-document-toolbar__actions > button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #cbd2d9; border-radius: 3px; padding: 0 16px; color: #222a32; background: #fff; font: inherit; font-size: .7rem; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.fc-document-toolbar__actions > button.fc-primary-action { border-color: #0878d8; border-radius: 8px; color: #fff; background: #0878d8; box-shadow: 0 3px 10px rgb(8 120 216 / 18%); }
+.fc-document-toolbar__actions > button:disabled { border-color: #e7eaed; color: #b0b5bb; background: #f5f6f7; cursor: not-allowed; box-shadow: none; }
+.fc-document-tree { display: grid; gap: 5px; padding: 7px; background: #f5f6f7; }
+.fc-document-vessel { --document-vessel-tint: color-mix(in srgb, var(--vessel-color) 54%, white); display: grid; gap: 4px; }
+.fc-document-vessel__header,
+.fc-document-category__header { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 7px; border: 0; border-radius: 8px; padding: 5px 9px; color: #172330; background: var(--document-vessel-tint); text-align: left; cursor: pointer; }
+.fc-document-vessel__header > strong,
+.fc-document-category__header > strong { overflow: hidden; font-size: .71rem; text-overflow: ellipsis; white-space: nowrap; }
+.fc-document-vessel__header > small,
+.fc-document-category__header > small { min-width: 24px; margin-left: auto; border-radius: 999px; padding: 3px 8px; color: #4b5662; background: rgb(255 255 255 / 86%); font-size: .62rem; font-weight: 800; text-align: center; }
+.fc-document-icon { display: grid; width: 29px; height: 29px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #0878d8; background: #fff; box-shadow: inset 0 0 0 1px rgb(8 120 216 / 12%); }
+.fc-document-categories { position: relative; display: grid; gap: 4px; margin-left: 38px; }
+.fc-document-categories::before,
+.fc-document-items::before { position: absolute; top: -4px; bottom: 14px; left: -18px; width: 1px; content: ''; background: #d9dee3; }
+.fc-document-category { position: relative; display: grid; gap: 3px; }
+.fc-document-category::before,
+.fc-document-items > div::before { position: absolute; top: 19px; left: -18px; width: 18px; height: 1px; content: ''; background: #d9dee3; }
+.fc-document-category__header { min-height: 37px; background: color-mix(in srgb, var(--vessel-color) 29%, white); }
+.fc-document-items { position: relative; display: grid; gap: 3px; margin-left: 38px; }
+.fc-document-items > div { position: relative; display: grid; min-height: 35px; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px; border: 1px solid #e5e8eb; border-radius: 7px; padding: 4px 10px; color: #28333e; background: #fff; }
+.fc-document-items > div.is-selected { border-color: #8fc4ed; background: #edf7ff; box-shadow: inset 3px 0 #0878d8; }
+.fc-document-items input { width: 16px; height: 16px; margin: 0; accent-color: #0878d8; cursor: pointer; }
+.fc-document-items button { overflow: hidden; border: 0; padding: 0; color: #1d2730; background: transparent; font: inherit; font-size: .72rem; font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.fc-document-items button:hover { color: #0872c9; text-decoration: underline; }
+
+.fc-dialog-backdrop { position: fixed; z-index: 130; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(13 24 36 / 46%); backdrop-filter: blur(3px); }
+.fc-new-document-dialog { display: grid; width: min(620px, 100%); max-height: calc(100vh - 36px); overflow: hidden; border: 1px solid #dbe2e8; border-radius: 14px; background: #fff; box-shadow: 0 24px 72px rgb(5 18 32 / 30%); }
+.fc-new-document-dialog > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; border-bottom: 1px solid #e1e6eb; padding: 15px 18px; }
+.fc-new-document-dialog > header > span { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 9px; color: #0878d8; background: #ebf6ff; }
+.fc-new-document-dialog > header > div { display: grid; gap: 2px; }
+.fc-new-document-dialog > header small { color: #76818c; font-size: .6rem; font-weight: 800; }
+.fc-new-document-dialog > header h2 { margin: 0; font-size: 1rem; }
+.fc-new-document-dialog > header > button { display: grid; width: 33px; height: 33px; place-items: center; border: 1px solid #e0e5ea; border-radius: 8px; color: #53616e; background: #fff; cursor: pointer; }
+.fc-new-document-dialog__body { display: grid; gap: 14px; overflow-y: auto; padding: 18px; background: #f8fafb; }
+.fc-new-document-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e1e6eb; padding: 12px 18px; }
+.fc-new-document-dialog > footer > button { display: inline-flex; min-height: 36px; align-items: center; gap: 7px; border: 1px solid #d3dae0; border-radius: 8px; padding: 0 13px; color: #3a4855; background: #fff; font: inherit; font-size: .7rem; font-weight: 800; cursor: pointer; }
+.fc-new-document-dialog > footer > button.fc-primary-action { border-color: #0878d8; color: #fff; background: #0878d8; }
+.fc-new-document-dialog > footer > button:disabled { cursor: not-allowed; opacity: .5; }
 
 @media (max-width: 1280px) {
   .fc-hero { grid-template-columns: 1fr; }
@@ -19009,6 +19057,11 @@ button.planning-p12-conflict-card {
   .fc-timeline-title,
   .fc-vessels { min-width: 840px; }
   .fc-months { min-width: 840px; }
+  .fc-document-toolbar { align-items: stretch; flex-direction: column; }
+  .fc-document-toolbar__actions { width: 100%; margin-left: 0; overflow-x: auto; }
+  .fc-document-toolbar__actions > button { flex: 0 0 auto; }
+  .fc-document-tree { min-width: 700px; }
+  .fc-document-library { overflow-x: auto; }
   .fc-drawer-backdrop { padding: 0; }
   .fc-drawer { width: 100%; border-radius: 0; }
 }
@@ -19022,6 +19075,8 @@ button.planning-p12-conflict-card {
   .fc-detail-list,
   .fc-form-grid { grid-template-columns: 1fr; }
   .fc-form-grid label.is-wide { grid-column: auto; }
+  .fc-dialog-backdrop { padding: 0; }
+  .fc-new-document-dialog { max-height: 100vh; border-radius: 0; }
   .fc-version { grid-template-columns: auto minmax(0, 1fr) auto; }
   .fc-version .fc-validate-action { grid-column: 2 / -1; justify-content: center; }
 }

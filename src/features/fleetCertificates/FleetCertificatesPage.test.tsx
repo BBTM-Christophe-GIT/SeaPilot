@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
@@ -74,6 +74,7 @@ function createClient(certificates: unknown[] = [renewalCertificateRow, expiredC
     storage: {
       from: vi.fn().mockReturnValue({
         createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }),
+        download: vi.fn().mockResolvedValue({ data: new Blob(['document'], { type: 'application/pdf' }), error: null }),
         upload: vi.fn().mockResolvedValue({ error: null }),
         remove: vi.fn().mockResolvedValue({ error: null }),
       }),
@@ -133,8 +134,9 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByLabelText('VISITES NON PLANIFIÉES À 3 MOIS')).toHaveTextContent('1');
 
     await user.selectOptions(screen.getByLabelText('Filtre navire'), 'SUROIT');
-    expect(screen.getByRole('button', { name: /SUROIT/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /GOURY/ })).not.toBeInTheDocument();
+    const timeline = document.querySelector('.fc-timeline-card') as HTMLElement;
+    expect(within(timeline).getByRole('button', { name: /SUROIT/ })).toBeInTheDocument();
+    expect(within(timeline).queryByRole('button', { name: /GOURY/ })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'navigation' } });
     expect(await screen.findByText('Permis de navigation')).toBeInTheDocument();
@@ -170,5 +172,51 @@ describe('FleetCertificatesPage', () => {
     expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe(
       'GRY - Permis de navigation - 2027.pdf',
     );
+  });
+
+  it('recreates the SharePoint download tree and supports document selection', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+
+    const library = await screen.findByRole('region', { name: 'Téléchargement des certificats' });
+    expect(library).toHaveTextContent('0 document(s) sélectionné(s)');
+    expect(within(library).getByRole('button', { name: /GOURY.*1 certificat/ })).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(within(library).getByRole('button', { name: /Navigation.*1/ }));
+    await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Permis de navigation' }));
+    expect(library).toHaveTextContent('1 document(s) sélectionné(s)');
+    expect(within(library).getByRole('button', { name: 'Télécharger' })).toBeEnabled();
+
+    await user.click(within(library).getByRole('button', { name: 'Tout sélectionner' }));
+    expect(library).toHaveTextContent('2 document(s) sélectionné(s)');
+  });
+
+  it('uploads a new library document with its normalized Supabase metadata', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['armement']} />);
+
+    await screen.findByRole('heading', { name: 'Suivi des certificats' });
+    await user.click(screen.getByRole('button', { name: 'Nouveau Document' }));
+    expect(screen.getByRole('dialog', { name: 'Nouveau document flotte' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Titre du nouveau document'), 'Certificat test');
+    fireEvent.change(screen.getByLabelText("Date d'échéance du nouveau document"), { target: { value: '2028-05-12' } });
+    const file = new File(['pdf'], 'scan.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText('Fichier du nouveau document'), file);
+    expect((screen.getByLabelText('Fichier du nouveau document') as HTMLInputElement).files?.[0]).toBe(file);
+    const addButton = screen.getByRole('button', { name: 'Ajouter le document' });
+    expect(addButton).toBeEnabled();
+    fireEvent.submit(screen.getByRole('dialog', { name: 'Nouveau document flotte' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_fleet_certificate_document', expect.objectContaining({
+        p_vessel_id: 1,
+        p_category_key: 'navigation',
+        p_document_title: 'Certificat test',
+        p_normalized_file_name: 'GRY - Certificat test - 2028.pdf',
+        p_original_file_name: 'scan.pdf',
+      })));
+    expect(await screen.findByText('Nouveau document ajouté.')).toBeInTheDocument();
   });
 });

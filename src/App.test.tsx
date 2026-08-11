@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -174,7 +174,9 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Suivi des certificats' })).toBeInTheDocument();
     expect(screen.getByLabelText('CERTIFICATS À 3 MOIS')).toHaveTextContent('1');
-    fireEvent.click(screen.getByRole('button', { name: /COTENTIN.*1 certificat/ }));
+    const timeline = document.querySelector('.fc-timeline-card');
+    expect(timeline).not.toBeNull();
+    fireEvent.click(within(timeline as HTMLElement).getByRole('button', { name: /COTENTIN.*1 certificat/ }));
     expect(screen.getByText('Permis de navigation COTENTIN')).toBeInTheDocument();
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Permis de navigation COTENTIN, échéance/ })).toBeInTheDocument();

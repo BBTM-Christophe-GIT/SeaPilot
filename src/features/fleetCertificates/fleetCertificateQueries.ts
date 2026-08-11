@@ -173,6 +173,19 @@ export interface SubmitFleetCertificateRenewalInput {
   notes: string;
 }
 
+export interface CreateFleetCertificateDocumentInput {
+  companyId: number;
+  vesselId: number;
+  vesselName: string;
+  vesselAcronym: string;
+  categoryKey: string;
+  categoryLabel: string;
+  documentTitle: string;
+  file: File;
+  issuedOn: string;
+  expiresOn: string;
+}
+
 function nullableText(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
 }
@@ -227,6 +240,11 @@ function isoDate(date: Date): string {
 function safeObjectName(fileName: string): string {
   const normalized = fileName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-160) || 'certificat';
+}
+
+function randomObjectId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export function getFleetCertificateStatusLabel(status: FleetCertificateStatus): string {
@@ -382,6 +400,110 @@ export async function openFleetCertificateDocument(
   return data.signedUrl;
 }
 
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function downloadFleetCertificateDocuments(
+  client: SupabaseClient,
+  certificates: FleetCertificateRecord[],
+): Promise<void> {
+  if (!certificates.length) throw new Error('Sélectionnez au moins un document.');
+
+  const documents = await Promise.all(certificates.map(async (certificate) => {
+    if (!certificate.storageBucket || !certificate.storagePath) {
+      throw new Error(`Le document « ${certificate.documentTitle} » est indisponible.`);
+    }
+    const { data, error } = await client.storage.from(certificate.storageBucket).download(certificate.storagePath);
+    if (error || !data) throw error || new Error(`Impossible de télécharger « ${certificate.documentTitle} ».`);
+    return { blob: data, fileName: certificate.fileName || certificate.originalFileName || `${certificate.documentTitle}.pdf` };
+  }));
+
+  if (documents.length === 1) {
+    triggerBlobDownload(documents[0].blob, documents[0].fileName);
+    return;
+  }
+
+  const { default: JSZip } = await import('jszip');
+  const archive = new JSZip();
+  documents.forEach(({ blob, fileName }) => archive.file(fileName, blob));
+  const generated = await archive.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  triggerBlobDownload(generated, `Certificats-flotte-${isoDate(new Date())}.zip`);
+}
+
+export async function createFleetCertificateDocument(
+  client: SupabaseClient,
+  input: CreateFleetCertificateDocumentInput,
+): Promise<void> {
+  if (!input.file) throw new Error('Sélectionnez un document.');
+  if (!input.documentTitle.trim()) throw new Error('Renseignez le titre du document.');
+  if (input.file.size > 50 * 1024 * 1024) throw new Error('Le document dépasse la limite de 50 Mo.');
+  const extension = input.file.name.split('.').pop()?.toLowerCase() || '';
+  if (!['pdf', 'png', 'jpg', 'jpeg', 'xlsx'].includes(extension)) {
+    throw new Error('Formats acceptés : PDF, PNG, JPG et XLSX.');
+  }
+
+  const normalizedName = buildFleetCertificateFileName({
+    vesselAcronym: input.vesselAcronym,
+    vesselName: input.vesselName,
+    documentTitle: input.documentTitle.trim(),
+  }, input.expiresOn, input.file.name);
+  const acronym = input.vesselAcronym || safeObjectName(input.vesselName).slice(0, 12).toUpperCase();
+  const storagePath = `${input.companyId}/${acronym}/documents/${randomObjectId()}-${safeObjectName(normalizedName)}`;
+  const { error: uploadError } = await client.storage.from(FLEET_CERTIFICATE_BUCKET).upload(storagePath, input.file, {
+    contentType: input.file.type || undefined,
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  const { error: metadataError } = await client.rpc('create_fleet_certificate_document', {
+    p_vessel_id: input.vesselId,
+    p_category_key: input.categoryKey,
+    p_category_label: input.categoryLabel,
+    p_document_title: input.documentTitle.trim(),
+    p_original_file_name: input.file.name,
+    p_normalized_file_name: normalizedName,
+    p_storage_path: storagePath,
+    p_mime_type: input.file.type || null,
+    p_file_size_bytes: input.file.size,
+    p_issued_on: input.issuedOn || null,
+    p_expires_on: input.expiresOn || null,
+  });
+  if (metadataError) {
+    await client.storage.from(FLEET_CERTIFICATE_BUCKET).remove([storagePath]);
+    throw metadataError;
+  }
+}
+
+export async function deleteFleetCertificateDocuments(
+  client: SupabaseClient,
+  certificateIds: number[],
+): Promise<void> {
+  if (!certificateIds.length) return;
+  const { data, error } = await client.rpc('delete_fleet_certificate_documents', {
+    p_certificate_ids: certificateIds,
+  });
+  if (error) throw error;
+
+  const objects = (data || []) as Array<{ storage_bucket: string; storage_path: string }>;
+  const pathsByBucket = new Map<string, string[]>();
+  objects.forEach((object) => {
+    if (!object.storage_bucket || !object.storage_path) return;
+    pathsByBucket.set(object.storage_bucket, [...(pathsByBucket.get(object.storage_bucket) || []), object.storage_path]);
+  });
+  for (const [bucket, paths] of pathsByBucket) {
+    const { error: removeError } = await client.storage.from(bucket).remove(Array.from(new Set(paths)));
+    if (removeError) throw removeError;
+  }
+}
+
 export async function planFleetCertificateRenewal(
   client: SupabaseClient,
   certificateId: number,
@@ -412,7 +534,7 @@ export async function submitFleetCertificateRenewal(
 
   const normalizedName = buildFleetCertificateFileName(certificate, input.expiresOn, input.file.name);
   const acronym = certificate.vesselAcronym || safeObjectName(certificate.vesselName).slice(0, 12).toUpperCase();
-  const storagePath = `${certificate.companyId}/${acronym}/${certificate.id}/renewals/${crypto.randomUUID()}-${safeObjectName(normalizedName)}`;
+  const storagePath = `${certificate.companyId}/${acronym}/${certificate.id}/renewals/${randomObjectId()}-${safeObjectName(normalizedName)}`;
   const { error: uploadError } = await client.storage.from(FLEET_CERTIFICATE_BUCKET).upload(storagePath, input.file, {
     contentType: input.file.type || undefined,
     upsert: false,

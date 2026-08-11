@@ -4,6 +4,8 @@
 
 Le module `Certificats flotte` reprend la structure visuelle du webpart BBTM : indicateurs d'alerte, filtres navire/échéance, recherche documentaire et timeline annuelle dépliable par navire.
 
+La version corrective `3.14.1` ajoute la bibliothèque de téléchargement du webpart : arborescence navire/catégorie/document, sélection unitaire ou globale, téléchargement simple ou ZIP, suppression contrôlée et ajout d'un nouveau document. Les nouveaux fichiers appliquent automatiquement le référentiel de renommage avant leur stockage privé dans Supabase.
+
 La migration de production du 11 août 2026 contient :
 
 - 120 certificats et 120 versions documentaires courantes ;
@@ -56,6 +58,7 @@ Les noms d'origine restent conservés pour l'audit. Seuls les caractères interd
 - Bucket privé : `fleet-certificates`.
 - Chemin historique : `{company_id}/{acronyme}/legacy/{index}-{nom sécurisé}`.
 - Chemin des renouvellements : `{company_id}/{acronyme}/{certificate_id}/renewals/{uuid}-{nom normalisé}`.
+- Chemin des nouveaux documents : `{company_id}/{acronyme}/documents/{uuid}-{nom normalisé}`.
 - Taille maximale : 50 Mo.
 - Formats autorisés : PDF, PNG, JPEG et XLSX. La détection temporaire `application/zip` utilisée par le client de migration pour le classeur XLSX est retirée après l'import.
 - Les politiques Storage vérifient le premier segment `company_id` et le rôle de l'utilisateur.

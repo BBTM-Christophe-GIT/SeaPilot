@@ -50,6 +50,40 @@ final result: passed
 
 ---
 
+# Design QA — Bibliothèque documentaire « Certificats flotte » v3.14.1 (2026-08-11)
+
+## Cibles et état comparés
+
+- Référence SharePoint : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-75259b38-0365-401c-b09c-259a8c52727b.png` (2048 × 952 px).
+- Implémentation locale : `http://127.0.0.1:4175/modules/certificates?preview=1`.
+- Capture finale : `C:/CODEX/SeaPilot/.data/fleet-library-implementation.png` (1265 × 709 px).
+- État : GOURY et la catégorie `01 - Registre International Français` dépliés, zéro document sélectionné.
+- La référence complète et la capture finale ont été ouvertes ensemble dans la même comparaison visuelle.
+
+## Résultat visuel
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- La barre de téléchargement reprend les libellés, l'ordre, les états désactivés, la hiérarchie et l'alignement de la référence.
+- L'arborescence navire → catégorie → document conserve la densité, les retraits, les connecteurs, les bandes bleu clair et les pastilles de comptage du webpart.
+- Les totaux réels sont cohérents : GOURY 29, HIRONDELLE DE LA MANCHE 12, HOLENN EUSA 9, KROKDUR 21, LANDEMER 3, LE ROZEL 22 et SUROIT 22.
+- La différence de largeur utile est attendue : la référence montre le webpart seul, tandis que l'implémentation est intégrée à la navigation SeaPilot.
+- Une première passe affichait des dates d'expiration inutiles et une icône de dossier trop générique ; ces deux écarts P2 ont été corrigés avant la capture finale.
+- Seul subsiste un écart P3 non bloquant : l'icône Lucide `Files` remplace l'icône SharePoint propriétaire.
+
+## Vérification des interactions
+
+- Sélection unitaire et globale, compteur de sélection et activation des actions vérifiés.
+- Téléchargement groupé de deux documents vérifié ; le message de succès s'affiche et aucune erreur console n'est produite.
+- Le dialogue `Nouveau Document` affiche les 7 navires, les catégories, le titre, les dates et le fichier.
+- L'ouverture d'un document réutilise le panneau de détail du certificat.
+- Ajout et suppression sont limités aux rôles bureau autorisés ; les fichiers restent dans le bucket Supabase privé.
+- Erreurs console : aucune.
+
+final result: passed
+
+---
+
 # Design QA — QHSE KPI / Indicateurs HSE v3.12.24 (2026-08-09)
 
 ## Cibles et état comparés

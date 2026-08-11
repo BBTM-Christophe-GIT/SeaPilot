@@ -9,16 +9,20 @@ import {
   Clock3,
   Download,
   FileCheck2,
+  FilePlus2,
   FileText,
+  Files,
   History,
+  Plus,
   RefreshCw,
   Search,
   Ship,
+  Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { CSSProperties, Dispatch, FormEvent, SetStateAction } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -26,6 +30,9 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import {
   buildFleetCertificateFileName,
   buildFleetCertificateMetrics,
+  createFleetCertificateDocument,
+  deleteFleetCertificateDocuments,
+  downloadFleetCertificateDocuments,
   fetchFleetCertificates,
   fetchFleetCertificateVersions,
   getEffectiveFleetCertificateStatus,
@@ -348,6 +355,91 @@ function CertificateDrawer({ certificate, client, isManager, onClose, onChanged 
   );
 }
 
+interface NewDocumentDialogProps {
+  certificates: FleetCertificateRecord[];
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (input: {
+    vesselId: number;
+    vesselName: string;
+    vesselAcronym: string;
+    companyId: number;
+    categoryKey: string;
+    categoryLabel: string;
+    documentTitle: string;
+    file: File;
+    issuedOn: string;
+    expiresOn: string;
+  }) => Promise<void>;
+}
+
+function NewDocumentDialog({ certificates, isSaving, onClose, onSubmit }: NewDocumentDialogProps) {
+  const vessels = useMemo(() => {
+    const byName = new Map<string, FleetCertificateRecord>();
+    certificates.forEach((certificate) => {
+      if (certificate.vesselId && !byName.has(certificate.vesselName)) byName.set(certificate.vesselName, certificate);
+    });
+    return Array.from(byName.values()).sort((left, right) => left.vesselName.localeCompare(right.vesselName, 'fr'));
+  }, [certificates]);
+  const categories = useMemo(() => {
+    const byKey = new Map<string, { key: string; label: string }>();
+    certificates.forEach((certificate) => byKey.set(certificate.categoryKey, { key: certificate.categoryKey, label: certificate.categoryLabel }));
+    return Array.from(byKey.values()).sort((left, right) => left.label.localeCompare(right.label, 'fr'));
+  }, [certificates]);
+  const [vesselName, setVesselName] = useState(vessels[0]?.vesselName || '');
+  const [categoryKey, setCategoryKey] = useState(categories[0]?.key || 'certificate');
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [issuedOn, setIssuedOn] = useState('');
+  const [expiresOn, setExpiresOn] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const vessel = vessels.find((candidate) => candidate.vesselName === vesselName);
+    const category = categories.find((candidate) => candidate.key === categoryKey);
+    if (!vessel?.vesselId || !category || !file) return;
+    await onSubmit({
+      vesselId: vessel.vesselId,
+      vesselName: vessel.vesselName,
+      vesselAcronym: vessel.vesselAcronym,
+      companyId: vessel.companyId,
+      categoryKey: category.key,
+      categoryLabel: category.label,
+      documentTitle,
+      file,
+      issuedOn,
+      expiresOn,
+    });
+  }
+
+  return (
+    <div className="fc-dialog-backdrop" onMouseDown={onClose} role="presentation">
+      <form aria-label="Nouveau document flotte" aria-modal="true" className="fc-new-document-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={handleSubmit} role="dialog">
+        <header>
+          <span><FilePlus2 aria-hidden="true" size={19} /></span>
+          <div><small>BIBLIOTHÈQUE DOCUMENTAIRE</small><h2>Nouveau document</h2></div>
+          <button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button>
+        </header>
+        <div className="fc-new-document-dialog__body">
+          <div className="fc-form-grid">
+            <label>Navire<select aria-label="Navire du nouveau document" onChange={(event) => setVesselName(event.target.value)} required value={vesselName}>{vessels.map((vessel) => <option key={vessel.vesselName} value={vessel.vesselName}>{vessel.vesselName}</option>)}</select></label>
+            <label>Catégorie<select aria-label="Catégorie du nouveau document" onChange={(event) => setCategoryKey(event.target.value)} required value={categoryKey}>{categories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}</select></label>
+            <label className="is-wide">Titre du document<input aria-label="Titre du nouveau document" onChange={(event) => setDocumentTitle(event.target.value)} required value={documentTitle} /></label>
+            <label>Date de délivrance<input aria-label="Date de délivrance du nouveau document" onChange={(event) => setIssuedOn(event.target.value)} type="date" value={issuedOn} /></label>
+            <label>Date d'échéance<input aria-label="Date d'échéance du nouveau document" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label>
+          </div>
+          <label className="fc-file-drop">
+            <UploadCloud aria-hidden="true" size={22} />
+            <span>{file?.name || 'PDF, image ou Excel · 50 Mo maximum'}</span>
+            <input accept=".pdf,.png,.jpg,.jpeg,.xlsx" aria-label="Fichier du nouveau document" onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" />
+          </label>
+        </div>
+        <footer><button onClick={onClose} type="button">Annuler</button><button className="fc-primary-action" disabled={isSaving || !file} type="submit"><UploadCloud size={16} /> {isSaving ? 'Enregistrement…' : 'Ajouter le document'}</button></footer>
+      </form>
+    </div>
+  );
+}
+
 export function FleetCertificatesPage({ client, roles }: FleetCertificatesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -363,6 +455,11 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [year, setYear] = useState(new Date().getFullYear());
   const [expandedVessel, setExpandedVessel] = useState('GOURY');
   const [selectedCertificate, setSelectedCertificate] = useState<FleetCertificateRecord | null>(null);
+  const [expandedDocumentVessels, setExpandedDocumentVessels] = useState<Set<string>>(() => new Set(['GOURY']));
+  const [expandedDocumentCategories, setExpandedDocumentCategories] = useState<Set<string>>(() => new Set(['GOURY::01-registre-international-francais']));
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
+  const [isDocumentActionRunning, setIsDocumentActionRunning] = useState(false);
+  const [isNewDocumentOpen, setIsNewDocumentOpen] = useState(false);
 
   const loadCertificates = useCallback(async () => {
     const loaded = sortCertificates(await fetchFleetCertificates(effectiveClient));
@@ -414,11 +511,87 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const todayPosition = year === new Date().getFullYear()
     ? yearPosition(new Date().toISOString().slice(0, 10), year)
     : -1;
+  const documentGroups = useMemo(() => vesselOptions.map((name, vesselIndex) => {
+    const vesselCertificates = activeCertificates.filter((certificate) => certificate.vesselName === name);
+    const categoryKeys = uniqueSorted(vesselCertificates.map((certificate) => certificate.categoryKey));
+    return {
+      name,
+      color: VESSEL_COLORS[vesselIndex % VESSEL_COLORS.length],
+      certificates: vesselCertificates,
+      categories: categoryKeys.map((key) => ({
+        key,
+        label: vesselCertificates.find((certificate) => certificate.categoryKey === key)?.categoryLabel || key,
+        certificates: vesselCertificates.filter((certificate) => certificate.categoryKey === key),
+      })).sort((left, right) => left.label.localeCompare(right.label, 'fr')),
+    };
+  }), [activeCertificates, vesselOptions]);
+  const selectedDocuments = useMemo(
+    () => activeCertificates.filter((certificate) => selectedDocumentIds.has(certificate.id)),
+    [activeCertificates, selectedDocumentIds],
+  );
 
   async function handleChanged(message: string) {
     await loadCertificates();
     setStatusMessage(message);
     window.setTimeout(() => setStatusMessage(''), 4500);
+  }
+
+  function toggleExpanded(setter: Dispatch<SetStateAction<Set<string>>>, key: string) {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleDocumentSelection(certificateId: number) {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(certificateId)) next.delete(certificateId); else next.add(certificateId);
+      return next;
+    });
+  }
+
+  async function handleDownloadSelection() {
+    setIsDocumentActionRunning(true);
+    setErrorMessage('');
+    try {
+      await downloadFleetCertificateDocuments(effectiveClient, selectedDocuments);
+      setStatusMessage(`${selectedDocuments.length} document(s) téléchargé(s).`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de télécharger les documents.');
+    } finally {
+      setIsDocumentActionRunning(false);
+    }
+  }
+
+  async function handleDeleteSelection() {
+    if (!selectedDocuments.length || !window.confirm(`Effacer définitivement ${selectedDocuments.length} document(s) ?`)) return;
+    setIsDocumentActionRunning(true);
+    setErrorMessage('');
+    try {
+      await deleteFleetCertificateDocuments(effectiveClient, selectedDocuments.map((certificate) => certificate.id));
+      setSelectedDocumentIds(new Set());
+      await handleChanged(`${selectedDocuments.length} document(s) effacé(s).`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'effacer les documents.");
+    } finally {
+      setIsDocumentActionRunning(false);
+    }
+  }
+
+  async function handleCreateDocument(input: Parameters<typeof createFleetCertificateDocument>[1]) {
+    setIsDocumentActionRunning(true);
+    setErrorMessage('');
+    try {
+      await createFleetCertificateDocument(effectiveClient, input);
+      setIsNewDocumentOpen(false);
+      await handleChanged('Nouveau document ajouté.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter le document.");
+    } finally {
+      setIsDocumentActionRunning(false);
+    }
   }
 
   if (isLoading) return <div className="admin-state">Chargement des certificats flotte…</div>;
@@ -528,9 +701,68 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
         </div>
       </section>
 
+      <section className="fc-document-library" aria-label="Téléchargement des certificats">
+        <header className="fc-document-toolbar">
+          <div><small>TÉLÉCHARGEMENT</small><strong>{selectedDocuments.length} document(s) sélectionné(s)</strong></div>
+          <div className="fc-document-toolbar__actions">
+            {isManager ? <button className="fc-primary-action" onClick={() => setIsNewDocumentOpen(true)} type="button"><Plus size={17} /> Nouveau Document</button> : null}
+            <button aria-pressed={selectedDocuments.length === activeCertificates.length} onClick={() => setSelectedDocumentIds(selectedDocuments.length === activeCertificates.length ? new Set() : new Set(activeCertificates.map((certificate) => certificate.id)))} type="button">Tout sélectionner</button>
+            {isManager ? <button disabled={!selectedDocuments.length || isDocumentActionRunning} onClick={() => void handleDeleteSelection()} type="button"><Trash2 size={16} /> Effacer</button> : null}
+            <button disabled={!selectedDocuments.length || isDocumentActionRunning} onClick={() => void handleDownloadSelection()} type="button"><Download size={17} /> Télécharger</button>
+          </div>
+        </header>
+
+        <div className="fc-document-tree">
+          {documentGroups.map((group) => {
+            const vesselExpanded = expandedDocumentVessels.has(group.name);
+            return (
+              <article className={`fc-document-vessel ${vesselExpanded ? 'is-expanded' : ''}`} key={group.name} style={{ '--vessel-color': group.color } as CSSProperties}>
+                <button aria-expanded={vesselExpanded} className="fc-document-vessel__header" onClick={() => toggleExpanded(setExpandedDocumentVessels, group.name)} type="button">
+                  <span className="fc-document-icon"><Files aria-hidden="true" size={16} /></span>
+                  {vesselExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Ship aria-hidden="true" size={16} />
+                  <strong>{group.name}</strong>
+                  <small>{group.certificates.length} certificat(s)</small>
+                </button>
+                {vesselExpanded ? (
+                  <div className="fc-document-categories">
+                    {group.categories.map((category) => {
+                      const categoryId = `${group.name}::${category.key}`;
+                      const categoryExpanded = expandedDocumentCategories.has(categoryId);
+                      return (
+                        <section className={`fc-document-category ${categoryExpanded ? 'is-expanded' : ''}`} key={categoryId}>
+                          <button aria-expanded={categoryExpanded} className="fc-document-category__header" onClick={() => toggleExpanded(setExpandedDocumentCategories, categoryId)} type="button">
+                            <span className="fc-document-icon"><Files aria-hidden="true" size={16} /></span>
+                            {categoryExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            <strong>{category.label}</strong>
+                            <small>{category.certificates.length}</small>
+                          </button>
+                          {categoryExpanded ? (
+                            <div className="fc-document-items">
+                              {category.certificates.map((certificate) => (
+                                <div className={selectedDocumentIds.has(certificate.id) ? 'is-selected' : ''} key={certificate.id}>
+                                  <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} onChange={() => toggleDocumentSelection(certificate.id)} type="checkbox" />
+                                  <FileText aria-hidden="true" size={15} />
+                                  <button onClick={() => setSelectedCertificate(certificate)} type="button">{certificate.documentTitle}</button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
       {selectedCertificate ? (
         <CertificateDrawer certificate={selectedCertificate} client={effectiveClient} isManager={isManager} onChanged={handleChanged} onClose={() => setSelectedCertificate(null)} />
       ) : null}
+      {isNewDocumentOpen ? <NewDocumentDialog certificates={activeCertificates} isSaving={isDocumentActionRunning} onClose={() => setIsNewDocumentOpen(false)} onSubmit={handleCreateDocument} /> : null}
     </section>
   );
 }
