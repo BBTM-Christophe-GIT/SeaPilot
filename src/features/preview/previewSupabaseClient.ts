@@ -133,7 +133,9 @@ function createPreviewFleetCertificates(): unknown[] {
     const expired = Boolean(expiresOn && expiresOn < '2026-08-11');
     const renewalDue = Boolean(expiresOn && expiresOn >= '2026-08-11' && expiresOn <= '2026-11-09');
     const category = categories[categoryIndex];
-    const title = category.titles[categoryDocumentIndex] || `${category.label.replace(/^\d+\s*-\s*/, '')} ${categoryDocumentIndex + 1}`;
+    const title = vesselIndex === 0 && categoryIndex === 1
+      ? 'Certificat de Franc-Bord'
+      : category.titles[categoryDocumentIndex] || `${category.label.replace(/^\d+\s*-\s*/, '')} ${categoryDocumentIndex + 1}`;
     const currentId = id++;
     return {
       id: currentId,
@@ -169,6 +171,33 @@ function createPreviewFleetCertificates(): unknown[] {
       updated_at: '2026-08-11T11:42:00Z',
     };
   })));
+}
+
+function createPreviewFleetCertificateFindings(): unknown[] {
+  return [
+    { id: 8601, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0012', finding_type: 'major_non_conformity', title: 'Corrosion du support bâbord', description: 'Corrosion perforante constatée sur le support bâbord. Décaper, contrôler l’épaisseur résiduelle puis remplacer la partie dégradée avant validation.', detected_on: '2026-07-16', treatment_delay_days: 21, treatment_due_on: '2026-08-06', status: 'in_progress', progress: 60, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z' },
+    { id: 8602, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0013', finding_type: 'minor_non_conformity', title: 'Marquage de sécurité incomplet', description: 'Compléter le marquage réglementaire sur la zone de travail arrière.', detected_on: '2026-07-16', treatment_delay_days: 45, treatment_due_on: '2026-08-30', status: 'assigned', progress: 20, responsible_person_id: 9304, responsible_name: 'Hugo BERNARD', created_at: '2026-07-16T09:40:00Z', updated_at: '2026-08-09T10:00:00Z' },
+    { id: 8603, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0014', finding_type: 'class_condition', title: 'Essai de charge à fournir', description: 'Transmettre le procès-verbal de l’essai de charge de l’apparau concerné.', detected_on: '2026-07-17', treatment_delay_days: 60, treatment_due_on: '2026-09-15', status: 'assigned', progress: 35, responsible_person_id: 9301, responsible_name: 'Arthur DEMO', created_at: '2026-07-17T08:20:00Z', updated_at: '2026-08-08T14:10:00Z' },
+    { id: 8604, company_id: 1, certificate_id: 5000, reference: 'EC-2026-0015', finding_type: 'prescription', title: 'Actualiser l’acte de francisation', description: 'Intégrer la dernière modification administrative et déposer le document signé.', detected_on: '2026-07-20', treatment_delay_days: 30, treatment_due_on: '2026-08-19', status: 'in_progress', progress: 70, responsible_person_id: 9302, responsible_name: 'Camille DURAND', created_at: '2026-07-20T08:20:00Z', updated_at: '2026-08-10T09:10:00Z' },
+    { id: 8605, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0016', finding_type: 'remark', title: 'Plan de maintenance à compléter', description: 'Préciser la périodicité du contrôle visuel dans le plan de maintenance.', detected_on: '2026-07-21', treatment_delay_days: 90, treatment_due_on: '2026-10-19', status: 'closed', progress: 100, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-21T08:20:00Z', updated_at: '2026-08-07T11:30:00Z' },
+  ];
+}
+
+function createPreviewFleetFindingAttachments(): unknown[] {
+  return [
+    { id: 8701, company_id: 1, finding_id: 8601, attachment_kind: 'finding', original_file_name: 'corrosion-support-babord.jpg', storage_bucket: 'fleet-certificates', storage_path: 'demo/action-plan-closure-proof.webp', mime_type: 'image/jpeg', file_size_bytes: 422100, caption: 'Constat initial', created_at: '2026-07-16T09:18:00Z' },
+    { id: 8702, company_id: 1, finding_id: 8601, attachment_kind: 'finding', original_file_name: 'rapport-visite-CSN.pdf', storage_bucket: 'fleet-certificates', storage_path: 'demo/rapport-visite-CSN.pdf', mime_type: 'application/pdf', file_size_bytes: 815000, caption: 'Rapport de visite', created_at: '2026-07-16T09:20:00Z' },
+    { id: 8703, company_id: 1, finding_id: 8601, attachment_kind: 'treatment', original_file_name: 'reparation-support.jpg', storage_bucket: 'fleet-certificates', storage_path: 'demo/action-plan-closure-proof.webp', mime_type: 'image/jpeg', file_size_bytes: 385200, caption: 'Travaux réalisés', created_at: '2026-08-10T15:20:00Z' },
+  ];
+}
+
+function createPreviewFleetFindingEvents(): unknown[] {
+  return [
+    { id: 8801, company_id: 1, finding_id: 8601, event_type: 'created', from_status: null, to_status: 'declared', note: 'Écart créé après visite CSN', created_at: '2026-07-16T09:14:00Z' },
+    { id: 8802, company_id: 1, finding_id: 8601, event_type: 'assigned', from_status: 'declared', to_status: 'assigned', note: 'Responsable : Luc MARTIN', created_at: '2026-07-17T07:30:00Z' },
+    { id: 8803, company_id: 1, finding_id: 8601, event_type: 'progress_updated', from_status: 'in_progress', to_status: 'in_progress', note: 'Décapage réalisé et pièce de remplacement commandée', created_at: '2026-08-05T14:05:00Z' },
+    { id: 8804, company_id: 1, finding_id: 8601, event_type: 'evidence_added', from_status: null, to_status: null, note: 'Preuve de traitement ajoutée : reparation-support.jpg', created_at: '2026-08-10T15:20:00Z' },
+  ];
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
@@ -1001,6 +1030,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   project_billing_documents: [],
   fleet_certificates: createPreviewFleetCertificates(),
   fleet_certificate_versions: [],
+  fleet_certificate_findings: createPreviewFleetCertificateFindings(),
+  fleet_certificate_finding_attachments: createPreviewFleetFindingAttachments(),
+  fleet_certificate_finding_events: createPreviewFleetFindingEvents(),
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 

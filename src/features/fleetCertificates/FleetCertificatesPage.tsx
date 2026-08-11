@@ -1,768 +1,230 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertTriangle,
-  CalendarClock,
-  CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Download,
-  FileCheck2,
-  FilePlus2,
-  FileText,
-  Files,
-  History,
-  Plus,
-  RefreshCw,
-  Search,
-  Ship,
-  Trash2,
-  UploadCloud,
-  X,
+  AlertCircle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CircleDot, Clock3, Download,
+  ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image, MoreHorizontal,
+  Plus, RefreshCw, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, Dispatch, FormEvent, SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
-  buildFleetCertificateFileName,
-  buildFleetCertificateMetrics,
-  createFleetCertificateDocument,
-  deleteFleetCertificateDocuments,
-  downloadFleetCertificateDocuments,
-  fetchFleetCertificates,
-  fetchFleetCertificateVersions,
-  getEffectiveFleetCertificateStatus,
-  getFleetCertificateStatusLabel,
-  openFleetCertificateDocument,
-  planFleetCertificateRenewal,
-  submitFleetCertificateRenewal,
-  validateFleetCertificateRenewal,
+  createFleetCertificateDocument, deleteFleetCertificateDocuments, fetchFleetCertificates,
+  getEffectiveFleetCertificateStatus, openFleetCertificateDocument, submitFleetCertificateRenewal,
   type FleetCertificateRecord,
-  type FleetCertificateVersion,
 } from './fleetCertificateQueries';
+import {
+  addFleetFindingComment, createFleetCertificateFinding, deleteFleetCertificateFinding,
+  fetchFleetCertificateFindings, fetchFleetFindingResponsibles, FLEET_FINDING_LABELS,
+  FLEET_FINDING_STATUS_LABELS, openFleetFindingAttachment, updateFleetCertificateFinding,
+  uploadFleetFindingAttachment, type FleetCertificateFinding, type FleetFindingAttachmentKind,
+  type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
+} from './fleetCertificateFindings';
+import { downloadFleetFindingReport, generateFleetFindingReport } from './fleetCertificateFindingReport';
 
-interface FleetCertificatesPageProps {
-  client?: SupabaseClient;
-  roles?: RoleKey[];
-}
+interface FleetCertificatesPageProps { client?: SupabaseClient; roles?: RoleKey[] }
+type DetailTab = 'overview' | 'deadlines' | 'findings' | 'versions';
 
-type DeadlineFilter = 'all' | 'renew_due' | 'expired';
+const TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+const TYPES = Object.entries(FLEET_FINDING_LABELS) as Array<[FleetFindingType, string]>;
 
-const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
-const VESSEL_COLORS = ['#72b7e8', '#f7b88a', '#b8bdc5', '#f9e65f', '#df8ad1', '#95dc92', '#f7aaaa'];
-
-function canManageFleetCertificates(roles: RoleKey[]): boolean {
-  return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
-}
-
-function normalizeSearchValue(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
-
-function uniqueSorted(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
-}
-
-function sortCertificates(certificates: FleetCertificateRecord[]): FleetCertificateRecord[] {
-  return [...certificates].sort((left, right) => {
-    const vesselOrder = left.vesselName.localeCompare(right.vesselName, 'fr');
-    if (vesselOrder) return vesselOrder;
-    if (!left.expiresOn && right.expiresOn) return 1;
-    if (left.expiresOn && !right.expiresOn) return -1;
-    return left.expiresOn.localeCompare(right.expiresOn) || left.documentTitle.localeCompare(right.documentTitle, 'fr');
-  });
+function canManage(roles: RoleKey[]): boolean {
+  return roles.some((role) => ['admin', 'direction', 'armement'].includes(role));
 }
 
 function formatDate(value: string): string {
   if (!value) return 'Non renseignée';
-  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
-  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value.slice(0, 10)}T12:00:00`));
 }
 
-function formatUpdatedAt(value: string): string {
-  if (!value) return 'inconnue';
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  }).format(new Date(value));
+function daysFromToday(value: string): number {
+  return Math.ceil((new Date(`${value}T12:00:00`).getTime() - new Date(`${TODAY}T12:00:00`).getTime()) / 86_400_000);
 }
 
-function formatFileSize(bytes: number | null): string {
-  if (!bytes) return 'Taille inconnue';
-  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} Ko`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+function isOverdue(finding: FleetCertificateFinding): boolean {
+  return finding.status !== 'closed' && Boolean(finding.treatmentDueOn && finding.treatmentDueOn < TODAY);
 }
 
-function yearPosition(value: string, year: number): number {
-  const date = new Date(`${value}T12:00:00Z`);
-  const start = Date.UTC(year, 0, 1);
-  const end = Date.UTC(year + 1, 0, 1);
-  return Math.max(0, Math.min(99.3, ((date.getTime() - start) / (end - start)) * 100));
+function typeTone(type: FleetFindingType): string {
+  if (type === 'major_non_conformity') return 'red';
+  if (type === 'minor_non_conformity' || type === 'class_condition') return 'amber';
+  return 'blue';
 }
 
-function matchesSearch(certificate: FleetCertificateRecord, search: string): boolean {
-  if (!search.trim()) return true;
-  const searchable = normalizeSearchValue([
-    certificate.documentTitle,
-    certificate.originalFileName,
-    certificate.fileName,
-    certificate.vesselName,
-    certificate.categoryLabel,
-    certificate.providerName,
-  ].join(' '));
-  return searchable.includes(normalizeSearchValue(search.trim()));
+function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return <div className="fcx-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section aria-modal="true" className="fcx-modal" role="dialog"><header><div><small>Certificats flotte</small><h2>{title}</h2></div><button aria-label="Fermer" onClick={onClose}><X size={20} /></button></header>{children}</section>
+  </div>;
 }
 
-function metricVessels(vessels: string[]): string {
-  return vessels.length ? `Navires : ${vessels.join(', ')}` : 'Aucun navire concerné';
-}
-
-interface MetricCardProps {
-  count: number;
-  icon: typeof AlertTriangle;
-  label: string;
-  tone: 'amber' | 'blue' | 'red';
-  vessels: string[];
-}
-
-function MetricCard({ count, icon: Icon, label, tone, vessels }: MetricCardProps) {
-  return (
-    <article aria-label={label} className={`fc-metric fc-metric--${tone}`}>
-      <span className="fc-metric__icon"><Icon aria-hidden="true" size={18} /></span>
-      <span className="fc-metric__badge">{count}</span>
-      <small>{label}</small>
-      <strong>{count}</strong>
-      <p>{metricVessels(vessels)}</p>
-    </article>
-  );
-}
-
-interface CertificateDrawerProps {
-  certificate: FleetCertificateRecord;
-  client: SupabaseClient;
-  isManager: boolean;
-  onClose: () => void;
-  onChanged: (message: string) => Promise<void>;
-}
-
-function CertificateDrawer({ certificate, client, isManager, onClose, onChanged }: CertificateDrawerProps) {
-  const [versions, setVersions] = useState<FleetCertificateVersion[]>([]);
-  const [isLoadingVersions, setIsLoadingVersions] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [planForm, setPlanForm] = useState({
-    plannedOn: certificate.plannedOn,
-    providerName: certificate.providerName,
-    visitLocation: certificate.visitLocation,
-    notes: certificate.renewalNotes,
-  });
-  const [file, setFile] = useState<File | null>(null);
-  const [issuedOn, setIssuedOn] = useState('');
-  const [expiresOn, setExpiresOn] = useState('');
-  const [uploadNotes, setUploadNotes] = useState('');
-
-  const loadVersions = useCallback(async () => {
-    setIsLoadingVersions(true);
-    try {
-      setVersions(await fetchFleetCertificateVersions(client, certificate.id));
-    } catch {
-      setErrorMessage("Impossible de charger l'historique des versions.");
-    } finally {
-      setIsLoadingVersions(false);
-    }
-  }, [certificate.id, client]);
-
-  useEffect(() => {
-    void loadVersions();
-  }, [loadVersions]);
-
-  const pendingVersion = versions.find((version) => version.status === 'pending_validation');
-  const previewName = file
-    ? buildFleetCertificateFileName(certificate, expiresOn, file.name)
-    : `${certificate.vesselAcronym || 'NAV'} - ${certificate.documentTitle} - AAAA.pdf`;
-
-  async function openDocument(document: FleetCertificateRecord | FleetCertificateVersion) {
-    setErrorMessage('');
-    try {
-      const url = await openFleetCertificateDocument(client, document);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setErrorMessage("Impossible d'ouvrir ce document.");
-    }
+function FindingForm({ certificate, responsibles, onClose, onSave }: {
+  certificate: FleetCertificateRecord; responsibles: FleetFindingResponsible[]; onClose: () => void;
+  onSave: (values: { type: FleetFindingType; title: string; description: string; due: string; responsibleId: number | null }) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true);
+    try { await onSave({ type: form.get('type') as FleetFindingType, title: String(form.get('title')), description: String(form.get('description')), due: String(form.get('due')), responsibleId: Number(form.get('responsible')) || null }); onClose(); } finally { setSaving(false); }
   }
-
-  async function handlePlan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSaving(true);
-    setErrorMessage('');
-    try {
-      await planFleetCertificateRenewal(client, certificate.id, planForm);
-      await onChanged('Renouvellement planifié.');
-    } catch {
-      setErrorMessage("Impossible d'enregistrer la planification.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleUpload(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!file) {
-      setErrorMessage('Sélectionnez le nouveau document.');
-      return;
-    }
-    setIsSaving(true);
-    setErrorMessage('');
-    try {
-      await submitFleetCertificateRenewal(client, certificate, { file, issuedOn, expiresOn, notes: uploadNotes });
-      await loadVersions();
-      await onChanged('Document envoyé pour validation.');
-      setFile(null);
-      setIssuedOn('');
-      setExpiresOn('');
-      setUploadNotes('');
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible d'envoyer le document.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleValidate(version: FleetCertificateVersion) {
-    setIsSaving(true);
-    setErrorMessage('');
-    try {
-      await validateFleetCertificateRenewal(client, version.id);
-      await loadVersions();
-      await onChanged('Nouvelle version validée et activée.');
-    } catch {
-      setErrorMessage('Impossible de valider cette version.');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  return (
-    <div className="fc-drawer-backdrop" onMouseDown={onClose} role="presentation">
-      <aside
-        aria-label={`Détail du certificat ${certificate.documentTitle}`}
-        aria-modal="true"
-        className="fc-drawer"
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <header className="fc-drawer__header">
-          <div>
-            <small>{certificate.vesselName} · {certificate.categoryLabel}</small>
-            <h2>{certificate.documentTitle}</h2>
-          </div>
-          <button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button>
-        </header>
-
-        <div className="fc-drawer__body">
-          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
-          <section className="fc-detail-card">
-            <div className="fc-detail-card__title">
-              <span className={`fc-status fc-status--${getEffectiveFleetCertificateStatus(certificate)}`}>
-                {getFleetCertificateStatusLabel(getEffectiveFleetCertificateStatus(certificate))}
-              </span>
-              <button className="fc-primary-action" onClick={() => void openDocument(certificate)} type="button">
-                <Download size={16} /> Ouvrir le document
-              </button>
-            </div>
-            <dl className="fc-detail-list">
-              <div><dt>Échéance</dt><dd>{formatDate(certificate.expiresOn)}</dd></div>
-              <div><dt>Planification</dt><dd>{formatDate(certificate.plannedOn)}</dd></div>
-              <div><dt>Prestataire</dt><dd>{certificate.providerName || 'Non renseigné'}</dd></div>
-              <div><dt>Lieu</dt><dd>{certificate.visitLocation || 'Non renseigné'}</dd></div>
-              <div><dt>Version active</dt><dd>v{certificate.currentVersionNo} · {formatFileSize(certificate.fileSizeBytes)}</dd></div>
-              <div><dt>Source</dt><dd>{certificate.sourceLabel || 'Supabase'}</dd></div>
-            </dl>
-          </section>
-
-          <section className="fc-renaming-card">
-            <span><FileCheck2 aria-hidden="true" size={18} /></span>
-            <div>
-              <small>Référentiel de renommage</small>
-              <strong>ACRONYME - TITRE DU DOCUMENT - ANNÉE.extension</strong>
-              <code>{previewName}</code>
-            </div>
-          </section>
-
-          {isManager ? (
-            <form className="fc-workflow-form" onSubmit={handlePlan}>
-              <div className="fc-section-heading">
-                <CalendarClock aria-hidden="true" size={18} />
-                <div><small>Étape 1</small><h3>Planifier le renouvellement</h3></div>
-              </div>
-              <div className="fc-form-grid">
-                <label>Date prévue<input aria-label="Date prévue du renouvellement" onChange={(event) => setPlanForm((current) => ({ ...current, plannedOn: event.target.value }))} required type="date" value={planForm.plannedOn} /></label>
-                <label>Prestataire<input aria-label="Prestataire du renouvellement" onChange={(event) => setPlanForm((current) => ({ ...current, providerName: event.target.value }))} value={planForm.providerName} /></label>
-                <label>Lieu de la visite<input aria-label="Lieu de la visite" onChange={(event) => setPlanForm((current) => ({ ...current, visitLocation: event.target.value }))} value={planForm.visitLocation} /></label>
-                <label className="is-wide">Commentaires<textarea aria-label="Commentaires de planification" onChange={(event) => setPlanForm((current) => ({ ...current, notes: event.target.value }))} rows={2} value={planForm.notes} /></label>
-              </div>
-              <button disabled={isSaving} type="submit">Enregistrer la planification</button>
-            </form>
-          ) : null}
-
-          {isManager ? (
-            <form className="fc-workflow-form" onSubmit={handleUpload}>
-              <div className="fc-section-heading">
-                <UploadCloud aria-hidden="true" size={18} />
-                <div><small>Étape 2</small><h3>Déposer le nouveau certificat</h3></div>
-              </div>
-              <label className="fc-file-drop">
-                <UploadCloud aria-hidden="true" size={22} />
-                <span>{file?.name || 'PDF, image ou Excel · 50 Mo maximum'}</span>
-                <input accept=".pdf,.png,.jpg,.jpeg,.xlsx" aria-label="Nouveau document du certificat" onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" />
-              </label>
-              <div className="fc-form-grid">
-                <label>Date de délivrance<input aria-label="Nouvelle date de délivrance" onChange={(event) => setIssuedOn(event.target.value)} type="date" value={issuedOn} /></label>
-                <label>Nouvelle échéance<input aria-label="Nouvelle date d'échéance" onChange={(event) => setExpiresOn(event.target.value)} required type="date" value={expiresOn} /></label>
-                <label className="is-wide">Note de transmission<textarea aria-label="Note de transmission" onChange={(event) => setUploadNotes(event.target.value)} rows={2} value={uploadNotes} /></label>
-              </div>
-              <button disabled={isSaving || Boolean(pendingVersion)} type="submit">
-                {pendingVersion ? 'Une version attend déjà validation' : 'Envoyer pour validation'}
-              </button>
-            </form>
-          ) : null}
-
-          <section className="fc-history">
-            <div className="fc-section-heading">
-              <History aria-hidden="true" size={18} />
-              <div><small>Traçabilité</small><h3>Historique des versions</h3></div>
-            </div>
-            {isLoadingVersions ? <p>Chargement…</p> : versions.map((version) => (
-              <article className="fc-version" key={version.id}>
-                <span className={`fc-version__state fc-version__state--${version.status}`} />
-                <div>
-                  <strong>Version {version.versionNo} · {version.normalizedFileName}</strong>
-                  <small>{formatDate(version.expiresOn)} · {formatFileSize(version.fileSizeBytes)}</small>
-                </div>
-                <button aria-label={`Ouvrir la version ${version.versionNo}`} onClick={() => void openDocument(version)} type="button"><Download size={16} /></button>
-                {isManager && version.status === 'pending_validation' ? (
-                  <button className="fc-validate-action" disabled={isSaving} onClick={() => void handleValidate(version)} type="button"><CheckCircle2 size={16} /> Valider</button>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        </div>
-      </aside>
-    </div>
-  );
+  return <Modal title="Déclarer un écart" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+    <p className="fcx-form-context"><Ship size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
+    <label>Type<select name="type">{TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    <label>Objet<input name="title" placeholder="Ex. Corrosion du support bâbord" required /></label>
+    <label>Description<textarea name="description" placeholder="Décrivez le constat, son emplacement et l’action attendue…" rows={4} required /></label>
+    <div className="fcx-form-grid"><label>Échéance de traitement<input name="due" required type="date" /></label><label>Responsable<select defaultValue="" name="responsible"><option value="">À affecter</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name} — {person.functionLabel}</option>)}</select></label></div>
+    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><Flag size={16} /> {saving ? 'Création…' : 'Créer l’écart'}</button></footer>
+  </form></Modal>;
 }
 
-interface NewDocumentDialogProps {
-  certificates: FleetCertificateRecord[];
-  isSaving: boolean;
-  onClose: () => void;
-  onSubmit: (input: {
-    vesselId: number;
-    vesselName: string;
-    vesselAcronym: string;
-    companyId: number;
-    categoryKey: string;
-    categoryLabel: string;
-    documentTitle: string;
-    file: File;
-    issuedOn: string;
-    expiresOn: string;
-  }) => Promise<void>;
+function DocumentForm({ certificates, onClose, onSave }: { certificates: FleetCertificateRecord[]; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); try { await onSave(new FormData(event.currentTarget)); onClose(); } finally { setSaving(false); } }
+  const vessels = Array.from(new Map(certificates.map((item) => [item.vesselId, item])).values());
+  return <Modal title="Ajouter un document" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+    <div className="fcx-form-grid"><label>Navire<select name="vesselId" required>{vessels.map((vessel) => <option key={vessel.vesselId} value={vessel.vesselId || ''}>{vessel.vesselName}</option>)}</select></label><label>Catégorie<input name="category" placeholder="Ex. 02 - Sécurité" required /></label></div>
+    <label>Nom du document<input name="title" placeholder="Ex. Certificat de Franc-Bord" required /></label>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" type="date" /></label><label>Date d’échéance<input name="expires" type="date" /></label></div>
+    <label className="fcx-drop"><UploadCloud size={22} /><span>PDF, image ou Excel · 50 Mo maximum</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" required type="file" /></label>
+    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><FilePlus2 size={16} /> {saving ? 'Ajout…' : 'Ajouter le document'}</button></footer>
+  </form></Modal>;
 }
 
-function NewDocumentDialog({ certificates, isSaving, onClose, onSubmit }: NewDocumentDialogProps) {
-  const vessels = useMemo(() => {
-    const byName = new Map<string, FleetCertificateRecord>();
-    certificates.forEach((certificate) => {
-      if (certificate.vesselId && !byName.has(certificate.vesselName)) byName.set(certificate.vesselName, certificate);
-    });
-    return Array.from(byName.values()).sort((left, right) => left.vesselName.localeCompare(right.vesselName, 'fr'));
-  }, [certificates]);
-  const categories = useMemo(() => {
-    const byKey = new Map<string, { key: string; label: string }>();
-    certificates.forEach((certificate) => byKey.set(certificate.categoryKey, { key: certificate.categoryKey, label: certificate.categoryLabel }));
-    return Array.from(byKey.values()).sort((left, right) => left.label.localeCompare(right.label, 'fr'));
-  }, [certificates]);
-  const [vesselName, setVesselName] = useState(vessels[0]?.vesselName || '');
-  const [categoryKey, setCategoryKey] = useState(categories[0]?.key || 'certificate');
-  const [documentTitle, setDocumentTitle] = useState('');
-  const [issuedOn, setIssuedOn] = useState('');
-  const [expiresOn, setExpiresOn] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const vessel = vessels.find((candidate) => candidate.vesselName === vesselName);
-    const category = categories.find((candidate) => candidate.key === categoryKey);
-    if (!vessel?.vesselId || !category || !file) return;
-    await onSubmit({
-      vesselId: vessel.vesselId,
-      vesselName: vessel.vesselName,
-      vesselAcronym: vessel.vesselAcronym,
-      companyId: vessel.companyId,
-      categoryKey: category.key,
-      categoryLabel: category.label,
-      documentTitle,
-      file,
-      issuedOn,
-      expiresOn,
-    });
-  }
-
-  return (
-    <div className="fc-dialog-backdrop" onMouseDown={onClose} role="presentation">
-      <form aria-label="Nouveau document flotte" aria-modal="true" className="fc-new-document-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={handleSubmit} role="dialog">
-        <header>
-          <span><FilePlus2 aria-hidden="true" size={19} /></span>
-          <div><small>BIBLIOTHÈQUE DOCUMENTAIRE</small><h2>Nouveau document</h2></div>
-          <button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button>
-        </header>
-        <div className="fc-new-document-dialog__body">
-          <div className="fc-form-grid">
-            <label>Navire<select aria-label="Navire du nouveau document" onChange={(event) => setVesselName(event.target.value)} required value={vesselName}>{vessels.map((vessel) => <option key={vessel.vesselName} value={vessel.vesselName}>{vessel.vesselName}</option>)}</select></label>
-            <label>Catégorie<select aria-label="Catégorie du nouveau document" onChange={(event) => setCategoryKey(event.target.value)} required value={categoryKey}>{categories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}</select></label>
-            <label className="is-wide">Titre du document<input aria-label="Titre du nouveau document" onChange={(event) => setDocumentTitle(event.target.value)} required value={documentTitle} /></label>
-            <label>Date de délivrance<input aria-label="Date de délivrance du nouveau document" onChange={(event) => setIssuedOn(event.target.value)} type="date" value={issuedOn} /></label>
-            <label>Date d'échéance<input aria-label="Date d'échéance du nouveau document" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label>
-          </div>
-          <label className="fc-file-drop">
-            <UploadCloud aria-hidden="true" size={22} />
-            <span>{file?.name || 'PDF, image ou Excel · 50 Mo maximum'}</span>
-            <input accept=".pdf,.png,.jpg,.jpeg,.xlsx" aria-label="Fichier du nouveau document" onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" />
-          </label>
-        </div>
-        <footer><button onClick={onClose} type="button">Annuler</button><button className="fc-primary-action" disabled={isSaving || !file} type="submit"><UploadCloud size={16} /> {isSaving ? 'Enregistrement…' : 'Ajouter le document'}</button></footer>
-      </form>
-    </div>
-  );
+function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCertificateRecord; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); try { await onSave(new FormData(event.currentTarget)); onClose(); } finally { setSaving(false); } }
+  return <Modal title="Renouveler le certificat" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+    <p className="fcx-form-context"><RefreshCw size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" type="date" /></label><label>Nouvelle échéance<input name="expires" required type="date" /></label></div>
+    <label>Note de renouvellement<textarea name="notes" rows={3} /></label>
+    <label className="fcx-drop"><UploadCloud size={22} /><span>Nouveau certificat signé</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" required type="file" /></label>
+    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><RefreshCw size={16} /> {saving ? 'Renouvellement…' : 'Enregistrer la nouvelle version'}</button></footer>
+  </form></Modal>;
 }
 
 export function FleetCertificatesPage({ client, roles }: FleetCertificatesPageProps) {
-  const outletContext = useOutletContext<AppShellOutletContext | undefined>();
-  const effectiveClient = client || outletContext?.client || supabase;
-  const effectiveRoles = roles || outletContext?.roles || [];
-  const isManager = canManageFleetCertificates(effectiveRoles);
+  const outlet = useOutletContext<AppShellOutletContext | undefined>();
+  const effectiveClient = client || outlet?.client || supabase;
+  const effectiveRoles = roles || outlet?.roles || [];
+  const manager = canManage(effectiveRoles);
   const [certificates, setCertificates] = useState<FleetCertificateRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [statusMessage, setStatusMessage] = useState('');
+  const [findings, setFindings] = useState<FleetCertificateFinding[]>([]);
+  const [responsibles, setResponsibles] = useState<FleetFindingResponsible[]>([]);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
+  const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
+  const [tab, setTab] = useState<DetailTab>('findings');
   const [search, setSearch] = useState('');
-  const [vesselName, setVesselName] = useState('');
-  const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>('all');
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [expandedVessel, setExpandedVessel] = useState('GOURY');
-  const [selectedCertificate, setSelectedCertificate] = useState<FleetCertificateRecord | null>(null);
-  const [expandedDocumentVessels, setExpandedDocumentVessels] = useState<Set<string>>(() => new Set(['GOURY']));
-  const [expandedDocumentCategories, setExpandedDocumentCategories] = useState<Set<string>>(() => new Set(['GOURY::01-registre-international-francais']));
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
-  const [isDocumentActionRunning, setIsDocumentActionRunning] = useState(false);
-  const [isNewDocumentOpen, setIsNewDocumentOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'upcoming' | 'actions'>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [modal, setModal] = useState<'finding' | 'document' | 'renewal' | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [comment, setComment] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploadKind, setUploadKind] = useState<FleetFindingAttachmentKind>('finding');
 
-  const loadCertificates = useCallback(async () => {
-    const loaded = sortCertificates(await fetchFleetCertificates(effectiveClient));
-    setCertificates(loaded);
-    setSelectedCertificate((current) => current ? loaded.find((certificate) => certificate.id === current.id) || current : null);
+  const load = useCallback(async () => {
+    const [loadedCertificates, loadedFindings, loadedResponsibles] = await Promise.all([
+      fetchFleetCertificates(effectiveClient), fetchFleetCertificateFindings(effectiveClient), fetchFleetFindingResponsibles(effectiveClient),
+    ]);
+    setCertificates(loadedCertificates); setFindings(loadedFindings); setResponsibles(loadedResponsibles);
+    setSelectedFindingId((current) => current && loadedFindings.some((item) => item.id === current) ? current : null);
   }, [effectiveClient]);
 
+  useEffect(() => { let active = true; setIsLoading(true); load().catch(() => active && setError('Impossible de charger les certificats et les écarts.')).finally(() => active && setIsLoading(false)); return () => { active = false; }; }, [load]);
+  const selectedCertificate = certificates.find((item) => item.id === selectedCertificateId) || null;
+  const certificateFindings = findings.filter((item) => item.certificateId === selectedCertificateId);
+  const selectedFinding = certificateFindings.find((item) => item.id === selectedFindingId) || certificateFindings[0] || null;
+  useEffect(() => { if (selectedFinding && selectedFinding.id !== selectedFindingId) setSelectedFindingId(selectedFinding.id); }, [selectedFinding, selectedFindingId]);
   useEffect(() => {
-    let active = true;
-    setIsLoading(true);
-    loadCertificates()
-      .catch(() => { if (active) setErrorMessage('Impossible de charger les certificats flotte.'); })
-      .finally(() => { if (active) setIsLoading(false); });
-    return () => { active = false; };
-  }, [loadCertificates]);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    const content = document.querySelector<HTMLElement>('.content-area');
+    if (content) content.scrollTop = 0;
+  }, [selectedCertificateId]);
 
-  const activeCertificates = useMemo(
-    () => certificates.filter((certificate) => certificate.isActiveFleet),
-    [certificates],
-  );
-  const metrics = useMemo(() => buildFleetCertificateMetrics(activeCertificates), [activeCertificates]);
-  const vesselOptions = useMemo(
-    () => uniqueSorted(activeCertificates.map((certificate) => certificate.vesselName)),
-    [activeCertificates],
-  );
-  const statusFilteredCertificates = useMemo(() => activeCertificates.filter((certificate) => {
-    if (vesselName && certificate.vesselName !== vesselName) return false;
-    if (deadlineFilter === 'all') return true;
-    return getEffectiveFleetCertificateStatus(certificate) === deadlineFilter;
-  }), [activeCertificates, deadlineFilter, vesselName]);
-  const searchResults = useMemo(
-    () => search.trim() ? activeCertificates.filter((certificate) => matchesSearch(certificate, search)).slice(0, 12) : [],
-    [activeCertificates, search],
-  );
-  const timelineGroups = useMemo(() => {
-    const names = vesselName ? [vesselName] : uniqueSorted(statusFilteredCertificates.map((certificate) => certificate.vesselName));
-    return names.map((name, index) => ({
-      name,
-      color: VESSEL_COLORS[index % VESSEL_COLORS.length],
-      certificates: statusFilteredCertificates.filter(
-        (certificate) => certificate.vesselName === name && certificate.expiresOn.startsWith(String(year)),
-      ),
-    }));
-  }, [statusFilteredCertificates, vesselName, year]);
-  const lastUpdatedAt = useMemo(
-    () => certificates.map((certificate) => certificate.updatedAt).filter(Boolean).sort().at(-1) || '',
-    [certificates],
-  );
-  const todayPosition = year === new Date().getFullYear()
-    ? yearPosition(new Date().toISOString().slice(0, 10), year)
-    : -1;
-  const documentGroups = useMemo(() => vesselOptions.map((name, vesselIndex) => {
-    const vesselCertificates = activeCertificates.filter((certificate) => certificate.vesselName === name);
-    const categoryKeys = uniqueSorted(vesselCertificates.map((certificate) => certificate.categoryKey));
-    return {
-      name,
-      color: VESSEL_COLORS[vesselIndex % VESSEL_COLORS.length],
-      certificates: vesselCertificates,
-      categories: categoryKeys.map((key) => ({
-        key,
-        label: vesselCertificates.find((certificate) => certificate.categoryKey === key)?.categoryLabel || key,
-        certificates: vesselCertificates.filter((certificate) => certificate.categoryKey === key),
-      })).sort((left, right) => left.label.localeCompare(right.label, 'fr')),
-    };
-  }), [activeCertificates, vesselOptions]);
-  const selectedDocuments = useMemo(
-    () => activeCertificates.filter((certificate) => selectedDocumentIds.has(certificate.id)),
-    [activeCertificates, selectedDocumentIds],
-  );
+  const active = certificates.filter((item) => item.isActiveFleet);
+  const expired = active.filter((item) => getEffectiveFleetCertificateStatus(item) === 'expired');
+  const upcoming = active.filter((item) => item.expiresOn && daysFromToday(item.expiresOn) >= 0 && daysFromToday(item.expiresOn) <= 90);
+  const openFindings = findings.filter((item) => item.status !== 'closed');
+  const filtered = useMemo(() => active.filter((item) => {
+    const q = search.trim().toLocaleLowerCase('fr');
+    if (q && !`${item.vesselName} ${item.documentTitle} ${item.categoryLabel}`.toLocaleLowerCase('fr').includes(q)) return false;
+    if (statusFilter === 'expired') return getEffectiveFleetCertificateStatus(item) === 'expired';
+    if (statusFilter === 'upcoming') return upcoming.some((up) => up.id === item.id);
+    if (statusFilter === 'actions') return openFindings.some((finding) => finding.certificateId === item.id);
+    return true;
+  }), [active, openFindings, search, statusFilter, upcoming]);
 
-  async function handleChanged(message: string) {
-    await loadCertificates();
-    setStatusMessage(message);
-    window.setTimeout(() => setStatusMessage(''), 4500);
+  async function run(action: () => Promise<void>, success: string) {
+    setError(''); setMessage('');
+    try { await action(); setMessage(success); await load(); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Action impossible.'); }
   }
 
-  function toggleExpanded(setter: Dispatch<SetStateAction<Set<string>>>, key: string) {
-    setter((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
+  async function openDocument(certificate: FleetCertificateRecord) {
+    await run(async () => { const url = await openFleetCertificateDocument(effectiveClient, certificate); window.open(url, '_blank', 'noopener,noreferrer'); }, 'Document ouvert dans un nouvel onglet.');
   }
 
-  function toggleDocumentSelection(certificateId: number) {
-    setSelectedDocumentIds((current) => {
-      const next = new Set(current);
-      if (next.has(certificateId)) next.delete(certificateId); else next.add(certificateId);
-      return next;
-    });
+  async function generateReport(scope: 'finding' | 'certificate' | 'selected' | 'all') {
+    setReportOpen(false);
+    const filteredCertificateIds = new Set(filtered.map((item) => item.id));
+    const scopedFindings = scope === 'finding' && selectedFinding
+      ? [selectedFinding]
+      : scope === 'certificate'
+        ? certificateFindings
+        : scope === 'selected'
+          ? findings.filter((item) => filteredCertificateIds.has(item.certificateId))
+          : findings;
+    const certificateIds = new Set(scopedFindings.map((item) => item.certificateId));
+    const scopedCertificates = certificates.filter((item) => certificateIds.has(item.id));
+    await run(async () => {
+      const report = await generateFleetFindingReport({ title: scope === 'finding' ? selectedFinding?.reference || 'Écart' : scope === 'certificate' ? selectedCertificate?.documentTitle || 'Certificat' : scope === 'selected' ? 'Documents filtrés' : 'Tous les écarts flotte', certificates: scopedCertificates, findings: scopedFindings });
+      downloadFleetFindingReport(report);
+    }, 'Rapport BBTM généré.');
   }
 
-  async function handleDownloadSelection() {
-    setIsDocumentActionRunning(true);
-    setErrorMessage('');
-    try {
-      await downloadFleetCertificateDocuments(effectiveClient, selectedDocuments);
-      setStatusMessage(`${selectedDocuments.length} document(s) téléchargé(s).`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Impossible de télécharger les documents.');
-    } finally {
-      setIsDocumentActionRunning(false);
-    }
-  }
+  if (isLoading) return <main className="fcx-page fcx-loading"><RefreshCw className="spin" /> Chargement du registre certificats…</main>;
 
-  async function handleDeleteSelection() {
-    if (!selectedDocuments.length || !window.confirm(`Effacer définitivement ${selectedDocuments.length} document(s) ?`)) return;
-    setIsDocumentActionRunning(true);
-    setErrorMessage('');
-    try {
-      await deleteFleetCertificateDocuments(effectiveClient, selectedDocuments.map((certificate) => certificate.id));
-      setSelectedDocumentIds(new Set());
-      await handleChanged(`${selectedDocuments.length} document(s) effacé(s).`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible d'effacer les documents.");
-    } finally {
-      setIsDocumentActionRunning(false);
-    }
-  }
-
-  async function handleCreateDocument(input: Parameters<typeof createFleetCertificateDocument>[1]) {
-    setIsDocumentActionRunning(true);
-    setErrorMessage('');
-    try {
-      await createFleetCertificateDocument(effectiveClient, input);
-      setIsNewDocumentOpen(false);
-      await handleChanged('Nouveau document ajouté.');
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter le document.");
-    } finally {
-      setIsDocumentActionRunning(false);
-    }
-  }
-
-  if (isLoading) return <div className="admin-state">Chargement des certificats flotte…</div>;
-
-  return (
-    <section className="certificates-page fc-page">
-      <header className="fc-hero">
-        <div className="fc-hero__intro">
-          <h1>Suivi des certificats</h1>
-          <p>Vue centralisée des échéances, certificats et visites réglementaires.</p>
-          <span><Clock3 aria-hidden="true" size={16} /> Mise à jour {formatUpdatedAt(lastUpdatedAt)}</span>
-        </div>
-        <div className="fc-metrics">
-          <MetricCard count={metrics.renewalDue} icon={AlertTriangle} label="CERTIFICATS À 3 MOIS" tone="amber" vessels={metrics.renewalVessels} />
-          <MetricCard count={metrics.unplannedVisits} icon={CalendarClock} label="VISITES NON PLANIFIÉES À 3 MOIS" tone="blue" vessels={metrics.unplannedVessels} />
-          <MetricCard count={metrics.expired} icon={AlertTriangle} label="CERTIFICATS EXPIRÉS" tone="red" vessels={metrics.expiredVessels} />
-        </div>
+  return <main className="fcx-page">
+    {(error || message) && <div className={`fcx-toast ${error ? 'is-error' : ''}`}><span>{error || message}</span><button onClick={() => { setError(''); setMessage(''); }}><X size={16} /></button></div>}
+    {!selectedCertificate ? <>
+      <header className="fcx-hero">
+        <div><span className="fcx-eyebrow">CONFORMITÉ · FLOTTE</span><h1>Certificats flotte</h1><p>Échéances, documents et écarts à traiter en un seul endroit.</p></div>
+        <div className="fcx-hero-actions">{manager && <button className="fcx-secondary" onClick={() => setModal('document')}><FilePlus2 size={17} /> Ajouter un document</button>}<button className="fcx-primary" onClick={() => setStatusFilter('actions')}><Flag size={17} /> Voir les sujets à traiter</button></div>
       </header>
-
-      <div aria-live="polite" className="fc-notices">
-        {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      </div>
-
-      <section className="fc-control-bar">
-        <div className="fc-filter-zone">
-          <div className="fc-control-heading"><small>FILTRES</small><strong>{vesselName || 'Tous les navires'}</strong><span>{statusFilteredCertificates.length} certificat(s) affichés</span></div>
-          <label className="fc-vessel-select">
-            <Ship aria-hidden="true" size={16} />
-            <select aria-label="Filtre navire" onChange={(event) => { setVesselName(event.target.value); if (event.target.value) setExpandedVessel(event.target.value); }} value={vesselName}>
-              <option value="">Tous les navires</option>
-              {vesselOptions.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-          <div aria-label="Filtre échéance" className="fc-deadline-tabs" role="group">
-            <button className={deadlineFilter === 'all' ? 'is-active' : ''} onClick={() => setDeadlineFilter('all')} type="button">Toutes échéances ({metrics.total})</button>
-            <button className={deadlineFilter === 'renew_due' ? 'is-active' : ''} onClick={() => setDeadlineFilter('renew_due')} type="button">À renouveler ({metrics.renewalDue})</button>
-            <button className={deadlineFilter === 'expired' ? 'is-active' : ''} onClick={() => setDeadlineFilter('expired')} type="button">Expirées ({metrics.expired})</button>
-          </div>
-        </div>
-        <div className="fc-search-zone">
-          <div className="fc-control-heading"><small>RECHERCHE DE DOCUMENT</small><strong>{search ? `${searchResults.length} résultat(s)` : 'Tous les documents'}</strong></div>
-          <label className="fc-search-input"><Search aria-hidden="true" size={17} /><input aria-label="Recherche de document" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat…" value={search} />{search ? <button aria-label="Effacer la recherche" onClick={() => setSearch('')} type="button"><X size={15} /></button> : null}</label>
-          {search ? (
-            <div className="fc-search-results">
-              {searchResults.length ? searchResults.map((certificate) => (
-                <button key={certificate.id} onClick={() => setSelectedCertificate(certificate)} type="button">
-                  <FileText aria-hidden="true" size={16} /><span><strong>{certificate.documentTitle}</strong><small>{certificate.vesselName} · {certificate.originalFileName}</small></span><ChevronRight size={16} />
-                </button>
-              )) : <p>Aucun document trouvé.</p>}
-            </div>
-          ) : null}
-        </div>
+      <section className="fcx-kpis">
+        <button className="danger" onClick={() => setStatusFilter('expired')}><AlertCircle /><span><strong>{expired.length}</strong> documents échus<small>À régulariser immédiatement</small></span></button>
+        <button className="amber" onClick={() => setStatusFilter('upcoming')}><CalendarClock /><span><strong>{upcoming.length}</strong> échéances à 90 jours<small>Anticiper les renouvellements</small></span></button>
+        <button className="blue" onClick={() => setStatusFilter('actions')}><Flag /><span><strong>{openFindings.length}</strong> sujets à traiter<small>{openFindings.filter(isOverdue).length} action(s) en retard</small></span></button>
+        <button className="green" onClick={() => setStatusFilter('all')}><FileCheck2 /><span><strong>{active.length}</strong> documents suivis<small>{new Set(active.map((item) => item.vesselName)).size} navires actifs</small></span></button>
       </section>
-
-      <section className="fc-timeline-card">
-        <header className="fc-timeline-title">
-          <span><ChevronDown aria-hidden="true" size={18} /></span>
-          <div><small>TIMELINE</small><h2>Échéances et visites planifiées {year}</h2></div>
-          <div className="fc-year-controls">
-            <button aria-label="Année précédente" onClick={() => setYear((current) => current - 1)} type="button"><ChevronLeft size={17} /></button>
-            <strong>{year}</strong>
-            <button aria-label="Année suivante" onClick={() => setYear((current) => current + 1)} type="button"><ChevronRight size={17} /></button>
-            <button aria-label="Actualiser les certificats" onClick={() => void loadCertificates()} type="button"><RefreshCw size={16} /></button>
-          </div>
-        </header>
-        <div className="fc-months" aria-hidden="true">{MONTHS.map((month) => <span key={month}>{month}</span>)}</div>
-
-        <div className="fc-vessels">
-          {timelineGroups.map((group) => {
-            const expanded = expandedVessel === group.name;
-            return (
-              <article className={`fc-vessel ${expanded ? 'is-expanded' : ''}`} key={group.name} style={{ '--vessel-color': group.color } as CSSProperties}>
-                <button className="fc-vessel__header" onClick={() => setExpandedVessel(expanded ? '' : group.name)} type="button">
-                  {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                  <span className="fc-vessel__dot" />
-                  <strong>{group.name}</strong>
-                  <small>{group.certificates.length} certificat(s)</small>
-                </button>
-                {expanded ? (
-                  <div className="fc-vessel__tracks">
-                    {todayPosition >= 0 ? <span className="fc-today-line" style={{ left: `${todayPosition}%` }} /> : null}
-                    {group.certificates.length ? group.certificates.map((certificate, eventIndex) => {
-                      const position = yearPosition(certificate.expiresOn, year);
-                      const status = getEffectiveFleetCertificateStatus(certificate);
-                      return (
-                        <button
-                          aria-label={`${certificate.documentTitle}, échéance ${formatDate(certificate.expiresOn)}`}
-                          className={`fc-timeline-event fc-timeline-event--${status}`}
-                          key={certificate.id}
-                          onClick={() => setSelectedCertificate(certificate)}
-                          style={{ '--event-top': `${12 + eventIndex * 34}px`, left: `${position}%` } as CSSProperties}
-                          title={`${certificate.documentTitle} · ${formatDate(certificate.expiresOn)}`}
-                          type="button"
-                        >
-                          <span>{certificate.documentTitle}</span>
-                          <i />
-                        </button>
-                      );
-                    }) : <p className="fc-empty-year">Aucune échéance pour {year}.</p>}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-          {!timelineGroups.length ? <div className="admin-state">Aucune échéance ne correspond à ces filtres.</div> : null}
-        </div>
+      <section className="fcx-toolbar"><label><Search size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat, un navire…" value={search} /></label><div><Filter size={16} /><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Tous</button><button className={statusFilter === 'expired' ? 'active' : ''} onClick={() => setStatusFilter('expired')}>Échus</button><button className={statusFilter === 'upcoming' ? 'active' : ''} onClick={() => setStatusFilter('upcoming')}>À venir</button><button className={statusFilter === 'actions' ? 'active' : ''} onClick={() => setStatusFilter('actions')}>Avec actions</button></div></section>
+      <section className="fcx-dashboard-grid">
+        <article className="fcx-panel"><header><div><span className="fcx-panel-icon red"><Flag size={18} /></span><div><h2>Sujets à traiter</h2><p>Priorisés par niveau de risque et délai</p></div></div><strong>{openFindings.length}</strong></header><div className="fcx-action-list">
+          {openFindings.slice().sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a))).slice(0, 7).map((finding) => { const cert = certificates.find((item) => item.id === finding.certificateId); return <button key={finding.id} onClick={() => { setSelectedCertificateId(finding.certificateId); setSelectedFindingId(finding.id); setTab('findings'); }}><span className={`fcx-type-dot ${typeTone(finding.findingType)}`} /><span className="fcx-action-main"><b>{finding.title}</b><small>{cert?.vesselName} · {cert?.documentTitle}</small></span><span className="fcx-action-meta"><em className={isOverdue(finding) ? 'late' : ''}>{isOverdue(finding) ? 'En retard' : formatDate(finding.treatmentDueOn)}</em><small>{finding.responsibleName}</small></span></button>; })}
+          {!openFindings.length && <div className="fcx-empty"><CheckCircle2 /> Aucun écart ouvert.</div>}
+        </div></article>
+        <article className="fcx-panel"><header><div><span className="fcx-panel-icon amber"><CalendarClock size={18} /></span><div><h2>Échéances à venir</h2><p>Fenêtre glissante de 90 jours</p></div></div><strong>{upcoming.length}</strong></header><div className="fcx-deadline-list">
+          {upcoming.sort((a, b) => a.expiresOn.localeCompare(b.expiresOn)).slice(0, 7).map((certificate) => { const days = daysFromToday(certificate.expiresOn); return <button key={certificate.id} onClick={() => setSelectedCertificateId(certificate.id)}><span className={`fcx-days ${days <= 30 ? 'urgent' : ''}`}><b>J-{days}</b><small>{formatDate(certificate.expiresOn)}</small></span><span><b>{certificate.documentTitle}</b><small>{certificate.vesselName} · {certificate.categoryLabel}</small></span><ChevronDown className="rotate" size={17} /></button>; })}
+        </div></article>
       </section>
-
-      <section className="fc-document-library" aria-label="Téléchargement des certificats">
-        <header className="fc-document-toolbar">
-          <div><small>TÉLÉCHARGEMENT</small><strong>{selectedDocuments.length} document(s) sélectionné(s)</strong></div>
-          <div className="fc-document-toolbar__actions">
-            {isManager ? <button className="fc-primary-action" onClick={() => setIsNewDocumentOpen(true)} type="button"><Plus size={17} /> Nouveau Document</button> : null}
-            <button aria-pressed={selectedDocuments.length === activeCertificates.length} onClick={() => setSelectedDocumentIds(selectedDocuments.length === activeCertificates.length ? new Set() : new Set(activeCertificates.map((certificate) => certificate.id)))} type="button">Tout sélectionner</button>
-            {isManager ? <button disabled={!selectedDocuments.length || isDocumentActionRunning} onClick={() => void handleDeleteSelection()} type="button"><Trash2 size={16} /> Effacer</button> : null}
-            <button disabled={!selectedDocuments.length || isDocumentActionRunning} onClick={() => void handleDownloadSelection()} type="button"><Download size={17} /> Télécharger</button>
-          </div>
-        </header>
-
-        <div className="fc-document-tree">
-          {documentGroups.map((group) => {
-            const vesselExpanded = expandedDocumentVessels.has(group.name);
-            return (
-              <article className={`fc-document-vessel ${vesselExpanded ? 'is-expanded' : ''}`} key={group.name} style={{ '--vessel-color': group.color } as CSSProperties}>
-                <button aria-expanded={vesselExpanded} className="fc-document-vessel__header" onClick={() => toggleExpanded(setExpandedDocumentVessels, group.name)} type="button">
-                  <span className="fc-document-icon"><Files aria-hidden="true" size={16} /></span>
-                  {vesselExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <Ship aria-hidden="true" size={16} />
-                  <strong>{group.name}</strong>
-                  <small>{group.certificates.length} certificat(s)</small>
-                </button>
-                {vesselExpanded ? (
-                  <div className="fc-document-categories">
-                    {group.categories.map((category) => {
-                      const categoryId = `${group.name}::${category.key}`;
-                      const categoryExpanded = expandedDocumentCategories.has(categoryId);
-                      return (
-                        <section className={`fc-document-category ${categoryExpanded ? 'is-expanded' : ''}`} key={categoryId}>
-                          <button aria-expanded={categoryExpanded} className="fc-document-category__header" onClick={() => toggleExpanded(setExpandedDocumentCategories, categoryId)} type="button">
-                            <span className="fc-document-icon"><Files aria-hidden="true" size={16} /></span>
-                            {categoryExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            <strong>{category.label}</strong>
-                            <small>{category.certificates.length}</small>
-                          </button>
-                          {categoryExpanded ? (
-                            <div className="fc-document-items">
-                              {category.certificates.map((certificate) => (
-                                <div className={selectedDocumentIds.has(certificate.id) ? 'is-selected' : ''} key={certificate.id}>
-                                  <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} onChange={() => toggleDocumentSelection(certificate.id)} type="checkbox" />
-                                  <FileText aria-hidden="true" size={15} />
-                                  <button onClick={() => setSelectedCertificate(certificate)} type="button">{certificate.documentTitle}</button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </section>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      {selectedCertificate ? (
-        <CertificateDrawer certificate={selectedCertificate} client={effectiveClient} isManager={isManager} onChanged={handleChanged} onClose={() => setSelectedCertificate(null)} />
-      ) : null}
-      {isNewDocumentOpen ? <NewDocumentDialog certificates={activeCertificates} isSaving={isDocumentActionRunning} onClose={() => setIsNewDocumentOpen(false)} onSubmit={handleCreateDocument} /> : null}
-    </section>
-  );
+      <section className="fcx-library"><header><div><h2>Bibliothèque documentaire</h2><p>{filtered.length} document(s) affiché(s)</p></div></header><div className="fcx-library-head"><span>Document</span><span>Navire</span><span>Échéance</span><span>État</span><span /></div>{filtered.slice(0, 30).map((certificate) => { const state = getEffectiveFleetCertificateStatus(certificate); return <button className="fcx-library-row" key={certificate.id} onClick={() => setSelectedCertificateId(certificate.id)}><span><FileText size={18} /><span><b>{certificate.documentTitle}</b><small>{certificate.categoryLabel}</small></span></span><span>{certificate.vesselName}</span><span>{formatDate(certificate.expiresOn)}</span><em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em><MoreHorizontal size={18} /></button>; })}</section>
+    </> : <>
+      <header className="fcx-detail-head"><button className="fcx-back" onClick={() => { setSelectedCertificateId(null); setSelectedFindingId(null); }}><ArrowLeft size={18} /> Retour au tableau de bord</button><div className="fcx-detail-title"><span className="fcx-file-icon"><FileCheck2 /></span><div><span>{selectedCertificate.vesselName} · {selectedCertificate.categoryLabel}</span><h1>{selectedCertificate.documentTitle}</h1><p><CircleDot size={12} /> Version {selectedCertificate.currentVersionNo} · échéance {formatDate(selectedCertificate.expiresOn)}</p></div></div><div className="fcx-detail-actions"><button onClick={() => openDocument(selectedCertificate)}><ExternalLink size={16} /> Ouvrir</button>{manager && <button onClick={() => setModal('renewal')}><RefreshCw size={16} /> Renouveler</button>}<div className="fcx-report-wrap"><button className="fcx-primary" onClick={() => setReportOpen((value) => !value)}><Download size={16} /> Générer un rapport <ChevronDown size={15} /></button>{reportOpen && <div className="fcx-report-menu"><button disabled={!selectedFinding} onClick={() => generateReport('finding')}>Cet écart</button><button onClick={() => generateReport('certificate')}>Ce certificat</button><button onClick={() => generateReport('selected')}>Documents filtrés ({filtered.length})</button><button onClick={() => generateReport('all')}>Tous les écarts flotte</button></div>}</div>{manager && <button className="icon danger" title="Supprimer" onClick={() => window.confirm('Supprimer définitivement ce certificat et ses pièces ?') && run(() => deleteFleetCertificateDocuments(effectiveClient, [selectedCertificate.id]), 'Certificat supprimé.').then(() => setSelectedCertificateId(null))}><Trash2 size={17} /></button>}</div></header>
+      <nav className="fcx-tabs">{([['overview', 'Aperçu'], ['deadlines', 'Échéances'], ['findings', `Écarts & actions (${certificateFindings.filter((item) => item.status !== 'closed').length})`], ['versions', 'Versions']] as Array<[DetailTab, string]>).map(([key, label]) => <button className={tab === key ? 'active' : ''} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav>
+      {tab === 'findings' ? <section className="fcx-findings">
+        <div className="fcx-finding-summary"><span><b>{certificateFindings.filter((item) => item.status !== 'closed').length}</b> écarts ouverts</span><span className="red"><b>{certificateFindings.filter((item) => item.findingType === 'major_non_conformity' && item.status !== 'closed').length}</b> majeur(s)</span><span className="amber"><b>{certificateFindings.filter(isOverdue).length}</b> en retard</span><span className="green"><b>{certificateFindings.length ? Math.round(certificateFindings.reduce((sum, item) => sum + item.progress, 0) / certificateFindings.length) : 0}%</b> traités</span>{manager && <button className="fcx-primary" onClick={() => setModal('finding')}><Plus size={16} /> Nouvel écart</button>}</div>
+        <div className="fcx-finding-workspace"><div className="fcx-finding-list"><header><div><h2>Écarts & actions</h2><p>Constats, prescriptions et conditions à lever</p></div><button><Filter size={16} /></button></header><div className="fcx-finding-columns"><span>Écart</span><span>Échéance</span><span>Responsable</span><span>Avancement</span></div>{certificateFindings.map((finding) => <button className={selectedFinding?.id === finding.id ? 'selected' : ''} key={finding.id} onClick={() => setSelectedFindingId(finding.id)}><span className="fcx-finding-name"><i className={typeTone(finding.findingType)}>{finding.findingType === 'class_condition' ? 'CC' : finding.findingType === 'prescription' ? 'P' : 'NC'}</i><span><b>{finding.title}</b><small>{finding.reference} · {FLEET_FINDING_LABELS[finding.findingType]}</small></span></span><em className={isOverdue(finding) ? 'late' : ''}>{formatDate(finding.treatmentDueOn)}</em><span className="fcx-person"><UserRound size={14} />{finding.responsibleName}</span><span className="fcx-progress"><i><u style={{ width: `${finding.progress}%` }} /></i><small>{finding.progress}%</small></span></button>)}{!certificateFindings.length && <div className="fcx-empty"><CheckCircle2 /> Aucun écart rattaché à ce certificat.</div>}</div>
+          <aside className="fcx-finding-detail">{selectedFinding ? <><header><div><span className={`fcx-badge ${typeTone(selectedFinding.findingType)}`}>{FLEET_FINDING_LABELS[selectedFinding.findingType]}</span><small>{selectedFinding.reference}</small><h2>{selectedFinding.title}</h2></div>{manager && <button title="Supprimer l’écart" onClick={() => window.confirm('Supprimer cet écart et ses preuves ?') && run(() => deleteFleetCertificateFinding(effectiveClient, selectedFinding.id), 'Écart supprimé.')}><Trash2 size={17} /></button>}</header><p className="fcx-description">{selectedFinding.description}</p>
+            <div className="fcx-detail-grid"><label>État<select value={selectedFinding.status} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { status: event.target.value as FleetFindingStatus }), 'État mis à jour.')}><option value="declared">À affecter</option><option value="assigned">Assigné</option><option value="in_progress">En cours</option><option value="pending_validation">À valider</option><option value="closed">Clôturé</option></select></label><label>Responsable<select value={selectedFinding.responsiblePersonId || ''} onChange={(event) => { const id = Number(event.target.value) || null; const person = responsibles.find((item) => item.id === id); run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { responsiblePersonId: id, responsibleName: person?.name || 'Non assigné' }), 'Responsable mis à jour.'); }}><option value="">Non assigné</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label>Échéance<input type="date" value={selectedFinding.treatmentDueOn} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { treatmentDueOn: event.target.value }), 'Échéance mise à jour.')} /></label><label>Avancement <b>{selectedFinding.progress}%</b><input min="0" max="100" step="10" type="range" value={selectedFinding.progress} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { progress: Number(event.target.value) }), 'Avancement mis à jour.')} /></label></div>
+            <section className="fcx-evidence"><header><div><h3>Constat & preuves</h3><p>Photos ou documents liés à l’écart</p></div></header><div className="fcx-evidence-grid">{(['finding', 'treatment'] as FleetFindingAttachmentKind[]).map((kind) => <div key={kind}><strong>{kind === 'finding' ? 'Constat initial' : 'Preuve du traitement'}</strong>{selectedFinding.attachments.filter((item) => item.kind === kind).map((attachment) => <button key={attachment.id} onClick={() => run(() => openFleetFindingAttachment(effectiveClient, attachment), 'Pièce ouverte.')}><span className="fcx-thumb">{attachment.mimeType.startsWith('image/') ? <Image size={22} /> : <FileText size={22} />}</span><span><b>{attachment.originalFileName}</b><small>{formatDate(attachment.createdAt)}</small></span><ExternalLink size={14} /></button>)}<button className="fcx-add-proof" onClick={() => { setUploadKind(kind); fileInput.current?.click(); }}><Plus size={15} /> Ajouter {kind === 'finding' ? 'une pièce' : 'une preuve'}</button></div>)}</div><input ref={fileInput} hidden accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) run(() => uploadFleetFindingAttachment(effectiveClient, selectedFinding, selectedCertificate.vesselAcronym, uploadKind, file), 'Pièce ajoutée.'); event.target.value = ''; }} /></section>
+            <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; run(() => addFleetFindingComment(effectiveClient, selectedFinding, comment), 'Note ajoutée.'); setComment(''); }}><input onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary"><Plus size={15} /> Ajouter</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small>{new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
+          </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div>
+      </section> : <section className="fcx-overview"><article><h2>{tab === 'deadlines' ? 'Échéance et renouvellement' : tab === 'versions' ? 'Versions du document' : 'Informations du certificat'}</h2>{tab === 'deadlines' ? <div className="fcx-info-cards"><p><CalendarClock /><span><small>Échéance actuelle</small><b>{formatDate(selectedCertificate.expiresOn)}</b></span></p><p><Clock3 /><span><small>Statut du workflow</small><b>{selectedCertificate.workflowStatus}</b></span></p><p><UserRound /><span><small>Prestataire</small><b>{selectedCertificate.providerName || 'Non renseigné'}</b></span></p></div> : tab === 'versions' ? <div className="fcx-version-card"><FileText /><span><b>{selectedCertificate.fileName}</b><small>Version {selectedCertificate.currentVersionNo} · active · mise à jour {formatDate(selectedCertificate.updatedAt)}</small></span><button onClick={() => openDocument(selectedCertificate)}><ExternalLink size={16} /> Ouvrir</button></div> : <div className="fcx-info-cards"><p><Ship /><span><small>Navire</small><b>{selectedCertificate.vesselName}</b></span></p><p><FileText /><span><small>Catégorie</small><b>{selectedCertificate.categoryLabel}</b></span></p><p><CalendarClock /><span><small>Émis le</small><b>{formatDate(selectedCertificate.issuedOn)}</b></span></p></div>}</article></section>}
+    </>}
+    {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
+    {modal === 'document' && <DocumentForm certificates={certificates} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const category = String(form.get('category')); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey: category.toLocaleLowerCase('fr').replace(/\s+/g, '-'), categoryLabel: category, documentTitle: String(form.get('title')), issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
+    {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => run(() => submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }), 'Renouvellement enregistré.')} />}
+  </main>;
 }

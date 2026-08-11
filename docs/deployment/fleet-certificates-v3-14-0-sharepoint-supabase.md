@@ -1,5 +1,23 @@
 # Certificats Flotte v3.14.0 — migration SharePoint vers Supabase
 
+## Refonte opérationnelle v3.15.0
+
+La version `3.15.0` remplace la présentation historique par un espace de travail centré sur l'action : documents échus, échéances à 90 jours et écarts ouverts apparaissent dès l'arrivée. Chaque ligne de la bibliothèque ouvre une fiche certificat avec accès direct au document, renouvellement, suppression contrôlée, versions et suivi des écarts.
+
+Un écart peut être une non-conformité majeure ou mineure, une condition de classe, une remarque ou une prescription. Il conserve la description, le délai et la date de traitement, le responsable, l'état, l'avancement, les pièces du constat, les preuves de traitement et un historique horodaté. Les responsables affectés peuvent mettre à jour leurs actions et déposer des preuves ; les rôles `admin`, `direction` et `armement` gardent les droits de gestion complets.
+
+Les rapports PDF avec identité BBTM peuvent couvrir un écart, un certificat, une sélection de documents ou toute la flotte. Ils incluent le résumé exécutif, les échéances, responsables, états, pièces et historique de traitement.
+
+Nouveaux objets Supabase :
+
+- `fleet_certificate_findings` pour les écarts et leur workflow ;
+- `fleet_certificate_finding_attachments` pour les constats et preuves ;
+- `fleet_certificate_finding_events` pour l'historique immuable ;
+- RPC `delete_fleet_certificate_findings` pour la suppression coordonnée des métadonnées et objets Storage ;
+- chemin Storage `{company_id}/{acronyme}/findings/{finding_id}/{finding|treatment}/{uuid}-{nom}`.
+
+La migration `20260811144207_fleet_certificate_findings_and_reports.sql` active le RLS, les droits Data API explicites, les politiques Storage par société et responsable, ainsi que les déclencheurs d'audit. La migration `20260811151248_fleet_certificate_findings_advisor_indexes.sql` ajoute les index de couverture recommandés par le conseiller de performance Supabase.
+
 ## Résultat livré
 
 Le module `Certificats flotte` reprend la structure visuelle du webpart BBTM : indicateurs d'alerte, filtres navire/échéance, recherche documentaire et timeline annuelle dépliable par navire.
