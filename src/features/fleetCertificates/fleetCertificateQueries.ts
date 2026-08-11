@@ -1,75 +1,180 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+export const FLEET_CERTIFICATE_BUCKET = 'fleet-certificates';
+
 const FLEET_CERTIFICATE_SELECT = [
   'id',
+  'company_id',
   'vessel_id',
   'vessel_name',
   'category_key',
+  'category_label',
+  'document_title',
   'title',
   'status',
   'issued_on',
   'expires_on',
+  'planned_on',
+  'alarm_on',
+  'provider_name',
+  'visit_location',
+  'workflow_status',
+  'renewal_notes',
+  'renaming_rule_key',
+  'original_file_name',
+  'file_name',
   'source_label',
   'file_url',
+  'storage_bucket',
+  'storage_path',
+  'mime_type',
+  'file_size_bytes',
+  'current_version_no',
+  'is_active_fleet',
   'notes',
+  'updated_at',
+  'vessel:vessels!fleet_certificates_vessel_id_fkey(acronym)',
 ].join(', ');
 
 export type FleetCertificateStatus = 'valid' | 'renew_due' | 'expired' | 'missing' | 'pending_validation';
+export type FleetCertificateWorkflowStatus =
+  | 'not_started'
+  | 'due'
+  | 'planned'
+  | 'requested'
+  | 'document_received'
+  | 'pending_validation'
+  | 'validated'
+  | 'cancelled';
 
 interface FleetCertificateRow {
   id: number;
+  company_id: number;
   vessel_id: number | null;
   vessel_name: string | null;
   category_key: string | null;
+  category_label: string | null;
+  document_title: string | null;
   title: string;
   status: string | null;
   issued_on: string | null;
   expires_on: string | null;
+  planned_on: string | null;
+  alarm_on: string | null;
+  provider_name: string | null;
+  visit_location: string | null;
+  workflow_status: string | null;
+  renewal_notes: string | null;
+  renaming_rule_key: string | null;
+  original_file_name: string | null;
+  file_name: string | null;
   source_label: string | null;
   file_url: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  current_version_no: number | null;
+  is_active_fleet: boolean | null;
   notes: string | null;
+  updated_at: string | null;
+  vessel: { acronym: string | null } | Array<{ acronym: string | null }> | null;
+}
+
+interface FleetCertificateVersionRow {
+  id: number;
+  version_no: number;
+  status: FleetCertificateVersion['status'];
+  original_file_name: string;
+  normalized_file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  is_current: boolean;
+  created_at: string;
+  validated_at: string | null;
 }
 
 export interface FleetCertificateRecord {
   id: number;
+  companyId: number;
   vesselId: number | null;
   vesselName: string;
+  vesselAcronym: string;
   categoryKey: string;
+  categoryLabel: string;
+  documentTitle: string;
   title: string;
   status: FleetCertificateStatus;
   issuedOn: string;
   expiresOn: string;
+  plannedOn: string;
+  alarmOn: string;
+  providerName: string;
+  visitLocation: string;
+  workflowStatus: FleetCertificateWorkflowStatus;
+  renewalNotes: string;
+  renamingRuleKey: string;
+  originalFileName: string;
+  fileName: string;
   sourceLabel: string;
   fileUrl: string;
+  storageBucket: string;
+  storagePath: string;
+  mimeType: string;
+  fileSizeBytes: number | null;
+  currentVersionNo: number;
+  isActiveFleet: boolean;
   notes: string;
+  updatedAt: string;
+}
+
+export interface FleetCertificateVersion {
+  id: number;
+  versionNo: number;
+  status: 'active' | 'archived' | 'pending_validation' | 'rejected';
+  originalFileName: string;
+  normalizedFileName: string;
+  storageBucket: string;
+  storagePath: string;
+  mimeType: string;
+  fileSizeBytes: number | null;
+  issuedOn: string;
+  expiresOn: string;
+  isCurrent: boolean;
+  createdAt: string;
+  validatedAt: string;
 }
 
 export interface FleetCertificateMetrics {
   total: number;
-  valid: number;
   renewalDue: number;
   expired: number;
-  missing: number;
+  unplannedVisits: number;
+  renewalVessels: string[];
+  expiredVessels: string[];
+  unplannedVessels: string[];
 }
 
-export interface CreateFleetCertificateInput {
-  vesselName: string;
-  categoryKey: string;
-  title: string;
-  status: FleetCertificateStatus;
+export interface PlanFleetCertificateRenewalInput {
+  plannedOn: string;
+  providerName: string;
+  visitLocation: string;
+  notes: string;
+}
+
+export interface SubmitFleetCertificateRenewalInput {
+  file: File;
   issuedOn: string;
   expiresOn: string;
-  fileUrl: string;
   notes: string;
 }
 
 function nullableText(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
-}
-
-function optionalText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed || null;
 }
 
 function normalizeStatus(status: string | null): FleetCertificateStatus {
@@ -82,27 +187,61 @@ function normalizeStatus(status: string | null): FleetCertificateStatus {
   ) {
     return status;
   }
-
   return 'valid';
+}
+
+function normalizeWorkflowStatus(status: string | null): FleetCertificateWorkflowStatus {
+  const statuses: FleetCertificateWorkflowStatus[] = [
+    'not_started', 'due', 'planned', 'requested', 'document_received',
+    'pending_validation', 'validated', 'cancelled',
+  ];
+  return statuses.includes(status as FleetCertificateWorkflowStatus)
+    ? (status as FleetCertificateWorkflowStatus)
+    : 'not_started';
+}
+
+function relationAcronym(relation: FleetCertificateRow['vessel']): string {
+  const vessel = Array.isArray(relation) ? relation[0] : relation;
+  return vessel?.acronym?.trim() || '';
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setHours(12, 0, 0, 0);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function isoDate(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function safeObjectName(fileName: string): string {
+  const normalized = fileName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-160) || 'certificat';
 }
 
 export function getFleetCertificateStatusLabel(status: FleetCertificateStatus): string {
   const labels: Record<FleetCertificateStatus, string> = {
-    expired: 'Expire',
+    expired: 'Expiré',
     missing: 'Manquant',
-    pending_validation: 'Validation',
-    renew_due: 'A renouveler',
+    pending_validation: 'À valider',
+    renew_due: 'À renouveler',
     valid: 'Valide',
   };
-
   return labels[status];
 }
 
 export function getFleetCertificateCategoryLabel(categoryKey: string): string {
-  if (categoryKey === 'certificate') {
-    return 'Certificat';
-  }
-
+  if (categoryKey === 'certificate') return 'Certificat';
   return categoryKey
     .split(/[_-]+/)
     .filter(Boolean)
@@ -110,30 +249,89 @@ export function getFleetCertificateCategoryLabel(categoryKey: string): string {
     .join(' ');
 }
 
+export function getEffectiveFleetCertificateStatus(
+  certificate: Pick<FleetCertificateRecord, 'status' | 'expiresOn'>,
+  today = new Date(),
+): FleetCertificateStatus {
+  if (certificate.status === 'missing' || certificate.status === 'pending_validation') return certificate.status;
+  if (!certificate.expiresOn) return 'valid';
+  const currentDate = isoDate(today);
+  if (certificate.expiresOn < currentDate) return 'expired';
+  if (certificate.expiresOn <= isoDate(addDays(today, 90))) return 'renew_due';
+  return 'valid';
+}
+
 export function mapFleetCertificateRows(rows: FleetCertificateRow[]): FleetCertificateRecord[] {
   return rows.map((row) => ({
     id: row.id,
+    companyId: row.company_id,
     vesselId: row.vessel_id,
-    vesselName: nullableText(row.vessel_name) || 'Navire non renseigne',
+    vesselName: nullableText(row.vessel_name) || 'Navire non renseigné',
+    vesselAcronym: relationAcronym(row.vessel),
     categoryKey: row.category_key || 'certificate',
+    categoryLabel: nullableText(row.category_label) || getFleetCertificateCategoryLabel(row.category_key || 'certificate'),
+    documentTitle: nullableText(row.document_title) || row.title,
     title: row.title,
     status: normalizeStatus(row.status),
     issuedOn: nullableText(row.issued_on),
     expiresOn: nullableText(row.expires_on),
+    plannedOn: nullableText(row.planned_on),
+    alarmOn: nullableText(row.alarm_on),
+    providerName: nullableText(row.provider_name),
+    visitLocation: nullableText(row.visit_location),
+    workflowStatus: normalizeWorkflowStatus(row.workflow_status),
+    renewalNotes: nullableText(row.renewal_notes),
+    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-expiry-year',
+    originalFileName: nullableText(row.original_file_name),
+    fileName: nullableText(row.file_name),
     sourceLabel: nullableText(row.source_label),
     fileUrl: nullableText(row.file_url),
+    storageBucket: nullableText(row.storage_bucket),
+    storagePath: nullableText(row.storage_path),
+    mimeType: nullableText(row.mime_type),
+    fileSizeBytes: row.file_size_bytes,
+    currentVersionNo: row.current_version_no || 1,
+    isActiveFleet: row.is_active_fleet !== false,
     notes: nullableText(row.notes),
+    updatedAt: nullableText(row.updated_at),
   }));
 }
 
-export function buildFleetCertificateMetrics(certificates: FleetCertificateRecord[]): FleetCertificateMetrics {
+export function buildFleetCertificateMetrics(
+  certificates: FleetCertificateRecord[],
+  today = new Date(),
+): FleetCertificateMetrics {
+  const dueLimit = isoDate(addDays(today, 90));
+  const todayIso = isoDate(today);
+  const renewalDue = certificates.filter((certificate) => {
+    const status = getEffectiveFleetCertificateStatus(certificate, today);
+    return status === 'renew_due';
+  });
+  const expired = certificates.filter((certificate) => getEffectiveFleetCertificateStatus(certificate, today) === 'expired');
+  const unplanned = certificates.filter(
+    (certificate) => certificate.expiresOn >= todayIso && certificate.expiresOn <= dueLimit && !certificate.plannedOn,
+  );
   return {
     total: certificates.length,
-    valid: certificates.filter((certificate) => certificate.status === 'valid').length,
-    renewalDue: certificates.filter((certificate) => certificate.status === 'renew_due').length,
-    expired: certificates.filter((certificate) => certificate.status === 'expired').length,
-    missing: certificates.filter((certificate) => certificate.status === 'missing').length,
+    renewalDue: renewalDue.length,
+    expired: expired.length,
+    unplannedVisits: unplanned.length,
+    renewalVessels: uniqueSorted(renewalDue.map((certificate) => certificate.vesselName)),
+    expiredVessels: uniqueSorted(expired.map((certificate) => certificate.vesselName)),
+    unplannedVessels: uniqueSorted(unplanned.map((certificate) => certificate.vesselName)),
   };
+}
+
+export function buildFleetCertificateFileName(
+  certificate: Pick<FleetCertificateRecord, 'vesselAcronym' | 'vesselName' | 'documentTitle'>,
+  expiresOn: string,
+  originalFileName: string,
+): string {
+  const acronym = certificate.vesselAcronym || certificate.vesselName.slice(0, 3).toUpperCase();
+  const extension = originalFileName.includes('.') ? originalFileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf';
+  const year = expiresOn ? expiresOn.slice(0, 4) : new Date().getFullYear().toString();
+  const title = certificate.documentTitle.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return `${acronym} - ${title} - ${year}.${extension}`;
 }
 
 export async function fetchFleetCertificates(client: SupabaseClient): Promise<FleetCertificateRecord[]> {
@@ -142,40 +340,103 @@ export async function fetchFleetCertificates(client: SupabaseClient): Promise<Fl
     .select(FLEET_CERTIFICATE_SELECT)
     .order('expires_on', { ascending: true, nullsFirst: false })
     .order('vessel_name', { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return mapFleetCertificateRows((data || []) as unknown as FleetCertificateRow[]);
 }
 
-export async function createFleetCertificate(
+export async function fetchFleetCertificateVersions(
   client: SupabaseClient,
-  input: CreateFleetCertificateInput,
-): Promise<FleetCertificateRecord> {
-  const title = input.title.trim();
+  certificateId: number,
+): Promise<FleetCertificateVersion[]> {
+  const { data, error } = await client
+    .from('fleet_certificate_versions')
+    .select('id, version_no, status, original_file_name, normalized_file_name, storage_bucket, storage_path, mime_type, file_size_bytes, issued_on, expires_on, is_current, created_at, validated_at')
+    .eq('certificate_id', certificateId)
+    .order('version_no', { ascending: false });
+  if (error) throw error;
+  return ((data || []) as FleetCertificateVersionRow[]).map((row) => ({
+    id: row.id,
+    versionNo: row.version_no,
+    status: row.status,
+    originalFileName: row.original_file_name,
+    normalizedFileName: row.normalized_file_name,
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    mimeType: nullableText(row.mime_type),
+    fileSizeBytes: row.file_size_bytes,
+    issuedOn: nullableText(row.issued_on),
+    expiresOn: nullableText(row.expires_on),
+    isCurrent: row.is_current,
+    createdAt: row.created_at,
+    validatedAt: nullableText(row.validated_at),
+  }));
+}
 
-  if (!title) {
-    throw new Error('Le titre du certificat est obligatoire.');
+export async function openFleetCertificateDocument(
+  client: SupabaseClient,
+  document: Pick<FleetCertificateRecord | FleetCertificateVersion, 'storageBucket' | 'storagePath'>,
+): Promise<string> {
+  if (!document.storageBucket || !document.storagePath) throw new Error('Aucun document Supabase disponible.');
+  const { data, error } = await client.storage.from(document.storageBucket).createSignedUrl(document.storagePath, 300);
+  if (error || !data?.signedUrl) throw error || new Error("Impossible d'ouvrir ce document.");
+  return data.signedUrl;
+}
+
+export async function planFleetCertificateRenewal(
+  client: SupabaseClient,
+  certificateId: number,
+  input: PlanFleetCertificateRenewalInput,
+): Promise<void> {
+  const { error } = await client.rpc('plan_fleet_certificate_renewal', {
+    p_certificate_id: certificateId,
+    p_planned_on: input.plannedOn,
+    p_provider_name: input.providerName.trim() || null,
+    p_visit_location: input.visitLocation.trim() || null,
+    p_notes: input.notes.trim() || null,
+  });
+  if (error) throw error;
+}
+
+export async function submitFleetCertificateRenewal(
+  client: SupabaseClient,
+  certificate: FleetCertificateRecord,
+  input: SubmitFleetCertificateRenewalInput,
+): Promise<void> {
+  if (!input.file) throw new Error('Sélectionnez un document.');
+  if (!input.expiresOn) throw new Error("Renseignez la nouvelle date d'échéance.");
+  if (input.file.size > 50 * 1024 * 1024) throw new Error('Le document dépasse la limite de 50 Mo.');
+  const extension = input.file.name.split('.').pop()?.toLowerCase() || '';
+  if (!['pdf', 'png', 'jpg', 'jpeg', 'xlsx'].includes(extension)) {
+    throw new Error('Formats acceptés : PDF, PNG, JPG et XLSX.');
   }
 
-  const payload = {
-    vessel_name: input.vesselName.trim() || 'Navire non renseigne',
-    category_key: input.categoryKey.trim() || 'certificate',
-    title,
-    status: input.status,
-    issued_on: optionalText(input.issuedOn),
-    expires_on: optionalText(input.expiresOn),
-    source_label: 'seapilot',
-    file_url: optionalText(input.fileUrl),
-    notes: optionalText(input.notes),
-  };
-  const { data, error } = await client.from('fleet_certificates').insert(payload).select(FLEET_CERTIFICATE_SELECT).single();
+  const normalizedName = buildFleetCertificateFileName(certificate, input.expiresOn, input.file.name);
+  const acronym = certificate.vesselAcronym || safeObjectName(certificate.vesselName).slice(0, 12).toUpperCase();
+  const storagePath = `${certificate.companyId}/${acronym}/${certificate.id}/renewals/${crypto.randomUUID()}-${safeObjectName(normalizedName)}`;
+  const { error: uploadError } = await client.storage.from(FLEET_CERTIFICATE_BUCKET).upload(storagePath, input.file, {
+    contentType: input.file.type || undefined,
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
 
-  if (error) {
-    throw error;
+  const { error: metadataError } = await client.rpc('submit_fleet_certificate_renewal', {
+    p_certificate_id: certificate.id,
+    p_original_file_name: input.file.name,
+    p_normalized_file_name: normalizedName,
+    p_storage_path: storagePath,
+    p_mime_type: input.file.type || null,
+    p_file_size_bytes: input.file.size,
+    p_issued_on: input.issuedOn || null,
+    p_expires_on: input.expiresOn,
+    p_notes: input.notes.trim() || null,
+  });
+  if (metadataError) {
+    await client.storage.from(FLEET_CERTIFICATE_BUCKET).remove([storagePath]);
+    throw metadataError;
   }
+}
 
-  return mapFleetCertificateRows([data as unknown as FleetCertificateRow])[0];
+export async function validateFleetCertificateRenewal(client: SupabaseClient, versionId: number): Promise<void> {
+  const { error } = await client.rpc('validate_fleet_certificate_renewal', { p_version_id: versionId });
+  if (error) throw error;
 }

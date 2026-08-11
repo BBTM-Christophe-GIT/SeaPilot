@@ -816,7 +816,9 @@ function mapFleetCertificatePayload(item: SharePointListItem, source: SharePoint
   const itemId = sourceItemId(item);
   const title = requiredText(item, ['FileLeafRef', 'Title'], `Certificat flotte SharePoint ${itemId || ''}`.trim());
   const expiresOn = dateOnly(item, ['DateEch_x00e9_ance', 'DateEcheance', 'DateExpiration', 'ExpiresOn']);
+  const plannedOn = dateOnly(item, ['Planification', 'PlannedOn']);
   const categoryKey = text(item, ['CategoryKey', 'Categorie']) || inferFleetCertificateCategory(title);
+  const status = inferHrDocumentStatus(text(item, ['Status', 'Statut']), expiresOn);
   const fileUrl = text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl);
 
   return withReconciliation(item, source, {
@@ -824,10 +826,21 @@ function mapFleetCertificatePayload(item: SharePointListItem, source: SharePoint
     vessel_sharepoint_item_id: text(item, ['NavireId', 'NavireLookupId', 'VesselId']),
     vessel_name: text(item, ['Navire', 'NavireLookupValue', 'NomNavire', 'VesselName']),
     category_key: categoryKey,
-    title,
-    status: inferHrDocumentStatus(text(item, ['Status', 'Statut']), expiresOn),
+    category_label: text(item, ['Catégorie', 'CatÃ©gorie', 'Categorie', 'CategoryLabel']),
+    document_title: text(item, ['Titre du Document', 'Titre_x0020_du_x0020_Document', 'DocumentTitle']) || title,
+    title: text(item, ['Titre du Document', 'Titre_x0020_du_x0020_Document', 'DocumentTitle']) || title,
+    status,
     issued_on: dateOnly(item, ['DateDelivrance', 'Date_x0020_delivrance', 'IssuedOn']),
     expires_on: expiresOn,
+    planned_on: plannedOn,
+    alarm_on: dateOnly(item, ['Alarme échéance', 'Alarme Ã©chÃ©ance', 'Alarme_x0020_echeance', 'AlarmOn']),
+    provider_name: text(item, ['Prestataire', 'ProviderName']),
+    visit_location: text(item, ['Lieu de la Visite', 'Lieu_x0020_de_x0020_la_x0020_Visite', 'VisitLocation']),
+    workflow_status: plannedOn ? 'planned' : status === 'expired' || status === 'renew_due' ? 'due' : 'not_started',
+    renewal_notes: text(item, ['Commentaires', 'Comments']),
+    original_file_name: title,
+    file_name: title,
+    renaming_rule_key: 'vessel-title-expiry-year',
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: fileUrl,

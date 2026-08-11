@@ -99,6 +99,65 @@ const PREVIEW_STCW_CERTIFICATES = PREVIEW_STCW_SOURCE_ROWS.map(
   }),
 );
 
+function createPreviewFleetCertificates(): unknown[] {
+  const vessels = [
+    { name: 'GOURY', acronym: 'GRY', total: 30, dates: ['2026-04-12', '2026-04-20', '2026-09-15', '2026-11-28', '2026-12-10', '2026-12-28'] },
+    { name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', total: 12, dates: ['2026-12-12'] },
+    { name: 'HOLENN EUSA', acronym: 'HE', total: 9, dates: ['2026-10-10', '2026-11-22', '2026-12-18'] },
+    { name: 'KROKDUR', acronym: 'KDR', total: 21, dates: ['2026-10-22', '2026-11-25', '2026-12-20'] },
+    { name: 'LANDEMER', acronym: 'LDM', total: 5, dates: ['2026-06-14'] },
+    { name: 'LE ROZEL', acronym: 'RZL', total: 25, dates: ['2026-11-20', '2026-12-08', '2026-12-22'] },
+    { name: 'SUROIT', acronym: 'SUR', total: 16, dates: ['2026-01-18', '2026-02-14', '2026-03-21', '2026-04-16', '2026-05-20', '2026-06-24', '2026-07-16', '2026-12-16'] },
+  ];
+  const titles = [
+    'Acte de Francisation', 'Permis d’Armement', 'Permis de Navigation',
+    'Certificat de Franc-Bord', 'Certificat de Classification', 'Assurance P&I',
+    'Visite Extinction Fixe et Portatif', 'Certificat Radeau', 'Rapport Visite Radio',
+    'Registre des Apparaux de Levage', 'Licence Radio', 'Dossier de Stabilité',
+  ];
+  let id = 5000;
+  return vessels.flatMap((vessel, vesselIndex) => Array.from({ length: vessel.total }, (_, index) => {
+    const expiresOn = vessel.dates[index] || null;
+    const expired = Boolean(expiresOn && expiresOn < '2026-08-11');
+    const renewalDue = Boolean(expiresOn && expiresOn >= '2026-08-11' && expiresOn <= '2026-11-09');
+    const title = titles[index % titles.length];
+    const currentId = id++;
+    return {
+      id: currentId,
+      company_id: 1,
+      vessel_id: vesselIndex + 1,
+      vessel_name: vessel.name,
+      vessel: { acronym: vessel.acronym },
+      category_key: 'certificate',
+      category_label: index % 2 ? 'Sécurité' : 'Documents réglementaires',
+      document_title: title,
+      title,
+      status: expired ? 'expired' : renewalDue ? 'renew_due' : 'valid',
+      issued_on: expiresOn ? `${Number(expiresOn.slice(0, 4)) - 1}${expiresOn.slice(4)}` : null,
+      expires_on: expiresOn,
+      planned_on: !renewalDue && index < 4 ? `2026-${String(Math.min(12, index + 8)).padStart(2, '0')}-05` : null,
+      alarm_on: null,
+      provider_name: index < 3 ? 'Prestataire de démonstration' : null,
+      visit_location: index < 3 ? 'Cherbourg' : null,
+      workflow_status: renewalDue || expired ? 'due' : index < 4 ? 'planned' : 'not_started',
+      renewal_notes: null,
+      renaming_rule_key: 'vessel-title-expiry-year',
+      original_file_name: `${vessel.acronym} - ${title}.pdf`,
+      file_name: `${vessel.acronym} - ${title}.pdf`,
+      source_label: 'prévisualisation',
+      file_url: null,
+      storage_bucket: 'fleet-certificates',
+      storage_path: `1/${vessel.acronym}/preview/${currentId}.pdf`,
+      mime_type: 'application/pdf',
+      file_size_bytes: 245000 + index * 2000,
+      current_version_no: 1,
+      is_active_fleet: true,
+      notes: null,
+      updated_at: '2026-08-11T11:42:00Z',
+    };
+  }));
+}
+
 const PREVIEW_ROWS: Record<string, unknown[]> = {
   profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration' }],
   people: [
@@ -927,6 +986,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     updated_at: '2026-08-05T12:00:00Z',
   }],
   project_billing_documents: [],
+  fleet_certificates: createPreviewFleetCertificates(),
+  fleet_certificate_versions: [],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 

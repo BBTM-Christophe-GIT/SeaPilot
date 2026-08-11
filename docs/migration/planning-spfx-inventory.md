@@ -19,6 +19,8 @@ Cette fiche est la mémoire de migration du module Planning. Elle consolide l’
 
 SeaPilot ajoute `planning_assignments` comme source native pour les affectations créées directement dans l’application. Cette table ne remplace pas les deux listes SMTR importées : les trois sources sont fusionnées à l’affichage, avec priorité aux périodes SMTR afin d’éviter les doublons exacts.
 
+La bibliothèque `Certificats Flotte BBTM` a été migrée intégralement le 11 août 2026 : 120 lignes et 120 documents privés Supabase, dont 118 certificats dans la flotte opérationnelle affichée. Le workflow de renouvellement, le versionnage et le référentiel de renommage sont détaillés dans [`docs/deployment/fleet-certificates-v3-14-0-sharepoint-supabase.md`](../deployment/fleet-certificates-v3-14-0-sharepoint-supabase.md).
+
 ## Import de production du 12 juillet 2026
 
 | Source | Extraits | Importés | Rattachement |
