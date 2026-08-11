@@ -63,8 +63,24 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByRole('button', { name: /1 documents échus/ })).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText('Rechercher un certificat, un navire…'), 'extincteurs');
     const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section')!;
+    expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toBeInTheDocument();
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toBeInTheDocument();
     expect(within(library).getByText('Certificat extincteurs')).toBeInTheDocument();
     expect(within(library).queryByText('Certificat de Franc-Bord')).not.toBeInTheDocument();
+  });
+
+  it('organizes the document library by vessel, category and document', async () => {
+    const user = userEvent.setup(); const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    expect(within(library).getByText('Navire', { selector: 'b' })).toBeInTheDocument();
+    expect(within(library).getByText('Catégorie', { selector: 'b' })).toBeInTheDocument();
+    expect(within(library).getByRole('treeitem', { name: 'Navire GOURY' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 02 - Centre de Sécurité des Navires' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
+    expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('opens a certificate workspace with finding evidence and report scopes', async () => {

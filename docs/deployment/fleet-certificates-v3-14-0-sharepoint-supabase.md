@@ -81,6 +81,16 @@ Les noms d'origine restent conservés pour l'audit. Seuls les caractères interd
 - Formats autorisés : PDF, PNG, JPEG et XLSX. La détection temporaire `application/zip` utilisée par le client de migration pour le classeur XLSX est retirée après l'import.
 - Les politiques Storage vérifient le premier segment `company_id` et le rôle de l'utilisateur.
 
+## Arborescence documentaire
+
+Depuis la version 3.15.1, la bibliothèque n'est plus une liste plate. Les 118 documents actifs sont classés sur trois niveaux repliables :
+
+1. navire ;
+2. catégorie réglementaire ;
+3. document.
+
+Le premier navire et sa première catégorie sont ouverts au chargement. La recherche et les filtres d'état déplient automatiquement toutes les branches contenant un résultat. Les compteurs par navire et catégorie, le nombre de documents échus, l'échéance et l'état restent visibles dans l'arborescence. Un contrôle permet de tout déplier ou tout replier, et la présentation mobile regroupe l'échéance et l'état sous le nom du document.
+
 ## Rejouer la préparation d'import
 
 Le script ne publie pas directement de données. Il prépare une migration SQL idempotente et une arborescence d'objets à charger :

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertCircle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CircleDot, Clock3, Download,
-  ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image, MoreHorizontal,
+  ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
   Plus, RefreshCw, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -22,6 +22,7 @@ import {
   type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
 } from './fleetCertificateFindings';
 import { downloadFleetFindingReport, generateFleetFindingReport } from './fleetCertificateFindingReport';
+import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
 
 interface FleetCertificatesPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 type DetailTab = 'overview' | 'deadlines' | 'findings' | 'versions';
@@ -209,7 +210,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
           {upcoming.sort((a, b) => a.expiresOn.localeCompare(b.expiresOn)).slice(0, 7).map((certificate) => { const days = daysFromToday(certificate.expiresOn); return <button key={certificate.id} onClick={() => setSelectedCertificateId(certificate.id)}><span className={`fcx-days ${days <= 30 ? 'urgent' : ''}`}><b>J-{days}</b><small>{formatDate(certificate.expiresOn)}</small></span><span><b>{certificate.documentTitle}</b><small>{certificate.vesselName} · {certificate.categoryLabel}</small></span><ChevronDown className="rotate" size={17} /></button>; })}
         </div></article>
       </section>
-      <section className="fcx-library"><header><div><h2>Bibliothèque documentaire</h2><p>{filtered.length} document(s) affiché(s)</p></div></header><div className="fcx-library-head"><span>Document</span><span>Navire</span><span>Échéance</span><span>État</span><span /></div>{filtered.slice(0, 30).map((certificate) => { const state = getEffectiveFleetCertificateStatus(certificate); return <button className="fcx-library-row" key={certificate.id} onClick={() => setSelectedCertificateId(certificate.id)}><span><FileText size={18} /><span><b>{certificate.documentTitle}</b><small>{certificate.categoryLabel}</small></span></span><span>{certificate.vesselName}</span><span>{formatDate(certificate.expiresOn)}</span><em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em><MoreHorizontal size={18} /></button>; })}</section>
+      <section className="fcx-library"><header><div><h2>Bibliothèque documentaire</h2><p>{filtered.length} document(s) affiché(s)</p></div></header><FleetCertificateLibraryTree key={`${search}|${statusFilter}`} certificates={filtered} formatDate={formatDate} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} onSelect={setSelectedCertificateId} /></section>
     </> : <>
       <header className="fcx-detail-head"><button className="fcx-back" onClick={() => { setSelectedCertificateId(null); setSelectedFindingId(null); }}><ArrowLeft size={18} /> Retour au tableau de bord</button><div className="fcx-detail-title"><span className="fcx-file-icon"><FileCheck2 /></span><div><span>{selectedCertificate.vesselName} · {selectedCertificate.categoryLabel}</span><h1>{selectedCertificate.documentTitle}</h1><p><CircleDot size={12} /> Version {selectedCertificate.currentVersionNo} · échéance {formatDate(selectedCertificate.expiresOn)}</p></div></div><div className="fcx-detail-actions"><button onClick={() => openDocument(selectedCertificate)}><ExternalLink size={16} /> Ouvrir</button>{manager && <button onClick={() => setModal('renewal')}><RefreshCw size={16} /> Renouveler</button>}<div className="fcx-report-wrap"><button className="fcx-primary" onClick={() => setReportOpen((value) => !value)}><Download size={16} /> Générer un rapport <ChevronDown size={15} /></button>{reportOpen && <div className="fcx-report-menu"><button disabled={!selectedFinding} onClick={() => generateReport('finding')}>Cet écart</button><button onClick={() => generateReport('certificate')}>Ce certificat</button><button onClick={() => generateReport('selected')}>Documents filtrés ({filtered.length})</button><button onClick={() => generateReport('all')}>Tous les écarts flotte</button></div>}</div>{manager && <button className="icon danger" title="Supprimer" onClick={() => window.confirm('Supprimer définitivement ce certificat et ses pièces ?') && run(() => deleteFleetCertificateDocuments(effectiveClient, [selectedCertificate.id]), 'Certificat supprimé.').then(() => setSelectedCertificateId(null))}><Trash2 size={17} /></button>}</div></header>
       <nav className="fcx-tabs">{([['overview', 'Aperçu'], ['deadlines', 'Échéances'], ['findings', `Écarts & actions (${certificateFindings.filter((item) => item.status !== 'closed').length})`], ['versions', 'Versions']] as Array<[DetailTab, string]>).map(([key, label]) => <button className={tab === key ? 'active' : ''} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav>
