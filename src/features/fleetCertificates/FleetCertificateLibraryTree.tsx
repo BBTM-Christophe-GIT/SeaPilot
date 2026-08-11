@@ -10,15 +10,18 @@ import {
 interface FleetCertificateLibraryTreeProps {
   certificates: FleetCertificateRecord[];
   formatDate: (value: string) => string;
+  findingCountByCertificate: ReadonlyMap<number, number>;
   revealMatches: boolean;
   selectedCertificateId?: number | null;
-  onSelect: (certificateId: number) => void;
+  onOpen: (certificate: FleetCertificateRecord) => void;
+  onManage?: (certificateId: number) => void;
 }
 
 interface CategoryBranch {
   key: string;
   label: string;
   certificates: FleetCertificateRecord[];
+  actionCount: number;
 }
 
 interface VesselBranch {
@@ -27,11 +30,15 @@ interface VesselBranch {
   categories: CategoryBranch[];
   documentCount: number;
   expiredCount: number;
+  actionCount: number;
 }
 
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 
-function buildTree(certificates: FleetCertificateRecord[]): VesselBranch[] {
+function buildTree(
+  certificates: FleetCertificateRecord[],
+  findingCountByCertificate: ReadonlyMap<number, number>,
+): VesselBranch[] {
   const vessels = new Map<string, { name: string; certificates: FleetCertificateRecord[] }>();
 
   certificates.forEach((certificate) => {
@@ -49,8 +56,10 @@ function buildTree(certificates: FleetCertificateRecord[]): VesselBranch[] {
         key: `${key}:${categoryKey}`,
         label: certificate.categoryLabel,
         certificates: [],
+        actionCount: 0,
       };
       category.certificates.push(certificate);
+      category.actionCount += findingCountByCertificate.get(certificate.id) || 0;
       categories.set(categoryKey, category);
     });
 
@@ -69,6 +78,10 @@ function buildTree(certificates: FleetCertificateRecord[]): VesselBranch[] {
       expiredCount: vessel.certificates.filter(
         (certificate) => getEffectiveFleetCertificateStatus(certificate) === 'expired',
       ).length,
+      actionCount: vessel.certificates.reduce(
+        (sum, certificate) => sum + (findingCountByCertificate.get(certificate.id) || 0),
+        0,
+      ),
     };
   }).sort((left, right) => frenchSort.compare(left.name, right.name));
 }
@@ -83,11 +96,16 @@ function toggleKey(current: Set<string>, key: string): Set<string> {
 export function FleetCertificateLibraryTree({
   certificates,
   formatDate,
+  findingCountByCertificate,
   revealMatches,
   selectedCertificateId,
-  onSelect,
+  onOpen,
+  onManage,
 }: FleetCertificateLibraryTreeProps) {
-  const branches = useMemo(() => buildTree(certificates), [certificates]);
+  const branches = useMemo(
+    () => buildTree(certificates, findingCountByCertificate),
+    [certificates, findingCountByCertificate],
+  );
   const allVesselKeys = useMemo(() => branches.map((vessel) => vessel.key), [branches]);
   const allCategoryKeys = useMemo(
     () => branches.flatMap((vessel) => vessel.categories.map((category) => category.key)),
@@ -134,6 +152,7 @@ export function FleetCertificateLibraryTree({
             <ChevronRight className={vesselOpen ? 'is-open' : ''} size={17} />
             <span className="fcx-tree-icon vessel"><Ship size={17} /></span>
             <strong>{vessel.name}</strong>
+            {vessel.actionCount > 0 && <em className="fcx-action-count">{vessel.actionCount} à traiter</em>}
             {vessel.expiredCount > 0 && <em>{vessel.expiredCount} échu{vessel.expiredCount > 1 ? 's' : ''}</em>}
             <small>{vessel.documentCount} document{vessel.documentCount > 1 ? 's' : ''}</small>
           </button>
@@ -145,18 +164,22 @@ export function FleetCertificateLibraryTree({
                   <ChevronRight className={categoryOpen ? 'is-open' : ''} size={16} />
                   <span className="fcx-tree-icon category"><Folder size={16} /></span>
                   <strong>{category.label}</strong>
+                  {category.actionCount > 0 && <em className="fcx-action-count">{category.actionCount} à traiter</em>}
                   <small>{category.certificates.length} document{category.certificates.length > 1 ? 's' : ''}</small>
                 </button>
                 {categoryOpen && <div className="fcx-tree-documents" role="group">
                   {category.certificates.map((certificate) => {
                     const state = getEffectiveFleetCertificateStatus(certificate);
+                    const actionCount = findingCountByCertificate.get(certificate.id) || 0;
                     return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
-                      <button className={`fcx-library-row${selectedCertificateId === certificate.id ? ' is-selected' : ''}`} onClick={() => onSelect(certificate.id)} type="button">
-                        <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span></span>
+                      <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
+                      <button aria-label={`Ouvrir la pièce jointe ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onOpen(certificate)} type="button">
+                        <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
                         <span>{formatDate(certificate.expiresOn)}</span>
                         <em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em>
-                        <MoreHorizontal size={18} />
                       </button>
+                      {onManage && <button aria-label={`Gérer ${certificate.documentTitle}`} className="fcx-library-manage" onClick={() => onManage(certificate.id)} title="Gérer le document" type="button"><MoreHorizontal size={18} /></button>}
+                      </div>
                     </div>;
                   })}
                 </div>}

@@ -103,6 +103,14 @@ La fiche certificat est désormais directement centrée sur la bibliothèque doc
 
 Tous les périmètres de rapport produisent un document intitulé « Plan d'Action », classé par navire, catégorie et document. Pour chaque écart, le PDF contient le type, l'objet, la description, l'échéance, la date de clôture, le responsable, l'état, l'intégralité du suivi avec son émetteur et son horodatage, ainsi que les photos du constat et des preuves de traitement. Les images sont ajustées dans leur zone sans déformation et le logo BBTM conserve systématiquement ses proportions d'origine.
 
+## Prestataires et visites v3.18.0
+
+La source SharePoint `Administration - Prestataires - Fournisseurs` (liste `5e29f7db-a85e-4147-9c54-b00f0e588f7e`) alimente toujours le catalogue. Les lignes répétées sont désormais normalisées en un prestataire canonique, plusieurs spécialités et plusieurs personnes de contact, chacune avec son adresse électronique et son téléphone. L'adresse, le téléphone et l'adresse électronique générique restent portés une seule fois par le prestataire. Les trois lignes SERVAUX historiques sont ainsi regroupées sous `SERVAUX`, avec les spécialités Incendie et Radeaux et leurs contacts respectifs.
+
+Une visite prestataire est rattachée à un document précis et peut contenir jusqu'à dix prestataires. Chaque affectation conserve la spécialité et le contact choisis. La programmation crée également l'association durable entre le prestataire et le document. Le calendrier du module est classé par navire, catégorie et document.
+
+Dans l'interface, les compteurs d'écarts ouverts sont visibles sur les trois niveaux de l'arborescence. Le clic sur le titre d'un document ouvre directement sa pièce jointe ; le menu contextuel permet d'ouvrir son poste de traitement. La barre de recherche est placée immédiatement au-dessus de la bibliothèque, et le pilotage du traitement reste affiché à ses côtés sur les écrans de bureau.
+
 ## Rejouer la préparation d'import
 
 Le script ne publie pas directement de données. Il prépare une migration SQL idempotente et une arborescence d'objets à charger :
