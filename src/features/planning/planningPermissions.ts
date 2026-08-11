@@ -6,6 +6,7 @@ export interface PlanningPermissions {
   canRead: boolean;
   canEditEvents: boolean;
   canExport: boolean;
+  canGenerateCrewList: boolean;
   canManagePublication: boolean;
   canSubmitPublication: boolean;
   canValidatePublication: boolean;
@@ -45,6 +46,7 @@ export function getPlanningPermissions(roles: RoleKey[], legacyLockState = false
     canRead: roles.some((role) => PLANNING_READ_ROLES.has(role)),
     canEditEvents: canEdit,
     canExport: isAdmin || isDirection || isArmement,
+    canGenerateCrewList: roles.some((role) => PLANNING_READ_ROLES.has(role)),
     canManagePublication: canEdit,
     canSubmitPublication: false,
     canValidatePublication: false,

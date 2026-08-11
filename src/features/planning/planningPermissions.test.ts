@@ -62,6 +62,7 @@ describe('planning permissions', () => {
     expect(getPlanningPermissions(['capitaine'], false)).toMatchObject({
       canRead: true,
       canEditEvents: false,
+      canGenerateCrewList: true,
       canValidatePublication: false,
       canPublishPublication: false,
       canManageRotations: false,
@@ -90,6 +91,7 @@ describe('planning permissions', () => {
       canManagePublication: false,
       canViewHistory: false,
       canExport: false,
+      canGenerateCrewList: true,
       canManageRotations: false,
       canManageTemplates: false,
       canManageManning: false,

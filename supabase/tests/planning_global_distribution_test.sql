@@ -1,6 +1,6 @@
 begin;
 
-select plan(37);
+select plan(41);
 
 select has_table('public', 'planning_releases', 'global planning releases are stored in Supabase');
 select ok(
@@ -76,6 +76,10 @@ select is(
 select ok(
   not has_function_privilege('authenticated', 'public.planning_release_snapshot(bigint)', 'EXECUTE'),
   'the unfiltered snapshot helper is private'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.planning_redact_financial_fields(jsonb)', 'EXECUTE'),
+  'the financial redaction helper is private'
 );
 
 insert into auth.users (id, email)
@@ -161,6 +165,43 @@ join public.vessels vessel on vessel.company_id = company.id and vessel.name = '
 join public.people captain on captain.company_id = company.id and captain.user_id = '73000000-0000-0000-0000-000000000003'
 join public.people sailor on sailor.company_id = company.id and sailor.user_id = '73000000-0000-0000-0000-000000000004'
 where company.code = 'bbtm';
+
+insert into public.planning_projects (
+  company_id,
+  title,
+  starts_on,
+  ends_on,
+  description,
+  client_name,
+  primary_vessel_id,
+  primary_vessel_name,
+  event_type,
+  status,
+  source_label,
+  charter_hire,
+  hire_currency,
+  hire_unit,
+  charter_hire_override
+)
+select
+  company.id,
+  'GLOBAL FINANCIAL TEST PROJECT',
+  '2037-01-05',
+  '2037-01-10',
+  'Operational details remain visible',
+  'Test client',
+  vessel.id,
+  vessel.name,
+  'operation',
+  'Confirmé',
+  'seapilot',
+  9999,
+  'EUR',
+  'jour',
+  true
+from public.companies company
+join public.vessels vessel on vessel.company_id = company.id and vessel.name = 'GLOBAL TEST VESSEL'
+where company.code = 'bbtm';
 set local session_replication_role = origin;
 
 set local role authenticated;
@@ -204,6 +245,29 @@ select is(
   (public.latest_planning_release() #>> '{snapshot,assignments,0,status_label}'),
   'En Mer',
   'a captain still reads the last distributed snapshot'
+);
+select ok(
+  exists (
+    select 1
+    from jsonb_array_elements(public.latest_planning_release() #> '{snapshot,projects}') project
+    where project ->> 'title' = 'GLOBAL FINANCIAL TEST PROJECT'
+  ),
+  'a captain can read operational project details from the released Planning'
+);
+select ok(
+  not exists (
+    select 1
+    from jsonb_array_elements(public.latest_planning_release() #> '{snapshot,projects}') project
+    where project ->> 'title' = 'GLOBAL FINANCIAL TEST PROJECT'
+      and project ?| array['charter_hire', 'hire_currency', 'hire_unit', 'charter_hire_override']
+  ),
+  'a captain never receives financial operation fields'
+);
+select throws_ok(
+  $$select * from public.projects_contracts()$$,
+  '42501',
+  'Insufficient permission to read project contracts',
+  'a captain cannot call the financial contract reader'
 );
 
 select set_config('request.jwt.claim.sub', '73000000-0000-0000-0000-000000000002', true);

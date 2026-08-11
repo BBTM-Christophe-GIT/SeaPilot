@@ -286,6 +286,7 @@ function createClient(options: {
   updatedProject?: unknown;
   transitionedPublication?: unknown;
   assistantAccess?: unknown[];
+  operationDocuments?: unknown[];
   matrices?: unknown[];
   manningRequirements?: unknown[];
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
@@ -389,6 +390,12 @@ function createClient(options: {
           order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: options.history ?? [], error: null }) }),
         }),
       };
+    }
+    if (table === 'project_generated_documents') {
+      const order = vi.fn().mockResolvedValue({ data: options.operationDocuments ?? [], error: null });
+      const documentTypeEq = vi.fn().mockReturnValue({ order });
+      const occurrenceEq = vi.fn().mockReturnValue({ eq: documentTypeEq });
+      return { select: vi.fn().mockReturnValue({ eq: occurrenceEq }) };
     }
     if (table === 'planning_assignments') return { insert: insertAssignment, update: updateAssignment };
     throw new Error(`Unexpected table ${table}`);
@@ -957,7 +964,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
   });
 
-  it('keeps marins in read-only mode', async () => {
+  it('keeps marins in read-only mode with leave requests, crew lists and project details', async () => {
     const user = userEvent.setup();
     const release = {
       id: 1,
@@ -974,7 +981,15 @@ describe('PlanningPage cockpit', () => {
         assignments: [],
         days: [],
         periods: [planningPeriodRow],
-        projects: [],
+        projects: [{
+          ...planningProjectRow,
+          charter_hire: 9999,
+          hire_currency: 'EUR',
+          hire_unit: 'jour',
+          charter_hire_override: true,
+          mobilisation_fee: 1500,
+          demobilisation_fee: 1750,
+        }],
         handovers: [],
         derogations: [],
       },
@@ -986,11 +1001,25 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Générer une crew list' })).toBeInTheDocument();
     expect(screen.queryByText('Affectation rapide')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Absences et conflits' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    const projectButton = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    fireEvent.contextMenu(projectButton);
+    await user.click(screen.getByRole('menuitem', { name: 'Voir les détails' }));
+    const detailDialog = await screen.findByRole('dialog');
+    expect(detailDialog).toHaveTextContent('Transit Cherbourg');
+    expect(detailDialog).toHaveTextContent('Mise en place');
+    expect(within(detailDialog).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(detailDialog).queryByRole('button', { name: /Enregistrer|Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
+    expect(detailDialog).not.toHaveTextContent('9 999');
+    expect(detailDialog).not.toHaveTextContent('1 500');
+    expect(detailDialog).not.toHaveTextContent('1 750');
+    expect(detailDialog).not.toHaveTextContent('EUR');
   });
 
   it('limits captains to leave requests and crew-list generation', async () => {
@@ -1009,7 +1038,13 @@ describe('PlanningPage cockpit', () => {
         assignments: [assignmentOverviewRow],
         days: [],
         periods: [planningPeriodRow],
-        projects: [],
+        projects: [{
+          ...planningProjectRow,
+          charter_hire: 9999,
+          hire_currency: 'EUR',
+          mobilisation_fee: 1500,
+          demobilisation_fee: 1750,
+        }],
         handovers: [],
         derogations: [],
       },
@@ -1025,6 +1060,10 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Exports' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
+    const projectButton = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    fireEvent.contextMenu(projectButton);
+    expect(await screen.findByRole('menuitem', { name: 'Voir les détails' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
   });
 
   it('allows office direction to edit while keeping vessel administration restricted', async () => {

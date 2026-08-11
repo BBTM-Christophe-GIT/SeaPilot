@@ -1304,6 +1304,7 @@ export async function fetchPlanningOperationDocuments(
     .from('project_generated_documents')
     .select(PLANNING_OPERATION_DOCUMENT_SELECT)
     .eq('planning_occurrence_id', planningOccurrenceId)
+    .eq('document_type', 'operation_attachment')
     .order('created_at', { ascending: false });
   if (error) throwPlanningDataError(
     'load-project-operation-documents',
