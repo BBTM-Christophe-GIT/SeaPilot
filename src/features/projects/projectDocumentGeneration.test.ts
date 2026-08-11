@@ -96,11 +96,27 @@ describe('projectDocumentGeneration', () => {
   });
 
   it('uses canonical project and typed contract values in the SPFx SUPPLYTIME overlay', () => {
-    const values = buildProjectSupplytimePdfFields(project, contract);
+    const values = buildProjectSupplytimePdfFields(project, {
+      ...contract,
+      hirePeriods: [{
+        id: 1,
+        projectId: project.id,
+        contractId: contract.id,
+        startsOn: '2026-07-01',
+        endsOn: '',
+        charterHire: 12000,
+        standbyHire: 9000,
+        weatherStandbyHire: 6000,
+        hireCurrency: 'EUR',
+        hireUnit: 'jour',
+      }],
+    });
     expect(values.box01_owners).toBe('BBTM, Cherbourg');
     expect(values.box03_vessel).toContain('COTENTIN');
     expect(values.box06_port_delivery).toBe('Brest');
     expect(values.box20_charter_hire).toContain('12');
+    expect(values.box20_charter_hire).toContain('Stand-by');
+    expect(values.box20_charter_hire).toContain('Weather Stand-by');
     expect(values.box20_charter_hire).not.toBe('ancienne valeur');
   });
 

@@ -11682,7 +11682,7 @@ button.planning-p12-conflict-card {
   align-items: end;
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr 1fr 1fr .65fr .75fr auto;
+  grid-template-columns: .9fr .9fr repeat(3, 1fr) .55fr .7fr auto;
 }
 
 .project-hire-period-row > button { min-height: 40px; width: 40px; }

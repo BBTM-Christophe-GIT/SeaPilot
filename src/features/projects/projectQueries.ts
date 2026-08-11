@@ -45,6 +45,8 @@ const PROJECT_CONTRACT_HIRE_PERIOD_SELECT = [
   'starts_on',
   'ends_on',
   'charter_hire',
+  'standby_hire',
+  'weather_standby_hire',
   'hire_currency',
   'hire_unit',
 ].join(', ');
@@ -361,6 +363,8 @@ export interface ProjectContractHirePeriodRecord {
   startsOn: string;
   endsOn: string;
   charterHire: number;
+  standbyHire: number;
+  weatherStandbyHire: number;
   hireCurrency: string;
   hireUnit: string;
 }
@@ -651,6 +655,12 @@ export function mapProjectContractHirePeriodRows(
     startsOn: nullableText(row.starts_on as string | null),
     endsOn: nullableText(row.ends_on as string | null),
     charterHire: nullableNumber(row.charter_hire as number | string | null) ?? 0,
+    standbyHire: nullableNumber(row.standby_hire as number | string | null)
+      ?? nullableNumber(row.charter_hire as number | string | null)
+      ?? 0,
+    weatherStandbyHire: nullableNumber(row.weather_standby_hire as number | string | null)
+      ?? nullableNumber(row.charter_hire as number | string | null)
+      ?? 0,
     hireCurrency: nullableText(row.hire_currency as string | null),
     hireUnit: nullableText(row.hire_unit as string | null),
   }));
