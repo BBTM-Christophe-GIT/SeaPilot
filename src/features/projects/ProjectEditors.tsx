@@ -305,7 +305,7 @@ function PortSelect({
         {PROJECT_PORT_GROUPS.map((group) => (
           <optgroup key={group.department} label={group.department}>
             {group.ports.map((port) => (
-              <option key={port.locode} value={port.port}>{formatProjectPort(port)}</option>
+              <option key={`${port.department}-${port.port}`} value={port.port}>{formatProjectPort(port)}</option>
             ))}
           </optgroup>
         ))}
