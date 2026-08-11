@@ -161,14 +161,6 @@ function mutationError(error: { message?: string } | null, fallback: string): Er
   return new Error(error?.message || fallback);
 }
 
-function isTransientUpstreamError(error: { message?: string } | null): boolean {
-  return /upstream request timeout|gateway timeout|temporarily unavailable/i.test(error?.message || '');
-}
-
-async function waitForRetry(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 500));
-}
-
 export function validateProjectWriteInput(input: ProjectWriteInput): string[] {
   const errors: string[] = [];
   if (!input.title.trim()) errors.push('Le nom du projet est obligatoire.');
@@ -246,15 +238,13 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     target_hire_unit: optionalText(input.hireUnit),
     target_max_audit_period: optionalText(input.maxAuditPeriod),
     target_supplytime_data: input.supplytimeData,
-    target_expected_updated_at: optionalTimestamp(input.expectedUpdatedAt),
+    // Keep the timestamp returned by PostgREST byte-for-byte. Converting it through
+    // Date.toISOString() drops PostgreSQL microseconds and makes every optimistic
+    // concurrency check look stale (for example .643239 becomes .643).
+    target_expected_updated_at: optionalText(input.expectedUpdatedAt),
   };
 
-  let response = await client.rpc('projects_save', args);
-  if (response.error && isTransientUpstreamError(response.error)) {
-    await waitForRetry();
-    response = await client.rpc('projects_save', args);
-  }
-  const { data, error } = response;
+  const { data, error } = await client.rpc('projects_save', args);
 
   if (error) throw mutationError(error, "Impossible d’enregistrer le projet.");
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
@@ -296,11 +286,7 @@ export async function saveProjectContractDetails(
     target_supplytime_data: input.supplytimeData,
     target_towed_asset_id: towedAssetId,
   };
-  let response = await client.rpc('projects_save_contract_details', args);
-  if (response.error && isTransientUpstreamError(response.error)) {
-    await waitForRetry();
-    response = await client.rpc('projects_save_contract_details', args);
-  }
+  const response = await client.rpc('projects_save_contract_details', args);
   if (response.error) {
     throw mutationError(response.error, "Impossible d’enregistrer les informations contractuelles.");
   }
@@ -354,7 +340,7 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
     target_city: optionalText(input.city),
     target_country: optionalText(input.country),
     target_active: input.active,
-    target_expected_updated_at: optionalTimestamp(input.expectedUpdatedAt),
+    target_expected_updated_at: optionalText(input.expectedUpdatedAt),
   });
   if (error) throw mutationError(error, "Impossible d’enregistrer le client.");
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
