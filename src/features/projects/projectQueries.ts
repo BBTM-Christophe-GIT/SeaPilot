@@ -163,6 +163,7 @@ interface ProjectContractRow {
   max_audit_period: string | null;
   supplytime_schema_version: string | null;
   supplytime_data: unknown;
+  towed_asset_id: number | null;
   source_label: string | null;
   sharepoint_list_title: string | null;
   sharepoint_item_id: string | null;
@@ -310,12 +311,47 @@ export interface ProjectContractRecord {
   maxAuditPeriod: string;
   supplytimeSchemaVersion: string;
   supplytimeData: Record<string, string>;
+  towedAssetId?: number | null;
   sourceLabel: string;
   sharePointListTitle: string;
   sharePointItemId: string;
   sourceModifiedAt: string;
   archivedAt: string;
   hirePeriods?: ProjectContractHirePeriodRecord[];
+}
+
+interface ProjectTowedAssetRow {
+  id: number;
+  name: string;
+  asset_type: string | null;
+  length_overall_m: number | string | null;
+  breadth_overall_m: number | string | null;
+  max_draft_m: number | string | null;
+  light_displacement_t: number | string | null;
+  flag: string | null;
+  classification_society: string | null;
+  registration_number: string | null;
+  owner_name: string | null;
+  hull_machinery_insurer: string | null;
+  liability_insurer: string | null;
+  active: boolean | null;
+}
+
+export interface ProjectTowedAssetRecord {
+  id: number;
+  name: string;
+  assetType: string;
+  lengthOverallM: number | null;
+  breadthOverallM: number | null;
+  maxDraftM: number | null;
+  lightDisplacementT: number | null;
+  flag: string;
+  classificationSociety: string;
+  registrationNumber: string;
+  ownerName: string;
+  hullMachineryInsurer: string;
+  liabilityInsurer: string;
+  active: boolean;
 }
 
 export interface ProjectContractHirePeriodRecord {
@@ -422,6 +458,7 @@ export type ProjectsDataSource =
   | 'planningOccurrences'
   | 'projectContracts'
   | 'projectDocuments'
+  | 'towedAssets'
   | 'vessels';
 
 export interface ProjectsDataWarning {
@@ -438,6 +475,7 @@ export interface ProjectsData {
   operationDocuments: ProjectOperationDocumentRecord[];
   clients: ClientRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
+  towedAssets: ProjectTowedAssetRecord[];
   vessels: VesselRecord[];
   warnings: ProjectsDataWarning[];
 }
@@ -575,11 +613,31 @@ export function mapProjectContractRows(rows: ProjectContractRow[]): ProjectContr
     maxAuditPeriod: nullableText(row.max_audit_period),
     supplytimeSchemaVersion: nullableText(row.supplytime_schema_version),
     supplytimeData: mapSupplytimeData(row.supplytime_data),
+    towedAssetId: row.towed_asset_id,
     sourceLabel: nullableText(row.source_label),
     sharePointListTitle: nullableText(row.sharepoint_list_title),
     sharePointItemId: nullableText(row.sharepoint_item_id),
     sourceModifiedAt: nullableText(row.source_modified_at),
     archivedAt: nullableText(row.archived_at),
+  }));
+}
+
+export function mapProjectTowedAssetRows(rows: ProjectTowedAssetRow[]): ProjectTowedAssetRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    assetType: nullableText(row.asset_type),
+    lengthOverallM: nullableNumber(row.length_overall_m),
+    breadthOverallM: nullableNumber(row.breadth_overall_m),
+    maxDraftM: nullableNumber(row.max_draft_m),
+    lightDisplacementT: nullableNumber(row.light_displacement_t),
+    flag: nullableText(row.flag),
+    classificationSociety: nullableText(row.classification_society),
+    registrationNumber: nullableText(row.registration_number),
+    ownerName: nullableText(row.owner_name),
+    hullMachineryInsurer: nullableText(row.hull_machinery_insurer),
+    liabilityInsurer: nullableText(row.liability_insurer),
+    active: row.active ?? true,
   }));
 }
 
@@ -727,6 +785,12 @@ export async function fetchProjectContracts(client: SupabaseClient): Promise<Pro
   return mapProjectContractRows((data || []) as ProjectContractRow[]);
 }
 
+export async function fetchProjectTowedAssets(client: SupabaseClient): Promise<ProjectTowedAssetRecord[]> {
+  const { data, error } = await client.rpc('projects_towed_assets');
+  if (error) throw new Error(error.message || 'Impossible de charger le référentiel des remorqués.');
+  return mapProjectTowedAssetRows((data || []) as ProjectTowedAssetRow[]);
+}
+
 export async function fetchProjectContractHirePeriods(
   client: SupabaseClient,
 ): Promise<ProjectContractHirePeriodRecord[]> {
@@ -791,10 +855,11 @@ const OPTIONAL_SOURCES: Array<{
   { source: 'planningOccurrences', label: 'les op\u00e9rations du planning' },
   { source: 'clients', label: 'les fiches clients' },
   { source: 'vessels', label: 'le référentiel navires' },
+  { source: 'towedAssets', label: 'le référentiel des remorqués' },
 ];
 
 export async function fetchProjectsData(client: SupabaseClient): Promise<ProjectsData> {
-  const [projectsResult, contractsResult, hirePeriodsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult] =
+  const [projectsResult, contractsResult, hirePeriodsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult, towedAssetsResult] =
     await Promise.allSettled([
       fetchProjects(client),
       fetchProjectContracts(client),
@@ -805,13 +870,14 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
       fetchProjectPlanningOccurrences(client),
       fetchClients(client),
       fetchVessels(client),
+      fetchProjectTowedAssets(client),
     ]);
 
   if (projectsResult.status === 'rejected') {
     throw projectsResult.reason;
   }
 
-  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult];
+  const optionalResults = [contractsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult, towedAssetsResult];
   const warnings = optionalResults.flatMap((result, index) =>
     result.status === 'rejected' ? [OPTIONAL_SOURCES[index]] : [],
   );
@@ -833,6 +899,7 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     operationDocuments: operationDocumentsResult.status === 'fulfilled' ? operationDocumentsResult.value : [],
     planningOccurrences: occurrencesResult.status === 'fulfilled' ? occurrencesResult.value : [],
     clients: clientsResult.status === 'fulfilled' ? clientsResult.value : [],
+    towedAssets: towedAssetsResult.status === 'fulfilled' ? towedAssetsResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     warnings,
   };

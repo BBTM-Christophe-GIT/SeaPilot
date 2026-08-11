@@ -2,14 +2,17 @@ import { CalendarDays, CreditCard, ExternalLink, FileText, FileUp, FolderOpen, P
 import { useEffect, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
+  saveProjectContractDetails,
   saveProjectContractHirePeriods,
   saveProjectPlanningOccurrence,
   saveClient,
   saveProject,
+  saveProjectTowedAsset,
   type ClientWriteInput,
   type ProjectContractHirePeriodWriteInput,
   type ProjectMutationResult,
   type ProjectPlanningOccurrenceWriteInput,
+  type ProjectTowedAssetWriteInput,
   type ProjectWriteInput,
 } from './projectMutations';
 import { storeOperationDocuments, type OperationDocumentUploadResult } from './projectDocumentStorage';
@@ -19,6 +22,7 @@ import type {
   ProjectOperationDocumentRecord,
   ProjectPlanningOccurrenceRecord,
   ProjectRecord,
+  ProjectTowedAssetRecord,
   VesselRecord,
 } from './projectQueries';
 import { SUPPLYTIME_GROUPS } from './projectReadModel';
@@ -26,6 +30,11 @@ import { formatProjectPort, PROJECT_PORT_GROUPS } from './projectPorts';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
+import {
+  DEFAULT_PROJECT_OWNER_IDENTITY,
+  PROJECT_CURRENCIES,
+  TOWAGE_CONTRACT_TYPE,
+} from './projectContractOptions';
 
 interface ProjectEditorProps {
   client: SupabaseClient;
@@ -41,6 +50,7 @@ interface ProjectEditorProps {
   onSaved: (result: ProjectMutationResult) => void;
   project?: ProjectRecord;
   statuses: string[];
+  towedAssets: ProjectTowedAssetRecord[];
   vessels: VesselRecord[];
 }
 
@@ -121,7 +131,7 @@ export function projectToWriteInput(
     operationArea: project.operationArea,
     isRovSupport: project.isRovSupport,
     isDivingSupport: project.isDivingSupport,
-    ownerIdentity: contract?.ownerIdentity || '',
+    ownerIdentity: contract?.ownerIdentity || DEFAULT_PROJECT_OWNER_IDENTITY,
     vesselAssignmentLimit: contract?.vesselAssignmentLimit || '',
     extensionCount: contract?.extensionCount ?? null,
     extensionDuration: contract?.extensionDuration ?? null,
@@ -130,7 +140,7 @@ export function projectToWriteInput(
     maxExtensionDays: contract?.maxExtensionDays ?? null,
     mobilisationFee: contract?.mobilisationFee ?? null,
     demobilisationFee: contract?.demobilisationFee ?? null,
-    feeCurrency: contract?.feeCurrency || '',
+    feeCurrency: contract?.feeCurrency || 'EUR',
     charterHire: contract?.charterHire ?? null,
     extensionHire: contract?.extensionHire ?? null,
     hireCurrency: contract?.hireCurrency || '',
@@ -166,13 +176,86 @@ function projectContractHirePeriodsToWriteInput(
   return [];
 }
 
-function projectDetailsSnapshot(input: ProjectWriteInput): string {
+function projectCoreSnapshot(input: ProjectWriteInput): string {
   return JSON.stringify({
-    ...input,
-    charterHire: null,
-    hireCurrency: '',
-    hireUnit: '',
+    projectId: input.projectId,
+    title: input.title,
+    clientId: input.clientId,
+    primaryVesselId: input.primaryVesselId,
+    secondaryVesselId: input.secondaryVesselId,
+    status: input.status,
+    description: input.description,
+    startsOn: input.startsOn,
+    endsOn: input.endsOn,
+    deliveryAt: input.deliveryAt,
+    redeliveryAt: input.redeliveryAt,
+    charterStartsAt: input.charterStartsAt,
+    charterEndsAt: input.charterEndsAt,
+    deliveryPort: input.deliveryPort,
+    redeliveryPort: input.redeliveryPort,
+    contractType: input.contractType,
+    operationArea: input.operationArea,
+    isRovSupport: input.isRovSupport,
+    isDivingSupport: input.isDivingSupport,
+    expectedUpdatedAt: input.expectedUpdatedAt,
   });
+}
+
+function projectContractSnapshot(input: ProjectWriteInput): string {
+  return JSON.stringify({
+    ownerIdentity: input.ownerIdentity,
+    vesselAssignmentLimit: input.vesselAssignmentLimit,
+    extensionCount: input.extensionCount,
+    extensionDuration: input.extensionDuration,
+    extensionUnit: input.extensionUnit,
+    autoExtensionPeriod: input.autoExtensionPeriod,
+    maxExtensionDays: input.maxExtensionDays,
+    mobilisationFee: input.mobilisationFee,
+    demobilisationFee: input.demobilisationFee,
+    feeCurrency: input.feeCurrency,
+    extensionHire: input.extensionHire,
+    maxAuditPeriod: input.maxAuditPeriod,
+    supplytimeData: input.supplytimeData,
+  });
+}
+
+const EMPTY_TOWED_ASSET: ProjectTowedAssetWriteInput = {
+  id: null,
+  name: '',
+  assetType: '',
+  lengthOverallM: null,
+  breadthOverallM: null,
+  maxDraftM: null,
+  lightDisplacementT: null,
+  flag: '',
+  classificationSociety: '',
+  registrationNumber: '',
+  ownerName: '',
+  hullMachineryInsurer: '',
+  liabilityInsurer: '',
+};
+
+function towedAssetToWriteInput(asset?: ProjectTowedAssetRecord): ProjectTowedAssetWriteInput | null {
+  if (!asset) return null;
+  return {
+    id: asset.id,
+    name: asset.name,
+    assetType: asset.assetType,
+    lengthOverallM: asset.lengthOverallM,
+    breadthOverallM: asset.breadthOverallM,
+    maxDraftM: asset.maxDraftM,
+    lightDisplacementT: asset.lightDisplacementT,
+    flag: asset.flag,
+    classificationSociety: asset.classificationSociety,
+    registrationNumber: asset.registrationNumber,
+    ownerName: asset.ownerName,
+    hullMachineryInsurer: asset.hullMachineryInsurer,
+    liabilityInsurer: asset.liabilityInsurer,
+  };
+}
+
+function towedAssetSnapshot(asset: ProjectTowedAssetWriteInput | null): string {
+  return JSON.stringify(asset);
 }
 
 function hirePeriodsSnapshot(periods: ProjectContractHirePeriodWriteInput[]): string {
@@ -240,12 +323,17 @@ export function ProjectEditor({
   onClose,
   onSaved,
   project,
+  towedAssets,
   vessels,
 }: ProjectEditorProps) {
   const initialForm = projectToWriteInput(project, contract);
   const initialHirePeriods = projectContractHirePeriodsToWriteInput(project, contract);
+  const initialTowedAsset = towedAssetToWriteInput(
+    towedAssets.find((asset) => asset.id === contract?.towedAssetId),
+  );
   const [form, setForm] = useState(() => initialForm);
   const [hirePeriods, setHirePeriods] = useState<ProjectContractHirePeriodWriteInput[]>(() => initialHirePeriods);
+  const [towedAsset, setTowedAsset] = useState<ProjectTowedAssetWriteInput | null>(() => initialTowedAsset);
   const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
   const [availableClients, setAvailableClients] = useState<
     Pick<ClientRecord, 'active' | 'id' | 'name'>[]
@@ -299,6 +387,13 @@ export function ProjectEditor({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateTowedAsset<K extends keyof ProjectTowedAssetWriteInput>(
+    key: K,
+    value: ProjectTowedAssetWriteInput[K],
+  ) {
+    setTowedAsset((current) => ({ ...(current || EMPTY_TOWED_ASSET), [key]: value }));
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
@@ -306,11 +401,20 @@ export function ProjectEditor({
     let savedProject: ProjectMutationResult | null = null;
     try {
       const firstHirePeriod = [...hirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
-      const projectDetailsChanged = !project
-        || projectDetailsSnapshot(form) !== projectDetailsSnapshot(initialForm);
+      const projectCoreChanged = !project
+        || projectCoreSnapshot(form) !== projectCoreSnapshot(initialForm);
+      const projectContractChanged = !project
+        || !contract
+        || projectContractSnapshot(form) !== projectContractSnapshot(initialForm);
       const hirePeriodsChanged = !project
         || hirePeriodsSnapshot(hirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
-      const result = projectDetailsChanged
+      const formWithEffectiveHire = firstHirePeriod ? {
+        ...form,
+        charterHire: firstHirePeriod.charterHire,
+        hireCurrency: firstHirePeriod.hireCurrency,
+        hireUnit: firstHirePeriod.hireUnit,
+      } : form;
+      const result = projectCoreChanged
         ? await saveProject(client, firstHirePeriod ? {
           ...form,
           charterHire: firstHirePeriod.charterHire,
@@ -323,7 +427,26 @@ export function ProjectEditor({
           title: project.title,
           updatedAt: project.updatedAt,
         };
-      if (projectDetailsChanged) savedProject = result;
+      if (projectCoreChanged) savedProject = result;
+
+      let effectiveTowedAssetId: number | null = null;
+      if (form.contractType === TOWAGE_CONTRACT_TYPE) {
+        if (!towedAsset?.name.trim()) {
+          throw new Error('Sélectionnez un remorqué ou ajoutez-en un nouveau.');
+        }
+        const towedAssetChanged = towedAssetSnapshot(towedAsset) !== towedAssetSnapshot(initialTowedAsset);
+        effectiveTowedAssetId = towedAssetChanged || towedAsset.id === null
+          ? await saveProjectTowedAsset(client, towedAsset)
+          : towedAsset.id;
+        if (effectiveTowedAssetId !== towedAsset.id) {
+          setTowedAsset((current) => current ? { ...current, id: effectiveTowedAssetId } : current);
+        }
+      }
+
+      const towedAssetLinkChanged = effectiveTowedAssetId !== (contract?.towedAssetId ?? null);
+      if ((!projectCoreChanged && projectContractChanged) || towedAssetLinkChanged) {
+        await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
+      }
       if (hirePeriodsChanged) await saveProjectContractHirePeriods(client, result.id, hirePeriods);
       if (initialOperationForm) {
         const occurrenceId = await saveProjectPlanningOccurrence(client, {
@@ -528,10 +651,71 @@ export function ProjectEditor({
                 <input list="project-contract-values" onChange={(event) => update('contractType', event.target.value)} value={form.contractType} />
                 <datalist id="project-contract-values">{contractTypes.map((value) => <option key={value} value={value} />)}</datalist>
               </Field>
-              <Field label="Identité armateur"><input onChange={(event) => update('ownerIdentity', event.target.value)} value={form.ownerIdentity} /></Field>
+              <label className="project-owner-identity">
+                <span>Identité armateur</span>
+                <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
+                <span aria-label="Aperçu de l’identité armateur" className="project-owner-identity-preview">
+                  {form.ownerIdentity.split('\n').map((line, index) => (
+                    index === 0
+                      ? <strong key={`${line}-${index}`}>{line || 'BBTM'}</strong>
+                      : <span key={`${line}-${index}`}>{line}</span>
+                  ))}
+                </span>
+              </label>
+              {form.contractType === TOWAGE_CONTRACT_TYPE ? (
+                <section aria-label="Remorqué" className="project-towed-asset is-wide">
+                  <div className="project-towed-asset-heading">
+                    <div>
+                      <strong>Remorqué</strong>
+                      <small>Sélectionnez un engin déjà remorqué ou créez une nouvelle fiche.</small>
+                    </div>
+                    <button onClick={() => setTowedAsset({ ...EMPTY_TOWED_ASSET })} type="button">
+                      <Plus aria-hidden="true" size={17} /> Ajouter un remorqué
+                    </button>
+                  </div>
+                  <label>
+                    <span>Nom du remorqué</span>
+                    <select
+                      onChange={(event) => {
+                        const selected = towedAssets.find((asset) => asset.id === Number(event.target.value));
+                        setTowedAsset(towedAssetToWriteInput(selected));
+                      }}
+                      value={towedAsset?.id ?? ''}
+                    >
+                      <option value="">{towedAsset?.id === null ? 'Nouveau remorqué' : 'Sélectionner…'}</option>
+                      {towedAssets.filter((asset) => asset.active || asset.id === contract?.towedAssetId).map((asset) => (
+                        <option key={asset.id} value={asset.id}>{asset.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {towedAsset ? (
+                    <div className="project-towed-asset-grid">
+                      <Field label="Nom"><input onChange={(event) => updateTowedAsset('name', event.target.value)} value={towedAsset.name} /></Field>
+                      <Field label="Type d’engin, de navire ou de colis"><input onChange={(event) => updateTowedAsset('assetType', event.target.value)} value={towedAsset.assetType} /></Field>
+                      <Field label="Longueur hors tout (m)"><input min="0" onChange={(event) => updateTowedAsset('lengthOverallM', optionalNumber(event.target.value))} step="0.01" type="number" value={towedAsset.lengthOverallM ?? ''} /></Field>
+                      <Field label="Largeur hors tout (m)"><input min="0" onChange={(event) => updateTowedAsset('breadthOverallM', optionalNumber(event.target.value))} step="0.01" type="number" value={towedAsset.breadthOverallM ?? ''} /></Field>
+                      <Field label="Tirant d’eau max (m)"><input min="0" onChange={(event) => updateTowedAsset('maxDraftM', optionalNumber(event.target.value))} step="0.01" type="number" value={towedAsset.maxDraftM ?? ''} /></Field>
+                      <Field label="Déplacement lège (T)"><input min="0" onChange={(event) => updateTowedAsset('lightDisplacementT', optionalNumber(event.target.value))} step="0.01" type="number" value={towedAsset.lightDisplacementT ?? ''} /></Field>
+                      <Field label="Pavillon"><input maxLength={2} onChange={(event) => updateTowedAsset('flag', event.target.value.toUpperCase())} placeholder="FR" value={towedAsset.flag} /></Field>
+                      <Field label="Société de classification"><input onChange={(event) => updateTowedAsset('classificationSociety', event.target.value)} value={towedAsset.classificationSociety} /></Field>
+                      <Field label="N° d’enregistrement"><input onChange={(event) => updateTowedAsset('registrationNumber', event.target.value)} value={towedAsset.registrationNumber} /></Field>
+                      <Field label="Propriétaire (si différent de l’affréteur)"><input onChange={(event) => updateTowedAsset('ownerName', event.target.value)} value={towedAsset.ownerName} /></Field>
+                      <Field label="Assureur corps et machine"><input onChange={(event) => updateTowedAsset('hullMachineryInsurer', event.target.value)} value={towedAsset.hullMachineryInsurer} /></Field>
+                      <Field label="Assureur RC"><input onChange={(event) => updateTowedAsset('liabilityInsurer', event.target.value)} value={towedAsset.liabilityInsurer} /></Field>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
               <Field label="Frais de mobilisation"><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
               <Field label="Frais de démobilisation"><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
-              <Field label="Devise des frais"><input maxLength={3} onChange={(event) => update('feeCurrency', event.target.value.toUpperCase())} placeholder="EUR" value={form.feeCurrency} /></Field>
+              <Field label="Devise des frais">
+                <select onChange={(event) => update('feeCurrency', event.target.value)} value={form.feeCurrency || 'EUR'}>
+                  {form.feeCurrency && !PROJECT_CURRENCIES.some((currency) => currency.code === form.feeCurrency)
+                    ? <option value={form.feeCurrency}>{form.feeCurrency}</option>
+                    : null}
+                  {PROJECT_CURRENCIES.map((currency) => <option key={currency.code} value={currency.code}>{currency.label}</option>)}
+                </select>
+              </Field>
               <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
                 <div className="project-hire-periods-heading">

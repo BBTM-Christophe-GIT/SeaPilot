@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus } from './projectStatus';
+import { DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
 
 export interface ProjectMutationResult {
   id: number;
@@ -34,6 +35,22 @@ export interface ProjectContractHirePeriodWriteInput {
   charterHire: number | null;
   hireCurrency: string;
   hireUnit: string;
+}
+
+export interface ProjectTowedAssetWriteInput {
+  id: number | null;
+  name: string;
+  assetType: string;
+  lengthOverallM: number | null;
+  breadthOverallM: number | null;
+  maxDraftM: number | null;
+  lightDisplacementT: number | null;
+  flag: string;
+  classificationSociety: string;
+  registrationNumber: string;
+  ownerName: string;
+  hullMachineryInsurer: string;
+  liabilityInsurer: string;
 }
 
 export interface ProjectWriteInput {
@@ -108,7 +125,7 @@ export const EMPTY_PROJECT_WRITE_INPUT: ProjectWriteInput = {
   operationArea: '',
   isRovSupport: false,
   isDivingSupport: false,
-  ownerIdentity: '',
+  ownerIdentity: DEFAULT_PROJECT_OWNER_IDENTITY,
   vesselAssignmentLimit: '',
   extensionCount: null,
   extensionDuration: null,
@@ -117,7 +134,7 @@ export const EMPTY_PROJECT_WRITE_INPUT: ProjectWriteInput = {
   maxExtensionDays: null,
   mobilisationFee: null,
   demobilisationFee: null,
-  feeCurrency: '',
+  feeCurrency: 'EUR',
   charterHire: null,
   extensionHire: null,
   hireCurrency: '',
@@ -142,6 +159,14 @@ function optionalTimestamp(value: string): string | null {
 
 function mutationError(error: { message?: string } | null, fallback: string): Error {
   return new Error(error?.message || fallback);
+}
+
+function isTransientUpstreamError(error: { message?: string } | null): boolean {
+  return /upstream request timeout|gateway timeout|temporarily unavailable/i.test(error?.message || '');
+}
+
+async function waitForRetry(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 export function validateProjectWriteInput(input: ProjectWriteInput): string[] {
@@ -185,7 +210,7 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     throw new Error(validationErrors.join(' '));
   }
 
-  const { data, error } = await client.rpc('projects_save', {
+  const args = {
     target_project_id: input.projectId,
     target_title: input.title.trim(),
     target_client_id: input.clientId,
@@ -222,7 +247,14 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     target_max_audit_period: optionalText(input.maxAuditPeriod),
     target_supplytime_data: input.supplytimeData,
     target_expected_updated_at: optionalTimestamp(input.expectedUpdatedAt),
-  });
+  };
+
+  let response = await client.rpc('projects_save', args);
+  if (response.error && isTransientUpstreamError(response.error)) {
+    await waitForRetry();
+    response = await client.rpc('projects_save', args);
+  }
+  const { data, error } = response;
 
   if (error) throw mutationError(error, "Impossible d’enregistrer le projet.");
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
@@ -233,6 +265,81 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     title: String(row.title || ''),
     updatedAt: String(row.updated_at || ''),
   };
+}
+
+export async function saveProjectContractDetails(
+  client: SupabaseClient,
+  projectId: number,
+  input: ProjectWriteInput,
+  towedAssetId: number | null,
+): Promise<void> {
+  const validationErrors = validateProjectWriteInput(input);
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
+
+  const args = {
+    target_project_id: projectId,
+    target_owner_identity: optionalText(input.ownerIdentity),
+    target_vessel_assignment_limit: optionalText(input.vesselAssignmentLimit),
+    target_extension_count: input.extensionCount,
+    target_extension_duration: input.extensionDuration,
+    target_extension_unit: optionalText(input.extensionUnit),
+    target_auto_extension_period: optionalText(input.autoExtensionPeriod),
+    target_max_extension_days: input.maxExtensionDays,
+    target_mobilisation_fee: input.mobilisationFee,
+    target_demobilisation_fee: input.demobilisationFee,
+    target_fee_currency: optionalText(input.feeCurrency),
+    target_charter_hire: input.charterHire,
+    target_extension_hire: input.extensionHire,
+    target_hire_currency: optionalText(input.hireCurrency),
+    target_hire_unit: optionalText(input.hireUnit),
+    target_max_audit_period: optionalText(input.maxAuditPeriod),
+    target_supplytime_data: input.supplytimeData,
+    target_towed_asset_id: towedAssetId,
+  };
+  let response = await client.rpc('projects_save_contract_details', args);
+  if (response.error && isTransientUpstreamError(response.error)) {
+    await waitForRetry();
+    response = await client.rpc('projects_save_contract_details', args);
+  }
+  if (response.error) {
+    throw mutationError(response.error, "Impossible d’enregistrer les informations contractuelles.");
+  }
+}
+
+export async function saveProjectTowedAsset(
+  client: SupabaseClient,
+  input: ProjectTowedAssetWriteInput,
+): Promise<number> {
+  if (!input.name.trim()) throw new Error('Le nom du remorqué est obligatoire.');
+  const numericValues = [input.lengthOverallM, input.breadthOverallM, input.maxDraftM, input.lightDisplacementT];
+  if (numericValues.some((value) => value !== null && value < 0)) {
+    throw new Error('Les dimensions et le déplacement du remorqué ne peuvent pas être négatifs.');
+  }
+  if (input.flag.trim() && !/^[A-Za-z]{2}$/.test(input.flag.trim())) {
+    throw new Error('Le pavillon du remorqué doit contenir deux lettres.');
+  }
+
+  const { data, error } = await client.rpc('projects_save_towed_asset', {
+    target_towed_asset_id: input.id,
+    target_name: input.name.trim(),
+    target_asset_type: optionalText(input.assetType),
+    target_length_overall_m: input.lengthOverallM,
+    target_breadth_overall_m: input.breadthOverallM,
+    target_max_draft_m: input.maxDraftM,
+    target_light_displacement_t: input.lightDisplacementT,
+    target_flag: optionalText(input.flag.toUpperCase()),
+    target_classification_society: optionalText(input.classificationSociety),
+    target_registration_number: optionalText(input.registrationNumber),
+    target_owner_name: optionalText(input.ownerName),
+    target_hull_machinery_insurer: optionalText(input.hullMachineryInsurer),
+    target_liability_insurer: optionalText(input.liabilityInsurer),
+  });
+  if (error) throw mutationError(error, "Impossible d’enregistrer le remorqué.");
+  const savedId = Number(data);
+  if (!Number.isInteger(savedId) || savedId <= 0) {
+    throw new Error("Supabase n’a retourné aucun remorqué après l’enregistrement.");
+  }
+  return savedId;
 }
 
 export async function saveClient(client: SupabaseClient, input: ClientWriteInput): Promise<number> {

@@ -4,6 +4,7 @@ import {
   mapProjectContractRows,
   mapProjectPlanningOccurrenceRows,
   mapProjectRows,
+  mapProjectTowedAssetRows,
 } from './projectQueries';
 
 const projectRow = {
@@ -44,6 +45,7 @@ function createReadClient(results: Record<string, { data: unknown[] | null; erro
   return {
     rpc: vi.fn((functionName: string) => {
       if (functionName === 'projects_planning_occurrences') return Promise.resolve(results.planning_projects);
+      if (functionName === 'projects_towed_assets') return Promise.resolve({ data: [], error: null });
       throw new Error(`Unexpected RPC ${functionName}`);
     }),
     from: vi.fn((table: string) => ({
@@ -59,6 +61,31 @@ function createReadClient(results: Record<string, { data: unknown[] | null; erro
 }
 
 describe('projectQueries', () => {
+  it('maps reusable towed assets and their numeric dimensions', () => {
+    expect(mapProjectTowedAssetRows([{
+      id: 8,
+      name: 'DENVER',
+      asset_type: 'AUTOMOTEUR FLUVIAL',
+      length_overall_m: '82.00',
+      breadth_overall_m: '8.20',
+      max_draft_m: '1.00',
+      light_displacement_t: '700.00',
+      flag: 'FR',
+      classification_society: null,
+      registration_number: null,
+      owner_name: null,
+      hull_machinery_insurer: null,
+      liability_insurer: null,
+      active: true,
+    }])).toEqual([expect.objectContaining({
+      id: 8,
+      name: 'DENVER',
+      lengthOverallM: 82,
+      breadthOverallM: 8.2,
+      lightDisplacementT: 700,
+    })]);
+  });
+
   it('maps the full typed project model and SharePoint provenance', () => {
     const [project] = mapProjectRows([projectRow] as never);
 

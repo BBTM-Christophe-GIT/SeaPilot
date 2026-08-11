@@ -395,11 +395,30 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
         box22_invoice_remittance: 'Facturation mensuelle — démonstration',
         box33_dispute_resolution: 'Droit français — démonstration',
       },
+      towed_asset_id: null,
       source_label: 'sharepoint',
       sharepoint_list_title: 'BBTM - Projets',
       sharepoint_item_id: 'preview-project-1',
       source_modified_at: '2026-07-15T10:00:00Z',
       archived_at: null,
+    },
+  ],
+  project_towed_assets: [
+    {
+      id: 9351,
+      name: 'DENVER',
+      asset_type: 'AUTOMOTEUR FLUVIAL',
+      length_overall_m: 82,
+      breadth_overall_m: 8.2,
+      max_draft_m: 1,
+      light_displacement_t: 700,
+      flag: 'FR',
+      classification_society: null,
+      registration_number: null,
+      owner_name: null,
+      hull_machinery_insurer: null,
+      liability_insurer: null,
+      active: true,
     },
   ],
   project_documents: [
@@ -1165,6 +1184,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   if (functionName === 'projects_contracts') {
     return createPreviewQuery({ data: previewRows('project_contracts'), error: null });
+  }
+  if (functionName === 'projects_towed_assets') {
+    return createPreviewQuery({ data: previewRows('project_towed_assets'), error: null });
   }
   if (functionName === 'projects_planning_occurrences') {
     return createPreviewQuery({
