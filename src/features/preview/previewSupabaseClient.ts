@@ -1033,6 +1033,54 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   fleet_certificate_findings: createPreviewFleetCertificateFindings(),
   fleet_certificate_finding_attachments: createPreviewFleetFindingAttachments(),
   fleet_certificate_finding_events: createPreviewFleetFindingEvents(),
+  service_providers: [{
+    id: 9801,
+    name: 'SERVAUX',
+    address: '5 Quai de Guinée',
+    city: 'Le Havre',
+    phone: '02 32 74 95 80',
+    company_email: 'contact@servaux.com',
+    active: true,
+    merged_into_provider_id: null,
+    specialties: [
+      { id: 9811, name: 'Visite Equipements Incendie', active: true },
+      { id: 9812, name: 'Visite Radeaux', active: true },
+    ],
+    contacts: [
+      { id: 9821, full_name: 'Yann DUVAL', role_label: 'Radeaux', email: 'y.duval@servaux.com', phone: '02 32 74 95 80', active: true },
+      { id: 9822, full_name: 'Xavier LECOINTRE', role_label: 'Incendie', email: 'x.lecointre@servaux.com', phone: '06 00 00 00 01', active: true },
+    ],
+  }, {
+    id: 9802,
+    name: 'DNV France SARL',
+    address: '28-34 rue du Château des Rentiers',
+    city: 'Paris',
+    phone: '',
+    company_email: '',
+    active: true,
+    merged_into_provider_id: null,
+    specialties: [{ id: 9813, name: 'Visite société de Classification', active: true }],
+    contacts: [{ id: 9823, full_name: 'Mathieu BOKOBZA', role_label: 'Surveyor', email: 'mathieu.bokobza@dnv.com', phone: '06 59 67 88 32', active: true }],
+  }],
+  fleet_certificate_visits: [{
+    id: 9831,
+    certificate_id: 5002,
+    scheduled_start: '2026-09-15T07:00:00Z',
+    scheduled_end: '2026-09-15T10:00:00Z',
+    location: 'Port de Cherbourg',
+    purpose: 'Visite annuelle du certificat',
+    notes: '',
+    status: 'confirmed',
+    certificate: { vessel_name: 'GOURY', category_label: '02 - Centre de Sécurité des Navires', document_title: 'Certificat de Franc-Bord' },
+    assignments: [{
+      provider_id: 9801,
+      specialty_id: 9811,
+      contact_id: 9822,
+      provider: { id: 9801, name: 'SERVAUX' },
+      specialty: { id: 9811, name: 'Visite Equipements Incendie' },
+      contact: { id: 9822, full_name: 'Xavier LECOINTRE' },
+    }],
+  }],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
@@ -1123,6 +1171,43 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'save_fleet_certificate_visit') {
+    const certificate = previewRows('fleet_certificates').find((row) => Number(row.id) === Number(args.p_certificate_id));
+    const assignments = (Array.isArray(args.p_assignments) ? args.p_assignments : []) as Array<Record<string, unknown>>;
+    if (!certificate || !assignments.length) return createPreviewQuery({ data: null, error: { message: 'Visite de démonstration invalide.' } });
+    const visitId = nextPreviewId('fleet_certificate_visits', 9831);
+    PREVIEW_ROWS.fleet_certificate_visits.push({
+      id: visitId,
+      certificate_id: certificate.id,
+      scheduled_start: args.p_scheduled_start,
+      scheduled_end: args.p_scheduled_end,
+      location: args.p_location,
+      purpose: args.p_purpose,
+      notes: args.p_notes,
+      status: 'planned',
+      certificate: {
+        vessel_name: certificate.vessel_name,
+        category_label: certificate.category_label,
+        document_title: certificate.document_title,
+      },
+      assignments: assignments.map((assignment) => {
+        const provider = previewRows('service_providers').find((row) => Number(row.id) === Number(assignment.providerId));
+        const specialties = (provider?.specialties || []) as Array<Record<string, unknown>>;
+        const contacts = (provider?.contacts || []) as Array<Record<string, unknown>>;
+        const specialty = specialties.find((row) => Number(row.id) === Number(assignment.specialtyId));
+        const contact = contacts.find((row) => Number(row.id) === Number(assignment.contactId));
+        return {
+          provider_id: provider?.id,
+          specialty_id: specialty?.id,
+          contact_id: contact?.id || null,
+          provider: { id: provider?.id, name: provider?.name },
+          specialty: { id: specialty?.id, name: specialty?.name },
+          contact: contact ? { id: contact.id, full_name: contact.full_name } : null,
+        };
+      }),
+    });
+    return createPreviewQuery({ data: visitId, error: null });
+  }
   if (functionName === 'refresh_planning_notifications' || functionName === 'refresh_working_time_notifications') {
     return createPreviewQuery({ data: 0, error: null });
   }
@@ -1373,7 +1458,7 @@ export const previewSupabaseClient = {
   },
   storage: {
     from: (bucket: string) => ({
-      createSignedUrl: () => Promise.resolve({ data: { signedUrl: '' }, error: null }),
+      createSignedUrl: () => Promise.resolve({ data: { signedUrl: bucket === 'fleet-certificates' ? '/demo/action-plan-closure-proof.webp' : '' }, error: null }),
       createSignedUrls: (paths: string[]) => Promise.resolve({
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),

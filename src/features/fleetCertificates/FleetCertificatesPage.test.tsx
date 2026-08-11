@@ -35,6 +35,19 @@ const findings = [{
   responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z',
 }];
 
+const providers = [{
+  id: 8, name: 'SERVAUX', address: '5 Quai de Guinée', city: 'Le Havre', phone: '02 32 74 95 80', company_email: null,
+  specialties: [{ id: 801, name: 'Visite Radeaux', active: true }, { id: 802, name: 'Visite Equipements Incendie', active: true }],
+  contacts: [{ id: 811, full_name: 'Yann DUVAL', role_label: null, email: 'y.duval@servaux.com', phone: '02 32 74 95 80', active: true }],
+}];
+
+const visits = [{
+  id: 301, certificate_id: 42, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z',
+  location: 'Le Havre', purpose: 'Visite du certificat', notes: '', status: 'planned',
+  certificate: { vessel_name: 'GOURY', category_label: '02 - Centre de Sécurité des Navires', document_title: 'Certificat de Franc-Bord' },
+  assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
+}];
+
 function createClient() {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
   const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn(), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
@@ -46,6 +59,8 @@ function createClient() {
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn() };
       if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
+      if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
+      if (table === 'fleet_certificate_visits') return { select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: visits, error: null }) }) }) };
       throw new Error(`Unexpected table ${table}`);
     }),
   };
@@ -67,6 +82,7 @@ describe('FleetCertificatesPage', () => {
     expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toBeInTheDocument();
     expect(within(library).getByText('Certificat extincteurs')).toBeInTheDocument();
     expect(within(library).queryByText('Certificat de Franc-Bord')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Calendrier des visites prestataires' })).toBeInTheDocument();
   });
 
   it('organizes the document library by vessel, category and document', async () => {
@@ -81,6 +97,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: /GOURY/ }));
     await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).getAllByText('1 à traiter').length).toBeGreaterThanOrEqual(3);
     await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
     expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toHaveAttribute('aria-expanded', 'true');
@@ -103,6 +120,7 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
     expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ouvrir' })).not.toBeInTheDocument();
+    expect(screen.getByText('SERVAUX · Visite Radeaux')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Certificat de Franc-Bord/ }).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /Générer un rapport/ }));
     expect(screen.getByRole('button', { name: 'Cet écart' })).toBeInTheDocument();

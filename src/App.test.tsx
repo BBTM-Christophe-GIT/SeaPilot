@@ -164,6 +164,28 @@ describe('App', () => {
         return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
       }
 
+      if (table === 'service_providers') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'fleet_certificate_visits') {
+        return {
+          select: vi.fn().mockReturnValue({
+            neq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+
       if (table === 'people') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
@@ -186,7 +208,7 @@ describe('App', () => {
     expect(library).not.toBeNull();
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /COTENTIN.*1 document/ }));
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Navigation/ }));
-    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Permis de navigation COTENTIN/ }));
+    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: 'Gérer Permis de navigation COTENTIN' }));
     expect(await screen.findByRole('heading', { name: 'Permis de navigation COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText(/COTENTIN · Navigation/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Ouvrir$/ })).not.toBeInTheDocument();
