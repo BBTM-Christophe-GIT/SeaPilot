@@ -1,6 +1,7 @@
 export interface ProjectPort {
   department: string;
   locode: string;
+  municipality?: string;
   port: string;
 }
 
@@ -14,6 +15,16 @@ export const PROJECT_PORTS_SOURCE = {
   siteUrl: 'https://bbtm668.sharepoint.com/sites/QHSE',
   title: 'LOCODE',
 } as const;
+
+const PROJECT_DEPARTMENT_CODES: Readonly<Record<string, string>> = {
+  'Alpes-Maritimes': '06',
+  'Bouches-du-Rhône': '13',
+  'Charente-Maritime': '17',
+  'Côtes-d’Armor': '22',
+  'Haute-Corse': '2B',
+  Var: '83',
+  Vendée: '85',
+};
 
 export const PROJECT_PORTS: readonly ProjectPort[] = [
   { department: 'Seine-Maritime', locode: 'FRLEH', port: 'Le Havre' },
@@ -69,15 +80,77 @@ export const PROJECT_PORTS: readonly ProjectPort[] = [
   { department: 'Saint-Pierre-et-Miquelon', locode: 'PMFSP', port: 'Saint-Pierre-et-Miquelon' },
   { department: 'Saint-Barthélemy', locode: 'BLSBH', port: 'Gustavia' },
   { department: 'Nouvelle-Calédonie', locode: 'NCNOU', port: 'Nouméa' },
+  {
+    department: 'Charente-Maritime',
+    locode: 'FRGGD',
+    municipality: "Saint-Georges-d'Oléron",
+    port: 'Port de Boyardville',
+  },
+  {
+    department: 'Charente-Maritime',
+    locode: 'FRPOZ',
+    municipality: "Saint-Pierre-d'Oléron",
+    port: 'Port de la Cotinière',
+  },
+  {
+    department: 'Charente-Maritime',
+    locode: 'FRGGD',
+    municipality: "Saint-Georges-d'Oléron",
+    port: 'Port du Douhet',
+  },
+  {
+    department: 'Côtes-d’Armor',
+    locode: '',
+    municipality: 'Plouha',
+    port: 'Port de Gwin Zegal',
+  },
+  {
+    department: 'Côtes-d’Armor',
+    locode: '',
+    municipality: 'Saint-Samson-sur-Rance',
+    port: 'Port du Lyvet',
+  },
+  {
+    department: 'Vendée',
+    locode: '',
+    municipality: "L'Épine (Île de Noirmoutier)",
+    port: 'Port de Morin',
+  },
+  {
+    department: 'Haute-Corse',
+    locode: 'FRCN5',
+    municipality: 'Centuri',
+    port: 'Port de Centuri',
+  },
+  {
+    department: 'Var',
+    locode: 'FRXBM',
+    municipality: 'Bormes-les-Mimosas',
+    port: 'Port de Gouron (Chicouras)',
+  },
+  {
+    department: 'Alpes-Maritimes',
+    locode: 'FRANT',
+    municipality: 'Antibes',
+    port: "Port de l'Olivette",
+  },
+  {
+    department: 'Bouches-du-Rhône',
+    locode: 'FRMRS',
+    municipality: 'Marseille',
+    port: 'Port des Goudes',
+  },
 ] as const;
 
 const frenchCollator = new Intl.Collator('fr', { sensitivity: 'base' });
 
 export const PROJECT_PORT_GROUPS: readonly ProjectPortGroup[] = Array.from(
   PROJECT_PORTS.reduce((groups, port) => {
-    const departmentPorts = groups.get(port.department) || [];
+    const departmentCode = PROJECT_DEPARTMENT_CODES[port.department];
+    const departmentLabel = departmentCode ? `${port.department} (${departmentCode})` : port.department;
+    const departmentPorts = groups.get(departmentLabel) || [];
     departmentPorts.push(port);
-    groups.set(port.department, departmentPorts);
+    groups.set(departmentLabel, departmentPorts);
     return groups;
   }, new Map<string, ProjectPort[]>()),
   ([department, ports]) => ({
@@ -86,6 +159,11 @@ export const PROJECT_PORT_GROUPS: readonly ProjectPortGroup[] = Array.from(
   }),
 ).sort((left, right) => frenchCollator.compare(left.department, right.department));
 
+function formatLocode(locode: string): string {
+  if (!locode) return 'sans LOCODE dédié';
+  return /^[A-Z]{2}[A-Z0-9]{3}$/.test(locode) ? `${locode.slice(0, 2)} ${locode.slice(2)}` : locode;
+}
+
 export function formatProjectPort(port: ProjectPort): string {
-  return `${port.port} – ${port.locode}`;
+  return [port.port, port.municipality, formatLocode(port.locode)].filter(Boolean).join(' – ');
 }

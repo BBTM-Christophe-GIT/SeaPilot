@@ -496,7 +496,12 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: /Planning/ }));
     const deliveryPort = screen.getByLabelText('Port de livraison');
     const finistere = deliveryPort.querySelector('optgroup[label="Finistère"]');
-    expect(finistere).toHaveTextContent('Brest – FRBES');
+    expect(finistere).toHaveTextContent('Brest – FR BES');
+    expect(deliveryPort.querySelector('optgroup[label="Charente-Maritime (17)"]')).toHaveTextContent(
+      "Port de Boyardville – Saint-Georges-d'Oléron – FR GGD",
+    );
+    expect(screen.getByLabelText('Port de restitution').querySelector('optgroup[label="Bouches-du-Rhône (13)"]'))
+      .toHaveTextContent('Port des Goudes – Marseille – FR MRS');
     await user.selectOptions(deliveryPort, 'Brest');
     await user.selectOptions(screen.getByLabelText('Port de restitution'), 'Cherbourg');
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
