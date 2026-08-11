@@ -1,5 +1,5 @@
 import {
-  ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, Folder, MoreHorizontal, Ship,
+  CalendarPlus, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, Folder, MoreHorizontal, Ship,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -15,6 +15,7 @@ interface FleetCertificateLibraryTreeProps {
   selectedCertificateId?: number | null;
   onOpen: (certificate: FleetCertificateRecord) => void;
   onManage?: (certificateId: number) => void;
+  onSchedule?: (certificateId: number) => void;
 }
 
 interface CategoryBranch {
@@ -101,6 +102,7 @@ export function FleetCertificateLibraryTree({
   selectedCertificateId,
   onOpen,
   onManage,
+  onSchedule,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(
     () => buildTree(certificates, findingCountByCertificate),
@@ -173,6 +175,7 @@ export function FleetCertificateLibraryTree({
                     const actionCount = findingCountByCertificate.get(certificate.id) || 0;
                     return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
                       <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
+                      {onSchedule && <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} className="fcx-library-schedule" onClick={() => onSchedule(certificate.id)} title="Programmer une visite" type="button"><CalendarPlus size={16} /></button>}
                       <button aria-label={`Ouvrir la pièce jointe ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onOpen(certificate)} type="button">
                         <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
                         <span>{formatDate(certificate.expiresOn)}</span>

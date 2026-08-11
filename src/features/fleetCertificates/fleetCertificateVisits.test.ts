@@ -24,8 +24,8 @@ describe('fleet certificate provider visits', () => {
       location: 'Le Havre', purpose: 'Visite annuelle', notes: '', status: 'planned',
       certificate: { vessel_name: 'GOURY', category_label: '06 - Incendie', document_title: 'Certificat incendie' },
       assignments: [
-        { provider_id: 8, specialty_id: 1, contact_id: 3, provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 1, name: 'Incendie' }, contact: { id: 3, full_name: 'Yann DUVAL' } },
-        { provider_id: 9, specialty_id: 4, contact_id: null, provider: { id: 9, name: 'DNV' }, specialty: { id: 4, name: 'Classification' }, contact: null },
+        { provider_id: 8, specialty_id: 1, contact_id: 3, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z', provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 1, name: 'Incendie' }, contact: { id: 3, full_name: 'Yann DUVAL' } },
+        { provider_id: 9, specialty_id: 4, contact_id: null, scheduled_start: '2026-09-01T08:00:00Z', scheduled_end: '2026-09-01T10:00:00Z', provider: { id: 9, name: 'DNV' }, specialty: { id: 4, name: 'Classification' }, contact: null },
       ],
     }], error: null });
     const client = { from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order }) }) }) };
@@ -43,11 +43,16 @@ describe('fleet certificate provider visits', () => {
       location: 'Le Havre',
       purpose: 'Visite annuelle',
       notes: '',
-      assignments: [{ providerId: 8, specialtyId: 1, contactId: 3 }, { providerId: 9, specialtyId: 4, contactId: null }],
+      assignments: [
+        { providerId: 8, specialtyId: 1, contactId: 3, scheduledStart: '2026-09-01T09:00', scheduledEnd: '2026-09-01T11:00' },
+        { providerId: 9, specialtyId: 4, contactId: null, scheduledStart: '2026-09-01T09:30', scheduledEnd: '2026-09-01T12:00' },
+      ],
     });
     expect(result).toBe(77);
     expect(rpc).toHaveBeenCalledWith('save_fleet_certificate_visit', expect.objectContaining({
       p_certificate_id: 42,
+      p_scheduled_start: new Date('2026-09-01T09:00').toISOString(),
+      p_scheduled_end: new Date('2026-09-01T12:00').toISOString(),
       p_assignments: expect.arrayContaining([expect.objectContaining({ providerId: 8 }), expect.objectContaining({ providerId: 9 })]),
     }));
   });

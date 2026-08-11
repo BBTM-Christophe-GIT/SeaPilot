@@ -117,6 +117,14 @@ La fenêtre « Ajouter un document » propose désormais toutes les catégories 
 
 Le nom du fichier chargé dans Supabase est construit avec le nom complet du navire, l'intitulé canonique du document et l'année de l'échéance : `Nom du navire - Nom du document - AAAA.ext`. L'échéance est donc obligatoire lors de la création, et le formulaire affiche un aperçu du nom final avant l'envoi.
 
+## Agenda journalier des visites v3.19.0
+
+Chaque ligne document affiche désormais, immédiatement à gauche de l'icône du fichier, un bouton calendrier ouvrant directement la fenêtre « Programmer une visite ». Cette fenêtre est centrée et conserve la hiérarchie visuelle du module Certificats flotte. Le lieu de visite s'appuie sur le référentiel partagé de 63 ports du module Projets : la recherche couvre le nom du port, son département, sa commune éventuelle et son LOCODE, puis les résultats sont regroupés par département.
+
+Le créneau est porté par l'affectation du prestataire et non plus uniquement par la visite. Chaque prestataire peut ainsi avoir un jour, une heure de début et une heure de fin différents. Plusieurs prestataires peuvent intervenir simultanément ; l'agenda journalier les affiche côte à côte. La migration `20260811200811_fleet_certificate_visit_assignment_schedule.sql` ajoute les colonnes `scheduled_start` et `scheduled_end` à `fleet_certificate_visit_providers`, reprend les horaires des visites existantes et valide chaque créneau dans la fonction atomique `save_fleet_certificate_visit`.
+
+Le formulaire permet d'exporter une journée au format PDF sous le titre « Planning des visites ». Le rapport contient le navire, la catégorie, le document, le lieu, l'objet, les notes, les horaires propres à chaque prestataire, sa spécialité et son contact. Une option inclut ou exclut les sujets liés au document. Lorsqu'elle est activée, chaque sujet ajoute son type, son objet, sa description/constat, son échéance, son responsable, son avancement, l'intégralité du suivi avec émetteur et date, ainsi que les photos du constat et des preuves de traitement. Le logo BBTM est calculé avec un ajustement proportionnel afin de conserver strictement son ratio d'origine.
+
 ## Rejouer la préparation d'import
 
 Le script ne publie pas directement de données. Il prépare une migration SQL idempotente et une arborescence d'objets à charger :

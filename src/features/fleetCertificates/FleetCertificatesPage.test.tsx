@@ -45,7 +45,7 @@ const visits = [{
   id: 301, certificate_id: 42, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z',
   location: 'Le Havre', purpose: 'Visite du certificat', notes: '', status: 'planned',
   certificate: { vessel_name: 'GOURY', category_label: '02 - Centre de Sécurité des Navires', document_title: 'Certificat de Franc-Bord' },
-  assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
+  assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z', provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
 }];
 
 function createClient() {
@@ -145,6 +145,27 @@ describe('FleetCertificatesPage', () => {
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
     fireEvent.change(screen.getByLabelText('Date d’échéance'), { target: { value: '2028-04-12' } });
     expect(screen.getByText('GOURY - Rapport radio - 2028.pdf')).toBeInTheDocument();
+  });
+
+  it('opens the centered visit agenda from the document row with searchable grouped ports', async () => {
+    const user = userEvent.setup(); const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Programmer une visite pour Certificat de Franc-Bord' }));
+    const dialog = screen.getByRole('dialog', { name: 'Programmer une visite prestataire' });
+    expect(dialog).toHaveClass('fcx-visit-dialog');
+    expect(within(dialog).getByText('Planning des journées')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Début de l’intervention')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Fin de l’intervention')).toBeInTheDocument();
+    const portInput = within(dialog).getByRole('combobox', { name: 'Lieu de visite' });
+    await user.clear(portInput);
+    await user.type(portInput, 'Cherbourg');
+    expect(within(dialog).getByRole('option', { name: /Cherbourg/ })).toBeInTheDocument();
+    expect(within(dialog).getByText('Manche', { selector: 'h3' })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Inclure les sujets, constats, suivis et photos')).toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
   });
 
   it('keeps the BBTM file renaming convention', () => {
