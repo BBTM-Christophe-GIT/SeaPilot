@@ -186,6 +186,10 @@ export interface CreateFleetCertificateDocumentInput {
   expiresOn: string;
 }
 
+interface FleetCertificateDocumentNameRow {
+  name: string;
+}
+
 function nullableText(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
 }
@@ -341,15 +345,43 @@ export function buildFleetCertificateMetrics(
 }
 
 export function buildFleetCertificateFileName(
-  certificate: Pick<FleetCertificateRecord, 'vesselAcronym' | 'vesselName' | 'documentTitle'>,
+  certificate: Pick<FleetCertificateRecord, 'vesselName' | 'documentTitle'>,
   expiresOn: string,
   originalFileName: string,
 ): string {
-  const acronym = certificate.vesselAcronym || certificate.vesselName.slice(0, 3).toUpperCase();
   const extension = originalFileName.includes('.') ? originalFileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf';
   const year = expiresOn ? expiresOn.slice(0, 4) : new Date().getFullYear().toString();
+  const vesselName = certificate.vesselName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
   const title = certificate.documentTitle.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return `${acronym} - ${title} - ${year}.${extension}`;
+  return `${vesselName} - ${title} - ${year}.${extension}`;
+}
+
+export function normalizeFleetCertificateDocumentName(title: string, vesselLabels: string[] = []): string {
+  let normalized = title.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/\s+/g, ' ').trim();
+  const labels = Array.from(new Set(vesselLabels.map((label) => label.trim()).filter(Boolean)))
+    .sort((left, right) => right.length - left.length);
+  labels.forEach((label) => {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    normalized = normalized
+      .replace(new RegExp(`^${escaped}\\s*[-–—_]\\s*`, 'i'), '')
+      .replace(new RegExp(`\\s*[-–—_]\\s*${escaped}$`, 'i'), '');
+  });
+  normalized = normalized
+    .replace(/\s*[-–—_/]\s*(?:19|20)\d{2}\s*$/i, '')
+    .replace(/^(?:19|20)\d{2}\s*[-–—_/]\s*/i, '')
+    .replace(/^[-–—_\s]+|[-–—_\s]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized || title.trim();
+}
+
+export async function fetchFleetCertificateDocumentNames(client: SupabaseClient): Promise<string[]> {
+  const { data, error } = await client
+    .from('fleet_certificate_document_names')
+    .select('name')
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return uniqueSorted(((data || []) as FleetCertificateDocumentNameRow[]).map((row) => row.name.trim()));
 }
 
 export async function fetchFleetCertificates(client: SupabaseClient): Promise<FleetCertificateRecord[]> {
@@ -451,7 +483,6 @@ export async function createFleetCertificateDocument(
   }
 
   const normalizedName = buildFleetCertificateFileName({
-    vesselAcronym: input.vesselAcronym,
     vesselName: input.vesselName,
     documentTitle: input.documentTitle.trim(),
   }, input.expiresOn, input.file.name);

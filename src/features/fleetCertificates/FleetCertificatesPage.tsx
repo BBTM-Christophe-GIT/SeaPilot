@@ -10,8 +10,10 @@ import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
-  createFleetCertificateDocument, deleteFleetCertificateDocuments, fetchFleetCertificates,
+  buildFleetCertificateFileName, createFleetCertificateDocument, deleteFleetCertificateDocuments,
+  fetchFleetCertificateDocumentNames, fetchFleetCertificates,
   getEffectiveFleetCertificateStatus, openFleetCertificateDocument, submitFleetCertificateRenewal,
+  normalizeFleetCertificateDocumentName,
   type FleetCertificateRecord,
 } from './fleetCertificateQueries';
 import {
@@ -87,15 +89,31 @@ function FindingForm({ certificate, responsibles, onClose, onSave }: {
   </form></Modal>;
 }
 
-function DocumentForm({ certificates, onClose, onSave }: { certificates: FleetCertificateRecord[]; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
+function DocumentForm({ certificates, documentNames, onClose, onSave }: { certificates: FleetCertificateRecord[]; documentNames: string[]; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
+  const vessels = useMemo(() => Array.from(new Map(certificates.filter((item) => item.vesselId).map((item) => [item.vesselId, item])).values()), [certificates]);
+  const categories = useMemo(() => Array.from(new Map(certificates.map((item) => [item.categoryKey, { key: item.categoryKey, label: item.categoryLabel }])).values())
+    .sort((left, right) => left.label.localeCompare(right.label, 'fr', { numeric: true })), [certificates]);
+  const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
+  const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
+    .map((name) => normalizeFleetCertificateDocumentName(name, vesselLabels)).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, 'fr')), [certificates, documentNames, vesselLabels]);
+  const [vesselId, setVesselId] = useState(String(vessels[0]?.vesselId || ''));
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [expiresOn, setExpiresOn] = useState('');
+  const [fileName, setFileName] = useState('document.pdf');
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); try { await onSave(new FormData(event.currentTarget)); onClose(); } finally { setSaving(false); } }
-  const vessels = Array.from(new Map(certificates.map((item) => [item.vesselId, item])).values());
+  const selectedVessel = vessels.find((vessel) => String(vessel.vesselId) === vesselId);
+  const canonicalTitle = normalizeFleetCertificateDocumentName(documentTitle, vesselLabels);
+  const finalFileName = selectedVessel && canonicalTitle && expiresOn
+    ? buildFleetCertificateFileName({ vesselName: selectedVessel.vesselName, documentTitle: canonicalTitle }, expiresOn, fileName)
+    : '';
   return <Modal title="Ajouter un document" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
-    <div className="fcx-form-grid"><label>Navire<select name="vesselId" required>{vessels.map((vessel) => <option key={vessel.vesselId} value={vessel.vesselId || ''}>{vessel.vesselName}</option>)}</select></label><label>Catégorie<input name="category" placeholder="Ex. 02 - Sécurité" required /></label></div>
-    <label>Nom du document<input name="title" placeholder="Ex. Certificat de Franc-Bord" required /></label>
-    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" type="date" /></label><label>Date d’échéance<input name="expires" type="date" /></label></div>
-    <label className="fcx-drop"><UploadCloud size={22} /><span>PDF, image ou Excel · 50 Mo maximum</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" required type="file" /></label>
+    <div className="fcx-form-grid"><label>Navire<select name="vesselId" onChange={(event) => setVesselId(event.target.value)} required value={vesselId}>{vessels.map((vessel) => <option key={vessel.vesselId} value={vessel.vesselId || ''}>{vessel.vesselName}</option>)}</select></label><label>Catégorie<select defaultValue="" name="category" required><option disabled value="">Sélectionner une catégorie</option>{categories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}</select></label></div>
+    <label>Nom du document<input aria-label="Nom du document" list="fleet-certificate-document-names" name="title" onChange={(event) => setDocumentTitle(event.target.value)} placeholder="Ex. Certificat de Franc-Bord" required value={documentTitle} /><datalist id="fleet-certificate-document-names">{suggestedNames.map((name) => <option key={name} value={name} />)}</datalist><small className="fcx-field-help">Choisissez un nom existant ou saisissez-en un nouveau.</small></label>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" type="date" /></label><label>Date d’échéance<input name="expires" onChange={(event) => setExpiresOn(event.target.value)} required type="date" value={expiresOn} /></label></div>
+    {finalFileName && <p className="fcx-file-name-preview"><FileText size={16} /><span>Nom final du fichier<strong>{finalFileName}</strong></span></p>}
+    <label className="fcx-drop"><UploadCloud size={22} /><span>PDF, image ou Excel · 50 Mo maximum</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || 'document.pdf')} required type="file" /></label>
     <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><FilePlus2 size={16} /> {saving ? 'Ajout…' : 'Ajouter le document'}</button></footer>
   </form></Modal>;
 }
@@ -134,6 +152,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [responsibles, setResponsibles] = useState<FleetFindingResponsible[]>([]);
   const [providers, setProviders] = useState<FleetServiceProvider[]>([]);
   const [visits, setVisits] = useState<FleetCertificateVisit[]>([]);
+  const [documentNames, setDocumentNames] = useState<string[]>([]);
   const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -150,12 +169,12 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [uploadKind, setUploadKind] = useState<FleetFindingAttachmentKind>('finding');
 
   const load = useCallback(async () => {
-    const [loadedCertificates, loadedFindings, loadedResponsibles, loadedProviders, loadedVisits] = await Promise.all([
+    const [loadedCertificates, loadedFindings, loadedResponsibles, loadedProviders, loadedVisits, loadedDocumentNames] = await Promise.all([
       fetchFleetCertificates(effectiveClient), fetchFleetCertificateFindings(effectiveClient), fetchFleetFindingResponsibles(effectiveClient),
-      fetchFleetServiceProviders(effectiveClient), fetchFleetCertificateVisits(effectiveClient),
+      fetchFleetServiceProviders(effectiveClient), fetchFleetCertificateVisits(effectiveClient), fetchFleetCertificateDocumentNames(effectiveClient),
     ]);
     setCertificates(loadedCertificates); setFindings(loadedFindings); setResponsibles(loadedResponsibles);
-    setProviders(loadedProviders); setVisits(loadedVisits);
+    setProviders(loadedProviders); setVisits(loadedVisits); setDocumentNames(loadedDocumentNames);
     setSelectedFindingId((current) => current && loadedFindings.some((item) => item.id === current) ? current : null);
   }, [effectiveClient]);
 
@@ -280,7 +299,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       </section>
     </>}
     {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
-    {modal === 'document' && <DocumentForm certificates={certificates} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const category = String(form.get('category')); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey: category.toLocaleLowerCase('fr').replace(/\s+/g, '-'), categoryLabel: category, documentTitle: String(form.get('title')), issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
+    {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = certificates.find((item) => item.categoryKey === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.categoryLabel || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => run(() => submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }), 'Renouvellement enregistré.')} />}
     {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}
     {modal === 'visit' && certificates.find((certificate) => certificate.id === visitCertificateId) && <FleetCertificateVisitForm certificate={certificates.find((certificate) => certificate.id === visitCertificateId)!} providers={providers} onClose={() => setModal(null)} onSave={(input) => run(() => saveFleetCertificateVisit(effectiveClient, input).then(() => undefined), 'Visite prestataire programmée.')} />}

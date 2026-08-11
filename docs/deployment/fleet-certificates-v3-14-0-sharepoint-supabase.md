@@ -111,6 +111,12 @@ Une visite prestataire est rattachée à un document précis et peut contenir ju
 
 Dans l'interface, les compteurs d'écarts ouverts sont visibles sur les trois niveaux de l'arborescence. Le clic sur le titre d'un document ouvre directement sa pièce jointe ; le menu contextuel permet d'ouvrir son poste de traitement. La barre de recherche est placée immédiatement au-dessus de la bibliothèque, et le pilotage du traitement reste affiché à ses côtés sur les écrans de bureau.
 
+## Référentiels d'ajout documentaire v3.18.1
+
+La fenêtre « Ajouter un document » propose désormais toutes les catégories déjà présentes dans le registre. Le nom du document est un champ enrichissable : il suggère les intitulés du référentiel de la société tout en autorisant une nouvelle valeur. Chaque nouveau nom est enregistré automatiquement dans `fleet_certificate_document_names` afin d'être proposé lors des ajouts suivants. Les anciens intitulés sont présentés sans préfixe navire, sans extension et sans année terminale.
+
+Le nom du fichier chargé dans Supabase est construit avec le nom complet du navire, l'intitulé canonique du document et l'année de l'échéance : `Nom du navire - Nom du document - AAAA.ext`. L'échéance est donc obligatoire lors de la création, et le formulaire affiche un aperçu du nom final avant l'envoi.
+
 ## Rejouer la préparation d'import
 
 Le script ne publie pas directement de données. Il prépare une migration SQL idempotente et une arborescence d'objets à charger :

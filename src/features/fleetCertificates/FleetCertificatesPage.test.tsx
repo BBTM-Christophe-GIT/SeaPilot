@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
-import { buildFleetCertificateFileName, mapFleetCertificateRows } from './fleetCertificateQueries';
+import { buildFleetCertificateFileName, mapFleetCertificateRows, normalizeFleetCertificateDocumentName } from './fleetCertificateQueries';
 
 const certificates = [
   {
@@ -61,6 +61,7 @@ function createClient() {
       if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
       if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
       if (table === 'fleet_certificate_visits') return { select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: visits, error: null }) }) }) };
+      if (table === 'fleet_certificate_document_names') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ name: 'Permis de Navigation' }, { name: 'Certificat de Franc-Bord' }], error: null }) }) };
       throw new Error(`Unexpected table ${table}`);
     }),
   };
@@ -134,13 +135,21 @@ describe('FleetCertificatesPage', () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Ajouter un document');
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Ajouter un document');
     expect(screen.getByText('PDF, image ou Excel · 50 Mo maximum')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Catégorie')).toHaveValue('');
+    expect(within(dialog).getByRole('option', { name: '02 - Centre de Sécurité des Navires' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: '06 - Incendie' })).toBeInTheDocument();
+    expect(document.querySelector('datalist option[value="Permis de Navigation"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
+    fireEvent.change(screen.getByLabelText('Date d’échéance'), { target: { value: '2028-04-12' } });
+    expect(screen.getByText('GOURY - Rapport radio - 2028.pdf')).toBeInTheDocument();
   });
 
   it('keeps the BBTM file renaming convention', () => {
     const certificate = mapFleetCertificateRows([certificates[0] as never])[0];
-    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GRY - Certificat de Franc-Bord - 2027.pdf');
+    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GOURY - Certificat de Franc-Bord - 2027.pdf');
+    expect(normalizeFleetCertificateDocumentName('GOURY - Permis de Navigation - 2027.pdf', ['GOURY', 'GRY'])).toBe('Permis de Navigation');
   });
 });

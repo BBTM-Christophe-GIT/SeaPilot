@@ -186,6 +186,14 @@ describe('App', () => {
         };
       }
 
+      if (table === 'fleet_certificate_document_names') {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({ data: [{ name: 'Permis de navigation' }], error: null }),
+          }),
+        };
+      }
+
       if (table === 'people') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
