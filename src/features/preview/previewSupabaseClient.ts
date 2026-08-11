@@ -1029,6 +1029,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   project_billing_documents: [],
   fleet_certificates: createPreviewFleetCertificates(),
+  fleet_certificate_document_names: [
+    { id: 9841, name: 'Certificat de Franc-Bord' },
+    { id: 9842, name: 'Permis de Navigation' },
+    { id: 9843, name: 'Certificat extincteurs' },
+  ],
   fleet_certificate_versions: [],
   fleet_certificate_findings: createPreviewFleetCertificateFindings(),
   fleet_certificate_finding_attachments: createPreviewFleetFindingAttachments(),
