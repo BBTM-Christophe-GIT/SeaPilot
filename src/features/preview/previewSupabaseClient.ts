@@ -193,10 +193,10 @@ function createPreviewFleetFindingAttachments(): unknown[] {
 
 function createPreviewFleetFindingEvents(): unknown[] {
   return [
-    { id: 8801, company_id: 1, finding_id: 8601, event_type: 'created', from_status: null, to_status: 'declared', note: 'Écart créé après visite CSN', created_at: '2026-07-16T09:14:00Z' },
-    { id: 8802, company_id: 1, finding_id: 8601, event_type: 'assigned', from_status: 'declared', to_status: 'assigned', note: 'Responsable : Luc MARTIN', created_at: '2026-07-17T07:30:00Z' },
-    { id: 8803, company_id: 1, finding_id: 8601, event_type: 'progress_updated', from_status: 'in_progress', to_status: 'in_progress', note: 'Décapage réalisé et pièce de remplacement commandée', created_at: '2026-08-05T14:05:00Z' },
-    { id: 8804, company_id: 1, finding_id: 8601, event_type: 'evidence_added', from_status: null, to_status: null, note: 'Preuve de traitement ajoutée : reparation-support.jpg', created_at: '2026-08-10T15:20:00Z' },
+    { id: 8801, company_id: 1, finding_id: 8601, event_type: 'created', from_status: null, to_status: 'declared', note: 'Écart créé après visite CSN', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' },
+    { id: 8802, company_id: 1, finding_id: 8601, event_type: 'assigned', from_status: 'declared', to_status: 'assigned', note: 'Responsable : Luc MARTIN', author: { display_name: 'Camille DURAND' }, created_at: '2026-07-17T07:30:00Z' },
+    { id: 8803, company_id: 1, finding_id: 8601, event_type: 'progress_updated', from_status: 'in_progress', to_status: 'in_progress', note: 'Décapage réalisé et pièce de remplacement commandée', author: { display_name: 'Luc MARTIN' }, created_at: '2026-08-05T14:05:00Z' },
+    { id: 8804, company_id: 1, finding_id: 8601, event_type: 'evidence_added', from_status: null, to_status: null, note: 'Preuve de traitement ajoutée : reparation-support.jpg', author: { display_name: 'Luc MARTIN' }, created_at: '2026-08-10T15:20:00Z' },
   ];
 }
 

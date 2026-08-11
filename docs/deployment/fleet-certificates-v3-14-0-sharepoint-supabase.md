@@ -91,6 +91,12 @@ Depuis la version 3.15.1, la bibliothèque n'est plus une liste plate. Les 118 d
 
 Le premier navire et sa première catégorie sont ouverts au chargement. La recherche et les filtres d'état déplient automatiquement toutes les branches contenant un résultat. Les compteurs par navire et catégorie, le nombre de documents échus, l'échéance et l'état restent visibles dans l'arborescence. Un contrôle permet de tout déplier ou tout replier, et la présentation mobile regroupe l'échéance et l'état sous le nom du document.
 
+## Poste de travail certificat v3.16.0
+
+La fiche d'un certificat rassemble désormais trois cartes côte à côte : la bibliothèque du navire, les écarts et actions du document actif, puis sa prévisualisation. Le document courant reste mis en évidence dans l'arborescence. Son titre, dans l'en-tête, la bibliothèque, la prévisualisation et l'historique de version, ouvre directement le fichier ; le bouton « Ouvrir » séparé a été supprimé.
+
+Le type d'écart `finding`, affiché « Findings », complète le référentiel. La migration `20260811161356_fleet_certificate_findings_type.sql` étend la contrainte de validation correspondante. Dans le suivi du traitement, chaque entrée affiche également le nom de son émetteur, issu du profil rattaché à `fleet_certificate_finding_events.created_by`.
+
 ## Rejouer la préparation d'import
 
 Le script ne publie pas directement de données. Il prépare une migration SQL idempotente et une arborescence d'objets à charger :

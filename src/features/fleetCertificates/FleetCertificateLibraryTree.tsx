@@ -11,6 +11,7 @@ interface FleetCertificateLibraryTreeProps {
   certificates: FleetCertificateRecord[];
   formatDate: (value: string) => string;
   revealMatches: boolean;
+  selectedCertificateId?: number | null;
   onSelect: (certificateId: number) => void;
 }
 
@@ -83,6 +84,7 @@ export function FleetCertificateLibraryTree({
   certificates,
   formatDate,
   revealMatches,
+  selectedCertificateId,
   onSelect,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(() => buildTree(certificates), [certificates]);
@@ -151,7 +153,7 @@ export function FleetCertificateLibraryTree({
                   {category.certificates.map((certificate) => {
                     const state = getEffectiveFleetCertificateStatus(certificate);
                     return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
-                      <button className="fcx-library-row" onClick={() => onSelect(certificate.id)} type="button">
+                      <button className={`fcx-library-row${selectedCertificateId === certificate.id ? ' is-selected' : ''}`} onClick={() => onSelect(certificate.id)} type="button">
                         <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span></span>
                         <span>{formatDate(certificate.expiresOn)}</span>
                         <em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em>
