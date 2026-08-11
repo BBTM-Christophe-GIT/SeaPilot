@@ -31,6 +31,8 @@ export interface FleetCertificateVisitAssignment {
   specialtyName: string;
   contactId: number | null;
   contactName: string;
+  scheduledStart: string;
+  scheduledEnd: string;
 }
 
 export interface FleetCertificateVisit {
@@ -88,6 +90,8 @@ interface VisitRow {
     provider_id: number;
     specialty_id: number;
     contact_id: number | null;
+    scheduled_start: string;
+    scheduled_end: string;
     provider: { id: number; name: string } | Array<{ id: number; name: string }>;
     specialty: { id: number; name: string } | Array<{ id: number; name: string }>;
     contact: { id: number; full_name: string } | Array<{ id: number; full_name: string }> | null;
@@ -144,7 +148,7 @@ export async function fetchFleetCertificateVisits(client: SupabaseClient): Promi
         vessel_name, category_label, document_title
       ),
       assignments:fleet_certificate_visit_providers(
-        provider_id, specialty_id, contact_id,
+        provider_id, specialty_id, contact_id, scheduled_start, scheduled_end,
         provider:service_providers!fleet_certificate_visit_providers_provider_id_fkey(id, name),
         specialty:service_provider_specialties!fleet_certificate_visit_providers_specialty_id_fkey(id, name),
         contact:service_provider_contacts!fleet_certificate_visit_providers_contact_id_fkey(id, full_name)
@@ -179,6 +183,8 @@ export async function fetchFleetCertificateVisits(client: SupabaseClient): Promi
           specialtyName: specialty?.name || 'Spécialité non renseignée',
           contactId: assignment.contact_id,
           contactName: contact?.full_name || '',
+          scheduledStart: assignment.scheduled_start,
+          scheduledEnd: assignment.scheduled_end,
         };
       }),
     };
@@ -192,31 +198,46 @@ export interface SaveFleetCertificateVisitInput {
   location: string;
   purpose: string;
   notes: string;
-  assignments: Array<{ providerId: number; specialtyId: number; contactId: number | null }>;
+  assignments: Array<{
+    providerId: number;
+    specialtyId: number;
+    contactId: number | null;
+    scheduledStart: string;
+    scheduledEnd: string;
+  }>;
 }
 
 export async function saveFleetCertificateVisit(
   client: SupabaseClient,
   input: SaveFleetCertificateVisitInput,
 ): Promise<number> {
-  if (!input.scheduledStart) throw new Error('Renseignez la date et l’heure de la visite.');
   if (!input.assignments.length) throw new Error('Ajoutez au moins un prestataire.');
   if (input.assignments.length > 10) throw new Error('Une visite est limitée à 10 prestataires.');
-  const start = new Date(input.scheduledStart);
-  const end = input.scheduledEnd ? new Date(input.scheduledEnd) : null;
-  if (Number.isNaN(start.getTime()) || (end && Number.isNaN(end.getTime()))) {
+  const assignmentDates = input.assignments.flatMap((assignment) => [
+    new Date(assignment.scheduledStart),
+    new Date(assignment.scheduledEnd),
+  ]);
+  if (assignmentDates.some((date) => Number.isNaN(date.getTime()))) {
     throw new Error('La date de visite est invalide.');
   }
-  if (end && end < start) throw new Error('La fin de visite doit être postérieure au début.');
+  if (input.assignments.some((assignment) => (
+    new Date(assignment.scheduledEnd) < new Date(assignment.scheduledStart)
+  ))) throw new Error('La fin de visite doit être postérieure au début.');
+  const start = new Date(Math.min(...assignmentDates.map((date) => date.getTime())));
+  const end = new Date(Math.max(...assignmentDates.map((date) => date.getTime())));
 
   const { data, error } = await client.rpc('save_fleet_certificate_visit', {
     p_certificate_id: input.certificateId,
     p_scheduled_start: start.toISOString(),
-    p_scheduled_end: end?.toISOString() || null,
+    p_scheduled_end: end.toISOString(),
     p_location: input.location.trim(),
     p_purpose: input.purpose.trim(),
     p_notes: input.notes.trim(),
-    p_assignments: input.assignments,
+    p_assignments: input.assignments.map((assignment) => ({
+      ...assignment,
+      scheduledStart: new Date(assignment.scheduledStart).toISOString(),
+      scheduledEnd: new Date(assignment.scheduledEnd).toISOString(),
+    })),
   });
   if (error) throw new Error(`Impossible de programmer la visite. ${error.message || ''}`.trim());
   return Number(data);
