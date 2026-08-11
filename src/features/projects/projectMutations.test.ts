@@ -7,6 +7,8 @@ import {
   fetchProjectCatalogOptions,
   saveClient,
   saveProject,
+  saveProjectContractDetails,
+  saveProjectTowedAsset,
   validateProjectWriteInput,
   validateProjectPlanningOccurrenceInput,
   validateProjectContractHirePeriods,
@@ -156,6 +158,49 @@ describe('projectMutations', () => {
     expect(validateProjectPlanningOccurrenceInput(input)).toHaveLength(2);
     await expect(saveProjectPlanningOccurrence({ rpc } as never, input)).rejects.toThrow("fin de l'opération");
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('saves contract-only changes without rewriting the project row', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    await expect(saveProjectContractDetails(
+      { rpc } as never,
+      60,
+      { ...EMPTY_PROJECT_WRITE_INPUT, projectId: 60, title: 'ETPO FORT BOYARD' },
+      8,
+    )).resolves.toBeUndefined();
+
+    expect(rpc).toHaveBeenCalledWith('projects_save_contract_details', expect.objectContaining({
+      target_project_id: 60,
+      target_owner_identity: expect.stringContaining('BBTM'),
+      target_fee_currency: 'EUR',
+      target_towed_asset_id: 8,
+    }));
+  });
+
+  it('creates or updates a reusable towed asset through the secured RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
+    await expect(saveProjectTowedAsset({ rpc } as never, {
+      id: null,
+      name: 'DENVER',
+      assetType: 'AUTOMOTEUR FLUVIAL',
+      lengthOverallM: 82,
+      breadthOverallM: 8.2,
+      maxDraftM: 1,
+      lightDisplacementT: 700,
+      flag: 'fr',
+      classificationSociety: '',
+      registrationNumber: '',
+      ownerName: '',
+      hullMachineryInsurer: '',
+      liabilityInsurer: '',
+    })).resolves.toBe(8);
+
+    expect(rpc).toHaveBeenCalledWith('projects_save_towed_asset', expect.objectContaining({
+      target_name: 'DENVER',
+      target_asset_type: 'AUTOMOTEUR FLUVIAL',
+      target_length_overall_m: 82,
+      target_flag: 'FR',
+    }));
   });
 
   it('deletes one project planning occurrence through the secured RPC', async () => {

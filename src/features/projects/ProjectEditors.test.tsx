@@ -5,14 +5,20 @@ import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 
 const mutationMocks = vi.hoisted(() => ({
   saveProject: vi.fn(),
+  saveProjectContractDetails: vi.fn(),
   saveProjectContractHirePeriods: vi.fn(),
+  saveProjectTowedAsset: vi.fn(),
 }));
 
 vi.mock('./projectMutations', async (importOriginal) => ({
   ...await importOriginal<typeof import('./projectMutations')>(),
   saveProject: mutationMocks.saveProject,
+  saveProjectContractDetails: mutationMocks.saveProjectContractDetails,
   saveProjectContractHirePeriods: mutationMocks.saveProjectContractHirePeriods,
+  saveProjectTowedAsset: mutationMocks.saveProjectTowedAsset,
 }));
+
+mutationMocks.saveProjectContractDetails.mockResolvedValue(undefined);
 
 const project = {
   id: 145,
@@ -57,6 +63,51 @@ describe('ProjectPlanningEditor permissions', () => {
 });
 
 describe('ProjectEditor contract hire periods', () => {
+  it('shows contractual defaults and loads an editable towed asset for a towage contract', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={['Affrètement à temps', 'Oil Spill Response', 'Contrat de Remorquage - BBTM']}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[{
+          id: 8,
+          name: 'DENVER',
+          assetType: 'AUTOMOTEUR FLUVIAL',
+          lengthOverallM: 82,
+          breadthOverallM: 8.2,
+          maxDraftM: 1,
+          lightDisplacementT: 700,
+          flag: 'FR',
+          classificationSociety: '',
+          registrationNumber: '',
+          ownerName: '',
+          hullMachineryInsurer: '',
+          liabilityInsurer: '',
+          active: true,
+        }]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    expect(screen.getByLabelText('Devise des frais')).toHaveValue('EUR');
+    expect(screen.getByRole('option', { name: '€ — EUR' })).toBeInTheDocument();
+    const ownerPreview = screen.getByLabelText('Aperçu de l’identité armateur');
+    expect(ownerPreview.querySelector('strong')).toHaveTextContent('BBTM');
+    expect(ownerPreview).toHaveTextContent('15, impasse du pou');
+
+    const contractType = screen.getByLabelText('Type de contrat');
+    await user.type(contractType, 'Contrat de Remorquage - BBTM');
+    expect(screen.getByRole('region', { name: 'Remorqué' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Nom du remorqué'), '8');
+    expect(screen.getByLabelText('Type d’engin, de navire ou de colis')).toHaveValue('AUTOMOTEUR FLUVIAL');
+    expect(screen.getByLabelText('Longueur hors tout (m)')).toHaveValue(82);
+  });
+
   it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
@@ -66,6 +117,7 @@ describe('ProjectEditor contract hire periods', () => {
         client={{ rpc: vi.fn() } as never}
         clients={[]}
         contractTypes={[]}
+        towedAssets={[]}
         onClose={vi.fn()}
         onSaved={onSaved}
         project={{
@@ -84,6 +136,12 @@ describe('ProjectEditor contract hire periods', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
     expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    expect(mutationMocks.saveProjectContractDetails).toHaveBeenCalledWith(
+      expect.anything(),
+      60,
+      expect.objectContaining({ ownerIdentity: expect.stringContaining('BBTM'), feeCurrency: 'EUR' }),
+      null,
+    );
     expect(mutationMocks.saveProjectContractHirePeriods).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 60, projectCode: 'P268' }));
   });
@@ -113,6 +171,7 @@ describe('ProjectEditor contract hire periods', () => {
           hireUnit: 'Journalier',
         } as never}
         contractTypes={[]}
+        towedAssets={[]}
         onClose={vi.fn()}
         onSaved={onSaved}
         project={{

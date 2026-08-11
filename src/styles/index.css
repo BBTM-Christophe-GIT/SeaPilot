@@ -11577,6 +11577,74 @@ button.planning-p12-conflict-card {
   justify-self: start;
 }
 
+.project-owner-identity textarea {
+  min-height: 88px;
+}
+
+.project-owner-identity-preview {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  color: #314657;
+  background: #f7faff;
+  border: 1px solid #d7e1ef;
+  border-radius: 8px;
+  font-size: .78rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.project-owner-identity-preview strong {
+  color: var(--navy);
+  font-size: .86rem;
+  font-weight: 900;
+}
+
+.project-towed-asset {
+  display: grid;
+  gap: 13px;
+  grid-column: 1 / -1;
+  padding: 14px;
+  background: #f6f9ff;
+  border: 1px solid #cbd9f4;
+  border-radius: 10px;
+}
+
+.project-towed-asset-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-towed-asset-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-towed-asset-heading small {
+  color: #617381;
+}
+
+.project-towed-asset-heading button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 11px;
+  color: #0b5e88;
+  background: #fff;
+  border: 1px solid #b9cbe7;
+  border-radius: 7px;
+  font-weight: 800;
+}
+
+.project-towed-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .project-hire-periods {
   background: #f6f9ff;
   border: 1px solid #cbd9f4;
@@ -11631,6 +11699,17 @@ button.planning-p12-conflict-card {
   grid-column: 1 / -1;
   justify-content: space-between;
   padding: 9px 11px;
+}
+
+@media (max-width: 900px) {
+  .project-towed-asset-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-towed-asset-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .hr-signature-panel > header,
 .hr-signature-current,

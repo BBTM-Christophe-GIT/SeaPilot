@@ -29,6 +29,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
+import { PROJECT_CONTRACT_TYPES } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
@@ -71,6 +72,7 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
   projectDocuments: [],
   planningOccurrences: [],
   projects: [],
+  towedAssets: [],
   warnings: [],
   vessels: [],
 };
@@ -855,7 +857,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const visibleProjects = filteredProjects.slice(safePage * PROJECTS_PER_PAGE, (safePage + 1) * PROJECTS_PER_PAGE);
   const hasActiveFilters = Object.values(filters).some(Boolean);
   const contractTypeOptions = useMemo(
-    () => uniqueSorted(projectsData.projects.map((project) => project.contractType)),
+    () => uniqueSorted([
+      ...PROJECT_CONTRACT_TYPES,
+      ...projectsData.projects.map((project) => project.contractType),
+    ]),
     [projectsData.projects],
   );
 
@@ -1252,6 +1257,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           }}
           project={editingProject}
           statuses={statusOptions}
+          towedAssets={projectsData.towedAssets}
           vessels={projectsData.vessels}
         />
       ) : null}
