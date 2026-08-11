@@ -1,12 +1,34 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
-import { FLEET_FINDING_LABELS, FLEET_FINDING_STATUS_LABELS, type FleetCertificateFinding } from './fleetCertificateFindings';
+import {
+  FLEET_FINDING_LABELS,
+  FLEET_FINDING_STATUS_LABELS,
+  type FleetCertificateFinding,
+} from './fleetCertificateFindings';
 
 export interface FleetFindingReportInput {
-  title: string;
   certificates: FleetCertificateRecord[];
   findings: FleetCertificateFinding[];
+  attachmentImages?: Record<number, string>;
   generatedOn?: Date;
 }
+
+export interface FleetFindingReportDocumentGroup {
+  certificate: FleetCertificateRecord;
+  findings: FleetCertificateFinding[];
+}
+
+export interface FleetFindingReportCategoryGroup {
+  label: string;
+  documents: FleetFindingReportDocumentGroup[];
+}
+
+export interface FleetFindingReportVesselGroup {
+  name: string;
+  categories: FleetFindingReportCategoryGroup[];
+}
+
+const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 
 function formatDate(value: string): string {
   if (!value) return 'Non renseignée';
@@ -14,106 +36,298 @@ function formatDate(value: string): string {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
+function formatDateTime(value: string): string {
+  if (!value) return 'Date non renseignée';
+  return new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+}
+
 async function loadLogo(): Promise<string | null> {
   try {
     const response = await fetch('/bbtm-report-logo.png');
     if (!response.ok) return null;
-    const blob = await response.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
+    return blobToDataUrl(await response.blob());
   } catch {
     return null;
   }
 }
 
-function safeFileName(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+export async function loadFleetFindingReportImages(
+  client: SupabaseClient,
+  findings: FleetCertificateFinding[],
+): Promise<Record<number, string>> {
+  const images = findings.flatMap((finding) => finding.attachments)
+    .filter((attachment) => attachment.mimeType.startsWith('image/'));
+  const loaded = await Promise.all(images.map(async (attachment) => {
+    try {
+      let url = `/demo/${attachment.storagePath.split('/').pop()}`;
+      if (!attachment.storagePath.startsWith('demo/')) {
+        const { data, error } = await client.storage
+          .from(attachment.storageBucket)
+          .createSignedUrl(attachment.storagePath, 300);
+        if (error) throw error;
+        url = data.signedUrl;
+      }
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Image indisponible (${response.status})`);
+      return [attachment.id, await blobToDataUrl(await response.blob())] as const;
+    } catch {
+      return null;
+    }
+  }));
+  return Object.fromEntries(loaded.filter((item): item is readonly [number, string] => item !== null));
 }
 
-export async function generateFleetFindingReport(input: FleetFindingReportInput): Promise<{ blob: Blob; filename: string }> {
+export function buildFleetFindingReportHierarchy(
+  certificates: FleetCertificateRecord[],
+  findings: FleetCertificateFinding[],
+): FleetFindingReportVesselGroup[] {
+  const byCertificate = new Map<number, FleetCertificateFinding[]>();
+  findings.forEach((finding) => {
+    const current = byCertificate.get(finding.certificateId) || [];
+    current.push(finding);
+    byCertificate.set(finding.certificateId, current);
+  });
+
+  const vessels = new Map<string, Map<string, FleetFindingReportDocumentGroup[]>>();
+  certificates.forEach((certificate) => {
+    const certificateFindings = byCertificate.get(certificate.id);
+    if (!certificateFindings?.length) return;
+    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetFindingReportDocumentGroup[]>();
+    const category = vessel.get(certificate.categoryLabel) || [];
+    category.push({
+      certificate,
+      findings: certificateFindings.slice().sort((left, right) => frenchSort.compare(left.reference, right.reference)),
+    });
+    vessel.set(certificate.categoryLabel, category);
+    vessels.set(certificate.vesselName, vessel);
+  });
+
+  return Array.from(vessels, ([name, categories]) => ({
+    name,
+    categories: Array.from(categories, ([label, documents]) => ({
+      label,
+      documents: documents.slice().sort((left, right) => frenchSort.compare(
+        left.certificate.documentTitle,
+        right.certificate.documentTitle,
+      )),
+    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+  })).sort((left, right) => frenchSort.compare(left.name, right.name));
+}
+
+export function calculateContainSize(
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number,
+): { width: number; height: number } {
+  if (width <= 0 || height <= 0) return { width: maxWidth, height: maxHeight };
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  return { width: width * scale, height: height * scale };
+}
+
+function imageFormat(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
+  if (dataUrl.startsWith('data:image/png')) return 'PNG';
+  if (dataUrl.startsWith('data:image/webp')) return 'WEBP';
+  return 'JPEG';
+}
+
+export async function generateFleetFindingReport(input: FleetFindingReportInput): Promise<{ blob: Blob; filename: string; arrayBuffer: ArrayBuffer }> {
   const [{ jsPDF }, { autoTable }, logo] = await Promise.all([import('jspdf'), import('jspdf-autotable'), loadLogo()]);
   const generatedOn = input.generatedOn || new Date();
+  const hierarchy = buildFleetFindingReportHierarchy(input.certificates, input.findings);
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   const navy: [number, number, number] = [20, 37, 63];
   const blue: [number, number, number] = [12, 111, 202];
   const red: [number, number, number] = [205, 47, 47];
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
 
   const drawHeader = (): void => {
-    doc.setFillColor(...navy); doc.rect(0, 0, 210, 29, 'F');
-    if (logo) doc.addImage(logo, 'PNG', 12, 7, 34, 15);
-    else { doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('BBTM', 14, 18); }
-    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('RAPPORT DES ÉCARTS CERTIFICATS', 198, 13, { align: 'right' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(input.title, 198, 20, { align: 'right' });
+    doc.setFillColor(...navy);
+    doc.rect(0, 0, pageWidth, 29, 'F');
+    if (logo) {
+      try {
+        const properties = doc.getImageProperties(logo);
+        const size = calculateContainSize(properties.width, properties.height, 19, 19);
+        doc.addImage(logo, imageFormat(logo), 12, 5 + ((19 - size.height) / 2), size.width, size.height);
+      } catch {
+        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('BBTM', 14, 18);
+      }
+    } else {
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('BBTM', 14, 18);
+    }
+    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text("PLAN D'ACTION", pageWidth - 12, 13, { align: 'right' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    doc.text(`Édité le ${generatedOn.toLocaleString('fr-FR')}`, pageWidth - 12, 20, { align: 'right' });
   };
-  drawHeader();
 
-  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text(input.title, 12, 42);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(80);
-  doc.text(`Généré le ${generatedOn.toLocaleString('fr-FR')} • ${input.certificates.length} document(s) • ${input.findings.length} écart(s)`, 12, 49);
+  const drawAutoTableHeader = (): void => drawHeader();
+  drawHeader();
+  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(21);
+  doc.text("Plan d'Action", 12, 44);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80);
+  doc.text(
+    `${hierarchy.length} navire(s) · ${input.certificates.length} document(s) · ${input.findings.length} écart(s)`,
+    12,
+    51,
+  );
 
   const open = input.findings.filter((item) => item.status !== 'closed');
   const overdue = open.filter((item) => item.treatmentDueOn && item.treatmentDueOn < generatedOn.toISOString().slice(0, 10));
   autoTable(doc, {
-    startY: 56,
+    startY: 58,
     head: [['Écarts ouverts', 'Majeurs', 'En retard', 'Clôturés']],
     body: [[open.length, open.filter((item) => item.findingType === 'major_non_conformity').length, overdue.length, input.findings.length - open.length]],
-    theme: 'grid', styles: { halign: 'center', fontSize: 11, cellPadding: 4, textColor: navy },
+    theme: 'grid',
+    styles: { halign: 'center', fontSize: 11, cellPadding: 4, textColor: navy },
     headStyles: { fillColor: [239, 244, 250], textColor: navy, fontSize: 8 },
-    columnStyles: { 2: { textColor: red } }, margin: { left: 12, right: 12 },
+    columnStyles: { 2: { textColor: red } },
+    margin: { left: 12, right: 12, top: 34 },
+    willDrawPage: drawAutoTableHeader,
   });
 
+  const summaryRows = hierarchy.flatMap((vessel) => vessel.categories.flatMap((category) => category.documents.map((document) => [
+    vessel.name,
+    category.label,
+    document.certificate.documentTitle,
+    `${document.findings.length}`,
+  ])));
   autoTable(doc, {
-    startY: 82,
-    head: [['Référence', 'Navire / certificat', 'Type', 'Échéance', 'Responsable', 'État']],
-    body: input.findings.map((finding) => {
-      const certificate = input.certificates.find((item) => item.id === finding.certificateId);
-      return [finding.reference, `${certificate?.vesselName || '-'}\n${certificate?.documentTitle || '-'}`, FLEET_FINDING_LABELS[finding.findingType], formatDate(finding.treatmentDueOn), finding.responsibleName, `${FLEET_FINDING_STATUS_LABELS[finding.status]}\n${finding.progress} %`];
-    }),
-    theme: 'grid', styles: { fontSize: 7.4, cellPadding: 2.3, valign: 'middle' },
-    headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' }, margin: { left: 12, right: 12 },
+    startY: 84,
+    head: [['Navire', 'Catégorie', 'Document', 'Écarts']],
+    body: summaryRows.length ? summaryRows : [['-', '-', 'Aucun écart dans ce périmètre', '0']],
+    theme: 'grid',
+    styles: { fontSize: 7.6, cellPadding: 2.4, valign: 'middle' },
+    headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
+    columnStyles: { 3: { halign: 'center', cellWidth: 16 } },
+    margin: { left: 12, right: 12, top: 34 },
+    willDrawPage: drawAutoTableHeader,
   });
 
-  input.findings.forEach((finding) => {
-    const certificate = input.certificates.find((item) => item.id === finding.certificateId);
-    doc.addPage(); drawHeader();
-    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(`${finding.reference} — ${finding.title}`, 12, 42, { maxWidth: 186 });
-    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(75);
-    doc.text(`${certificate?.vesselName || '-'} • ${certificate?.documentTitle || '-'} • ${FLEET_FINDING_LABELS[finding.findingType]}`, 12, 50);
-    autoTable(doc, {
-      startY: 57, theme: 'grid',
-      body: [
-        ['Constaté le', formatDate(finding.detectedOn), 'Échéance', formatDate(finding.treatmentDueOn)],
-        ['Responsable', finding.responsibleName, 'Avancement', `${finding.progress} % — ${FLEET_FINDING_STATUS_LABELS[finding.status]}`],
-        ['Délai', finding.treatmentDelayDays == null ? '-' : `${finding.treatmentDelayDays} jours`, 'Preuves', `${finding.attachments.filter((item) => item.kind === 'treatment').length} fichier(s)`],
-      ],
-      styles: { fontSize: 8, cellPadding: 3 }, columnStyles: { 0: { fontStyle: 'bold', fillColor: [239, 244, 250] }, 2: { fontStyle: 'bold', fillColor: [239, 244, 250] } }, margin: { left: 12, right: 12 },
-    });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...navy); doc.text('Description de l’écart', 12, 94);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(55); doc.text(finding.description || 'Aucune description.', 12, 101, { maxWidth: 186 });
-    const attachmentsY = Math.max(121, 105 + doc.splitTextToSize(finding.description || '', 186).length * 4);
-    autoTable(doc, {
-      startY: attachmentsY, head: [['Pièces et preuves', 'Nature', 'Ajoutée le']],
-      body: finding.attachments.length ? finding.attachments.map((item) => [item.originalFileName, item.kind === 'finding' ? 'Constat initial' : 'Preuve de traitement', new Date(item.createdAt).toLocaleDateString('fr-FR')]) : [['Aucune pièce jointe', '-', '-']],
-      theme: 'grid', styles: { fontSize: 8, cellPadding: 2.5 }, headStyles: { fillColor: blue }, margin: { left: 12, right: 12 },
-    });
-    const historyY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-    autoTable(doc, {
-      startY: historyY, head: [['Historique du traitement', 'Détail']],
-      body: finding.events.length ? finding.events.map((event) => [new Date(event.createdAt).toLocaleString('fr-FR'), event.note || event.eventType]) : [['-', 'Aucun événement']],
-      theme: 'striped', styles: { fontSize: 7.5, cellPadding: 2.3 }, headStyles: { fillColor: navy }, margin: { left: 12, right: 12 },
-    });
-    doc.setFontSize(7); doc.setTextColor(120); doc.text('Rapport généré par SeaPilot — BBTM', 12, 290);
-  });
+  hierarchy.forEach((vessel) => vessel.categories.forEach((category) => category.documents.forEach((group) => {
+    group.findings.forEach((finding) => {
+      doc.addPage();
+      drawHeader();
+      doc.setTextColor(80); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(`${vessel.name}  ›  ${category.label}  ›  ${group.certificate.documentTitle}`, 12, 38, { maxWidth: 186 });
+      doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+      const heading = doc.splitTextToSize(`${finding.reference} — ${finding.title}`, 186);
+      doc.text(heading, 12, 47);
+      const metadataY = 49 + (heading.length * 6);
 
-  return { blob: doc.output('blob'), filename: `BBTM-${safeFileName(input.title || 'Rapport-ecarts')}-${generatedOn.toISOString().slice(0, 10)}.pdf` };
+      autoTable(doc, {
+        startY: metadataY,
+        theme: 'grid',
+        body: [
+          ['Type d’écart', FLEET_FINDING_LABELS[finding.findingType], 'Échéance', formatDate(finding.treatmentDueOn)],
+          ['Objet', finding.title || 'Non renseigné', 'Date de clôture', finding.closedAt ? formatDate(finding.closedAt) : 'Non clôturé'],
+          ['Responsable', finding.responsibleName, 'État', `${FLEET_FINDING_STATUS_LABELS[finding.status]} — ${finding.progress} %`],
+          ['Date du constat', formatDate(finding.detectedOn), 'Délai', finding.treatmentDelayDays == null ? 'Non renseigné' : `${finding.treatmentDelayDays} jours`],
+        ],
+        styles: { fontSize: 7.8, cellPadding: 2.7, valign: 'middle' },
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [239, 244, 250], cellWidth: 29 },
+          1: { cellWidth: 64 },
+          2: { fontStyle: 'bold', fillColor: [239, 244, 250], cellWidth: 29 },
+          3: { cellWidth: 64 },
+        },
+        margin: { left: 12, right: 12, top: 34 },
+        willDrawPage: drawAutoTableHeader,
+      });
+
+      let cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      const descriptionLines = doc.splitTextToSize(finding.description || 'Aucune description.', 186);
+      if (cursorY + 10 + (descriptionLines.length * 4.2) > pageHeight - 15) {
+        doc.addPage(); drawHeader(); cursorY = 39;
+      }
+      doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text('Description', 12, cursorY);
+      doc.setTextColor(55); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.8);
+      doc.text(descriptionLines, 12, cursorY + 6);
+      cursorY += 10 + (descriptionLines.length * 4.2);
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [['Date', 'Émetteur du suivi', 'Suivi du traitement']],
+        body: finding.events.length
+          ? finding.events.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).map((event) => [
+            formatDateTime(event.createdAt),
+            event.authorName || 'Système SeaPilot',
+            event.note || event.eventType,
+          ])
+          : [['-', '-', 'Aucun suivi enregistré']],
+        theme: 'grid',
+        styles: { fontSize: 7.4, cellPadding: 2.4, valign: 'top' },
+        headStyles: { fillColor: navy, textColor: 255 },
+        columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 42 } },
+        margin: { left: 12, right: 12, top: 34 },
+        willDrawPage: drawAutoTableHeader,
+      });
+
+      const photos = finding.attachments.filter((attachment) => (
+        attachment.mimeType.startsWith('image/') && input.attachmentImages?.[attachment.id]
+      ));
+      if (photos.length) {
+        let photoY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 9;
+        photos.forEach((attachment) => {
+          const dataUrl = input.attachmentImages?.[attachment.id];
+          if (!dataUrl) return;
+          try {
+            const properties = doc.getImageProperties(dataUrl);
+            const size = calculateContainSize(properties.width, properties.height, 184, 150);
+            const requiredHeight = size.height + 17;
+            if (photoY + requiredHeight > pageHeight - 14) {
+              doc.addPage(); drawHeader(); photoY = 39;
+            }
+            doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+            doc.text(attachment.kind === 'finding' ? 'Photo du constat' : 'Preuve photographique du traitement', 12, photoY);
+            doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.3);
+            doc.text(attachment.caption || attachment.originalFileName, 12, photoY + 5, { maxWidth: 184 });
+            doc.addImage(dataUrl, imageFormat(dataUrl), 12 + ((184 - size.width) / 2), photoY + 9, size.width, size.height);
+            photoY += requiredHeight;
+          } catch {
+            // Une image illisible ne doit pas empêcher la génération du rapport complet.
+          }
+        });
+      }
+    });
+  })));
+
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setDrawColor(220, 226, 234); doc.line(12, pageHeight - 10, pageWidth - 12, pageHeight - 10);
+    doc.setTextColor(120); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text('SeaPilot — BBTM', 12, pageHeight - 6);
+    doc.text(`Page ${page} / ${totalPages}`, pageWidth - 12, pageHeight - 6, { align: 'right' });
+  }
+
+  const arrayBuffer = doc.output('arraybuffer');
+  return {
+    blob: new Blob([arrayBuffer], { type: 'application/pdf' }),
+    filename: `BBTM-Plan-d-Action-${generatedOn.toISOString().slice(0, 10)}.pdf`,
+    arrayBuffer,
+  };
 }
 
 export function downloadFleetFindingReport(result: { blob: Blob; filename: string }): void {
   const url = URL.createObjectURL(result.blob);
-  const link = document.createElement('a'); link.href = url; link.download = result.filename; link.click();
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = result.filename;
+  link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

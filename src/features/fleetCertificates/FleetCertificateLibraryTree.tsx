@@ -94,12 +94,10 @@ export function FleetCertificateLibraryTree({
     [branches],
   );
   const [openVessels, setOpenVessels] = useState<Set<string>>(
-    () => revealMatches ? new Set(allVesselKeys) : new Set(branches[0] ? [branches[0].key] : []),
+    () => revealMatches ? new Set(allVesselKeys) : new Set(),
   );
   const [openCategories, setOpenCategories] = useState<Set<string>>(
-    () => revealMatches
-      ? new Set(allCategoryKeys)
-      : new Set(branches[0]?.categories[0] ? [branches[0].categories[0].key] : []),
+    () => revealMatches ? new Set(allCategoryKeys) : new Set(),
   );
 
   const everythingOpen = allVesselKeys.every((key) => openVessels.has(key))

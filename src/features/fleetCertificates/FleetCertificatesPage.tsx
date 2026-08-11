@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertCircle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CircleDot, Clock3, Download,
+  AlertCircle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CircleDot, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
   Plus, RefreshCw, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
@@ -21,11 +21,14 @@ import {
   uploadFleetFindingAttachment, type FleetCertificateFinding, type FleetFindingAttachmentKind,
   type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
 } from './fleetCertificateFindings';
-import { downloadFleetFindingReport, generateFleetFindingReport } from './fleetCertificateFindingReport';
+import {
+  downloadFleetFindingReport,
+  generateFleetFindingReport,
+  loadFleetFindingReportImages,
+} from './fleetCertificateFindingReport';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
 
 interface FleetCertificatesPageProps { client?: SupabaseClient; roles?: RoleKey[] }
-type DetailTab = 'overview' | 'deadlines' | 'findings' | 'versions';
 
 const TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
 const TYPES = Object.entries(FLEET_FINDING_LABELS) as Array<[FleetFindingType, string]>;
@@ -113,8 +116,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [responsibles, setResponsibles] = useState<FleetFindingResponsible[]>([]);
   const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
-  const [tab, setTab] = useState<DetailTab>('findings');
   const [search, setSearch] = useState('');
+  const [librarySearch, setLibrarySearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'upcoming' | 'actions'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -152,6 +155,13 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const vesselCertificates = selectedCertificate
     ? active.filter((item) => item.vesselId === selectedCertificate.vesselId)
     : [];
+  const filteredVesselCertificates = useMemo(() => {
+    const query = librarySearch.trim().toLocaleLowerCase('fr');
+    if (!query) return vesselCertificates;
+    return vesselCertificates.filter((item) => (
+      `${item.documentTitle} ${item.fileName} ${item.categoryLabel}`.toLocaleLowerCase('fr').includes(query)
+    ));
+  }, [librarySearch, vesselCertificates]);
   const filtered = useMemo(() => active.filter((item) => {
     const q = search.trim().toLocaleLowerCase('fr');
     if (q && !`${item.vesselName} ${item.documentTitle} ${item.categoryLabel}`.toLocaleLowerCase('fr').includes(q)) return false;
@@ -183,7 +193,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     const certificateIds = new Set(scopedFindings.map((item) => item.certificateId));
     const scopedCertificates = certificates.filter((item) => certificateIds.has(item.id));
     await run(async () => {
-      const report = await generateFleetFindingReport({ title: scope === 'finding' ? selectedFinding?.reference || 'Écart' : scope === 'certificate' ? selectedCertificate?.documentTitle || 'Certificat' : scope === 'selected' ? 'Documents filtrés' : 'Tous les écarts flotte', certificates: scopedCertificates, findings: scopedFindings });
+      const attachmentImages = await loadFleetFindingReportImages(effectiveClient, scopedFindings);
+      const report = await generateFleetFindingReport({ certificates: scopedCertificates, findings: scopedFindings, attachmentImages });
       downloadFleetFindingReport(report);
     }, 'Rapport BBTM généré.');
   }
@@ -206,7 +217,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       <section className="fcx-toolbar"><label><Search size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat, un navire…" value={search} /></label><div><Filter size={16} /><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Tous</button><button className={statusFilter === 'expired' ? 'active' : ''} onClick={() => setStatusFilter('expired')}>Échus</button><button className={statusFilter === 'upcoming' ? 'active' : ''} onClick={() => setStatusFilter('upcoming')}>À venir</button><button className={statusFilter === 'actions' ? 'active' : ''} onClick={() => setStatusFilter('actions')}>Avec actions</button></div></section>
       <section className="fcx-dashboard-grid">
         <article className="fcx-panel"><header><div><span className="fcx-panel-icon red"><Flag size={18} /></span><div><h2>Sujets à traiter</h2><p>Priorisés par niveau de risque et délai</p></div></div><strong>{openFindings.length}</strong></header><div className="fcx-action-list">
-          {openFindings.slice().sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a))).slice(0, 7).map((finding) => { const cert = certificates.find((item) => item.id === finding.certificateId); return <button key={finding.id} onClick={() => { setSelectedCertificateId(finding.certificateId); setSelectedFindingId(finding.id); setTab('findings'); }}><span className={`fcx-type-dot ${typeTone(finding.findingType)}`} /><span className="fcx-action-main"><b>{finding.title}</b><small>{cert?.vesselName} · {cert?.documentTitle}</small></span><span className="fcx-action-meta"><em className={isOverdue(finding) ? 'late' : ''}>{isOverdue(finding) ? 'En retard' : formatDate(finding.treatmentDueOn)}</em><small>{finding.responsibleName}</small></span></button>; })}
+          {openFindings.slice().sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a))).slice(0, 7).map((finding) => { const cert = certificates.find((item) => item.id === finding.certificateId); return <button key={finding.id} onClick={() => { setSelectedCertificateId(finding.certificateId); setSelectedFindingId(finding.id); }}><span className={`fcx-type-dot ${typeTone(finding.findingType)}`} /><span className="fcx-action-main"><b>{finding.title}</b><small>{cert?.vesselName} · {cert?.documentTitle}</small></span><span className="fcx-action-meta"><em className={isOverdue(finding) ? 'late' : ''}>{isOverdue(finding) ? 'En retard' : formatDate(finding.treatmentDueOn)}</em><small>{finding.responsibleName}</small></span></button>; })}
           {!openFindings.length && <div className="fcx-empty"><CheckCircle2 /> Aucun écart ouvert.</div>}
         </div></article>
         <article className="fcx-panel"><header><div><span className="fcx-panel-icon amber"><CalendarClock size={18} /></span><div><h2>Échéances à venir</h2><p>Fenêtre glissante de 90 jours</p></div></div><strong>{upcoming.length}</strong></header><div className="fcx-deadline-list">
@@ -216,13 +227,15 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       <section className="fcx-library"><header><div><h2>Bibliothèque documentaire</h2><p>{filtered.length} document(s) affiché(s)</p></div></header><FleetCertificateLibraryTree key={`${search}|${statusFilter}`} certificates={filtered} formatDate={formatDate} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} onSelect={setSelectedCertificateId} /></section>
     </> : <>
       <header className="fcx-detail-head"><button className="fcx-back" onClick={() => { setSelectedCertificateId(null); setSelectedFindingId(null); }}><ArrowLeft size={18} /> Retour au tableau de bord</button><div className="fcx-detail-title"><span className="fcx-file-icon"><FileCheck2 /></span><div><span>{selectedCertificate.vesselName} · {selectedCertificate.categoryLabel}</span><h1><button className="fcx-document-title-link" onClick={() => openDocument(selectedCertificate)} type="button">{selectedCertificate.documentTitle}<ExternalLink size={16} /></button></h1><p><CircleDot size={12} /> Version {selectedCertificate.currentVersionNo} · échéance {formatDate(selectedCertificate.expiresOn)}</p></div></div><div className="fcx-detail-actions">{manager && <button onClick={() => setModal('renewal')}><RefreshCw size={16} /> Renouveler</button>}<div className="fcx-report-wrap"><button className="fcx-primary" onClick={() => setReportOpen((value) => !value)}><Download size={16} /> Générer un rapport <ChevronDown size={15} /></button>{reportOpen && <div className="fcx-report-menu"><button disabled={!selectedFinding} onClick={() => generateReport('finding')}>Cet écart</button><button onClick={() => generateReport('certificate')}>Ce certificat</button><button onClick={() => generateReport('selected')}>Documents filtrés ({filtered.length})</button><button onClick={() => generateReport('all')}>Tous les écarts flotte</button></div>}</div>{manager && <button className="icon danger" title="Supprimer" onClick={() => window.confirm('Supprimer définitivement ce certificat et ses pièces ?') && run(() => deleteFleetCertificateDocuments(effectiveClient, [selectedCertificate.id]), 'Certificat supprimé.').then(() => setSelectedCertificateId(null))}><Trash2 size={17} /></button>}</div></header>
-      <nav className="fcx-tabs">{([['overview', 'Aperçu'], ['deadlines', 'Échéances'], ['findings', `Écarts & actions (${certificateFindings.filter((item) => item.status !== 'closed').length})`], ['versions', 'Versions']] as Array<[DetailTab, string]>).map(([key, label]) => <button className={tab === key ? 'active' : ''} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav>
-      {tab === 'findings' ? <section className="fcx-findings">
+      <section className="fcx-findings">
         <div className="fcx-command-center">
-          <article className="fcx-command-card fcx-command-library">
-            <header><div><span>{selectedCertificate.vesselName}</span><h2>Bibliothèque documentaire</h2><p>{vesselCertificates.length} document(s) pour ce navire</p></div></header>
-            <FleetCertificateLibraryTree key={selectedCertificate.vesselId || selectedCertificate.vesselName} certificates={vesselCertificates} formatDate={formatDate} revealMatches selectedCertificateId={selectedCertificate.id} onSelect={setSelectedCertificateId} />
-          </article>
+          <div className="fcx-command-library-column">
+            <label className="fcx-library-search"><Search size={17} /><input aria-label="Rechercher dans la bibliothèque documentaire" onChange={(event) => setLibrarySearch(event.target.value)} placeholder="Rechercher un document ou une catégorie…" value={librarySearch} /></label>
+            <article className="fcx-command-card fcx-command-library">
+              <header><div><span>{selectedCertificate.vesselName}</span><h2>Bibliothèque documentaire</h2><p>{filteredVesselCertificates.length} document(s) pour ce navire</p></div></header>
+              <FleetCertificateLibraryTree key={`${selectedCertificate.vesselId || selectedCertificate.vesselName}|${librarySearch}`} certificates={filteredVesselCertificates} formatDate={formatDate} revealMatches={Boolean(librarySearch.trim())} selectedCertificateId={selectedCertificate.id} onSelect={setSelectedCertificateId} />
+            </article>
+          </div>
           <article className="fcx-command-card fcx-command-actions">
             <header className="fcx-command-actions-head"><div><span>Pilotage du traitement</span><h2>Écarts & actions</h2><p>Constats, prescriptions et conditions à lever</p></div>{manager && <button className="fcx-primary" onClick={() => setModal('finding')}><Plus size={16} /> Nouvel écart</button>}</header>
             <div className="fcx-finding-summary"><span><b>{certificateFindings.filter((item) => item.status !== 'closed').length}</b> ouverts</span><span className="red"><b>{certificateFindings.filter((item) => item.findingType === 'major_non_conformity' && item.status !== 'closed').length}</b> majeurs</span><span className="amber"><b>{certificateFindings.filter(isOverdue).length}</b> en retard</span><span className="green"><b>{certificateFindings.length ? Math.round(certificateFindings.reduce((sum, item) => sum + item.progress, 0) / certificateFindings.length) : 0}%</b> traités</span></div>
@@ -234,7 +247,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
               </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div>
           </article>
         </div>
-      </section> : <section className="fcx-overview"><article><h2>{tab === 'deadlines' ? 'Échéance et renouvellement' : tab === 'versions' ? 'Versions du document' : 'Informations du certificat'}</h2>{tab === 'deadlines' ? <div className="fcx-info-cards"><p><CalendarClock /><span><small>Échéance actuelle</small><b>{formatDate(selectedCertificate.expiresOn)}</b></span></p><p><Clock3 /><span><small>Statut du workflow</small><b>{selectedCertificate.workflowStatus}</b></span></p><p><UserRound /><span><small>Prestataire</small><b>{selectedCertificate.providerName || 'Non renseigné'}</b></span></p></div> : tab === 'versions' ? <div className="fcx-version-card"><FileText /><span><button className="fcx-version-title-link" onClick={() => openDocument(selectedCertificate)} type="button">{selectedCertificate.fileName}<ExternalLink size={14} /></button><small>Version {selectedCertificate.currentVersionNo} · active · mise à jour {formatDate(selectedCertificate.updatedAt)}</small></span></div> : <div className="fcx-info-cards"><p><Ship /><span><small>Navire</small><b>{selectedCertificate.vesselName}</b></span></p><p><FileText /><span><small>Catégorie</small><b>{selectedCertificate.categoryLabel}</b></span></p><p><CalendarClock /><span><small>Émis le</small><b>{formatDate(selectedCertificate.issuedOn)}</b></span></p></div>}</article></section>}
+      </section>
     </>}
     {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
     {modal === 'document' && <DocumentForm certificates={certificates} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const category = String(form.get('category')); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey: category.toLocaleLowerCase('fr').replace(/\s+/g, '-'), categoryLabel: category, documentTitle: String(form.get('title')), issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
