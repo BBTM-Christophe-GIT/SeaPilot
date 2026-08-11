@@ -107,7 +107,12 @@ function contractHireScheduleLabel(contract?: ProjectContractRecord): string {
     return formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit);
   }
   return contract.hirePeriods
-    .map((period) => `${formatDate(period.startsOn)}${period.endsOn ? ` - ${formatDate(period.endsOn)}` : ' et après'} : ${formatMoney(period.charterHire, period.hireCurrency, period.hireUnit)}`)
+    .map((period) => [
+      `${formatDate(period.startsOn)}${period.endsOn ? ` - ${formatDate(period.endsOn)}` : ' et après'}`,
+      `En Opération : ${formatMoney(period.charterHire, period.hireCurrency, period.hireUnit)}`,
+      `Stand-by : ${formatMoney(period.standbyHire, period.hireCurrency, period.hireUnit)}`,
+      `Weather Stand-by : ${formatMoney(period.weatherStandbyHire, period.hireCurrency, period.hireUnit)}`,
+    ].join(' — '))
     .join('\n');
 }
 

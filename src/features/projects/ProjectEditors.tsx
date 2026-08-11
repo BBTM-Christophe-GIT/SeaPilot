@@ -160,6 +160,8 @@ function projectContractHirePeriodsToWriteInput(
       startsOn: period.startsOn,
       endsOn: period.endsOn,
       charterHire: period.charterHire,
+      standbyHire: period.standbyHire ?? period.charterHire,
+      weatherStandbyHire: period.weatherStandbyHire ?? period.charterHire,
       hireCurrency: period.hireCurrency,
       hireUnit: period.hireUnit,
     }));
@@ -169,6 +171,8 @@ function projectContractHirePeriodsToWriteInput(
       startsOn: project?.startsOn || new Date().toISOString().slice(0, 10),
       endsOn: '',
       charterHire: contract.charterHire,
+      standbyHire: contract.charterHire,
+      weatherStandbyHire: contract.charterHire,
       hireCurrency: contract.hireCurrency || 'EUR',
       hireUnit: contract.hireUnit || 'jour',
     }];
@@ -725,6 +729,8 @@ export function ProjectEditor({
                       startsOn: periods.at(-1)?.endsOn ? nextDate(periods.at(-1)?.endsOn || '') : form.startsOn || new Date().toISOString().slice(0, 10),
                       endsOn: '',
                       charterHire: periods.at(-1)?.charterHire ?? null,
+                      standbyHire: periods.at(-1)?.standbyHire ?? periods.at(-1)?.charterHire ?? null,
+                      weatherStandbyHire: periods.at(-1)?.weatherStandbyHire ?? periods.at(-1)?.charterHire ?? null,
                       hireCurrency: periods.at(-1)?.hireCurrency || 'EUR',
                       hireUnit: periods.at(-1)?.hireUnit || 'jour',
                     }])}
@@ -735,7 +741,9 @@ export function ProjectEditor({
                   <div className="project-hire-period-row" key={index}>
                     <label>Début *<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, startsOn: event.target.value } : item))} required type="date" value={period.startsOn} /></label>
                     <label>Fin<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, endsOn: event.target.value } : item))} type="date" value={period.endsOn} /></label>
-                    <label>Loyer *<input min="0" onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, charterHire: optionalNumber(event.target.value) } : item))} required step="0.01" type="number" value={period.charterHire ?? ''} /></label>
+                    <label>En Opération *<input min="0" onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, charterHire: optionalNumber(event.target.value) } : item))} required step="0.01" type="number" value={period.charterHire ?? ''} /></label>
+                    <label>Stand-by *<input min="0" onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, standbyHire: optionalNumber(event.target.value) } : item))} required step="0.01" type="number" value={period.standbyHire ?? ''} /></label>
+                    <label>Weather Stand-by *<input min="0" onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, weatherStandbyHire: optionalNumber(event.target.value) } : item))} required step="0.01" type="number" value={period.weatherStandbyHire ?? ''} /></label>
                     <label>Devise *<input maxLength={3} onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, hireCurrency: event.target.value.toUpperCase() } : item))} required value={period.hireCurrency} /></label>
                     <label>Unité *<input onChange={(event) => setHirePeriods((periods) => periods.map((item, itemIndex) => itemIndex === index ? { ...item, hireUnit: event.target.value } : item))} required value={period.hireUnit} /></label>
                     <button aria-label={`Supprimer la période tarifaire ${index + 1}`} onClick={() => setHirePeriods((periods) => periods.filter((_, itemIndex) => itemIndex !== index))} type="button"><X aria-hidden="true" size={16} /></button>

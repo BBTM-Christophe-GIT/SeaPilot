@@ -160,6 +160,8 @@ describe('ProjectEditor contract hire periods', () => {
           hireCurrency: 'EUR',
           hirePeriods: [{
             charterHire: 4450,
+            standbyHire: 3200,
+            weatherStandbyHire: 2200,
             contractId: 3,
             endsOn: '2025-06-20',
             hireCurrency: 'EUR',
@@ -195,8 +197,8 @@ describe('ProjectEditor contract hire periods', () => {
         expect.anything(),
         145,
         expect.arrayContaining([
-          expect.objectContaining({ startsOn: '2024-05-31', charterHire: 4450 }),
-          expect.objectContaining({ startsOn: '2025-06-21', charterHire: 4450 }),
+          expect.objectContaining({ startsOn: '2024-05-31', charterHire: 4450, standbyHire: 3200, weatherStandbyHire: 2200 }),
+          expect.objectContaining({ startsOn: '2025-06-21', charterHire: 4450, standbyHire: 3200, weatherStandbyHire: 2200 }),
         ]),
       );
     });

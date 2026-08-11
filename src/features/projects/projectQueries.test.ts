@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   fetchProjectsData,
+  mapProjectContractHirePeriodRows,
   mapProjectContractRows,
   mapProjectPlanningOccurrenceRows,
   mapProjectRows,
@@ -133,6 +134,25 @@ describe('projectQueries', () => {
     expect(contract.charterHire).toBe(12000.5);
     expect(contract.extensionDuration).toBe(5);
     expect(contract.supplytimeData).toEqual({ box05_cancelling_date: '30 juin' });
+  });
+
+  it('maps all three contract hire amounts for a dated period', () => {
+    expect(mapProjectContractHirePeriodRows([{
+      id: 8,
+      project_id: 880,
+      contract_id: 10,
+      starts_on: '2026-07-01',
+      ends_on: null,
+      charter_hire: '12000',
+      standby_hire: '9000',
+      weather_standby_hire: '6000',
+      hire_currency: 'EUR',
+      hire_unit: 'jour',
+    }])).toEqual([expect.objectContaining({
+      charterHire: 12000,
+      standbyHire: 9000,
+      weatherStandbyHire: 6000,
+    })]);
   });
 
   it('keeps projects visible and reports secondary Supabase failures as partial data', async () => {

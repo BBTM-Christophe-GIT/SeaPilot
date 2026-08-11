@@ -709,20 +709,36 @@ export function billingOperationRows(input: BillingExportInput): BillingOperatio
           input.contract,
           dpr.reportDate,
           dpr.vesselName || input.selectedVesselName,
+          contractHireModeForOperation(dpr.operation),
         )
         ?? 0,
       comments: billingDprComment(dpr),
     }));
 }
 
+export type ContractHireMode = 'operation' | 'standby' | 'weather-standby';
+
+export function contractHireModeForOperation(operation: string): ContractHireMode {
+  const normalized = singleLineBillingOperation(operation).toLocaleUpperCase('fr-FR');
+  if (/WEATHER\s+STAND[ -]?BY/.test(normalized) || /STAND[ -]?BY\s+M[ÉE]T[ÉE]O/.test(normalized)) {
+    return 'weather-standby';
+  }
+  if (/STAND[ -]?BY/.test(normalized)) return 'standby';
+  return 'operation';
+}
+
 export function contractHireForDate(
   contract: ProjectContractRecord | undefined,
   reportDate: string,
+  mode: ContractHireMode = 'operation',
 ): number | null {
   const period = [...(contract?.hirePeriods || [])]
     .filter((candidate) => candidate.startsOn <= reportDate && (!candidate.endsOn || candidate.endsOn >= reportDate))
     .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
-  return period?.charterHire ?? contract?.charterHire ?? null;
+  if (!period) return contract?.charterHire ?? null;
+  if (mode === 'weather-standby') return period.weatherStandbyHire ?? period.charterHire;
+  if (mode === 'standby') return period.standbyHire ?? period.charterHire;
+  return period.charterHire;
 }
 
 export function billingApplicableHire(
@@ -730,6 +746,7 @@ export function billingApplicableHire(
   contract: ProjectContractRecord | undefined,
   reportDate: string,
   vesselName: string,
+  mode: ContractHireMode = 'operation',
 ): number | null {
   const normalizedVesselName = vesselName.trim().toLocaleUpperCase('fr-FR');
   const operation = operations
@@ -741,10 +758,10 @@ export function billingApplicableHire(
         )))
     .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
   if (operation?.charterHireOverride === true) return operation.charterHire;
-  if (operation?.charterHireOverride === undefined) {
-    return operation?.charterHire ?? contractHireForDate(contract, reportDate);
+  if (operation?.charterHireOverride === undefined && mode === 'operation') {
+    return operation?.charterHire ?? contractHireForDate(contract, reportDate, mode);
   }
-  return contractHireForDate(contract, reportDate) ?? operation?.charterHire ?? null;
+  return contractHireForDate(contract, reportDate, mode) ?? operation?.charterHire ?? null;
 }
 
 export function billingOperationHire(

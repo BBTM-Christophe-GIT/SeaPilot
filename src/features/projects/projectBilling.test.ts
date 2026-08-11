@@ -201,8 +201,8 @@ describe('billing operation export', () => {
     const scheduledContract = {
       ...input.contract!,
       hirePeriods: [
-        { id: 1, projectId: 144, contractId: 1, startsOn: '2026-06-01', endsOn: '2026-06-15', charterHire: 4000, hireCurrency: 'EUR', hireUnit: 'jour' },
-        { id: 2, projectId: 144, contractId: 1, startsOn: '2026-06-16', endsOn: '', charterHire: 4750, hireCurrency: 'EUR', hireUnit: 'jour' },
+        { id: 1, projectId: 144, contractId: 1, startsOn: '2026-06-01', endsOn: '2026-06-15', charterHire: 4000, standbyHire: 3000, weatherStandbyHire: 2000, hireCurrency: 'EUR', hireUnit: 'jour' },
+        { id: 2, projectId: 144, contractId: 1, startsOn: '2026-06-16', endsOn: '', charterHire: 4750, standbyHire: 3750, weatherStandbyHire: 2750, hireCurrency: 'EUR', hireUnit: 'jour' },
       ],
     };
     const rows = billingOperationRows({
@@ -215,6 +215,34 @@ describe('billing operation export', () => {
       ],
     });
     expect(rows.map((row) => row.amountHt)).toEqual([4000, 4750]);
+  });
+
+  it('uses the Stand-by and Weather Stand-by contract rates for each DPR day', () => {
+    const scheduledContract = {
+      ...input.contract!,
+      hirePeriods: [{
+        id: 1,
+        projectId: 144,
+        contractId: 1,
+        startsOn: '2026-06-01',
+        endsOn: '',
+        charterHire: 4000,
+        standbyHire: 3000,
+        weatherStandbyHire: 2000,
+        hireCurrency: 'EUR',
+        hireUnit: 'jour',
+      }],
+    };
+    const rows = billingOperationRows({
+      ...input,
+      contract: scheduledContract,
+      operations: input.operations.map((operation) => ({ ...operation, charterHireOverride: false })),
+      dprs: [
+        { ...input.dprs[0], id: 1, operation: '24/24 Stand-by', amountHt: null },
+        { ...input.dprs[0], id: 2, reportDate: '2026-06-02', operation: '24/24 Weather Stand-by', amountHt: null },
+      ],
+    });
+    expect(rows.map((row) => row.amountHt)).toEqual([3000, 2000]);
   });
 
   it('keeps a manual operation override and excludes deselected PDF lines', () => {

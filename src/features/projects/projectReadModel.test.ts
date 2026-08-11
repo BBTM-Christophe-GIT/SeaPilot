@@ -124,7 +124,20 @@ describe('projectReadModel', () => {
   });
 
   it('builds all 34 SUPPLYTIME boxes and signatures with canonical values taking priority', () => {
-    const groups = buildSupplytimePreview(makeProject(), makeContract());
+    const groups = buildSupplytimePreview(makeProject(), makeContract({
+      hirePeriods: [{
+        id: 1,
+        projectId: 880,
+        contractId: 10,
+        startsOn: '2026-07-01',
+        endsOn: '',
+        charterHire: 12000,
+        standbyHire: 9000,
+        weatherStandbyHire: 6000,
+        hireCurrency: 'EUR',
+        hireUnit: 'jour',
+      }],
+    }));
     const fields = groups.flatMap((group) => group.fields);
 
     expect(fields).toHaveLength(36);
@@ -138,7 +151,7 @@ describe('projectReadModel', () => {
     });
     expect(fields.find((field) => field.key === 'box20_charter_hire')).toMatchObject({
       source: 'canonical',
-      value: expect.stringContaining('12'),
+      value: expect.stringContaining('Weather Stand-by'),
     });
     expect(fields.find((field) => field.key === 'box34_additional_clauses')).toMatchObject({
       source: 'empty',

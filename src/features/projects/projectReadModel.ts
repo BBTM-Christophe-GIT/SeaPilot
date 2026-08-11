@@ -275,7 +275,12 @@ function canonicalSupplytimeValue(
     box17_employment: project.title,
     box20_charter_hire: contract?.hirePeriods?.length
       ? contract.hirePeriods
-        .map((period) => `${period.startsOn}${period.endsOn ? ` au ${period.endsOn}` : ' et après'} : ${money(period.charterHire, period.hireCurrency, period.hireUnit)}`)
+        .map((period) => [
+          `${period.startsOn}${period.endsOn ? ` au ${period.endsOn}` : ' et après'}`,
+          `En Opération : ${money(period.charterHire, period.hireCurrency, period.hireUnit)}`,
+          `Stand-by : ${money(period.standbyHire, period.hireCurrency, period.hireUnit)}`,
+          `Weather Stand-by : ${money(period.weatherStandbyHire, period.hireCurrency, period.hireUnit)}`,
+        ].join(' — '))
         .join('\n')
       : money(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit),
     box21_extension_hire: money(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit),

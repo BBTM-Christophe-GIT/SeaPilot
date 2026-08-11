@@ -33,6 +33,8 @@ export interface ProjectContractHirePeriodWriteInput {
   startsOn: string;
   endsOn: string;
   charterHire: number | null;
+  standbyHire: number | null;
+  weatherStandbyHire: number | null;
   hireCurrency: string;
   hireUnit: string;
 }
@@ -388,8 +390,14 @@ export function validateProjectContractHirePeriods(
     if (period.endsOn && period.endsOn < period.startsOn) {
       errors.push(`La fin du tarif ${index + 1} ne peut pas précéder son début.`);
     }
-    if (period.charterHire === null || period.charterHire < 0) {
-      errors.push(`Le montant du tarif ${index + 1} est obligatoire et doit être positif ou nul.`);
+    if (typeof period.charterHire !== 'number' || period.charterHire < 0) {
+      errors.push(`Le montant En Opération du tarif ${index + 1} est obligatoire et doit être positif ou nul.`);
+    }
+    if (typeof period.standbyHire !== 'number' || period.standbyHire < 0) {
+      errors.push(`Le montant Stand-by du tarif ${index + 1} est obligatoire et doit être positif ou nul.`);
+    }
+    if (typeof period.weatherStandbyHire !== 'number' || period.weatherStandbyHire < 0) {
+      errors.push(`Le montant Weather Stand-by du tarif ${index + 1} est obligatoire et doit être positif ou nul.`);
     }
     if (!/^[A-Za-z]{3}$/.test(period.hireCurrency.trim())) {
       errors.push(`Une devise à trois lettres est obligatoire pour le tarif ${index + 1}.`);
@@ -416,6 +424,8 @@ export async function saveProjectContractHirePeriods(
       starts_on: period.startsOn,
       ends_on: optionalText(period.endsOn),
       charter_hire: period.charterHire,
+      standby_hire: period.standbyHire,
+      weather_standby_hire: period.weatherStandbyHire,
       hire_currency: period.hireCurrency.trim().toUpperCase(),
       hire_unit: period.hireUnit.trim(),
     })),
