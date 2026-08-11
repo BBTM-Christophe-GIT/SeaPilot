@@ -14,6 +14,9 @@ Cette évolution remplace le circuit historique de publication par période. Le 
 - Le bouton **Diffuser le Planning** capture l’état complet du planning dans une nouvelle version globale.
 - Une diffusion affiche uniquement son numéro de version, sa date de publication et son auteur.
 - `capitaine` et `marin` consultent uniquement la dernière version diffusée, filtrée par leurs droits métier, et ne peuvent pas modifier le planning.
+- Leur ruban en lecture seule permet de demander des congés et de générer une crew list ; le détail opérationnel d’un projet reste consultable.
+- Les opérations du navire d’affectation alimentent la crew list complète, y compris pour un profil `marin`.
+- Aucun champ financier n’est transmis à `capitaine` ou `marin` : loyers d’affrètement, unités/devises associées, frais de mobilisation et de démobilisation sont retirés côté Supabase avant l’envoi de l’instantané.
 - Les anciennes capacités terrain de traitement des conflits, de gestion des dépendances et de consultation de l’historique de gouvernance sont retirées.
 - Tous les rôles peuvent créer une demande de congé avec une date de début, une date de fin et un motif facultatif.
 - Les demandes en attente et les congés approuvés sont visibles directement sur les lignes du planning.
@@ -36,6 +39,8 @@ Les accès applicatifs passent par les RPC suivantes :
 - `publish_planning_release()` : crée une nouvelle version, uniquement pour `admin`, `direction` et `armement` ;
 - `planning_release_history()` : renvoie tout l’historique aux rôles de gestion et uniquement la dernière version aux rôles terrain ;
 - `latest_planning_release()` : renvoie la dernière version en filtrant son contenu selon le rôle et le périmètre de l’utilisateur.
+
+La fonction interne `planning_redact_financial_fields()` supprime les clés financières des opérations avant leur diffusion aux profils terrain. Les documents financiers restent également inaccessibles : seuls les fichiers de type `operation_attachment` rattachés à une opération visible peuvent être lus depuis le Planning.
 
 Les anciennes publications par période sont conservées à titre d’historique, mais leurs verrous sont supprimés et leur RPC de transition n’est plus accessible au client.
 
@@ -71,12 +76,13 @@ Aucune nouvelle variable d’environnement n’est nécessaire.
 2. Diffuser le planning et vérifier l’incrément du numéro de version ainsi que la date et l’auteur.
 3. Modifier à nouveau le brouillon et confirmer qu’un `capitaine` ou un `marin` voit encore la version précédemment diffusée.
 4. Diffuser une nouvelle version et vérifier que la vue terrain est actualisée.
-5. Vérifier qu’un `capitaine` et un `marin` ne disposent d’aucune action de modification ou de diffusion.
-6. Créer une demande de congé sans motif avec chacun des rôles.
-7. Vérifier que la période en attente apparaît sur le planning et dans **Demandes en attente**.
-8. Cliquer la période avec `admin`, `direction` ou `armement`, puis l’accepter ou la refuser.
-9. Vérifier qu’une demande approuvée reste visible sur le planning et que la demande traitée disparaît de la liste des demandes en attente.
-10. Vérifier l’isolation entre entreprises et le filtrage des instantanés pour les rôles terrain.
+5. Vérifier qu’un `capitaine` et un `marin` ne disposent d’aucune action de modification ou de diffusion, mais peuvent demander des congés, générer une crew list et ouvrir le détail d’un projet.
+6. Vérifier dans le détail du projet et dans les réponses réseau qu’aucun loyer, frais, montant, unité ou devise financière n’est présent.
+7. Créer une demande de congé sans motif avec chacun des rôles.
+8. Vérifier que la période en attente apparaît sur le planning et dans **Demandes en attente**.
+9. Cliquer la période avec `admin`, `direction` ou `armement`, puis l’accepter ou la refuser.
+10. Vérifier qu’une demande approuvée reste visible sur le planning et que la demande traitée disparaît de la liste des demandes en attente.
+11. Vérifier l’isolation entre entreprises et le filtrage des instantanés pour les rôles terrain.
 
 ## Retour arrière
 

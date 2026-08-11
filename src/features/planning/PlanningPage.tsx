@@ -2330,7 +2330,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             {isPersonalPlanningView ? (
               <PlanningRibbonGroup className="is-centered" label="Gestion des congés">
                 <PlanningRibbonButton icon={<CalendarOff aria-hidden="true" size={22} />} label="Demander des congés" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} />
-                {isCaptainView ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
+                {permissions.canGenerateCrewList ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
               </PlanningRibbonGroup>
             ) : <>
             <PlanningRibbonGroup label="ARMEMENT">
@@ -2360,7 +2360,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             </PlanningRibbonGroup>
 
             <PlanningRibbonGroup label="Documents">
-              {permissions.canExport ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
+              {permissions.canGenerateCrewList ? <PlanningRibbonButton icon={<FileSpreadsheet aria-hidden="true" size={22} />} label="Générer une crew list" onClick={openCrewList} /> : null}
               {permissions.canExport ? <PlanningRibbonButton icon={<FileDown aria-hidden="true" size={22} />} label="Exports" onClick={() => setIsExportOpen(true)} /> : null}
               {permissions.canExport ? <PlanningRibbonButton icon={<ShipWheel aria-hidden="true" size={22} />} label="Attestation d'armement" onClick={() => setIsBoardingCertificateOpen(true)} /> : null}
             </PlanningRibbonGroup>
