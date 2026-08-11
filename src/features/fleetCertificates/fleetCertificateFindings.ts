@@ -6,7 +6,8 @@ export type FleetFindingType =
   | 'minor_non_conformity'
   | 'class_condition'
   | 'remark'
-  | 'prescription';
+  | 'prescription'
+  | 'finding';
 
 export type FleetFindingStatus = 'declared' | 'assigned' | 'in_progress' | 'pending_validation' | 'closed';
 export type FleetFindingAttachmentKind = 'finding' | 'treatment';
@@ -31,6 +32,7 @@ export interface FleetFindingEvent {
   fromStatus: string;
   toStatus: string;
   note: string;
+  authorName: string;
   createdAt: string;
 }
 
@@ -84,9 +86,12 @@ function mapAttachment(row: Record<string, unknown>): FleetFindingAttachment {
 }
 
 function mapEvent(row: Record<string, unknown>): FleetFindingEvent {
+  const relation = Array.isArray(row.author) ? row.author[0] : row.author;
+  const author = relation && typeof relation === 'object' ? relation as Record<string, unknown> : null;
   return {
     id: Number(row.id), findingId: Number(row.finding_id), eventType: String(row.event_type || ''),
     fromStatus: String(row.from_status || ''), toStatus: String(row.to_status || ''), note: String(row.note || ''),
+    authorName: String(author?.display_name || author?.email || row.created_by_name || 'Système SeaPilot'),
     createdAt: String(row.created_at || ''),
   };
 }
@@ -109,7 +114,7 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
   const [findingsResult, attachmentsResult, eventsResult] = await Promise.all([
     client.from('fleet_certificate_findings').select('*'),
     client.from('fleet_certificate_finding_attachments').select('*'),
-    client.from('fleet_certificate_finding_events').select('*'),
+    client.from('fleet_certificate_finding_events').select('*, author:profiles!fleet_certificate_finding_events_created_by_fkey(display_name, email)'),
   ]);
   if (findingsResult.error) throw findingsResult.error;
   if (attachmentsResult.error) throw attachmentsResult.error;
@@ -209,7 +214,7 @@ export async function deleteFleetCertificateFinding(client: SupabaseClient, find
 
 export const FLEET_FINDING_LABELS: Record<FleetFindingType, string> = {
   major_non_conformity: 'Non-conformité majeure', minor_non_conformity: 'Non-conformité mineure',
-  class_condition: 'Condition de Classe', remark: 'Remarque', prescription: 'Prescription',
+  class_condition: 'Condition de Classe', remark: 'Remarque', prescription: 'Prescription', finding: 'Findings',
 };
 
 export const FLEET_FINDING_STATUS_LABELS: Record<FleetFindingStatus, string> = {

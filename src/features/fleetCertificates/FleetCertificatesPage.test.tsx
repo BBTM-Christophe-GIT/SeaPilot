@@ -44,7 +44,7 @@ function createClient() {
       if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificates, error: null }) }) }) };
       if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findings, error: null }), insert: vi.fn() };
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
-      if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn() };
+      if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn() };
       if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
       throw new Error(`Unexpected table ${table}`);
     }),
@@ -63,8 +63,24 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByRole('button', { name: /1 documents échus/ })).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText('Rechercher un certificat, un navire…'), 'extincteurs');
     const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section')!;
+    expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toBeInTheDocument();
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toBeInTheDocument();
     expect(within(library).getByText('Certificat extincteurs')).toBeInTheDocument();
     expect(within(library).queryByText('Certificat de Franc-Bord')).not.toBeInTheDocument();
+  });
+
+  it('organizes the document library by vessel, category and document', async () => {
+    const user = userEvent.setup(); const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    expect(within(library).getByText('Navire', { selector: 'b' })).toBeInTheDocument();
+    expect(within(library).getByText('Catégorie', { selector: 'b' })).toBeInTheDocument();
+    expect(within(library).getByRole('treeitem', { name: 'Navire GOURY' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 02 - Centre de Sécurité des Navires' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
+    expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('opens a certificate workspace with finding evidence and report scopes', async () => {
@@ -73,12 +89,20 @@ describe('FleetCertificatesPage', () => {
     await user.click(await screen.findByText('Corrosion du support bâbord'));
     expect(await screen.findByRole('heading', { name: 'Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(screen.getByText('EC-2026-0012')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bibliothèque documentaire' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Écarts & actions' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Prévisualisation' })).not.toBeInTheDocument();
     expect(screen.getByText('Constat & preuves')).toBeInTheDocument();
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
+    expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ouvrir' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Certificat de Franc-Bord/ }).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /Générer un rapport/ }));
     expect(screen.getByRole('button', { name: 'Cet écart' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ce certificat' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tous les écarts flotte' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
+    expect(screen.getByRole('option', { name: 'Findings' })).toHaveValue('finding');
   });
 
   it('exposes the new document workflow to fleet managers', async () => {

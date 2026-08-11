@@ -187,7 +187,8 @@ describe('App', () => {
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Permis de navigation COTENTIN/ }));
     expect(await screen.findByRole('heading', { name: 'Permis de navigation COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText(/COTENTIN · Navigation/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Ouvrir$/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ouvrir$/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Permis de navigation COTENTIN/ }).length).toBeGreaterThan(0);
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
