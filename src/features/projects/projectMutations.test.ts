@@ -53,6 +53,25 @@ describe('projectMutations', () => {
     expect(rpc.mock.calls[0][1]).not.toHaveProperty('target_project_code');
   });
 
+  it('preserves PostgreSQL microseconds in project concurrency tokens', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { id: 60, project_code: 'P268', title: 'ETPO FORT BOYARD', updated_at: '2026-08-11T09:00:00Z' },
+      error: null,
+    });
+    const expectedUpdatedAt = '2026-08-07T08:05:49.643239+00:00';
+
+    await saveProject({ rpc } as never, {
+      ...EMPTY_PROJECT_WRITE_INPUT,
+      expectedUpdatedAt,
+      projectId: 60,
+      title: 'ETPO FORT BOYARD',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+      target_expected_updated_at: expectedUpdatedAt,
+    }));
+  });
+
   it('validates required, vessel, period, extension and currency rules before the RPC', async () => {
     const invalid = {
       ...EMPTY_PROJECT_WRITE_INPUT,
@@ -70,10 +89,11 @@ describe('projectMutations', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('surfaces Supabase network and stale-write failures', async () => {
+  it('surfaces Supabase network failures without retrying an ambiguous write', async () => {
     const input = { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet réseau' };
-    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
-    await expect(saveProject({ rpc } as never, input)).rejects.toThrow('Failed to fetch');
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'upstream request timeout' } });
+    await expect(saveProject({ rpc } as never, input)).rejects.toThrow('upstream request timeout');
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it('uses controlled client and archive RPCs', async () => {
@@ -95,6 +115,28 @@ describe('projectMutations', () => {
     })).resolves.toBe(52);
     await expect(archiveProject({ rpc } as never, 901)).resolves.toBeUndefined();
     expect(rpc.mock.calls.map(([name]) => name)).toEqual(['clients_save', 'projects_archive']);
+  });
+
+  it('preserves PostgreSQL microseconds in client concurrency tokens', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 52 }, error: null });
+    const expectedUpdatedAt = '2026-08-07T08:05:49.643239+00:00';
+
+    await saveClient({ rpc } as never, {
+      active: true,
+      address: '',
+      city: '',
+      clientId: 52,
+      code: 'ETPO',
+      country: '',
+      email: '',
+      expectedUpdatedAt,
+      name: 'ETPO',
+      phone: '',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
+      target_expected_updated_at: expectedUpdatedAt,
+    }));
   });
 
   it('maps the minimal catalog used by dependent modules without creating a second dataset', async () => {
