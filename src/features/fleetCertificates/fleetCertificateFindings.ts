@@ -51,6 +51,7 @@ export interface FleetCertificateFinding {
   progress: number;
   responsiblePersonId: number | null;
   responsibleName: string;
+  closedAt: string;
   createdAt: string;
   updatedAt: string;
   attachments: FleetFindingAttachment[];
@@ -104,7 +105,8 @@ function mapFinding(row: Record<string, unknown>, attachments: FleetFindingAttac
     detectedOn: String(row.detected_on || ''), treatmentDelayDays: row.treatment_delay_days == null ? null : Number(row.treatment_delay_days),
     treatmentDueOn: String(row.treatment_due_on || ''), status: row.status as FleetFindingStatus, progress: Number(row.progress || 0),
     responsiblePersonId: row.responsible_person_id == null ? null : Number(row.responsible_person_id),
-    responsibleName: String(row.responsible_name || 'Non assigné'), createdAt: String(row.created_at || ''),
+    responsibleName: String(row.responsible_name || 'Non assigné'), closedAt: String(row.closed_at || ''),
+    createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''), attachments: attachments.filter((item) => item.findingId === id),
     events: events.filter((item) => item.findingId === id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   };

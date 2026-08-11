@@ -184,6 +184,8 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /1 échéances à 90 jours/ })).toBeInTheDocument();
     const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section');
     expect(library).not.toBeNull();
+    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /COTENTIN.*1 document/ }));
+    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Navigation/ }));
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Permis de navigation COTENTIN/ }));
     expect(await screen.findByRole('heading', { name: 'Permis de navigation COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText(/COTENTIN · Navigation/)).toBeInTheDocument();

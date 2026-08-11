@@ -75,8 +75,11 @@ describe('FleetCertificatesPage', () => {
     const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
     expect(within(library).getByText('Navire', { selector: 'b' })).toBeInTheDocument();
     expect(within(library).getByText('Catégorie', { selector: 'b' })).toBeInTheDocument();
-    expect(within(library).getByRole('treeitem', { name: 'Navire GOURY' })).toHaveAttribute('aria-expanded', 'true');
-    expect(within(library).getByRole('treeitem', { name: 'Catégorie 02 - Centre de Sécurité des Navires' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(library).getByRole('treeitem', { name: 'Navire GOURY' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(library).queryByRole('treeitem', { name: 'Catégorie 02 - Centre de Sécurité des Navires' })).not.toBeInTheDocument();
+    expect(within(library).queryByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).not.toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
     await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
     expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
@@ -91,6 +94,10 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByText('EC-2026-0012')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Bibliothèque documentaire' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Écarts & actions' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Rechercher dans la bibliothèque documentaire')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aperçu' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Échéances' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Versions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Prévisualisation' })).not.toBeInTheDocument();
     expect(screen.getByText('Constat & preuves')).toBeInTheDocument();
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
