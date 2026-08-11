@@ -93,7 +93,7 @@ Le premier navire et sa première catégorie sont ouverts au chargement. La rech
 
 ## Poste de travail certificat v3.16.0
 
-La fiche d'un certificat rassemble désormais trois cartes côte à côte : la bibliothèque du navire, les écarts et actions du document actif, puis sa prévisualisation. Le document courant reste mis en évidence dans l'arborescence. Son titre, dans l'en-tête, la bibliothèque, la prévisualisation et l'historique de version, ouvre directement le fichier ; le bouton « Ouvrir » séparé a été supprimé.
+La fiche d'un certificat rassemble désormais deux cartes côte à côte : la bibliothèque du navire et les écarts et actions du document actif. Le document courant reste mis en évidence dans l'arborescence. Son titre, dans l'en-tête, la bibliothèque et l'historique de version, ouvre directement le fichier ; le bouton « Ouvrir » séparé et la carte de prévisualisation ont été supprimés dans la version 3.16.1.
 
 Le type d'écart `finding`, affiché « Findings », complète le référentiel. La migration `20260811161356_fleet_certificate_findings_type.sql` étend la contrainte de validation correspondante. Dans le suivi du traitement, chaque entrée affiche également le nom de son émetteur, issu du profil rattaché à `fleet_certificate_finding_events.created_by`.
 

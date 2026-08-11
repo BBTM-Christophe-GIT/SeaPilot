@@ -91,8 +91,7 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByText('EC-2026-0012')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Bibliothèque documentaire' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Écarts & actions' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Prévisualisation' })).toBeInTheDocument();
-    expect(await screen.findByTitle('Prévisualisation de Certificat de Franc-Bord')).toHaveAttribute('src', expect.stringContaining('https://signed.test/document'));
+    expect(screen.queryByRole('heading', { name: 'Prévisualisation' })).not.toBeInTheDocument();
     expect(screen.getByText('Constat & preuves')).toBeInTheDocument();
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
     expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();

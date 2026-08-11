@@ -22,7 +22,6 @@ import {
   type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
 } from './fleetCertificateFindings';
 import { downloadFleetFindingReport, generateFleetFindingReport } from './fleetCertificateFindingReport';
-import { FleetCertificateDocumentPreview } from './FleetCertificateDocumentPreview';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
 
 interface FleetCertificatesPageProps { client?: SupabaseClient; roles?: RoleKey[] }
@@ -125,8 +124,6 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [comment, setComment] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploadKind, setUploadKind] = useState<FleetFindingAttachmentKind>('finding');
-  const [documentPreviewUrl, setDocumentPreviewUrl] = useState('');
-  const [documentPreviewLoading, setDocumentPreviewLoading] = useState(false);
 
   const load = useCallback(async () => {
     const [loadedCertificates, loadedFindings, loadedResponsibles] = await Promise.all([
@@ -147,17 +144,6 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     const content = document.querySelector<HTMLElement>('.content-area');
     if (content) content.scrollTop = 0;
   }, [selectedCertificateId]);
-  useEffect(() => {
-    let activeRequest = true;
-    setDocumentPreviewUrl('');
-    if (!selectedCertificate) return () => { activeRequest = false; };
-    setDocumentPreviewLoading(true);
-    openFleetCertificateDocument(effectiveClient, selectedCertificate)
-      .then((url) => { if (activeRequest) setDocumentPreviewUrl(url); })
-      .catch(() => { if (activeRequest) setDocumentPreviewUrl(''); })
-      .finally(() => { if (activeRequest) setDocumentPreviewLoading(false); });
-    return () => { activeRequest = false; };
-  }, [effectiveClient, selectedCertificate]);
 
   const active = certificates.filter((item) => item.isActiveFleet);
   const expired = active.filter((item) => getEffectiveFleetCertificateStatus(item) === 'expired');
@@ -247,7 +233,6 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
                 <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; run(() => addFleetFindingComment(effectiveClient, selectedFinding, comment), 'Note ajoutée.'); setComment(''); }}><input onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary"><Plus size={15} /> Ajouter</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small><strong>{event.authorName}</strong> · {new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
               </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div>
           </article>
-          <FleetCertificateDocumentPreview certificate={selectedCertificate} loading={documentPreviewLoading} onOpen={() => openDocument(selectedCertificate)} previewUrl={documentPreviewUrl} />
         </div>
       </section> : <section className="fcx-overview"><article><h2>{tab === 'deadlines' ? 'Échéance et renouvellement' : tab === 'versions' ? 'Versions du document' : 'Informations du certificat'}</h2>{tab === 'deadlines' ? <div className="fcx-info-cards"><p><CalendarClock /><span><small>Échéance actuelle</small><b>{formatDate(selectedCertificate.expiresOn)}</b></span></p><p><Clock3 /><span><small>Statut du workflow</small><b>{selectedCertificate.workflowStatus}</b></span></p><p><UserRound /><span><small>Prestataire</small><b>{selectedCertificate.providerName || 'Non renseigné'}</b></span></p></div> : tab === 'versions' ? <div className="fcx-version-card"><FileText /><span><button className="fcx-version-title-link" onClick={() => openDocument(selectedCertificate)} type="button">{selectedCertificate.fileName}<ExternalLink size={14} /></button><small>Version {selectedCertificate.currentVersionNo} · active · mise à jour {formatDate(selectedCertificate.updatedAt)}</small></span></div> : <div className="fcx-info-cards"><p><Ship /><span><small>Navire</small><b>{selectedCertificate.vesselName}</b></span></p><p><FileText /><span><small>Catégorie</small><b>{selectedCertificate.categoryLabel}</b></span></p><p><CalendarClock /><span><small>Émis le</small><b>{formatDate(selectedCertificate.issuedOn)}</b></span></p></div>}</article></section>}
     </>}
