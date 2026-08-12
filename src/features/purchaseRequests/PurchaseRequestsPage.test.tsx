@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { PurchaseRequestsPage } from './PurchaseRequestsPage';
+import { isCaptainScopedPurchaseView, PurchaseRequestsPage } from './PurchaseRequestsPage';
 
 const baseRequest = {
   id: 95,
@@ -91,6 +91,13 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest]) {
 }
 
 describe('PurchaseRequestsPage', () => {
+  it('keeps office profiles company-wide when they also own a captain role', () => {
+    expect(isCaptainScopedPurchaseView(['admin', 'capitaine', 'marin'])).toBe(false);
+    expect(isCaptainScopedPurchaseView(['direction', 'capitaine'])).toBe(false);
+    expect(isCaptainScopedPurchaseView(['armement', 'capitaine'])).toBe(false);
+    expect(isCaptainScopedPurchaseView(['capitaine', 'marin'])).toBe(true);
+  });
+
   it('renders the modern master-detail cockpit and filters by search and urgency', async () => {
     const user = userEvent.setup();
     const { client } = createClient();

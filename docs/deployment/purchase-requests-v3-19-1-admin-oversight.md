@@ -13,6 +13,11 @@ validation. Les administrateurs conservent les actions de traitement existantes
 `Planifier la livraison` et `Reçu à bord`) et chaque intervention reste tracée
 dans l'activité de la demande.
 
+Le client ne présélectionne maintenant le navire affecté que pour une vue
+strictement Capitaine. Un administrateur qui possède aussi les rôles Capitaine
+ou Marin conserve sa vue société : les demandes chargées ne sont plus masquées
+par un filtre navire implicite.
+
 ## Déploiement
 
 Appliquer la migration
