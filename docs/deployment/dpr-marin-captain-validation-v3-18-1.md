@@ -33,6 +33,10 @@ Les migrations `20260812132049_optimize_marin_dpr_dashboard_access.sql` et
 une politique optimisée selon le profil. Les profils bureau conservent la vue société, les Marins ne lisent que leurs
 propres DPR non supprimés, et les Capitaines conservent leur périmètre navire ou nominatif.
 
+La migration `20260812135136_optimize_dpr_child_dashboard_access.sql` applique la même optimisation aux métriques,
+incidents et fichiers. Elle supprime notamment le contrôle de rapport répété sur chacun des incidents historiques,
+qui faisait encore expirer le chargement d'un vrai compte Marin alors qu'une simulation de rôle fonctionnait.
+
 ## Recette
 
 1. Avec un profil `Marin`, ouvrir `Opérations > Daily Progress Report` puis `Saisir un DPR`.

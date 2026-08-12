@@ -1,6 +1,6 @@
 begin;
 
-select plan(31);
+select plan(34);
 
 insert into public.companies (code, name)
 values ('dpr-other', 'DPR other company');
@@ -211,6 +211,19 @@ select is(
   (select count(*)::integer from pg_policies where schemaname = 'public' and tablename = 'dpr_reports' and policyname = 'dpr_reports_company_read'),
   0,
   'the row-by-row DPR read policy is removed'
+);
+
+select ok(
+  position('dpr_can_read_report' in (select qual from pg_policies where schemaname = 'public' and tablename = 'dpr_daily_metrics' and policyname = 'dpr_daily_metrics_company_read')) = 0,
+  'daily metrics avoid a report permission call for every row'
+);
+select ok(
+  position('dpr_can_read_report' in (select qual from pg_policies where schemaname = 'public' and tablename = 'dpr_incidents' and policyname = 'dpr_incidents_company_read')) = 0,
+  'incidents avoid a report permission call for every row'
+);
+select ok(
+  position('dpr_can_read_report' in (select qual from pg_policies where schemaname = 'public' and tablename = 'dpr_files' and policyname = 'dpr_files_company_read')) = 0,
+  'files avoid a report permission call for every row'
 );
 
 select * from finish();
