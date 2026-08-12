@@ -1,8 +1,43 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_DPR_PAYLOAD } from './dprFormModel.ts';
-import { runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
+import { fetchDprDashboard, runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
+
+function queryResult(data: unknown) {
+  const result = { data, error: null };
+  const query: Record<string, unknown> = {
+    then: (resolve: (value: typeof result) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject),
+  };
+  ['eq', 'in', 'is', 'limit', 'order', 'select'].forEach((method) => {
+    query[method] = vi.fn(() => query);
+  });
+  query.maybeSingle = vi.fn().mockResolvedValue(result);
+  return query;
+}
 
 describe('DPR Supabase commands', () => {
+  it('filters a Marin dashboard by author before loading reports', async () => {
+    const reports = queryResult([]);
+    const profiles = queryResult({ display_name: 'Arthur RICHER' });
+    const people = queryResult({ id: 18, first_name: 'Arthur', last_name: 'Richer', function_label: '2nd Capitaine', grade_label: 'Officier' });
+    const empty = queryResult([]);
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() => table === 'dpr_reports' ? reports : table === 'profiles' ? profiles : table === 'people' ? people : empty),
+    }));
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null })
+      .mockResolvedValueOnce({ data: { defaultValidatorPersonId: null, people: [] }, error: null });
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'sailor-user', email: 'arthur@example.invalid' } } }) },
+      from,
+      rpc,
+    };
+
+    const dashboard = await fetchDprDashboard(client as never, { selfOnly: true });
+
+    expect(reports.eq).toHaveBeenCalledWith('created_by', 'sailor-user');
+    expect(dashboard.currentUserId).toBe('sailor-user');
+  });
+
   it('saves the complete six-step payload through the transactional RPC', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: { id: 42 }, error: null })

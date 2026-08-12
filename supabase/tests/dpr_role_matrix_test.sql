@@ -1,6 +1,6 @@
 begin;
 
-select plan(29);
+select plan(31);
 
 insert into public.companies (code, name)
 values ('dpr-other', 'DPR other company');
@@ -201,6 +201,17 @@ select is((select count(*)::integer from public.dpr_reports where description = 
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000001', true);
 select is((select count(*)::integer from public.dpr_audit_events where dpr_id = (select id from public.dpr_reports where description = 'Marin updated draft')), 6, 'create update validator assignment submit validate reopen audit events are append-only');
+
+select is(
+  (select count(*)::integer from pg_policies where schemaname = 'public' and tablename = 'dpr_reports' and policyname = 'dpr_reports_role_read'),
+  1,
+  'DPR reads use the optimized role policy'
+);
+select is(
+  (select count(*)::integer from pg_policies where schemaname = 'public' and tablename = 'dpr_reports' and policyname = 'dpr_reports_company_read'),
+  0,
+  'the row-by-row DPR read policy is removed'
+);
 
 select * from finish();
 rollback;

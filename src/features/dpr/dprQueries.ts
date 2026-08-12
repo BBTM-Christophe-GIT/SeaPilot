@@ -146,13 +146,21 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
 }
 
 export async function fetchDprDashboard(client: SupabaseClient, options: { selfOnly?: boolean } = {}): Promise<DprDashboardData> {
-  const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, profile, entryContext] = await Promise.all([
-    client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000),
+  const profile = await loadCurrentProfile(client);
+  if (options.selfOnly && !profile.id) throw new Error('Session utilisateur introuvable.');
+
+  let reportQuery = client
+    .from('dpr_reports')
+    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,updated_at')
+    .is('deleted_at', null);
+  if (options.selfOnly) reportQuery = reportQuery.eq('created_by', profile.id as string);
+
+  const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
+    reportQuery.order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000),
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.from('vessels').select('id,name').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
-    loadCurrentProfile(client),
     fetchDprEntryContext(client, new Date().toISOString().slice(0, 10)),
   ]);
   const firstError = [reportResult, projectResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
@@ -182,7 +190,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { selfO
     .forEach((file) => filesByReport.set(file.dprId, [...(filesByReport.get(file.dprId) || []), file]));
   const projectMap = new Map(projects.map((project) => [project.id, project]));
   const vesselMap = new Map(vessels.map((vessel) => [vessel.id, vessel]));
-  const reports = (reportResult.data || []).filter((row) => !options.selfOnly || row.created_by === profile.id).map((row) => {
+  const reports = (reportResult.data || []).map((row) => {
     const projectId = numberOrNull(row.project_id); const vesselId = numberOrNull(row.vessel_id);
     return {
       id: Number(row.id), number: numberOrNull(row.dpr_number), status: row.status as DprStatus,
