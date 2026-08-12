@@ -161,6 +161,27 @@ describe('PurchaseRequestsPage', () => {
     }));
   });
 
+  it('keeps validation oversight and intervention actions available to administrators', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient([baseRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={['admin']} />);
+
+    expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
+    expect(screen.getAllByText('En attente')).not.toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Actions de la demande' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Approuver' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
+      p_request_id: 95,
+      p_action: 'approve',
+      p_comment: null,
+      p_effective_date: null,
+    }));
+  });
+
   it('opens the first non-empty workflow tab on initial load', async () => {
     const orderedRequest = { ...baseRequest, status: 'Commande en cours', ordered_on: '2026-08-01' };
     const { client } = createClient([orderedRequest]);
