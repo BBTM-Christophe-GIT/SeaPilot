@@ -29,6 +29,7 @@ export interface DprFormPayload {
   projectId: number | null;
   unlistedProjectName: string;
   vesselId: number | null;
+  validatorPersonId: number | null;
   description: string;
   qhseNote: string;
   metrics: {
@@ -74,6 +75,7 @@ export const EMPTY_DPR_PAYLOAD: DprFormPayload = {
   projectId: null,
   unlistedProjectName: '',
   vesselId: null,
+  validatorPersonId: null,
   description: '',
   qhseNote: '',
   metrics: { fuelConsumedLiters: '', fuelOnBoardLiters: '' },
@@ -136,6 +138,7 @@ export function validateDprPayload(payload: DprFormPayload, forSubmission = fals
   if (forSubmission) {
     if (payload.projectId === null && !payload.unlistedProjectName.trim()) errors.push('Le projet est obligatoire avant soumission.');
     if (payload.vesselId === null) errors.push('Le navire est obligatoire avant soumission.');
+    if (payload.validatorPersonId === null) errors.push('Le capitaine valideur est obligatoire avant soumission.');
     if (!payload.description.trim()) errors.push('La description de la journée est obligatoire avant soumission.');
   }
   return errors;

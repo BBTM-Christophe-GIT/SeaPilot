@@ -6,6 +6,7 @@ function validPayload() {
   payload.reportDate = '2026-07-22';
   payload.projectId = 52;
   payload.vesselId = 3;
+  payload.validatorPersonId = 12;
   payload.description = 'Opérations réalisées sans événement.';
   return payload;
 }
@@ -15,13 +16,14 @@ describe('validateDprPayload', () => {
     expect(validateDprPayload(validPayload(), true)).toEqual([]);
   });
 
-  it('requires project, vessel and description only at submission', () => {
+  it('requires project, vessel, captain validator and description only at submission', () => {
     const payload = structuredClone(EMPTY_DPR_PAYLOAD);
     payload.reportDate = '2026-07-22';
     expect(validateDprPayload(payload, false)).toEqual([]);
     expect(validateDprPayload(payload, true)).toEqual(expect.arrayContaining([
       'Le projet est obligatoire avant soumission.',
       'Le navire est obligatoire avant soumission.',
+      'Le capitaine valideur est obligatoire avant soumission.',
       'La description de la journée est obligatoire avant soumission.',
     ]));
   });

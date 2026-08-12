@@ -20,6 +20,7 @@ export interface DprPersonOption {
   roleLabel: string;
   crewFunction: CrewFunction;
   isSedentary: boolean;
+  isDprValidator: boolean;
 }
 export interface DprEntryContext {
   issuerPersonId: number | null;
@@ -29,6 +30,7 @@ export interface DprEntryContext {
   watchGroup: string;
   people: DprPersonOption[];
   crewPersonIds: number[];
+  defaultValidatorPersonId: number | null;
 }
 export interface DprReferenceData {
   projects: DprProjectOption[];
@@ -61,6 +63,8 @@ export interface DprReportRecord {
   unlistedProjectName: string;
   vesselId: number | null;
   vesselName: string;
+  validatorPersonId: number | null;
+  validatorName: string;
   issuerName: string;
   description: string;
   qhseNote: string;
@@ -70,7 +74,7 @@ export interface DprReportRecord {
   incidentCount: number;
   files: DprFileRecord[];
 }
-export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string; currentPersonFunction?: string }
+export interface DprDashboardData { reports: DprReportRecord[]; references: DprReferenceData; currentUserId: string | null; currentUserName: string; currentPersonId: number | null; currentPersonFunction?: string }
 export interface DprDetail { report: DprReportRecord; payload: DprFormPayload; files: DprFileRecord[] }
 
 function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
@@ -111,6 +115,7 @@ function mapPerson(row: Record<string, unknown>): DprPersonOption {
     roleLabel,
     crewFunction: crewFunction(functionLabel, gradeLabel),
     isSedentary: sedentaryLabel.includes('sedentaire'),
+    isDprValidator: Boolean(row.is_dpr_validator ?? row.isDprValidator),
   };
 }
 
@@ -123,37 +128,44 @@ function mapFile(row: Record<string, unknown>): DprFileRecord {
   };
 }
 
-async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; name: string; functionLabel: string }> {
+async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; personId: number | null; name: string; functionLabel: string }> {
   const { data: authData } = await client.auth.getUser();
   const userId = authData.user?.id || null;
-  if (!userId) return { id: null, name: 'Utilisateur SeaPilot', functionLabel: '' };
+  if (!userId) return { id: null, personId: null, name: 'Utilisateur SeaPilot', functionLabel: '' };
   const [profileResult, personResult] = await Promise.all([
     client.from('profiles').select('display_name').eq('id', userId).maybeSingle(),
-    client.from('people').select('first_name,last_name,function_label,grade_label').eq('user_id', userId).maybeSingle(),
+    client.from('people').select('id,first_name,last_name,function_label,grade_label').eq('user_id', userId).maybeSingle(),
   ]);
   const personName = formatPersonName(text(personResult.data?.first_name), text(personResult.data?.last_name));
   return {
     id: userId,
+    personId: numberOrNull(personResult.data?.id),
     name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot',
     functionLabel: `${text(personResult.data?.function_label)} ${text(personResult.data?.grade_label)}`.trim(),
   };
 }
 
 export async function fetchDprDashboard(client: SupabaseClient, options: { selfOnly?: boolean } = {}): Promise<DprDashboardData> {
-  const [reportResult, metricResult, incidentResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult, profile] = await Promise.all([
-    client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(2000),
-    client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters'),
-    client.from('dpr_incidents').select('dpr_id,level'),
-    client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,display_filename,mime_type,size_bytes,sha256,is_current,status').eq('status', 'ready').is('deleted_at', null).limit(5000),
+  const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, profile, entryContext] = await Promise.all([
+    client.from('dpr_reports').select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,updated_at').is('deleted_at', null).order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000),
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.from('vessels').select('id,name').order('name'),
-    client.from('people').select('id,first_name,last_name,function_label,grade_label,role_label,hired_on,departed_on').eq('active', true).order('last_name').limit(5000),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     loadCurrentProfile(client),
+    fetchDprEntryContext(client, new Date().toISOString().slice(0, 10)),
   ]);
-  const firstError = [reportResult, metricResult, incidentResult, fileResult, projectResult, vesselResult, peopleResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
+  const firstError = [reportResult, projectResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
   if (firstError) throw firstError;
+  const reportIds = (reportResult.data || []).map((row) => Number(row.id));
+  const emptyResult = { data: [], error: null };
+  const [metricResult, incidentResult, fileResult] = reportIds.length ? await Promise.all([
+    client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters').in('dpr_id', reportIds),
+    client.from('dpr_incidents').select('dpr_id,level').in('dpr_id', reportIds),
+    client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,display_filename,mime_type,size_bytes,sha256,is_current,status').in('dpr_id', reportIds).eq('status', 'ready').is('deleted_at', null).limit(5000),
+  ]) : [emptyResult, emptyResult, emptyResult];
+  const relatedError = [metricResult, incidentResult, fileResult].find((result) => result.error)?.error;
+  if (relatedError) throw relatedError;
   const projects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
   const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) }));
   const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
@@ -176,20 +188,17 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { selfO
       id: Number(row.id), number: numberOrNull(row.dpr_number), status: row.status as DprStatus,
       reportDate: text(row.report_date), projectId, projectCode: projectId ? projectMap.get(projectId)?.code || '' : '',
       projectTitle: projectId ? projectMap.get(projectId)?.title || '' : '', unlistedProjectName: text(row.unlisted_project_name),
-      vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '', issuerName: text(row.issuer_name_snapshot),
+      vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '',
+      validatorPersonId: numberOrNull(row.validator_person_id), validatorName: text(row.validator_name_snapshot), issuerName: text(row.issuer_name_snapshot),
       description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
       updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
       incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;
   });
-  const today = new Date().toISOString().slice(0, 10);
-  const people = (peopleResult.data || [])
-    .filter((row) => (!row.hired_on || text(row.hired_on) <= today) && (!row.departed_on || text(row.departed_on) >= today))
-    .map((row) => mapPerson(row as Record<string, unknown>));
   return {
-    reports, currentUserId: profile.id, currentUserName: profile.name, currentPersonFunction: profile.functionLabel,
+    reports, currentUserId: profile.id, currentUserName: profile.name, currentPersonId: profile.personId, currentPersonFunction: profile.functionLabel,
     references: {
-      projects, vessels, people,
+      projects, vessels, people: entryContext.people,
       exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
       portReasons: (reasonResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
     },
@@ -197,17 +206,33 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { selfO
 }
 
 export async function fetchDprEntryContext(client: SupabaseClient, reportDate: string): Promise<DprEntryContext> {
-  const { data, error } = await client.rpc('dpr_entry_context', { target_date: reportDate });
+  const [{ data, error }, { data: validatorData, error: validatorError }] = await Promise.all([
+    client.rpc('dpr_entry_context', { target_date: reportDate }),
+    client.rpc('dpr_validator_context', { target_date: reportDate }),
+  ]);
   if (error) throw error;
+  if (validatorError) throw validatorError;
   const row = (data || {}) as Record<string, unknown>;
+  const validatorRow = (validatorData || {}) as Record<string, unknown>;
+  const validatorPeople = (Array.isArray(validatorRow.people) ? validatorRow.people : [])
+    .map((person) => mapPerson(person as Record<string, unknown>));
+  const validatorById = new Map(validatorPeople.map((person) => [person.id, person]));
+  const peopleById = new Map(
+    (Array.isArray(row.people) ? row.people : []).map((person) => {
+      const mapped = mapPerson(person as Record<string, unknown>);
+      return [mapped.id, validatorById.get(mapped.id) ? { ...mapped, isDprValidator: true } : mapped] as const;
+    }),
+  );
+  validatorPeople.forEach((person) => { if (!peopleById.has(person.id)) peopleById.set(person.id, person); });
   return {
     issuerPersonId: numberOrNull(row.issuerPersonId),
     issuerName: text(row.issuerName) || 'Utilisateur SeaPilot',
     vesselId: numberOrNull(row.vesselId),
     projectId: numberOrNull(row.projectId),
     watchGroup: text(row.watchGroup),
-    people: (Array.isArray(row.people) ? row.people : []).map((person) => mapPerson(person as Record<string, unknown>)),
+    people: [...peopleById.values()],
     crewPersonIds: (Array.isArray(row.crewPersonIds) ? row.crewPersonIds : []).map(Number).filter(Number.isFinite),
+    defaultValidatorPersonId: numberOrNull(validatorRow.defaultValidatorPersonId),
   };
 }
 
@@ -235,7 +260,7 @@ export async function fetchDprDetail(client: SupabaseClient, baseReport: DprRepo
   const metricRow = (metric.data || {}) as Record<string, unknown>;
   const payload: DprFormPayload = {
     reportDate: baseReport.reportDate, projectId: baseReport.projectId, unlistedProjectName: baseReport.unlistedProjectName,
-    vesselId: baseReport.vesselId, description: baseReport.description, qhseNote: baseReport.qhseNote,
+    vesselId: baseReport.vesselId, validatorPersonId: baseReport.validatorPersonId, description: baseReport.description, qhseNote: baseReport.qhseNote,
     metrics: { fuelConsumedLiters: scalarText(metricRow.fuel_consumed_liters), fuelOnBoardLiters: scalarText(metricRow.fuel_on_board_liters) },
     crewMembers: ((crew.data || []) as Array<Record<string, unknown>>).map((row) => ({ personId: Number(row.person_id), crewFunction: row.crew_function as CrewFunction, rosterGroup: text(row.roster_group), displayName: text(row.display_name_snapshot), displayOrder: Number(row.display_order || 0) })),
     otherPeople: ((others.data || []) as Array<Record<string, unknown>>).map((row) => ({ personId: numberOrNull(row.person_id), displayName: text(row.display_name_snapshot), displayOrder: Number(row.display_order || 0) })),
@@ -262,7 +287,13 @@ export async function saveDprPayload(client: SupabaseClient, dprId: number | nul
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
   if (!row?.id) throw new Error("Supabase n'a retourné aucun DPR.");
-  return Number(row.id);
+  const savedId = Number(row.id);
+  const { error: validatorError } = await client.rpc('dpr_assign_validator', {
+    target_dpr_id: savedId,
+    target_validator_person_id: payload.validatorPersonId,
+  });
+  if (validatorError) throw validatorError;
+  return savedId;
 }
 
 export async function runDprTransition(client: SupabaseClient, transition: 'submit' | 'validate' | 'reopen' | 'delete', dprId: number, reason = ''): Promise<void> {

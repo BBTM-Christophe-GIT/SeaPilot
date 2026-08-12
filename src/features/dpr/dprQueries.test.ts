@@ -4,12 +4,18 @@ import { runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts
 
 describe('DPR Supabase commands', () => {
   it('saves the complete six-step payload through the transactional RPC', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: { id: 42 }, error: null });
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { id: 42 }, error: null })
+      .mockResolvedValueOnce({ data: { id: 42 }, error: null });
     const id = await saveDprPayload({ rpc } as never, null, EMPTY_DPR_PAYLOAD);
     expect(id).toBe(42);
     expect(rpc).toHaveBeenCalledWith('dpr_save_payload', {
       target_dpr_id: null,
       target_payload: EMPTY_DPR_PAYLOAD,
+    });
+    expect(rpc).toHaveBeenCalledWith('dpr_assign_validator', {
+      target_dpr_id: 42,
+      target_validator_person_id: null,
     });
   });
 

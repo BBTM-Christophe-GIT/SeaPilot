@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(29);
 
 insert into public.companies (code, name)
 values ('dpr-other', 'DPR other company');
@@ -48,9 +48,19 @@ insert into public.vessels (company_id, name, acronym)
 select id, 'DPR TEST VESSEL', 'DTV'
 from public.companies where code = 'bbtm';
 
+insert into public.people (company_id, user_id, first_name, last_name, function_label, active)
+select id, '70000000-0000-0000-0000-000000000004', 'DPR', 'Capitaine', 'Capitaine', true
+from public.companies where code = 'bbtm';
+
 select set_config(
   'test.dpr_vessel_id',
   (select id::text from public.vessels where name = 'DPR TEST VESSEL'),
+  false
+);
+
+select set_config(
+  'test.dpr_validator_person_id',
+  (select id::text from public.people where user_id = '70000000-0000-0000-0000-000000000004'),
   false
 );
 
@@ -98,6 +108,18 @@ select lives_ok(
   'marin can update own draft'
 );
 select lives_ok(
+  $$select public.dpr_assign_validator(
+      (select id from public.dpr_reports where description = 'Marin updated draft'),
+      current_setting('test.dpr_validator_person_id')::bigint
+    )$$,
+  'marin can assign an active captain profile to own draft'
+);
+select is(
+  (select validator_person_id from public.dpr_reports where description = 'Marin updated draft'),
+  current_setting('test.dpr_validator_person_id')::bigint,
+  'draft stores the designated captain validator'
+);
+select lives_ok(
   $$select public.dpr_submit((select id from public.dpr_reports where description = 'Marin updated draft'))$$,
   'marin can submit own draft'
 );
@@ -118,7 +140,7 @@ select is(
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000004', true);
 select lives_ok(
   $$select public.dpr_validate((select id from public.dpr_reports where description = 'Marin updated draft'))$$,
-  'captain can validate every company DPR including another author'
+  'designated captain can validate the submitted DPR'
 );
 select lives_ok(
   $$select public.dpr_reopen((select id from public.dpr_reports where description = 'Marin updated draft'), 'Correction required')$$,
@@ -178,7 +200,7 @@ select is((select count(*)::integer from public.dpr_reports where dpr_number = 9
 select is((select count(*)::integer from public.dpr_reports where description = 'Marin updated draft'), 0, 'other company admin cannot read BBTM DPR');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000001', true);
-select is((select count(*)::integer from public.dpr_audit_events where dpr_id = (select id from public.dpr_reports where description = 'Marin updated draft')), 5, 'create update submit validate reopen audit events are append-only');
+select is((select count(*)::integer from public.dpr_audit_events where dpr_id = (select id from public.dpr_reports where description = 'Marin updated draft')), 6, 'create update validator assignment submit validate reopen audit events are append-only');
 
 select * from finish();
 rollback;

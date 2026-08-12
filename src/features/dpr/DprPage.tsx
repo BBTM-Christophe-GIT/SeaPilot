@@ -54,9 +54,17 @@ const STATUS_LABELS: Record<DprReportRecord['status'], string> = {
 function cloneEmptyPayload(): DprFormPayload { return structuredClone(EMPTY_DPR_PAYLOAD); }
 function hasOfficeRole(roles: RoleKey[]): boolean { return roles.some((role) => ['admin', 'direction', 'armement'].includes(role)); }
 function canValidate(roles: RoleKey[]): boolean { return hasOfficeRole(roles) || roles.includes('capitaine'); }
-function canEdit(report: DprReportRecord | null, roles: RoleKey[], userId: string | null): boolean {
+function canValidateReport(report: DprReportRecord, roles: RoleKey[], currentPersonId: number | null): boolean {
+  return hasOfficeRole(roles)
+    || (roles.includes('capitaine') && (report.validatorPersonId === null || report.validatorPersonId === currentPersonId));
+}
+function canEdit(report: DprReportRecord | null, roles: RoleKey[], userId: string | null, currentPersonId: number | null): boolean {
   if (!report) return true;
-  if (report.status === 'submitted') return roles.includes('capitaine') && !hasOfficeRole(roles);
+  if (report.status === 'submitted') {
+    return roles.includes('capitaine')
+      && !hasOfficeRole(roles)
+      && (report.validatorPersonId === null || report.validatorPersonId === currentPersonId);
+  }
   if (!['draft', 'reopened'].includes(report.status)) return false;
   return canValidate(roles) || (roles.includes('marin') && report.createdBy === userId);
 }
@@ -227,6 +235,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     next.projectId = context.projectId;
     next.unlistedProjectName = '';
     next.vesselId = context.vesselId;
+    next.validatorPersonId = next.validatorPersonId ?? context.defaultValidatorPersonId;
     next.crewMembers = context.crewPersonIds.flatMap((personId, index) => {
       const person = context.people.find((item) => item.id === personId);
       return person ? [{ personId, crewFunction: person.crewFunction, rosterGroup: context.watchGroup, displayName: person.name, displayOrder: index }] : [];
@@ -364,7 +373,8 @@ export function DprPage({ client, roles }: DprPageProps) {
       const nextDashboard = await load();
       const nextReport = nextDashboard.reports.find((item) => item.id === id) || null;
       setReport(nextReport); setInitialSignature(JSON.stringify(payload));
-      setNotice(submit ? 'DPR soumis avec succès.' : 'Brouillon enregistré.');
+      const validator = dashboard?.references.people.find((person) => person.id === payload.validatorPersonId)?.name;
+      setNotice(submit ? `DPR soumis${validator ? ` à ${validator}` : ''} pour validation.` : 'Brouillon enregistré.');
       return id;
     } catch (reason) { setError((reason as Error).message); return null; }
     finally { setBusy(false); }
@@ -411,7 +421,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     finally { setBusy(false); }
   };
 
-  const editable = canEdit(report, currentRoles, dashboard?.currentUserId || null);
+  const editable = canEdit(report, currentRoles, dashboard?.currentUserId || null, dashboard?.currentPersonId || null);
   const updatePayload = (recipe: (current: DprFormPayload) => void) => setPayload((current) => { const next = structuredClone(current); recipe(next); return next; });
   const updateReportDate = async (reportDate: string) => {
     if (report) { updatePayload((current) => { current.reportDate = reportDate; }); return; }
@@ -476,7 +486,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         </div>
 
         <div className="dpr-selection-summary">
-          {!isMarinView ? <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span> : <span><strong>Mes DPR</strong><small>consultation sans téléchargement</small></span>}
+          {!isMarinView ? <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span> : <span><strong>Mes DPR</strong><small>rédaction et suivi de mes rapports</small></span>}
           <span>{visibleReports.length} DPR affiché(s)</span>
         </div>
 
@@ -494,7 +504,7 @@ export function DprPage({ client, roles }: DprPageProps) {
                   {!isMarinView ? <button className="dpr-row__preview" aria-label={`Aperçu ${reportTitle(item)}`} onClick={() => void preparePreview(item)}><Eye size={16}/></button> : null}
                   <strong>{reportTitle(item)}</strong><span><small>DATE</small>{formatDate(item.reportDate)}</span><span><small>AUTEUR</small>{item.issuerName || '-'}</span><span><small>FUEL</small>{item.fuelConsumedLiters.toLocaleString('fr-FR')} L</span>
                   <span className={`dpr-status dpr-status--${item.status}`}>{STATUS_LABELS[item.status]}</span>
-                  <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId || null) ? 'Modifier' : 'Consulter'}</button>
+                  <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId || null, dashboard?.currentPersonId || null) ? 'Modifier' : 'Consulter'}</button>
                 </article>)}
               </div>)}
             </section>;
@@ -535,8 +545,8 @@ export function DprPage({ client, roles }: DprPageProps) {
           <button className="button" onClick={closeModal}>Annuler</button>
           {editable && <button className="button" onClick={() => void save(false)} disabled={busy}><Save size={16}/> {report?.status === 'submitted' ? 'Enregistrer les modifications' : 'Enregistrer le brouillon'}</button>}
           {editable && report?.status !== 'submitted' && <button className="button button--primary" onClick={() => void save(true)} disabled={busy}><Check size={16}/> Soumettre le DPR</button>}
-          {report?.status === 'submitted' && canValidate(currentRoles) && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider</button>}
-          {report?.status === 'validated' && canValidate(currentRoles) && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
+          {report?.status === 'submitted' && canValidateReport(report, currentRoles, dashboard.currentPersonId) && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider</button>}
+          {report?.status === 'validated' && canValidateReport(report, currentRoles, dashboard.currentPersonId) && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
           {report && hasOfficeRole(currentRoles) && <button className="button button--danger" onClick={() => void transition('delete')} disabled={busy}><Trash2 size={16}/> Supprimer</button>}
         </footer>
       </div>
@@ -558,6 +568,7 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
       return sedentaryDifference || leftLabel.localeCompare(rightLabel, 'fr');
     });
   }, [availableOtherPeople, references.people]);
+  const validators = useMemo(() => references.people.filter((person) => person.isDprValidator), [references.people]);
   const toggleCrew = (personId: number) => update((current) => {
     const person = references.people.find((item) => item.id === personId)!;
     const existing = current.crewMembers.findIndex((item) => item.personId === personId);
@@ -591,6 +602,7 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
       <Field label="DATE"><input type="date" disabled={!editable} value={payload.reportDate} onChange={(event) => onDateChange(event.target.value)}/></Field>
       <Field label="PROJET"><select disabled={!editable} value={payload.projectId ?? ''} onChange={(event) => update((current) => { current.projectId = event.target.value ? Number(event.target.value) : null; if (current.projectId) current.unlistedProjectName = ''; })}><option value="">Sélectionner…</option>{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => update((current) => { current.vesselId = event.target.value ? Number(event.target.value) : null; })}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="CAPITAINE VALIDEUR"><select aria-label="Capitaine valideur" disabled={!editable} required value={payload.validatorPersonId ?? ''} onChange={(event) => update((current) => { current.validatorPersonId = event.target.value ? Number(event.target.value) : null; })}><option value="">Sélectionner un profil Capitaine…</option>{validators.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>
     <section className="dpr-card"><h4><b>2</b> Personnel embarqué</h4>{(Object.keys(CREW_LABELS) as CrewFunction[]).map((role) => <div className="dpr-people" key={role}><strong>{CREW_LABELS[role]}</strong><div>{references.people.filter((person) => person.crewFunction === role).map((person) => <label key={person.id}><input type="checkbox" disabled={!editable} checked={payload.crewMembers.some((item) => item.personId === person.id)} onChange={() => toggleCrew(person.id)}/>{person.name}</label>)}</div></div>)}

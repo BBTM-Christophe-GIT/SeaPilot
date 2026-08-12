@@ -1367,6 +1367,24 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       error: null,
     });
   }
+  if (functionName === 'dpr_validator_context') {
+    const captain = previewRows('people').find((person) => person.id === 9301);
+    return createPreviewQuery({
+      data: {
+        defaultValidatorPersonId: 9301,
+        people: captain ? [{
+          id: captain.id,
+          firstName: captain.first_name,
+          lastName: captain.last_name,
+          functionLabel: captain.function_label,
+          gradeLabel: captain.grade_label,
+          roleLabel: captain.role_label,
+          isDprValidator: true,
+        }] : [],
+      },
+      error: null,
+    });
+  }
   if (functionName === 'planning_project_catalog') {
     return createPreviewQuery({
       data: previewRows('projects').map((project) => ({
