@@ -12507,6 +12507,154 @@ button.planning-p12-conflict-card {
   .planning-p13-panel.is-page .planning-p13-toolbar > button { width: 100%; }
 }
 
+/* Fleet certificates unified workspace scope and compact ribbon */
+.fcx-certificates-ribbon .planning-ribbon-actions {
+  grid-template-rows: 65px;
+}
+
+.fcx-tree-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fcx-tree-toolbar-actions > button {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e0e9;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #456078;
+  background: #fff;
+  font-size: .66rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.fcx-tree-toolbar-actions > button:hover:not(:disabled) {
+  border-color: #9fc8e8;
+  color: #0875d2;
+  background: #f5faff;
+}
+
+.fcx-tree-toolbar-actions > button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.fcx-tree-vessel-row.is-scope-selected,
+.fcx-tree-category-row.is-scope-selected {
+  color: #075faa;
+  background: #e3f2ff;
+  box-shadow: inset 3px 0 #0875d2;
+}
+
+.fcx-workspace-scope {
+  display: flex;
+  min-height: 37px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #e6ebf1;
+  padding: 6px 14px;
+  color: #6d7e91;
+  background: #f8fbfe;
+  font-size: .64rem;
+}
+
+.fcx-workspace-scope strong {
+  color: #17446e;
+}
+
+.fcx-workspace-scope button {
+  border: 0;
+  padding: 4px;
+  color: #0875d2;
+  background: transparent;
+  font-size: .62rem;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.fcx-scope-groups {
+  display: grid;
+}
+
+.fcx-scope-groups > section > h3 {
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  border-top: 1px solid #dfe8f1;
+  border-bottom: 1px solid #e8eef4;
+  padding: 8px 15px;
+  color: #173d63;
+  background: #eef6fd;
+  font-size: .76rem;
+}
+
+.fcx-scope-category > h4 {
+  display: flex;
+  min-height: 37px;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  border-bottom: 1px solid #ebeff4;
+  padding: 7px 15px 7px 30px;
+  color: #315675;
+  background: #f8fbfe;
+  font-size: .68rem;
+}
+
+.fcx-scope-document > h5 {
+  display: flex;
+  min-height: 35px;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  border-bottom: 1px solid #edf1f5;
+  padding: 7px 15px 7px 46px;
+  color: #375169;
+  background: #fff;
+  font-size: .65rem;
+}
+
+.fcx-scope-document .fcx-global-finding-list {
+  border-top: 0;
+}
+
+.fcx-scope-document .fcx-global-finding-list > button {
+  padding-left: 61px;
+}
+
+.fcx-deadline-scope-groups .fcx-deadline-list > button {
+  padding-left: 46px;
+}
+
+@media (max-width: 720px) {
+  .fcx-tree-toolbar-actions {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .fcx-tree-toolbar-actions > button {
+    flex: 0 0 auto;
+  }
+
+  .fcx-workspace-scope {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fcx-scope-document .fcx-global-finding-list > button,
+  .fcx-deadline-scope-groups .fcx-deadline-list > button {
+    padding-left: 16px;
+  }
+}
+
 /* Planning P2.1 — assistant maritime explicable */
 .planning-p21-panel {
   --assistant-primary: #175e6c;

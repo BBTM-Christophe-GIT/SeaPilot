@@ -303,7 +303,7 @@ export function mapFleetCertificateRows(rows: FleetCertificateRow[]): FleetCerti
     visitLocation: nullableText(row.visit_location),
     workflowStatus: normalizeWorkflowStatus(row.workflow_status),
     renewalNotes: nullableText(row.renewal_notes),
-    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-issued-on',
+    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-issued-year',
     originalFileName: nullableText(row.original_file_name),
     fileName: nullableText(row.file_name),
     sourceLabel: nullableText(row.source_label),
@@ -356,7 +356,7 @@ export function buildFleetCertificateFileName(
   }
   const vesselName = certificate.vesselName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
   const title = certificate.documentTitle.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return `${vesselName} - ${title} - ${issueDate}.${extension}`;
+  return `${vesselName} - ${title} - ${issueDate.slice(0, 4)}.${extension}`;
 }
 
 export function getDefaultFleetCertificateExpiryDate(issuedOn: string): string {
