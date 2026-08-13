@@ -32,6 +32,7 @@ const report: DprReportRecord = {
   id: 1056, number: 1056, status: 'validated', reportDate: '2026-07-21', projectId: 144,
   projectCode: 'P144', projectTitle: 'Guard Vessel EMDT', unlistedProjectName: '', vesselId: 3,
   vesselName: 'GOURY', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures', qhseNote: 'RAS',
+  validatorPersonId: 12, validatorName: 'Pierre LEPRETRE',
   createdBy: 'user-1', updatedAt: '2026-07-21T18:00:00Z', fuelConsumedLiters: 650,
   incidentCount: 0, files: [],
 };
@@ -39,11 +40,11 @@ const report: DprReportRecord = {
 const submittedReport: DprReportRecord = { ...report, id: 1057, number: 1057, status: 'submitted', files: [] };
 
 const dashboard: DprDashboardData = {
-  currentUserId: 'user-1', currentUserName: 'Camille Marin', reports: [report, submittedReport],
+  currentUserId: 'user-1', currentUserName: 'Camille Marin', currentPersonId: 12, reports: [report, submittedReport],
   references: {
     projects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
     vessels: [{ id: 3, name: 'GOURY' }],
-    people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false }],
+    people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false, isDprValidator: true }],
     exerciseTypes: [{ key: 'fire-protection', label: "Protection contre l'incendie" }],
     portReasons: [{ key: 'crew-change', label: 'Crew Change' }],
   },
@@ -61,9 +62,10 @@ describe('DprPage Phase 7', () => {
       issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144, watchGroup: 'Bordée A',
       people: [
         dashboard.references.people[0],
-        { id: 13, firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', functionLabel: 'Direction', gradeLabel: '', roleLabel: 'Sédentaire', crewFunction: 'execution', isSedentary: true },
+        { id: 13, firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', functionLabel: 'Direction', gradeLabel: '', roleLabel: 'Sédentaire', crewFunction: 'execution', isSedentary: true, isDprValidator: false },
       ],
       crewPersonIds: [12],
+      defaultValidatorPersonId: 12,
     });
     mocks.signedUrl.mockResolvedValue('https://signed.test/dpr.pdf');
     mocks.generatePdf.mockResolvedValue({ blob: new Blob(['pdf'], { type: 'application/pdf' }), filename: 'DPR-1056.pdf' });
@@ -109,7 +111,8 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('button', { name: 'Produire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exports ZIP' })).not.toBeInTheDocument();
     expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
-    expect(screen.getByText('consultation sans téléchargement')).toBeInTheDocument();
+    expect(screen.getByText(/L’historique reste réservé/)).toBeInTheDocument();
+    expect(screen.queryByText('DPR-1056')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -119,7 +122,8 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: /^4Escale/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^5Photos/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ajouter un fichier/ })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Pierre LEPRETRE')).toBeDisabled();
+    expect(screen.getAllByDisplayValue('Pierre LEPRETRE').some((element) => element.hasAttribute('disabled'))).toBe(true);
+    expect(screen.queryByRole('combobox', { name: 'Capitaine valideur' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Pierre LEPRETRE' })).toBeChecked();
     expect(screen.queryByText('PROJET NON RÉFÉRENCÉ')).not.toBeInTheDocument();
 
@@ -168,11 +172,10 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: 'Saisir un DPR' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Produire' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Diagnostic/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Consulter' })).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    await user.click(screen.getAllByRole('button', { name: 'Consulter' })[1]);
     expect(await screen.findByRole('button', { name: /Valider/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Enregistrer/ })).toBeInTheDocument();
   });
 
   it.each(['direction', 'armement', 'marin'] as const)(

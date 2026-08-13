@@ -33,6 +33,8 @@ interface RegisterRow {
   period_end: string;
   status: string;
   work_rest_policy_id: number | string | null;
+  requested_captain_person_id: number | string | null;
+  requested_signature_date: string | null;
   people?: Record<string, unknown> | Array<Record<string, unknown>> | null;
 }
 
@@ -149,6 +151,22 @@ export interface WorkingTimeWorkspaceRegister {
   periodEnd: string;
   status: WorkingTimeRegisterStatus;
   workRestPolicyId: number | null;
+  requestedCaptainPersonId?: number | null;
+  requestedSignatureDate?: string | null;
+}
+
+export interface WorkingTimeCaptainCandidate {
+  personId: number;
+  firstName: string;
+  lastName: string;
+  name: string;
+}
+
+export interface WorkingTimeDayContext {
+  assignmentId: number | null;
+  vesselId: number | null;
+  watchGroup: string | null;
+  captainCandidates: WorkingTimeCaptainCandidate[];
 }
 
 export interface WorkingTimeDayComment {
@@ -317,7 +335,7 @@ export interface SaveWorkingTimePhasesInput {
   comment: string | null;
 }
 
-const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
+const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,requested_captain_person_id,requested_signature_date,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
@@ -352,6 +370,8 @@ function mapRegister(row: RegisterRow): WorkingTimeWorkspaceRegister {
     periodEnd: row.period_end,
     status: row.status as WorkingTimeRegisterStatus,
     workRestPolicyId: numberOrNull(row.work_rest_policy_id),
+    requestedCaptainPersonId: numberOrNull(row.requested_captain_person_id),
+    requestedSignatureDate: row.requested_signature_date,
   };
 }
 
@@ -543,6 +563,33 @@ export async function getOrCreateWorkingTimeRegister(
   return Number(data);
 }
 
+export async function fetchWorkingTimeDayContext(
+  client: SupabaseClient,
+  input: { personId: number; localWorkDate: string },
+): Promise<WorkingTimeDayContext> {
+  const { data, error } = await client.rpc('working_time_day_context', {
+    p_person_id: input.personId,
+    p_local_work_date: input.localWorkDate,
+  });
+  assertResult(error, 'Impossible de charger l’affectation Planning de cette journée.');
+  const value = (data || {}) as Record<string, unknown>;
+  const candidates = Array.isArray(value.captain_candidates) ? value.captain_candidates : [];
+  return {
+    assignmentId: numberOrNull(value.assignment_id as number | string | null),
+    vesselId: numberOrNull(value.vessel_id as number | string | null),
+    watchGroup: value.watch_group ? String(value.watch_group) : null,
+    captainCandidates: candidates.map((candidate) => {
+      const row = candidate as Record<string, unknown>;
+      return {
+        personId: Number(row.person_id),
+        firstName: String(row.first_name || ''),
+        lastName: String(row.last_name || ''),
+        name: String(row.name || '').trim(),
+      };
+    }),
+  };
+}
+
 export async function saveWorkingTimeInterval(
   client: SupabaseClient,
   input: SaveWorkingTimeIntervalInput,
@@ -700,6 +747,42 @@ export async function transitionWorkingTimeRegister(
   return Number(data);
 }
 
+export async function requestWorkingTimeCaptainSignature(
+  client: SupabaseClient,
+  input: { registerId: number; captainPersonId: number; localWorkDate: string },
+): Promise<number> {
+  const { data, error } = await client.rpc('request_working_time_captain_signature', {
+    p_register_id: input.registerId,
+    p_captain_person_id: input.captainPersonId,
+    p_local_work_date: input.localWorkDate,
+  });
+  assertResult(error, 'Impossible de demander la signature du capitaine.');
+  return Number(data);
+}
+
+export async function validateWorkingTimeRegister(
+  client: SupabaseClient,
+  registerId: number,
+): Promise<number> {
+  const { data, error } = await client.rpc('validate_working_time_register', {
+    p_register_id: registerId,
+  });
+  assertResult(error, 'Impossible de valider le registre.');
+  return Number(data);
+}
+
+export async function approveOwnWorkingTimeRegister(
+  client: SupabaseClient,
+  input: { registerId: number; localWorkDate: string },
+): Promise<number> {
+  const { data, error } = await client.rpc('approve_own_working_time_register', {
+    p_register_id: input.registerId,
+    p_local_work_date: input.localWorkDate,
+  });
+  assertResult(error, 'Impossible de valider votre registre.');
+  return Number(data);
+}
+
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['canceling statement due to statement timeout', 'La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.'],
   ['WORKING_TIME_IMPORT_PERMISSION_DENIED', 'Seuls l’administrateur et l’armement peuvent importer un registre XLSM.'],
@@ -710,7 +793,9 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_IMPORT_BATCH_LOCKED', 'Cet import a déjà été validé ou annulé.'],
   ['WORKING_TIME_IMPORT_DUPLICATE_SOURCE_DATES', 'Le classeur contient plusieurs lignes pour une même date.'],
   ['WORKING_TIME_IMPORT_NO_READY_ROWS', 'Aucune journée contrôlée ne peut être importée.'],
-  ['WORKING_TIME_SELF_VALIDATION_FORBIDDEN', 'Un capitaine ne peut pas valider son propre registre.'],
+  ['WORKING_TIME_CAPTAIN_NOT_IN_WATCH', 'Sélectionnez un capitaine affecté à votre bordée pour cette journée.'],
+  ['WORKING_TIME_PLANNING_ASSIGNMENT_REQUIRED', 'Aucune affectation Planning active ne couvre cette personne et cette journée.'],
+  ['WORKING_TIME_ALERT_COMMENT_REQUIRED', 'Le commentaire est obligatoire lorsqu’une alerte ou une non-conformité est détectée.'],
   ['WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED', 'Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.'],
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
   ['WORKING_TIME_REGISTER_LOCKED', 'Ce registre validé est verrouillé. Réouvrez-le avec un motif pour le corriger.'],

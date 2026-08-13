@@ -15,6 +15,8 @@ const report: DprReportRecord = {
   unlistedProjectName: '',
   vesselId: 3,
   vesselName: 'GOURY',
+  validatorPersonId: 12,
+  validatorName: 'Pierre LEPRETRE',
   issuerName: 'Christophe',
   description: 'Opération de surveillance',
   qhseNote: 'RAS',

@@ -272,6 +272,33 @@ describe('AppShell', () => {
     expect(screen.queryByRole('heading', { name: 'Projets' })).not.toBeInTheDocument();
   });
 
+  it('allows a Marin profile to open the DPR module directly', async () => {
+    const client = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+        signInWithPassword: vi.fn(),
+        signOut: vi.fn(),
+      },
+    };
+
+    render(
+      <AuthProvider client={client as never}>
+        <MemoryRouter initialEntries={['/modules/dpr']}>
+          <Routes>
+            <Route element={<AppShell rolesOverride={['marin']} />}>
+              <Route path="modules/dpr" element={<div>Formulaire DPR marin</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByText('Formulaire DPR marin')).toBeInTheDocument();
+    expect(screen.queryByText('Acces refuse pour ce module.')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Daily Progress Report' })).toBeInTheDocument();
+  });
+
   it.each(['/modules/projects/', '/modules/PROJECTS'])(
     'blocks equivalent direct module URL %s for unauthorized roles',
     async (initialEntry) => {

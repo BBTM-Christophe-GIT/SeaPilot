@@ -77,4 +77,14 @@ describe('previewSupabaseClient', () => {
     expect(summary.data).toMatchObject({ exposure_hours: 12480, LWDC: 1, FAC: 3 });
     expect(profile.data).toMatchObject({ first_name: 'Arthur', last_name: 'DEMO' });
   });
+
+  it('exposes an active Captain as the nominated DPR validator in preview', async () => {
+    const context = await previewSupabaseClient.rpc('dpr_validator_context', { target_date: '2026-08-12' });
+
+    expect(context.error).toBeNull();
+    expect(context.data).toMatchObject({
+      defaultValidatorPersonId: 9301,
+      people: [expect.objectContaining({ id: 9301, functionLabel: 'Capitaine', isDprValidator: true })],
+    });
+  });
 });

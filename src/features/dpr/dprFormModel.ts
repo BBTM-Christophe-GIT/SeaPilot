@@ -29,6 +29,7 @@ export interface DprFormPayload {
   projectId: number | null;
   unlistedProjectName: string;
   vesselId: number | null;
+  validatorPersonId: number | null;
   description: string;
   qhseNote: string;
   metrics: {
@@ -74,6 +75,7 @@ export const EMPTY_DPR_PAYLOAD: DprFormPayload = {
   projectId: null,
   unlistedProjectName: '',
   vesselId: null,
+  validatorPersonId: null,
   description: '',
   qhseNote: '',
   metrics: { fuelConsumedLiters: '', fuelOnBoardLiters: '' },

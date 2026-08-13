@@ -296,7 +296,13 @@ select ok(
 );
 select ok(
   (
-    select bool_and(coalesce(qual, '') like '%user_belongs_to_company%')
+    select bool_and(
+      coalesce(qual, '') like '%user_belongs_to_company%'
+      or (
+        tablename = 'purchase_requests'
+        and coalesce(qual, '') like '%purchase_request_has_company_role%'
+      )
+    )
     from pg_policies
     where schemaname = 'public'
       and tablename in ('dpr_items', 'dpr_archives', 'purchase_requests', 'action_items', 'action_documents')

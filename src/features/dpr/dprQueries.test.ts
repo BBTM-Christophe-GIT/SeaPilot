@@ -1,16 +1,52 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_DPR_PAYLOAD } from './dprFormModel.ts';
-import { runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
+import { fetchDprDashboard, runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
+
+function queryResult(data: unknown) {
+  const result = { data, error: null };
+  const query: Record<string, unknown> = {
+    then: (resolve: (value: typeof result) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject),
+  };
+  ['eq', 'in', 'is', 'limit', 'order', 'select'].forEach((method) => {
+    query[method] = vi.fn(() => query);
+  });
+  query.maybeSingle = vi.fn().mockResolvedValue(result);
+  return query;
+}
 
 describe('DPR Supabase commands', () => {
+  it('does not load DPR history for a Marin dashboard', async () => {
+    const reports = queryResult([]);
+    const profiles = queryResult({ display_name: 'Arthur RICHER' });
+    const people = queryResult({ id: 18, first_name: 'Arthur', last_name: 'Richer', function_label: '2nd Capitaine', grade_label: 'Officier' });
+    const empty = queryResult([]);
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() => table === 'dpr_reports' ? reports : table === 'profiles' ? profiles : table === 'people' ? people : empty),
+    }));
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null });
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'sailor-user', email: 'arthur@example.invalid' } } }) },
+      from,
+      rpc,
+    };
+
+    const dashboard = await fetchDprDashboard(client as never, { hideHistory: true });
+
+    expect(reports.order).not.toHaveBeenCalled();
+    expect(dashboard.reports).toEqual([]);
+    expect(dashboard.currentUserId).toBe('sailor-user');
+  });
+
   it('saves the complete six-step payload through the transactional RPC', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: { id: 42 }, error: null });
+    const rpc = vi.fn().mockResolvedValueOnce({ data: { id: 42 }, error: null });
     const id = await saveDprPayload({ rpc } as never, null, EMPTY_DPR_PAYLOAD);
     expect(id).toBe(42);
     expect(rpc).toHaveBeenCalledWith('dpr_save_payload', {
       target_dpr_id: null,
       target_payload: EMPTY_DPR_PAYLOAD,
     });
+    expect(rpc).toHaveBeenCalledOnce();
   });
 
   it('passes an explicit reason for logical deletion and reopening', async () => {

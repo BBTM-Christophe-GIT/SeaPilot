@@ -121,6 +121,7 @@ select lives_ok(
         ('2026-08-04'::date, '2026-08-04 12:00:00+02'::timestamptz,
          '2026-08-04 14:00:00+02'::timestamptz, 'calculation-c')
     ) fixture(local_work_date, starts_at, ends_at, source_record_key)
+    where register.period_kind = 'weekly' and register.period_start = '2026-08-03'
   $$,
   'overlapping and overnight intervals are accepted as raw facts'
 );

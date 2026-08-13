@@ -2,13 +2,17 @@
 
 Le module `/modules/workingTime` conserve les intervalles horodatés comme source de vérité pour les contrôles de travail et de repos. Plusieurs phases disjointes peuvent être saisies le même jour ; elles sont contrôlées ensemble puis enregistrées atomiquement par Supabase.
 
-Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le marin et le capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. La signature du titulaire demeure obligatoirement explicite et l’auto-validation d’un capitaine reste interdite.
+Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le Marin et le Capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. Un registre mensuel est ouvert automatiquement lorsqu’une fiche RH liée reçoit le rôle Marin ou Capitaine.
+
+Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la frise fournit les heures et le serveur impose l’affectation Planning active de la personne et de la journée. Les périodes sélectionnées sont affichées sous la frise. Le commentaire devient obligatoire dès que l’analyse serveur détecte une alerte ou une non-conformité.
+
+Le Marin enregistre son brouillon puis choisit un Capitaine présent dans le même navire et la même bordée au jour de saisie pour demander sa signature. Le Capitaine peut valider le registre demandé. Pour ses propres heures, le Capitaine dispose d’une validation directe qui soumet et approuve atomiquement son registre avec sa signature active.
 
 ## Cockpit mensuel
 
 L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel en poste et le personnel ancien ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
 
-La barre de commandes reste centrée sur les actions utiles. Les anciennes entrées « Cockpit métier P1.3 », « Registres » et « Historique » ont été retirées. Les fonctions secondaires s’ouvrent désormais dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
+La barre de commandes reste centrée sur les fonctions d’aide à la décision et les documents. Le groupe « Gestion des congés », « Actualiser », « Ouvrir un registre », « Enregistrer le brouillon » et « Demander la signature » ont été retirés de cette barre. Les deux dernières actions apparaissent maintenant sous les périodes sélectionnées. Les fonctions secondaires s’ouvrent dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
 
 Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
 
@@ -16,7 +20,7 @@ Les intervalles affichés sont consolidés par personne et par mois, indépendam
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
 
-Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Enregistrer la sélection », persiste atomiquement toutes les périodes. La saisie précise début/fin reste disponible et modifie la période active.
+Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Enregistrer le brouillon », persiste atomiquement toutes les périodes. Il n’existe plus de saisie manuelle Début/Fin, Navire ou Bordée.
 
 ## Exports mensuels
 
@@ -68,7 +72,7 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Minuit, chevauchements, doublons, repos total/consécutif | `working_time_server_calculations_test.sql` |
 | Fenêtre entre deux mois et exactement 7 jours | `working_time_server_calculations_test.sql` |
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
-| Droits Marin/Capitaine/Admin, auto-validation interdite | `working_time_workflow_permissions_test.sql` |
+| Droits Marin/Capitaine/Admin, demande au Capitaine de bordée et auto-validation Capitaine | `working_time_workflow_permissions_test.sql` |
 | Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
 | RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |

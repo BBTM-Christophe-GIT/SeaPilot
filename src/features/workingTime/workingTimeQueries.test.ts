@@ -221,8 +221,8 @@ describe('working-time workflow queries', () => {
   });
 
   it('translates server authorization failures into actionable interface messages', () => {
-    expect(workingTimeErrorMessage(new Error('WORKING_TIME_SELF_VALIDATION_FORBIDDEN.')))
-      .toBe('Un capitaine ne peut pas valider son propre registre.');
+    expect(workingTimeErrorMessage(new Error('WORKING_TIME_CAPTAIN_NOT_IN_WATCH.')))
+      .toBe('Sélectionnez un capitaine affecté à votre bordée pour cette journée.');
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.')))
       .toBe('Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.');
     expect(workingTimeErrorMessage(new Error('canceling statement due to statement timeout')))

@@ -67,6 +67,11 @@ interface ActionDialogState {
   title: string;
 }
 
+export function isCaptainScopedPurchaseView(roles: RoleKey[]): boolean {
+  return roles.includes('capitaine')
+    && !roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+}
+
 const PAGE_SIZE = 10;
 const STAGE_LABELS: Record<PurchaseRequestStage, string> = {
   to_process: 'À traiter',
@@ -174,7 +179,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const currentPerson = outletContext?.currentPerson || null;
   const processingAllowed = canProcess(effectiveRoles);
   const creationAllowed = canCreate(effectiveRoles, currentPerson?.functionLabel || '');
-  const captainView = effectiveRoles.includes('capitaine');
+  const captainView = isCaptainScopedPurchaseView(effectiveRoles);
 
   const [requests, setRequests] = useState<PurchaseRequestRecord[]>([]);
   const [vessels, setVessels] = useState<PurchaseVesselOption[]>([]);

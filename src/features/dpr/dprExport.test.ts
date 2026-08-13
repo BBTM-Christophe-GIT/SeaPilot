@@ -7,6 +7,7 @@ function report(id: number, number: number, date: string): DprReportRecord {
   return {
     id, number, status: 'validated', reportDate: date, projectId: 144, projectCode: 'P144',
     projectTitle: 'Projet', unlistedProjectName: '', vesselId: 3, vesselName: 'GOURY',
+    validatorPersonId: 12, validatorName: 'Pierre LEPRETRE',
     issuerName: 'Christophe', description: 'Opération', qhseNote: '', createdBy: 'user-1',
     updatedAt: `${date}T18:00:00Z`, fuelConsumedLiters: 600, incidentCount: 0, files: [],
   };

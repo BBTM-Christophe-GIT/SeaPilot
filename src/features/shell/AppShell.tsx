@@ -259,14 +259,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
 
   const requestedModule = getRequestedModule(location.pathname);
   const roleVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
-  const isMarinOnly = effectiveRoles.includes('marin')
-    && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
-  const currentFunction = `${currentPerson?.functionLabel || ''} ${currentPerson?.gradeLabel || ''}`
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR');
-  const isSecondCaptain = currentFunction.includes('2nd capitaine') || currentFunction.includes('second capitaine');
-  const activeVisibleModules = isMarinOnly && !isSecondCaptain
-    ? roleVisibleModules.filter((module) => module.key !== 'dpr')
-    : roleVisibleModules;
+  const activeVisibleModules = roleVisibleModules;
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
     : false;
