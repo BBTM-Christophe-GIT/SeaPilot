@@ -15,17 +15,12 @@ import {
   LayoutList,
   LockKeyhole,
   PenLine,
-  Plus,
-  RefreshCw,
-  RotateCcw,
   Search,
-  Send,
   ShieldCheck,
   SlidersHorizontal,
   TableProperties,
   Trash2,
   Upload,
-  UserCheck,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -36,15 +31,20 @@ import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
   fetchWorkingTimeWorkspace,
+  fetchWorkingTimeDayContext,
   discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
+  approveOwnWorkingTimeRegister,
+  requestWorkingTimeCaptainSignature,
   saveWorkingTimeDayComment,
   saveWorkingTimeInterval,
   saveWorkingTimePhases,
   transitionWorkingTimeRegister,
+  validateWorkingTimeRegister,
   voidWorkingTimeInterval,
   workingTimeErrorMessage,
   type WorkingTimeActiveSignature,
+  type WorkingTimeDayContext,
   type WorkingTimeNonComplianceCause,
   type WorkingTimePhaseInput,
   type WorkingTimeRange,
@@ -219,7 +219,6 @@ export function WorkingTimeWorkflowPanel({
   previewMode = false,
   refreshToken = 0,
   onMonthChange,
-  onRefresh,
   onOpenImport,
   onOpenHse,
   onOpenReport,
@@ -229,12 +228,9 @@ export function WorkingTimeWorkflowPanel({
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
   const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
-  const [personId, setPersonId] = useState<number | null>(currentPerson?.id || null);
   const [registerSearch, setRegisterSearch] = useState('');
   const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
   const [endsAt, setEndsAt] = useState(`${range.start}T00:00`);
-  const [vesselId, setVesselId] = useState('');
-  const [watchGroup, setWatchGroup] = useState('');
   const [intervalComment, setIntervalComment] = useState('');
   const [editingIntervalId, setEditingIntervalId] = useState<number | null>(null);
   const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
@@ -242,7 +238,6 @@ export function WorkingTimeWorkflowPanel({
   const [voidReason, setVoidReason] = useState('');
   const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
   const [reopenReason, setReopenReason] = useState('');
-  const [signatureConsent, setSignatureConsent] = useState(false);
   const [signatureUrls, setSignatureUrls] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -250,7 +245,10 @@ export function WorkingTimeWorkflowPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [openRegisterMenu, setOpenRegisterMenu] = useState(false);
+  const [dayContext, setDayContext] = useState<WorkingTimeDayContext | null>(null);
+  const [selectedCaptainPersonId, setSelectedCaptainPersonId] = useState<number | null>(null);
+  const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
+  const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedDay, setSelectedDay] = useState(range.start);
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
@@ -354,7 +352,7 @@ export function WorkingTimeWorkflowPanel({
   const validatorSignatureSnapshot = selectedValidations.find((validation) => validation.eventType === 'captain_validated')?.signatureSnapshot;
   const subjectSignatureEvidence = frozenSignatureEvidence(sailorSignatureSnapshot) || activeSignatureEvidence(subjectSignature);
   const validatorSignatureEvidence = frozenSignatureEvidence(validatorSignatureSnapshot)
-    || (!isOwnRegister ? activeSignatureEvidence(currentSignature) : undefined);
+    || activeSignatureEvidence(currentSignature);
   const persistedCommentDates = new Set((workspace?.dayComments || [])
     .filter((comment) => comment.registerId === selectedRegister?.id && nonComplianceComplete({
       causeCategory: comment.causeCategory || '',
@@ -364,11 +362,16 @@ export function WorkingTimeWorkflowPanel({
       comment: comment.comment,
     }))
     .map((comment) => comment.localWorkDate));
-  const missingCaptainComments = nonCompliantDates.filter((date) => !persistedCommentDates.has(date));
+  const missingCaptainComments = nonCompliantDates.filter((date) => (
+    !persistedCommentDates.has(date) && !nonComplianceComplete(dayResponses[date])
+  ));
   const canValidate = Boolean(
     selectedRegister?.status === 'submitted'
-      && !isOwnRegister
       && (hasCaptainRole || hasManagementValidationRole)
+      && (hasManagementValidationRole
+        || isOwnRegister
+        || selectedRegister.requestedCaptainPersonId == null
+        || selectedRegister.requestedCaptainPersonId === currentPersonId)
       && currentSignature
       && missingCaptainComments.length === 0,
   );
@@ -380,9 +383,6 @@ export function WorkingTimeWorkflowPanel({
 
   useEffect(() => {
     if (!workspace) return;
-    setPersonId((current) => current && visibleEditablePeople.some((person) => person.personId === current)
-      ? current
-      : visibleEditablePeople[0]?.personId || null);
     setSelectedPersonId((current) => {
       if (current
         && visibleReadablePeople.some((person) => person.personId === current)
@@ -430,10 +430,56 @@ export function WorkingTimeWorkflowPanel({
         compensatoryRestPlan: comment.compensatoryRestPlan,
         comment: comment.comment,
       }])));
-    setSignatureConsent(false);
     setReopenReason('');
     setPendingPhases([]);
   }, [selectedRegister?.id, workspace]);
+
+  useEffect(() => {
+    if (!selectedRegister || !selectedDay) {
+      setDayContext(null);
+      setSelectedCaptainPersonId(null);
+      return;
+    }
+    let active = true;
+    void fetchWorkingTimeDayContext(client, {
+      personId: selectedRegister.personId,
+      localWorkDate: selectedDay,
+    }).then((context) => {
+      if (!active) return;
+      setDayContext(context);
+      setSelectedCaptainPersonId((current) => {
+        if (current && context.captainCandidates.some((candidate) => candidate.personId === current)) return current;
+        if (selectedRegister.requestedCaptainPersonId
+          && context.captainCandidates.some((candidate) => candidate.personId === selectedRegister.requestedCaptainPersonId)) {
+          return selectedRegister.requestedCaptainPersonId;
+        }
+        return context.captainCandidates[0]?.personId || null;
+      });
+    }).catch((reason) => {
+      if (!active) return;
+      setDayContext(null);
+      setSelectedCaptainPersonId(null);
+      setActionError(workingTimeErrorMessage(reason));
+    });
+    return () => { active = false; };
+  }, [client, selectedDay, selectedRegister]);
+
+  useEffect(() => {
+    if (!workspace || !currentPerson || isAutoCreatingRegister || isLoading) return;
+    if (!roles.some((role) => role === 'marin' || role === 'capitaine')) return;
+    if (monthlyRegisterByPerson.has(currentPerson.id)) return;
+    const attemptKey = `${currentPerson.id}:${range.start}`;
+    if (autoRegisterAttempt === attemptKey) return;
+    setAutoRegisterAttempt(attemptKey);
+    setIsAutoCreatingRegister(true);
+    void getOrCreateWorkingTimeRegister(client, {
+      personId: currentPerson.id,
+      periodKind: 'monthly',
+      periodStart: range.start,
+    }).then(() => reload()).catch((reason) => {
+      setActionError(workingTimeErrorMessage(reason));
+    }).finally(() => setIsAutoCreatingRegister(false));
+  }, [autoRegisterAttempt, client, currentPerson, isAutoCreatingRegister, isLoading, monthlyRegisterByPerson, range.start, reload, roles, workspace]);
 
   useEffect(() => {
     if (previewMode || !workspace) {
@@ -505,8 +551,6 @@ export function WorkingTimeWorkflowPanel({
     setPendingPhases([]);
     setStartsAt(`${selectedDay}T00:00`);
     setEndsAt(`${selectedDay}T00:00`);
-    setVesselId('');
-    setWatchGroup('');
     setIntervalComment('');
   }
 
@@ -519,8 +563,8 @@ export function WorkingTimeWorkflowPanel({
     const common = {
       registerId: selectedRegister.id,
       timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-      vesselId: vesselId ? Number(vesselId) : null,
-      watchGroup: watchGroup.trim() || null,
+      vesselId: dayContext?.vesselId || null,
+      watchGroup: dayContext?.watchGroup || null,
       comment: intervalComment.trim() || null,
     };
     if (editingIntervalId) {
@@ -559,19 +603,43 @@ export function WorkingTimeWorkflowPanel({
     }));
   }
 
-  async function refreshEverything() {
-    if (onRefresh) await onRefresh();
-    else await reload();
-  }
-
   function editInterval(interval: WorkingTimeInterval) {
     setPendingPhases([]);
     setEditingIntervalId(interval.id);
+    setSelectedDay(interval.localWorkDate);
     setStartsAt(dateTimeLocal(interval.startsAt));
     setEndsAt(dateTimeLocal(interval.endsAt));
-    setVesselId(interval.vesselId ? String(interval.vesselId) : '');
-    setWatchGroup(interval.watchGroup || '');
     setIntervalComment(interval.comment || '');
+  }
+
+  function handleEntryAction(intent: 'save' | 'request-signature' | 'validate') {
+    if (!selectedRegister) return;
+    const successMessage = intent === 'save'
+      ? 'Le brouillon a été enregistré.'
+      : intent === 'request-signature'
+        ? 'Le registre a été transmis au capitaine sélectionné.'
+        : 'Le registre est validé et verrouillé.';
+    void runAction(async () => {
+      if (pendingPhases.length || editingIntervalId) await persistPendingSelection();
+      await persistCompleteCaptainResponses();
+      if (intent === 'request-signature') {
+        if (!selectedCaptainPersonId) throw new Error('Sélectionnez un capitaine de votre bordée.');
+        await requestWorkingTimeCaptainSignature(client, {
+          registerId: selectedRegister.id,
+          captainPersonId: selectedCaptainPersonId,
+          localWorkDate: selectedDay,
+        });
+      } else if (intent === 'validate') {
+        if (isOwnRegister && hasCaptainRole && selectedRegister.status !== 'submitted') {
+          await approveOwnWorkingTimeRegister(client, {
+            registerId: selectedRegister.id,
+            localWorkDate: selectedDay,
+          });
+        } else {
+          await validateWorkingTimeRegister(client, selectedRegister.id);
+        }
+      }
+    }, successMessage);
   }
 
   if (!currentPerson && !canBrowseWithoutProfile) {
@@ -583,50 +651,10 @@ export function WorkingTimeWorkflowPanel({
     <section aria-labelledby="working-time-registers-title" className="working-time-workflow">
       <nav aria-label="Actions du suivi du temps de travail" className="working-time-command-bar">
         <div className="working-time-command-group">
-          <span>Gestion des congés</span>
-          <div>
-            <button disabled={isLoading || isSaving} onClick={() => void refreshEverything()} type="button"><RefreshCw aria-hidden="true" className={isLoading ? 'is-spinning' : ''} size={21} /><small>Actualiser</small></button>
-            <span className="working-time-command-popover-anchor">
-              <button aria-expanded={openRegisterMenu} onClick={() => setOpenRegisterMenu((open) => !open)} type="button"><Plus aria-hidden="true" size={21} /><small>Ouvrir un registre</small></button>
-              {openRegisterMenu ? <span className="working-time-command-popover is-register" role="dialog">
-                <strong>Ouvrir {displayedMonthLabel}</strong>
-                <label>Marin<select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
-                  {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
-                  {visibleEditablePeople.map((person) => <option key={person.personId} value={person.personId}>{formatPerson(person.firstName, person.lastName)}{person.isSelf ? ' — moi' : ''}</option>)}
-                </select></label>
-                <button disabled={isSaving || !currentPerson || !personId} onClick={() => void runAction(async () => {
-                  await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind: 'monthly', periodStart: range.start });
-                  setSelectedPersonId(personId);
-                  setOpenRegisterMenu(false);
-                }, 'Le registre est prêt pour la saisie.')} type="button">Ouvrir ce mois</button>
-              </span> : null}
-            </span>
-            <button disabled={isSaving || (!canEdit && !hasCaptainRole) || (!pendingPhases.length && !editingIntervalId && !Object.values(dayResponses).some(nonComplianceComplete))} onClick={() => void runAction(async () => {
-              await persistPendingSelection();
-              await persistCompleteCaptainResponses();
-            }, 'Le brouillon et les commentaires complets ont été enregistrés.')} type="button"><FileSignature aria-hidden="true" size={21} /><small>Enregistrer le brouillon</small></button>
-            <button disabled={!canEdit || isSaving || (!selectedIntervals.length && !pendingPhases.length)} onClick={() => void runAction(async () => {
-              await persistPendingSelection();
-              await persistCompleteCaptainResponses();
-              await transitionWorkingTimeRegister(client, { registerId: selectedRegister!.id, action: 'request_sailor_signature' });
-            }, 'Le registre attend maintenant la signature du marin.')} type="button"><Send aria-hidden="true" size={21} /><small>Demander la signature</small></button>
-          </div>
-        </div>
-
-        <div className="working-time-command-group">
           <span>Aide à la décision</span>
           <div>
             {onOpenHse ? <button onClick={onOpenHse} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Exposition HSE / IMCA</small></button> : null}
             {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
-            {selectedRegister?.status === 'awaiting_sailor_signature' && isOwnRegister ? <button disabled={isSaving || !currentSignature} onClick={() => {
-              if (!window.confirm('Apposer explicitement votre signature de profil et soumettre ce registre ?')) return;
-              setSignatureConsent(true);
-              void runAction(() => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'sailor_sign' }), 'Votre registre a été signé et soumis.');
-            }} type="button"><FileSignature aria-hidden="true" size={21} /><small>Signer et soumettre</small></button> : null}
-            {selectedRegister?.status === 'submitted' && !isOwnRegister && (hasCaptainRole || hasManagementValidationRole) ? <button disabled={isSaving || !canValidate} onClick={() => void runAction(
-              () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'captain_validate' }),
-              'Le registre est validé et verrouillé.',
-            )} type="button"><UserCheck aria-hidden="true" size={21} /><small>Valider</small></button> : null}
             {canReopen ? <button disabled={isSaving} onClick={() => {
               const reason = window.prompt('Motif de la réouverture :', reopenReason);
               if (!reason?.trim()) return;
@@ -644,16 +672,6 @@ export function WorkingTimeWorkflowPanel({
           </div>
         </div>
       </nav>
-      <header className="working-time-section-heading" hidden>
-        <div><p>Registres individuels</p><h2 id="working-time-registers-title">Saisie, signature et validation</h2></div>
-        <div className="working-time-heading-actions">
-          <span>{catalogPeople.length} marin(s) affiché(s) · {displayedMonthLabel}</span>
-          <button disabled={isLoading || isSaving} onClick={() => void reload()} type="button">
-            <RefreshCw aria-hidden="true" size={15} /> Actualiser
-          </button>
-        </div>
-      </header>
-
       {errorMessage ? <p className="working-time-message is-error" role="alert">{errorMessage}</p> : null}
       {actionError ? <p className="working-time-message is-error" role="alert">{actionError}</p> : null}
       {actionMessage ? <p className="working-time-message is-success" role="status">{actionMessage}</p> : null}
@@ -662,27 +680,6 @@ export function WorkingTimeWorkflowPanel({
 
       {workspace ? (
         <>
-          <div className="working-time-register-create" hidden>
-            <label>Marin
-              <select aria-label="Personne du registre" disabled={!visibleEditablePeople.length} onChange={(event) => setPersonId(Number(event.target.value))} value={personId || ''}>
-                {!visibleEditablePeople.length ? <option value="">Aucune personne accessible</option> : null}
-                {visibleEditablePeople.map((person) => (
-                  <option key={person.personId} value={person.personId}>
-                    {formatPerson(person.firstName, person.lastName)}{person.isSelf ? ' — moi' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>Mois et année
-              <input aria-label="Mois du registre" disabled type="month" value={range.start.slice(0, 7)} />
-            </label>
-            <button disabled={isSaving || !currentPerson || !personId} onClick={() => void runAction(async () => {
-              await getOrCreateWorkingTimeRegister(client, { personId: personId!, periodKind: 'monthly', periodStart: range.start });
-              setSelectedPersonId(personId);
-            }, 'Le registre est prêt pour la saisie.')} type="button">
-              <Plus aria-hidden="true" size={17} /> Ouvrir ce mois
-            </button>
-          </div>
           {!visibleEditablePeople.length ? <p className="working-time-message is-warning">Aucune fiche RH n’est accessible en saisie pour votre rôle et cette période.</p> : null}
 
           <div className="working-time-workspace-grid">
@@ -710,7 +707,6 @@ export function WorkingTimeWorkflowPanel({
                     return <div className={`working-time-register-card ${person.personId === selectedPersonId ? 'is-active' : ''}`} key={person.personId}>
                       <button className="working-time-register-select" onClick={() => {
                         setSelectedPersonId(person.personId);
-                        if (visibleEditablePeople.some((editable) => editable.personId === person.personId)) setPersonId(person.personId);
                       }} type="button"><span>{personName}</span><small>{person.functionLabel || person.gradeLabel || 'Personnel maritime'}</small><i className={person.active !== false ? 'is-available' : ''} title={person.active !== false ? 'Disponible' : 'Indisponible'} /></button>
                       {register?.status === 'draft' ? <button aria-label={`Supprimer le brouillon de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
                         if (!window.confirm(`Retirer ce brouillon de ${personName} et abandonner ses modifications non enregistrées ?`)) return;
@@ -768,6 +764,7 @@ export function WorkingTimeWorkflowPanel({
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
                     <WorkingTimeEntryBoard
+                    captainCandidates={dayContext?.captainCandidates || []}
                     canEdit={canEdit}
                     client={client}
                     comment={intervalComment}
@@ -775,48 +772,32 @@ export function WorkingTimeWorkflowPanel({
                     endsAt={endsAt}
                     intervals={selectedIntervals}
                     isSaving={isSaving}
+                    hasRecordedPeriods={selectedDayIntervals.length > 0}
                     onCancelEdit={resetIntervalForm}
+                    onCaptainPersonIdChange={setSelectedCaptainPersonId}
                     onCommentChange={setIntervalComment}
                     onEndsAtChange={setEndsAt}
                     onPendingPhasesChange={setPendingPhases}
                     onSelectedDayChange={setSelectedDay}
                     onStartsAtChange={setStartsAt}
-                    onSubmit={(phases) => void runAction(async () => {
-                      const common = {
-                        registerId: selectedRegister.id,
-                        timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-                        vesselId: vesselId ? Number(vesselId) : null,
-                        watchGroup: watchGroup.trim() || null,
-                        comment: intervalComment.trim() || null,
-                      };
-                      if (editingIntervalId) {
-                        await saveWorkingTimeInterval(client, {
-                          ...common,
-                          startsAt: localInputToIso(phases[0].startsAt),
-                          endsAt: localInputToIso(phases[0].endsAt),
-                          intervalId: editingIntervalId,
-                        });
-                      } else {
-                        await saveWorkingTimePhases(client, {
-                          ...common,
-                          phases: phases.map((phase) => ({ startsAt: localInputToIso(phase.startsAt), endsAt: localInputToIso(phase.endsAt) })),
-                        });
-                      }
-                      resetIntervalForm();
-                    }, editingIntervalId ? 'Le créneau a été corrigé.' : 'Les heures ont été ajoutées au brouillon.')}
-                    onVesselIdChange={setVesselId}
-                    onWatchGroupChange={setWatchGroup}
+                    onSubmit={(_phases, intent) => handleEntryAction(intent)}
                     periodEnd={selectedRegister.periodEnd}
                     periodStart={selectedRegister.periodStart}
                     personId={selectedRegister.personId}
                     pendingPhases={pendingPhases}
+                    planningVesselId={dayContext?.vesselId || null}
+                    planningWatchGroup={dayContext?.watchGroup || null}
                     nonCompliantDates={nonCompliantDates}
+                    selectedCaptainPersonId={selectedCaptainPersonId}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
-                    showSubmitActions={false}
-                    vesselId={vesselId}
-                    vessels={workspace.vessels}
-                    watchGroup={watchGroup}
+                    showRequestSignature={canEdit && isOwnRegister && isSailorOnlyView}
+                    showSaveDraft={canEdit}
+                    showValidate={(canEdit && isOwnRegister && hasCaptainRole)
+                      || (selectedRegister.status === 'submitted' && (hasCaptainRole || hasManagementValidationRole))}
+                    validateDisabled={canEdit && isOwnRegister && hasCaptainRole
+                      ? !currentSignature || missingCaptainComments.length > 0
+                      : !canValidate}
                     />
                     {selectedIntervals.length ? (
                     <div className="working-time-interval-list" hidden>
@@ -900,67 +881,15 @@ export function WorkingTimeWorkflowPanel({
                   </section>
                 ) : null}
 
-                <section className="working-time-workflow-actions" aria-label="Workflow du registre" hidden>
-                  <h4>Signature et décision</h4>
-                  {canEdit ? <button disabled={isSaving || selectedIntervals.length === 0} onClick={() => void runAction(
-                    () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'request_sailor_signature' }),
-                    'Le registre attend maintenant la signature du marin.',
-                  )} type="button"><Send aria-hidden="true" size={17} />Enregistrer le brouillon et demander la signature</button> : null}
-
-                  {selectedRegister.status === 'awaiting_sailor_signature' && isOwnRegister ? (
-                    <div className="working-time-sign-action">
-                      <label><input checked={signatureConsent} onChange={(event) => setSignatureConsent(event.target.checked)} type="checkbox" />J’appose explicitement ma signature de profil sur ce registre.</label>
-                      <button disabled={isSaving || !signatureConsent || !currentSignature} onClick={() => void runAction(
-                        () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'sailor_sign' }),
-                        'Votre registre a été signé et soumis.',
-                      )} type="button"><FileSignature aria-hidden="true" size={17} />Signer et soumettre</button>
-                    </div>
-                  ) : null}
-
-                  {selectedRegister.status === 'submitted' && isOwnRegister && hasCaptainRole ? (
-                    <p className="working-time-separation-note"><LockKeyhole aria-hidden="true" size={17} />Auto-validation interdite : un autre capitaine autorisé, l’Armement ou un administrateur doit valider votre registre.</p>
-                  ) : null}
-
-                  {selectedRegister.status === 'submitted' && !isOwnRegister && (hasCaptainRole || hasManagementValidationRole) ? (
-                    <button disabled={isSaving || !canValidate} onClick={() => void runAction(
-                      () => transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'captain_validate' }),
-                      'Le registre est validé et verrouillé.',
-                    )} type="button"><UserCheck aria-hidden="true" size={17} />Contrôler et valider le registre</button>
-                  ) : null}
-
-                  {missingCaptainComments.length > 0 && selectedRegister.status === 'submitted' ? <p className="working-time-message is-error">Réponses de non-conformité incomplètes : {missingCaptainComments.join(', ')}.</p> : null}
-                  {!currentSignature && ['awaiting_sailor_signature', 'submitted'].includes(selectedRegister.status) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
-
-                  {canReopen ? (
-                    <div className="working-time-reopen-form">
-                      <label>Motif obligatoire<input onChange={(event) => setReopenReason(event.target.value)} placeholder="Décrivez la correction demandée" value={reopenReason} /></label>
-                      <button disabled={isSaving || reopenReason.trim().length < 2} onClick={() => void runAction(async () => {
-                        await transitionWorkingTimeRegister(client, { registerId: selectedRegister.id, action: 'reopen', comment: reopenReason });
-                        setReopenReason('');
-                      }, 'Le registre a été rouvert et le motif ajouté à l’audit.')} type="button"><RotateCcw aria-hidden="true" size={17} />Réouvrir</button>
-                    </div>
-                  ) : null}
-
-                  {selectedRegister.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Validation terminée — historique et signatures figés.</p> : null}
-                </section>
+                {missingCaptainComments.length > 0 && selectedRegister.status === 'submitted' ? <p className="working-time-message is-error">Réponses de non-conformité incomplètes : {missingCaptainComments.join(', ')}.</p> : null}
+                {!currentSignature && selectedRegister.status === 'submitted' && (hasCaptainRole || hasManagementValidationRole) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
+                {selectedRegister.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Validation terminée — historique et signatures figés.</p> : null}
               </article>
             ) : (
               <div className="working-time-register-detail working-time-empty">
                 <div>
                   <h3>{selectedCatalogPerson ? formatPerson(selectedCatalogPerson.firstName, selectedCatalogPerson.lastName) : 'Aucun marin sélectionné'}</h3>
-                  <p>{selectedCatalogPerson ? `Aucun registre mensuel pour ${displayedMonthLabel}.` : 'Sélectionnez un marin dans le catalogue.'}</p>
-                  {selectedCatalogPerson && currentPerson && visibleEditablePeople.some((person) => person.personId === selectedCatalogPerson.personId) ? (
-                    <button hidden disabled={isSaving} onClick={() => void runAction(async () => {
-                      await getOrCreateWorkingTimeRegister(client, {
-                        personId: selectedCatalogPerson.personId,
-                        periodKind: 'monthly',
-                        periodStart: range.start,
-                      });
-                      setPersonId(selectedCatalogPerson.personId);
-                    }, 'Le registre mensuel est prêt pour la saisie.')} type="button">
-                      <Plus aria-hidden="true" size={17} /> Ouvrir {displayedMonthLabel}
-                    </button>
-                  ) : null}
+                  <p>{selectedCatalogPerson ? `Le registre mensuel de ${displayedMonthLabel} est en cours de création automatique.` : 'Sélectionnez un marin dans le catalogue.'}</p>
                 </div>
               </div>
             )}

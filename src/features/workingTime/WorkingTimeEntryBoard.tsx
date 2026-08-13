@@ -3,15 +3,17 @@ import {
   AlertTriangle,
   CheckCircle2,
   Save,
+  Send,
+  UserCheck,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
   fetchWorkingTimePhasesRecommendation,
   workingTimeErrorMessage,
+  type WorkingTimeCaptainCandidate,
   type WorkingTimeEntryRecommendation,
   type WorkingTimePhaseInput,
-  type WorkingTimeVesselOption,
 } from './workingTimeQueries';
 
 interface WorkingTimeEntryBoardProps {
@@ -20,27 +22,31 @@ interface WorkingTimeEntryBoardProps {
   periodStart: string;
   periodEnd: string;
   intervals: WorkingTimeInterval[];
-  vessels: WorkingTimeVesselOption[];
   canEdit: boolean;
   isSaving: boolean;
   startsAt: string;
   endsAt: string;
-  vesselId: string;
-  watchGroup: string;
+  planningVesselId: number | null;
+  planningWatchGroup: string | null;
   comment: string;
   editingIntervalId: number | null;
   pendingPhases?: WorkingTimePhaseInput[];
   nonCompliantDates?: string[];
   selectedDay?: string;
-  showSubmitActions?: boolean;
+  captainCandidates?: WorkingTimeCaptainCandidate[];
+  selectedCaptainPersonId?: number | null;
+  hasRecordedPeriods?: boolean;
+  showSaveDraft?: boolean;
+  showRequestSignature?: boolean;
+  showValidate?: boolean;
+  validateDisabled?: boolean;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
-  onVesselIdChange: (value: string) => void;
-  onWatchGroupChange: (value: string) => void;
   onCommentChange: (value: string) => void;
+  onCaptainPersonIdChange?: (value: number | null) => void;
   onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
   onSelectedDayChange?: (day: string) => void;
-  onSubmit: (phases: WorkingTimePhaseInput[]) => void;
+  onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save' | 'request-signature' | 'validate') => void;
   onCancelEdit: () => void;
 }
 
@@ -111,24 +117,28 @@ export function WorkingTimeEntryBoard({
   periodStart,
   periodEnd,
   intervals,
-  vessels,
   canEdit,
   isSaving,
   startsAt,
   endsAt,
-  vesselId,
-  watchGroup,
+  planningVesselId,
+  planningWatchGroup,
   comment,
   editingIntervalId,
   pendingPhases = [],
   nonCompliantDates = [],
   selectedDay: controlledSelectedDay,
-  showSubmitActions = true,
+  captainCandidates = [],
+  selectedCaptainPersonId = null,
+  hasRecordedPeriods = false,
+  showSaveDraft = true,
+  showRequestSignature = false,
+  showValidate = false,
+  validateDisabled = false,
   onStartsAtChange,
   onEndsAtChange,
-  onVesselIdChange,
-  onWatchGroupChange,
   onCommentChange,
+  onCaptainPersonIdChange = () => undefined,
   onPendingPhasesChange = () => undefined,
   onSelectedDayChange = () => undefined,
   onSubmit,
@@ -170,8 +180,8 @@ export function WorkingTimeEntryBoard({
         personId,
         phases: combinedPhases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() })),
         timezoneName,
-        vesselId: vesselId ? Number(vesselId) : null,
-        watchGroup: watchGroup.trim() || null,
+        vesselId: planningVesselId,
+        watchGroup: planningWatchGroup,
         excludeIntervalId: editingIntervalId,
       }).then((result) => {
         if (!cancelled) setRecommendation(result);
@@ -188,7 +198,7 @@ export function WorkingTimeEntryBoard({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, timezoneName, vesselId, watchGroup]);
+  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, planningVesselId, planningWatchGroup, timezoneName]);
 
   const selectedSlots = useMemo(() => {
     const start = new Date(startsAt).getTime();
@@ -240,15 +250,6 @@ export function WorkingTimeEntryBoard({
       onStartsAtChange(merged[nextActiveIndex].startsAt);
       onEndsAtChange(merged[nextActiveIndex].endsAt);
     }
-  }
-
-  function updateActivePhase(field: 'startsAt' | 'endsAt', value: string) {
-    if (field === 'startsAt') onStartsAtChange(value);
-    else onEndsAtChange(value);
-    if (editingIntervalId || activePendingIndex === null || !pendingPhases[activePendingIndex]) return;
-    onPendingPhasesChange(pendingPhases.map((phase, index) => index === activePendingIndex
-      ? { ...phase, [field]: value }
-      : phase));
   }
 
   function removePendingPhase(index: number) {
@@ -306,6 +307,8 @@ export function WorkingTimeEntryBoard({
   const status = recommendation?.status || 'sans_politique';
   const statusLabel = status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
   const maxRecommended = recommendation?.alreadyNonCompliant ? 0 : recommendation?.maxAdditionalSeconds || 0;
+  const commentRequired = combinedPhases.length > 0 && (status === 'alerte' || status === 'non_conforme');
+  const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(recommendationError);
 
   return (
     <section aria-labelledby="working-time-entry-title" className="working-time-entry-board">
@@ -378,24 +381,35 @@ export function WorkingTimeEntryBoard({
         </div>
       </div>
 
+      {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
+
       {canEdit ? (
-        <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => { event.preventDefault(); onSubmit(combinedPhases); }}>
-          <label>Début<input aria-label="Début du travail" onChange={(event) => updateActivePhase('startsAt', event.target.value)} required step="1800" type="datetime-local" value={startsAt} /></label>
-          <label>Fin<input aria-label="Fin du travail" onChange={(event) => updateActivePhase('endsAt', event.target.value)} required step="1800" type="datetime-local" value={endsAt} /></label>
-          <label>Navire<select aria-label="Filtrer et affecter le navire" onChange={(event) => onVesselIdChange(event.target.value)} value={vesselId}><option value="">Sans navire</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
-          <label>Bordée<input aria-label="Filtrer et affecter la bordée" onChange={(event) => onWatchGroupChange(event.target.value)} value={watchGroup} /></label>
-          <label className="is-wide">Commentaire<input onChange={(event) => onCommentChange(event.target.value)} value={comment} /></label>
-          {!editingIntervalId ? <div className="working-time-selection-summary">
-            <div><strong>{pendingPhases.length ? `${pendingPhases.length} période${pendingPhases.length > 1 ? 's' : ''} prête${pendingPhases.length > 1 ? 's' : ''}` : 'Sélection directe'}</strong><small>{pendingPhases.length ? 'Vous pouvez encore glisser sur la frise pour en ajouter.' : 'Glissez sur la frise ; chaque nouvelle plage est ajoutée automatiquement.'}</small></div>
-            {pendingPhases.length ? <button onClick={() => { onPendingPhasesChange([]); setActivePendingIndex(null); onStartsAtChange(`${selectedDay}T00:00`); onEndsAtChange(`${selectedDay}T00:00`); }} type="button">Effacer la sélection</button> : null}
-          </div> : null}
-          {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
-          {showSubmitActions ? <div className="working-time-form-actions">
-            <button disabled={isSaving || !combinedPhases.length || phasesOverlap || phasesConflictExisting} type="submit"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : `Enregistrer la sélection · ${combinedPhases.length} période${combinedPhases.length > 1 ? 's' : ''}`}</button>
+        <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
+          event.preventDefault();
+          const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+          onSubmit(combinedPhases, (submitter?.value || 'save') as 'save' | 'request-signature' | 'validate');
+        }}>
+          <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
+          {!planningVesselId ? <p className="working-time-planning-context is-missing">Aucune affectation Planning active pour cette journée.</p> : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}</p>}
+          <div className="working-time-form-actions">
+            {showSaveDraft ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : 'Enregistrer le brouillon'}</button> : null}
+            {!editingIntervalId && showRequestSignature ? <>
+              <label className="working-time-captain-select">Capitaine
+                <select aria-label="Capitaine de la bordée" onChange={(event) => onCaptainPersonIdChange(event.target.value ? Number(event.target.value) : null)} required value={selectedCaptainPersonId || ''}>
+                  <option value="">Sélectionner…</option>
+                  {captainCandidates.map((candidate) => <option key={candidate.personId} value={candidate.personId}>{candidate.name}</option>)}
+                </select>
+              </label>
+              <button disabled={isSaving || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !selectedCaptainPersonId} type="submit" value="request-signature"><Send aria-hidden="true" size={16}/>Demander la signature</button>
+            </> : null}
+            {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate"><UserCheck aria-hidden="true" size={16}/>Valider</button> : null}
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
-          </div> : null}
+          </div>
         </form>
-      ) : <p className="working-time-lock-note">Ce registre est en lecture seule pour son statut actuel.</p>}
+      ) : <>
+        <p className="working-time-lock-note">Ce registre est en lecture seule pour son statut actuel.</p>
+        {showValidate ? <div className="working-time-form-actions is-readonly"><button disabled={isSaving || validateDisabled} onClick={() => onSubmit([], 'validate')} type="button"><UserCheck aria-hidden="true" size={16}/>Valider</button></div> : null}
+      </>}
     </section>
   );
 }

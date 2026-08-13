@@ -1,6 +1,6 @@
 begin;
 
-select plan(72);
+select plan(90);
 
 select has_function(
   'public', 'working_time_entry_context', array['date', 'date'],
@@ -27,6 +27,26 @@ select has_function(
 select has_function(
   'public', 'working_time_signature_upload_context', array['bigint'],
   'profile-signature uploads receive a server-authorized private path context'
+);
+select has_function(
+  'public', 'working_time_ensure_current_register_for_person', array['bigint'],
+  'maritime profiles receive their current monthly register automatically'
+);
+select has_function(
+  'public', 'working_time_day_context', array['bigint', 'date'],
+  'entry context is derived from Planning for the selected person and day'
+);
+select has_function(
+  'public', 'request_working_time_captain_signature', array['bigint', 'bigint', 'date'],
+  'a Marin can request the signature of a same-watch Capitaine'
+);
+select has_function(
+  'public', 'validate_working_time_register', array['bigint'],
+  'a requested Capitaine can validate a submitted register'
+);
+select has_function(
+  'public', 'approve_own_working_time_register', array['bigint', 'date'],
+  'a Capitaine can approve their own register'
 );
 select has_column(
   'public', 'working_time_day_comments', 'cause_category',
@@ -283,13 +303,14 @@ select set_config(
    where person_id = (select id from public.people where sailor_number = 'WF-DIR')
      and period_start = '2026-09-21'), true
 );
-select lives_ok(
+select throws_ok(
   $$select public.save_working_time_interval(
     current_setting('test.workflow.management_register_id')::bigint,
     '2026-09-21 08:00:00+02', '2026-09-21 16:00:00+02', 'Europe/Paris',
     null, null, 'Saisie administrateur'
   )$$,
-  'an administrator can enter hours without a published-watch assignment'
+  '23514', 'WORKING_TIME_PLANNING_ASSIGNMENT_REQUIRED.',
+  'entry fields are derived from Planning, including for an administrator'
 );
 
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000004', true);
@@ -673,6 +694,107 @@ select is(
    where id = current_setting('test.workflow.captain_register_id')::bigint),
   'validated',
   'the final validated status is locked'
+);
+
+select is(
+  (select count(*)::integer
+   from public.working_time_registers register
+   join public.people person on person.id = register.person_id
+   where person.sailor_number in ('WF-CAPA', 'WF-CAPB', 'WF-MARIN')
+     and register.period_kind = 'monthly'
+     and register.period_start = date_trunc('month', current_date)::date),
+  3,
+  'creating maritime HR profiles automatically opens their current register'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
+select ok(
+  (public.working_time_day_context(
+    (select id from public.people where sailor_number = 'WF-MARIN'), '2026-09-14'
+  )->>'vessel_id')::bigint = (select id from public.vessels where acronym = 'WFW')
+  and jsonb_array_length(public.working_time_day_context(
+    (select id from public.people where sailor_number = 'WF-MARIN'), '2026-09-14'
+  )->'captain_candidates') >= 1,
+  'the Marin day context supplies the Planning vessel and same-watch Capitaines'
+);
+select lives_ok(
+  $$select set_config('test.workflow.simple_sailor_register_id', register_id::text, false)
+    from public.get_or_create_working_time_register(
+      (select id from public.people where sailor_number = 'WF-MARIN'), 'weekly', '2026-09-14'
+    ) register_id$$,
+  'the Marin can use a register for the selected Planning week'
+);
+select lives_ok(
+  $$select public.save_working_time_interval(
+    current_setting('test.workflow.simple_sailor_register_id')::bigint,
+    '2026-09-14 08:00:00+02', '2026-09-14 09:00:00+02', 'Europe/Paris',
+    null, null, 'Quart court'
+  )$$,
+  'the Marin saves hours without sending vessel or watch form fields'
+);
+select results_eq(
+  $$select interval.vessel_id, interval.watch_group
+    from public.working_time_intervals interval
+    where interval.register_id = current_setting('test.workflow.simple_sailor_register_id')::bigint$$,
+  $$select vessel.id, assignment.watch_group
+    from public.vessels vessel
+    join public.planning_assignments assignment on assignment.vessel_id = vessel.id
+    join public.people person on person.id = assignment.crew_person_id and person.sailor_number = 'WF-MARIN'
+    where vessel.acronym = 'WFW'
+    limit 1$$,
+  'the saved interval receives vessel and watch values from Planning'
+);
+select lives_ok(
+  $$select public.request_working_time_captain_signature(
+    current_setting('test.workflow.simple_sailor_register_id')::bigint,
+    current_setting('test.workflow.captain_a_id')::bigint,
+    '2026-09-14'
+  )$$,
+  'the Marin requests the signature of a Capitaine in the same watch'
+);
+select results_eq(
+  $$select register.status, register.requested_captain_person_id
+    from public.working_time_registers register
+    where register.id = current_setting('test.workflow.simple_sailor_register_id')::bigint$$,
+  $$values ('submitted'::text, current_setting('test.workflow.captain_a_id')::bigint)$$,
+  'the request submits the register to the selected Capitaine'
+);
+
+select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  $$select public.validate_working_time_register(current_setting('test.workflow.simple_sailor_register_id')::bigint)$$,
+  'the selected Capitaine validates the Marin register'
+);
+select is(
+  (select status from public.working_time_registers where id = current_setting('test.workflow.simple_sailor_register_id')::bigint),
+  'validated',
+  'the Marin register is validated'
+);
+select lives_ok(
+  $$select set_config('test.workflow.simple_captain_register_id', register_id::text, false)
+    from public.get_or_create_working_time_register(
+      current_setting('test.workflow.captain_a_id')::bigint, 'weekly', '2026-09-14'
+    ) register_id$$,
+  'the Capitaine opens their own selected-week register'
+);
+select lives_ok(
+  $$select public.save_working_time_interval(
+    current_setting('test.workflow.simple_captain_register_id')::bigint,
+    '2026-09-14 10:00:00+02', '2026-09-14 11:00:00+02', 'Europe/Paris',
+    null, null, 'Passerelle'
+  )$$,
+  'the Capitaine saves their own Planning-derived hours'
+);
+select lives_ok(
+  $$select public.approve_own_working_time_register(
+    current_setting('test.workflow.simple_captain_register_id')::bigint, '2026-09-14'
+  )$$,
+  'the Capitaine directly approves their own entry'
+);
+select is(
+  (select status from public.working_time_registers where id = current_setting('test.workflow.simple_captain_register_id')::bigint),
+  'validated',
+  'the Capitaine own register is validated'
 );
 
 rollback;

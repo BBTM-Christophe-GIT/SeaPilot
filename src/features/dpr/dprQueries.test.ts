@@ -15,7 +15,7 @@ function queryResult(data: unknown) {
 }
 
 describe('DPR Supabase commands', () => {
-  it('filters a Marin dashboard by author before loading reports', async () => {
+  it('does not load DPR history for a Marin dashboard', async () => {
     const reports = queryResult([]);
     const profiles = queryResult({ display_name: 'Arthur RICHER' });
     const people = queryResult({ id: 18, first_name: 'Arthur', last_name: 'Richer', function_label: '2nd Capitaine', grade_label: 'Officier' });
@@ -24,34 +24,29 @@ describe('DPR Supabase commands', () => {
       select: vi.fn(() => table === 'dpr_reports' ? reports : table === 'profiles' ? profiles : table === 'people' ? people : empty),
     }));
     const rpc = vi.fn()
-      .mockResolvedValueOnce({ data: { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null })
-      .mockResolvedValueOnce({ data: { defaultValidatorPersonId: null, people: [] }, error: null });
+      .mockResolvedValueOnce({ data: { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null });
     const client = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'sailor-user', email: 'arthur@example.invalid' } } }) },
       from,
       rpc,
     };
 
-    const dashboard = await fetchDprDashboard(client as never, { selfOnly: true });
+    const dashboard = await fetchDprDashboard(client as never, { hideHistory: true });
 
-    expect(reports.eq).toHaveBeenCalledWith('created_by', 'sailor-user');
+    expect(reports.order).not.toHaveBeenCalled();
+    expect(dashboard.reports).toEqual([]);
     expect(dashboard.currentUserId).toBe('sailor-user');
   });
 
   it('saves the complete six-step payload through the transactional RPC', async () => {
-    const rpc = vi.fn()
-      .mockResolvedValueOnce({ data: { id: 42 }, error: null })
-      .mockResolvedValueOnce({ data: { id: 42 }, error: null });
+    const rpc = vi.fn().mockResolvedValueOnce({ data: { id: 42 }, error: null });
     const id = await saveDprPayload({ rpc } as never, null, EMPTY_DPR_PAYLOAD);
     expect(id).toBe(42);
     expect(rpc).toHaveBeenCalledWith('dpr_save_payload', {
       target_dpr_id: null,
       target_payload: EMPTY_DPR_PAYLOAD,
     });
-    expect(rpc).toHaveBeenCalledWith('dpr_assign_validator', {
-      target_dpr_id: 42,
-      target_validator_person_id: null,
-    });
+    expect(rpc).toHaveBeenCalledOnce();
   });
 
   it('passes an explicit reason for logical deletion and reopening', async () => {

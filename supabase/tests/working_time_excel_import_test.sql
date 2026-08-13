@@ -125,7 +125,8 @@ join public.vessels vessel on vessel.company_id = register.company_id and vessel
 cross join (values
   ('2026-01-03'::date, '2026-01-03 08:00:00+01'::timestamptz, '2026-01-03 11:00:00+01'::timestamptz, 'import-validated-existing'::text),
   ('2026-01-10'::date, '2026-01-10 08:00:00+01'::timestamptz, '2026-01-10 12:00:00+01'::timestamptz, 'import-draft-existing'::text)
-) fixture(local_date, starts_at, ends_at, source_key);
+) fixture(local_date, starts_at, ends_at, source_key)
+where register.period_kind = 'monthly' and register.period_start = '2026-01-01';
 
 -- A validated weekly register on 3 January makes that source day immutable while
 -- the monthly draft register remains available for the other dates.
