@@ -167,3 +167,29 @@ function formatLocode(locode: string): string {
 export function formatProjectPort(port: ProjectPort): string {
   return [port.port, port.municipality, formatLocode(port.locode)].filter(Boolean).join(' – ');
 }
+
+function normalizePortSearch(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fr')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function filterProjectPortGroups(query: string): ProjectPortGroup[] {
+  const normalizedQuery = normalizePortSearch(query);
+  if (!normalizedQuery) {
+    return PROJECT_PORT_GROUPS.map((group) => ({ ...group, ports: [...group.ports] }));
+  }
+
+  const queryWords = normalizedQuery.split(' ');
+  return PROJECT_PORT_GROUPS.map((group) => ({
+    ...group,
+    ports: group.ports.filter((port) => {
+      const searchText = normalizePortSearch(`${group.department} ${formatProjectPort(port)} ${port.locode}`);
+      return queryWords.every((word) => searchText.includes(word));
+    }),
+  })).filter((group) => group.ports.length > 0);
+}

@@ -9,6 +9,7 @@ import type { ButtonHTMLAttributes, ChangeEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
+import { ProjectPortCombobox } from '../projects/ProjectPortCombobox';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
   EMPTY_DPR_PAYLOAD, INCIDENT_CATEGORIES, validateDprPayload,
@@ -35,6 +36,9 @@ interface PendingFile { key: string; kind: 'photo' | 'attachment'; file: File; p
 interface DprPdfPreview extends GeneratedDprDocument { report: DprReportRecord; url: string }
 
 const EMPTY_FILTERS: DprFilters = { vesselId: '', projectId: '', dateFrom: '', dateTo: '', search: '', status: '' };
+const DOCK_PROJECT_NAME = 'Navire à quai';
+const DOCK_PROJECT_VALUE = '__dock_project__';
+const UNLISTED_PROJECT_VALUE = '__unlisted_project__';
 const STEPS = [
   ['Informations Projet', 'Informations projet'],
   ['Informations Journalière', 'Données journalières'],
@@ -222,7 +226,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     const next = structuredClone(basePayload);
     next.reportDate = reportDate;
     next.projectId = context.projectId;
-    next.unlistedProjectName = '';
+    next.unlistedProjectName = context.projectId === null && context.vesselId !== null ? DOCK_PROJECT_NAME : '';
     next.vesselId = context.vesselId;
     next.validatorPersonId = null;
     next.crewMembers = context.crewPersonIds.flatMap((personId, index) => {
@@ -605,7 +609,17 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
   return <div className="dpr-cards">
     <section className="dpr-card"><h4><b>1</b> Projet</h4><div className="dpr-form-grid">
       <Field label="DATE"><input type="date" disabled={!editable} value={payload.reportDate} onChange={(event) => onDateChange(event.target.value)}/></Field>
-      <Field label="PROJET"><select disabled={!editable} value={payload.projectId ?? ''} onChange={(event) => update((current) => { current.projectId = event.target.value ? Number(event.target.value) : null; if (current.projectId) current.unlistedProjectName = ''; })}><option value="">Sélectionner…</option>{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
+      <Field label="PROJET"><select disabled={!editable} value={payload.projectId !== null ? String(payload.projectId) : payload.unlistedProjectName === DOCK_PROJECT_NAME ? DOCK_PROJECT_VALUE : payload.unlistedProjectName ? UNLISTED_PROJECT_VALUE : ''} onChange={(event) => update((current) => {
+        if (event.target.value === DOCK_PROJECT_VALUE) {
+          current.projectId = null;
+          current.unlistedProjectName = DOCK_PROJECT_NAME;
+        } else if (event.target.value === UNLISTED_PROJECT_VALUE) {
+          current.projectId = null;
+        } else {
+          current.projectId = event.target.value ? Number(event.target.value) : null;
+          current.unlistedProjectName = '';
+        }
+      })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => update((current) => { current.vesselId = event.target.value ? Number(event.target.value) : null; })}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>
@@ -632,7 +646,7 @@ function StepQhse({ payload, references, editable, update }: StepProps & { refer
 
 function StepPort({ payload, references, editable, update }: StepProps & { references: DprReferenceData }) {
   const call = payload.portCalls[0];
-  return <div className="dpr-cards"><section className="dpr-card"><h4>Date et heure de l'Escale</h4><div className="dpr-form-grid"><Field label="PORT"><input disabled={!editable} value={call.portName} onChange={(event) => update((current) => { current.portCalls[0].portName = event.target.value; })}/></Field><Field label="HEURE - NAVIRE ACCOSTÉ AU PORT"><input type="datetime-local" disabled={!editable} value={call.arrivalAt} onChange={(event) => update((current) => { current.portCalls[0].arrivalAt = event.target.value; })}/></Field><Field label="HEURE - APPAREILLAGE DU PORT"><input type="datetime-local" disabled={!editable} value={call.departureAt} onChange={(event) => update((current) => { current.portCalls[0].departureAt = event.target.value; })}/></Field></div><div className="dpr-choice-grid">{references.portReasons.map((reason) => <label key={reason.key}><input type="checkbox" disabled={!editable} checked={call.reasons.includes(reason.key)} onChange={(event) => update((current) => { const reasons = current.portCalls[0].reasons; current.portCalls[0].reasons = event.target.checked ? [...reasons, reason.key] : reasons.filter((key) => key !== reason.key); })}/>{reason.label}</label>)}</div></section>
+  return <div className="dpr-cards"><section className="dpr-card"><h4>Date et heure de l'Escale</h4><div className="dpr-form-grid"><Field label="PORT"><ProjectPortCombobox disabled={!editable} onChange={(value) => update((current) => { current.portCalls[0].portName = value; })} value={call.portName} /></Field><Field label="HEURE - NAVIRE ACCOSTÉ AU PORT"><input type="datetime-local" disabled={!editable} value={call.arrivalAt} onChange={(event) => update((current) => { current.portCalls[0].arrivalAt = event.target.value; })}/></Field><Field label="HEURE - APPAREILLAGE DU PORT"><input type="datetime-local" disabled={!editable} value={call.departureAt} onChange={(event) => update((current) => { current.portCalls[0].departureAt = event.target.value; })}/></Field></div><div className="dpr-choice-grid">{references.portReasons.map((reason) => <label key={reason.key}><input type="checkbox" disabled={!editable} checked={call.reasons.includes(reason.key)} onChange={(event) => update((current) => { const reasons = current.portCalls[0].reasons; current.portCalls[0].reasons = event.target.checked ? [...reasons, reason.key] : reasons.filter((key) => key !== reason.key); })}/>{reason.label}</label>)}</div></section>
     <section className="dpr-card"><h4>Approvisionnements</h4><div className="dpr-form-grid">{([['fuelM3', 'FUEL (EN M3)'], ['oilLiters', 'APPROVISIONNEMENT HUILE (EN L)'], ['waterM3', 'APPROVISIONNEMENT EN EAU (M3)']] as const).map(([key, label]) => <Field key={key} label={label}><input type="number" min="0" disabled={!editable} value={payload.supplies[key]} onChange={(event) => update((current) => { current.supplies[key] = event.target.value; })}/></Field>)}</div></section>
     <section className="dpr-card"><h4>Collecte et déchets</h4><div className="dpr-form-grid">{payload.wasteRecords.map((record, index) => <Field key={record.key} label={`${record.key.toUpperCase()} (EN ${record.unit.toUpperCase()})`}><input type="number" min="0" disabled={!editable} value={record.quantity} onChange={(event) => update((current) => { current.wasteRecords[index].quantity = event.target.value; })}/></Field>)}</div></section></div>;
 }

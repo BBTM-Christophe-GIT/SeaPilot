@@ -16987,6 +16987,21 @@ button.planning-p12-conflict-card {
 .dpr-field input, .dpr-field select, .dpr-field textarea { width: 100%; min-height: 42px; box-sizing: border-box; border: 1px solid #ced9e8; border-radius: 11px; background: #fff; color: #172036; padding: 9px 12px; font: inherit; font-size: .82rem; font-weight: 500; }
 .dpr-field textarea { resize: vertical; }
 .dpr-field input:disabled, .dpr-field select:disabled, .dpr-field textarea:disabled { background: #f1f4f8; color: #657089; }
+.project-port-combobox { position: relative; width: 100%; min-width: 0; }
+.project-port-combobox__control { position: relative; display: flex; align-items: center; }
+.project-port-combobox__control > svg { position: absolute; z-index: 1; color: #74839a; pointer-events: none; }
+.project-port-combobox__control > svg:first-child { left: 11px; }
+.project-port-combobox__control > svg:last-child { right: 11px; }
+.project-port-combobox__control > input { width: 100%; padding-right: 35px; padding-left: 35px; }
+.project-port-combobox__results { position: absolute; z-index: 90; top: calc(100% + 5px); right: 0; left: 0; max-height: 310px; overflow: auto; border: 1px solid #cbd8e7; border-radius: 10px; background: #fff; box-shadow: 0 18px 42px #10243c2e; }
+.project-port-combobox__results > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; gap: 7px; padding: 9px 11px; color: #66768b; border-bottom: 1px solid #e7edf4; background: #fff; font-size: .65rem; font-weight: 800; }
+.project-port-combobox__results section h3 { position: sticky; z-index: 1; top: 34px; margin: 0; padding: 7px 11px; color: #465f7c; background: #f0f5fa; font-size: .64rem; }
+.project-port-combobox__results [role="option"] { display: grid; gap: 2px; padding: 8px 11px; color: #21344d; border-top: 1px solid #edf1f5; background: #fff; cursor: pointer; }
+.project-port-combobox__results [role="option"]:hover, .project-port-combobox__results [role="option"].is-active { color: #075fc5; background: #edf6ff; }
+.project-port-combobox__results [role="option"][aria-selected="true"] { box-shadow: inset 3px 0 #2563eb; }
+.project-port-combobox__results [role="option"] strong { font-size: .76rem; }
+.project-port-combobox__results [role="option"] small { color: #718096; font-size: .62rem; font-weight: 500; }
+.project-port-combobox__results > p { margin: 0; padding: 18px; color: #718096; text-align: center; font-size: .7rem; }
 .dpr-period { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .dpr-search { display: flex; align-items: center; gap: 6px; min-height: 42px; box-sizing: border-box; border: 1px solid #ced9e8; border-radius: 11px; background: #fff; padding: 0 10px; }
 .dpr-search input { min-width: 0; border: 0; outline: 0; }

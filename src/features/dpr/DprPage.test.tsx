@@ -136,6 +136,51 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
   });
 
+  it('defaults to Navire à quai when Planning has a vessel without an active project', async () => {
+    const user = userEvent.setup();
+    mocks.fetchEntryContext.mockResolvedValueOnce({
+      issuerPersonId: 12,
+      issuerName: 'Pierre LEPRETRE',
+      vesselId: 3,
+      projectId: null,
+      watchGroup: 'Bordée A',
+      people: dashboard.references.people,
+      crewPersonIds: [12],
+    });
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+
+    const projectSelect = screen.getAllByLabelText('PROJET').at(-1) as HTMLSelectElement;
+    expect(projectSelect.selectedOptions[0]).toHaveTextContent('Navire à quai');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(
+      expect.anything(),
+      null,
+      expect.objectContaining({ projectId: null, unlistedProjectName: 'Navire à quai', vesselId: 3 }),
+    ));
+  });
+
+  it('searches and selects Escale ports from the department-grouped catalog', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+    await user.click(screen.getByRole('button', { name: /^4Escale/ }));
+
+    const port = screen.getByLabelText('PORT');
+    await user.click(port);
+    expect(screen.getByRole('group', { name: 'Manche' })).toHaveTextContent('Cherbourg');
+    await user.type(port, 'FR CER');
+    await user.click(screen.getByRole('option', { name: /Cherbourg.*FR CER/ }));
+
+    expect(port).toHaveValue('Cherbourg');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    await user.click(port);
+    expect(screen.getByRole('group', { name: 'Finistère' })).toHaveTextContent('Brest');
+  });
+
   it('removes submission and validates a complete DPR directly for a Marin', async () => {
     const user = userEvent.setup();
     render(<DprPage client={{} as never} roles={['marin']} />);

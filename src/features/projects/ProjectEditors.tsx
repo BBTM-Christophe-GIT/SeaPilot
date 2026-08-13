@@ -26,7 +26,7 @@ import type {
   VesselRecord,
 } from './projectQueries';
 import { SUPPLYTIME_GROUPS } from './projectReadModel';
-import { formatProjectPort, PROJECT_PORT_GROUPS } from './projectPorts';
+import { ProjectPortCombobox } from './ProjectPortCombobox';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
@@ -299,21 +299,9 @@ function PortSelect({
   onChange: (value: string) => void;
   value: string;
 }) {
-  const knownValue = PROJECT_PORT_GROUPS.some((group) => group.ports.some((port) => port.port === value));
-
   return (
     <Field label={label}>
-      <select onChange={(event) => onChange(event.target.value)} value={value}>
-        <option value="">Non renseigné</option>
-        {value && !knownValue ? <option value={value}>{value} (valeur actuelle)</option> : null}
-        {PROJECT_PORT_GROUPS.map((group) => (
-          <optgroup key={group.department} label={group.department}>
-            {group.ports.map((port) => (
-              <option key={`${port.department}-${port.port}`} value={port.port}>{formatProjectPort(port)}</option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+      <ProjectPortCombobox onChange={onChange} value={value} />
     </Field>
   );
 }
