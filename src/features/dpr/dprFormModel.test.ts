@@ -11,18 +11,18 @@ function validPayload() {
 }
 
 describe('validateDprPayload', () => {
-  it('accepts a complete DPR submitted with Supabase references', () => {
+  it('accepts a complete DPR validated with Supabase references', () => {
     expect(validateDprPayload(validPayload(), true)).toEqual([]);
   });
 
-  it('requires project, vessel and description only at submission', () => {
+  it('requires project, vessel and description only at validation', () => {
     const payload = structuredClone(EMPTY_DPR_PAYLOAD);
     payload.reportDate = '2026-07-22';
     expect(validateDprPayload(payload, false)).toEqual([]);
     expect(validateDprPayload(payload, true)).toEqual(expect.arrayContaining([
-      'Le projet est obligatoire avant soumission.',
-      'Le navire est obligatoire avant soumission.',
-      'La description de la journée est obligatoire avant soumission.',
+      'Le projet est obligatoire avant validation.',
+      'Le navire est obligatoire avant validation.',
+      'La description de la journée est obligatoire avant validation.',
     ]));
   });
 

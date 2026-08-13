@@ -108,7 +108,7 @@ function isNegative(value: string): boolean {
   return Number.isFinite(number) && number < 0;
 }
 
-export function validateDprPayload(payload: DprFormPayload, forSubmission = false): string[] {
+export function validateDprPayload(payload: DprFormPayload, forValidation = false): string[] {
   const errors: string[] = [];
   if (!payload.reportDate) errors.push('La date du DPR est obligatoire.');
   if (payload.projectId !== null && payload.unlistedProjectName.trim()) {
@@ -135,10 +135,10 @@ export function validateDprPayload(payload: DprFormPayload, forSubmission = fals
   if (new Set(payload.crewMembers.map((member) => `${member.personId}:${member.crewFunction}`)).size !== payload.crewMembers.length) {
     errors.push("Une personne ne peut apparaître deux fois avec la même fonction.");
   }
-  if (forSubmission) {
-    if (payload.projectId === null && !payload.unlistedProjectName.trim()) errors.push('Le projet est obligatoire avant soumission.');
-    if (payload.vesselId === null) errors.push('Le navire est obligatoire avant soumission.');
-    if (!payload.description.trim()) errors.push('La description de la journée est obligatoire avant soumission.');
+  if (forValidation) {
+    if (payload.projectId === null && !payload.unlistedProjectName.trim()) errors.push('Le projet est obligatoire avant validation.');
+    if (payload.vesselId === null) errors.push('Le navire est obligatoire avant validation.');
+    if (!payload.description.trim()) errors.push('La description de la journée est obligatoire avant validation.');
   }
   return errors;
 }

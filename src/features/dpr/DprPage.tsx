@@ -351,14 +351,18 @@ export function DprPage({ client, roles }: DprPageProps) {
     setPendingFiles([]);
   };
 
-  const save = async (action: 'draft' | 'submit' | 'validate' = 'draft'): Promise<number | null> => {
+  const save = async (action: 'draft' | 'validate' = 'draft'): Promise<number | null> => {
     const validationErrors = validateDprPayload(payload, action !== 'draft');
-    if (validationErrors.length) { setError(validationErrors.join(' ')); return null; }
+    if (validationErrors.length) {
+      setError(validationErrors.join(' '));
+      if ((payload.projectId === null && !payload.unlistedProjectName.trim()) || payload.vesselId === null) setStep(0);
+      else if (!payload.description.trim()) setStep(1);
+      return null;
+    }
     setBusy(true); setError('');
     try {
       const id = await saveDprPayload(db, report?.id || null, payload);
       await uploadPending(id);
-      if (action !== 'draft') await runDprTransition(db, 'submit', id);
       if (action === 'validate') await runDprTransition(db, 'validate', id);
       const nextDashboard = await load();
       const nextReport = nextDashboard.reports.find((item) => item.id === id) || null;
@@ -370,7 +374,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       }
       setNotice(action === 'validate'
         ? 'DPR validé. Il est transmis dans l’historique accessible aux profils autorisés.'
-        : action === 'submit' ? 'DPR soumis pour validation.' : 'Brouillon enregistré.');
+        : 'Brouillon enregistré.');
       return id;
     } catch (reason) { setError((reason as Error).message); return null; }
     finally { setBusy(false); }
@@ -441,7 +445,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       <div><span className="dpr-native__eyebrow">OPÉRATIONS</span><h1>Daily Progress Report</h1><p>Consultez, prévisualisez et produisez les DPR à la demande, sans stockage des PDF.</p></div>
     </header>
 
-    {(notice || error) && <div className={error ? 'dpr-message dpr-message--error' : 'dpr-message'}>{error || notice}</div>}
+    {(notice || error) && !modalOpen && <div className={error ? 'dpr-message dpr-message--error' : 'dpr-message'} role={error ? 'alert' : 'status'}>{error || notice}</div>}
 
     <nav className="planning-module-toolbar dpr-module-toolbar" aria-label="Menu Daily Progress Report">
       <div className="planning-ribbon-scroll">
@@ -532,6 +536,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         <div className="dpr-modal__body">
           <nav className="dpr-steps" aria-label="Étapes du DPR"><span>ASSISTANT</span><h3>DPR</h3>{STEPS.map(([title, subtitle], index) => <button key={title} className={step === index ? 'active' : ''} onClick={() => setStep(index)}><b>{index + 1}</b><span><strong>{title}</strong><small>{subtitle}</small></span><ChevronRight size={15}/></button>)}</nav>
           <main className="dpr-step">
+            {(notice || error) && <div className={error ? 'dpr-message dpr-message--error dpr-modal__message' : 'dpr-message dpr-modal__message'} role={error ? 'alert' : 'status'}>{error || notice}</div>}
             <div className="dpr-step__title"><b>{step + 1}.</b><h3>{STEPS[step][0]}</h3><span>— {STEPS[step][1]}</span></div>
             {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)}/>}
             {step === 1 && <StepDaily payload={payload} editable={editable} update={updatePayload}/>}
@@ -545,9 +550,8 @@ export function DprPage({ client, roles }: DprPageProps) {
           {dirty && <span className="dpr-unsaved"><AlertTriangle size={15}/> Modifications non enregistrées</span>}
           <button className="button" onClick={closeModal}>Annuler</button>
           {editable && !isMarinView && <button className="button" onClick={() => void save('draft')} disabled={busy}><Save size={16}/> Enregistrer le brouillon</button>}
-          {editable && !isMarinView && <button className="button" onClick={() => void save('submit')} disabled={busy}><Check size={16}/> Soumettre le DPR</button>}
           {editable && <button className="button button--primary" onClick={() => void save('validate')} disabled={busy}><ShieldCheck size={16}/> Valider le DPR</button>}
-          {report?.status === 'submitted' && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider</button>}
+          {report?.status === 'submitted' && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider le DPR</button>}
           {report?.status === 'validated' && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
           {report && hasOfficeRole(currentRoles) && <button className="button button--danger" onClick={() => void transition('delete')} disabled={busy}><Trash2 size={16}/> Supprimer</button>}
         </footer>

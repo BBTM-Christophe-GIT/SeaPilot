@@ -72,7 +72,7 @@ limit 1;
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
--- A pure Marin can use every write step when their role has DPR module access,
+-- A pure Marin can author and directly validate when their role has DPR module access,
 -- while the report and audit history remain absent from ordinary SELECTs.
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000005', true);
 select lives_ok(
@@ -99,22 +99,23 @@ select lives_ok(
   'the Marin can update the draft by its RPC identifier'
 );
 select lives_ok(
-  $$select set_config('test.dpr_marin_number', submitted.dpr_number::text, false)
-    from public.dpr_submit(current_setting('test.dpr_marin_id')::bigint) submitted$$,
-  'the Marin can submit without designating a validator'
-);
-select isnt(current_setting('test.dpr_marin_number'), '', 'submission allocates the chronological DPR number');
-select lives_ok(
-  $$select set_config('test.dpr_marin_status', validated.status, false)
+  $$select set_config('test.dpr_marin_number', validated.dpr_number::text, false),
+           set_config('test.dpr_marin_status', validated.status, false),
+           set_config('test.dpr_marin_submitted_at', validated.submitted_at::text, false)
     from public.dpr_validate(current_setting('test.dpr_marin_id')::bigint) validated$$,
-  'the Marin can validate the submitted DPR directly'
+  'the Marin can validate a draft directly without designating a validator'
 );
+select isnt(current_setting('test.dpr_marin_number'), '', 'direct validation allocates the chronological DPR number');
 select is(current_setting('test.dpr_marin_status'), 'validated', 'the direct validation closes the Marin DPR');
+select ok(
+  current_setting('test.dpr_marin_submitted_at') <> '',
+  'direct validation preserves the legacy submission timestamp metadata'
+);
 select is((select count(*)::integer from public.dpr_reports), 0, 'the Marin still cannot browse DPR history after validation');
 select is((select count(*)::integer from public.dpr_audit_events), 0, 'the Marin cannot browse DPR audit history');
 
 -- A Capitaine with module access sees every company DPR and can run the same
--- create/submit/validate workflow without a designated-validator rule.
+-- direct validation workflow without a designated-validator rule.
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000004', true);
 select is((select count(*)::integer from public.dpr_reports where id = current_setting('test.dpr_marin_id')::bigint), 1, 'a Capitaine sees the Marin DPR');
 select lives_ok(
@@ -127,8 +128,8 @@ select lives_ok(
     ) created$$,
   'a Capitaine can create a DPR'
 );
-select lives_ok($$select public.dpr_submit(current_setting('test.dpr_captain_id')::bigint)$$, 'a Capitaine can submit their DPR');
-select lives_ok($$select public.dpr_validate(current_setting('test.dpr_captain_id')::bigint)$$, 'a Capitaine can validate their DPR');
+select lives_ok($$select public.dpr_validate(current_setting('test.dpr_captain_id')::bigint)$$, 'a Capitaine can validate their draft directly');
+select is((select status from public.dpr_reports where id = current_setting('test.dpr_captain_id')::bigint), 'validated', 'the Capitaine direct validation is persisted');
 select is((select count(*)::integer from public.dpr_reports), 2, 'the Capitaine sees all company DPRs');
 
 -- The administrator overview remains complete even when a Capitaine role exists.
@@ -136,7 +137,12 @@ select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000001
 select is((select count(*)::integer from public.dpr_reports), 2, 'an administrator still sees all DPRs when a Capitaine is assigned');
 select lives_ok(
   $$select set_config('test.dpr_admin_id', created.id::text, false)
-    from public.dpr_create_draft(current_date, target_description => 'Admin draft') created$$,
+    from public.dpr_create_draft(
+      current_date,
+      target_unlisted_project_name => 'Admin project',
+      target_vessel_id => current_setting('test.dpr_vessel_id')::bigint,
+      target_description => 'Admin draft'
+    ) created$$,
   'an administrator can create a draft'
 );
 select lives_ok($$select public.dpr_soft_delete(current_setting('test.dpr_admin_id')::bigint, 'Duplicate draft')$$, 'an administrator can logically delete a draft');
@@ -159,10 +165,10 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000002', true);
 select is((select count(*)::integer from public.dpr_reports), 3, 'Direction reads every company DPR');
-select lives_ok($$select public.dpr_create_draft(current_date, target_description => 'Direction draft')$$, 'Direction can create a DPR');
+select lives_ok($$select public.dpr_validate(current_setting('test.dpr_admin_id')::bigint)$$, 'Direction can validate another author DPR with module access');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000003', true);
-select is((select count(*)::integer from public.dpr_reports), 4, 'Armement reads every company DPR');
+select is((select count(*)::integer from public.dpr_reports), 3, 'Armement reads every company DPR');
 select lives_ok($$select public.dpr_create_draft(current_date, target_description => 'Armement draft')$$, 'Armement can create a DPR');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000006', true);
@@ -170,7 +176,7 @@ select is((select count(*)::integer from public.dpr_reports where dpr_number = 9
 select is((select count(*)::integer from public.dpr_reports where id = current_setting('test.dpr_marin_id')::bigint), 0, 'company isolation hides BBTM DPRs');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000001', true);
-select is((select count(*)::integer from public.dpr_audit_events where dpr_id = current_setting('test.dpr_marin_id')::bigint), 4, 'create, update, submit and validate are audited');
+select is((select count(*)::integer from public.dpr_audit_events where dpr_id = current_setting('test.dpr_marin_id')::bigint), 3, 'create, update and direct validation are audited');
 select is(
   (select count(*)::integer from pg_policies where schemaname = 'public' and tablename = 'dpr_reports' and policyname = 'dpr_reports_role_read'),
   1,
