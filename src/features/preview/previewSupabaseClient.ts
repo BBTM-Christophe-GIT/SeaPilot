@@ -156,7 +156,7 @@ function createPreviewFleetCertificates(): unknown[] {
       visit_location: index < 3 ? 'Cherbourg' : null,
       workflow_status: renewalDue || expired ? 'due' : index < 4 ? 'planned' : 'not_started',
       renewal_notes: null,
-      renaming_rule_key: 'vessel-title-expiry-year',
+      renaming_rule_key: 'vessel-title-issued-on',
       original_file_name: `${vessel.acronym} - ${title}.pdf`,
       file_name: `${vessel.acronym} - ${title}.pdf`,
       source_label: 'prévisualisation',

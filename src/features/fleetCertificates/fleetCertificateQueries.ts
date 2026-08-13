@@ -303,7 +303,7 @@ export function mapFleetCertificateRows(rows: FleetCertificateRow[]): FleetCerti
     visitLocation: nullableText(row.visit_location),
     workflowStatus: normalizeWorkflowStatus(row.workflow_status),
     renewalNotes: nullableText(row.renewal_notes),
-    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-expiry-year',
+    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-issued-on',
     originalFileName: nullableText(row.original_file_name),
     fileName: nullableText(row.file_name),
     sourceLabel: nullableText(row.source_label),
@@ -346,14 +346,24 @@ export function buildFleetCertificateMetrics(
 
 export function buildFleetCertificateFileName(
   certificate: Pick<FleetCertificateRecord, 'vesselName' | 'documentTitle'>,
-  expiresOn: string,
+  issuedOn: string,
   originalFileName: string,
 ): string {
   const extension = originalFileName.includes('.') ? originalFileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf';
-  const year = expiresOn ? expiresOn.slice(0, 4) : new Date().getFullYear().toString();
+  const issueDate = issuedOn?.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDate)) {
+    throw new Error("Renseignez la date d'émission du document.");
+  }
   const vesselName = certificate.vesselName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
   const title = certificate.documentTitle.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return `${vesselName} - ${title} - ${year}.${extension}`;
+  return `${vesselName} - ${title} - ${issueDate}.${extension}`;
+}
+
+export function getDefaultFleetCertificateExpiryDate(issuedOn: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(issuedOn)) return '';
+  const [year, month, day] = issuedOn.split('-').map(Number);
+  const lastDayNextYearMonth = new Date(Date.UTC(year + 1, month, 0)).getUTCDate();
+  return [year + 1, String(month).padStart(2, '0'), String(Math.min(day, lastDayNextYearMonth)).padStart(2, '0')].join('-');
 }
 
 export function normalizeFleetCertificateDocumentName(title: string, vesselLabels: string[] = []): string {
@@ -367,8 +377,8 @@ export function normalizeFleetCertificateDocumentName(title: string, vesselLabel
       .replace(new RegExp(`\\s*[-–—_]\\s*${escaped}$`, 'i'), '');
   });
   normalized = normalized
-    .replace(/\s*[-–—_/]\s*(?:19|20)\d{2}\s*$/i, '')
-    .replace(/^(?:19|20)\d{2}\s*[-–—_/]\s*/i, '')
+    .replace(/\s*[-–—_/]\s*(?:19|20)\d{2}(?:-\d{2}-\d{2})?\s*$/i, '')
+    .replace(/^(?:19|20)\d{2}(?:-\d{2}-\d{2})?\s*[-–—_/]\s*/i, '')
     .replace(/^[-–—_\s]+|[-–—_\s]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -485,7 +495,7 @@ export async function createFleetCertificateDocument(
   const normalizedName = buildFleetCertificateFileName({
     vesselName: input.vesselName,
     documentTitle: input.documentTitle.trim(),
-  }, input.expiresOn, input.file.name);
+  }, input.issuedOn, input.file.name);
   const acronym = input.vesselAcronym || safeObjectName(input.vesselName).slice(0, 12).toUpperCase();
   const storagePath = `${input.companyId}/${acronym}/documents/${randomObjectId()}-${safeObjectName(normalizedName)}`;
   const { error: uploadError } = await client.storage.from(FLEET_CERTIFICATE_BUCKET).upload(storagePath, input.file, {
@@ -556,14 +566,14 @@ export async function submitFleetCertificateRenewal(
   input: SubmitFleetCertificateRenewalInput,
 ): Promise<void> {
   if (!input.file) throw new Error('Sélectionnez un document.');
-  if (!input.expiresOn) throw new Error("Renseignez la nouvelle date d'échéance.");
+  if (!input.issuedOn) throw new Error("Renseignez la date d'émission du document.");
   if (input.file.size > 50 * 1024 * 1024) throw new Error('Le document dépasse la limite de 50 Mo.');
   const extension = input.file.name.split('.').pop()?.toLowerCase() || '';
   if (!['pdf', 'png', 'jpg', 'jpeg', 'xlsx'].includes(extension)) {
     throw new Error('Formats acceptés : PDF, PNG, JPG et XLSX.');
   }
 
-  const normalizedName = buildFleetCertificateFileName(certificate, input.expiresOn, input.file.name);
+  const normalizedName = buildFleetCertificateFileName(certificate, input.issuedOn, input.file.name);
   const acronym = certificate.vesselAcronym || safeObjectName(certificate.vesselName).slice(0, 12).toUpperCase();
   const storagePath = `${certificate.companyId}/${acronym}/${certificate.id}/renewals/${randomObjectId()}-${safeObjectName(normalizedName)}`;
   const { error: uploadError } = await client.storage.from(FLEET_CERTIFICATE_BUCKET).upload(storagePath, input.file, {
@@ -580,7 +590,7 @@ export async function submitFleetCertificateRenewal(
     p_mime_type: input.file.type || null,
     p_file_size_bytes: input.file.size,
     p_issued_on: input.issuedOn || null,
-    p_expires_on: input.expiresOn,
+    p_expires_on: input.expiresOn || null,
     p_notes: input.notes.trim() || null,
   });
   if (metadataError) {
