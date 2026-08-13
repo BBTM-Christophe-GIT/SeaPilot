@@ -199,7 +199,8 @@ select register.company_id, register.id, register.person_id, '2026-08-03',
 from public.working_time_registers register
 join public.people sailor on sailor.id = register.person_id
 join public.vessels vessel
-  on vessel.company_id = register.company_id and vessel.name = 'WORKING TIME TEST VESSEL';
+  on vessel.company_id = register.company_id and vessel.name = 'WORKING TIME TEST VESSEL'
+where register.period_kind = 'weekly' and register.period_start = '2026-08-03';
 
 select throws_ok(
   $$
@@ -227,6 +228,7 @@ select throws_ok(
            '{}'::jsonb, '{}'::jsonb
     from public.working_time_registers register
     join public.people sailor on sailor.id = register.person_id
+    where register.period_kind = 'weekly' and register.period_start = '2026-08-03'
   $$,
   '23514',
   null,
@@ -249,6 +251,7 @@ select throws_ok(
      and captain.user_id = '76000000-0000-0000-0000-000000000001'
     join public.working_time_profile_signatures sailor_signature
       on sailor_signature.person_id = register.person_id and sailor_signature.valid_to is null
+    where register.period_kind = 'weekly' and register.period_start = '2026-08-03'
   $$,
   '23514',
   'WORKING_TIME_SIGNATURE_MISMATCH: validateur.',
@@ -261,27 +264,27 @@ select set_config('request.jwt.claim.sub', '76000000-0000-0000-0000-000000000002
 
 select lives_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'request_sailor_signature',
     null
   )$$,
   'the sailor can request their own signature'
 );
 select is(
-  (select status from public.working_time_registers limit 1),
+  (select status from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
   'awaiting_sailor_signature',
   'the register waits for the sailor signature'
 );
 select lives_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'sailor_sign',
     null
   )$$,
   'the linked sailor can sign the register'
 );
 select is(
-  (select status from public.working_time_registers limit 1),
+  (select status from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
   'submitted',
   'the sailor signature submits the register'
 );
@@ -316,14 +319,14 @@ select is(
 select set_config('request.jwt.claim.sub', '76000000-0000-0000-0000-000000000001', true);
 select lives_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'captain_validate',
     'Heures contrôlées'
   )$$,
   'the captain can validate a sailor in the same planned watch'
 );
 select is(
-  (select status from public.working_time_registers limit 1),
+  (select status from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
   'validated',
   'captain validation closes the register'
 );
@@ -342,7 +345,7 @@ select ok(
 );
 select throws_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'captain_validate',
     null
   )$$,
@@ -352,7 +355,7 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'reopen',
     null
   )$$,
@@ -362,14 +365,14 @@ select throws_ok(
 );
 select lives_ok(
   $$select public.transition_working_time_register(
-    (select id from public.working_time_registers limit 1),
+    (select id from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
     'reopen',
     'Correction demandée après validation'
   )$$,
   'the captain can reopen the validated register with a reason'
 );
 select is(
-  (select status from public.working_time_registers limit 1),
+  (select status from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03' limit 1),
   'reopened',
   'the reopened status is persisted'
 );
@@ -382,14 +385,14 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '76000000-0000-0000-0000-000000000003', true);
 select is(
-  (select count(*)::integer from public.working_time_registers),
+  (select count(*)::integer from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03'),
   0,
   'a sailor outside the watch cannot read another register'
 );
 
 select set_config('request.jwt.claim.sub', '76000000-0000-0000-0000-000000000001', true);
 select is(
-  (select count(*)::integer from public.working_time_registers),
+  (select count(*)::integer from public.working_time_registers where period_kind = 'weekly' and period_start = '2026-08-03'),
   1,
   'the assigned captain can read the register'
 );

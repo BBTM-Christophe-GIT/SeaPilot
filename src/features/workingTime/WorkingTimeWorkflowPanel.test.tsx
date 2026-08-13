@@ -4,10 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
+  approveOwnWorkingTimeRegister,
   discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
   transitionWorkingTimeRegister,
+  validateWorkingTimeRegister,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
@@ -17,7 +19,16 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
   return {
     ...original,
-    getOrCreateWorkingTimeRegister: vi.fn(),
+    getOrCreateWorkingTimeRegister: vi.fn().mockResolvedValue(100),
+    fetchWorkingTimeDayContext: vi.fn().mockResolvedValue({
+      assignmentId: 1,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
+    }),
+    requestWorkingTimeCaptainSignature: vi.fn().mockResolvedValue(1),
+    validateWorkingTimeRegister: vi.fn().mockResolvedValue(1),
+    approveOwnWorkingTimeRegister: vi.fn().mockResolvedValue(1),
     discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
     voidWorkingTimeInterval: vi.fn(),
@@ -145,40 +156,36 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText('Personnel ancien')).toBeInTheDocument();
   });
 
-  it('requires explicit profile-signature consent before the subject submits', async () => {
+  it('lets a captain validate their own draft from the daily entry area', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderPanel(['capitaine'], workspace('awaiting_sailor_signature'));
+    renderPanel(['capitaine'], workspace('draft'));
 
-    const submitButton = screen.getByRole('button', { name: 'Signer et soumettre' });
-    expect(submitButton).toBeEnabled();
-    await user.click(submitButton);
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    const validateButton = screen.getByRole('button', { name: 'Valider' });
+    expect(validateButton).toBeEnabled();
+    await user.click(validateButton);
 
-    expect(transitionWorkingTimeRegister).toHaveBeenCalledWith(client, {
+    expect(approveOwnWorkingTimeRegister).toHaveBeenCalledWith(client, {
       registerId: 100,
-      action: 'sailor_sign',
+      localWorkDate: '2026-08-03',
     });
   });
 
-  it('does not retain a hidden person id when the server exposes no editable HR person', async () => {
-    const user = userEvent.setup();
+  it('removes manual register and refresh commands when no HR person is editable', () => {
     const data = workspace('draft', 20);
     data.editablePeople = [];
     renderPanel(['admin'], data);
 
-    await user.click(screen.getByRole('button', { name: 'Ouvrir un registre' }));
-    expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ouvrir ce mois' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Ouvrir un registre' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Gestion des congés')).not.toBeInTheDocument();
     expect(screen.getByText(/Aucune fiche RH n’est accessible/)).toBeInTheDocument();
     expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
   });
 
-  it('lets management prepare a draft when the server exposes the HR person', async () => {
-    const user = userEvent.setup();
+  it('lets management prepare a draft when the server exposes the HR person', () => {
     renderPanel(['admin'], workspace('draft', 20));
 
-    await user.click(screen.getByRole('button', { name: 'Ouvrir un registre' }));
-    expect(screen.getByRole('combobox', { name: 'Personne du registre' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
   });
 
@@ -253,11 +260,13 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/retiré sans enregistrer ses modifications/)).toBeInTheDocument();
   });
 
-  it('shows separation of duties and never offers self-validation to a captain', () => {
+  it('offers self-validation to a captain', async () => {
+    const user = userEvent.setup();
     renderPanel(['capitaine'], workspace('submitted'));
 
-    expect(screen.getByText(/Auto-validation interdite/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Contrôler et valider le registre' })).not.toBeInTheDocument();
+    const validateButton = screen.getByRole('button', { name: 'Valider' });
+    await user.click(validateButton);
+    expect(validateWorkingTimeRegister).toHaveBeenCalledWith(client, 100);
   });
 
   it('keeps validation disabled until every non-compliant day has a saved captain comment', async () => {
@@ -293,7 +302,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     fireEvent.change(screen.getByLabelText('Action immédiate'), { target: { value: 'Relève organisée.' } });
     fireEvent.change(screen.getByLabelText('Repos compensateur prévu'), { target: { value: 'Repos planifié demain.' } });
     fireEvent.change(screen.getByLabelText('Commentaire obligatoire'), { target: { value: 'Écart documenté par le capitaine.' } });
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
 
     expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
       registerId: 100,
@@ -304,6 +313,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       compensatoryRestPlan: 'Repos planifié demain.',
       comment: 'Écart documenté par le capitaine.',
     });
+    expect(validateWorkingTimeRegister).toHaveBeenCalledWith(client, 100);
   });
 
   it('locks validated data and requires a reason before reopening', async () => {

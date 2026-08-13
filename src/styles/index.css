@@ -12374,6 +12374,10 @@ button.planning-p12-conflict-card {
 .working-time-pending-phases button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 0; color: inherit; background: transparent; font-size: .72rem; }
 .working-time-pending-phases button + button { min-width: 28px; padding: 0; border-left: 1px solid currentcolor; font-size: .9rem; }
 .working-time-form-actions > button[type='submit'] { min-width: 220px; }
+.working-time-planning-context { grid-column: 1 / -1; margin: 0; color: #426274; font-size: .72rem; }
+.working-time-planning-context.is-missing { color: #9a2639; }
+.working-time-captain-select { display: grid; min-width: 220px; gap: 4px; color: #315987; font-size: .7rem; font-weight: 760; }
+.working-time-captain-select select { min-height: 36px; }
 
 @container (max-width: 620px) {
   .working-time-entry-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -18650,11 +18654,29 @@ button.planning-p12-conflict-card {
 .working-time-analysis-bar dd { margin: 0; color: #12346f; font-size: .82rem; font-weight: 800; }
 .working-time-interval-form { padding: 12px; border: 1px solid #dce6ed; background: #fff; }
 .working-time-selection-summary > button,
-.working-time-form-actions,
 .working-time-interval-list,
 .working-time-intervals > .working-time-void-form,
 .working-time-workflow-actions,
 .working-time-non-compliance-card > button { display: none; }
+.working-time-entry-form { grid-template-columns: minmax(0, 1fr); }
+.working-time-entry-form .is-wide { grid-column: 1 / -1; }
+.working-time-pending-phases { min-height: 40px; align-items: center; padding: 6px 8px; border: 1px solid #cfe0e8; border-radius: 8px; background: #f8fbfd; }
+.working-time-pending-phases > div { border-color: #087789; color: #075d71; background: #e7f7f9; }
+.working-time-form-actions { display: flex; grid-column: 1 / -1; align-items: end; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+.working-time-form-actions.is-readonly { padding: 10px 0 0; }
+.working-time-form-actions > button,
+.working-time-form-actions > button[type='submit'] { display: inline-flex; min-width: 0; min-height: 38px; align-items: center; justify-content: center; gap: 6px; padding: 7px 13px; border: 1px solid #b8cddd; border-radius: 7px; color: #0a4d78; background: #fff; font: inherit; font-size: .73rem; font-weight: 780; cursor: pointer; }
+.working-time-form-actions > button[value='request-signature'],
+.working-time-form-actions > button[value='validate'],
+.working-time-form-actions.is-readonly > button { border-color: #087789; color: #fff; background: #087789; }
+.working-time-form-actions > button:disabled { cursor: not-allowed; opacity: .45; }
+
+.dpr-marin-entry-only { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; padding: 22px; border: 1px solid #d8e4ee; border-radius: 12px; background: #fff; }
+.dpr-marin-entry-only > svg { color: #1f63c6; }
+.dpr-marin-entry-only h2,
+.dpr-marin-entry-only p { margin: 0; }
+.dpr-marin-entry-only h2 { color: #102f67; font-size: 1rem; }
+.dpr-marin-entry-only p { margin-top: 4px; color: #617087; font-size: .8rem; }
 
 .working-time-roster-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
 .working-time-roster-title h3 { margin: 0; color: #12346f; font-size: .72rem; letter-spacing: .03em; text-transform: uppercase; }

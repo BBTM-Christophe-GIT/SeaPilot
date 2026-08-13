@@ -65,6 +65,18 @@ select company.id, 'WORKING TIME RECOMMENDATION VESSEL', 'WTR', true
 from public.companies company
 where company.code = 'bbtm';
 
+insert into public.planning_assignments (
+  company_id, vessel_id, crew_person_id, starts_on, ends_on, starts_at, ends_at,
+  assignment_role, status_label, confirmation_status, watch_group, source_label
+)
+select company.id, vessel.id, person.id, '2026-10-01', '2026-10-31',
+       '2026-10-01 00:00:00+02'::timestamptz, '2026-10-31 23:59:59+01'::timestamptz,
+       'Matelot', 'En mer', 'confirmed', 'Bordée A', 'recommendation_test'
+from public.companies company
+join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WTR'
+join public.people person on person.company_id = company.id and person.sailor_number = 'REC-784'
+where company.code = 'bbtm';
+
 insert into public.planning_work_rest_policies (
   company_id, name, scope, vessel_id, effective_from, effective_to,
   max_work_24h, min_rest_24h, max_work_7d, min_rest_7d,
@@ -100,7 +112,8 @@ select register.company_id, register.id, register.person_id, '2026-10-01',
        person.user_id, person.id, 'manual', 'recommendation-existing'
 from public.working_time_registers register
 join public.people person on person.id = register.person_id
-join public.vessels vessel on vessel.company_id = register.company_id and vessel.acronym = 'WTR';
+join public.vessels vessel on vessel.company_id = register.company_id and vessel.acronym = 'WTR'
+where register.period_kind = 'weekly' and register.period_start = '2026-10-01';
 
 select set_config('test.wtr_person_id', (select id::text from public.people where sailor_number = 'REC-784'), true);
 select set_config('test.wtr_vessel_id', (select id::text from public.vessels where acronym = 'WTR'), true);
@@ -232,7 +245,7 @@ select is(
 );
 select is(
   cardinality(public.save_working_time_phases(
-    (select id from public.working_time_registers where person_id=current_setting('test.wtr_person_id')::bigint),
+    (select id from public.working_time_registers where person_id=current_setting('test.wtr_person_id')::bigint and period_kind = 'weekly' and period_start = '2026-10-01'),
     '[{"starts_at":"2026-10-04T08:00:00+02:00","ends_at":"2026-10-04T10:00:00+02:00"},{"starts_at":"2026-10-04T14:00:00+02:00","ends_at":"2026-10-04T16:00:00+02:00"}]'::jsonb,
     'Europe/Paris', current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', 'Deux quarts'
   )),

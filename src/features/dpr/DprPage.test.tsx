@@ -111,7 +111,8 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('button', { name: 'Produire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exports ZIP' })).not.toBeInTheDocument();
     expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
-    expect(screen.getByText('rédaction et suivi de mes rapports')).toBeInTheDocument();
+    expect(screen.getByText(/L’historique reste réservé/)).toBeInTheDocument();
+    expect(screen.queryByText('DPR-1056')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -122,7 +123,7 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: /^5Photos/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ajouter un fichier/ })).toBeInTheDocument();
     expect(screen.getAllByDisplayValue('Pierre LEPRETRE').some((element) => element.hasAttribute('disabled'))).toBe(true);
-    expect(screen.getByRole('combobox', { name: 'Capitaine valideur' })).toHaveValue('12');
+    expect(screen.queryByRole('combobox', { name: 'Capitaine valideur' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Pierre LEPRETRE' })).toBeChecked();
     expect(screen.queryByText('PROJET NON RÉFÉRENCÉ')).not.toBeInTheDocument();
 
@@ -171,11 +172,10 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByRole('button', { name: 'Saisir un DPR' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Produire' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Diagnostic/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Consulter' })).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    await user.click(screen.getAllByRole('button', { name: 'Consulter' })[1]);
     expect(await screen.findByRole('button', { name: /Valider/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Enregistrer/ })).toBeInTheDocument();
   });
 
   it.each(['direction', 'armement', 'marin'] as const)(
