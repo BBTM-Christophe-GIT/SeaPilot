@@ -14,11 +14,16 @@ interface FleetCertificateLibraryTreeProps {
   revealMatches: boolean;
   selectedCertificateId?: number | null;
   selectedDocumentIds?: ReadonlySet<number>;
+  selectedScopeCategoryKey?: string;
+  selectedScopeVesselName?: string;
   canManage?: boolean;
   onDelete?: (certificate: FleetCertificateRecord) => void;
   onDownload: (certificate: FleetCertificateRecord) => void;
   onRenew?: (certificate: FleetCertificateRecord) => void;
   onSelect: (certificate: FleetCertificateRecord) => void;
+  onSelectCategory?: (vesselName: string, categoryKey: string, categoryLabel: string) => void;
+  onSelectVessel?: (vesselName: string) => void;
+  onDownloadSelected?: () => void;
   onToggleSelection?: (certificateId: number) => void;
 }
 
@@ -106,11 +111,16 @@ export function FleetCertificateLibraryTree({
   revealMatches,
   selectedCertificateId,
   selectedDocumentIds = EMPTY_SELECTION,
+  selectedScopeCategoryKey = '',
+  selectedScopeVesselName = '',
   canManage = false,
   onDelete,
   onDownload,
   onRenew,
   onSelect,
+  onSelectCategory,
+  onSelectVessel,
+  onDownloadSelected,
   onToggleSelection,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(
@@ -149,17 +159,20 @@ export function FleetCertificateLibraryTree({
   return <>
     <div className="fcx-tree-toolbar">
       <span>Classement&nbsp;: <b>Navire</b><i>›</i><b>Catégorie</b><i>›</i><b>Document</b></span>
-      <button onClick={toggleAll} type="button">
-        {everythingOpen ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
-        {everythingOpen ? 'Tout replier' : 'Tout déplier'}
-      </button>
+      <div className="fcx-tree-toolbar-actions">
+        {onDownloadSelected ? <button aria-label={selectedDocumentIds.size ? `Télécharger (${selectedDocumentIds.size})` : 'Télécharger'} disabled={!selectedDocumentIds.size} onClick={onDownloadSelected} type="button"><Download size={15} /> Télécharger</button> : null}
+        <button onClick={toggleAll} type="button">
+          {everythingOpen ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
+          {everythingOpen ? 'Tout replier' : 'Tout déplier'}
+        </button>
+      </div>
     </div>
     <div className="fcx-library-head"><span>Arborescence documentaire</span><span>Échéance</span><span>État</span><span /></div>
     <div className="fcx-tree" role="tree" aria-label="Documents classés par navire et catégorie">
       {branches.map((vessel) => {
         const vesselOpen = openVessels.has(vessel.key);
         return <div aria-label={`Navire ${vessel.name}`} className="fcx-tree-vessel" key={vessel.key} role="treeitem" aria-expanded={vesselOpen}>
-          <button className="fcx-tree-vessel-row" onClick={() => setOpenVessels((current) => toggleKey(current, vessel.key))} type="button">
+          <button className={`fcx-tree-vessel-row${selectedScopeVesselName === vessel.name && !selectedScopeCategoryKey ? ' is-scope-selected' : ''}`} onClick={() => { setOpenVessels((current) => toggleKey(current, vessel.key)); onSelectVessel?.(vessel.name); }} type="button">
             <ChevronRight className={vesselOpen ? 'is-open' : ''} size={17} />
             <span className="fcx-tree-icon vessel"><Ship size={17} /></span>
             <strong>{vessel.name}</strong>
@@ -171,7 +184,7 @@ export function FleetCertificateLibraryTree({
             {vessel.categories.map((category) => {
               const categoryOpen = openCategories.has(category.key);
               return <div aria-label={`Catégorie ${category.label}`} className="fcx-tree-category" key={category.key} role="treeitem" aria-expanded={categoryOpen}>
-                <button className="fcx-tree-category-row" onClick={() => setOpenCategories((current) => toggleKey(current, category.key))} type="button">
+                <button className={`fcx-tree-category-row${selectedScopeVesselName === vessel.name && selectedScopeCategoryKey === category.certificates[0]?.categoryKey ? ' is-scope-selected' : ''}`} onClick={() => { setOpenCategories((current) => toggleKey(current, category.key)); onSelectCategory?.(vessel.name, category.certificates[0]?.categoryKey || category.label, category.label); }} type="button">
                   <ChevronRight className={categoryOpen ? 'is-open' : ''} size={16} />
                   <span className="fcx-tree-icon category"><Folder size={16} /></span>
                   <strong>{category.label}</strong>

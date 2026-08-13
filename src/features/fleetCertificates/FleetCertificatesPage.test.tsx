@@ -115,7 +115,8 @@ describe('FleetCertificatesPage', () => {
     expect(within(library).getByRole('button', { name: 'Télécharger Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(within(library).queryByRole('button', { name: /Gérer/ })).not.toBeInTheDocument();
     await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat de Franc-Bord' }));
-    expect(screen.getByRole('button', { name: 'Télécharger (1)' })).toBeEnabled();
+    expect(within(library).getByRole('button', { name: 'Télécharger (1)' })).toBeEnabled();
+    expect(screen.getByRole('navigation', { name: 'Menu des certificats flotte' })).not.toHaveTextContent('Télécharger');
     expect(within(library).getAllByText('1 à traiter').length).toBeGreaterThanOrEqual(3);
     await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
     expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
@@ -162,7 +163,8 @@ describe('FleetCertificatesPage', () => {
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
     fireEvent.change(screen.getByLabelText('Date d’émission'), { target: { value: '2027-04-12' } });
     expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('2028-04-12');
-    expect(screen.getByText('GOURY - Rapport radio - 2027-04-12.pdf')).toBeInTheDocument();
+    expect(screen.getByText('GOURY - Rapport radio - 2027.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('Proposée à +1 an. Modifiable ou supprimable.')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Date d’échéance (facultative)'), { target: { value: '' } });
     expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('');
   });
@@ -190,9 +192,34 @@ describe('FleetCertificatesPage', () => {
 
   it('uses the issue date naming convention and a removable one-year default expiry', () => {
     const certificate = mapFleetCertificateRows([certificates[0] as never])[0];
-    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GOURY - Certificat de Franc-Bord - 2027-09-15.pdf');
+    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GOURY - Certificat de Franc-Bord - 2027.pdf');
     expect(normalizeFleetCertificateDocumentName('GOURY - Permis de Navigation - 2027-09-15.pdf', ['GOURY', 'GRY'])).toBe('Permis de Navigation');
     expect(getDefaultFleetCertificateExpiryDate('2027-04-12')).toBe('2028-04-12');
     expect(getDefaultFleetCertificateExpiryDate('2028-02-29')).toBe('2029-02-28');
+  });
+
+  it('filters findings, deadlines and visits from vessel and category rows', async () => {
+    const user = userEvent.setup(); const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    expect(screen.getByText('Périmètre :', { exact: false }).closest('.fcx-workspace-scope')).toHaveTextContent('Toute la flotte');
+    expect(screen.getByRole('heading', { name: 'GOURY' })).toBeInTheDocument();
+    expect(screen.getByText('Corrosion du support bâbord')).toBeInTheDocument();
+
+    await user.click(within(library).getByRole('button', { name: /SUROIT/ }));
+    expect(screen.getByText('Périmètre :', { exact: false }).closest('.fcx-workspace-scope')).toHaveTextContent('SUROIT');
+    expect(screen.queryByText('Corrosion du support bâbord')).not.toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: /06 - Incendie/ }));
+    expect(screen.getByText('Périmètre :', { exact: false }).closest('.fcx-workspace-scope')).toHaveTextContent('SUROIT · 06 - Incendie');
+
+    await user.click(screen.getByRole('tab', { name: 'Échéances à venir' }));
+    const workspace = document.querySelector<HTMLElement>('.fcx-workspace-panel')!;
+    expect(within(workspace).getByText('Certificat extincteurs')).toBeInTheDocument();
+    expect(within(workspace).queryByText('Certificat de Franc-Bord')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Visites prestataires' }));
+    expect(screen.getByText('Aucune visite prestataire programmée.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Afficher toute la flotte' }));
+    expect(screen.getByText('SERVAUX · Visite Radeaux')).toBeInTheDocument();
   });
 });

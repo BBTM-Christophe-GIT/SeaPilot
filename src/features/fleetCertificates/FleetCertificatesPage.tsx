@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertCircle, CalendarPlus, CheckCircle2, ChevronDown, Download,
+  AlertCircle, CalendarPlus, CheckCircle2, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
   Plus, RefreshCw, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
@@ -35,6 +35,7 @@ import {
   generateFleetCertificateVisitReport,
 } from './fleetCertificateVisitReport';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
+import { FleetCertificateDeadlinesByScope, FleetCertificateFindingsByScope } from './FleetCertificateScopeViews';
 import { FleetCertificateVisitCalendar } from './FleetCertificateVisitCalendar';
 import { FleetCertificateVisitForm } from './FleetCertificateVisitForm';
 import {
@@ -118,7 +119,7 @@ function DocumentForm({ certificates, documentNames, onClose, onSave }: { certif
   return <Modal title="Ajouter un document" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
     <div className="fcx-form-grid"><label>Navire<select name="vesselId" onChange={(event) => setVesselId(event.target.value)} required value={vesselId}>{vessels.map((vessel) => <option key={vessel.vesselId} value={vessel.vesselId || ''}>{vessel.vesselName}</option>)}</select></label><label>Catégorie<select defaultValue="" name="category" required><option disabled value="">Sélectionner une catégorie</option>{categories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}</select></label></div>
     <label>Nom du document<input aria-label="Nom du document" list="fleet-certificate-document-names" name="title" onChange={(event) => setDocumentTitle(event.target.value)} placeholder="Ex. Certificat de Franc-Bord" required value={documentTitle} /><datalist id="fleet-certificate-document-names">{suggestedNames.map((name) => <option key={name} value={name} />)}</datalist><small className="fcx-field-help">Choisissez un nom existant ou saisissez-en un nouveau.</small></label>
-    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Date d’échéance (facultative)<input aria-label="Date d’échéance (facultative)" name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /><small className="fcx-field-help">Proposée à +1 an. Modifiable ou supprimable.</small></label></div>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Date d’échéance (facultative)<input aria-label="Date d’échéance (facultative)" name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label></div>
     {finalFileName && <p className="fcx-file-name-preview"><FileText size={16} /><span>Nom final du fichier<strong>{finalFileName}</strong></span></p>}
     <label className="fcx-drop"><UploadCloud size={22} /><span>PDF, image ou Excel · 50 Mo maximum</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || 'document.pdf')} required type="file" /></label>
     <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><FilePlus2 size={16} /> {saving ? 'Ajout…' : 'Ajouter le document'}</button></footer>
@@ -134,7 +135,7 @@ function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCerti
   const finalFileName = issuedOn ? buildFleetCertificateFileName(certificate, issuedOn, fileName) : '';
   return <Modal title="Renouveler le certificat" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
     <p className="fcx-form-context"><RefreshCw size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
-    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Nouvelle échéance (facultative)<input aria-label="Nouvelle échéance (facultative)" name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /><small className="fcx-field-help">Proposée à +1 an. Modifiable ou supprimable.</small></label></div>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Nouvelle échéance (facultative)<input aria-label="Nouvelle échéance (facultative)" name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label></div>
     {finalFileName && <p className="fcx-file-name-preview"><FileText size={16} /><span>Nom final du fichier<strong>{finalFileName}</strong></span></p>}
     <label>Note de renouvellement<textarea name="notes" rows={3} /></label>
     <label className="fcx-drop"><UploadCloud size={22} /><span>Nouveau certificat signé</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || 'document.pdf')} required type="file" /></label>
@@ -223,6 +224,9 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
+  const [scopeVesselName, setScopeVesselName] = useState('');
+  const [scopeCategoryKey, setScopeCategoryKey] = useState('');
+  const [scopeCategoryLabel, setScopeCategoryLabel] = useState('');
   const [activeTab, setActiveTab] = useState<FleetCertificateWorkspaceTab>('findings');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'upcoming' | 'actions'>('all');
@@ -290,11 +294,30 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     if (statusFilter === 'actions') return openFindings.some((finding) => finding.certificateId === item.id);
     return true;
   }), [active, openFindings, search, statusFilter, upcoming]);
-  const deadlineCertificates = useMemo(() => active
+  const scopedCertificates = useMemo(() => active.filter((item) => (
+    (!scopeVesselName || item.vesselName === scopeVesselName)
+    && (!scopeCategoryKey || item.categoryKey === scopeCategoryKey)
+  )), [active, scopeCategoryKey, scopeVesselName]);
+  const scopedCertificateIds = useMemo(
+    () => new Set(scopedCertificates.map((item) => item.id)),
+    [scopedCertificates],
+  );
+  const deadlineCertificates = useMemo(() => scopedCertificates
     .filter((item) => item.expiresOn && daysFromToday(item.expiresOn) <= 90)
-    .sort((left, right) => left.expiresOn.localeCompare(right.expiresOn)), [active]);
+    .sort((left, right) => left.expiresOn.localeCompare(right.expiresOn)), [scopedCertificates]);
   const selectedDocuments = useMemo(() => active.filter((item) => selectedDocumentIds.has(item.id)), [active, selectedDocumentIds]);
-  const workspaceFindings = selectedCertificate ? certificateFindings : openFindings;
+  const scopedOpenFindings = useMemo(
+    () => openFindings.filter((item) => scopedCertificateIds.has(item.certificateId)),
+    [openFindings, scopedCertificateIds],
+  );
+  const scopedVisits = useMemo(
+    () => visits.filter((visit) => scopedCertificateIds.has(visit.certificateId)),
+    [scopedCertificateIds, visits],
+  );
+  const workspaceFindings = selectedCertificate ? certificateFindings : scopedOpenFindings;
+  const scopeLabel = scopeCategoryKey
+    ? `${scopeVesselName} · ${scopeCategoryLabel}`
+    : scopeVesselName || 'Toute la flotte';
 
   async function run(action: () => Promise<void>, success: string, reload = true) {
     setError(''); setMessage('');
@@ -305,6 +328,35 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setSelectedCertificateId(certificate.id);
     setSelectedFindingId(null);
     setActiveTab(tab);
+  }
+
+  function clearDocumentSelectionForScope() {
+    setSelectedCertificateId(null);
+    setSelectedFindingId(null);
+    if (activeTab === 'preview') setActiveTab('findings');
+  }
+
+  function selectVesselScope(vesselName: string) {
+    const clearScope = scopeVesselName === vesselName && !scopeCategoryKey;
+    setScopeVesselName(clearScope ? '' : vesselName);
+    setScopeCategoryKey('');
+    setScopeCategoryLabel('');
+    clearDocumentSelectionForScope();
+  }
+
+  function selectCategoryScope(vesselName: string, categoryKey: string, categoryLabel: string) {
+    const clearCategory = scopeVesselName === vesselName && scopeCategoryKey === categoryKey;
+    setScopeVesselName(vesselName);
+    setScopeCategoryKey(clearCategory ? '' : categoryKey);
+    setScopeCategoryLabel(clearCategory ? '' : categoryLabel);
+    clearDocumentSelectionForScope();
+  }
+
+  function resetScope() {
+    setScopeVesselName('');
+    setScopeCategoryKey('');
+    setScopeCategoryLabel('');
+    clearDocumentSelectionForScope();
   }
 
   function toggleDocumentSelection(certificateId: number) {
@@ -386,7 +438,6 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       <ModuleRibbonGroup label="Gestion documentaire">
         {manager ? <ModuleRibbonCommand icon={<FilePlus2 aria-hidden="true" size={22} />} label="Ajouter un document" onClick={() => setModal('document')} /> : null}
         {manager ? <ModuleRibbonCommand icon={<CalendarPlus aria-hidden="true" size={22} />} label="Programmer une visite" onClick={() => setModal('visit-target')} /> : null}
-        <ModuleRibbonCommand count={selectedDocuments.length} disabled={!selectedDocuments.length} icon={<Download aria-hidden="true" size={22} />} label="Télécharger" onClick={() => downloadDocuments(selectedDocuments)} />
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Rapports">
         <div className="fcx-ribbon-report-wrap">
@@ -403,7 +454,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
           <label><Search size={18} /><input aria-label="Rechercher dans la bibliothèque documentaire" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat, un navire…" value={search} /></label>
           <div aria-label="Filtrer la bibliothèque"><Filter size={16} /><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Tous</button><button className={statusFilter === 'expired' ? 'active' : ''} onClick={() => setStatusFilter('expired')}>Échus</button><button className={statusFilter === 'upcoming' ? 'active' : ''} onClick={() => setStatusFilter('upcoming')}>À venir</button><button className={statusFilter === 'actions' ? 'active' : ''} onClick={() => setStatusFilter('actions')}>Avec actions</button></div>
         </div>
-        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onRenew={renewCertificate} onSelect={selectCertificate} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} />
+        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onDownloadSelected={() => downloadDocuments(selectedDocuments)} onRenew={renewCertificate} onSelect={selectCertificate} onSelectCategory={selectCategoryScope} onSelectVessel={selectVesselScope} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} selectedScopeCategoryKey={scopeCategoryKey} selectedScopeVesselName={scopeVesselName} />
       </section>
 
       <section className="fcx-workspace-card">
@@ -413,6 +464,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
           <button aria-selected={activeTab === 'visits'} className={activeTab === 'visits' ? 'active' : ''} onClick={() => setActiveTab('visits')} role="tab">Visites prestataires</button>
           <button aria-selected={activeTab === 'preview'} className={activeTab === 'preview' ? 'active' : ''} onClick={() => setActiveTab('preview')} role="tab">Aperçu du document</button>
         </div>
+        <div className="fcx-workspace-scope"><span>Périmètre&nbsp;: <strong>{scopeLabel}</strong></span>{scopeVesselName ? <button onClick={resetScope} type="button">Afficher toute la flotte</button> : null}</div>
 
         <div className="fcx-workspace-panel" role="tabpanel">
           {activeTab === 'findings' ? <div className="fcx-command-actions">
@@ -423,12 +475,12 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
                 <div className="fcx-detail-grid"><label>État<select value={selectedFinding.status} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { status: event.target.value as FleetFindingStatus }), 'État mis à jour.')}><option value="declared">À affecter</option><option value="assigned">Assigné</option><option value="in_progress">En cours</option><option value="pending_validation">À valider</option><option value="closed">Clôturé</option></select></label><label>Responsable<select value={selectedFinding.responsiblePersonId || ''} onChange={(event) => { const id = Number(event.target.value) || null; const person = responsibles.find((item) => item.id === id); run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { responsiblePersonId: id, responsibleName: person?.name || 'Non assigné' }), 'Responsable mis à jour.'); }}><option value="">Non assigné</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label>Échéance<input type="date" value={selectedFinding.treatmentDueOn} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { treatmentDueOn: event.target.value }), 'Échéance mise à jour.')} /></label><label>Avancement <b>{selectedFinding.progress}%</b><input min="0" max="100" step="10" type="range" value={selectedFinding.progress} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { progress: Number(event.target.value) }), 'Avancement mis à jour.')} /></label></div>
                 <section className="fcx-evidence"><header><div><h3>Constat & preuves</h3><p>Photos ou documents liés à l’écart</p></div></header><div className="fcx-evidence-grid">{(['finding', 'treatment'] as FleetFindingAttachmentKind[]).map((kind) => <div key={kind}><strong>{kind === 'finding' ? 'Constat initial' : 'Preuve du traitement'}</strong>{selectedFinding.attachments.filter((item) => item.kind === kind).map((attachment) => <button key={attachment.id} onClick={() => run(() => openFleetFindingAttachment(effectiveClient, attachment), 'Pièce ouverte.')}><span className="fcx-thumb">{attachment.mimeType.startsWith('image/') ? <Image size={22} /> : <FileText size={22} />}</span><span><b>{attachment.originalFileName}</b><small>{formatDate(attachment.createdAt)}</small></span><ExternalLink size={14} /></button>)}<button className="fcx-add-proof" onClick={() => { setUploadKind(kind); fileInput.current?.click(); }}><Plus size={15} /> Ajouter {kind === 'finding' ? 'une pièce' : 'une preuve'}</button></div>)}</div><input ref={fileInput} hidden accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) run(() => uploadFleetFindingAttachment(effectiveClient, selectedFinding, selectedCertificate.vesselAcronym, uploadKind, file), 'Pièce ajoutée.'); event.target.value = ''; }} /></section>
                 <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; run(() => addFleetFindingComment(effectiveClient, selectedFinding, comment), 'Note ajoutée.'); setComment(''); }}><input onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary"><Plus size={15} /> Ajouter</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small><strong>{event.authorName}</strong> · {new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
-              </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div> : <div className="fcx-global-finding-list">{openFindings.slice().sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a))).map((finding) => { const certificate = certificates.find((item) => item.id === finding.certificateId); return <button key={finding.id} onClick={() => { setSelectedCertificateId(finding.certificateId); setSelectedFindingId(finding.id); }}><span className={`fcx-type-dot ${typeTone(finding.findingType)}`} /><span><b>{finding.title}</b><small>{certificate?.vesselName} · {certificate?.documentTitle}</small></span><em className={isOverdue(finding) ? 'late' : ''}>{isOverdue(finding) ? 'En retard' : formatDate(finding.treatmentDueOn)}</em></button>; })}{!openFindings.length ? <div className="fcx-empty"><CheckCircle2 /> Aucun écart ouvert.</div> : null}</div>}
+              </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div> : <FleetCertificateFindingsByScope certificates={scopedCertificates} findings={scopedOpenFindings} formatDate={formatDate} isOverdue={isOverdue} onSelectFinding={(certificateId, findingId) => { setSelectedCertificateId(certificateId); setSelectedFindingId(findingId); }} typeTone={typeTone} />}
           </div> : null}
 
-          {activeTab === 'deadlines' ? <div className="fcx-deadline-workspace"><header><div><span>Échéances à venir</span><h2>Documents à renouveler</h2><p>Documents échus ou arrivant à échéance dans les 90 jours</p></div><strong>{deadlineCertificates.length}</strong></header><div className="fcx-deadline-list">{deadlineCertificates.map((certificate) => { const days = daysFromToday(certificate.expiresOn); return <button key={certificate.id} onClick={() => selectCertificate(certificate)}><span className={`fcx-days ${days <= 30 ? 'urgent' : ''}`}><b>{days < 0 ? `J+${Math.abs(days)}` : `J-${days}`}</b><small>{formatDate(certificate.expiresOn)}</small></span><span><b>{certificate.documentTitle}</b><small>{certificate.vesselName} · {certificate.categoryLabel}</small></span><ChevronDown className="rotate" size={17} /></button>; })}{!deadlineCertificates.length ? <div className="fcx-empty"><CheckCircle2 /> Aucune échéance à traiter.</div> : null}</div></div> : null}
+          {activeTab === 'deadlines' ? <div className="fcx-deadline-workspace"><header><div><span>Échéances à venir</span><h2>Documents à renouveler</h2><p>Documents échus ou arrivant à échéance dans les 90 jours</p></div><strong>{deadlineCertificates.length}</strong></header><FleetCertificateDeadlinesByScope certificates={deadlineCertificates} daysFromToday={daysFromToday} formatDate={formatDate} onSelectDocument={selectCertificate} /></div> : null}
 
-          {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={visits} /> : null}
+          {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
           {activeTab === 'preview' ? <FleetCertificateDocumentPreview certificate={selectedCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} previewUrl={previewUrl} /> : null}
         </div>
