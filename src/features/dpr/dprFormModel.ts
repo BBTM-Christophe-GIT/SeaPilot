@@ -138,7 +138,6 @@ export function validateDprPayload(payload: DprFormPayload, forSubmission = fals
   if (forSubmission) {
     if (payload.projectId === null && !payload.unlistedProjectName.trim()) errors.push('Le projet est obligatoire avant soumission.');
     if (payload.vesselId === null) errors.push('Le navire est obligatoire avant soumission.');
-    if (payload.validatorPersonId === null) errors.push('Le capitaine valideur est obligatoire avant soumission.');
     if (!payload.description.trim()) errors.push('La description de la journée est obligatoire avant soumission.');
   }
   return errors;

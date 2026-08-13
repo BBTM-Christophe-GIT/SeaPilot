@@ -30,7 +30,6 @@ export interface DprEntryContext {
   watchGroup: string;
   people: DprPersonOption[];
   crewPersonIds: number[];
-  defaultValidatorPersonId: number | null;
 }
 export interface DprReferenceData {
   projects: DprProjectOption[];
@@ -145,18 +144,20 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
   };
 }
 
-export async function fetchDprDashboard(client: SupabaseClient, options: { selfOnly?: boolean } = {}): Promise<DprDashboardData> {
+export async function fetchDprDashboard(client: SupabaseClient, options: { hideHistory?: boolean } = {}): Promise<DprDashboardData> {
   const profile = await loadCurrentProfile(client);
-  if (options.selfOnly && !profile.id) throw new Error('Session utilisateur introuvable.');
+  if (options.hideHistory && !profile.id) throw new Error('Session utilisateur introuvable.');
 
-  let reportQuery = client
+  const reportQuery = client
     .from('dpr_reports')
     .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,updated_at')
     .is('deleted_at', null);
-  if (options.selfOnly) reportQuery = reportQuery.eq('created_by', profile.id as string);
+  const reportPromise = options.hideHistory
+    ? Promise.resolve({ data: [], error: null })
+    : reportQuery.order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000);
 
   const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
-    reportQuery.order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000),
+    reportPromise,
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.from('vessels').select('id,name').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
@@ -214,24 +215,15 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { selfO
 }
 
 export async function fetchDprEntryContext(client: SupabaseClient, reportDate: string): Promise<DprEntryContext> {
-  const [{ data, error }, { data: validatorData, error: validatorError }] = await Promise.all([
-    client.rpc('dpr_entry_context', { target_date: reportDate }),
-    client.rpc('dpr_validator_context', { target_date: reportDate }),
-  ]);
+  const { data, error } = await client.rpc('dpr_entry_context', { target_date: reportDate });
   if (error) throw error;
-  if (validatorError) throw validatorError;
   const row = (data || {}) as Record<string, unknown>;
-  const validatorRow = (validatorData || {}) as Record<string, unknown>;
-  const validatorPeople = (Array.isArray(validatorRow.people) ? validatorRow.people : [])
-    .map((person) => mapPerson(person as Record<string, unknown>));
-  const validatorById = new Map(validatorPeople.map((person) => [person.id, person]));
   const peopleById = new Map(
     (Array.isArray(row.people) ? row.people : []).map((person) => {
       const mapped = mapPerson(person as Record<string, unknown>);
-      return [mapped.id, validatorById.get(mapped.id) ? { ...mapped, isDprValidator: true } : mapped] as const;
+      return [mapped.id, mapped] as const;
     }),
   );
-  validatorPeople.forEach((person) => { if (!peopleById.has(person.id)) peopleById.set(person.id, person); });
   return {
     issuerPersonId: numberOrNull(row.issuerPersonId),
     issuerName: text(row.issuerName) || 'Utilisateur SeaPilot',
@@ -240,7 +232,6 @@ export async function fetchDprEntryContext(client: SupabaseClient, reportDate: s
     watchGroup: text(row.watchGroup),
     people: [...peopleById.values()],
     crewPersonIds: (Array.isArray(row.crewPersonIds) ? row.crewPersonIds : []).map(Number).filter(Number.isFinite),
-    defaultValidatorPersonId: numberOrNull(validatorRow.defaultValidatorPersonId),
   };
 }
 
@@ -295,13 +286,7 @@ export async function saveDprPayload(client: SupabaseClient, dprId: number | nul
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
   if (!row?.id) throw new Error("Supabase n'a retourné aucun DPR.");
-  const savedId = Number(row.id);
-  const { error: validatorError } = await client.rpc('dpr_assign_validator', {
-    target_dpr_id: savedId,
-    target_validator_person_id: payload.validatorPersonId,
-  });
-  if (validatorError) throw validatorError;
-  return savedId;
+  return Number(row.id);
 }
 
 export async function runDprTransition(client: SupabaseClient, transition: 'submit' | 'validate' | 'reopen' | 'delete', dprId: number, reason = ''): Promise<void> {
