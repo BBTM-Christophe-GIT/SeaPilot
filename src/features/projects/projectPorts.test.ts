@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  filterProjectPortGroups,
   formatProjectPort,
   PROJECT_PORT_GROUPS,
   PROJECT_PORTS,
@@ -70,5 +71,14 @@ describe('projectPorts', () => {
     expect(bouchesDuRhone?.ports.map(formatProjectPort)).toContain(
       'Port des Goudes – Marseille – FR MRS',
     );
+  });
+
+  it('filters ports by port, department and LOCODE without requiring accents', () => {
+    expect(filterProjectPortGroups('cherbourg').flatMap((group) => group.ports.map((port) => port.port)))
+      .toContain('Cherbourg');
+    expect(filterProjectPortGroups('cotes armor').map((group) => group.department))
+      .toContain('Côtes-d’Armor (22)');
+    expect(filterProjectPortGroups('FR BES').flatMap((group) => group.ports.map((port) => port.port)))
+      .toContain('Brest');
   });
 });

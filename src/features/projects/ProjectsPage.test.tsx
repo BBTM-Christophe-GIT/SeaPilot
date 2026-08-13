@@ -495,15 +495,20 @@ describe('ProjectsPage', () => {
     await user.selectOptions(screen.getByLabelText('Client / affréteur'), '50');
     await user.click(screen.getByRole('button', { name: /Planning/ }));
     const deliveryPort = screen.getByLabelText('Port de livraison');
-    const finistere = deliveryPort.querySelector('optgroup[label="Finistère"]');
-    expect(finistere).toHaveTextContent('Brest – FR BES');
-    expect(deliveryPort.querySelector('optgroup[label="Charente-Maritime (17)"]')).toHaveTextContent(
-      "Port de Boyardville – Saint-Georges-d'Oléron – FR GGD",
+    await user.click(deliveryPort);
+    expect(screen.getByRole('group', { name: 'Finistère' })).toHaveTextContent('Brest');
+    expect(screen.getByRole('group', { name: 'Charente-Maritime (17)' })).toHaveTextContent(
+      "Port de Boyardville",
     );
-    expect(screen.getByLabelText('Port de restitution').querySelector('optgroup[label="Bouches-du-Rhône (13)"]'))
-      .toHaveTextContent('Port des Goudes – Marseille – FR MRS');
-    await user.selectOptions(deliveryPort, 'Brest');
-    await user.selectOptions(screen.getByLabelText('Port de restitution'), 'Cherbourg');
+    await user.type(deliveryPort, 'Brest');
+    await user.click(screen.getByRole('option', { name: /Brest.*FR BES/ }));
+
+    const redeliveryPort = screen.getByLabelText('Port de restitution');
+    await user.click(redeliveryPort);
+    expect(screen.getByRole('group', { name: 'Bouches-du-Rhône (13)' }))
+      .toHaveTextContent('Port des Goudes');
+    await user.type(redeliveryPort, 'Cherbourg');
+    await user.click(screen.getByRole('option', { name: /Cherbourg.*FR CER/ }));
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
