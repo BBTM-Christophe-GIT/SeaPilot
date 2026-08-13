@@ -19346,3 +19346,78 @@ button.planning-p12-conflict-card {
   .fc-version { grid-template-columns: auto minmax(0, 1fr) auto; }
   .fc-version .fc-validate-action { grid-column: 2 / -1; justify-content: center; }
 }
+
+/* Fleet certificates: compact ribbon, guided reports and visit hierarchy. */
+.planning-module-toolbar.fcx-certificates-ribbon { min-height: 72px; }
+.fcx-certificates-ribbon .planning-ribbon-group { grid-template-rows: 46px 18px; padding-top: 2px; }
+.fcx-certificates-ribbon .planning-ribbon-actions { grid-auto-columns: max-content; grid-template-rows: 46px; gap: 4px; }
+.fcx-certificates-ribbon .planning-ribbon-command { display: flex; width: auto; min-width: 142px; min-height: 42px; grid-template-rows: none; justify-content: flex-start; gap: 8px; padding: 5px 11px; }
+.fcx-certificates-ribbon .planning-ribbon-command-icon { width: 24px; height: 24px; }
+.fcx-certificates-ribbon .planning-ribbon-command-icon svg { width: 18px; height: 18px; }
+.fcx-certificates-ribbon .planning-ribbon-command-label { max-width: 118px; font-size: .62rem; line-height: 1.15; text-align: left; -webkit-line-clamp: 2; }
+.fcx-certificates-ribbon .planning-ribbon-group-label { padding: 2px 5px 4px; }
+.fcx-workbench-library .fcx-library-row { padding-left: 258px; }
+.fcx-workbench-library .fcx-library-row:before { width: 186px; }
+
+.fcx-dialog-section-title { display: flex; align-items: flex-start; gap: 9px; }
+.fcx-dialog-section-title > span { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #fff; background: #1769dc; font-size: .68rem; font-weight: 900; }
+.fcx-dialog-section-title h3 { margin: 0; color: #1d3654; font-size: .79rem; }
+.fcx-dialog-section-title p { margin: 3px 0 0; color: #748397; font-size: .62rem; line-height: 1.4; }
+.fcx-document-path-fields { display: grid; grid-template-columns: .75fr 1.25fr 1.25fr; gap: 10px; }
+.fcx-document-path-fields.is-single { grid-template-columns: minmax(260px, .55fr); }
+.fcx-document-path-fields label,.fcx-report-finding-field label { display: grid; gap: 5px; color: #53657a; font-size: .66rem; font-weight: 850; }
+.fcx-document-path-fields select,.fcx-report-finding-field select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 9px; border: 1px solid #d4dde8; border-radius: 8px; color: #19304d; background: #fff; font: inherit; }
+
+.fcx-visit-target-form { gap: 16px; }
+.fcx-visit-target-summary { display: flex; align-items: center; gap: 10px; margin: 0; padding: 11px 12px; color: #1769dc; border: 1px solid #cfe2f4; border-radius: 9px; background: #f2f8fe; }
+.fcx-visit-target-summary > span { display: grid; gap: 2px; }
+.fcx-visit-target-summary small { color: #66809a; font-size: .58rem; font-weight: 800; text-transform: uppercase; }
+.fcx-visit-target-summary b { color: #1d3654; font-size: .72rem; }
+.fcx-visit-target-summary em { color: #65788c; font-size: .61rem; font-style: normal; }
+
+.fcx-report-dialog { width: min(920px, 100%); }
+.fcx-report-dialog > header p { margin: 4px 0 0; color: #6c7d91; font-size: .65rem; }
+.fcx-report-dialog-body { display: grid; gap: 18px; max-height: calc(100vh - 220px); overflow: auto; padding: 18px 20px; }
+.fcx-report-scope-section,.fcx-report-details-section { display: grid; gap: 13px; }
+.fcx-report-details-section { padding-top: 17px; border-top: 1px solid #e4e9ef; }
+.fcx-report-scope-options { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 8px; }
+.fcx-report-scope-options > button { display: grid; min-height: 94px; grid-template-columns: 22px minmax(0,1fr); align-content: start; gap: 8px; padding: 11px; text-align: left; border: 1px solid #d7e0e9; border-radius: 10px; color: #577086; background: #fff; cursor: pointer; }
+.fcx-report-scope-options > button:hover { border-color: #9fc8e8; background: #f7fbff; }
+.fcx-report-scope-options > button.is-active { color: #1769dc; border-color: #76b0e3; background: #eef7ff; box-shadow: inset 0 0 0 1px #b9daf5; }
+.fcx-report-scope-options > button > span { display: grid; gap: 4px; }
+.fcx-report-scope-options > button > span b { color: #203a58; font-size: .68rem; }
+.fcx-report-scope-options > button > span small { color: #738398; font-size: .57rem; line-height: 1.35; }
+.fcx-report-scope-options > button > svg:last-child { grid-column: 1/-1; align-self: end; justify-self: end; }
+.fcx-report-finding-field { max-width: 100%; }
+.fcx-report-finding-field label > small { color: #a03838; font-size: .6rem; }
+.fcx-report-summary { display: flex; align-items: center; gap: 11px; padding: 13px; border: 1px solid #cfe3d9; border-radius: 10px; background: #f2faf5; }
+.fcx-report-summary > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 99px; color: #11834c; background: #daf2e3; }
+.fcx-report-summary > div { display: grid; gap: 2px; }
+.fcx-report-summary small { color: #52806a; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
+.fcx-report-summary h3 { margin: 0; color: #1c4933; font-size: .76rem; }
+.fcx-report-summary p { margin: 0; color: #668172; font-size: .62rem; }
+.fcx-report-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 20px; border-top: 1px solid #e2e8ef; }
+.fcx-report-dialog > footer button { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; padding: 0 15px; border: 1px solid #d2dae4; border-radius: 8px; background: #fff; font-weight: 850; cursor: pointer; }
+.fcx-report-dialog > footer .fcx-primary { color: #fff; border-color: #1769dc; background: #1769dc; }
+.fcx-report-dialog > footer button:disabled { cursor: default; opacity: .55; }
+
+.fcx-visit-step { display: grid; gap: 11px; padding: 13px; border: 1px solid #dfe6ee; border-radius: 11px; background: #fbfcfe; }
+.fcx-visit-main-fields { display: grid; grid-template-columns: 1.15fr .85fr; gap: 10px; }
+
+@media(max-width:900px) {
+  .fcx-report-scope-options { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .fcx-document-path-fields { grid-template-columns: 1fr; }
+}
+
+@media(max-width:720px) {
+  .planning-module-toolbar.fcx-certificates-ribbon { min-height: 68px; }
+  .fcx-certificates-ribbon .planning-ribbon-command { min-width: 130px; }
+  .fcx-workbench-library .fcx-library-row { min-height: 88px; padding-top: 41px; padding-left: 60px; }
+  .fcx-workbench-library .fcx-library-row:before { width: 0; }
+  .fcx-library-document-actions { top: 24px; left: 60px; transform: none; }
+  .fcx-report-dialog { height: 100%; max-height: none; border-radius: 0; }
+  .fcx-report-dialog-body { max-height: none; }
+  .fcx-report-scope-options { grid-template-columns: 1fr; }
+  .fcx-report-scope-options > button { min-height: 70px; }
+  .fcx-visit-main-fields { grid-template-columns: 1fr; }
+}

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
+import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
 import {
   buildFleetCertificateFileName,
   getDefaultFleetCertificateExpiryDate,
@@ -110,6 +111,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: /GOURY/ }));
     await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).getByRole('button', { name: 'Programmer une visite pour Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(within(library).getByRole('button', { name: 'Supprimer Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(within(library).getByRole('button', { name: 'Renouveler Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(within(library).getByRole('button', { name: 'Télécharger Certificat de Franc-Bord' })).toBeInTheDocument();
@@ -142,9 +144,18 @@ describe('FleetCertificatesPage', () => {
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
     expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Générer un rapport' }));
-    expect(screen.getByRole('button', { name: 'Cet écart' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ce certificat' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tous les écarts flotte' })).toBeInTheDocument();
+    const reportDialog = screen.getByRole('dialog', { name: 'Générer un rapport' });
+    expect(within(reportDialog).getByRole('radio', { name: /^Toute la flotte/ })).toHaveAttribute('aria-checked', 'true');
+    expect(within(reportDialog).getByRole('radio', { name: /^Un navire/ })).toBeInTheDocument();
+    expect(within(reportDialog).getByRole('radio', { name: /^Une catégorie/ })).toBeInTheDocument();
+    expect(within(reportDialog).getByRole('radio', { name: /^Un document/ })).toBeInTheDocument();
+    await user.click(within(reportDialog).getByRole('radio', { name: /^Un écart/ }));
+    expect(within(reportDialog).getByRole('combobox', { name: 'Navire' })).toHaveValue('GOURY');
+    expect(within(reportDialog).getByRole('combobox', { name: 'Catégorie' })).toHaveValue('02-securite');
+    expect(within(reportDialog).getByRole('combobox', { name: 'Document' })).toHaveValue('42');
+    expect(within(reportDialog).getByRole('combobox', { name: 'Écart' })).toHaveValue('81');
+    expect(within(reportDialog).getByLabelText('Récapitulatif du rapport')).toHaveTextContent('EC-2026-0012');
+    await user.click(within(reportDialog).getByRole('button', { name: 'Fermer' }));
     await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
     expect(screen.getByRole('option', { name: 'Findings' })).toHaveValue('finding');
   });
@@ -174,7 +185,9 @@ describe('FleetCertificatesPage', () => {
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: 'Programmer une visite' }));
     const targetDialog = screen.getByRole('dialog');
-    await user.selectOptions(within(targetDialog).getByRole('combobox'), '42');
+    expect(within(targetDialog).getByRole('combobox', { name: 'Navire' })).toHaveValue('GOURY');
+    expect(within(targetDialog).getByRole('combobox', { name: 'Catégorie' })).toHaveValue('02-securite');
+    await user.selectOptions(within(targetDialog).getByRole('combobox', { name: 'Document' }), '42');
     await user.click(within(targetDialog).getByRole('button', { name: 'Continuer' }));
     const dialog = screen.getByRole('dialog', { name: 'Programmer une visite prestataire' });
     expect(dialog).toHaveClass('fcx-visit-dialog');
@@ -188,6 +201,23 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByText('Manche', { selector: 'h3' })).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Inclure les sujets, constats, suivis et photos')).toBeChecked();
     expect(within(dialog).getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+
+    const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Programmer une visite pour Certificat de Franc-Bord' }));
+    expect(screen.getByRole('dialog', { name: 'Programmer une visite prestataire' })).toBeInTheDocument();
+  });
+
+  it('resolves every report perimeter independently from the current workspace selection', () => {
+    const records = mapFleetCertificateRows(certificates as never);
+    const mappedFindings = [{ id: 81, certificateId: 42 }] as never;
+    expect(resolveFleetCertificateReportSelection(records, mappedFindings, { scope: 'fleet' })).toMatchObject({ certificates: records, findings: mappedFindings });
+    expect(resolveFleetCertificateReportSelection(records, mappedFindings, { scope: 'vessel', vesselName: 'SUROIT' }).certificates.map((item) => item.id)).toEqual([43]);
+    expect(resolveFleetCertificateReportSelection(records, mappedFindings, { scope: 'category', categoryKey: '02-securite' }).certificates.map((item) => item.id)).toEqual([42]);
+    expect(resolveFleetCertificateReportSelection(records, mappedFindings, { scope: 'document', certificateId: 43 })).toMatchObject({ certificates: [{ id: 43 }], findings: [] });
+    expect(resolveFleetCertificateReportSelection(records, mappedFindings, { scope: 'finding', certificateId: 42, findingId: 81 })).toMatchObject({ certificates: [{ id: 42 }], findings: [{ id: 81 }] });
   });
 
   it('uses the issue date naming convention and a removable one-year default expiry', () => {

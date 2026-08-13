@@ -1,5 +1,5 @@
 import {
-  ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, Folder, RefreshCw, Ship, Trash2,
+  CalendarPlus, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, Folder, RefreshCw, Ship, Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -20,6 +20,7 @@ interface FleetCertificateLibraryTreeProps {
   onDelete?: (certificate: FleetCertificateRecord) => void;
   onDownload: (certificate: FleetCertificateRecord) => void;
   onRenew?: (certificate: FleetCertificateRecord) => void;
+  onSchedule?: (certificate: FleetCertificateRecord) => void;
   onSelect: (certificate: FleetCertificateRecord) => void;
   onSelectCategory?: (vesselName: string, categoryKey: string, categoryLabel: string) => void;
   onSelectVessel?: (vesselName: string) => void;
@@ -117,6 +118,7 @@ export function FleetCertificateLibraryTree({
   onDelete,
   onDownload,
   onRenew,
+  onSchedule,
   onSelect,
   onSelectCategory,
   onSelectVessel,
@@ -199,6 +201,7 @@ export function FleetCertificateLibraryTree({
                       <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
                       <div className="fcx-library-document-actions">
                         {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} onChange={() => onToggleSelection(certificate.id)} type="checkbox" /> : null}
+                        {canManage && onSchedule ? <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} onClick={() => onSchedule(certificate)} title="Programmer une visite" type="button"><CalendarPlus size={15} /></button> : null}
                         {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
                         {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
                         <button aria-label={`Télécharger ${certificate.documentTitle}`} onClick={() => onDownload(certificate)} title="Télécharger" type="button"><Download size={15} /></button>
