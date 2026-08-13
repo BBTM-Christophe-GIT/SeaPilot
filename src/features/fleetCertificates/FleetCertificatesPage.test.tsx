@@ -2,7 +2,12 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
-import { buildFleetCertificateFileName, mapFleetCertificateRows, normalizeFleetCertificateDocumentName } from './fleetCertificateQueries';
+import {
+  buildFleetCertificateFileName,
+  getDefaultFleetCertificateExpiryDate,
+  mapFleetCertificateRows,
+  normalizeFleetCertificateDocumentName,
+} from './fleetCertificateQueries';
 
 const certificates = [
   {
@@ -50,7 +55,7 @@ const visits = [{
 
 function createClient() {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
-  const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn(), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
+  const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn().mockResolvedValue({ data: new Blob(['document']), error: null }), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
   const client = {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
@@ -69,21 +74,28 @@ function createClient() {
 }
 
 describe('FleetCertificatesPage', () => {
-  it('prioritizes expired documents, upcoming deadlines and open findings', async () => {
+  it('groups the library, treatment, deadlines, visits and preview in one workspace', async () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
     expect(await screen.findByRole('heading', { name: 'Certificats flotte' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Sujets à traiter' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Échéances à venir' })).toBeInTheDocument();
-    expect(screen.getByText('Corrosion du support bâbord')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /1 documents échus/ })).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText('Rechercher un certificat, un navire…'), 'extincteurs');
+    expect(screen.queryByRole('button', { name: /documents échus/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Menu des certificats flotte' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pilotage du traitement' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Échéances à venir' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Visites prestataires' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Aperçu du document' })).toBeInTheDocument();
+
     const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section')!;
+    await user.type(within(library).getByRole('textbox', { name: 'Rechercher dans la bibliothèque documentaire' }), 'extincteurs');
     expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toBeInTheDocument();
-    expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toBeInTheDocument();
     expect(within(library).getByText('Certificat extincteurs')).toBeInTheDocument();
     expect(within(library).queryByText('Certificat de Franc-Bord')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Calendrier des visites prestataires' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Échéances à venir' }));
+    expect(screen.getByRole('heading', { name: 'Documents à renouveler' })).toBeInTheDocument();
+    expect(screen.getAllByText('Certificat extincteurs').length).toBeGreaterThanOrEqual(2);
+    await user.click(screen.getByRole('tab', { name: 'Visites prestataires' }));
+    expect(screen.getByText('SERVAUX · Visite Radeaux')).toBeInTheDocument();
   });
 
   it('organizes the document library by vessel, category and document', async () => {
@@ -98,32 +110,37 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: /GOURY/ }));
     await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     expect(within(library).getByRole('treeitem', { name: 'Document Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).getByRole('button', { name: 'Supprimer Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).getByRole('button', { name: 'Renouveler Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).getByRole('button', { name: 'Télécharger Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(within(library).queryByRole('button', { name: /Gérer/ })).not.toBeInTheDocument();
+    await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat de Franc-Bord' }));
+    expect(screen.getByRole('button', { name: 'Télécharger (1)' })).toBeEnabled();
     expect(within(library).getAllByText('1 à traiter').length).toBeGreaterThanOrEqual(3);
     await user.click(within(library).getByRole('button', { name: /Tout déplier/ }));
     expect(within(library).getByRole('treeitem', { name: 'Navire SUROIT' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(library).getByRole('treeitem', { name: 'Catégorie 06 - Incendie' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('opens a certificate workspace with finding evidence and report scopes', async () => {
+  it('opens a document preview from its row and keeps treatment actions in the tabbed workspace', async () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['armement']} />);
-    await user.click(await screen.findByText('Corrosion du support bâbord'));
-    expect(await screen.findByRole('heading', { name: 'Certificat de Franc-Bord' })).toBeInTheDocument();
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    expect(screen.getByRole('tab', { name: 'Aperçu du document' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('heading', { name: 'Informations du document' })).toBeInTheDocument();
+    expect(screen.getByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', 'https://signed.test/document');
+    expect(screen.getByText('15 sept. 2025')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+    expect(screen.getByRole('heading', { name: 'Certificat de Franc-Bord' })).toBeInTheDocument();
     expect(screen.getByText('EC-2026-0012')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Bibliothèque documentaire' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Écarts & actions' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Rechercher dans la bibliothèque documentaire')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Aperçu' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Échéances' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Versions' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Prévisualisation' })).not.toBeInTheDocument();
     expect(screen.getByText('Constat & preuves')).toBeInTheDocument();
     expect(screen.getByText('Suivi du traitement')).toBeInTheDocument();
     expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ouvrir' })).not.toBeInTheDocument();
-    expect(screen.getByText('SERVAUX · Visite Radeaux')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Certificat de Franc-Bord/ }).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /Générer un rapport/ }));
+    await user.click(screen.getByRole('button', { name: 'Générer un rapport' }));
     expect(screen.getByRole('button', { name: 'Cet écart' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ce certificat' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tous les écarts flotte' })).toBeInTheDocument();
@@ -143,17 +160,20 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByRole('option', { name: '06 - Incendie' })).toBeInTheDocument();
     expect(document.querySelector('datalist option[value="Permis de Navigation"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
-    fireEvent.change(screen.getByLabelText('Date d’échéance'), { target: { value: '2028-04-12' } });
-    expect(screen.getByText('GOURY - Rapport radio - 2028.pdf')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date d’émission'), { target: { value: '2027-04-12' } });
+    expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('2028-04-12');
+    expect(screen.getByText('GOURY - Rapport radio - 2027-04-12.pdf')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date d’échéance (facultative)'), { target: { value: '' } });
+    expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('');
   });
 
-  it('opens the centered visit agenda from the document row with searchable grouped ports', async () => {
+  it('opens the centered visit agenda from the Planning-style ribbon with searchable grouped ports', async () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
-    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
-    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
-    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
-    await user.click(within(library).getByRole('button', { name: 'Programmer une visite pour Certificat de Franc-Bord' }));
+    await user.click(await screen.findByRole('button', { name: 'Programmer une visite' }));
+    const targetDialog = screen.getByRole('dialog');
+    await user.selectOptions(within(targetDialog).getByRole('combobox'), '42');
+    await user.click(within(targetDialog).getByRole('button', { name: 'Continuer' }));
     const dialog = screen.getByRole('dialog', { name: 'Programmer une visite prestataire' });
     expect(dialog).toHaveClass('fcx-visit-dialog');
     expect(within(dialog).getByText('Planning des journées')).toBeInTheDocument();
@@ -168,9 +188,11 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
   });
 
-  it('keeps the BBTM file renaming convention', () => {
+  it('uses the issue date naming convention and a removable one-year default expiry', () => {
     const certificate = mapFleetCertificateRows([certificates[0] as never])[0];
-    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GOURY - Certificat de Franc-Bord - 2027.pdf');
-    expect(normalizeFleetCertificateDocumentName('GOURY - Permis de Navigation - 2027.pdf', ['GOURY', 'GRY'])).toBe('Permis de Navigation');
+    expect(buildFleetCertificateFileName(certificate, '2027-09-15', 'scan final.PDF')).toBe('GOURY - Certificat de Franc-Bord - 2027-09-15.pdf');
+    expect(normalizeFleetCertificateDocumentName('GOURY - Permis de Navigation - 2027-09-15.pdf', ['GOURY', 'GRY'])).toBe('Permis de Navigation');
+    expect(getDefaultFleetCertificateExpiryDate('2027-04-12')).toBe('2028-04-12');
+    expect(getDefaultFleetCertificateExpiryDate('2028-02-29')).toBe('2029-02-28');
   });
 });

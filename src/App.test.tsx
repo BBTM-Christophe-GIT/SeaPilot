@@ -211,16 +211,17 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Certificats flotte' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /1 échéances à 90 jours/ })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Menu des certificats flotte' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Échéances à venir' })).toBeInTheDocument();
     const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section');
     expect(library).not.toBeNull();
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /COTENTIN.*1 document/ }));
     fireEvent.click(within(library as HTMLElement).getByRole('button', { name: /Navigation/ }));
-    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: 'Gérer Permis de navigation COTENTIN' }));
-    expect(await screen.findByRole('heading', { name: 'Permis de navigation COTENTIN' })).toBeInTheDocument();
-    expect(screen.getByText(/COTENTIN · Navigation/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Ouvrir$/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Permis de navigation COTENTIN/ }).length).toBeGreaterThan(0);
+    fireEvent.click(within(library as HTMLElement).getByRole('button', { name: 'Prévisualiser Permis de navigation COTENTIN' }));
+    expect(screen.getByRole('tab', { name: 'Aperçu du document' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('heading', { name: 'Informations du document' })).toBeInTheDocument();
+    expect(screen.getAllByText('COTENTIN').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('button', { name: /Gérer/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 

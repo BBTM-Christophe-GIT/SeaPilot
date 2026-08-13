@@ -55,15 +55,17 @@ export function FleetCertificateVisitCalendar({
   canManage,
   onSchedule,
   onSelectDocument,
+  embedded = false,
 }: {
   visits: FleetCertificateVisit[];
   canManage: boolean;
   onSchedule: () => void;
   onSelectDocument: (certificateId: number) => void;
+  embedded?: boolean;
 }) {
   const groups = useMemo(() => groupVisits(visits), [visits]);
-  return <article className="fcx-visit-calendar">
-    <header><div><span className="fcx-panel-icon blue"><CalendarDays size={18} /></span><div><h2>Calendrier des visites prestataires</h2><p>Classement par navire, catégorie et document</p></div></div>{canManage && <button className="fcx-primary" onClick={onSchedule}><Plus size={16} /> Programmer une visite</button>}</header>
+  return <article className={`fcx-visit-calendar${embedded ? ' is-embedded' : ''}`}>
+    {!embedded ? <header><div><span className="fcx-panel-icon blue"><CalendarDays size={18} /></span><div><h2>Calendrier des visites prestataires</h2><p>Classement par navire, catégorie et document</p></div></div>{canManage && <button className="fcx-primary" onClick={onSchedule}><Plus size={16} /> Programmer une visite</button>}</header> : null}
     {!groups.length ? <div className="fcx-empty"><CalendarDays size={20} /> Aucune visite prestataire programmée.</div> : <div className="fcx-visit-groups">
       {groups.map((vessel) => <section key={vessel.name}><h3><ChevronRight size={15} />{vessel.name}<small>{vessel.categories.reduce((sum, category) => sum + category.documents.reduce((count, document) => count + document.visits.length, 0), 0)} visite(s)</small></h3>
         {vessel.categories.map((category) => <div className="fcx-visit-category" key={category.label}><h4>{category.label}</h4>

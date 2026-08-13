@@ -1,5 +1,5 @@
 import {
-  CalendarPlus, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, Folder, MoreHorizontal, Ship,
+  ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, Folder, RefreshCw, Ship, Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -13,9 +13,13 @@ interface FleetCertificateLibraryTreeProps {
   findingCountByCertificate: ReadonlyMap<number, number>;
   revealMatches: boolean;
   selectedCertificateId?: number | null;
-  onOpen: (certificate: FleetCertificateRecord) => void;
-  onManage?: (certificateId: number) => void;
-  onSchedule?: (certificateId: number) => void;
+  selectedDocumentIds?: ReadonlySet<number>;
+  canManage?: boolean;
+  onDelete?: (certificate: FleetCertificateRecord) => void;
+  onDownload: (certificate: FleetCertificateRecord) => void;
+  onRenew?: (certificate: FleetCertificateRecord) => void;
+  onSelect: (certificate: FleetCertificateRecord) => void;
+  onToggleSelection?: (certificateId: number) => void;
 }
 
 interface CategoryBranch {
@@ -35,6 +39,7 @@ interface VesselBranch {
 }
 
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+const EMPTY_SELECTION = new Set<number>();
 
 function buildTree(
   certificates: FleetCertificateRecord[],
@@ -100,9 +105,13 @@ export function FleetCertificateLibraryTree({
   findingCountByCertificate,
   revealMatches,
   selectedCertificateId,
-  onOpen,
-  onManage,
-  onSchedule,
+  selectedDocumentIds = EMPTY_SELECTION,
+  canManage = false,
+  onDelete,
+  onDownload,
+  onRenew,
+  onSelect,
+  onToggleSelection,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(
     () => buildTree(certificates, findingCountByCertificate),
@@ -175,13 +184,17 @@ export function FleetCertificateLibraryTree({
                     const actionCount = findingCountByCertificate.get(certificate.id) || 0;
                     return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
                       <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
-                      {onSchedule && <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} className="fcx-library-schedule" onClick={() => onSchedule(certificate.id)} title="Programmer une visite" type="button"><CalendarPlus size={16} /></button>}
-                      <button aria-label={`Ouvrir la pièce jointe ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onOpen(certificate)} type="button">
+                      <div className="fcx-library-document-actions">
+                        {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} onChange={() => onToggleSelection(certificate.id)} type="checkbox" /> : null}
+                        {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
+                        {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
+                        <button aria-label={`Télécharger ${certificate.documentTitle}`} onClick={() => onDownload(certificate)} title="Télécharger" type="button"><Download size={15} /></button>
+                      </div>
+                      <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
                         <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
                         <span>{formatDate(certificate.expiresOn)}</span>
                         <em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em>
                       </button>
-                      {onManage && <button aria-label={`Gérer ${certificate.documentTitle}`} className="fcx-library-manage" onClick={() => onManage(certificate.id)} title="Gérer le document" type="button"><MoreHorizontal size={18} /></button>}
                       </div>
                     </div>;
                   })}
