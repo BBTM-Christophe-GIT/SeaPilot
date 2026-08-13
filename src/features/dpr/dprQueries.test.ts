@@ -55,6 +55,13 @@ describe('DPR Supabase commands', () => {
     expect(rpc).toHaveBeenCalledWith('dpr_soft_delete', { target_dpr_id: 42, target_reason: 'Doublon confirmé' });
   });
 
+  it('calls validation directly without the obsolete submission transition', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    await runDprTransition({ rpc } as never, 'validate', 42);
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith('dpr_validate', { target_dpr_id: 42 });
+  });
+
   it('allocates a trusted path before uploading and completing a file', async () => {
     const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
     const rpc = vi.fn()

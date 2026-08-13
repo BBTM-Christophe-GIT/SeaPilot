@@ -58,6 +58,8 @@ describe('DprPage Phase 7', () => {
     mocks.fetchDashboard.mockResolvedValue(dashboard);
     mocks.fetchDetail.mockImplementation((_client, target: DprReportRecord) => Promise.resolve({ report: target, payload: { ...structuredClone(EMPTY_DPR_PAYLOAD), reportDate: target.reportDate, projectId: 144, vesselId: 3, description: target.description }, files: target.files }));
     mocks.fetchDiagnostic.mockResolvedValue({ reports: 2, orphan_files: 0 });
+    mocks.save.mockResolvedValue(42);
+    mocks.transition.mockResolvedValue(undefined);
     mocks.fetchEntryContext.mockResolvedValue({
       issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144, watchGroup: 'Bordée A',
       people: [
@@ -134,6 +136,28 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
   });
 
+  it('removes submission and validates a complete DPR directly for a Marin', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['marin']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+
+    expect(screen.queryByRole('button', { name: 'Soumettre le DPR' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Valider le DPR' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('La description de la journée est obligatoire avant validation.');
+    expect(screen.getByRole('button', { name: /Informations Journalière/ })).toHaveClass('active');
+    expect(mocks.save).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('DESCRIPTION DE LA JOURNÉE'), 'Quart réalisé sans événement.');
+    await user.click(screen.getByRole('button', { name: 'Valider le DPR' }));
+
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+    expect(mocks.transition).toHaveBeenCalledOnce();
+    expect(mocks.transition).toHaveBeenCalledWith(expect.anything(), 'validate', 42);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('adds active other people from the function-grouped multiselect and manual names', async () => {
     const user = userEvent.setup();
     render(<DprPage client={{} as never} roles={['direction']} />);
@@ -151,7 +175,7 @@ describe('DprPage Phase 7', () => {
     expect(screen.getByText('Léa DURAND')).toBeInTheDocument();
   });
 
-  it('reserves diagnostic for admin and validation for captain', async () => {
+  it('reserves diagnostic for admin and keeps direct validation available', async () => {
     const user = userEvent.setup();
     render(<DprPage client={{} as never} roles={['admin', 'capitaine']} />);
     await screen.findByRole('heading', { name: 'Daily Progress Report' });

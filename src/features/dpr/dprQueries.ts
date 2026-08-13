@@ -289,8 +289,8 @@ export async function saveDprPayload(client: SupabaseClient, dprId: number | nul
   return Number(row.id);
 }
 
-export async function runDprTransition(client: SupabaseClient, transition: 'submit' | 'validate' | 'reopen' | 'delete', dprId: number, reason = ''): Promise<void> {
-  const functions = { submit: 'dpr_submit', validate: 'dpr_validate', reopen: 'dpr_reopen', delete: 'dpr_soft_delete' } as const;
+export async function runDprTransition(client: SupabaseClient, transition: 'validate' | 'reopen' | 'delete', dprId: number, reason = ''): Promise<void> {
+  const functions = { validate: 'dpr_validate', reopen: 'dpr_reopen', delete: 'dpr_soft_delete' } as const;
   const args = transition === 'reopen' || transition === 'delete' ? { target_dpr_id: dprId, target_reason: reason } : { target_dpr_id: dprId };
   const { error } = await client.rpc(functions[transition], args);
   if (error) throw error;

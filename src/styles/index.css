@@ -16979,6 +16979,7 @@ button.planning-p12-conflict-card {
 
 .dpr-message { margin: 14px 20px 0; padding: 11px 14px; border: 1px solid #a9d8c1; border-radius: 10px; background: #edf9f3; color: #17603a; font-size: .82rem; }
 .dpr-message--error { border-color: #efb8c0; background: #fff1f3; color: #a1172d; }
+.dpr-modal__message { margin: 0 0 14px; }
 .dpr-native__filters { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr) minmax(220px, 1.35fr) minmax(170px, .8fr) auto auto; align-items: end; gap: 10px; margin: 16px 20px; padding: 14px; border: 1px solid #d9e2ef; border-radius: 12px; background: #f8faff; }
 .dpr-native__filters > strong { align-self: center; white-space: nowrap; color: #5d6a81; font-size: .77rem; }
 .dpr-field { display: grid; gap: 5px; min-width: 0; color: #5d6a81; font-size: .67rem; font-weight: 800; }
