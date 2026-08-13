@@ -35,6 +35,16 @@ import {
   generateFleetCertificateVisitReport,
 } from './fleetCertificateVisitReport';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
+import {
+  createDefaultFleetCertificateDocumentPath,
+  FleetCertificateDocumentFields,
+  type FleetCertificateDocumentPath,
+} from './FleetCertificateDocumentFields';
+import {
+  FleetCertificateReportDialog,
+  resolveFleetCertificateReportSelection,
+  type FleetCertificateReportSelection,
+} from './FleetCertificateReportDialog';
 import { FleetCertificateDeadlinesByScope, FleetCertificateFindingsByScope } from './FleetCertificateScopeViews';
 import { FleetCertificateVisitCalendar } from './FleetCertificateVisitCalendar';
 import { FleetCertificateVisitForm } from './FleetCertificateVisitForm';
@@ -73,7 +83,7 @@ function typeTone(type: FleetFindingType): string {
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return <div className="fcx-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section aria-modal="true" className="fcx-modal" role="dialog"><header><div><small>Certificats flotte</small><h2>{title}</h2></div><button aria-label="Fermer" onClick={onClose}><X size={20} /></button></header>{children}</section>
+    <section aria-label={title} aria-modal="true" className="fcx-modal" role="dialog"><header><div><small>Certificats flotte</small><h2>{title}</h2></div><button aria-label="Fermer" onClick={onClose}><X size={20} /></button></header>{children}</section>
   </div>;
 }
 
@@ -148,9 +158,12 @@ function VisitTargetForm({ certificates, onClose, onSelect }: {
   onClose: () => void;
   onSelect: (certificateId: number) => void;
 }) {
-  const [certificateId, setCertificateId] = useState(String(certificates[0]?.id || ''));
-  return <Modal title="Choisir le document de la visite" onClose={onClose}><form className="fcx-form" onSubmit={(event) => { event.preventDefault(); onSelect(Number(certificateId)); }}>
-    <label>Navire · Catégorie · Document<select required value={certificateId} onChange={(event) => setCertificateId(event.target.value)}>{certificates.map((certificate) => <option key={certificate.id} value={certificate.id}>{certificate.vesselName} · {certificate.categoryLabel} · {certificate.documentTitle}</option>)}</select></label>
+  const [path, setPath] = useState<FleetCertificateDocumentPath>(() => createDefaultFleetCertificateDocumentPath(certificates));
+  const selectedCertificate = certificates.find((certificate) => certificate.id === path.certificateId);
+  return <Modal title="Choisir le document de la visite" onClose={onClose}><form className="fcx-form fcx-visit-target-form" onSubmit={(event) => { event.preventDefault(); if (path.certificateId) onSelect(path.certificateId); }}>
+    <div className="fcx-dialog-section-title"><span>1</span><div><h3>Document concerné</h3><p>Sélectionnez successivement le navire, la catégorie puis le document.</p></div></div>
+    <FleetCertificateDocumentFields certificates={certificates} onChange={setPath} value={path} />
+    {selectedCertificate ? <p className="fcx-visit-target-summary"><CalendarPlus size={18} /><span><small>Visite à programmer</small><b>{selectedCertificate.documentTitle}</b><em>{selectedCertificate.vesselName} · {selectedCertificate.categoryLabel}</em></span></p> : null}
     <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" type="submit">Continuer</button></footer>
   </form></Modal>;
 }
@@ -233,9 +246,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'finding' | 'document' | 'renewal' | 'visit-target' | 'visit' | null>(null);
+  const [modal, setModal] = useState<'finding' | 'document' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
   const [visitCertificateId, setVisitCertificateId] = useState<number | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
@@ -386,23 +398,18 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setModal('renewal');
   }
 
-  async function generateReport(scope: 'finding' | 'certificate' | 'selected' | 'all') {
-    setReportOpen(false);
-    const filteredCertificateIds = new Set(filtered.map((item) => item.id));
-    const scopedFindings = scope === 'finding' && selectedFinding
-      ? [selectedFinding]
-      : scope === 'certificate'
-        ? certificateFindings
-        : scope === 'selected'
-          ? findings.filter((item) => filteredCertificateIds.has(item.certificateId))
-          : findings;
-    const certificateIds = new Set(scopedFindings.map((item) => item.certificateId));
-    const scopedCertificates = certificates.filter((item) => certificateIds.has(item.id));
-    await run(async () => {
-      const attachmentImages = await loadFleetFindingReportImages(effectiveClient, scopedFindings);
-      const report = await generateFleetFindingReport({ certificates: scopedCertificates, findings: scopedFindings, attachmentImages });
+  async function generateReport(selection: FleetCertificateReportSelection) {
+    const reportScope = resolveFleetCertificateReportSelection(active, findings, selection);
+    setError('');
+    setMessage('');
+    try {
+      const attachmentImages = await loadFleetFindingReportImages(effectiveClient, reportScope.findings);
+      const report = await generateFleetFindingReport({ ...reportScope, attachmentImages });
       downloadFleetFindingReport(report);
-    }, 'Rapport BBTM généré.');
+      setMessage('Rapport BBTM généré.');
+    } catch (caught) {
+      throw caught instanceof Error ? caught : new Error('Impossible de générer le rapport.');
+    }
   }
 
   async function generateVisitReport(
@@ -440,10 +447,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
         {manager ? <ModuleRibbonCommand icon={<CalendarPlus aria-hidden="true" size={22} />} label="Programmer une visite" onClick={() => setModal('visit-target')} /> : null}
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Rapports">
-        <div className="fcx-ribbon-report-wrap">
-          <ModuleRibbonCommand icon={<FileText aria-hidden="true" size={22} />} label="Générer un rapport" onClick={() => setReportOpen((value) => !value)} />
-          {reportOpen ? <div className="fcx-report-menu"><button disabled={!selectedFinding} onClick={() => generateReport('finding')}>Cet écart</button><button disabled={!selectedCertificate} onClick={() => generateReport('certificate')}>Ce certificat</button><button onClick={() => generateReport('selected')}>Documents filtrés ({filtered.length})</button><button onClick={() => generateReport('all')}>Tous les écarts flotte</button></div> : null}
-        </div>
+        <ModuleRibbonCommand icon={<FileText aria-hidden="true" size={22} />} label="Générer un rapport" onClick={() => setModal('report')} />
       </ModuleRibbonGroup>
     </ModuleRibbon>
 
@@ -454,7 +458,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
           <label><Search size={18} /><input aria-label="Rechercher dans la bibliothèque documentaire" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat, un navire…" value={search} /></label>
           <div aria-label="Filtrer la bibliothèque"><Filter size={16} /><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Tous</button><button className={statusFilter === 'expired' ? 'active' : ''} onClick={() => setStatusFilter('expired')}>Échus</button><button className={statusFilter === 'upcoming' ? 'active' : ''} onClick={() => setStatusFilter('upcoming')}>À venir</button><button className={statusFilter === 'actions' ? 'active' : ''} onClick={() => setStatusFilter('actions')}>Avec actions</button></div>
         </div>
-        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onDownloadSelected={() => downloadDocuments(selectedDocuments)} onRenew={renewCertificate} onSelect={selectCertificate} onSelectCategory={selectCategoryScope} onSelectVessel={selectVesselScope} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} selectedScopeCategoryKey={scopeCategoryKey} selectedScopeVesselName={scopeVesselName} />
+        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onDownloadSelected={() => downloadDocuments(selectedDocuments)} onRenew={renewCertificate} onSchedule={(certificate) => { setVisitCertificateId(certificate.id); setModal('visit'); }} onSelect={selectCertificate} onSelectCategory={selectCategoryScope} onSelectVessel={selectVesselScope} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} selectedScopeCategoryKey={scopeCategoryKey} selectedScopeVesselName={scopeVesselName} />
       </section>
 
       <section className="fcx-workspace-card">
@@ -489,6 +493,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = certificates.find((item) => item.categoryKey === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.categoryLabel || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => run(() => submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }), 'Renouvellement enregistré.')} />}
+    {modal === 'report' && <FleetCertificateReportDialog certificates={active} findings={findings} onClose={() => setModal(null)} onGenerate={generateReport} />}
     {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}
     {modal === 'visit' && certificates.find((certificate) => certificate.id === visitCertificateId) && <FleetCertificateVisitForm certificate={certificates.find((certificate) => certificate.id === visitCertificateId)!} providers={providers} onClose={() => setModal(null)} onExport={generateVisitReport} onSave={(input) => run(() => saveFleetCertificateVisit(effectiveClient, input).then(() => undefined), 'Visite prestataire programmée.')} />}
   </main>;
