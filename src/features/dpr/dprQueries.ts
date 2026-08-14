@@ -35,6 +35,7 @@ export interface DprReferenceData {
   projects: DprProjectOption[];
   vessels: DprVesselOption[];
   people: DprPersonOption[];
+  planningCrewPersonIds: number[];
   exerciseTypes: Array<{ key: string; label: string }>;
   portReasons: Array<{ key: string; label: string }>;
 }
@@ -207,15 +208,18 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { hideH
   return {
     reports, currentUserId: profile.id, currentUserName: profile.name, currentPersonId: profile.personId, currentPersonFunction: profile.functionLabel,
     references: {
-      projects, vessels, people: entryContext.people,
+      projects, vessels, people: entryContext.people, planningCrewPersonIds: entryContext.crewPersonIds,
       exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
       portReasons: (reasonResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
     },
   };
 }
 
-export async function fetchDprEntryContext(client: SupabaseClient, reportDate: string): Promise<DprEntryContext> {
-  const { data, error } = await client.rpc('dpr_entry_context', { target_date: reportDate });
+export async function fetchDprEntryContext(client: SupabaseClient, reportDate: string, vesselId: number | null = null): Promise<DprEntryContext> {
+  const { data, error } = await client.rpc('dpr_entry_context', {
+    target_date: reportDate,
+    target_vessel_id: vesselId,
+  });
   if (error) throw error;
   const row = (data || {}) as Record<string, unknown>;
   const peopleById = new Map(

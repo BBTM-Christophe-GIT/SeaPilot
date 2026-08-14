@@ -121,6 +121,22 @@ interface ValidationRow {
   occurred_at: string;
 }
 
+interface DayApprovalRow {
+  id: number | string;
+  company_id: number | string;
+  register_id: number | string;
+  person_id: number | string;
+  local_work_date: string;
+  status: string;
+  planning_assignment_id: number | string | null;
+  vessel_id: number | string | null;
+  watch_group: string | null;
+  approver_person_id: number | string | null;
+  submitted_at: string | null;
+  validated_at: string | null;
+  validated_by_person_id: number | string | null;
+}
+
 interface VesselRow {
   id: number | string;
   name: string;
@@ -166,7 +182,27 @@ export interface WorkingTimeDayContext {
   assignmentId: number | null;
   vesselId: number | null;
   watchGroup: string | null;
+  statusLabel: string | null;
+  approverPersonId: number | null;
   captainCandidates: WorkingTimeCaptainCandidate[];
+}
+
+export type WorkingTimeDayApprovalStatus = 'draft' | 'submitted' | 'validated';
+
+export interface WorkingTimeDayApproval {
+  id: number;
+  companyId: number;
+  registerId: number;
+  personId: number;
+  localWorkDate: string;
+  status: WorkingTimeDayApprovalStatus;
+  planningAssignmentId: number | null;
+  vesselId: number | null;
+  watchGroup: string | null;
+  approverPersonId: number | null;
+  submittedAt: string | null;
+  validatedAt: string | null;
+  validatedByPersonId: number | null;
 }
 
 export interface WorkingTimeDayComment {
@@ -252,6 +288,7 @@ export interface WorkingTimeWorkspace {
   dayComments: WorkingTimeDayComment[];
   signatures: WorkingTimeActiveSignature[];
   validations: WorkingTimeValidationEvent[];
+  dayApprovals: WorkingTimeDayApproval[];
   vessels: WorkingTimeVesselOption[];
 }
 
@@ -339,6 +376,7 @@ const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
+const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id';
 
 function numberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -470,7 +508,7 @@ export async function fetchWorkingTimeWorkspace(
   });
   assertResult(ensureResult.error, 'Impossible de préparer les registres mensuels.');
 
-  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, vesselResult] = await Promise.all([
+  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult] = await Promise.all([
     client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
     client.from('working_time_registers').select(REGISTER_SELECT)
       .is('discarded_at', null)
@@ -484,6 +522,7 @@ export async function fetchWorkingTimeWorkspace(
     client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
       .is('valid_to', null).order('version_number', { ascending: false }),
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
+    client.from('working_time_day_approvals').select(DAY_APPROVAL_SELECT).order('local_work_date', { ascending: false }).limit(2000),
     client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
   ]);
 
@@ -494,6 +533,7 @@ export async function fetchWorkingTimeWorkspace(
   assertResult(commentResult.error, 'Impossible de charger les commentaires.');
   assertResult(signatureResult.error, 'Impossible de charger les signatures.');
   assertResult(validationResult.error, 'Impossible de charger les instantanés de validation.');
+  assertResult(dayApprovalResult.error, 'Impossible de charger les approbations journalières.');
   assertResult(vesselResult.error, 'Impossible de charger les navires.');
 
   const context = (contextResult.data || {}) as EntryContextRow;
@@ -546,6 +586,21 @@ export async function fetchWorkingTimeWorkspace(
       validFrom: signature.valid_from,
     })),
     validations: ((validationResult.data || []) as ValidationRow[]).map(mapValidation),
+    dayApprovals: ((dayApprovalResult.data || []) as DayApprovalRow[]).map((approval) => ({
+      id: Number(approval.id),
+      companyId: Number(approval.company_id),
+      registerId: Number(approval.register_id),
+      personId: Number(approval.person_id),
+      localWorkDate: approval.local_work_date,
+      status: approval.status as WorkingTimeDayApprovalStatus,
+      planningAssignmentId: numberOrNull(approval.planning_assignment_id),
+      vesselId: numberOrNull(approval.vessel_id),
+      watchGroup: approval.watch_group,
+      approverPersonId: numberOrNull(approval.approver_person_id),
+      submittedAt: approval.submitted_at,
+      validatedAt: approval.validated_at,
+      validatedByPersonId: numberOrNull(approval.validated_by_person_id),
+    })),
     vessels: ((vesselResult.data || []) as VesselRow[]).map((vessel) => ({
       id: Number(vessel.id),
       name: vessel.name,
@@ -584,6 +639,8 @@ export async function fetchWorkingTimeDayContext(
     assignmentId: numberOrNull(value.assignment_id as number | string | null),
     vesselId: numberOrNull(value.vessel_id as number | string | null),
     watchGroup: value.watch_group ? String(value.watch_group) : null,
+    statusLabel: value.status_label ? String(value.status_label) : null,
+    approverPersonId: numberOrNull(value.approver_person_id as number | string | null),
     captainCandidates: candidates.map((candidate) => {
       const row = candidate as Record<string, unknown>;
       return {
@@ -766,6 +823,29 @@ export async function requestWorkingTimeCaptainSignature(
   return Number(data);
 }
 
+export async function submitWorkingTimeDay(
+  client: SupabaseClient,
+  input: { registerId: number; localWorkDate: string },
+): Promise<number> {
+  const { data, error } = await client.rpc('submit_working_time_day', {
+    p_register_id: input.registerId,
+    p_local_work_date: input.localWorkDate,
+  });
+  assertResult(error, 'Impossible de soumettre la journée au capitaine.');
+  return Number(data);
+}
+
+export async function validateWorkingTimeDay(
+  client: SupabaseClient,
+  dayApprovalId: number,
+): Promise<number> {
+  const { data, error } = await client.rpc('validate_working_time_day', {
+    p_day_approval_id: dayApprovalId,
+  });
+  assertResult(error, 'Impossible de valider la journée.');
+  return Number(data);
+}
+
 export async function validateWorkingTimeRegister(
   client: SupabaseClient,
   registerId: number,
@@ -800,7 +880,11 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_IMPORT_DUPLICATE_SOURCE_DATES', 'Le classeur contient plusieurs lignes pour une même date.'],
   ['WORKING_TIME_IMPORT_NO_READY_ROWS', 'Aucune journée contrôlée ne peut être importée.'],
   ['WORKING_TIME_CAPTAIN_NOT_IN_WATCH', 'Sélectionnez un capitaine affecté à votre bordée pour cette journée.'],
+  ['WORKING_TIME_CAPTAIN_APPROVER_REQUIRED', 'Aucun autre capitaine actif de la bordée n’a été trouvé dans le Planning pour approuver cette journée.'],
   ['WORKING_TIME_PLANNING_ASSIGNMENT_REQUIRED', 'Aucune affectation Planning active ne couvre cette personne et cette journée.'],
+  ['WORKING_TIME_EMPTY_DAY', 'Saisissez au moins une période de travail avant de soumettre la journée.'],
+  ['WORKING_TIME_DAY_LOCKED', 'Cette journée a déjà été validée et est en lecture seule.'],
+  ['WORKING_TIME_SUBMITTED_DAY_MOVE_FORBIDDEN', 'Une journée soumise ne peut pas être déplacée vers une autre date.'],
   ['WORKING_TIME_ALERT_COMMENT_REQUIRED', 'Le commentaire est obligatoire lorsqu’une alerte ou une non-conformité est détectée.'],
   ['WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED', 'Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.'],
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],

@@ -141,6 +141,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           range={range}
           refreshToken={workspaceRefreshToken}
           onMonthChange={changeMonth}
+          onNavigateDate={(date) => setRange(currentMonthRange(date))}
           onOpenHse={canViewHse ? () => setActiveModal('hse') : undefined}
           onOpenImport={canImport ? () => setActiveModal('import') : undefined}
           onOpenReport={canViewComplianceReport ? () => setActiveModal('report') : undefined}

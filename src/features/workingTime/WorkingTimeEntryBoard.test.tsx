@@ -32,18 +32,17 @@ const recommendation = {
 
 function Harness({
   onSubmit = vi.fn(),
-  requestSignature = false,
+  submitToCaptain = true,
 }: {
-  onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save' | 'request-signature' | 'validate') => void;
-  requestSignature?: boolean;
+  onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
+  submitToCaptain?: boolean;
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
   const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
-  const [captainPersonId, setCaptainPersonId] = useState<number | null>(null);
   return (
     <WorkingTimeEntryBoard
-      captainCandidates={requestSignature ? [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }] : []}
+      approverName="Camille CAPITAINE"
       canEdit
       client={{} as SupabaseClient}
       comment=""
@@ -52,7 +51,6 @@ function Harness({
       intervals={[]}
       isSaving={false}
       onCancelEdit={vi.fn()}
-      onCaptainPersonIdChange={setCaptainPersonId}
       onCommentChange={vi.fn()}
       onEndsAtChange={setEndsAt}
       onPendingPhasesChange={setPendingPhases}
@@ -63,8 +61,7 @@ function Harness({
       personId={42}
       pendingPhases={pendingPhases}
       planningVesselId={7}
-      selectedCaptainPersonId={captainPersonId}
-      showRequestSignature={requestSignature}
+      showSubmitToCaptain={submitToCaptain}
       planningWatchGroup="Bordée 1"
       startsAt={startsAt}
     />
@@ -114,7 +111,7 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
   });
 
-  it('removes manual planning fields and keeps draft submission available', async () => {
+  it('removes manual planning fields and the draft action', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
@@ -122,7 +119,8 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.queryByLabelText('Début du travail')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filtrer et affecter le navire')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filtrer et affecter la bordée')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Soumettre au Capitaine' }));
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
@@ -141,12 +139,12 @@ describe('WorkingTimeEntryBoard', () => {
 
     expect(screen.getByText('Période 1')).toBeInTheDocument();
     expect(screen.getByText('Période 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await user.click(screen.getByRole('button', { name: 'Soumettre au Capitaine' }));
 
     expect(onSubmit).toHaveBeenCalledWith([
       { startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' },
       { startsAt: '2026-08-03T14:00', endsAt: '2026-08-03T16:00' },
-    ], 'save');
+    ], 'submit-day');
   });
 
   it('merges adjacent pointer selections into one continuous period', () => {
@@ -164,21 +162,22 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('08:00–12:00')).toBeInTheDocument();
   });
 
-  it('lets a Marin select a same-watch Capitaine and request their signature', async () => {
+  it('uses the Planning Capitaine and submits without a manual selector', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    render(<Harness onSubmit={onSubmit} requestSignature />);
+    render(<Harness onSubmit={onSubmit} />);
     const cells = screen.getAllByRole('gridcell');
 
     fireEvent.pointerDown(cells[16]);
     fireEvent.pointerEnter(cells[17]);
     fireEvent.pointerUp(cells[17]);
-    await user.selectOptions(screen.getByRole('combobox'), '10');
-    await user.click(screen.getByRole('button', { name: /Demander la signature/ }));
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText(/Approbateur : Camille CAPITAINE/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Soumettre au Capitaine/ }));
 
     expect(onSubmit).toHaveBeenCalledWith(
       [{ startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T09:00' }],
-      'request-signature',
+      'submit-day',
     );
   });
 
@@ -207,6 +206,6 @@ describe('WorkingTimeEntryBoard', () => {
     await user.click(screen.getByRole('button', { name: 'Retirer la période 1' }));
 
     expect(screen.queryByText('Période 1')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Soumettre au Capitaine' })).toBeDisabled();
   });
 });

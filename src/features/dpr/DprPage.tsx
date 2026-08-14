@@ -221,8 +221,8 @@ export function DprPage({ client, roles }: DprPageProps) {
     setPendingFiles([]); setModalOpen(false); setReport(null); setFiles([]); setError('');
   };
 
-  const applyPlanningDefaults = async (reportDate: string, basePayload: DprFormPayload): Promise<DprFormPayload> => {
-    const context = await fetchDprEntryContext(db, reportDate);
+  const applyPlanningDefaults = async (reportDate: string, basePayload: DprFormPayload, vesselId: number | null = basePayload.vesselId): Promise<DprFormPayload> => {
+    const context = await fetchDprEntryContext(db, reportDate, vesselId);
     const next = structuredClone(basePayload);
     next.reportDate = reportDate;
     next.projectId = context.projectId;
@@ -233,8 +233,12 @@ export function DprPage({ client, roles }: DprPageProps) {
       const person = context.people.find((item) => item.id === personId);
       return person ? [{ personId, crewFunction: person.crewFunction, rosterGroup: context.watchGroup, displayName: person.name, displayOrder: index }] : [];
     });
-    next.otherPeople = next.otherPeople.filter((person) => person.personId === null || context.people.some((candidate) => candidate.id === person.personId));
-    setDashboard((current) => current ? { ...current, references: { ...current.references, people: context.people } } : current);
+    const eligibleCrewIds = new Set(context.crewPersonIds);
+    next.otherPeople = next.otherPeople.filter((person) => person.personId === null || eligibleCrewIds.has(person.personId));
+    setDashboard((current) => current ? {
+      ...current,
+      references: { ...current.references, people: context.people, planningCrewPersonIds: context.crewPersonIds },
+    } : current);
     setIssuerName(context.issuerName);
     return next;
   };
@@ -258,8 +262,15 @@ export function DprPage({ client, roles }: DprPageProps) {
   const openReport = async (item: DprReportRecord) => {
     setBusy(true); setError('');
     try {
-      const detail = await fetchDprDetail(db, item);
+      const [detail, context] = await Promise.all([
+        fetchDprDetail(db, item),
+        fetchDprEntryContext(db, item.reportDate, item.vesselId),
+      ]);
       setReport(item); setPayload(detail.payload); setFiles(detail.files); setPendingFiles([]); setStep(0);
+      setDashboard((current) => current ? {
+        ...current,
+        references: { ...current.references, people: context.people, planningCrewPersonIds: context.crewPersonIds },
+      } : current);
       setIssuerName(item.issuerName || dashboard?.currentUserName || 'Utilisateur SeaPilot');
       setInitialSignature(JSON.stringify(detail.payload)); setModalOpen(true);
     } catch (reason) { setError((reason as Error).message); }
@@ -430,7 +441,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const updateReportDate = async (reportDate: string) => {
     if (report) { updatePayload((current) => { current.reportDate = reportDate; }); return; }
     setBusy(true); setError('');
-    try { setPayload(await applyPlanningDefaults(reportDate, payload)); }
+    try { setPayload(await applyPlanningDefaults(reportDate, payload, payload.vesselId)); }
     catch (reason) {
       updatePayload((current) => { current.reportDate = reportDate; });
       setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`);
@@ -542,7 +553,12 @@ export function DprPage({ client, roles }: DprPageProps) {
           <main className="dpr-step">
             {(notice || error) && <div className={error ? 'dpr-message dpr-message--error dpr-modal__message' : 'dpr-message dpr-modal__message'} role={error ? 'alert' : 'status'}>{error || notice}</div>}
             <div className="dpr-step__title"><b>{step + 1}.</b><h3>{STEPS[step][0]}</h3><span>— {STEPS[step][1]}</span></div>
-            {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)}/>}
+            {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)} onVesselChange={async (vesselId) => {
+              setBusy(true); setError('');
+              try { setPayload(await applyPlanningDefaults(payload.reportDate, payload, vesselId)); }
+              catch (reason) { setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`); }
+              finally { setBusy(false); }
+            }} />}
             {step === 1 && <StepDaily payload={payload} editable={editable} update={updatePayload}/>}
             {step === 2 && <StepQhse payload={payload} references={dashboard.references} editable={editable} update={updatePayload}/>}
             {step === 3 && <StepPort payload={payload} references={dashboard.references} editable={editable} update={updatePayload}/>}
@@ -566,10 +582,12 @@ export function DprPage({ client, roles }: DprPageProps) {
 
 interface StepProps { payload: DprFormPayload; editable: boolean; update: (recipe: (current: DprFormPayload) => void) => void }
 
-function StepProject({ payload, references, issuer, editable, update, onDateChange }: StepProps & { references: DprReferenceData; issuer: string; onDateChange: (value: string) => void }) {
+function StepProject({ payload, references, issuer, editable, update, onDateChange, onVesselChange }: StepProps & { references: DprReferenceData; issuer: string; onDateChange: (value: string) => void; onVesselChange: (value: number | null) => Promise<void> }) {
   const [manualNames, setManualNames] = useState('');
   const otherPersonIds = useMemo(() => new Set(payload.otherPeople.flatMap((person) => person.personId === null ? [] : [person.personId])), [payload.otherPeople]);
-  const availableOtherPeople = useMemo(() => references.people.filter((person) => !payload.crewMembers.some((crew) => crew.personId === person.id)), [payload.crewMembers, references.people]);
+  const planningCrewIds = useMemo(() => new Set(references.planningCrewPersonIds || []), [references.planningCrewPersonIds]);
+  const availableOtherPeople = useMemo(() => references.people.filter((person) => planningCrewIds.has(person.id)
+    && !payload.crewMembers.some((crew) => crew.personId === person.id)), [payload.crewMembers, planningCrewIds, references.people]);
   const peopleByFunction = useMemo(() => {
     const groups = new Map<string, typeof references.people>();
     availableOtherPeople.forEach((person) => groups.set(person.functionLabel, [...(groups.get(person.functionLabel) || []), person]));
@@ -620,10 +638,10 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
           current.unlistedProjectName = '';
         }
       })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
-      <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => update((current) => { current.vesselId = event.target.value ? Number(event.target.value) : null; })}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => void onVesselChange(event.target.value ? Number(event.target.value) : null)}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>
-    <section className="dpr-card"><h4><b>2</b> Personnel embarqué</h4>{(Object.keys(CREW_LABELS) as CrewFunction[]).map((role) => <div className="dpr-people" key={role}><strong>{CREW_LABELS[role]}</strong><div>{references.people.filter((person) => person.crewFunction === role).map((person) => <label key={person.id}><input type="checkbox" disabled={!editable} checked={payload.crewMembers.some((item) => item.personId === person.id)} onChange={() => toggleCrew(person.id)}/>{person.name}</label>)}</div></div>)}
+    <section className="dpr-card"><h4><b>2</b> Personnel embarqué</h4>{(Object.keys(CREW_LABELS) as CrewFunction[]).map((role) => <div className="dpr-people" key={role}><strong>{CREW_LABELS[role]}</strong><div>{references.people.filter((person) => planningCrewIds.has(person.id) && person.crewFunction === role).map((person) => <label key={person.id}><input type="checkbox" disabled={!editable} checked={payload.crewMembers.some((item) => item.personId === person.id)} onChange={() => toggleCrew(person.id)}/>{person.name}</label>)}</div></div>)}
       <div className="dpr-people dpr-other-people"><strong>Autres personnes</strong>
         {editable && <details className="dpr-multiselect"><summary>{otherPersonIds.size ? `${otherPersonIds.size} personne(s) sélectionnée(s)` : 'Sélectionner des personnes en poste'}</summary><div className="dpr-multiselect__panel">{peopleByFunction.map(([functionLabel, people]) => <fieldset key={functionLabel}><legend>{functionLabel}{people.some((person) => person.isSedentary) ? ' · Sédentaire' : ''}</legend>{people.map((person) => <label key={person.id}><input type="checkbox" checked={otherPersonIds.has(person.id)} onChange={() => toggleOtherPerson(person.id)}/>{person.name}</label>)}</fieldset>)}</div></details>}
         <div className="dpr-selected-people">{payload.otherPeople.map((person, index) => <span key={`${person.personId ?? 'free'}-${index}`}>{person.displayName}<button type="button" disabled={!editable} aria-label={`Retirer ${person.displayName}`} onClick={() => update((current) => { current.otherPeople.splice(index, 1); })}><X size={13}/></button></span>)}</div>

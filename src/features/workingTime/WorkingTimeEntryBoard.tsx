@@ -11,7 +11,6 @@ import type { WorkingTimeInterval } from './workingTimeModel';
 import {
   fetchWorkingTimePhasesRecommendation,
   workingTimeErrorMessage,
-  type WorkingTimeCaptainCandidate,
   type WorkingTimeEntryRecommendation,
   type WorkingTimePhaseInput,
 } from './workingTimeQueries';
@@ -33,20 +32,17 @@ interface WorkingTimeEntryBoardProps {
   pendingPhases?: WorkingTimePhaseInput[];
   nonCompliantDates?: string[];
   selectedDay?: string;
-  captainCandidates?: WorkingTimeCaptainCandidate[];
-  selectedCaptainPersonId?: number | null;
+  approverName?: string | null;
   hasRecordedPeriods?: boolean;
-  showSaveDraft?: boolean;
-  showRequestSignature?: boolean;
+  showSubmitToCaptain?: boolean;
   showValidate?: boolean;
   validateDisabled?: boolean;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
-  onCaptainPersonIdChange?: (value: number | null) => void;
   onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
   onSelectedDayChange?: (day: string) => void;
-  onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save' | 'request-signature' | 'validate') => void;
+  onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
   onCancelEdit: () => void;
 }
 
@@ -128,17 +124,14 @@ export function WorkingTimeEntryBoard({
   pendingPhases = [],
   nonCompliantDates = [],
   selectedDay: controlledSelectedDay,
-  captainCandidates = [],
-  selectedCaptainPersonId = null,
+  approverName = null,
   hasRecordedPeriods = false,
-  showSaveDraft = true,
-  showRequestSignature = false,
+  showSubmitToCaptain = false,
   showValidate = false,
   validateDisabled = false,
   onStartsAtChange,
   onEndsAtChange,
   onCommentChange,
-  onCaptainPersonIdChange = () => undefined,
   onPendingPhasesChange = () => undefined,
   onSelectedDayChange = () => undefined,
   onSubmit,
@@ -387,28 +380,20 @@ export function WorkingTimeEntryBoard({
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
           event.preventDefault();
           const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-          onSubmit(combinedPhases, (submitter?.value || 'save') as 'save' | 'request-signature' | 'validate');
+          onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'submit-day' | 'validate-day');
         }}>
           <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
-          {!planningVesselId ? <p className="working-time-planning-context is-missing">Aucune affectation Planning active pour cette journée.</p> : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}</p>}
+          {!planningVesselId ? <p className="working-time-planning-context is-missing">Aucune affectation Planning « En mer » ou « A terre » active pour cette journée.</p> : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
           <div className="working-time-form-actions">
-            {showSaveDraft ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save"><Save aria-hidden="true" size={16} />{editingIntervalId ? 'Enregistrer la correction' : 'Enregistrer le brouillon'}</button> : null}
-            {!editingIntervalId && showRequestSignature ? <>
-              <label className="working-time-captain-select">Capitaine
-                <select aria-label="Capitaine de la bordée" onChange={(event) => onCaptainPersonIdChange(event.target.value ? Number(event.target.value) : null)} required value={selectedCaptainPersonId || ''}>
-                  <option value="">Sélectionner…</option>
-                  {captainCandidates.map((candidate) => <option key={candidate.personId} value={candidate.personId}>{candidate.name}</option>)}
-                </select>
-              </label>
-              <button disabled={isSaving || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !selectedCaptainPersonId} type="submit" value="request-signature"><Send aria-hidden="true" size={16}/>Demander la signature</button>
-            </> : null}
-            {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate"><UserCheck aria-hidden="true" size={16}/>Valider</button> : null}
+            {editingIntervalId ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save-correction"><Save aria-hidden="true" size={16} />Enregistrer la correction</button> : null}
+            {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Soumettre au Capitaine</button> : null}
+            {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate-day"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button> : null}
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>
         </form>
       ) : <>
-        <p className="working-time-lock-note">Ce registre est en lecture seule pour son statut actuel.</p>
-        {showValidate ? <div className="working-time-form-actions is-readonly"><button disabled={isSaving || validateDisabled} onClick={() => onSubmit([], 'validate')} type="button"><UserCheck aria-hidden="true" size={16}/>Valider</button></div> : null}
+        <p className="working-time-lock-note">Cette journée est en lecture seule pour son statut actuel.</p>
+        {showValidate ? <div className="working-time-form-actions is-readonly"><button disabled={isSaving || validateDisabled} onClick={() => onSubmit([], 'validate-day')} type="button"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button></div> : null}
       </>}
     </section>
   );
