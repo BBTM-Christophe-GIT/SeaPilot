@@ -52,6 +52,7 @@ const workspace: WorkingTimeWorkspace = {
   readablePeople: [],
   editablePeople: [],
   registers: [register],
+  dayApprovals: [],
   intervals: [{
     id: 200, registerId: 100, companyId: 1, personId: 20, localWorkDate: '2026-08-03',
     startsAt: '2026-08-03T06:00:00Z', endsAt: '2026-08-03T18:00:00Z', timezoneName: 'Europe/Paris',

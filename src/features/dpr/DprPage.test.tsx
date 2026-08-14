@@ -45,6 +45,7 @@ const dashboard: DprDashboardData = {
     projects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
     vessels: [{ id: 3, name: 'GOURY' }],
     people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false, isDprValidator: true }],
+    planningCrewPersonIds: [12],
     exerciseTypes: [{ key: 'fire-protection', label: "Protection contre l'incendie" }],
     portReasons: [{ key: 'crew-change', label: 'Crew Change' }],
   },
@@ -62,11 +63,12 @@ describe('DprPage Phase 7', () => {
     mocks.transition.mockResolvedValue(undefined);
     mocks.fetchEntryContext.mockResolvedValue({
       issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144, watchGroup: 'Bordée A',
-      people: [
+    people: [
         dashboard.references.people[0],
         { id: 13, firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', functionLabel: 'Direction', gradeLabel: '', roleLabel: 'Sédentaire', crewFunction: 'execution', isSedentary: true, isDprValidator: false },
-      ],
-      crewPersonIds: [12],
+        { id: 14, firstName: 'Bob', lastName: 'VACANCES', name: 'Bob VACANCES', functionLabel: 'Matelot', gradeLabel: '', roleLabel: 'Navigant', crewFunction: 'execution', isSedentary: false, isDprValidator: false },
+    ],
+      crewPersonIds: [12, 13],
       defaultValidatorPersonId: 12,
     });
     mocks.signedUrl.mockResolvedValue('https://signed.test/dpr.pdf');
@@ -132,7 +134,7 @@ describe('DprPage Phase 7', () => {
     const currentDate = new Date().toISOString().slice(0, 10);
     const changedDate = currentDate === '2026-07-23' ? '2026-07-24' : '2026-07-23';
     fireEvent.change(screen.getByDisplayValue(currentDate), { target: { value: changedDate } });
-    await waitFor(() => expect(mocks.fetchEntryContext).toHaveBeenLastCalledWith(expect.anything(), changedDate));
+    await waitFor(() => expect(mocks.fetchEntryContext).toHaveBeenLastCalledWith(expect.anything(), changedDate, 3));
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
   });
 
@@ -203,19 +205,18 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('adds active other people from the function-grouped multiselect and manual names', async () => {
+  it('keeps only Planning crew in Personnel embarqué and accepts manual external names', async () => {
     const user = userEvent.setup();
     render(<DprPage client={{} as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'Daily Progress Report' });
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
 
-    await user.click(screen.getByText('Sélectionner des personnes en poste'));
-    expect(screen.getByText('Direction · Sédentaire')).toBeInTheDocument();
-    await user.click(screen.getAllByRole('checkbox', { name: 'Alice MARTIN' }).at(-1)!);
+    expect(await screen.findByRole('checkbox', { name: 'Alice MARTIN' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Bob VACANCES' })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Ajouter plusieurs autres personnes'), 'Jean DUPONT; Léa DURAND');
     await user.click(screen.getByRole('button', { name: /Ajouter les personnes/ }));
 
-    expect(screen.getAllByText('Alice MARTIN').length).toBeGreaterThan(1);
+    expect(screen.getByText('Alice MARTIN')).toBeInTheDocument();
     expect(screen.getByText('Jean DUPONT')).toBeInTheDocument();
     expect(screen.getByText('Léa DURAND')).toBeInTheDocument();
   });

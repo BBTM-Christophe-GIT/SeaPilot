@@ -4,12 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
-  approveOwnWorkingTimeRegister,
   discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
-  transitionWorkingTimeRegister,
-  validateWorkingTimeRegister,
+  submitWorkingTimeDay,
+  validateWorkingTimeDay,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
@@ -24,16 +23,16 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
       assignmentId: 1,
       vesselId: 7,
       watchGroup: 'Bordée 1',
-      captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
+      statusLabel: 'En Mer',
+      approverPersonId: 11,
+      captainCandidates: [{ personId: 11, firstName: 'Claude', lastName: 'CAPITAINE', name: 'Claude CAPITAINE' }],
     }),
-    requestWorkingTimeCaptainSignature: vi.fn().mockResolvedValue(1),
-    validateWorkingTimeRegister: vi.fn().mockResolvedValue(1),
-    approveOwnWorkingTimeRegister: vi.fn().mockResolvedValue(1),
+    submitWorkingTimeDay: vi.fn().mockResolvedValue(1),
+    validateWorkingTimeDay: vi.fn().mockResolvedValue(1),
     discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
     voidWorkingTimeInterval: vi.fn(),
     saveWorkingTimeDayComment: vi.fn().mockResolvedValue(1),
-    transitionWorkingTimeRegister: vi.fn().mockResolvedValue(1),
   };
 });
 
@@ -94,6 +93,7 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
       { id: 301, personId: 20, versionNumber: 1, storageBucket: 'working-time-signatures', storagePath: '1/20/sign.png', mimeType: 'image/png', fileSizeBytes: 1234, sha256: 'b'.repeat(64), validFrom: '2026-01-01T00:00:00Z' },
     ],
     validations: [],
+    dayApprovals: [],
     vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
   };
 }
@@ -156,16 +156,16 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText('Personnel ancien')).toBeInTheDocument();
   });
 
-  it('lets a captain validate their own draft from the daily entry area', async () => {
+  it('lets a captain submit their own day to another Planning captain', async () => {
     const user = userEvent.setup();
     renderPanel(['capitaine'], workspace('draft'));
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
-    const validateButton = screen.getByRole('button', { name: 'Valider' });
-    expect(validateButton).toBeEnabled();
-    await user.click(validateButton);
+    const submitButton = screen.getByRole('button', { name: 'Soumettre au Capitaine' });
+    expect(submitButton).toBeEnabled();
+    await user.click(submitButton);
 
-    expect(approveOwnWorkingTimeRegister).toHaveBeenCalledWith(client, {
+    expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, {
       registerId: 100,
       localWorkDate: '2026-08-03',
     });
@@ -248,6 +248,22 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('table')).toHaveTextContent('Non conforme');
   });
 
+  it('does not flag an empty day because of a rolling-window breach inherited from the previous day', () => {
+    const data = workspace('draft', 20);
+    data.calculations = [{
+      id: 402, companyId: 1, personId: 20, windowEnd: '2026-08-04T01:00:00Z', localWindowEndDate: '2026-08-04',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 50_000, rest24hSeconds: 36_400,
+      longestRest24hSeconds: 20_000, restPeriodCount24h: 2, work7dSeconds: 50_000, rest7dSeconds: 554_800,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['work_24h'], calculationVersion: 1,
+      calculatedAt: '2026-08-04T01:00:01Z',
+    }];
+    renderPanel(['admin'], data);
+
+    const emptyDay = screen.getByRole('tab', { name: /mar 04 août$/ });
+    expect(emptyDay).not.toHaveClass('is-non-compliant');
+    expect(screen.queryByText('2026-08-04', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
+  });
+
   it('discards an unsigned draft from its card without saving its changes', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -260,18 +276,35 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/retiré sans enregistrer ses modifications/)).toBeInTheDocument();
   });
 
-  it('offers self-validation to a captain', async () => {
+  it('shows the approval badge and lets the assigned captain validate one sailor day', async () => {
     const user = userEvent.setup();
-    renderPanel(['capitaine'], workspace('submitted'));
+    const data = workspace('validated', 20);
+    data.dayApprovals = [{
+      id: 501, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+    }];
+    renderPanel(['capitaine'], data);
 
-    const validateButton = screen.getByRole('button', { name: 'Valider' });
+    const approvalTab = screen.getByRole('tab', { name: /Approbation1/ });
+    await user.click(approvalTab);
+    const approvalEntry = screen.getAllByRole('button', { name: /Alex MARIN/ }).at(-1)!;
+    await user.click(approvalEntry);
+    const validateButton = screen.getByRole('button', { name: 'Valider la journée' });
     await user.click(validateButton);
-    expect(validateWorkingTimeRegister).toHaveBeenCalledWith(client, 100);
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 501);
   });
 
   it('keeps validation disabled until every non-compliant day has a saved captain comment', async () => {
     const user = userEvent.setup();
     const data = workspace('submitted', 20);
+    data.dayApprovals = [{
+      id: 502, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+    }];
     data.calculations = [{
       id: 400,
       companyId: 1,
@@ -294,15 +327,16 @@ describe('WorkingTimeWorkflowPanel', () => {
       calculatedAt: '2026-08-03T18:00:01Z',
     }];
     renderPanel(['capitaine'], data);
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
 
-    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
-    expect(screen.getByText(/Réponses de non-conformité incomplètes : 2026-08-03/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider la journée' })).toBeDisabled();
+    expect(screen.getByText(/Justification de non-conformité incomplète/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Catégorie de cause'), { target: { value: 'safety_emergency' } });
     fireEvent.change(screen.getByLabelText('Contexte opérationnel'), { target: { value: 'Opération de sécurité prolongée.' } });
     fireEvent.change(screen.getByLabelText('Action immédiate'), { target: { value: 'Relève organisée.' } });
     fireEvent.change(screen.getByLabelText('Repos compensateur prévu'), { target: { value: 'Repos planifié demain.' } });
     fireEvent.change(screen.getByLabelText('Commentaire obligatoire'), { target: { value: 'Écart documenté par le capitaine.' } });
-    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
 
     expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
       registerId: 100,
@@ -313,23 +347,23 @@ describe('WorkingTimeWorkflowPanel', () => {
       compensatoryRestPlan: 'Repos planifié demain.',
       comment: 'Écart documenté par le capitaine.',
     });
-    expect(validateWorkingTimeRegister).toHaveBeenCalledWith(client, 100);
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 502);
   });
 
-  it('locks validated data and requires a reason before reopening', async () => {
+  it('locks only the validated day without offering a month-level reopen action', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'prompt').mockReturnValue('Correction demandée');
-    renderPanel(['armement'], workspace('validated', 20));
+    const data = workspace('validated', 20);
+    data.dayApprovals = [{
+      id: 503, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'validated', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: '2026-08-03T17:00:00Z', validatedByPersonId: 10,
+    }];
+    renderPanel(['armement'], data);
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
 
-    expect(screen.getByText(/heures et commentaires sont verrouillés/)).toBeInTheDocument();
+    expect(screen.getByText(/Journée validée et clôturée/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
-    const reopenButton = screen.getByRole('button', { name: 'Réouvrir' });
-    await user.click(reopenButton);
-
-    expect(transitionWorkingTimeRegister).toHaveBeenCalledWith(client, {
-      registerId: 100,
-      action: 'reopen',
-      comment: 'Correction demandée',
-    });
+    expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
   });
 });

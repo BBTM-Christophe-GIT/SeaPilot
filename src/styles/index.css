@@ -19309,6 +19309,17 @@ button.planning-p12-conflict-card {
 .working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 2; padding-top: 0; border-top: 0; }
 .working-time-signatures { align-content: start; gap: 5px; padding: 12px; border: 1px solid #dce6ed; border-radius: 8px; }
 .working-time-signatures > h4 { margin: 0 0 8px; color: #12346f; font-size: .72rem; text-transform: uppercase; }
+.working-time-side-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 7px; padding: 3px; border: 1px solid #d6e2ea; border-radius: 7px; background: #f4f8fa; }
+.working-time-side-tabs button { position: relative; min-height: 34px; border: 0; border-radius: 5px; color: #355471; background: transparent; font: inherit; font-size: .67rem; font-weight: 800; cursor: pointer; }
+.working-time-side-tabs button.is-active { color: #fff; background: #08758b; }
+.working-time-side-tabs em { position: absolute; top: -7px; right: -5px; display: grid; min-width: 20px; height: 20px; place-items: center; border: 2px solid #fff; border-radius: 999px; padding-inline: 4px; color: #fff; background: #d9324f; font-size: .58rem; font-style: normal; }
+.working-time-approval-list { display: grid; gap: 6px; }
+.working-time-approval-list > button { display: grid; min-height: 54px; gap: 3px; padding: 8px; border: 1px solid #d5e1e9; border-radius: 7px; color: #264967; background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.working-time-approval-list > button:hover { border-color: #08758b; background: #f0f8fa; }
+.working-time-approval-list > button > span { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.working-time-approval-list strong { color: #12346f; font-size: .7rem; }
+.working-time-approval-list small { color: #60798c; font-size: .61rem; }
+.working-time-approval-list > p { margin: 8px 0; color: #6d8293; font-size: .68rem; line-height: 1.4; }
 .working-time-conformity-item { display: grid; grid-template-columns: 25px 1fr; gap: 2px 8px; padding: 10px 0; border-bottom: 1px dotted #cbd8e2; }
 .working-time-conformity-item svg { grid-row: 1 / 4; color: #0642b4; }
 .working-time-conformity-item span { color: #315987; font-size: .68rem; font-weight: 760; }
@@ -19341,7 +19352,8 @@ button.planning-p12-conflict-card {
 .working-time-interval-list,
 .working-time-intervals > .working-time-void-form,
 .working-time-workflow-actions,
-.working-time-non-compliance-card > button { display: none; }
+.working-time-non-compliance-card > button { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; border: 1px solid #087789; border-radius: 7px; padding: 7px 12px; color: #fff; background: #087789; font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
+.working-time-non-compliance-card > button:disabled { cursor: not-allowed; opacity: .45; }
 .working-time-entry-form { grid-template-columns: minmax(0, 1fr); }
 .working-time-entry-form .is-wide { grid-column: 1 / -1; }
 .working-time-pending-phases { min-height: 40px; align-items: center; padding: 6px 8px; border: 1px solid #cfe0e8; border-radius: 8px; background: #f8fbfd; }

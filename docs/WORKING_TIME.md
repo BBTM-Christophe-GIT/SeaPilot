@@ -4,15 +4,15 @@ Le module `/modules/workingTime` conserve les intervalles horodatés comme sourc
 
 Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le Marin et le Capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. Chaque fiche RH disposant d’une date d’embauche reçoit automatiquement un registre pour chaque mois depuis son mois d’embauche. Pour le personnel sorti, la série s’arrête au mois de départ ; sinon elle va jusqu’au mois courant. La création ou la modification d’une fiche déclenche ce provisionnement, et le chargement du module garantit le mois demandé avant de lire les registres.
 
-Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la frise fournit les heures et le serveur impose l’affectation Planning active de la personne et de la journée. Les périodes sélectionnées sont affichées sous la frise. Le commentaire devient obligatoire dès que l’analyse serveur détecte une alerte ou une non-conformité.
+Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la frise fournit les heures et le serveur impose l’affectation Planning active de la personne et de la journée. Seuls les statuts Planning normalisés « En Mer » et « A Terre » sont éligibles ; les vacances, repos, arrêts, formations et autres statuts sont exclus. Le commentaire devient obligatoire dès que l’analyse serveur détecte une alerte ou une non-conformité.
 
-Le Marin enregistre son brouillon puis choisit un Capitaine présent dans le même navire et la même bordée au jour de saisie pour demander sa signature. Le Capitaine peut valider le registre demandé. Pour ses propres heures, le Capitaine dispose d’une validation directe qui soumet et approuve atomiquement son registre avec sa signature active.
+Le workflow porte désormais sur une journée, pas sur tout le registre mensuel. Le Marin ou le Capitaine saisit ses phases puis choisit « Soumettre au Capitaine ». Le serveur résout automatiquement un autre Capitaine actif sur le même navire et la même bordée dans le Planning ; aucun approbateur n’est choisi manuellement. Le Capitaine retrouve les journées qui lui sont attribuées dans l’onglet « Approbation », peut corriger les phases, documente obligatoirement toute non-conformité et valide la journée avec sa signature active. Seule cette journée devient alors en lecture seule ; les autres jours du mois restent ouverts. L’auto-validation du Capitaine demeure interdite.
 
 ## Cockpit mensuel
 
 L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel en poste et le personnel ancien ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
 
-La barre de commandes reste centrée sur les fonctions d’aide à la décision et les documents. Le groupe « Gestion des congés », « Actualiser », « Ouvrir un registre », « Enregistrer le brouillon » et « Demander la signature » ont été retirés de cette barre. Les deux dernières actions apparaissent maintenant sous les périodes sélectionnées. Les fonctions secondaires s’ouvrent dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
+La barre de commandes reste centrée sur les fonctions d’aide à la décision et les documents. Le groupe « Gestion des congés », « Actualiser », « Ouvrir un registre » et toutes les actions de brouillon ont été retirés. L’action unique « Soumettre au Capitaine » apparaît sous les périodes sélectionnées. Les fonctions secondaires s’ouvrent dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
 
 Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
 
@@ -20,7 +20,11 @@ Les intervalles affichés sont consolidés par personne et par mois, indépendam
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
 
-Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Enregistrer le brouillon », persiste atomiquement toutes les périodes. Il n’existe plus de saisie manuelle Début/Fin, Navire ou Bordée.
+Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Soumettre au Capitaine », persiste atomiquement toutes les périodes puis ouvre l’approbation quotidienne. Il n’existe plus de saisie manuelle Début/Fin, Navire, Bordée ou approbateur.
+
+## Daily Progress Report
+
+Le contexte DPR est résolu à partir de la date et du navire sélectionnés, indépendamment de l’émetteur. Le projet actif du Planning est automatiquement renseigné. La section « Personnel embarqué » ne propose que les personnes affectées au navire avec un statut Planning effectif « En Mer » ou « A Terre » ; les autres statuts, notamment « Vacance », sont exclus.
 
 ## Exports mensuels
 
@@ -72,10 +76,12 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Minuit, chevauchements, doublons, repos total/consécutif | `working_time_server_calculations_test.sql` |
 | Fenêtre entre deux mois et exactement 7 jours | `working_time_server_calculations_test.sql` |
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
-| Droits Marin/Capitaine/Admin, demande au Capitaine de bordée et auto-validation Capitaine | `working_time_workflow_permissions_test.sql` |
-| Verrouillage, réouverture motivée, instantanés de signature | `working_time_workflow_permissions_test.sql` et `working_time_domain_model_test.sql` |
+| Droits Marin/Capitaine/Admin, approbateur automatique de bordée et interdiction d’auto-validation | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
+| Verrouillage limité au jour validé, commentaire d’écart et instantanés de signature | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
 | RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |
 | PDF français d’une page avec les deux signatures figées en première page | `workingTimePdf.test.ts` |
 | Consolidation de deux créneaux importés issus de registres historiques différents | `WorkingTimeWorkflowPanel.test.tsx` |
+| Journée sans travail non signalée par une fenêtre glissante héritée | `WorkingTimeWorkflowPanel.test.tsx` et `working_time_daily_approval_test.sql` |
+| Personnel et projet DPR issus du Planning selon la date et le navire | `DprPage.test.tsx` et `dpr_planning_prefill_test.sql` |
