@@ -87,6 +87,14 @@ describe('working-time workflow queries', () => {
     const client = workspaceClient();
     const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
 
+    expect(client.rpc).toHaveBeenNthCalledWith(1, 'ensure_working_time_registers_for_period', {
+      p_starts_on: '2026-08-01',
+      p_ends_on: '2026-08-31',
+    });
+    expect(client.rpc).toHaveBeenNthCalledWith(2, 'working_time_entry_context', {
+      p_starts_on: '2026-08-01',
+      p_ends_on: '2026-08-31',
+    });
     expect(workspace.currentPersonId).toBe(42);
     expect(workspace.readablePeople[0]).toMatchObject({ personId: 42, gradeLabel: 'Pont', departedOn: null, active: true, isSelf: true });
     expect(workspace.editablePeople[0]).toMatchObject({ personId: 42, gradeLabel: 'Pont', active: true, isSelf: true });

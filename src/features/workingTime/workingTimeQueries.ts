@@ -464,6 +464,12 @@ export async function fetchWorkingTimeWorkspace(
   client: SupabaseClient,
   range: WorkingTimeRange,
 ): Promise<WorkingTimeWorkspace> {
+  const ensureResult = await client.rpc('ensure_working_time_registers_for_period', {
+    p_starts_on: range.start,
+    p_ends_on: range.end,
+  });
+  assertResult(ensureResult.error, 'Impossible de préparer les registres mensuels.');
+
   const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, vesselResult] = await Promise.all([
     client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
     client.from('working_time_registers').select(REGISTER_SELECT)

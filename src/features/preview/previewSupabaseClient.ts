@@ -1220,6 +1220,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'refresh_planning_notifications' || functionName === 'refresh_working_time_notifications') {
     return createPreviewQuery({ data: 0, error: null });
   }
+  if (functionName === 'ensure_working_time_registers_for_period') {
+    return createPreviewQuery({ data: 0, error: null });
+  }
   if (functionName === 'working_time_entry_context') {
     return createPreviewQuery({
       data: {
