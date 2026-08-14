@@ -278,9 +278,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const sessionDisplayName = [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
   );
-  const userDisplayName = previewMode
-    ? 'Préversion SeaPilot'
-    : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur';
+  const personDisplayName = currentPerson
+    ? `${currentPerson.firstName} ${currentPerson.lastName}`.trim()
+    : '';
+  const userDisplayName = personDisplayName
+    || (previewMode ? 'Préversion SeaPilot' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => effectiveRoles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
 

@@ -22,19 +22,15 @@ import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
+const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
 }
 
 export default function App({ previewModeOverride }: AppProps) {
-  const homeModule = APP_MODULES.find((module) => module.key === 'home');
   const previewMode = previewModeOverride ?? isSeaPilotPreviewDeployment();
   const previewRoles: RoleKey[] | undefined = previewMode ? ['admin'] : undefined;
-
-  if (!homeModule) {
-    throw new Error('Home module is missing');
-  }
 
   return (
     <Routes>
@@ -53,7 +49,7 @@ export default function App({ previewModeOverride }: AppProps) {
             />
           }
         >
-          <Route index element={<ModulePage module={homeModule} />} />
+          <Route index element={<Suspense fallback={<div className="admin-state" role="status">Chargement de votre accueil…</div>}><HomePage /></Suspense>} />
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
             <Route
               key={module.key}
