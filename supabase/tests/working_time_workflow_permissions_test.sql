@@ -1,6 +1,6 @@
 begin;
 
-select plan(90);
+select plan(91);
 
 select has_function(
   'public', 'working_time_entry_context', array['date', 'date'],
@@ -29,8 +29,12 @@ select has_function(
   'profile-signature uploads receive a server-authorized private path context'
 );
 select has_function(
-  'public', 'working_time_ensure_current_register_for_person', array['bigint'],
-  'maritime profiles receive their current monthly register automatically'
+  'public', 'working_time_ensure_monthly_registers_for_person', array['bigint'],
+  'HR profiles receive every monthly register from their hire date automatically'
+);
+select has_function(
+  'public', 'ensure_working_time_registers_for_period', array['date', 'date'],
+  'workspace loading ensures the requested monthly register range before reading it'
 );
 select has_function(
   'public', 'working_time_day_context', array['bigint', 'date'],
@@ -134,10 +138,10 @@ cross join public.companies company
 where company.code = 'bbtm';
 
 insert into public.people (
-  company_id, user_id, first_name, last_name, function_label, sailor_number, active
+  company_id, user_id, first_name, last_name, function_label, sailor_number, hired_on, active
 )
 select company.id, fixture.user_id, fixture.first_name, fixture.last_name,
-       fixture.function_label, fixture.sailor_number, true
+       fixture.function_label, fixture.sailor_number, '2026-07-15', true
 from (
   values
     ('79000000-0000-0000-0000-000000000001'::uuid, 'Camille', 'CAPITAINE A', 'Capitaine', 'WF-CAPA'),
@@ -696,15 +700,36 @@ select is(
   'the final validated status is locked'
 );
 
-select is(
-  (select count(*)::integer
-   from public.working_time_registers register
-   join public.people person on person.id = register.person_id
-   where person.sailor_number in ('WF-CAPA', 'WF-CAPB', 'WF-MARIN')
-     and register.period_kind = 'monthly'
-     and register.period_start = date_trunc('month', current_date)::date),
-  3,
-  'creating maritime HR profiles automatically opens their current register'
+insert into public.people (
+  company_id, user_id, first_name, last_name, function_label, sailor_number, hired_on, active
+)
+select company.id, null, 'Robin', 'SANS COMPTE', 'Personnel RH', 'WF-UNLINKED', '2026-07-15', true
+from public.companies company
+where company.code = 'bbtm';
+
+select ok(
+  not exists (
+    select 1
+    from public.people person
+    where person.sailor_number in (
+      'WF-CAPA', 'WF-CAPB', 'WF-MARIN', 'WF-ARM', 'WF-ADM', 'WF-DIR', 'WF-UNLINKED'
+    )
+      and (
+        not exists (
+          select 1 from public.working_time_registers register
+          where register.person_id = person.id
+            and register.period_kind = 'monthly'
+            and register.period_start = date_trunc('month', person.hired_on)::date
+        )
+        or not exists (
+          select 1 from public.working_time_registers register
+          where register.person_id = person.id
+            and register.period_kind = 'monthly'
+            and register.period_start = date_trunc('month', current_date)::date
+        )
+      )
+  ),
+  'every linked or unlinked HR profile owns registers for both its hire month and the current month'
 );
 
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);

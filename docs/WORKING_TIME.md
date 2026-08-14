@@ -2,7 +2,7 @@
 
 Le module `/modules/workingTime` conserve les intervalles horodatés comme source de vérité pour les contrôles de travail et de repos. Plusieurs phases disjointes peuvent être saisies le même jour ; elles sont contrôlées ensemble puis enregistrées atomiquement par Supabase.
 
-Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le Marin et le Capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. Un registre mensuel est ouvert automatiquement lorsqu’une fiche RH liée reçoit le rôle Marin ou Capitaine.
+Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour toute fiche RH active de leur société. Le Marin et le Capitaine conservent leur périmètre personnel ou de bordée publiée. La Direction reste en lecture seule. Chaque fiche RH disposant d’une date d’embauche reçoit automatiquement un registre pour chaque mois depuis son mois d’embauche. Pour le personnel sorti, la série s’arrête au mois de départ ; sinon elle va jusqu’au mois courant. La création ou la modification d’une fiche déclenche ce provisionnement, et le chargement du module garantit le mois demandé avant de lire les registres.
 
 Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la frise fournit les heures et le serveur impose l’affectation Planning active de la personne et de la journée. Les périodes sélectionnées sont affichées sous la frise. Le commentaire devient obligatoire dès que l’analyse serveur détecte une alerte ou une non-conformité.
 
