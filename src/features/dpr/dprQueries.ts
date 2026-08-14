@@ -27,6 +27,7 @@ export interface DprEntryContext {
   issuerName: string;
   vesselId: number | null;
   projectId: number | null;
+  project: DprProjectOption | null;
   watchGroup: string;
   people: DprPersonOption[];
   crewPersonIds: number[];
@@ -176,7 +177,10 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { hideH
   ]) : [emptyResult, emptyResult, emptyResult];
   const relatedError = [metricResult, incidentResult, fileResult].find((result) => result.error)?.error;
   if (relatedError) throw relatedError;
-  const projects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
+  const catalogProjects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
+  const projects = entryContext.project && !catalogProjects.some((project) => project.id === entryContext.project?.id)
+    ? [...catalogProjects, entryContext.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
+    : catalogProjects;
   const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) }));
   const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
   const incidents = new Map<number, number>();
@@ -228,11 +232,20 @@ export async function fetchDprEntryContext(client: SupabaseClient, reportDate: s
       return [mapped.id, mapped] as const;
     }),
   );
+  const projectRow = row.project && typeof row.project === 'object'
+    ? row.project as Record<string, unknown>
+    : null;
+  const projectId = numberOrNull(projectRow?.id ?? row.projectId);
   return {
     issuerPersonId: numberOrNull(row.issuerPersonId),
     issuerName: text(row.issuerName) || 'Utilisateur SeaPilot',
     vesselId: numberOrNull(row.vesselId),
-    projectId: numberOrNull(row.projectId),
+    projectId,
+    project: projectId && projectRow ? {
+      id: projectId,
+      code: text(projectRow.code),
+      title: text(projectRow.title),
+    } : null,
     watchGroup: text(row.watchGroup),
     people: [...peopleById.values()],
     crewPersonIds: (Array.isArray(row.crewPersonIds) ? row.crewPersonIds : []).map(Number).filter(Number.isFinite),

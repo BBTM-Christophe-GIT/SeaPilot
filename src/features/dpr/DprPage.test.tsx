@@ -63,6 +63,7 @@ describe('DprPage Phase 7', () => {
     mocks.transition.mockResolvedValue(undefined);
     mocks.fetchEntryContext.mockResolvedValue({
       issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144, watchGroup: 'Bordée A',
+      project: { id: 144, code: 'P144', title: 'Guard Vessel EMDT' },
     people: [
         dashboard.references.people[0],
         { id: 13, firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', functionLabel: 'Direction', gradeLabel: '', roleLabel: 'Sédentaire', crewFunction: 'execution', isSedentary: true, isDprValidator: false },
@@ -145,6 +146,7 @@ describe('DprPage Phase 7', () => {
       issuerName: 'Pierre LEPRETRE',
       vesselId: 3,
       projectId: null,
+      project: null,
       watchGroup: 'Bordée A',
       people: dashboard.references.people,
       crewPersonIds: [12],
@@ -162,6 +164,32 @@ describe('DprPage Phase 7', () => {
       null,
       expect.objectContaining({ projectId: null, unlistedProjectName: 'Navire à quai', vesselId: 3 }),
     ));
+  });
+
+  it('shows the Planning project to a field profile even when the project catalog is hidden by RLS', async () => {
+    const user = userEvent.setup();
+    mocks.fetchDashboard.mockResolvedValueOnce({
+      ...dashboard,
+      references: { ...dashboard.references, projects: [] },
+    });
+    mocks.fetchEntryContext.mockResolvedValue({
+      issuerPersonId: 12,
+      issuerName: 'Gary LEFEVRE',
+      vesselId: 3,
+      projectId: 60,
+      project: { id: 60, code: 'P268', title: 'ETPO FORT BOYARD' },
+      watchGroup: 'Bordée 1',
+      people: dashboard.references.people,
+      crewPersonIds: [12],
+    });
+    render(<DprPage client={{} as never} roles={['marin']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+
+    const projectSelect = screen.getAllByLabelText('PROJET').at(-1) as HTMLSelectElement;
+    expect(projectSelect).toHaveValue('60');
+    expect(projectSelect.selectedOptions[0]).toHaveTextContent('P268 — ETPO FORT BOYARD');
   });
 
   it('searches and selects Escale ports from the department-grouped catalog', async () => {

@@ -1363,6 +1363,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
         issuerName: 'Arthur DEMO',
         vesselId: 9201,
         projectId: 9001,
+        project: { id: 9001, code: 'P-DEMO', title: 'Projet de démonstration' },
         watchGroup: 'Bordée 1',
         people,
         crewPersonIds: [9301, 9303, 9304],

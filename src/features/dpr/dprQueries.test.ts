@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_DPR_PAYLOAD } from './dprFormModel.ts';
-import { fetchDprDashboard, runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
+import { fetchDprDashboard, fetchDprEntryContext, runDprTransition, saveDprPayload, uploadDprFile } from './dprQueries.ts';
 
 function queryResult(data: unknown) {
   const result = { data, error: null };
@@ -15,6 +15,27 @@ function queryResult(data: unknown) {
 }
 
 describe('DPR Supabase commands', () => {
+  it('maps the narrow Planning project snapshot returned to field profiles', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({
+      data: {
+        issuerPersonId: 28,
+        issuerName: 'Gary LEFEVRE',
+        vesselId: 3,
+        projectId: 60,
+        project: { id: 60, code: 'P268', title: 'ETPO FORT BOYARD' },
+        watchGroup: 'Bordée 1',
+        people: [],
+        crewPersonIds: [],
+      },
+      error: null,
+    });
+
+    const context = await fetchDprEntryContext({ rpc } as never, '2026-08-14');
+
+    expect(context.projectId).toBe(60);
+    expect(context.project).toEqual({ id: 60, code: 'P268', title: 'ETPO FORT BOYARD' });
+  });
+
   it('does not load DPR history for a Marin dashboard', async () => {
     const reports = queryResult([]);
     const profiles = queryResult({ display_name: 'Arthur RICHER' });
