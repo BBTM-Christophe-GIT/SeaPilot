@@ -13,7 +13,7 @@ Cette livraison remplace les anciennes règles DPR basées sur le rôle et sur u
 
 ## Suivi du temps
 
-- Un registre mensuel courant est créé automatiquement pour chaque fiche RH active liée à un compte Marin ou Capitaine.
+- Un registre mensuel courant est créé automatiquement pour chaque fiche RH active, sans dépendre d’un compte utilisateur ni d’un rôle. Les fiches actives déjà présentes sont initialisées par migration et toute nouvelle fiche active est prise en charge par le déclencheur RH.
 - Le formulaire ne saisit plus manuellement Début, Fin, Navire ou Bordée. Les heures proviennent de la frise et le contexte opérationnel provient du Planning actif.
 - Les périodes sélectionnées apparaissent sous la frise sous forme de boutons supprimables.
 - Le commentaire est requis si l’analyse serveur renvoie `alerte` ou `non_conforme`.

@@ -696,15 +696,24 @@ select is(
   'the final validated status is locked'
 );
 
+insert into public.people (
+  company_id, user_id, first_name, last_name, function_label, sailor_number, active
+)
+select company.id, null, 'Robin', 'SANS COMPTE', 'Personnel RH', 'WF-UNLINKED', true
+from public.companies company
+where company.code = 'bbtm';
+
 select is(
   (select count(*)::integer
    from public.working_time_registers register
    join public.people person on person.id = register.person_id
-   where person.sailor_number in ('WF-CAPA', 'WF-CAPB', 'WF-MARIN')
+   where person.sailor_number in (
+     'WF-CAPA', 'WF-CAPB', 'WF-MARIN', 'WF-ARM', 'WF-ADM', 'WF-DIR', 'WF-UNLINKED'
+   )
      and register.period_kind = 'monthly'
      and register.period_start = date_trunc('month', current_date)::date),
-  3,
-  'creating maritime HR profiles automatically opens their current register'
+  7,
+  'creating any active HR profile, including one without an account, automatically opens its current register'
 );
 
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000003', true);
