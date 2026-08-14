@@ -37,6 +37,12 @@ select matches(
 
 select matches(
   pg_get_functiondef('public.dpr_entry_context(date,bigint)'::regprocedure),
+  '(?i)join public\.projects.*project_code.*jsonb_build_object',
+  'the context returns the selected project snapshot without broad catalog access'
+);
+
+select matches(
+  pg_get_functiondef('public.dpr_entry_context(date,bigint)'::regprocedure),
   '(?i)planning_status_is_working.*planning_effective_person_status',
   'the embarked crew excludes non-working Planning statuses'
 );

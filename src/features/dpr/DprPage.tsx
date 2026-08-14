@@ -237,7 +237,14 @@ export function DprPage({ client, roles }: DprPageProps) {
     next.otherPeople = next.otherPeople.filter((person) => person.personId === null || eligibleCrewIds.has(person.personId));
     setDashboard((current) => current ? {
       ...current,
-      references: { ...current.references, people: context.people, planningCrewPersonIds: context.crewPersonIds },
+      references: {
+        ...current.references,
+        projects: context.project && !current.references.projects.some((project) => project.id === context.project?.id)
+          ? [...current.references.projects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
+          : current.references.projects,
+        people: context.people,
+        planningCrewPersonIds: context.crewPersonIds,
+      },
     } : current);
     setIssuerName(context.issuerName);
     return next;
@@ -269,7 +276,14 @@ export function DprPage({ client, roles }: DprPageProps) {
       setReport(item); setPayload(detail.payload); setFiles(detail.files); setPendingFiles([]); setStep(0);
       setDashboard((current) => current ? {
         ...current,
-        references: { ...current.references, people: context.people, planningCrewPersonIds: context.crewPersonIds },
+        references: {
+          ...current.references,
+          projects: context.project && !current.references.projects.some((project) => project.id === context.project?.id)
+            ? [...current.references.projects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
+            : current.references.projects,
+          people: context.people,
+          planningCrewPersonIds: context.crewPersonIds,
+        },
       } : current);
       setIssuerName(item.issuerName || dashboard?.currentUserName || 'Utilisateur SeaPilot');
       setInitialSignature(JSON.stringify(detail.payload)); setModalOpen(true);
