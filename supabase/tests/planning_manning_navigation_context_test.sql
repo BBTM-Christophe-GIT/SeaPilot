@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(10);
 
 select has_column(
   'public', 'planning_manning_matrices', 'navigation_genre',
@@ -30,6 +30,19 @@ select ok(
     'execute'
   ),
   'authenticated managers can call the updated staffing save function'
+);
+select has_function(
+  'public', 'save_planning_manning_matrix',
+  array['bigint', 'bigint', 'text', 'date', 'date', 'text', 'text', 'jsonb'],
+  'the previous staffing save signature remains available during rollout'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.save_planning_manning_matrix(bigint,bigint,text,date,date,text,text,jsonb)',
+    'execute'
+  ),
+  'already-open clients keep access to the previous staffing save signature'
 );
 select matches(
   pg_get_functiondef('public.save_planning_manning_matrix(bigint,bigint,text,text,text,date,date,text,text,jsonb)'::regprocedure),

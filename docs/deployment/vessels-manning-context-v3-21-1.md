@@ -12,7 +12,7 @@ Le nom `BBTM - Flotte` reste visible uniquement lorsqu’il désigne la source S
 
 ## Base de données
 
-Appliquer `20260818140000_vessel_manning_navigation_context.sql`. La migration ajoute `navigation_genre` et `activity_description` à `public.planning_manning_matrices`, contraint les genres autorisés et remplace la signature de `save_planning_manning_matrix` afin de versionner les deux valeurs avec la situation.
+Appliquer `20260818140000_vessel_manning_navigation_context.sql`. La migration ajoute `navigation_genre` et `activity_description` à `public.planning_manning_matrices`, contraint les genres autorisés et ajoute une signature de `save_planning_manning_matrix` afin de versionner les deux valeurs avec la situation. L’ancienne signature reste disponible pendant la bascule pour ne pas interrompre une session `3.21.0` déjà ouverte.
 
 Les lignes historiques restent lisibles avec un contexte non renseigné. Toute nouvelle sauvegarde ou modification via le client `3.21.1` exige les deux champs.
 

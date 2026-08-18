@@ -18,8 +18,6 @@ alter table public.planning_manning_matrices
     activity_description is null or length(trim(activity_description)) between 2 and 2000
   );
 
-drop function if exists public.save_planning_manning_matrix(bigint, bigint, text, date, date, text, text, jsonb);
-
 create or replace function public.save_planning_manning_matrix(
   p_matrix_id bigint,
   p_vessel_id bigint,
@@ -118,6 +116,10 @@ $$;
 
 revoke all on function public.save_planning_manning_matrix(bigint, bigint, text, text, text, date, date, text, text, jsonb) from public, anon;
 grant execute on function public.save_planning_manning_matrix(bigint, bigint, text, text, text, date, date, text, text, jsonb) to authenticated;
+
+-- Keep the previous overload during the client rollout so an already-open 3.21.0
+-- session can still save a situation. New 3.21.1 calls resolve to the overload
+-- above because they include p_navigation_genre and p_activity_description.
 
 comment on column public.planning_manning_matrices.navigation_genre is 'Navigation genre selected for this staffing situation.';
 comment on column public.planning_manning_matrices.activity_description is 'Predefined or custom operating activity and limits for this staffing situation.';
