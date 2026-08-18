@@ -76,7 +76,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
       setSelectedId((current) => current && fleetRows.some((vessel) => vessel.id === current) ? current : fleetRows[0]?.id || null);
       setFeedback(null);
     } catch (error) {
-      setFeedback({ message: planningErrorMessage(error, 'Impossible de charger BBTM - Flotte.'), error: true });
+      setFeedback({ message: planningErrorMessage(error, 'Impossible de charger les navires.'), error: true });
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +101,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
       await Promise.all([load(), reloadOverview()]);
       setSelectedId(saved.id);
       setForm(null);
-      setFeedback({ message: 'Le navire est enregistré dans la liste canonique BBTM - Flotte.', error: false });
+      setFeedback({ message: 'Le navire est enregistré dans la liste canonique des navires.', error: false });
     } catch (error) {
       setFeedback({ message: planningErrorMessage(error, "Impossible d’enregistrer ce navire."), error: true });
     } finally { setIsSaving(false); }
@@ -135,10 +135,10 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   return (
     <section className="fleet-page">
       <header className="fleet-page-heading">
-        <div><span><Anchor aria-hidden="true" size={20} /></span><div><small>Référentiel partagé Planning · DPR · RH</small><h1>BBTM - Flotte</h1><p>Liste canonique des navires issue de la liste SharePoint QHSE.</p></div></div>
-        <button aria-label="Actualiser BBTM - Flotte" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw aria-hidden="true" size={17} />Actualiser</button>
+        <div><span><Anchor aria-hidden="true" size={20} /></span><div><small>Référentiel partagé Planning · DPR · RH</small><h1>Navires</h1><p>Liste canonique des navires issue de la liste SharePoint QHSE.</p></div></div>
+        <button aria-label="Actualiser les navires" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw aria-hidden="true" size={17} />Actualiser</button>
       </header>
-      <nav aria-label="Sections BBTM - Flotte" className="fleet-tabs" role="tablist">
+      <nav aria-label="Sections Navires" className="fleet-tabs" role="tablist">
         <button aria-selected={tab === 'fleet'} className={tab === 'fleet' ? 'is-active' : ''} onClick={() => setTab('fleet')} role="tab" type="button"><Ship size={17} />Flotte</button>
         <button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Décision d’effectif</button>
       </nav>

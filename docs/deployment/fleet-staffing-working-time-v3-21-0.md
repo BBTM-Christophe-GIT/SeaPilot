@@ -1,8 +1,8 @@
-# SeaPilot 3.21.0 — BBTM - Flotte, effectif et validation quotidienne
+# SeaPilot 3.21.0 — Navires, effectif et validation quotidienne
 
 ## Périmètre
 
-- Nouveau module `BBTM - Flotte` adossé à `public.vessels`, avec ajout, modification, retrait réversible et onglet `Décision d’effectif`.
+- Nouveau module `Navires` adossé à `public.vessels`, avec ajout, modification, retrait réversible et onglet `Décision d’effectif`.
 - Référentiel source : liste SharePoint QHSE `BBTM - Flotte`, identifiant `543b9f00-aed2-489a-808a-7b64cc835a83`. Aucune table flotte concurrente n’est créée.
 - Contrôle administrateur de la composition par navire, bordée et jour avant diffusion du Planning.
 - Réassignation de la fonction Planning sur toute l’affectation continue, sans modifier `people.function_label`.
@@ -26,7 +26,7 @@ Les colonnes `subject_signature_snapshot` et `approver_signature_snapshot` figen
 1. Appliquer `20260818120000_fleet_staffing_decisions_and_planning_guards.sql`.
 2. Appliquer `20260818130000_working_time_dual_signatures_and_hr_captain_truth.sql`.
 3. Déployer le client `3.21.0`.
-4. En administrateur, vérifier la liste BBTM - Flotte, configurer au moins une Situation par navire, confirmer une bordée et tester le blocage de diffusion.
+4. En administrateur, vérifier la liste Navires, configurer au moins une Situation par navire, confirmer une bordée et tester le blocage de diffusion.
 5. Tester une journée Capitaine, une journée Marin conforme et une journée Marin non conforme avec justification et deux signatures.
 
 La recette des profils Marin et Capitaine doit s’appuyer sur les gardes RPC/RLS, le code conditionnel et les fixtures de rôle réelles. Les vues simulées depuis une session administrateur ne constituent pas une preuve de comportement.

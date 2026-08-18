@@ -85,6 +85,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ['admin', 'direction'],
   },
+  { key: 'fleet', label: 'Navires', family: 'Opérations', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'purchaseRequests',
     label: "Demande d'Achat",
@@ -93,7 +94,6 @@ export const APP_MODULES: AppModule[] = [
     allowedRoles: ALL_ROLES,
   },
   { key: 'planning', label: 'Planning', family: 'Planning', navigationKind: 'direct', allowedRoles: ALL_ROLES },
-  { key: 'fleet', label: 'BBTM - Flotte', family: 'Planning', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'humanResources',
     label: 'RH / Brevets',

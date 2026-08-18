@@ -49,7 +49,7 @@ const data: PlanningP12Data = {
   conflictCases: [],
   conflictHistory: [],
   matrices: [{
-    id: 70, vesselId: 10, name: 'Armement COTENTIN', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
+    id: 70, vesselId: 10, name: 'Armement COTENTIN', navigationGenre: 'CN-CABOTAGE NATIONAL', activityDescription: 'Navigation côtière', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
     requirements: [{ id: 71, matrixId: 70, functionLabel: 'Capitaine', minimumCount: 2, targetCount: 2, requiredCertificates: ['Capitaine 3000'], requiredQualifications: ['Grue offshore'], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }],
   }],
 };

@@ -78,7 +78,7 @@ describe('Planning P1.1 panel', () => {
   it('shows vacancies in read-only mode and does not expose matrix editing', async () => {
     vi.mocked(fetchPlanningP11Data).mockResolvedValue({
       rotations: [], templates: [], certificates: [], matrices: [{
-        id: 2, vesselId: 1, name: 'Armement COTENTIN', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
+        id: 2, vesselId: 1, name: 'Armement COTENTIN', navigationGenre: 'CN-CABOTAGE NATIONAL', activityDescription: 'Navigation côtière', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
         requirements: [{ id: 3, matrixId: 2, functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: [], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }],
       }],
     });
@@ -87,6 +87,8 @@ describe('Planning P1.1 panel', () => {
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
     await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
     expect(await screen.findByRole('heading', { name: 'Armement COTENTIN' })).toBeInTheDocument();
+    expect(screen.getByText('CN-CABOTAGE NATIONAL')).toBeInTheDocument();
+    expect(screen.getByText('Navigation côtière')).toBeInTheDocument();
     const row = screen.getByRole('cell', { name: 'Capitaine' }).closest('tr')!;
     expect(within(row).getAllByRole('cell')[2]).toHaveTextContent('1');
     expect(screen.queryByRole('button', { name: 'Configurer' })).not.toBeInTheDocument();
@@ -111,6 +113,24 @@ describe('Planning P1.1 panel', () => {
 
     expect(screen.getByLabelText('Situation')).toHaveValue('Situation 1');
     expect(screen.getAllByRole('option', { name: /Situation/ })).toHaveLength(6);
+    const navigationSelect = screen.getByLabelText('Genre(s) de navigation');
+    expect([...navigationSelect.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'Sélectionner un genre de navigation',
+      'CI-CABOTAGE INTERNATIONAL',
+      'CN-CABOTAGE NATIONAL',
+      'NC-NAVIGATION COTIERE',
+    ]);
+    const activitySelect = screen.getByLabelText('Description de l’activité, des conditions d’exploitation, des limites d’exploitation');
+    expect([...activitySelect.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'Sélectionner une description',
+      "Assistance aux travaux, support de plongée, transfert de personnel, 4ème catégorie de navigation, séjour à la mer d'une durée maximale de 6 heures en respectant les conditions du permis de navigation.",
+      'Navigation limitée à 20 milles des côtes / Zone radio SMDSM : A1',
+      'Navigation limitée à 200 milles des côtes / Zone radio SMDSM : A1-A2',
+      "Navire en exploitation en 4ème et 3ème catégorie de navigation d'une durée n'excédant pas 24 heures",
+      "Navire en exploitation en 5ème catégorie de navigation d'une durée n'excédant pas 24 heures",
+      'Vedette de servitude polyvalente - 3eme catégorie de navigation zone A1',
+      'Texte personnalisé…',
+    ]);
     expect(screen.queryByLabelText('Minimum')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Cible')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Qualifications')).not.toBeInTheDocument();
@@ -130,6 +150,10 @@ describe('Planning P1.1 panel', () => {
       'Matelot machine', 'Matelot polyvalent pont/machine',
     ]);
     await user.selectOptions(functionSelect, 'Capitaine');
+    await user.selectOptions(navigationSelect, 'CI-CABOTAGE INTERNATIONAL');
+    await user.selectOptions(activitySelect, 'Texte personnalisé…');
+    await user.type(screen.getByLabelText('Description personnalisée de l’activité'), 'Navigation saisonnière sous dérogation locale');
+    await user.type(screen.getByLabelText('Prescriptions ou conditions spéciales (le cas échéant)'), 'Veille renforcée');
     const brevetPicker = screen.getByRole('group', { name: 'Brevets requis pour Capitaine' });
     expect(within(brevetPicker).getAllByRole('heading', { level: 6 }).map((heading) => heading.textContent)).toEqual(['Pont', 'Machine', 'Formation de Sécurité']);
     expect(within(brevetPicker).queryByRole('checkbox', { name: /CACES/ })).not.toBeInTheDocument();
@@ -143,6 +167,9 @@ describe('Planning P1.1 panel', () => {
 
     await waitFor(() => expect(savePlanningManningMatrix).toHaveBeenCalledWith(client, expect.objectContaining({
       name: 'Situation 1',
+      navigationGenre: 'CI-CABOTAGE INTERNATIONAL',
+      activityDescription: 'Navigation saisonnière sous dérogation locale',
+      notes: 'Veille renforcée',
       status: 'active',
       requirements: [expect.objectContaining({ minimumCount: 1, targetCount: 1, requiredCertificates: ['Capitaine 200'], requiredAuthorizations: ['CACES'], requiredQualifications: [], requiredTrainings: [], restrictions: [] })],
     })));
@@ -156,7 +183,7 @@ describe('Planning P1.1 panel', () => {
         { id: 2, sourceItemId: 47, name: 'CACES', category: 'Conduite d’Engin', stcwRules: [] },
       ],
       matrices: [{
-        id: 2, vesselId: 1, name: 'Situation 2', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
+        id: 2, vesselId: 1, name: 'Situation 2', navigationGenre: 'CN-CABOTAGE NATIONAL', activityDescription: 'Navigation limitée à 20 milles des côtes / Zone radio SMDSM : A1', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
         requirements: [{
           id: 3, matrixId: 2, functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1,
           requiredCertificates: ['Legacy brevet', 'CACES'], requiredQualifications: [],

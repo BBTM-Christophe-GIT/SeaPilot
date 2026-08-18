@@ -16,7 +16,7 @@ import type {
 const ROTATION_SELECT = 'id, vessel_id, crew_person_id, captain_person_id, name, pattern_key, starts_on, onboard_days, rest_days, occurrence_count, assignment_role, watch_group, handover_minutes, confirmation_status, active';
 const OCCURRENCE_SELECT = 'id, series_id, assignment_id, occurrence_number, starts_on, ends_on, rest_starts_on, rest_ends_on, handover_at, is_override';
 const TEMPLATE_SELECT = 'id, vessel_id, name, template_kind, description, default_duration_days, default_status, configuration, active';
-const MATRIX_SELECT = 'id, vessel_id, name, effective_from, effective_to, status, notes, version';
+const MATRIX_SELECT = 'id, vessel_id, name, navigation_genre, activity_description, effective_from, effective_to, status, notes, version';
 const REQUIREMENT_SELECT = 'id, matrix_id, function_label, minimum_count, target_count, required_certificates, required_qualifications, required_authorizations, required_trainings, restrictions, display_order';
 const STCW_CERTIFICATE_SELECT = 'id, source_item_id, name, category, stcw_rules';
 
@@ -67,6 +67,8 @@ interface MatrixRow {
   id: number;
   vessel_id: number;
   name: string;
+  navigation_genre: string | null;
+  activity_description: string | null;
   effective_from: string;
   effective_to: string | null;
   status: 'draft' | 'active' | 'archived';
@@ -146,6 +148,8 @@ export interface SavePlanningManningMatrixInput {
   id?: number;
   vesselId: number;
   name: string;
+  navigationGenre: string;
+  activityDescription: string;
   effectiveFrom: string;
   effectiveTo: string;
   status: 'draft' | 'active' | 'archived';
@@ -237,6 +241,8 @@ export function mapPlanningMatrixRows(rows: MatrixRow[], requirements: PlanningM
     id: row.id,
     vesselId: row.vessel_id,
     name: row.name,
+    navigationGenre: row.navigation_genre || '',
+    activityDescription: row.activity_description || '',
     effectiveFrom: row.effective_from,
     effectiveTo: row.effective_to || '',
     status: row.status,
@@ -362,6 +368,8 @@ export function savePlanningManningMatrix(client: SupabaseClient, input: SavePla
     p_matrix_id: input.id || null,
     p_vessel_id: input.vesselId,
     p_name: input.name,
+    p_navigation_genre: input.navigationGenre,
+    p_activity_description: input.activityDescription,
     p_effective_from: input.effectiveFrom,
     p_effective_to: input.effectiveTo || null,
     p_status: input.status,

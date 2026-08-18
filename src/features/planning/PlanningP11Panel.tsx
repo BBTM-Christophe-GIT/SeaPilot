@@ -6,7 +6,9 @@ import { planningErrorMessage, reportPlanningTechnicalError } from './planningEr
 import {
   buildManningMatrixComparison,
   buildRotationPreview,
+  PLANNING_ACTIVITY_DESCRIPTIONS,
   PLANNING_FUNCTION_GROUPS,
+  PLANNING_NAVIGATION_GENRES,
   rotationPatternDays,
   rotationPreviewHasOverlaps,
   type PlanningManningMatrix,
@@ -47,6 +49,7 @@ const PATTERN_LABELS: Record<PlanningRotationPattern, string> = {
 };
 const MANNING_CERTIFICATE_CATEGORIES = ['Pont', 'Machine', 'Formation de Sécurité'] as const;
 const MANNING_CERTIFICATE_CATEGORY_SET = new Set<string>(MANNING_CERTIFICATE_CATEGORIES);
+const CUSTOM_ACTIVITY_DESCRIPTION = '__custom_activity_description__';
 
 interface PlanningCertificateChoiceGroup {
   label: string;
@@ -267,6 +270,8 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
   const emptyForm = (): SavePlanningManningMatrixInput => ({
     vesselId: vessels[0]?.id || 0,
     name: situations[0],
+    navigationGenre: '',
+    activityDescription: '',
     effectiveFrom: range.start,
     effectiveTo: '',
     status: 'active',
@@ -275,6 +280,7 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
   });
   const [form, setForm] = useState<SavePlanningManningMatrixInput>(emptyForm);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isCustomActivityDescription, setIsCustomActivityDescription] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(data.matrices[0]?.id || null);
   const [isSaving, setIsSaving] = useState(false);
   const selected = data.matrices.find((matrix) => matrix.id === selectedId) || data.matrices[0] || null;
@@ -299,10 +305,13 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
     setForm((current) => ({ ...current, requirements: current.requirements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
   }
   function openMatrix(matrix?: PlanningManningMatrix) {
+    const activityDescription = matrix?.activityDescription || '';
     setForm(matrix ? {
       id: matrix.id,
       vesselId: matrix.vesselId,
       name: situations.includes(matrix.name) ? matrix.name : situations[0],
+      navigationGenre: matrix.navigationGenre,
+      activityDescription: matrix.activityDescription,
       effectiveFrom: matrix.effectiveFrom,
       effectiveTo: matrix.effectiveTo,
       status: matrix.status,
@@ -319,6 +328,8 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
         ])],
       })),
     } : emptyForm());
+    setIsCustomActivityDescription(Boolean(activityDescription)
+      && !PLANNING_ACTIVITY_DESCRIPTIONS.includes(activityDescription as typeof PLANNING_ACTIVITY_DESCRIPTIONS[number]));
     setIsFormOpen(true);
   }
   function toggleRequirementValue(
@@ -360,7 +371,18 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
       <div className="planning-p11-form-grid">
         <label>Situation<select required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}>{situations.map((situation) => <option key={situation}>{situation}</option>)}</select></label>
         <label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
-        <label className="is-wide">Prescriptions ou conditions spéciales<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
+        <label className="is-wide">Genre(s) de navigation<select required value={form.navigationGenre} onChange={(event) => setForm({ ...form, navigationGenre: event.target.value })}><option value="">Sélectionner un genre de navigation</option>{PLANNING_NAVIGATION_GENRES.map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select></label>
+        <label className="is-wide">Description de l’activité, des conditions d’exploitation, des limites d’exploitation<select required value={isCustomActivityDescription ? CUSTOM_ACTIVITY_DESCRIPTION : form.activityDescription} onChange={(event) => {
+          if (event.target.value === CUSTOM_ACTIVITY_DESCRIPTION) {
+            setIsCustomActivityDescription(true);
+            setForm({ ...form, activityDescription: '' });
+          } else {
+            setIsCustomActivityDescription(false);
+            setForm({ ...form, activityDescription: event.target.value });
+          }
+        }}><option value="">Sélectionner une description</option>{PLANNING_ACTIVITY_DESCRIPTIONS.map((description) => <option key={description} value={description}>{description}</option>)}<option value={CUSTOM_ACTIVITY_DESCRIPTION}>Texte personnalisé…</option></select></label>
+        {isCustomActivityDescription ? <label className="is-wide">Description personnalisée de l’activité<textarea required minLength={2} value={form.activityDescription} onChange={(event) => setForm({ ...form, activityDescription: event.target.value })} /></label> : null}
+        <label className="is-wide">Prescriptions ou conditions spéciales (le cas échéant)<textarea rows={4} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
       </div>
       <div className="planning-p11-requirements"><header><h4>Postes normalement prévus</h4><button onClick={() => setForm((current) => ({ ...current, requirements: [...current.requirements, requirementInput(undefined, current.requirements.length)] }))} type="button"><Plus size={15} />Ajouter un poste</button></header>
         {form.requirements.map((requirement, index) => <fieldset key={index}>
@@ -388,7 +410,7 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
       </div>
       <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la situation</button></footer>
     </form> : null}
-    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
+    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><dl className="planning-p11-situation-context"><div><dt>Genre(s) de navigation</dt><dd>{selected.navigationGenre || 'Non renseigné'}</dd></div><div><dt>Description de l’activité, des conditions d’exploitation, des limites d’exploitation</dt><dd>{selected.activityDescription || 'Non renseignée'}</dd></div><div><dt>Prescriptions ou conditions spéciales</dt><dd>{selected.notes || 'Aucune'}</dd></div></dl><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
   </section>;
 }
 

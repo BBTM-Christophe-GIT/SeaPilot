@@ -332,6 +332,8 @@ describe('AdminPage', () => {
     render(<AdminPage client={client as never} />);
 
     const projectsForSailor = await screen.findByRole('checkbox', { name: 'Projets visible pour Marin' });
+    expect(screen.getByRole('checkbox', { name: 'Navires visible pour Admin' })).toBeChecked();
+    expect(screen.getByText('Navires')).toBeInTheDocument();
     expect(projectsForSailor).not.toBeChecked();
 
     await user.click(projectsForSailor);
