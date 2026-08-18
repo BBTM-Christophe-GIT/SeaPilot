@@ -107,7 +107,7 @@ describe('Planning P1.1 panel', () => {
     render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
     await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
-    await user.click(screen.getByRole('button', { name: 'Nouvelle décision' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle situation' }));
 
     expect(screen.getByLabelText('Situation')).toHaveValue('Situation 1');
     expect(screen.getAllByRole('option', { name: /Situation/ })).toHaveLength(6);
@@ -139,7 +139,7 @@ describe('Planning P1.1 panel', () => {
     expect(within(authorizationPicker).queryByRole('checkbox', { name: /Capitaine 200/ })).not.toBeInTheDocument();
     await user.click(within(brevetPicker).getByRole('checkbox', { name: /Capitaine 200/ }));
     await user.click(within(authorizationPicker).getByRole('checkbox', { name: /CACES/ }));
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la décision' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la situation' }));
 
     await waitFor(() => expect(savePlanningManningMatrix).toHaveBeenCalledWith(client, expect.objectContaining({
       name: 'Situation 1',
@@ -169,7 +169,7 @@ describe('Planning P1.1 panel', () => {
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
     await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
     await user.click(screen.getByRole('button', { name: 'Configurer' }));
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la décision' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la situation' }));
 
     await waitFor(() => expect(savePlanningManningMatrix).toHaveBeenCalledWith(client, expect.objectContaining({
       requirements: [expect.objectContaining({

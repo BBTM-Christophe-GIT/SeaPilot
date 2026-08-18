@@ -12844,6 +12844,34 @@ button.planning-p12-conflict-card {
 .working-time-timeline button.is-pending { background: #f6c66f; box-shadow: inset 0 0 0 1px #cb7d0b; }
 .working-time-timeline button.is-selected { background: #17a6b8; box-shadow: inset 0 0 0 1px #087789; }
 .working-time-timeline button:disabled { cursor: default; opacity: 1; }
+.working-time-timeline button.is-occupied:not(:disabled) { cursor: pointer; }
+.working-time-recorded-period-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-top: 1px solid #d8e4e9;
+  color: #274b5f;
+  background: #eef7f8;
+  font-size: .72rem;
+}
+.working-time-recorded-period-actions > div { display: flex; gap: 6px; }
+.working-time-recorded-period-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid #a9c5cf;
+  border-radius: 6px;
+  color: #0d5669;
+  background: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.working-time-recorded-period-actions button:last-child { min-width: 31px; padding: 0; justify-content: center; }
 .working-time-timeline time {
   position: absolute;
   top: -19px;
@@ -19951,3 +19979,250 @@ button.planning-p12-conflict-card {
   .fcx-report-scope-options > button { min-height: 70px; }
   .fcx-visit-main-fields { grid-template-columns: 1fr; }
 }
+/* BBTM - Flotte ---------------------------------------------------------- */
+.fleet-page {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  color: #163147;
+}
+
+.fleet-page-heading,
+.fleet-page-heading > div,
+.fleet-page-heading > div > div,
+.fleet-tabs,
+.fleet-roster header,
+.fleet-roster header > div,
+.fleet-detail > header,
+.fleet-detail > header > div,
+.fleet-dialog header,
+.fleet-dialog header > div,
+.fleet-dialog header span {
+  display: flex;
+  align-items: center;
+}
+
+.fleet-page-heading {
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border: 1px solid #d7e2ea;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(21 55 79 / 6%);
+}
+
+.fleet-page-heading > div { gap: 14px; }
+.fleet-page-heading > div > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  color: #fff;
+  background: #075e74;
+}
+.fleet-page-heading > div > div,
+.fleet-dialog header span { align-items: flex-start; flex-direction: column; }
+.fleet-page-heading h1,
+.fleet-page-heading p,
+.fleet-page-heading small,
+.fleet-roster h2,
+.fleet-detail h2,
+.fleet-detail p,
+.fleet-detail small,
+.fleet-dialog h2,
+.fleet-dialog small { margin: 0; }
+.fleet-page-heading h1 { font-size: 24px; color: #0b2c43; }
+.fleet-page-heading p { color: #617588; font-size: 13px; }
+.fleet-page-heading small,
+.fleet-detail small,
+.fleet-dialog small { color: #24738a; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.fleet-page-heading > button,
+.fleet-roster header > button,
+.fleet-detail > header button,
+.fleet-dialog footer button,
+.fleet-dialog header > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #b9cbd6;
+  border-radius: 7px;
+  color: #16445d;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fleet-tabs {
+  gap: 4px;
+  padding: 4px;
+  width: max-content;
+  border: 1px solid #d7e2ea;
+  border-radius: 9px;
+  background: #fff;
+}
+.fleet-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 6px;
+  color: #526c7f;
+  background: transparent;
+  font-weight: 750;
+  cursor: pointer;
+}
+.fleet-tabs button.is-active { color: #fff; background: #075e74; }
+
+.fleet-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+  gap: 18px;
+  min-height: 560px;
+}
+.fleet-roster,
+.fleet-detail,
+.fleet-manning-panel {
+  min-width: 0;
+  border: 1px solid #d7e2ea;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(21 55 79 / 5%);
+}
+.fleet-roster { padding: 16px; }
+.fleet-roster header { justify-content: space-between; gap: 10px; }
+.fleet-roster header > div { gap: 8px; }
+.fleet-roster header strong {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #075e74;
+  background: #e7f5f7;
+  font-size: 12px;
+}
+.fleet-roster header > button { color: #fff; border-color: #075e74; background: #075e74; }
+.fleet-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+  padding: 0 11px;
+  min-height: 40px;
+  border: 1px solid #c9d8e1;
+  border-radius: 7px;
+  color: #6c8393;
+}
+.fleet-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: #173d55; background: transparent; }
+.fleet-archived-toggle { display: flex; gap: 7px; align-items: center; color: #607789; font-size: 12px; }
+.fleet-vessel-list { display: grid; gap: 6px; max-height: 450px; margin-top: 12px; overflow: auto; }
+.fleet-vessel-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #173d55;
+  background: #f8fafb;
+  text-align: left;
+  cursor: pointer;
+}
+.fleet-vessel-list > button.is-active { border-color: #7dc2cd; background: #edf8f9; }
+.fleet-vessel-list span { display: grid; gap: 3px; min-width: 0; }
+.fleet-vessel-list small { color: #6c7f8d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fleet-vessel-list em { padding: 3px 7px; border-radius: 999px; color: #91542f; background: #fff0e6; font-size: 10px; font-style: normal; font-weight: 800; text-transform: uppercase; }
+.fleet-vessel-list em.is-active { color: #176542; background: #e6f6ed; }
+
+.fleet-detail { display: flex; flex-direction: column; padding: 20px; }
+.fleet-detail > header { align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid #e0e8ed; }
+.fleet-detail > header > div:first-child { align-items: flex-start; flex-direction: column; }
+.fleet-detail > header > div:last-child { gap: 8px; }
+.fleet-detail > header button.is-danger { color: #9e3e36; border-color: #e2b6b2; }
+.fleet-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 8px 0 20px; }
+.fleet-detail-grid > div { padding: 15px 8px; border-bottom: 1px solid #e8eef2; }
+.fleet-detail-grid dt { margin-bottom: 5px; color: #6d8392; font-size: 11px; font-weight: 750; text-transform: uppercase; }
+.fleet-detail-grid dd { margin: 0; color: #163d54; font-weight: 700; }
+.fleet-detail > footer { display: flex; justify-content: space-between; gap: 10px; margin-top: auto; color: #718694; font-size: 11px; }
+.fleet-manning-panel { padding: 18px; }
+
+.fleet-dialog-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(11 34 49 / 50%);
+}
+.fleet-dialog { width: min(820px, 100%); max-height: calc(100vh - 48px); overflow: auto; border: 0; border-radius: 12px; background: #fff; box-shadow: 0 24px 70px rgb(0 24 38 / 25%); }
+.fleet-dialog header { justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid #dce6ec; }
+.fleet-dialog header > div { gap: 10px; }
+.fleet-dialog header > button { width: 36px; padding: 0; }
+.fleet-dialog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 20px; }
+.fleet-dialog-grid label { display: grid; gap: 6px; color: #36576b; font-size: 12px; font-weight: 750; }
+.fleet-dialog-grid label.is-wide { grid-column: 1 / -1; }
+.fleet-dialog-grid input { min-height: 40px; padding: 0 10px; border: 1px solid #c8d7e0; border-radius: 6px; color: #173d55; }
+.fleet-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 15px 20px; border-top: 1px solid #dce6ec; }
+.fleet-dialog footer button:last-child { color: #fff; border-color: #075e74; background: #075e74; }
+
+@media (max-width: 900px) {
+  .fleet-layout { grid-template-columns: 1fr; }
+  .fleet-detail-grid,
+  .fleet-dialog-grid { grid-template-columns: 1fr; }
+  .fleet-dialog-grid label.is-wide { grid-column: auto; }
+  .fleet-page-heading,
+  .fleet-detail > header { align-items: flex-start; flex-direction: column; }
+}
+
+.planning-assignment-note-cell.has-staffing-alert {
+  outline: 2px solid #d94343;
+  outline-offset: -2px;
+  background-image: repeating-linear-gradient(135deg, rgb(217 67 67 / 9%) 0 4px, transparent 4px 8px);
+}
+.planning-staffing-alert-icon { color: #b72f2f; filter: drop-shadow(0 0 2px #fff); }
+.planning-staffing-review-dialog { width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
+.planning-staffing-review-summary,
+.planning-staffing-review-summary > div,
+.planning-staffing-discrepancies article > div:first-child,
+.planning-staffing-captain-warning,
+.planning-staffing-captain-ok {
+  display: flex;
+  align-items: center;
+}
+.planning-staffing-review-summary { justify-content: space-between; gap: 16px; padding: 16px 20px 8px; }
+.planning-staffing-review-summary > div { align-items: flex-start; flex-direction: column; }
+.planning-staffing-review-summary > span { padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.planning-staffing-review-summary > span.is-blocking { color: #a32f2f; background: #fde8e7; }
+.planning-staffing-review-summary > span.is-ok { color: #146a45; background: #e3f6ec; }
+.planning-staffing-review-help { margin: 0; padding: 0 20px 14px; color: #60798b; font-size: 12px; }
+.planning-staffing-composition-table { margin: 0 20px; overflow: auto; border: 1px solid #d8e3e9; border-radius: 8px; }
+.planning-staffing-composition-table table { width: 100%; border-collapse: collapse; }
+.planning-staffing-composition-table th,
+.planning-staffing-composition-table td { padding: 10px 12px; border-bottom: 1px solid #e5ecef; text-align: left; }
+.planning-staffing-composition-table th { color: #5b7484; background: #f4f8fa; font-size: 11px; text-transform: uppercase; }
+.planning-staffing-composition-table td { color: #294c61; font-size: 12px; }
+.planning-staffing-composition-table select { min-width: 180px; min-height: 36px; padding: 0 8px; border: 1px solid #bfcfd8; border-radius: 6px; color: #173f56; background: #fff; }
+.planning-staffing-composition-table .is-captain { display: inline-block; padding: 3px 7px; border-radius: 999px; color: #075e74; background: #e4f4f6; font-weight: 800; }
+.planning-staffing-captain-warning,
+.planning-staffing-captain-ok { gap: 7px; margin: 12px 20px 0; padding: 9px 11px; border-radius: 7px; font-size: 12px; font-weight: 700; }
+.planning-staffing-captain-warning { color: #a3332f; background: #fdeceb; }
+.planning-staffing-captain-ok { color: #176b48; background: #e6f7ee; }
+.planning-staffing-discrepancies { padding: 18px 20px; }
+.planning-staffing-discrepancies h3 { margin: 0 0 10px; font-size: 15px; color: #173f56; }
+.planning-staffing-discrepancies article { display: grid; gap: 10px; margin-top: 8px; padding: 11px 12px; border: 1px solid #e4c0bd; border-radius: 8px; background: #fff7f6; }
+.planning-staffing-discrepancies article.is-warning { border-color: #ead6a9; background: #fffaf0; }
+.planning-staffing-discrepancies article.is-derogated { border-color: #9fcfba; background: #eff9f4; }
+.planning-staffing-discrepancies article > div:first-child { align-items: flex-start; gap: 9px; color: #9b3530; }
+.planning-staffing-discrepancies article > div:first-child span { display: grid; gap: 2px; }
+.planning-staffing-discrepancies article small { color: #6f6664; }
+.planning-staffing-derogation { display: grid; gap: 8px; padding-left: 25px; }
+.planning-staffing-derogation > label:first-child { display: flex; align-items: center; gap: 7px; font-weight: 800; color: #173f56; }
+.planning-staffing-derogation > label:last-child { display: grid; gap: 5px; color: #4f6878; font-size: 12px; }
+.planning-staffing-derogation textarea { min-height: 64px; padding: 8px; border: 1px solid #c8d6de; border-radius: 6px; resize: vertical; }

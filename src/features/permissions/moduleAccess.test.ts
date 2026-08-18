@@ -43,6 +43,7 @@ describe('module access', () => {
       ['Opérations', 'Projets', 'submenu'],
       ['Achats', "Demande d'Achat", 'submenu'],
       ['Planning', 'Planning', 'direct'],
+      ['Planning', 'BBTM - Flotte', 'submenu'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],
       ['Maintenance', 'Marad', 'submenu'],

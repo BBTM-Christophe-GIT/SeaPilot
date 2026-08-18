@@ -29,6 +29,7 @@ import {
   type PlanningCrewLane,
   type PlanningFleetLane,
 } from './planningViews';
+import { planningStaffingBoardKey } from './planningStaffingQueries';
 
 interface TimelineBaseProps {
   days: PlanningTimelineDay[];
@@ -41,6 +42,7 @@ const EMPTY_CUT_GRID_CELL_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
 const EMPTY_ABSENCES: PlanningAbsenceRecord[] = [];
 const EMPTY_HR_DOCUMENTS: PlanningHrDocumentRecord[] = [];
+const EMPTY_STAFFING_ALERT_KEYS: ReadonlySet<string> = new Set();
 
 function expiredDocumentsLabel(documents: readonly PlanningHrDocumentRecord[]): string {
   const prefix = documents.length > 1 ? `${documents.length} documents échus` : 'Document échu';
@@ -458,6 +460,8 @@ export function PlanningCrewTimelineRow({
   onGridCellClick,
   onEmptyGridCellDoubleClick,
   onConflictCellClick,
+  staffingAlertKeys = EMPTY_STAFFING_ALERT_KEYS,
+  onStaffingAlertCellClick,
   absences = EMPTY_ABSENCES,
   hrDocuments = EMPTY_HR_DOCUMENTS,
   onOpenAbsence,
@@ -483,6 +487,8 @@ export function PlanningCrewTimelineRow({
   onGridCellClick?: (cell: PlanningGridCell, event: React.MouseEvent<HTMLButtonElement>) => boolean;
   onEmptyGridCellDoubleClick?: (cell: PlanningGridCell) => void;
   onConflictCellClick?: (cell: PlanningGridCell) => void;
+  staffingAlertKeys?: ReadonlySet<string>;
+  onStaffingAlertCellClick?: (cell: PlanningGridCell) => void;
   absences?: PlanningAbsenceRecord[];
   hrDocuments?: readonly PlanningHrDocumentRecord[];
   onOpenAbsence?: (absence: PlanningAbsenceRecord) => void;
@@ -766,16 +772,22 @@ export function PlanningCrewTimelineRow({
             const segmentEnd = !planningGridCellsShareSegment(cell, adjacentCell(addPlanningDays(day.date, 1)));
             const expiredDocuments = planningExpiredDocumentsForDate(hrDocuments, event.personId, day.date);
             const documentAlert = expiredDocuments.length ? expiredDocumentsLabel(expiredDocuments) : '';
+            const hasStaffingAlert = staffingAlertKeys.has(planningStaffingBoardKey(event.vesselId, event.board, day.date));
             return (
               <button
-                aria-label={`${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
-                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
+                aria-label={`${hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif. ' : ''}${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
+                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${hasStaffingAlert ? ' has-staffing-alert' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
                 data-planning-grid-cell={cellKey}
                 disabled={!editable}
                 key={`${event.id}-${day.date}`}
                 onClick={(noteEvent) => {
                   noteEvent.preventDefault();
                   noteEvent.stopPropagation();
+                  if (hasStaffingAlert && onStaffingAlertCellClick && !noteEvent.ctrlKey && !noteEvent.metaKey) {
+                    onSelect(event.id);
+                    onStaffingAlertCellClick(cell);
+                    return;
+                  }
                   const gridCellHandled = onGridCellClick?.(cell, noteEvent) || false;
                   if (gridCellHandled && (noteEvent.ctrlKey || noteEvent.metaKey || !cell.isConflict)) {
                     onSelect(event.id);
@@ -801,9 +813,9 @@ export function PlanningCrewTimelineRow({
                   onOpen(event);
                 }}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={[documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
+                title={[hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
                 type="button"
-              >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
+              >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{hasStaffingAlert ? <AlertTriangle aria-hidden="true" className="planning-staffing-alert-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
           }) : null}
           {hasDailyGrid && continuousDailyStatus && !hasVisibleDailyNotes && placement.span >= 2 ? (

@@ -135,6 +135,8 @@ interface DayApprovalRow {
   submitted_at: string | null;
   validated_at: string | null;
   validated_by_person_id: number | string | null;
+  subject_signature_snapshot: Record<string, unknown> | null;
+  approver_signature_snapshot: Record<string, unknown> | null;
 }
 
 interface VesselRow {
@@ -203,6 +205,8 @@ export interface WorkingTimeDayApproval {
   submittedAt: string | null;
   validatedAt: string | null;
   validatedByPersonId: number | null;
+  subjectSignatureSnapshot: WorkingTimeSignatureSnapshot | null;
+  approverSignatureSnapshot: WorkingTimeSignatureSnapshot | null;
 }
 
 export interface WorkingTimeDayComment {
@@ -376,7 +380,7 @@ const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
-const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id';
+const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id,subject_signature_snapshot,approver_signature_snapshot';
 
 function numberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -600,6 +604,8 @@ export async function fetchWorkingTimeWorkspace(
       submittedAt: approval.submitted_at,
       validatedAt: approval.validated_at,
       validatedByPersonId: numberOrNull(approval.validated_by_person_id),
+      subjectSignatureSnapshot: mapSignatureSnapshot(approval.subject_signature_snapshot),
+      approverSignatureSnapshot: mapSignatureSnapshot(approval.approver_signature_snapshot),
     })),
     vessels: ((vesselResult.data || []) as VesselRow[]).map((vessel) => ({
       id: Number(vessel.id),
@@ -843,6 +849,23 @@ export async function validateWorkingTimeDay(
     p_day_approval_id: dayApprovalId,
   });
   assertResult(error, 'Impossible de valider la journée.');
+  return Number(data);
+}
+
+export async function validateWorkingTimeDayWithComment(
+  client: SupabaseClient,
+  dayApprovalId: number,
+  input: Omit<SaveWorkingTimeDayCommentInput, 'registerId' | 'localWorkDate'>,
+): Promise<number> {
+  const { data, error } = await client.rpc('validate_working_time_day_with_comment', {
+    p_day_approval_id: dayApprovalId,
+    p_cause_category: input.causeCategory,
+    p_operational_context: input.operationalContext,
+    p_immediate_action: input.immediateAction,
+    p_compensatory_rest_plan: input.compensatoryRestPlan,
+    p_comment: input.comment,
+  });
+  assertResult(error, 'Impossible de valider les heures et leur justification.');
   return Number(data);
 }
 

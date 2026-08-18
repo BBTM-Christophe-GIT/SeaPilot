@@ -80,7 +80,7 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest]) {
       if (table === 'vessels') {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }], error: null }) }),
+            eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }, { id: 3, name: 'NAVIRE CANONIQUE' }], error: null }) }),
           }),
         };
       }
@@ -210,5 +210,7 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.getByRole('heading', { name: /Créer une demande d.achat/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /6.*Pièces jointes/i })).toBeInTheDocument();
     expect(screen.getByLabelText('Navire')).toHaveTextContent('GOURY');
+    await user.click(screen.getByRole('button', { name: /3.*Prix/i }));
+    expect(screen.getByLabelText('Refacturation')).toHaveTextContent('NAVIRE CANONIQUE');
   });
 });

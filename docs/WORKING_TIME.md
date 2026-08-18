@@ -6,13 +6,15 @@ Les rôles `admin` et `armement` peuvent préparer ou corriger un brouillon pour
 
 Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la frise fournit les heures et le serveur impose l’affectation Planning active de la personne et de la journée. Seuls les statuts Planning normalisés « En Mer » et « A Terre » sont éligibles ; les vacances, repos, arrêts, formations et autres statuts sont exclus. Le commentaire devient obligatoire dès que l’analyse serveur détecte une alerte ou une non-conformité.
 
-Le workflow porte désormais sur une journée, pas sur tout le registre mensuel. Le Marin ou le Capitaine saisit ses phases puis choisit « Soumettre au Capitaine ». Le serveur résout automatiquement un autre Capitaine actif sur le même navire et la même bordée dans le Planning ; aucun approbateur n’est choisi manuellement. Le Capitaine retrouve les journées qui lui sont attribuées dans l’onglet « Approbation », peut corriger les phases, documente obligatoirement toute non-conformité et valide la journée avec sa signature active. Seule cette journée devient alors en lecture seule ; les autres jours du mois restent ouverts. L’auto-validation du Capitaine demeure interdite.
+Le workflow porte désormais sur une journée, pas sur tout le registre mensuel. Sous le commentaire, le Marin ou le Capitaine choisit « Valider ». Une signature active de l’auteur est obligatoire et figée avec la journée. La qualité de Capitaine vient exclusivement du libellé RH exact `Capitaine`, indépendamment du rôle applicatif : `Capitaine 200`, `Second capitaine` ou toute variante de casse ne confèrent pas cette qualité.
+
+Le Capitaine RH valide directement sa propre journée avec sa signature active. Pour un Marin, le serveur résout l’unique personne de la même bordée dont la fonction RH est exactement `Capitaine` et dont la fonction Planning `Capitaine` a été confirmée. Cette personne reçoit la demande dans l’onglet « Approbation », avec une pastille rouge indiquant le nombre de demandes. Elle peut corriger les phases et valide avec sa propre signature active ; les signatures du Marin et du Capitaine sont conservées séparément. Pour une journée non conforme, le Capitaine renseigne la justification puis utilise l’action atomique « Valider la saisie des heures et la justification ». Les rôles Admin et Armement conservent la validation de secours. Seule la journée validée devient en lecture seule.
 
 ## Cockpit mensuel
 
 L’écran principal est organisé comme un cockpit mensuel : commandes métier regroupées en haut, équipage classé par service à gauche, calendrier et frise 24 heures au centre, synthèse de conformité à droite. Un administrateur, l’Armement ou la Direction peut basculer entre le personnel en poste et le personnel ancien ; la date locale `departed_on` détermine la catégorie. Le catalogue conserve une seule entrée visuelle par marin, même lorsque d’anciens registres hebdomadaires coexistent avec le registre mensuel.
 
-La barre de commandes reste centrée sur les fonctions d’aide à la décision et les documents. Le groupe « Gestion des congés », « Actualiser », « Ouvrir un registre » et toutes les actions de brouillon ont été retirés. L’action unique « Soumettre au Capitaine » apparaît sous les périodes sélectionnées. Les fonctions secondaires s’ouvrent dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
+La barre de commandes reste centrée sur les fonctions d’aide à la décision et les documents. Le groupe « Gestion des congés », « Actualiser », « Ouvrir un registre » et toutes les actions de brouillon ont été retirés. L’action « Valider » apparaît sous le commentaire. Les fonctions secondaires s’ouvrent dans des fenêtres dédiées : « Import » pour l’assistant XLSM réservé aux administrateurs, « Exposition HSE / IMCA » pour les indicateurs et « Contrôles travail et repos » pour le moteur P1.3 et ses alertes.
 
 Les intervalles affichés sont consolidés par personne et par mois, indépendamment du registre historique qui les porte. Après un import XLSM, les espaces Planning et Temps de travail sont rechargés ensemble : les phases importées apparaissent immédiatement, y compris plusieurs créneaux disjoints pour une même journée.
 
@@ -20,7 +22,7 @@ Les intervalles affichés sont consolidés par personne et par mois, indépendam
 
 La grille affiche les 48 demi-heures de la journée sans défilement horizontal dès 516 px de largeur utile. Les indicateurs de conformité sont disposés au-dessus de la frise afin de lui réserver toute la largeur disponible.
 
-Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées, les périodes adjacentes ou qui se recouvrent sont fusionnées, et une puce permet de sélectionner ou retirer chaque période. Une seule action, « Soumettre au Capitaine », persiste atomiquement toutes les périodes puis ouvre l’approbation quotidienne. Il n’existe plus de saisie manuelle Début/Fin, Navire, Bordée ou approbateur.
+Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées et les périodes adjacentes ou qui se recouvrent sont fusionnées. Les anciennes lignes récapitulatives munies des boutons « Corriger » et « Retirer » sont supprimées : une plage déjà enregistrée se sélectionne directement dans la frise, qui affiche alors ses actions de correction et de retrait. L’action « Valider » enregistre la journée et déclenche son workflow. Il n’existe plus de saisie manuelle Début/Fin, Navire, Bordée ou approbateur.
 
 ## Daily Progress Report
 
@@ -76,8 +78,8 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Minuit, chevauchements, doublons, repos total/consécutif | `working_time_server_calculations_test.sql` |
 | Fenêtre entre deux mois et exactement 7 jours | `working_time_server_calculations_test.sql` |
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
-| Droits Marin/Capitaine/Admin, approbateur automatique de bordée et interdiction d’auto-validation | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
-| Verrouillage limité au jour validé, commentaire d’écart et instantanés de signature | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
+| Vérité RH exacte `Capitaine`, auto-validation Capitaine et approbateur automatique de bordée | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
+| Verrouillage limité au jour validé, justification atomique et deux instantanés de signature | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
 | RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |
 | Grille 24 h responsive et sélection multi-périodes en une action | `WorkingTimeEntryBoard.test.tsx` et recette navigateur 1280 × 720 |

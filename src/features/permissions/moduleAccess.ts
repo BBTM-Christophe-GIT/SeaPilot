@@ -10,6 +10,7 @@ export type ModuleKey =
   | 'dpr'
   | 'purchaseRequests'
   | 'planning'
+  | 'fleet'
   | 'humanResources'
   | 'workingTime'
   | 'projects'
@@ -92,6 +93,7 @@ export const APP_MODULES: AppModule[] = [
     allowedRoles: ALL_ROLES,
   },
   { key: 'planning', label: 'Planning', family: 'Planning', navigationKind: 'direct', allowedRoles: ALL_ROLES },
+  { key: 'fleet', label: 'BBTM - Flotte', family: 'Planning', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'humanResources',
     label: 'RH / Brevets',

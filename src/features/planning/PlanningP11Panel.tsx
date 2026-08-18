@@ -258,7 +258,7 @@ function TemplateTab({ client, data, overview, editable, onReload, onOperational
   </section>;
 }
 
-function ManningTab({ client, data, overview, range, editable, onReload, setFeedback }: {
+export function ManningTab({ client, data, overview, range, editable, onReload, setFeedback }: {
   client: SupabaseClient; data: PlanningP11Data; overview: PlanningOverview; range: PlanningDateRange;
   editable: boolean; onReload: () => Promise<void>; setFeedback: (message: string, error?: boolean) => void;
 }) {
@@ -350,12 +350,12 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
       };
       const id = await savePlanningManningMatrix(client, normalizedForm);
       await onReload(); setSelectedId(id); setIsFormOpen(false);
-      setFeedback('Décision d’effectif enregistrée et versionnée.');
+      setFeedback('Situation d’effectif enregistrée et versionnée.');
     } catch (error) { setFeedback(planningErrorMessage(error, 'Impossible d’enregistrer la décision d’effectif.'), true); }
     finally { setIsSaving(false); }
   }
   return <section className="planning-p11-section">
-    <div className="planning-p11-section-heading"><div><h3>Décision d’effectif</h3><p>Postes attendus et brevets nécessaires pour le navire sélectionné.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle décision</button> : null}</div>
+    <div className="planning-p11-section-heading"><div><h3>Décision d’effectif</h3><p>Postes attendus et brevets nécessaires pour le navire sélectionné.</p></div>{editable ? <button onClick={() => openMatrix()} type="button"><Plus size={16} />Nouvelle situation</button> : null}</div>
     {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}>
       <div className="planning-p11-form-grid">
         <label>Situation<select required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}>{situations.map((situation) => <option key={situation}>{situation}</option>)}</select></label>
@@ -386,7 +386,7 @@ function ManningTab({ client, data, overview, range, editable, onReload, setFeed
           {form.requirements.length > 1 ? <button aria-label={`Supprimer le poste ${index + 1}`} onClick={() => setForm((current) => ({ ...current, requirements: current.requirements.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })) }))} type="button"><Trash2 size={16} /></button> : null}
         </fieldset>)}
       </div>
-      <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la décision</button></footer>
+      <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la situation</button></footer>
     </form> : null}
     {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
   </section>;

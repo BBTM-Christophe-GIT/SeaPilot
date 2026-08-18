@@ -46,7 +46,8 @@ describe('AppShell', () => {
     expect(qhseButton.closest('section')).toHaveAttribute('data-family-theme', 'qhse');
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Planning' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'BBTM - Flotte' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();

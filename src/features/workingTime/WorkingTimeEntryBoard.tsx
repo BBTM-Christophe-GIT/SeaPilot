@@ -2,8 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   CheckCircle2,
+  PenLine,
   Save,
   Send,
+  Trash2,
   UserCheck,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +37,7 @@ interface WorkingTimeEntryBoardProps {
   approverName?: string | null;
   hasRecordedPeriods?: boolean;
   showSubmitToCaptain?: boolean;
+  submitDisabled?: boolean;
   showValidate?: boolean;
   validateDisabled?: boolean;
   onStartsAtChange: (value: string) => void;
@@ -44,6 +47,8 @@ interface WorkingTimeEntryBoardProps {
   onSelectedDayChange?: (day: string) => void;
   onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
   onCancelEdit: () => void;
+  onEditInterval?: (interval: WorkingTimeInterval) => void;
+  onRequestVoid?: (interval: WorkingTimeInterval) => void;
 }
 
 const pad = (value: number) => String(value).padStart(2, '0');
@@ -127,6 +132,7 @@ export function WorkingTimeEntryBoard({
   approverName = null,
   hasRecordedPeriods = false,
   showSubmitToCaptain = false,
+  submitDisabled = false,
   showValidate = false,
   validateDisabled = false,
   onStartsAtChange,
@@ -136,6 +142,8 @@ export function WorkingTimeEntryBoard({
   onSelectedDayChange = () => undefined,
   onSubmit,
   onCancelEdit,
+  onEditInterval = () => undefined,
+  onRequestVoid = () => undefined,
 }: WorkingTimeEntryBoardProps) {
   const days = useMemo(() => periodDays(periodStart, periodEnd), [periodEnd, periodStart]);
   const nonCompliantDaySet = useMemo(() => new Set(nonCompliantDates), [nonCompliantDates]);
@@ -144,6 +152,7 @@ export function WorkingTimeEntryBoard({
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
+  const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
@@ -210,6 +219,17 @@ export function WorkingTimeEntryBoard({
       && slotStart < new Date(interval.endsAt).getTime()
       && slotEnd > new Date(interval.startsAt).getTime());
   }), [editingIntervalId, intervals, selectedDay]);
+
+  const recordedIntervalBySlot = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
+    const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
+    const slotEnd = new Date(slotLocalValue(selectedDay, slot + 1)).getTime();
+    return intervals.find((interval) => interval.id !== editingIntervalId
+      && slotStart < new Date(interval.endsAt).getTime()
+      && slotEnd > new Date(interval.startsAt).getTime()) || null;
+  }), [editingIntervalId, intervals, selectedDay]);
+  const selectedRecordedInterval = intervals.find((interval) => interval.id === selectedRecordedIntervalId) || null;
+
+  useEffect(() => { setSelectedRecordedIntervalId(null); }, [selectedDay]);
 
   const pendingSlots = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
     const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
@@ -331,16 +351,21 @@ export function WorkingTimeEntryBoard({
           <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
             {Array.from({ length: 48 }, (_, slot) => {
               const label = slotLocalValue(selectedDay, slot).slice(11);
+              const recordedInterval = recordedIntervalBySlot[slot];
               const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
               return (
                 <button
-                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
+                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                   aria-selected={selectedSlots[slot]}
                   className={className}
                   disabled={!canEdit}
                   key={slot}
                   onKeyDown={(event) => handleSlotKeyDown(event, slot)}
-                  onPointerDown={() => { dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot); }}
+                  onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
+                  onPointerDown={() => {
+                    if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
+                    dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot);
+                  }}
                   onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
                   onPointerUp={() => {
                     if (dragStart.current !== null) commitSlots(dragStart.current, slot);
@@ -355,6 +380,7 @@ export function WorkingTimeEntryBoard({
               );
             })}
           </div>
+          {selectedRecordedInterval ? <div className="working-time-recorded-period-actions" role="group" aria-label="Actions de la plage enregistrée"><span><strong>{formatDateTime(selectedRecordedInterval.startsAt)}</strong> → {formatDateTime(selectedRecordedInterval.endsAt)}</span><div><button onClick={() => { setSelectedRecordedIntervalId(null); onEditInterval(selectedRecordedInterval); }} type="button"><PenLine size={15} />Corriger</button><button onClick={() => { setSelectedRecordedIntervalId(null); onRequestVoid(selectedRecordedInterval); }} type="button"><Trash2 size={15} />Retirer</button><button aria-label="Fermer les actions" onClick={() => setSelectedRecordedIntervalId(null)} type="button">×</button></div></div> : null}
         </div>
 
         <div className="working-time-recommendation-panel" aria-live="polite">
@@ -386,7 +412,7 @@ export function WorkingTimeEntryBoard({
           {!planningVesselId ? <p className="working-time-planning-context is-missing">Aucune affectation Planning « En mer » ou « A terre » active pour cette journée.</p> : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
           <div className="working-time-form-actions">
             {editingIntervalId ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save-correction"><Save aria-hidden="true" size={16} />Enregistrer la correction</button> : null}
-            {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Soumettre au Capitaine</button> : null}
+            {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}
             {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate-day"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button> : null}
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>

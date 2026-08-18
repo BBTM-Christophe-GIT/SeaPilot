@@ -19,3 +19,7 @@ After completing any coding request in this repository, unless the user explicit
 6. Verify that Vercel has deployed the pushed commit successfully. If the automatic deployment did not run or failed, diagnose and complete the deployment before handing off.
 
 Never include unrelated local changes, secrets, or generated credentials in a commit.
+
+## Profile-specific UI verification
+
+For Marin and Capitaine workflows, never use the Marin or Capitaine views simulated from the current user session as the source of truth: they do not represent what real Marin and Capitaine accounts see. Inspect and test the role-gated application code, RPC/RLS rules, and profile-specific test fixtures for each real profile instead.
