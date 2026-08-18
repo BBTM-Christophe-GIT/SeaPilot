@@ -10,6 +10,7 @@ export type ModuleKey =
   | 'dpr'
   | 'purchaseRequests'
   | 'planning'
+  | 'fleet'
   | 'humanResources'
   | 'workingTime'
   | 'projects'
@@ -84,6 +85,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ['admin', 'direction'],
   },
+  { key: 'fleet', label: 'Navires', family: 'Opérations', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'purchaseRequests',
     label: "Demande d'Achat",

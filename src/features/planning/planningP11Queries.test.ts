@@ -30,8 +30,8 @@ describe('planning P1.1 query mappers', () => {
 
   it('maps reusable templates and matrix requirements without losing arrays', () => {
     expect(mapPlanningTemplateRows([{ id: 1, vessel_id: null, name: 'Soutage', template_kind: 'bunkering', description: null, default_duration_days: 1, default_status: 'planned', configuration: { port: 'Cherbourg' }, active: true }])[0]).toMatchObject({ templateKind: 'bunkering', configuration: { port: 'Cherbourg' } });
-    const matrices = mapPlanningMatrixRows([{ id: 2, vessel_id: 9, name: 'Matrice', effective_from: '2026-01-01', effective_to: null, status: 'active', notes: null, version: 3 }], [{ id: 4, matrixId: 2, functionLabel: 'Chef mécanicien', minimumCount: 1, targetCount: 1, requiredCertificates: ['Chef 3000'], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }]);
-    expect(matrices[0]).toMatchObject({ vesselId: 9, version: 3, requirements: [{ requiredCertificates: ['Chef 3000'] }] });
+    const matrices = mapPlanningMatrixRows([{ id: 2, vessel_id: 9, name: 'Matrice', navigation_genre: 'CN-CABOTAGE NATIONAL', activity_description: 'Navigation côtière personnalisée', effective_from: '2026-01-01', effective_to: null, status: 'active', notes: null, version: 3 }], [{ id: 4, matrixId: 2, functionLabel: 'Chef mécanicien', minimumCount: 1, targetCount: 1, requiredCertificates: ['Chef 3000'], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }]);
+    expect(matrices[0]).toMatchObject({ vesselId: 9, navigationGenre: 'CN-CABOTAGE NATIONAL', activityDescription: 'Navigation côtière personnalisée', version: 3, requirements: [{ requiredCertificates: ['Chef 3000'] }] });
   });
 
   it('maps the SharePoint STCW catalogue used by the multi-select', () => {
@@ -86,8 +86,13 @@ describe('planning P1.1 RPC contracts', () => {
   it('persists templates and matrices through validated RPCs', async () => {
     const { client, rpc } = rpcClient(7);
     await savePlanningTemplate(client, { vesselId: null, name: 'Transit', templateKind: 'transit', description: '', defaultDurationDays: 2, defaultStatus: 'planned', configuration: {} });
-    await savePlanningManningMatrix(client, { vesselId: 1, name: 'Matrice', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', requirements: [{ functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: [], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }] });
+    await savePlanningManningMatrix(client, { vesselId: 1, name: 'Matrice', navigationGenre: 'CI-CABOTAGE INTERNATIONAL', activityDescription: 'Navigation limitée à 20 milles des côtes / Zone radio SMDSM : A1', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', requirements: [{ functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: [], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }] });
     expect(rpc).toHaveBeenNthCalledWith(1, 'save_planning_template', expect.objectContaining({ p_template_kind: 'transit' }));
-    expect(rpc).toHaveBeenNthCalledWith(2, 'save_planning_manning_matrix', expect.objectContaining({ p_status: 'active', p_requirements: expect.any(Array) }));
+    expect(rpc).toHaveBeenNthCalledWith(2, 'save_planning_manning_matrix', expect.objectContaining({
+      p_navigation_genre: 'CI-CABOTAGE INTERNATIONAL',
+      p_activity_description: 'Navigation limitée à 20 milles des côtes / Zone radio SMDSM : A1',
+      p_status: 'active',
+      p_requirements: expect.any(Array),
+    }));
   });
 });

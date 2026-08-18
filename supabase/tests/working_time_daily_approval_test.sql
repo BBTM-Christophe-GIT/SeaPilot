@@ -19,6 +19,19 @@ select has_function(
   'a planning captain can validate one submitted day'
 );
 select has_function(
+  'public', 'validate_working_time_day_with_comment',
+  array['bigint', 'text', 'text', 'text', 'text', 'text'],
+  'a captain can atomically save the justification and validate a non-compliant day'
+);
+select has_column(
+  'public', 'working_time_day_approvals', 'subject_signature_snapshot',
+  'the subject signature is frozen independently'
+);
+select has_column(
+  'public', 'working_time_day_approvals', 'approver_signature_snapshot',
+  'the approver signature is frozen independently'
+);
+select has_function(
   'public', 'planning_status_is_working', array['text'],
   'planning duty statuses are normalised server-side'
 );
@@ -49,8 +62,13 @@ select matches(
 );
 select matches(
   pg_get_functiondef('public.validate_working_time_day(bigint)'::regprocedure),
-  '(?is)actor_person_id = target_approval.person_id.*WORKING_TIME_PERMISSION_DENIED',
-  'daily approval keeps separation of duties'
+  '(?is)function_label = ''Capitaine''.*working_time_captain_matches_day',
+  'daily captain eligibility comes from the exact HR function and Planning board'
+);
+select matches(
+  pg_get_functiondef('public.submit_working_time_day(bigint,date)'::regprocedure),
+  '(?is)target_person.function_label = ''Capitaine''.*next_status := ''validated''',
+  'an exact HR Capitaine can validate their own compliant signed day'
 );
 select matches(
   pg_get_functiondef('public.dpr_entry_context(date,bigint)'::regprocedure),

@@ -41,6 +41,7 @@ describe('module access', () => {
       ['QHSE', "Plan d'Action", 'submenu'],
       ['Opérations', 'Daily Progress Report', 'submenu'],
       ['Opérations', 'Projets', 'submenu'],
+      ['Opérations', 'Navires', 'submenu'],
       ['Achats', "Demande d'Achat", 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],

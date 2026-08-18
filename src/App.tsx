@@ -7,6 +7,7 @@ import { PasswordUpdatePage } from './features/auth/PasswordUpdatePage';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { DprPage } from './features/dpr/DprPage';
 import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
+import { FleetPage } from './features/fleet/FleetPage';
 import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
@@ -67,6 +68,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <FleetCertificatesPage />
                 ) : module.key === 'planning' ? (
                   <PlanningPage />
+                ) : module.key === 'fleet' ? (
+                  <FleetPage />
                 ) : module.key === 'humanResources' ? (
                   <HumanResourcesPage />
                 ) : module.key === 'workingTime' ? (

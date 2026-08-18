@@ -36,6 +36,8 @@ describe('planning P1.1 manning matrix comparison', () => {
     id: 1,
     vesselId: 10,
     name: 'Armement côtier',
+    navigationGenre: 'CN-CABOTAGE NATIONAL',
+    activityDescription: 'Navigation côtière',
     effectiveFrom: '2026-01-01',
     effectiveTo: '',
     status: 'active',

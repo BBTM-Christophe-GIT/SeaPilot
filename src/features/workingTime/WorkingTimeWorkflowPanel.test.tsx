@@ -5,10 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
   discardWorkingTimeDraft,
+  fetchWorkingTimeDayContext,
   getOrCreateWorkingTimeRegister,
-  saveWorkingTimeDayComment,
   submitWorkingTimeDay,
   validateWorkingTimeDay,
+  validateWorkingTimeDayWithComment,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
@@ -29,6 +30,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
     }),
     submitWorkingTimeDay: vi.fn().mockResolvedValue(1),
     validateWorkingTimeDay: vi.fn().mockResolvedValue(1),
+    validateWorkingTimeDayWithComment: vi.fn().mockResolvedValue(1),
     discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
     voidWorkingTimeInterval: vi.fn(),
@@ -156,12 +158,20 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText('Personnel ancien')).toBeInTheDocument();
   });
 
-  it('lets a captain submit their own day to another Planning captain', async () => {
+  it('lets an exact HR Capitaine validate their own signed day independently of the application role', async () => {
     const user = userEvent.setup();
-    renderPanel(['capitaine'], workspace('draft'));
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValueOnce({
+      assignmentId: 1,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      statusLabel: 'En Mer',
+      approverPersonId: 10,
+      captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
+    });
+    renderPanel(['marin'], workspace('draft'));
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
-    const submitButton = screen.getByRole('button', { name: 'Soumettre au Capitaine' });
+    const submitButton = screen.getByRole('button', { name: 'Valider' });
     expect(submitButton).toBeEnabled();
     await user.click(submitButton);
 
@@ -284,6 +294,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
       vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
       submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
     }];
     renderPanel(['capitaine'], data);
 
@@ -304,6 +315,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
       vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
       submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
     }];
     data.calculations = [{
       id: 400,
@@ -329,25 +341,23 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['capitaine'], data);
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
 
-    expect(screen.getByRole('button', { name: 'Valider la journée' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Valider la saisie des heures et la justification' })).toBeDisabled();
     expect(screen.getByText(/Justification de non-conformité incomplète/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Catégorie de cause'), { target: { value: 'safety_emergency' } });
     fireEvent.change(screen.getByLabelText('Contexte opérationnel'), { target: { value: 'Opération de sécurité prolongée.' } });
     fireEvent.change(screen.getByLabelText('Action immédiate'), { target: { value: 'Relève organisée.' } });
     fireEvent.change(screen.getByLabelText('Repos compensateur prévu'), { target: { value: 'Repos planifié demain.' } });
     fireEvent.change(screen.getByLabelText('Commentaire obligatoire'), { target: { value: 'Écart documenté par le capitaine.' } });
-    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
+    await user.click(screen.getByRole('button', { name: 'Valider la saisie des heures et la justification' }));
 
-    expect(saveWorkingTimeDayComment).toHaveBeenCalledWith(client, {
-      registerId: 100,
-      localWorkDate: '2026-08-03',
+    expect(validateWorkingTimeDayWithComment).toHaveBeenCalledWith(client, 502, {
       causeCategory: 'safety_emergency',
       operationalContext: 'Opération de sécurité prolongée.',
       immediateAction: 'Relève organisée.',
       compensatoryRestPlan: 'Repos planifié demain.',
       comment: 'Écart documenté par le capitaine.',
     });
-    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 502);
+    expect(validateWorkingTimeDay).not.toHaveBeenCalledWith(client, 502);
   });
 
   it('locks only the validated day without offering a month-level reopen action', async () => {
@@ -358,6 +368,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       localWorkDate: '2026-08-03', status: 'validated', planningAssignmentId: 1,
       vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
       submittedAt: '2026-08-03T16:00:00Z', validatedAt: '2026-08-03T17:00:00Z', validatedByPersonId: 10,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
     }];
     renderPanel(['armement'], data);
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));

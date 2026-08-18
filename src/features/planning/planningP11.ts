@@ -75,6 +75,8 @@ export interface PlanningManningMatrix {
   id: number;
   vesselId: number;
   name: string;
+  navigationGenre: string;
+  activityDescription: string;
   effectiveFrom: string;
   effectiveTo: string;
   status: 'draft' | 'active' | 'archived';
@@ -82,6 +84,21 @@ export interface PlanningManningMatrix {
   version: number;
   requirements: PlanningManningRequirement[];
 }
+
+export const PLANNING_NAVIGATION_GENRES = [
+  'CI-CABOTAGE INTERNATIONAL',
+  'CN-CABOTAGE NATIONAL',
+  'NC-NAVIGATION COTIERE',
+] as const;
+
+export const PLANNING_ACTIVITY_DESCRIPTIONS = [
+  'Assistance aux travaux, support de plongée, transfert de personnel, 4ème catégorie de navigation, séjour à la mer d\'une durée maximale de 6 heures en respectant les conditions du permis de navigation.',
+  'Navigation limitée à 20 milles des côtes / Zone radio SMDSM : A1',
+  'Navigation limitée à 200 milles des côtes / Zone radio SMDSM : A1-A2',
+  "Navire en exploitation en 4ème et 3ème catégorie de navigation d'une durée n'excédant pas 24 heures",
+  "Navire en exploitation en 5ème catégorie de navigation d'une durée n'excédant pas 24 heures",
+  'Vedette de servitude polyvalente - 3eme catégorie de navigation zone A1',
+] as const;
 
 export interface PlanningStcwCertificate {
   id: number;
