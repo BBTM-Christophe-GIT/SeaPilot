@@ -554,7 +554,7 @@ export async function createFleetCertificateLine(
     p_issued_on: input.issuedOn || null,
     p_expires_on: input.expiresOn || null,
   });
-  if (error) throw error;
+  if (error) throw new Error(error.message || 'Impossible d’ajouter cette ligne.');
 }
 
 export async function updateFleetCertificateDocumentMetadata(
@@ -577,7 +577,7 @@ export async function updateFleetCertificateDocumentMetadata(
     p_issued_on: input.issuedOn || null,
     p_expires_on: input.expiresOn || null,
   });
-  if (error) throw error;
+  if (error) throw new Error(error.message || 'Impossible de modifier les informations du document.');
 }
 
 export async function deleteFleetCertificateDocuments(

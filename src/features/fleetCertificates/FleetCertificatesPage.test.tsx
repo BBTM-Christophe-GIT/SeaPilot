@@ -71,7 +71,7 @@ function createClient() {
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, rpc };
+  return { client, rpc, storageApi };
 }
 
 describe('FleetCertificatesPage', () => {
@@ -228,7 +228,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('Ajouter un document');
-    expect(screen.getByText('PDF, image ou Excel · 50 Mo maximum')).toBeInTheDocument();
+    expect(screen.getByText('Pièce jointe facultative · PDF, image ou Excel · 50 Mo maximum')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Catégorie')).toHaveValue('');
     expect(within(dialog).getByRole('option', { name: '02 - Centre de Sécurité des Navires' })).toBeInTheDocument();
     expect(within(dialog).getByRole('option', { name: '06 - Incendie' })).toBeInTheDocument();
@@ -238,6 +238,7 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByRole('option', { name: '16 - Registre des produits dangereux' })).toBeInTheDocument();
     expect(document.querySelector('datalist option[value="Permis de Navigation"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
+    await user.upload(within(dialog).getByLabelText('Pièce jointe facultative'), new File(['radio'], 'rapport-radio.pdf', { type: 'application/pdf' }));
     fireEvent.change(screen.getByLabelText('Date d’émission'), { target: { value: '2027-04-12' } });
     expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('2028-04-12');
     expect(screen.getByText('GOURY - Rapport radio - 2027.pdf')).toBeInTheDocument();
@@ -253,11 +254,10 @@ describe('FleetCertificatesPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un document' });
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Catégorie' }), '08-3-accessoires-levage');
     await user.type(within(dialog).getByLabelText('Nom du document'), 'Élingues et manilles');
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Créer une ligne sans document joint' }));
 
-    expect(within(dialog).queryByText('PDF, image ou Excel · 50 Mo maximum')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Pièce jointe facultative')).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/Date d’émission/)).not.toBeRequired();
-    expect(within(dialog).getByText('La ligne sera marquée « Manquant » et le fichier pourra être ajouté plus tard.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Sans pièce jointe, une ligne « Manquant » sera créée et le fichier pourra être ajouté plus tard.')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter la ligne' }));
 
     expect(rpc).toHaveBeenCalledWith('create_fleet_certificate_line', {
@@ -270,6 +270,34 @@ describe('FleetCertificatesPage', () => {
     });
     expect(await screen.findByText('Ligne de suivi ajoutée.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+  });
+
+  it('creates the document when an optional attachment is selected', async () => {
+    const user = userEvent.setup(); const { client, rpc, storageApi } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un document' });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Catégorie' }), '06-incendie');
+    await user.type(within(dialog).getByLabelText('Nom du document'), 'Rapport extinction fixe');
+    const file = new File(['rapport'], 'rapport-extinction.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByLabelText('Pièce jointe facultative'), file);
+    fireEvent.change(within(dialog).getByLabelText('Date d’émission'), { target: { value: '2026-08-19' } });
+
+    expect(within(dialog).getByLabelText('Date d’émission')).toBeRequired();
+    expect(within(dialog).getByRole('button', { name: 'Ajouter le document' })).toBeInTheDocument();
+    expect(within(dialog).getByText('GOURY - Rapport extinction fixe - 2026.pdf')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter le document' }));
+
+    expect(storageApi.upload).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('create_fleet_certificate_document', expect.objectContaining({
+      p_vessel_id: 1,
+      p_category_key: '06-incendie',
+      p_document_title: 'Rapport extinction fixe',
+      p_original_file_name: 'rapport-extinction.pdf',
+      p_issued_on: '2026-08-19',
+      p_expires_on: '2027-08-19',
+    }));
+    expect(await screen.findByText('Document ajouté.')).toBeInTheDocument();
   });
 
   it('opens the centered visit agenda from the Planning-style ribbon with searchable grouped ports', async () => {
