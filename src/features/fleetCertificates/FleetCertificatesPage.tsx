@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertCircle, CalendarPlus, CheckCircle2, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
-  Plus, RefreshCw, Search, Ship, Trash2, UploadCloud, UserRound, X,
+  Pencil, Plus, RefreshCw, Save, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -15,8 +15,9 @@ import {
   downloadFleetCertificateDocuments, fetchFleetCertificateDocumentNames, fetchFleetCertificates,
   getDefaultFleetCertificateExpiryDate,
   getEffectiveFleetCertificateStatus, openFleetCertificateDocument, submitFleetCertificateRenewal,
-  normalizeFleetCertificateDocumentName,
+  normalizeFleetCertificateDocumentName, updateFleetCertificateDocumentMetadata,
   type FleetCertificateRecord,
+  type UpdateFleetCertificateDocumentMetadataInput,
 } from './fleetCertificateQueries';
 import {
   addFleetFindingComment, createFleetCertificateFinding, deleteFleetCertificateFinding,
@@ -153,6 +154,70 @@ function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCerti
   </form></Modal>;
 }
 
+function DocumentMetadataForm({ certificate, certificates, documentNames, onClose, onSave }: {
+  certificate: FleetCertificateRecord;
+  certificates: FleetCertificateRecord[];
+  documentNames: string[];
+  onClose: () => void;
+  onSave: (input: UpdateFleetCertificateDocumentMetadataInput) => Promise<void>;
+}) {
+  const vessels = useMemo(() => Array.from(new Map(certificates
+    .filter((item) => item.vesselId)
+    .map((item) => [item.vesselId, item])).values()), [certificates]);
+  const categories = useMemo(() => Array.from(new Map(certificates
+    .map((item) => [item.categoryKey, { key: item.categoryKey, label: item.categoryLabel }])).values())
+    .sort((left, right) => left.label.localeCompare(right.label, 'fr', { numeric: true })), [certificates]);
+  const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
+  const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
+    .map((name) => normalizeFleetCertificateDocumentName(name, vesselLabels)).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, 'fr')), [certificates, documentNames, vesselLabels]);
+  const [vesselId, setVesselId] = useState(String(certificate.vesselId || ''));
+  const [categoryKey, setCategoryKey] = useState(certificate.categoryKey);
+  const [documentTitle, setDocumentTitle] = useState(certificate.documentTitle);
+  const [issuedOn, setIssuedOn] = useState(certificate.issuedOn);
+  const [expiresOn, setExpiresOn] = useState(certificate.expiresOn);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const category = categories.find((item) => item.key === categoryKey);
+    setFormError('');
+    setSaving(true);
+    try {
+      await onSave({
+        certificateId: certificate.id,
+        vesselId: Number(vesselId),
+        categoryKey,
+        categoryLabel: category?.label || certificate.categoryLabel,
+        documentTitle: normalizeFleetCertificateDocumentName(documentTitle, vesselLabels),
+        issuedOn,
+        expiresOn,
+      });
+      onClose();
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Impossible de modifier les informations.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <Modal title="Modifier les informations" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+    <p className="fcx-form-context"><FileText size={16} /> Version v{certificate.currentVersionNo} · {certificate.fileName || certificate.documentTitle}</p>
+    <div className="fcx-form-grid">
+      <label>Navire<select name="vesselId" onChange={(event) => setVesselId(event.target.value)} required value={vesselId}>{vessels.map((vessel) => <option key={vessel.vesselId} value={vessel.vesselId || ''}>{vessel.vesselName}</option>)}</select></label>
+      <label>Catégorie<select name="category" onChange={(event) => setCategoryKey(event.target.value)} required value={categoryKey}>{categories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}</select></label>
+    </div>
+    <label>Nom du document<input aria-label="Nom du document" list="fleet-certificate-edit-document-names" onChange={(event) => setDocumentTitle(event.target.value)} required value={documentTitle} /><datalist id="fleet-certificate-edit-document-names">{suggestedNames.map((name) => <option key={name} value={name} />)}</datalist></label>
+    <div className="fcx-form-grid">
+      <label>Date d’émission<input onChange={(event) => setIssuedOn(event.target.value)} type="date" value={issuedOn} /></label>
+      <label>Date d’échéance (facultative)<input aria-label="Date d’échéance (facultative)" min={issuedOn || undefined} onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /><small className="fcx-field-help">Laissez vide pour une validité illimitée.</small></label>
+    </div>
+    {formError ? <p className="fcx-form-error" role="alert">{formError}</p> : null}
+    <footer><button disabled={saving} onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><Save size={16} /> {saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
+  </form></Modal>;
+}
+
 function VisitTargetForm({ certificates, onClose, onSelect }: {
   certificates: FleetCertificateRecord[];
   onClose: () => void;
@@ -177,16 +242,20 @@ function formatFileSize(value: number | null): string {
 }
 
 function FleetCertificateDocumentPreview({
+  canEdit,
   certificate,
   error,
   isLoading,
   onDownload,
+  onEdit,
   previewUrl,
 }: {
+  canEdit: boolean;
   certificate: FleetCertificateRecord | null;
   error: string;
   isLoading: boolean;
   onDownload: (certificate: FleetCertificateRecord) => void;
+  onEdit: () => void;
   previewUrl: string;
 }) {
   if (!certificate) {
@@ -208,7 +277,7 @@ function FleetCertificateDocumentPreview({
       </div>
     </section>
     <aside className="fcx-preview-metadata">
-      <h3>Informations du document</h3>
+      <div className="fcx-preview-metadata-head"><h3>Informations du document</h3>{canEdit ? <button className="fcx-secondary" onClick={onEdit} type="button"><Pencil size={14} /> Modifier</button> : null}</div>
       <dl>
         <div><dt>Navire</dt><dd>{certificate.vesselName}</dd></div>
         <div><dt>Catégorie</dt><dd>{certificate.categoryLabel}</dd></div>
@@ -246,7 +315,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'finding' | 'document' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
+  const [modal, setModal] = useState<'finding' | 'document' | 'metadata' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
   const [visitCertificateId, setVisitCertificateId] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
@@ -493,12 +562,13 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
           {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
-          {activeTab === 'preview' ? <FleetCertificateDocumentPreview certificate={selectedCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} previewUrl={previewUrl} /> : null}
+          {activeTab === 'preview' ? <FleetCertificateDocumentPreview canEdit={manager} certificate={selectedCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} previewUrl={previewUrl} /> : null}
         </div>
       </section>
     </section>
     {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={(form) => run(async () => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = certificates.find((item) => item.categoryKey === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); await createFleetCertificateDocument(effectiveClient, { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.categoryLabel || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), file: form.get('file') as File }); }, 'Document ajouté.')} />}
+    {modal === 'metadata' && selectedCertificate && <DocumentMetadataForm certificate={selectedCertificate} certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (input) => { await updateFleetCertificateDocumentMetadata(effectiveClient, input); await load(); setMessage('Informations du document mises à jour.'); }} />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => run(() => submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }), 'Renouvellement enregistré.')} />}
     {modal === 'report' && <FleetCertificateReportDialog certificates={active} findings={findings} onClose={() => setModal(null)} onGenerate={generateReport} />}
     {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}

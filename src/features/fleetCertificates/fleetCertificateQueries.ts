@@ -186,6 +186,16 @@ export interface CreateFleetCertificateDocumentInput {
   expiresOn: string;
 }
 
+export interface UpdateFleetCertificateDocumentMetadataInput {
+  certificateId: number;
+  vesselId: number;
+  categoryKey: string;
+  categoryLabel: string;
+  documentTitle: string;
+  issuedOn: string;
+  expiresOn: string;
+}
+
 interface FleetCertificateDocumentNameRow {
   name: string;
 }
@@ -521,6 +531,29 @@ export async function createFleetCertificateDocument(
     await client.storage.from(FLEET_CERTIFICATE_BUCKET).remove([storagePath]);
     throw metadataError;
   }
+}
+
+export async function updateFleetCertificateDocumentMetadata(
+  client: SupabaseClient,
+  input: UpdateFleetCertificateDocumentMetadataInput,
+): Promise<void> {
+  if (!input.certificateId || !input.vesselId) throw new Error('Le document ou le navire est introuvable.');
+  if (!input.categoryKey.trim() || !input.categoryLabel.trim()) throw new Error('Sélectionnez une catégorie.');
+  if (!input.documentTitle.trim()) throw new Error('Renseignez le nom du document.');
+  if (input.issuedOn && input.expiresOn && input.expiresOn < input.issuedOn) {
+    throw new Error("La date d'échéance ne peut pas être antérieure à la date d'émission.");
+  }
+
+  const { error } = await client.rpc('update_fleet_certificate_document_metadata', {
+    p_certificate_id: input.certificateId,
+    p_vessel_id: input.vesselId,
+    p_category_key: input.categoryKey.trim(),
+    p_category_label: input.categoryLabel.trim(),
+    p_document_title: input.documentTitle.trim(),
+    p_issued_on: input.issuedOn || null,
+    p_expires_on: input.expiresOn || null,
+  });
+  if (error) throw error;
 }
 
 export async function deleteFleetCertificateDocuments(

@@ -1178,6 +1178,46 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'update_fleet_certificate_document_metadata') {
+    const certificate = previewRows('fleet_certificates').find((row) => Number(row.id) === Number(args.p_certificate_id));
+    const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));
+    const categoryKey = String(args.p_category_key || '').trim();
+    const categoryLabel = String(args.p_category_label || '').trim();
+    const documentTitle = String(args.p_document_title || '').trim();
+    const issuedOn = args.p_issued_on ? String(args.p_issued_on) : null;
+    const expiresOn = args.p_expires_on ? String(args.p_expires_on) : null;
+    if (!certificate || !vesselSource || !categoryKey || !categoryLabel || !documentTitle) {
+      return createPreviewQuery({ data: null, error: { message: 'Les informations du document sont incomplètes.' } });
+    }
+    if (issuedOn && expiresOn && expiresOn < issuedOn) {
+      return createPreviewQuery({ data: null, error: { message: 'La date d’échéance ne peut pas être antérieure à la date d’émission.' } });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const renewalLimit = new Date(`${today}T00:00:00Z`);
+    renewalLimit.setUTCDate(renewalLimit.getUTCDate() + 90);
+    const specialStatus = certificate.status === 'missing' || certificate.status === 'pending_validation';
+    certificate.vessel_id = Number(args.p_vessel_id);
+    certificate.vessel_name = vesselSource.vessel_name;
+    certificate.vessel = vesselSource.vessel;
+    certificate.category_key = categoryKey;
+    certificate.category_label = categoryLabel;
+    certificate.document_title = documentTitle;
+    certificate.title = documentTitle;
+    certificate.issued_on = issuedOn;
+    certificate.expires_on = expiresOn;
+    if (!specialStatus) {
+      certificate.status = !expiresOn ? 'valid' : expiresOn < today ? 'expired' : expiresOn <= renewalLimit.toISOString().slice(0, 10) ? 'renew_due' : 'valid';
+    }
+    if (expiresOn) {
+      const alarmOn = new Date(`${expiresOn}T00:00:00Z`);
+      alarmOn.setUTCDate(alarmOn.getUTCDate() - 90);
+      certificate.alarm_on = alarmOn.toISOString().slice(0, 10);
+    } else {
+      certificate.alarm_on = null;
+    }
+    certificate.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: certificate.id, error: null });
+  }
   if (functionName === 'save_fleet_certificate_visit') {
     const certificate = previewRows('fleet_certificates').find((row) => Number(row.id) === Number(args.p_certificate_id));
     const assignments = (Array.isArray(args.p_assignments) ? args.p_assignments : []) as Array<Record<string, unknown>>;

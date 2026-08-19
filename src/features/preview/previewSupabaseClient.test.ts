@@ -38,6 +38,33 @@ describe('previewSupabaseClient', () => {
     );
   });
 
+  it('updates fleet certificate metadata for the interactive preview', async () => {
+    const before = await previewSupabaseClient.from('fleet_certificates').select('*').order('id');
+    const certificate = before.data?.find((item) => item.id === 5000);
+    const update = await previewSupabaseClient.rpc('update_fleet_certificate_document_metadata', {
+      p_certificate_id: 5000,
+      p_vessel_id: 7,
+      p_category_key: '06-incendie',
+      p_category_label: '06 - Incendie',
+      p_document_title: 'Rapport incendie annuel',
+      p_issued_on: '2026-08-19',
+      p_expires_on: null,
+    });
+
+    expect(certificate).toBeDefined();
+    expect(update.error).toBeNull();
+    expect(update.data).toBe(5000);
+    expect(certificate).toMatchObject({
+      vessel_name: 'SUROIT',
+      category_key: '06-incendie',
+      document_title: 'Rapport incendie annuel',
+      issued_on: '2026-08-19',
+      expires_on: null,
+      alarm_on: null,
+      status: 'valid',
+    });
+  });
+
   it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {
     const projects = await previewSupabaseClient.from('projects').select('*').order('id');
     const documents = await previewSupabaseClient.from('project_documents').select('*').order('id');
