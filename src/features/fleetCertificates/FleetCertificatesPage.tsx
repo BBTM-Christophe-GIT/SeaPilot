@@ -403,8 +403,15 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setError('');
     setMessage('');
     try {
-      const attachmentImages = await loadFleetFindingReportImages(effectiveClient, reportScope.findings);
-      const report = await generateFleetFindingReport({ ...reportScope, attachmentImages });
+      const attachmentImages = selection.includeFindings
+        ? await loadFleetFindingReportImages(effectiveClient, reportScope.findings)
+        : {};
+      const report = await generateFleetFindingReport({
+        ...reportScope,
+        attachmentImages,
+        includeDocuments: selection.includeDocuments,
+        includeFindings: selection.includeFindings,
+      });
       downloadFleetFindingReport(report);
       setMessage('Rapport BBTM généré.');
     } catch (caught) {
