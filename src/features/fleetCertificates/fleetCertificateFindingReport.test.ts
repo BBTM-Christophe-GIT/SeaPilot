@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import type { FleetCertificateFinding } from './fleetCertificateFindings';
 import {
+  buildFleetCertificateDocumentReportRows,
   buildFleetFindingReportHierarchy,
   calculateContainSize,
   generateFleetFindingReport,
+  sanitizeFleetReportText,
 } from './fleetCertificateFindingReport';
 
 const certificate = {
@@ -12,6 +14,7 @@ const certificate = {
   vesselName: 'GOURY',
   categoryLabel: '02 - Centre de Sécurité des Navires',
   documentTitle: 'Certificat de Franc-Bord',
+  expiresOn: '2027-09-15',
 } as FleetCertificateRecord;
 
 const finding: FleetCertificateFinding = {
@@ -66,14 +69,43 @@ describe('fleet certificate action plan report', () => {
     expect(calculateContainSize(1200, 600, 184, 150)).toEqual({ width: 184, height: 92 });
   });
 
-  it('generates a Plan d Action PDF with the canonical filename', async () => {
+  it('builds the document list with expiry dates and binary validity labels', () => {
+    const rows = buildFleetCertificateDocumentReportRows([
+      certificate,
+      { ...certificate, id: 43, vesselName: 'SUROIT', documentTitle: 'Certificat extincteurs', expiresOn: '2026-08-01' },
+      { ...certificate, id: 44, documentTitle: 'Permis de Navigation', expiresOn: '' },
+    ], new Date('2026-08-11T12:00:00Z'));
+
+    expect(rows).toEqual([
+      expect.objectContaining({ documentTitle: 'Certificat de Franc-Bord', expiresOn: '2027-09-15', validity: 'Valide' }),
+      expect.objectContaining({ documentTitle: 'Permis de Navigation', expiresOn: '', validity: 'Valide' }),
+      expect.objectContaining({ documentTitle: 'Certificat extincteurs', expiresOn: '2026-08-01', validity: 'Échu' }),
+    ]);
+  });
+
+  it('removes the report brand word regardless of casing', () => {
+    expect(sanitizeFleetReportText('Système SeaPilot - SEAPILOT - seaPilot')).toBe('Système - -');
+  });
+
+  it('generates the fleet certificate action plan PDF with the canonical filename', async () => {
     const report = await generateFleetFindingReport({
       certificates: [certificate],
       findings: [finding],
       generatedOn: new Date('2026-08-11T12:00:00Z'),
+      includeDocuments: true,
+      includeFindings: false,
     });
-    expect(report.filename).toBe('BBTM-Plan-d-Action-2026-08-11.pdf');
+    expect(report.filename).toBe('BBTM-Certificats-Flotte-Plan-d-Action-2026-08-11.pdf');
     expect(report.blob.type).toBe('application/pdf');
     expect(report.blob.size).toBeGreaterThan(1_000);
+  });
+
+  it('rejects a report with neither list selected', async () => {
+    await expect(generateFleetFindingReport({
+      certificates: [certificate],
+      findings: [finding],
+      includeDocuments: false,
+      includeFindings: false,
+    })).rejects.toThrow('Sélectionnez au moins une liste à éditer.');
   });
 });
