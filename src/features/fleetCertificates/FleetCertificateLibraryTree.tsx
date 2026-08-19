@@ -3,7 +3,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
-  getEffectiveFleetCertificateStatus,
+  getEffectiveFleetCertificateStatus, getFleetCertificateStatusLabel,
   type FleetCertificateRecord,
 } from './fleetCertificateQueries';
 
@@ -197,19 +197,20 @@ export function FleetCertificateLibraryTree({
                   {category.certificates.map((certificate) => {
                     const state = getEffectiveFleetCertificateStatus(certificate);
                     const actionCount = findingCountByCertificate.get(certificate.id) || 0;
+                    const hasFile = Boolean(certificate.storageBucket && certificate.storagePath);
                     return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
                       <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
                       <div className="fcx-library-document-actions">
-                        {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} onChange={() => onToggleSelection(certificate.id)} type="checkbox" /> : null}
+                        {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} disabled={!hasFile} onChange={() => onToggleSelection(certificate.id)} title={hasFile ? 'Sélectionner pour le téléchargement' : 'Aucun fichier à télécharger'} type="checkbox" /> : null}
                         {canManage && onSchedule ? <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} onClick={() => onSchedule(certificate)} title="Programmer une visite" type="button"><CalendarPlus size={15} /></button> : null}
                         {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
                         {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
-                        <button aria-label={`Télécharger ${certificate.documentTitle}`} onClick={() => onDownload(certificate)} title="Télécharger" type="button"><Download size={15} /></button>
+                        <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
                       </div>
                       <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
-                        <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
+                        <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || 'Aucun fichier joint'}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
                         <span>{formatDate(certificate.expiresOn)}</span>
-                        <em className={state}>{state === 'expired' ? 'Échu' : state === 'renew_due' ? 'À renouveler' : 'Valide'}</em>
+                        <em className={state}>{getFleetCertificateStatusLabel(state)}</em>
                       </button>
                       </div>
                     </div>;
