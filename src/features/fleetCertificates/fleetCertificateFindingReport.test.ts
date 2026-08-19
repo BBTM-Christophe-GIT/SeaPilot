@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import type { FleetCertificateFinding } from './fleetCertificateFindings';
 import {
+  buildFleetCertificateActionReportHierarchy,
   buildFleetCertificateDocumentReportHierarchy,
   buildFleetCertificateDocumentReportRows,
   buildFleetFindingReportHierarchy,
@@ -66,6 +67,31 @@ describe('fleet certificate action plan report', () => {
     });
   });
 
+  it('associates documents and findings with the corresponding vessel and category', () => {
+    const secondCertificate = {
+      ...certificate,
+      id: 43,
+      vesselName: 'SUROIT',
+      categoryLabel: '03 - Organismes de classification',
+      documentTitle: 'Certificat de classe',
+    } as FleetCertificateRecord;
+    const hierarchy = buildFleetCertificateActionReportHierarchy(
+      [secondCertificate, certificate],
+      [finding],
+      new Date('2026-08-11T12:00:00Z'),
+    );
+
+    expect(hierarchy.map((vessel) => vessel.name)).toEqual(['GOURY', 'SUROIT']);
+    expect(hierarchy[0].categories[0]).toMatchObject({
+      label: '02 - Centre de Sécurité des Navires',
+      documents: [{
+        reportRow: expect.objectContaining({ documentTitle: 'Certificat de Franc-Bord', validity: 'Valide' }),
+        findings: [expect.objectContaining({ reference: 'EC-2026-0012' })],
+      }],
+    });
+    expect(hierarchy[1].categories[0].documents[0].findings).toEqual([]);
+  });
+
   it('preserves image proportions inside the requested box', () => {
     expect(calculateContainSize(500, 500, 34, 15)).toEqual({ width: 15, height: 15 });
     expect(calculateContainSize(1200, 600, 184, 150)).toEqual({ width: 184, height: 92 });
@@ -111,6 +137,34 @@ describe('fleet certificate action plan report', () => {
     });
     expect(report.filename).toBe('BBTM-Certificats-Flotte-Plan-d-Action-2026-08-11.pdf');
     expect(report.blob.type).toBe('application/pdf');
+    expect(report.blob.size).toBeGreaterThan(1_000);
+  });
+
+  it('creates a cover and starts each vessel on a dedicated page', async () => {
+    const report = await generateFleetFindingReport({
+      certificates: [
+        certificate,
+        { ...certificate, id: 43, vesselName: 'SUROIT', documentTitle: 'Certificat de classe' },
+      ],
+      findings: [finding],
+      generatedOn: new Date('2026-08-11T12:00:00Z'),
+      includeDocuments: true,
+      includeFindings: true,
+    });
+    const pdfSource = new TextDecoder('latin1').decode(report.arrayBuffer);
+    expect(pdfSource.match(/\/Type \/Page\b/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('generates a findings-only report with the same vessel and category organization', async () => {
+    const report = await generateFleetFindingReport({
+      certificates: [certificate],
+      findings: [finding],
+      generatedOn: new Date('2026-08-11T12:00:00Z'),
+      includeDocuments: false,
+      includeFindings: true,
+    });
+    const pdfSource = new TextDecoder('latin1').decode(report.arrayBuffer);
+    expect(pdfSource.match(/\/Type \/Page\b/g)?.length).toBeGreaterThanOrEqual(2);
     expect(report.blob.size).toBeGreaterThan(1_000);
   });
 

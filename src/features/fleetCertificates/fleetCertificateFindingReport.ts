@@ -48,6 +48,20 @@ export interface FleetFindingReportVesselGroup {
   categories: FleetFindingReportCategoryGroup[];
 }
 
+export interface FleetCertificateActionReportDocumentGroup extends FleetFindingReportDocumentGroup {
+  reportRow: FleetCertificateDocumentReportRow;
+}
+
+export interface FleetCertificateActionReportCategoryGroup {
+  label: string;
+  documents: FleetCertificateActionReportDocumentGroup[];
+}
+
+export interface FleetCertificateActionReportVesselGroup {
+  name: string;
+  categories: FleetCertificateActionReportCategoryGroup[];
+}
+
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 const FLEET_REPORT_TITLE = "Certificats Flotte - Plan d'Action";
 
@@ -198,6 +212,51 @@ export function buildFleetFindingReportHierarchy(
   })).sort((left, right) => frenchSort.compare(left.name, right.name));
 }
 
+export function buildFleetCertificateActionReportHierarchy(
+  certificates: FleetCertificateRecord[],
+  findings: FleetCertificateFinding[],
+  generatedOn: Date,
+): FleetCertificateActionReportVesselGroup[] {
+  const findingsByCertificate = new Map<number, FleetCertificateFinding[]>();
+  findings.forEach((finding) => {
+    const certificateFindings = findingsByCertificate.get(finding.certificateId) || [];
+    certificateFindings.push(finding);
+    findingsByCertificate.set(finding.certificateId, certificateFindings);
+  });
+
+  const generatedDate = reportIsoDate(generatedOn);
+  const vessels = new Map<string, Map<string, FleetCertificateActionReportDocumentGroup[]>>();
+  certificates.forEach((certificate) => {
+    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetCertificateActionReportDocumentGroup[]>();
+    const category = vessel.get(certificate.categoryLabel) || [];
+    category.push({
+      certificate,
+      reportRow: {
+        vesselName: certificate.vesselName,
+        categoryLabel: certificate.categoryLabel,
+        documentTitle: certificate.documentTitle,
+        expiresOn: certificate.expiresOn,
+        validity: certificate.expiresOn && certificate.expiresOn < generatedDate ? 'Échu' : 'Valide',
+      },
+      findings: (findingsByCertificate.get(certificate.id) || []).slice()
+        .sort((left, right) => frenchSort.compare(left.reference, right.reference)),
+    });
+    vessel.set(certificate.categoryLabel, category);
+    vessels.set(certificate.vesselName, vessel);
+  });
+
+  return Array.from(vessels, ([name, categories]) => ({
+    name,
+    categories: Array.from(categories, ([label, documents]) => ({
+      label,
+      documents: documents.slice().sort((left, right) => frenchSort.compare(
+        left.certificate.documentTitle,
+        right.certificate.documentTitle,
+      )),
+    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+  })).sort((left, right) => frenchSort.compare(left.name, right.name));
+}
+
 export function calculateContainSize(
   width: number,
   height: number,
@@ -246,24 +305,18 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
       originalFileName: sanitizeFleetReportText(attachment.originalFileName),
     })),
   }));
-  const hierarchy = buildFleetFindingReportHierarchy(certificates, includeFindings ? findings : []);
-  const documentRows = buildFleetCertificateDocumentReportRows(certificates, generatedOn);
-  const documentHierarchy = buildFleetCertificateDocumentReportHierarchy(documentRows);
-  const certificateById = new Map(certificates.map((certificate) => [certificate.id, certificate]));
-  const findingRows = findings.flatMap((finding) => {
-    const certificate = certificateById.get(finding.certificateId);
-    return certificate ? [{ certificate, finding }] : [];
-  }).sort((left, right) => (
-    frenchSort.compare(left.certificate.vesselName, right.certificate.vesselName)
-    || frenchSort.compare(left.certificate.documentTitle, right.certificate.documentTitle)
-    || frenchSort.compare(left.finding.reference, right.finding.reference)
-  ));
+  const reportHierarchy = buildFleetCertificateActionReportHierarchy(
+    certificates,
+    includeFindings ? findings : [],
+    generatedOn,
+  );
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   doc.setProperties({ title: FLEET_REPORT_TITLE, subject: FLEET_REPORT_TITLE, author: 'BBTM', creator: 'BBTM' });
   const navy: [number, number, number] = [20, 37, 63];
   const blue: [number, number, number] = [12, 111, 202];
   const red: [number, number, number] = [205, 47, 47];
   const green: [number, number, number] = [19, 126, 83];
+  const amber: [number, number, number] = [202, 116, 26];
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -288,247 +341,332 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   };
 
   const drawAutoTableHeader = (): void => drawHeader();
-  drawHeader();
-  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
-  doc.text(FLEET_REPORT_TITLE, 12, 44);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80);
-  const vesselCount = new Set(certificates.map((certificate) => certificate.vesselName)).size;
-  const summary = [`${vesselCount} navire(s)`];
-  if (includeDocuments) summary.push(`${certificates.length} document(s)`);
-  if (includeFindings) summary.push(`${findings.length} écart(s)`);
-  doc.text(summary.join(' - '), 12, 51);
+  const generatedDate = reportIsoDate(generatedOn);
+  const visibleFindings = includeFindings ? findings : [];
+  const openFindings = visibleFindings.filter((item) => item.status !== 'closed');
+  const overdueFindings = openFindings.filter((item) => item.treatmentDueOn && item.treatmentDueOn < generatedDate);
+  const lastTableY = (): number => (
+    doc as unknown as { lastAutoTable: { finalY: number } }
+  ).lastAutoTable.finalY;
 
-  let tableY = 58;
-  const ensureTableSpace = (requiredHeight = 34): boolean => {
-    if (tableY <= pageHeight - requiredHeight) return false;
+  drawHeader();
+  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(21);
+  doc.text(FLEET_REPORT_TITLE, 12, 46);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(80);
+  doc.text('Suivi documentaire, échéances et traitement des écarts', 12, 54);
+
+  autoTable(doc, {
+    startY: 63,
+    head: [['Navires', 'Documents', 'Écarts ouverts', 'Écarts en retard']],
+    body: [[
+      reportHierarchy.length,
+      includeDocuments ? certificates.length : 'Non inclus',
+      includeFindings ? openFindings.length : 'Non inclus',
+      includeFindings ? overdueFindings.length : 'Non inclus',
+    ]],
+    theme: 'grid',
+    styles: { halign: 'center', fontSize: 11, cellPadding: 4.2, textColor: navy },
+    headStyles: { fillColor: [239, 244, 250], textColor: navy, fontSize: 8, fontStyle: 'bold' },
+    columnStyles: { 3: { textColor: overdueFindings.length ? red : green, fontStyle: 'bold' } },
+    margin: { left: 12, right: 12, top: 34 },
+    willDrawPage: drawAutoTableHeader,
+  });
+
+  let tableY = lastTableY() + 10;
+  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  doc.text('Contenu édité', 12, tableY);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(75);
+  const includedContent = [
+    includeDocuments ? 'Suivi documentaire avec échéances et validité' : '',
+    includeFindings ? 'Écarts, actions, suivis et preuves photographiques' : '',
+  ].filter(Boolean);
+  doc.text(includedContent.map((item) => `- ${item}`), 16, tableY + 7);
+  tableY += 13 + (includedContent.length * 4);
+
+  autoTable(doc, {
+    startY: tableY,
+    head: [['Organisation des pages']],
+    body: [[reportHierarchy.length
+      ? 'Chaque navire commence sur une nouvelle page. Ses catégories, documents et écarts restent regroupés.'
+      : 'Aucun navire dans ce périmètre.']],
+    theme: 'grid',
+    styles: { fontSize: 8.4, cellPadding: 3, textColor: navy },
+    headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
+    margin: { left: 12, right: 12, top: 34 },
+    willDrawPage: drawAutoTableHeader,
+  });
+
+  const vesselDocumentCount = (vessel: FleetCertificateActionReportVesselGroup): number => (
+    vessel.categories.reduce((total, category) => total + category.documents.length, 0)
+  );
+  const vesselFindingCount = (vessel: FleetCertificateActionReportVesselGroup): number => (
+    vessel.categories.reduce((vesselTotal, category) => (
+      vesselTotal + category.documents.reduce((categoryTotal, group) => categoryTotal + group.findings.length, 0)
+    ), 0)
+  );
+
+  const renderVesselHeading = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    y: number,
+    continued = false,
+  ): void => {
+    const documentCount = vesselDocumentCount(vessel);
+    const findingCount = vesselFindingCount(vessel);
+    doc.setFillColor(...blue);
+    doc.roundedRect(12, y, pageWidth - 24, 10, 1.7, 1.7, 'F');
+    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
+    doc.text(`NAVIRE · ${vessel.name}${continued ? ' · SUITE' : ''}`, 16, y + 6.7);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    const metrics = [
+      includeDocuments ? `${documentCount} document${documentCount > 1 ? 's' : ''}` : '',
+      includeFindings ? `${findingCount} écart${findingCount > 1 ? 's' : ''}` : '',
+    ].filter(Boolean).join(' · ');
+    doc.text(metrics, pageWidth - 16, y + 6.5, { align: 'right' });
+  };
+
+  const renderCategoryHeading = (label: string, y: number, continued = false): void => {
+    doc.setFillColor(239, 244, 250);
+    doc.rect(12, y, pageWidth - 24, 8, 'F');
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.text(`${label}${continued ? ' · suite' : ''}`, 15, y + 5.5, { maxWidth: pageWidth - 30 });
+  };
+
+  const startVesselPage = (vessel: FleetCertificateActionReportVesselGroup): void => {
     doc.addPage();
     drawHeader();
-    tableY = 38;
+    renderVesselHeading(vessel, 35);
+    tableY = 51;
+  };
+
+  const startContinuationPage = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    categoryLabel?: string,
+  ): void => {
+    doc.addPage();
+    drawHeader();
+    renderVesselHeading(vessel, 34, true);
+    tableY = 49;
+    if (categoryLabel) {
+      renderCategoryHeading(categoryLabel, tableY, true);
+      tableY += 11;
+    }
+  };
+
+  const ensureVesselSpace = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    requiredHeight: number,
+    categoryLabel?: string,
+  ): boolean => {
+    if (tableY <= pageHeight - requiredHeight) return false;
+    startContinuationPage(vessel, categoryLabel);
     return true;
   };
 
-  if (includeFindings) {
-    const open = findings.filter((item) => item.status !== 'closed');
-    const overdue = open.filter((item) => item.treatmentDueOn && item.treatmentDueOn < reportIsoDate(generatedOn));
-    autoTable(doc, {
-      startY: tableY,
-      head: [['Écarts ouverts', 'Majeurs', 'En retard', 'Clôturés']],
-      body: [[open.length, open.filter((item) => item.findingType === 'major_non_conformity').length, overdue.length, findings.length - open.length]],
-      theme: 'grid',
-      styles: { halign: 'center', fontSize: 11, cellPadding: 4, textColor: navy },
-      headStyles: { fillColor: [239, 244, 250], textColor: navy, fontSize: 8 },
-      columnStyles: { 2: { textColor: red } },
-      margin: { left: 12, right: 12, top: 34 },
-      willDrawPage: drawAutoTableHeader,
-    });
-    tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7;
-  }
+  const drawCategoryTableHeader = (
+    data: { pageNumber: number },
+    vessel: FleetCertificateActionReportVesselGroup,
+    categoryLabel: string,
+  ): void => {
+    drawHeader();
+    if (data.pageNumber <= 1) return;
+    renderVesselHeading(vessel, 34, true);
+    renderCategoryHeading(categoryLabel, 47, true);
+  };
 
-  if (includeDocuments) {
-    ensureTableSpace(40);
-    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-    doc.text('Liste des documents', 12, tableY);
-    doc.setDrawColor(...blue); doc.setLineWidth(0.7); doc.line(12, tableY + 3, pageWidth - 12, tableY + 3);
-    tableY += 9;
+  reportHierarchy.forEach((vessel) => {
+    startVesselPage(vessel);
 
-    const renderVesselHeading = (name: string, count: number, y: number, continued = false): void => {
-      doc.setFillColor(...blue);
-      doc.roundedRect(12, y, pageWidth - 24, 9, 1.5, 1.5, 'F');
-      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
-      doc.text(`NAVIRE · ${name}${continued ? ' · SUITE' : ''}`, 16, y + 6);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-      doc.text(`${count} document${count > 1 ? 's' : ''}`, pageWidth - 16, y + 6, { align: 'right' });
-    };
+    vessel.categories.forEach((category) => {
+      ensureVesselSpace(vessel, 38);
+      renderCategoryHeading(category.label, tableY);
+      tableY += 10;
 
-    const drawVesselHeading = (name: string, count: number, continued = false): void => {
-      renderVesselHeading(name, count, tableY, continued);
-      tableY += 13;
-    };
-
-    if (!documentHierarchy.length) {
-      autoTable(doc, {
-        startY: tableY,
-        body: [['Aucun document dans ce périmètre']],
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 4, textColor: [90, 99, 112] },
-        margin: { left: 12, right: 12, top: 34 },
-        willDrawPage: drawAutoTableHeader,
-      });
-      tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7;
-    }
-
-    documentHierarchy.forEach((vessel) => {
-      const documentCount = vessel.categories.reduce((total, category) => total + category.documents.length, 0);
-      ensureTableSpace(40);
-      drawVesselHeading(vessel.name, documentCount);
-
-      vessel.categories.forEach((category) => {
-        if (ensureTableSpace(34)) drawVesselHeading(vessel.name, documentCount, true);
-
+      if (includeDocuments) {
         autoTable(doc, {
           startY: tableY,
           head: [
             [{
-              content: category.label,
+              content: `SUIVI DOCUMENTAIRE · ${category.documents.length} document${category.documents.length > 1 ? 's' : ''}`,
               colSpan: 3,
-              styles: {
-                fillColor: [239, 244, 250],
-                textColor: navy,
-                fontStyle: 'bold',
-                fontSize: 8.5,
-              },
+              styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
             }],
             ['Document', 'Échéance', 'État'],
           ],
-          body: category.documents.map((row) => [
-            row.documentTitle,
-            formatFleetCertificateDocumentExpiry(row.expiresOn),
+          body: category.documents.map((group) => [
+            group.reportRow.documentTitle,
+            formatFleetCertificateDocumentExpiry(group.reportRow.expiresOn),
             {
-              content: row.validity,
+              content: group.reportRow.validity,
               styles: {
-                fillColor: row.validity === 'Échu' ? [255, 238, 238] : [234, 247, 240],
-                textColor: row.validity === 'Échu' ? red : green,
+                fillColor: group.reportRow.validity === 'Échu' ? [255, 238, 238] : [234, 247, 240],
+                textColor: group.reportRow.validity === 'Échu' ? red : green,
                 fontStyle: 'bold',
                 halign: 'center',
               },
             },
           ]),
           theme: 'grid',
-          styles: { fontSize: 7.8, cellPadding: 2.5, valign: 'middle', lineColor: [220, 226, 234] },
-          headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 7.7, cellPadding: 2.35, valign: 'middle', lineColor: [220, 226, 234] },
+          headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [249, 251, 253] },
-          columnStyles: {
-            1: { cellWidth: 39 },
-            2: { cellWidth: 22, halign: 'center' },
-          },
-          margin: { left: 12, right: 12, top: 47 },
-          willDrawPage: (data) => {
-            drawAutoTableHeader();
-            if (data.pageNumber > 1) renderVesselHeading(vessel.name, documentCount, 34, true);
-          },
+          columnStyles: { 1: { cellWidth: 39 }, 2: { cellWidth: 22, halign: 'center' } },
+          margin: { left: 12, right: 12, top: 59 },
+          willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
         });
-        tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
-      });
-      tableY += 2;
-    });
-  }
-
-  if (includeFindings) {
-    ensureTableSpace();
-    autoTable(doc, {
-      startY: tableY,
-      head: [['Navire', 'Document', 'Référence', 'Écart', 'Échéance', 'État']],
-      body: findingRows.length ? findingRows.map(({ certificate, finding }) => [
-        certificate.vesselName,
-        certificate.documentTitle,
-        finding.reference,
-        finding.title || 'Non renseigné',
-        formatDate(finding.treatmentDueOn),
-        FLEET_FINDING_STATUS_LABELS[finding.status],
-      ]) : [['-', '-', '-', 'Aucun écart dans ce périmètre', '-', '-']],
-      theme: 'grid',
-      styles: { fontSize: 6.7, cellPadding: 2.1, valign: 'middle' },
-      headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
-      columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 24 },
-        4: { cellWidth: 24 },
-        5: { cellWidth: 21 },
-      },
-      margin: { left: 12, right: 12, top: 34 },
-      willDrawPage: drawAutoTableHeader,
-    });
-  }
-
-  if (includeFindings) hierarchy.forEach((vessel) => vessel.categories.forEach((category) => category.documents.forEach((group) => {
-    group.findings.forEach((finding) => {
-      doc.addPage();
-      drawHeader();
-      doc.setTextColor(80); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-      doc.text(`${vessel.name} / ${category.label} / ${group.certificate.documentTitle}`, 12, 38, { maxWidth: 186 });
-      doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-      const heading = doc.splitTextToSize(`${finding.reference} - ${finding.title || 'Écart sans objet'}`, 186);
-      doc.text(heading, 12, 47);
-      const metadataY = 49 + (heading.length * 6);
-
-      autoTable(doc, {
-        startY: metadataY,
-        theme: 'grid',
-        body: [
-          ['Type d’écart', FLEET_FINDING_LABELS[finding.findingType], 'Échéance', formatDate(finding.treatmentDueOn)],
-          ['Objet', finding.title || 'Non renseigné', 'Date de clôture', finding.closedAt ? formatDate(finding.closedAt) : 'Non clôturé'],
-          ['Responsable', finding.responsibleName || 'Non renseigné', 'État', `${FLEET_FINDING_STATUS_LABELS[finding.status]} - ${finding.progress} %`],
-          ['Date du constat', formatDate(finding.detectedOn), 'Délai', finding.treatmentDelayDays == null ? 'Non renseigné' : `${finding.treatmentDelayDays} jours`],
-        ],
-        styles: { fontSize: 7.8, cellPadding: 2.7, valign: 'middle' },
-        columnStyles: {
-          0: { fontStyle: 'bold', fillColor: [239, 244, 250], cellWidth: 29 },
-          1: { cellWidth: 64 },
-          2: { fontStyle: 'bold', fillColor: [239, 244, 250], cellWidth: 29 },
-          3: { cellWidth: 64 },
-        },
-        margin: { left: 12, right: 12, top: 34 },
-        willDrawPage: drawAutoTableHeader,
-      });
-
-      let cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-      const descriptionLines = doc.splitTextToSize(finding.description || 'Aucune description.', 186);
-      if (cursorY + 10 + (descriptionLines.length * 4.2) > pageHeight - 15) {
-        doc.addPage(); drawHeader(); cursorY = 39;
+        tableY = lastTableY() + 5;
       }
-      doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-      doc.text('Description', 12, cursorY);
-      doc.setTextColor(55); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.8);
-      doc.text(descriptionLines, 12, cursorY + 6);
-      cursorY += 10 + (descriptionLines.length * 4.2);
 
-      autoTable(doc, {
-        startY: cursorY,
-        head: [['Date', 'Émetteur du suivi', 'Suivi du traitement']],
-        body: finding.events.length
-          ? finding.events.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).map((event) => [
-            formatDateTime(event.createdAt),
-            event.authorName || 'Système',
-            event.note || event.eventType,
-          ])
-          : [['-', '-', 'Aucun suivi enregistré']],
-        theme: 'grid',
-        styles: { fontSize: 7.4, cellPadding: 2.4, valign: 'top' },
-        headStyles: { fillColor: navy, textColor: 255 },
-        columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 42 } },
-        margin: { left: 12, right: 12, top: 34 },
-        willDrawPage: drawAutoTableHeader,
-      });
+      if (includeFindings) {
+        const categoryFindings = category.documents.flatMap((group) => (
+          group.findings.map((finding) => ({ group, finding }))
+        ));
 
-      const photos = finding.attachments.filter((attachment) => (
-        attachment.mimeType.startsWith('image/') && input.attachmentImages?.[attachment.id]
-      ));
-      if (photos.length) {
-        let photoY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 9;
-        photos.forEach((attachment) => {
-          const dataUrl = input.attachmentImages?.[attachment.id];
-          if (!dataUrl) return;
-          try {
-            const properties = doc.getImageProperties(dataUrl);
-            const size = calculateContainSize(properties.width, properties.height, 184, 150);
-            const requiredHeight = size.height + 17;
-            if (photoY + requiredHeight > pageHeight - 14) {
-              doc.addPage(); drawHeader(); photoY = 39;
-            }
-            doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-            doc.text(attachment.kind === 'finding' ? 'Photo du constat' : 'Preuve photographique du traitement', 12, photoY);
-            doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.3);
-            doc.text(attachment.caption || attachment.originalFileName || 'Pièce jointe', 12, photoY + 5, { maxWidth: 184 });
-            doc.addImage(dataUrl, imageFormat(dataUrl), 12 + ((184 - size.width) / 2), photoY + 9, size.width, size.height);
-            photoY += requiredHeight;
-          } catch {
-            // Une image illisible ne doit pas empêcher la génération du rapport complet.
-          }
-        });
+        if (!categoryFindings.length) {
+          ensureVesselSpace(vessel, 17, category.label);
+          doc.setFillColor(238, 248, 243);
+          doc.roundedRect(12, tableY, pageWidth - 24, 9, 1.3, 1.3, 'F');
+          doc.setTextColor(...green); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+          doc.text('Aucun écart enregistré pour cette catégorie.', 16, tableY + 5.8);
+          tableY += 13;
+        } else {
+          ensureVesselSpace(vessel, 34, category.label);
+          autoTable(doc, {
+            startY: tableY,
+            head: [
+              [{
+                content: `ÉCARTS & ACTIONS · ${categoryFindings.length}`,
+                colSpan: 5,
+                styles: { fillColor: amber, textColor: 255, fontStyle: 'bold' },
+              }],
+              ['Document', 'Référence', 'Écart', 'Échéance', 'Suivi'],
+            ],
+            body: categoryFindings.map(({ group, finding }) => {
+              const overdue = finding.status !== 'closed'
+                && Boolean(finding.treatmentDueOn)
+                && finding.treatmentDueOn < generatedDate;
+              return [
+                group.certificate.documentTitle,
+                finding.reference,
+                finding.title || 'Non renseigné',
+                formatDate(finding.treatmentDueOn),
+                {
+                  content: `${overdue ? 'En retard' : FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`,
+                  styles: {
+                    fillColor: overdue ? [255, 238, 238] : finding.status === 'closed' ? [234, 247, 240] : [239, 244, 250],
+                    textColor: overdue ? red : finding.status === 'closed' ? green : navy,
+                    fontStyle: 'bold',
+                    halign: 'center',
+                  },
+                },
+              ];
+            }),
+            theme: 'grid',
+            styles: { fontSize: 6.8, cellPadding: 2.1, valign: 'middle', lineColor: [224, 227, 232] },
+            headStyles: { fillColor: [61, 72, 89], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [253, 250, 246] },
+            columnStyles: {
+              0: { cellWidth: 37 },
+              1: { cellWidth: 23 },
+              3: { cellWidth: 24 },
+              4: { cellWidth: 30, halign: 'center' },
+            },
+            margin: { left: 12, right: 12, top: 59 },
+            willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+          });
+          tableY = lastTableY() + 7;
+
+          categoryFindings.forEach(({ group, finding }) => {
+            ensureVesselSpace(vessel, 48, category.label);
+            autoTable(doc, {
+              startY: tableY,
+              head: [[{
+                content: `${finding.reference} · ${finding.title || 'Écart sans objet'}`,
+                colSpan: 4,
+                styles: { fillColor: amber, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+              }]],
+              body: [
+                [{
+                  content: group.certificate.documentTitle,
+                  colSpan: 4,
+                  styles: { fillColor: [253, 247, 239], textColor: navy, fontStyle: 'bold' },
+                }],
+                ['Type d’écart', FLEET_FINDING_LABELS[finding.findingType] || 'Non renseigné', 'Échéance', formatDate(finding.treatmentDueOn)],
+                ['Responsable', finding.responsibleName || 'Non renseigné', 'État', `${FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`],
+                ['Date du constat', formatDate(finding.detectedOn), 'Date de clôture', finding.closedAt ? formatDate(finding.closedAt) : 'Non clôturé'],
+                [{
+                  content: `Description\n${finding.description || 'Aucune description.'}`,
+                  colSpan: 4,
+                  styles: { cellPadding: 3, textColor: [55, 62, 72] },
+                }],
+              ],
+              theme: 'grid',
+              styles: { fontSize: 7.3, cellPadding: 2.3, valign: 'middle', lineColor: [224, 227, 232] },
+              columnStyles: {
+                0: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
+                1: { cellWidth: 62 },
+                2: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
+                3: { cellWidth: 62 },
+              },
+              margin: { left: 12, right: 12, top: 59 },
+              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+            });
+            tableY = lastTableY() + 3;
+
+            ensureVesselSpace(vessel, 28, category.label);
+            autoTable(doc, {
+              startY: tableY,
+              head: [
+                [{
+                  content: 'SUIVI DU TRAITEMENT',
+                  colSpan: 3,
+                  styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+                }],
+                ['Date', 'Émetteur', 'Action / commentaire'],
+              ],
+              body: finding.events.length
+                ? finding.events.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).map((event) => [
+                  formatDateTime(event.createdAt),
+                  event.authorName || 'Système',
+                  event.note || event.eventType,
+                ])
+                : [['-', '-', 'Aucun suivi enregistré']],
+              theme: 'grid',
+              styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
+              headStyles: { fillColor: [45, 63, 87], textColor: 255 },
+              columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 39 } },
+              margin: { left: 12, right: 12, top: 59 },
+              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+            });
+            tableY = lastTableY() + 7;
+
+            const photos = finding.attachments.filter((attachment) => (
+              attachment.mimeType.startsWith('image/') && input.attachmentImages?.[attachment.id]
+            ));
+            photos.forEach((attachment) => {
+              const dataUrl = input.attachmentImages?.[attachment.id];
+              if (!dataUrl) return;
+              try {
+                const properties = doc.getImageProperties(dataUrl);
+                const size = calculateContainSize(properties.width, properties.height, 184, 145);
+                const requiredHeight = size.height + 18;
+                if (tableY + requiredHeight > pageHeight - 14) startContinuationPage(vessel, category.label);
+                doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.7);
+                doc.text(`${finding.reference} · ${attachment.kind === 'finding' ? 'Photo du constat' : 'Preuve du traitement'}`, 12, tableY);
+                doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
+                doc.text(attachment.caption || attachment.originalFileName || 'Pièce jointe', 12, tableY + 5, { maxWidth: 184 });
+                doc.addImage(dataUrl, imageFormat(dataUrl), 12 + ((184 - size.width) / 2), tableY + 9, size.width, size.height);
+                tableY += requiredHeight;
+              } catch {
+                // Une image illisible ne doit pas empêcher la génération du rapport complet.
+              }
+            });
+          });
+        }
       }
+
+      tableY += 4;
     });
-  })));
+  });
 
   const totalPages = doc.getNumberOfPages();
   for (let page = 1; page <= totalPages; page += 1) {
