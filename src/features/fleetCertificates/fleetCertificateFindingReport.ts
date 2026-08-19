@@ -322,79 +322,29 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
 
   const drawHeader = (): void => {
     doc.setFillColor(...navy);
-    doc.rect(0, 0, pageWidth, 29, 'F');
+    doc.rect(0, 0, pageWidth, 21, 'F');
     if (logo) {
       try {
         const properties = doc.getImageProperties(logo);
-        const size = calculateContainSize(properties.width, properties.height, 19, 19);
-        doc.addImage(logo, imageFormat(logo), 12, 5 + ((19 - size.height) / 2), size.width, size.height);
+        const size = calculateContainSize(properties.width, properties.height, 14, 14);
+        doc.addImage(logo, imageFormat(logo), 12, 3.5 + ((14 - size.height) / 2), size.width, size.height);
       } catch {
-        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('BBTM', 14, 18);
+        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('BBTM', 14, 13.5);
       }
     } else {
-      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('BBTM', 14, 18);
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('BBTM', 14, 13.5);
     }
-    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-    doc.text(FLEET_REPORT_TITLE, pageWidth - 12, 13, { align: 'right' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-    doc.text(`Édité le ${generatedOn.toLocaleString('fr-FR')}`, pageWidth - 12, 20, { align: 'right' });
+    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.text(FLEET_REPORT_TITLE, pageWidth - 12, 9.2, { align: 'right' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.text(`Édité le ${generatedOn.toLocaleString('fr-FR')}`, pageWidth - 12, 15.4, { align: 'right' });
   };
 
-  const drawAutoTableHeader = (): void => drawHeader();
   const generatedDate = reportIsoDate(generatedOn);
-  const visibleFindings = includeFindings ? findings : [];
-  const openFindings = visibleFindings.filter((item) => item.status !== 'closed');
-  const overdueFindings = openFindings.filter((item) => item.treatmentDueOn && item.treatmentDueOn < generatedDate);
   const lastTableY = (): number => (
     doc as unknown as { lastAutoTable: { finalY: number } }
   ).lastAutoTable.finalY;
-
-  drawHeader();
-  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(21);
-  doc.text(FLEET_REPORT_TITLE, 12, 46);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(80);
-  doc.text('Suivi documentaire, échéances et traitement des écarts', 12, 54);
-
-  autoTable(doc, {
-    startY: 63,
-    head: [['Navires', 'Documents', 'Écarts ouverts', 'Écarts en retard']],
-    body: [[
-      reportHierarchy.length,
-      includeDocuments ? certificates.length : 'Non inclus',
-      includeFindings ? openFindings.length : 'Non inclus',
-      includeFindings ? overdueFindings.length : 'Non inclus',
-    ]],
-    theme: 'grid',
-    styles: { halign: 'center', fontSize: 11, cellPadding: 4.2, textColor: navy },
-    headStyles: { fillColor: [239, 244, 250], textColor: navy, fontSize: 8, fontStyle: 'bold' },
-    columnStyles: { 3: { textColor: overdueFindings.length ? red : green, fontStyle: 'bold' } },
-    margin: { left: 12, right: 12, top: 34 },
-    willDrawPage: drawAutoTableHeader,
-  });
-
-  let tableY = lastTableY() + 10;
-  doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-  doc.text('Contenu édité', 12, tableY);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(75);
-  const includedContent = [
-    includeDocuments ? 'Suivi documentaire avec échéances et validité' : '',
-    includeFindings ? 'Écarts, actions, suivis et preuves photographiques' : '',
-  ].filter(Boolean);
-  doc.text(includedContent.map((item) => `- ${item}`), 16, tableY + 7);
-  tableY += 13 + (includedContent.length * 4);
-
-  autoTable(doc, {
-    startY: tableY,
-    head: [['Organisation des pages']],
-    body: [[reportHierarchy.length
-      ? 'Chaque navire commence sur une nouvelle page. Ses catégories, documents et écarts restent regroupés.'
-      : 'Aucun navire dans ce périmètre.']],
-    theme: 'grid',
-    styles: { fontSize: 8.4, cellPadding: 3, textColor: navy },
-    headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
-    margin: { left: 12, right: 12, top: 34 },
-    willDrawPage: drawAutoTableHeader,
-  });
+  let tableY = 0;
 
   const vesselDocumentCount = (vessel: FleetCertificateActionReportVesselGroup): number => (
     vessel.categories.reduce((total, category) => total + category.documents.length, 0)
@@ -413,29 +363,29 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
     const documentCount = vesselDocumentCount(vessel);
     const findingCount = vesselFindingCount(vessel);
     doc.setFillColor(...blue);
-    doc.roundedRect(12, y, pageWidth - 24, 10, 1.7, 1.7, 'F');
-    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
-    doc.text(`NAVIRE · ${vessel.name}${continued ? ' · SUITE' : ''}`, 16, y + 6.7);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.roundedRect(12, y, pageWidth - 24, 8, 1.5, 1.5, 'F');
+    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.2);
+    doc.text(`NAVIRE · ${vessel.name}${continued ? ' · SUITE' : ''}`, 16, y + 5.4);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8);
     const metrics = [
       includeDocuments ? `${documentCount} document${documentCount > 1 ? 's' : ''}` : '',
       includeFindings ? `${findingCount} écart${findingCount > 1 ? 's' : ''}` : '',
     ].filter(Boolean).join(' · ');
-    doc.text(metrics, pageWidth - 16, y + 6.5, { align: 'right' });
+    doc.text(metrics, pageWidth - 16, y + 5.3, { align: 'right' });
   };
 
   const renderCategoryHeading = (label: string, y: number, continued = false): void => {
     doc.setFillColor(239, 244, 250);
-    doc.rect(12, y, pageWidth - 24, 8, 'F');
-    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
-    doc.text(`${label}${continued ? ' · suite' : ''}`, 15, y + 5.5, { maxWidth: pageWidth - 30 });
+    doc.rect(12, y, pageWidth - 24, 6.5, 'F');
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.7);
+    doc.text(`${label}${continued ? ' · suite' : ''}`, 15, y + 4.5, { maxWidth: pageWidth - 30 });
   };
 
-  const startVesselPage = (vessel: FleetCertificateActionReportVesselGroup): void => {
-    doc.addPage();
+  const startVesselPage = (vessel: FleetCertificateActionReportVesselGroup, addPage: boolean): void => {
+    if (addPage) doc.addPage();
     drawHeader();
-    renderVesselHeading(vessel, 35);
-    tableY = 51;
+    renderVesselHeading(vessel, 25);
+    tableY = 37;
   };
 
   const startContinuationPage = (
@@ -444,11 +394,11 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   ): void => {
     doc.addPage();
     drawHeader();
-    renderVesselHeading(vessel, 34, true);
-    tableY = 49;
+    renderVesselHeading(vessel, 25, true);
+    tableY = 37;
     if (categoryLabel) {
       renderCategoryHeading(categoryLabel, tableY, true);
-      tableY += 11;
+      tableY += 8.5;
     }
   };
 
@@ -469,17 +419,78 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   ): void => {
     drawHeader();
     if (data.pageNumber <= 1) return;
-    renderVesselHeading(vessel, 34, true);
-    renderCategoryHeading(categoryLabel, 47, true);
+    renderVesselHeading(vessel, 25, true);
+    renderCategoryHeading(categoryLabel, 36, true);
   };
 
-  reportHierarchy.forEach((vessel) => {
-    startVesselPage(vessel);
+  if (!reportHierarchy.length) {
+    drawHeader();
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+    doc.text('Aucune donnée à afficher pour le périmètre sélectionné.', pageWidth / 2, 55, { align: 'center' });
+  } else if (includeDocuments && !includeFindings) {
+    reportHierarchy.forEach((vessel, vesselIndex) => {
+      startVesselPage(vessel, vesselIndex > 0);
+      const body = vessel.categories.flatMap((category) => [
+        [{
+          content: category.label,
+          colSpan: 3,
+          styles: {
+            fillColor: [232, 239, 248] as [number, number, number],
+            textColor: navy,
+            fontStyle: 'bold' as const,
+            fontSize: 7.2,
+            cellPadding: { top: 1.35, right: 1.6, bottom: 1.35, left: 2.2 },
+          },
+        }],
+        ...category.documents.map((group) => [
+          group.reportRow.documentTitle,
+          formatFleetCertificateDocumentExpiry(group.reportRow.expiresOn),
+          {
+            content: group.reportRow.validity,
+            styles: {
+              fillColor: (group.reportRow.validity === 'Échu'
+                ? [255, 238, 238]
+                : [234, 247, 240]) as [number, number, number],
+              textColor: group.reportRow.validity === 'Échu' ? red : green,
+              fontStyle: 'bold' as const,
+              halign: 'center' as const,
+            },
+          },
+        ]),
+      ]);
 
-    vessel.categories.forEach((category) => {
+      autoTable(doc, {
+        startY: tableY,
+        head: [
+          [{
+            content: `LISTE DES DOCUMENTS · ${vesselDocumentCount(vessel)} document${vesselDocumentCount(vessel) > 1 ? 's' : ''}`,
+            colSpan: 3,
+            styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+          }],
+          ['Document', 'Échéance', 'État'],
+        ],
+        body,
+        theme: 'grid',
+        styles: { fontSize: 6.65, cellPadding: 1.25, valign: 'middle', lineColor: [220, 226, 234] },
+        headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold', cellPadding: 1.45 },
+        alternateRowStyles: { fillColor: [249, 251, 253] },
+        columnStyles: { 1: { cellWidth: 38 }, 2: { cellWidth: 21, halign: 'center' } },
+        margin: { left: 12, right: 12, top: 37, bottom: 14 },
+        willDrawPage: (data) => {
+          drawHeader();
+          if (data.pageNumber > 1) renderVesselHeading(vessel, 25, true);
+        },
+      });
+      tableY = lastTableY() + 4;
+    });
+  } else {
+    reportHierarchy.forEach((vessel, vesselIndex) => {
+      startVesselPage(vessel, vesselIndex > 0);
+
+      vessel.categories.forEach((category) => {
       ensureVesselSpace(vessel, 38);
       renderCategoryHeading(category.label, tableY);
-      tableY += 10;
+      tableY += 8.5;
 
       if (includeDocuments) {
         autoTable(doc, {
@@ -510,7 +521,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
           headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [249, 251, 253] },
           columnStyles: { 1: { cellWidth: 39 }, 2: { cellWidth: 22, halign: 'center' } },
-          margin: { left: 12, right: 12, top: 59 },
+          margin: { left: 12, right: 12, top: 45 },
           willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
         });
         tableY = lastTableY() + 5;
@@ -570,7 +581,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
               3: { cellWidth: 24 },
               4: { cellWidth: 30, halign: 'center' },
             },
-            margin: { left: 12, right: 12, top: 59 },
+            margin: { left: 12, right: 12, top: 45 },
             willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
           });
           tableY = lastTableY() + 7;
@@ -607,7 +618,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
                 2: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
                 3: { cellWidth: 62 },
               },
-              margin: { left: 12, right: 12, top: 59 },
+              margin: { left: 12, right: 12, top: 45 },
               willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
             });
             tableY = lastTableY() + 3;
@@ -634,7 +645,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
               styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
               headStyles: { fillColor: [45, 63, 87], textColor: 255 },
               columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 39 } },
-              margin: { left: 12, right: 12, top: 59 },
+              margin: { left: 12, right: 12, top: 45 },
               willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
             });
             tableY = lastTableY() + 7;
@@ -665,8 +676,9 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
       }
 
       tableY += 4;
+      });
     });
-  });
+  }
 
   const totalPages = doc.getNumberOfPages();
   for (let page = 1; page <= totalPages; page += 1) {

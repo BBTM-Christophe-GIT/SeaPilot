@@ -51,6 +51,10 @@ const finding: FleetCertificateFinding = {
   }],
 };
 
+function pdfPageCount(arrayBuffer: ArrayBuffer): number {
+  return new TextDecoder('latin1').decode(arrayBuffer).match(/\/Type \/Page\b/g)?.length || 0;
+}
+
 describe('fleet certificate action plan report', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
@@ -140,7 +144,7 @@ describe('fleet certificate action plan report', () => {
     expect(report.blob.size).toBeGreaterThan(1_000);
   });
 
-  it('creates a cover and starts each vessel on a dedicated page', async () => {
+  it('starts the report directly with one dedicated page per vessel', async () => {
     const report = await generateFleetFindingReport({
       certificates: [
         certificate,
@@ -151,8 +155,32 @@ describe('fleet certificate action plan report', () => {
       includeDocuments: true,
       includeFindings: true,
     });
-    const pdfSource = new TextDecoder('latin1').decode(report.arrayBuffer);
-    expect(pdfSource.match(/\/Type \/Page\b/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(pdfPageCount(report.arrayBuffer)).toBe(2);
+  });
+
+  it('keeps an 18-document single-vessel list on one page', async () => {
+    const categoryLabels = Array.from({ length: 14 }, (_, index) => (
+      `${String(index + 1).padStart(2, '0')} - Catégorie ${index + 1}`
+    ));
+    const certificates = Array.from({ length: 18 }, (_, index) => ({
+      ...certificate,
+      id: 100 + index,
+      vesselName: 'SUROIT',
+      categoryLabel: categoryLabels[Math.min(index, categoryLabels.length - 1)],
+      documentTitle: `Document réglementaire ${String(index + 1).padStart(2, '0')}`,
+      expiresOn: index % 4 === 0 ? '' : '2027-09-15',
+    } as FleetCertificateRecord));
+
+    const report = await generateFleetFindingReport({
+      certificates,
+      findings: [],
+      generatedOn: new Date('2026-08-19T12:00:00Z'),
+      includeDocuments: true,
+      includeFindings: false,
+    });
+
+    expect(pdfPageCount(report.arrayBuffer)).toBe(1);
+    expect(report.blob.size).toBeGreaterThan(1_000);
   });
 
   it('generates a findings-only report with the same vessel and category organization', async () => {
@@ -163,8 +191,7 @@ describe('fleet certificate action plan report', () => {
       includeDocuments: false,
       includeFindings: true,
     });
-    const pdfSource = new TextDecoder('latin1').decode(report.arrayBuffer);
-    expect(pdfSource.match(/\/Type \/Page\b/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(pdfPageCount(report.arrayBuffer)).toBe(1);
     expect(report.blob.size).toBeGreaterThan(1_000);
   });
 
