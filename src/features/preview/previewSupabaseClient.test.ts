@@ -65,6 +65,30 @@ describe('previewSupabaseClient', () => {
     });
   });
 
+  it('creates a missing fleet certificate line without a file in preview mode', async () => {
+    const creation = await previewSupabaseClient.rpc('create_fleet_certificate_line', {
+      p_vessel_id: 1,
+      p_category_key: '16-2-fiches-donnee-securite',
+      p_category_label: '16.2 - Fiches de Donnée de Sécurité',
+      p_document_title: 'FDS peintures atelier',
+      p_issued_on: null,
+      p_expires_on: null,
+    });
+    const rows = await previewSupabaseClient.from('fleet_certificates').select('*').order('id');
+    const created = rows.data?.find((item) => item.id === creation.data);
+
+    expect(creation.error).toBeNull();
+    expect(created).toMatchObject({
+      vessel_name: 'GOURY',
+      category_key: '16-2-fiches-donnee-securite',
+      category_label: '16.2 - Fiches de Donnée de Sécurité',
+      document_title: 'FDS peintures atelier',
+      status: 'missing',
+      storage_path: null,
+      current_version_no: 0,
+    });
+  });
+
   it('exposes a safe Projects catalog for visual preview without enabling writes', async () => {
     const projects = await previewSupabaseClient.from('projects').select('*').order('id');
     const documents = await previewSupabaseClient.from('project_documents').select('*').order('id');

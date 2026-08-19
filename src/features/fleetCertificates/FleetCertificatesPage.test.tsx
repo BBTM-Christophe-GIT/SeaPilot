@@ -232,6 +232,10 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByLabelText('Catégorie')).toHaveValue('');
     expect(within(dialog).getByRole('option', { name: '02 - Centre de Sécurité des Navires' })).toBeInTheDocument();
     expect(within(dialog).getByRole('option', { name: '06 - Incendie' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: '08 - Levage' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: '↳ 08.3 - Accessoires de levage' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: '15 - Dotation Médicale' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: '16 - Registre des produits dangereux' })).toBeInTheDocument();
     expect(document.querySelector('datalist option[value="Permis de Navigation"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom du document'), { target: { value: 'Rapport radio' } });
     fireEvent.change(screen.getByLabelText('Date d’émission'), { target: { value: '2027-04-12' } });
@@ -240,6 +244,32 @@ describe('FleetCertificatesPage', () => {
     expect(screen.queryByText('Proposée à +1 an. Modifiable ou supprimable.')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Date d’échéance (facultative)'), { target: { value: '' } });
     expect(screen.getByLabelText('Date d’échéance (facultative)')).toHaveValue('');
+  });
+
+  it('creates a tracked line without requiring an uploaded document', async () => {
+    const user = userEvent.setup(); const { client, rpc } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un document' });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Catégorie' }), '08-3-accessoires-levage');
+    await user.type(within(dialog).getByLabelText('Nom du document'), 'Élingues et manilles');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Créer une ligne sans document joint' }));
+
+    expect(within(dialog).queryByText('PDF, image ou Excel · 50 Mo maximum')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Date d’émission/)).not.toBeRequired();
+    expect(within(dialog).getByText('La ligne sera marquée « Manquant » et le fichier pourra être ajouté plus tard.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter la ligne' }));
+
+    expect(rpc).toHaveBeenCalledWith('create_fleet_certificate_line', {
+      p_vessel_id: 1,
+      p_category_key: '08-3-accessoires-levage',
+      p_category_label: '08.3 - Accessoires de levage',
+      p_document_title: 'Élingues et manilles',
+      p_issued_on: null,
+      p_expires_on: null,
+    });
+    expect(await screen.findByText('Ligne de suivi ajoutée.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Ajouter un document' })).not.toBeInTheDocument();
   });
 
   it('opens the centered visit agenda from the Planning-style ribbon with searchable grouped ports', async () => {

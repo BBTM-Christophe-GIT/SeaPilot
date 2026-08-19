@@ -109,7 +109,7 @@ function createPreviewFleetCertificates(): unknown[] {
     { key: '05-safety-plan', label: '05 - Safety Plan', titles: ['Safety Plan'] },
     { key: '06-incendie', label: '06 - Incendie', titles: ['Visite Extinction Fixe et Portatif', 'Certificat extincteurs', 'Rapport installation incendie'] },
     { key: '07-lsa', label: '07 - LSA', titles: ['Certificat Radeau', 'Certificat brassières', 'Rapport moyens de sauvetage'] },
-    { key: '08-grue-et-bossoir', label: '08 - Grue & Bossoir', titles: ['Registre des Apparaux de Levage', 'Certificat grue', 'Certificat bossoir', 'Rapport palans', 'Rapport accessoires de levage'] },
+    { key: '08-levage', label: '08 - Levage', titles: ['Registre des Apparaux de Levage', 'Certificat grue', 'Certificat bossoir', 'Rapport palans', 'Rapport accessoires de levage'] },
     { key: '09-anfr', label: '09 - ANFR', titles: ['Licence Radio', 'Rapport Visite Radio'] },
     { key: '10-dotation-medicale', label: '10 - Dotation Médicale', titles: ['Dotation médicale'] },
     { key: '11-analyse-eau', label: '11 - Analyse Eau', titles: ['Analyse eau potable', 'Analyse légionelles', 'Rapport sanitaire'] },
@@ -1178,6 +1178,57 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'create_fleet_certificate_line') {
+    const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));
+    const categoryKey = String(args.p_category_key || '').trim();
+    const categoryLabel = String(args.p_category_label || '').trim();
+    const documentTitle = String(args.p_document_title || '').trim();
+    const issuedOn = args.p_issued_on ? String(args.p_issued_on) : null;
+    const expiresOn = args.p_expires_on ? String(args.p_expires_on) : null;
+    if (!vesselSource || !categoryKey || !categoryLabel || !documentTitle) {
+      return createPreviewQuery({ data: null, error: { message: 'Les informations de la ligne sont incomplètes.' } });
+    }
+    if (issuedOn && expiresOn && expiresOn < issuedOn) {
+      return createPreviewQuery({ data: null, error: { message: 'La date d’échéance ne peut pas être antérieure à la date d’émission.' } });
+    }
+    const certificateId = nextPreviewId('fleet_certificates', 5200);
+    const alarmOn = expiresOn ? new Date(`${expiresOn}T00:00:00Z`) : null;
+    alarmOn?.setUTCDate(alarmOn.getUTCDate() - 90);
+    PREVIEW_ROWS.fleet_certificates.push({
+      id: certificateId,
+      company_id: vesselSource.company_id,
+      vessel_id: Number(args.p_vessel_id),
+      vessel_name: vesselSource.vessel_name,
+      vessel: vesselSource.vessel,
+      category_key: categoryKey,
+      category_label: categoryLabel,
+      document_title: documentTitle,
+      title: documentTitle,
+      status: 'missing',
+      issued_on: issuedOn,
+      expires_on: expiresOn,
+      planned_on: null,
+      alarm_on: alarmOn?.toISOString().slice(0, 10) || null,
+      provider_name: null,
+      visit_location: null,
+      workflow_status: 'not_started',
+      renewal_notes: null,
+      renaming_rule_key: 'vessel-title-issued-year',
+      original_file_name: null,
+      file_name: null,
+      source_label: 'manual',
+      file_url: null,
+      storage_bucket: null,
+      storage_path: null,
+      mime_type: null,
+      file_size_bytes: null,
+      current_version_no: 0,
+      is_active_fleet: true,
+      notes: null,
+      updated_at: new Date().toISOString(),
+    });
+    return createPreviewQuery({ data: certificateId, error: null });
+  }
   if (functionName === 'update_fleet_certificate_document_metadata') {
     const certificate = previewRows('fleet_certificates').find((row) => Number(row.id) === Number(args.p_certificate_id));
     const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));
