@@ -12,10 +12,12 @@ Au moins un contenu doit être sélectionné. Pour le périmètre Liste des docu
 
 ## Liste documentaire
 
-Le tableau présente le navire, la catégorie, le document, la date d'échéance et un indicateur binaire :
+La liste est structurée en sections distinctes par navire. Dans chaque section, les documents sont regroupés par catégorie dans un tableau dédié présentant le document, l'échéance et un indicateur binaire :
 
 - **Échu** lorsque la date d'échéance est antérieure à la date d'édition du rapport ;
-- **Valide** dans les autres cas, y compris lorsqu'aucune échéance n'est renseignée.
+- **Valide** dans les autres cas.
+
+Lorsqu'aucune date d'échéance n'est renseignée, la colonne Échéance affiche **Validité illimitée** et l'état reste **Valide**.
 
 ## Identité du rapport
 

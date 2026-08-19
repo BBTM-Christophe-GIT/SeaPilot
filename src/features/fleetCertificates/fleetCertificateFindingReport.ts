@@ -23,6 +23,16 @@ export interface FleetCertificateDocumentReportRow {
   validity: 'Valide' | 'Échu';
 }
 
+export interface FleetCertificateDocumentReportCategoryGroup {
+  label: string;
+  documents: FleetCertificateDocumentReportRow[];
+}
+
+export interface FleetCertificateDocumentReportVesselGroup {
+  name: string;
+  categories: FleetCertificateDocumentReportCategoryGroup[];
+}
+
 export interface FleetFindingReportDocumentGroup {
   certificate: FleetCertificateRecord;
   findings: FleetCertificateFinding[];
@@ -67,10 +77,35 @@ export function buildFleetCertificateDocumentReportRows(
   ));
 }
 
+export function buildFleetCertificateDocumentReportHierarchy(
+  rows: FleetCertificateDocumentReportRow[],
+): FleetCertificateDocumentReportVesselGroup[] {
+  const vessels = new Map<string, Map<string, FleetCertificateDocumentReportRow[]>>();
+  rows.forEach((row) => {
+    const vessel = vessels.get(row.vesselName) || new Map<string, FleetCertificateDocumentReportRow[]>();
+    const category = vessel.get(row.categoryLabel) || [];
+    category.push(row);
+    vessel.set(row.categoryLabel, category);
+    vessels.set(row.vesselName, vessel);
+  });
+
+  return Array.from(vessels, ([name, categories]) => ({
+    name,
+    categories: Array.from(categories, ([label, documents]) => ({
+      label,
+      documents: documents.slice().sort((left, right) => frenchSort.compare(left.documentTitle, right.documentTitle)),
+    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+  })).sort((left, right) => frenchSort.compare(left.name, right.name));
+}
+
 function formatDate(value: string): string {
   if (!value) return 'Non renseignée';
   const [year, month, day] = value.slice(0, 10).split('-');
   return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+export function formatFleetCertificateDocumentExpiry(value: string): string {
+  return value ? formatDate(value) : 'Validité illimitée';
 }
 
 function formatDateTime(value: string): string {
@@ -213,6 +248,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   }));
   const hierarchy = buildFleetFindingReportHierarchy(certificates, includeFindings ? findings : []);
   const documentRows = buildFleetCertificateDocumentReportRows(certificates, generatedOn);
+  const documentHierarchy = buildFleetCertificateDocumentReportHierarchy(documentRows);
   const certificateById = new Map(certificates.map((certificate) => [certificate.id, certificate]));
   const findingRows = findings.flatMap((finding) => {
     const certificate = certificateById.get(finding.certificateId);
@@ -227,6 +263,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   const navy: [number, number, number] = [20, 37, 63];
   const blue: [number, number, number] = [12, 111, 202];
   const red: [number, number, number] = [205, 47, 47];
+  const green: [number, number, number] = [19, 126, 83];
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -262,11 +299,12 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   doc.text(summary.join(' - '), 12, 51);
 
   let tableY = 58;
-  const ensureTableSpace = (): void => {
-    if (tableY <= pageHeight - 34) return;
+  const ensureTableSpace = (requiredHeight = 34): boolean => {
+    if (tableY <= pageHeight - requiredHeight) return false;
     doc.addPage();
     drawHeader();
     tableY = 38;
+    return true;
   };
 
   if (includeFindings) {
@@ -287,30 +325,92 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   }
 
   if (includeDocuments) {
-    ensureTableSpace();
-    autoTable(doc, {
-      startY: tableY,
-      head: [['Navire', 'Catégorie', 'Document', 'Date d’échéance', 'État']],
-      body: documentRows.length ? documentRows.map((row) => [
-        row.vesselName,
-        row.categoryLabel,
-        row.documentTitle,
-        formatDate(row.expiresOn),
-        row.validity,
-      ]) : [['-', '-', 'Aucun document dans ce périmètre', '-', '-']],
-      theme: 'grid',
-      styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'middle' },
-      headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
-      columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 43 },
-        3: { cellWidth: 28 },
-        4: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
-      },
-      margin: { left: 12, right: 12, top: 34 },
-      willDrawPage: drawAutoTableHeader,
+    ensureTableSpace(40);
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+    doc.text('Liste des documents', 12, tableY);
+    doc.setDrawColor(...blue); doc.setLineWidth(0.7); doc.line(12, tableY + 3, pageWidth - 12, tableY + 3);
+    tableY += 9;
+
+    const renderVesselHeading = (name: string, count: number, y: number, continued = false): void => {
+      doc.setFillColor(...blue);
+      doc.roundedRect(12, y, pageWidth - 24, 9, 1.5, 1.5, 'F');
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+      doc.text(`NAVIRE · ${name}${continued ? ' · SUITE' : ''}`, 16, y + 6);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text(`${count} document${count > 1 ? 's' : ''}`, pageWidth - 16, y + 6, { align: 'right' });
+    };
+
+    const drawVesselHeading = (name: string, count: number, continued = false): void => {
+      renderVesselHeading(name, count, tableY, continued);
+      tableY += 13;
+    };
+
+    if (!documentHierarchy.length) {
+      autoTable(doc, {
+        startY: tableY,
+        body: [['Aucun document dans ce périmètre']],
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 4, textColor: [90, 99, 112] },
+        margin: { left: 12, right: 12, top: 34 },
+        willDrawPage: drawAutoTableHeader,
+      });
+      tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7;
+    }
+
+    documentHierarchy.forEach((vessel) => {
+      const documentCount = vessel.categories.reduce((total, category) => total + category.documents.length, 0);
+      ensureTableSpace(40);
+      drawVesselHeading(vessel.name, documentCount);
+
+      vessel.categories.forEach((category) => {
+        if (ensureTableSpace(34)) drawVesselHeading(vessel.name, documentCount, true);
+
+        autoTable(doc, {
+          startY: tableY,
+          head: [
+            [{
+              content: category.label,
+              colSpan: 3,
+              styles: {
+                fillColor: [239, 244, 250],
+                textColor: navy,
+                fontStyle: 'bold',
+                fontSize: 8.5,
+              },
+            }],
+            ['Document', 'Échéance', 'État'],
+          ],
+          body: category.documents.map((row) => [
+            row.documentTitle,
+            formatFleetCertificateDocumentExpiry(row.expiresOn),
+            {
+              content: row.validity,
+              styles: {
+                fillColor: row.validity === 'Échu' ? [255, 238, 238] : [234, 247, 240],
+                textColor: row.validity === 'Échu' ? red : green,
+                fontStyle: 'bold',
+                halign: 'center',
+              },
+            },
+          ]),
+          theme: 'grid',
+          styles: { fontSize: 7.8, cellPadding: 2.5, valign: 'middle', lineColor: [220, 226, 234] },
+          headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [249, 251, 253] },
+          columnStyles: {
+            1: { cellWidth: 39 },
+            2: { cellWidth: 22, halign: 'center' },
+          },
+          margin: { left: 12, right: 12, top: 47 },
+          willDrawPage: (data) => {
+            drawAutoTableHeader();
+            if (data.pageNumber > 1) renderVesselHeading(vessel.name, documentCount, 34, true);
+          },
+        });
+        tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+      });
+      tableY += 2;
     });
-    tableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7;
   }
 
   if (includeFindings) {

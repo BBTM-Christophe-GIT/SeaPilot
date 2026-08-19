@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import type { FleetCertificateFinding } from './fleetCertificateFindings';
 import {
+  buildFleetCertificateDocumentReportHierarchy,
   buildFleetCertificateDocumentReportRows,
   buildFleetFindingReportHierarchy,
   calculateContainSize,
+  formatFleetCertificateDocumentExpiry,
   generateFleetFindingReport,
   sanitizeFleetReportText,
 } from './fleetCertificateFindingReport';
@@ -81,6 +83,18 @@ describe('fleet certificate action plan report', () => {
       expect.objectContaining({ documentTitle: 'Permis de Navigation', expiresOn: '', validity: 'Valide' }),
       expect.objectContaining({ documentTitle: 'Certificat extincteurs', expiresOn: '2026-08-01', validity: 'Échu' }),
     ]);
+    expect(formatFleetCertificateDocumentExpiry('')).toBe('Validité illimitée');
+    expect(formatFleetCertificateDocumentExpiry('2027-09-15')).toBe('15/09/2027');
+
+    const hierarchy = buildFleetCertificateDocumentReportHierarchy(rows);
+    expect(hierarchy.map((vessel) => vessel.name)).toEqual(['GOURY', 'SUROIT']);
+    expect(hierarchy[0].categories[0]).toMatchObject({
+      label: '02 - Centre de Sécurité des Navires',
+      documents: [
+        expect.objectContaining({ documentTitle: 'Certificat de Franc-Bord' }),
+        expect.objectContaining({ documentTitle: 'Permis de Navigation' }),
+      ],
+    });
   });
 
   it('removes the report brand word regardless of casing', () => {

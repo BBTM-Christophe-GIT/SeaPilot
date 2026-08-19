@@ -189,7 +189,7 @@ export function FleetCertificateReportDialog({
         <section className="fcx-report-content-section" aria-labelledby="fleet-report-content-title">
           <div className="fcx-dialog-section-title"><span>{scope === 'fleet' ? '2' : '3'}</span><div><h3 id="fleet-report-content-title">Contenu du rapport</h3><p>Éditez la liste documentaire, la liste des écarts ou les deux.</p></div></div>
           <div className="fcx-report-content-options">
-            <label className={includeDocuments ? 'is-active' : ''}><input checked={includeDocuments} onChange={(event) => setIncludeDocuments(event.target.checked)} type="checkbox" /><ListChecks size={18} /><span><b>Liste des documents</b><small>Date d’échéance et indicateur Valide ou Échu</small></span></label>
+            <label className={includeDocuments ? 'is-active' : ''}><input checked={includeDocuments} onChange={(event) => setIncludeDocuments(event.target.checked)} type="checkbox" /><ListChecks size={18} /><span><b>Liste des documents</b><small>Échéance, validité illimitée et état Valide ou Échu</small></span></label>
             <label className={includeFindings ? 'is-active' : ''}><input checked={includeFindings} onChange={(event) => setIncludeFindings(event.target.checked)} type="checkbox" /><Flag size={18} /><span><b>Liste des écarts</b><small>Synthèse, détails, suivis et preuves</small></span></label>
           </div>
           {!includeDocuments && !includeFindings ? <small className="fcx-report-selection-error">Sélectionnez au moins une liste à éditer.</small> : null}
