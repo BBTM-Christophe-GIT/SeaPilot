@@ -34,6 +34,8 @@ export const FLEET_CERTIFICATE_CATEGORY_CATALOG: FleetCertificateCategoryOption[
 ];
 
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+const categoryByKey = new Map(FLEET_CERTIFICATE_CATEGORY_CATALOG.map((category) => [category.key, category]));
+const categoryByLabel = new Map(FLEET_CERTIFICATE_CATEGORY_CATALOG.map((category) => [category.label, category]));
 
 function normalizeCategory(key: string, label: string): FleetCertificateCategoryOption {
   const normalizedLabel = label.toLocaleLowerCase('fr').replaceAll('&', 'et');
@@ -43,12 +45,28 @@ function normalizeCategory(key: string, label: string): FleetCertificateCategory
   return { key, label };
 }
 
+export function getFleetCertificateCategory(
+  key: string,
+  label: string,
+): FleetCertificateCategoryOption {
+  const normalized = normalizeCategory(key, label);
+  return categoryByKey.get(normalized.key)
+    || categoryByLabel.get(normalized.label)
+    || normalized;
+}
+
+export function getFleetCertificateCategoryParent(
+  category: FleetCertificateCategoryOption,
+): FleetCertificateCategoryOption | null {
+  return category.parentKey ? categoryByKey.get(category.parentKey) || null : null;
+}
+
 export function getFleetCertificateCategoryOptions(
   certificates: Array<Pick<FleetCertificateRecord, 'categoryKey' | 'categoryLabel'>>,
 ): FleetCertificateCategoryOption[] {
   const categories = new Map<string, FleetCertificateCategoryOption>();
   certificates.forEach((certificate) => {
-    const category = normalizeCategory(certificate.categoryKey, certificate.categoryLabel);
+    const category = getFleetCertificateCategory(certificate.categoryKey, certificate.categoryLabel);
     categories.set(category.key, category);
   });
   FLEET_CERTIFICATE_CATEGORY_CATALOG.forEach((category) => categories.set(category.key, category));

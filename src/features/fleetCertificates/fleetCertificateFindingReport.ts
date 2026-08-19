@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import {
+  getFleetCertificateCategory,
+  getFleetCertificateCategoryParent,
+} from './fleetCertificateCategories';
+import {
   FLEET_FINDING_LABELS,
   FLEET_FINDING_STATUS_LABELS,
   type FleetCertificateFinding,
@@ -17,6 +21,7 @@ export interface FleetFindingReportInput {
 
 export interface FleetCertificateDocumentReportRow {
   vesselName: string;
+  categoryKey: string;
   categoryLabel: string;
   documentTitle: string;
   expiresOn: string;
@@ -24,7 +29,10 @@ export interface FleetCertificateDocumentReportRow {
 }
 
 export interface FleetCertificateDocumentReportCategoryGroup {
+  key: string;
   label: string;
+  parentKey?: string;
+  parentLabel?: string;
   documents: FleetCertificateDocumentReportRow[];
 }
 
@@ -39,7 +47,10 @@ export interface FleetFindingReportDocumentGroup {
 }
 
 export interface FleetFindingReportCategoryGroup {
+  key: string;
   label: string;
+  parentKey?: string;
+  parentLabel?: string;
   documents: FleetFindingReportDocumentGroup[];
 }
 
@@ -53,7 +64,10 @@ export interface FleetCertificateActionReportDocumentGroup extends FleetFindingR
 }
 
 export interface FleetCertificateActionReportCategoryGroup {
+  key: string;
   label: string;
+  parentKey?: string;
+  parentLabel?: string;
   documents: FleetCertificateActionReportDocumentGroup[];
 }
 
@@ -64,6 +78,33 @@ export interface FleetCertificateActionReportVesselGroup {
 
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 const FLEET_REPORT_TITLE = "Certificats Flotte - Plan d'Action";
+
+interface FleetCertificateReportCategoryMeta {
+  key: string;
+  label: string;
+  parentKey?: string;
+  parentLabel?: string;
+}
+
+function getReportCategoryMeta(categoryKey: string, categoryLabel: string): FleetCertificateReportCategoryMeta {
+  const category = getFleetCertificateCategory(categoryKey || categoryLabel, categoryLabel);
+  const parent = getFleetCertificateCategoryParent(category);
+  return {
+    key: category.key,
+    label: category.label,
+    parentKey: parent?.key,
+    parentLabel: parent?.label,
+  };
+}
+
+function compareReportCategories(
+  left: FleetCertificateReportCategoryMeta,
+  right: FleetCertificateReportCategoryMeta,
+): number {
+  return frenchSort.compare(left.parentLabel || left.label, right.parentLabel || right.label)
+    || Number(Boolean(left.parentKey)) - Number(Boolean(right.parentKey))
+    || frenchSort.compare(left.label, right.label);
+}
 
 export function sanitizeFleetReportText(value: string | null | undefined): string {
   return (value || '').replace(/seapilot/gi, '').replace(/\s{2,}/g, ' ').trim();
@@ -78,15 +119,22 @@ export function buildFleetCertificateDocumentReportRows(
   generatedOn: Date,
 ): FleetCertificateDocumentReportRow[] {
   const generatedDate = reportIsoDate(generatedOn);
-  return certificates.map((certificate) => ({
-    vesselName: certificate.vesselName,
-    categoryLabel: certificate.categoryLabel,
-    documentTitle: certificate.documentTitle,
-    expiresOn: certificate.expiresOn,
-    validity: certificate.expiresOn && certificate.expiresOn < generatedDate ? 'Échu' as const : 'Valide' as const,
-  })).sort((left, right) => (
+  return certificates.map((certificate) => {
+    const category = getReportCategoryMeta(certificate.categoryKey, certificate.categoryLabel);
+    return {
+      vesselName: certificate.vesselName,
+      categoryKey: category.key,
+      categoryLabel: category.label,
+      documentTitle: certificate.documentTitle,
+      expiresOn: certificate.expiresOn,
+      validity: certificate.expiresOn && certificate.expiresOn < generatedDate ? 'Échu' as const : 'Valide' as const,
+    };
+  }).sort((left, right) => (
     frenchSort.compare(left.vesselName, right.vesselName)
-    || frenchSort.compare(left.categoryLabel, right.categoryLabel)
+    || compareReportCategories(
+      getReportCategoryMeta(left.categoryKey, left.categoryLabel),
+      getReportCategoryMeta(right.categoryKey, right.categoryLabel),
+    )
     || frenchSort.compare(left.documentTitle, right.documentTitle)
   ));
 }
@@ -94,21 +142,23 @@ export function buildFleetCertificateDocumentReportRows(
 export function buildFleetCertificateDocumentReportHierarchy(
   rows: FleetCertificateDocumentReportRow[],
 ): FleetCertificateDocumentReportVesselGroup[] {
-  const vessels = new Map<string, Map<string, FleetCertificateDocumentReportRow[]>>();
+  const vessels = new Map<string, Map<string, FleetCertificateDocumentReportCategoryGroup>>();
   rows.forEach((row) => {
-    const vessel = vessels.get(row.vesselName) || new Map<string, FleetCertificateDocumentReportRow[]>();
-    const category = vessel.get(row.categoryLabel) || [];
-    category.push(row);
-    vessel.set(row.categoryLabel, category);
+    const vessel = vessels.get(row.vesselName) || new Map<string, FleetCertificateDocumentReportCategoryGroup>();
+    const meta = getReportCategoryMeta(row.categoryKey, row.categoryLabel);
+    const category = vessel.get(meta.key) || { ...meta, documents: [] };
+    category.documents.push(row);
+    vessel.set(meta.key, category);
     vessels.set(row.vesselName, vessel);
   });
 
   return Array.from(vessels, ([name, categories]) => ({
     name,
-    categories: Array.from(categories, ([label, documents]) => ({
-      label,
-      documents: documents.slice().sort((left, right) => frenchSort.compare(left.documentTitle, right.documentTitle)),
-    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+    categories: Array.from(categories.values()).map((category) => ({
+      ...category,
+      documents: category.documents.slice()
+        .sort((left, right) => frenchSort.compare(left.documentTitle, right.documentTitle)),
+    })).sort(compareReportCategories),
   })).sort((left, right) => frenchSort.compare(left.name, right.name));
 }
 
@@ -186,29 +236,30 @@ export function buildFleetFindingReportHierarchy(
     byCertificate.set(finding.certificateId, current);
   });
 
-  const vessels = new Map<string, Map<string, FleetFindingReportDocumentGroup[]>>();
+  const vessels = new Map<string, Map<string, FleetFindingReportCategoryGroup>>();
   certificates.forEach((certificate) => {
     const certificateFindings = byCertificate.get(certificate.id);
     if (!certificateFindings?.length) return;
-    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetFindingReportDocumentGroup[]>();
-    const category = vessel.get(certificate.categoryLabel) || [];
-    category.push({
+    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetFindingReportCategoryGroup>();
+    const meta = getReportCategoryMeta(certificate.categoryKey, certificate.categoryLabel);
+    const category = vessel.get(meta.key) || { ...meta, documents: [] };
+    category.documents.push({
       certificate,
       findings: certificateFindings.slice().sort((left, right) => frenchSort.compare(left.reference, right.reference)),
     });
-    vessel.set(certificate.categoryLabel, category);
+    vessel.set(meta.key, category);
     vessels.set(certificate.vesselName, vessel);
   });
 
   return Array.from(vessels, ([name, categories]) => ({
     name,
-    categories: Array.from(categories, ([label, documents]) => ({
-      label,
-      documents: documents.slice().sort((left, right) => frenchSort.compare(
+    categories: Array.from(categories.values()).map((category) => ({
+      ...category,
+      documents: category.documents.slice().sort((left, right) => frenchSort.compare(
         left.certificate.documentTitle,
         right.certificate.documentTitle,
       )),
-    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+    })).sort(compareReportCategories),
   })).sort((left, right) => frenchSort.compare(left.name, right.name));
 }
 
@@ -225,15 +276,17 @@ export function buildFleetCertificateActionReportHierarchy(
   });
 
   const generatedDate = reportIsoDate(generatedOn);
-  const vessels = new Map<string, Map<string, FleetCertificateActionReportDocumentGroup[]>>();
+  const vessels = new Map<string, Map<string, FleetCertificateActionReportCategoryGroup>>();
   certificates.forEach((certificate) => {
-    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetCertificateActionReportDocumentGroup[]>();
-    const category = vessel.get(certificate.categoryLabel) || [];
-    category.push({
+    const vessel = vessels.get(certificate.vesselName) || new Map<string, FleetCertificateActionReportCategoryGroup>();
+    const meta = getReportCategoryMeta(certificate.categoryKey, certificate.categoryLabel);
+    const category = vessel.get(meta.key) || { ...meta, documents: [] };
+    category.documents.push({
       certificate,
       reportRow: {
         vesselName: certificate.vesselName,
-        categoryLabel: certificate.categoryLabel,
+        categoryKey: meta.key,
+        categoryLabel: meta.label,
         documentTitle: certificate.documentTitle,
         expiresOn: certificate.expiresOn,
         validity: certificate.expiresOn && certificate.expiresOn < generatedDate ? 'Échu' : 'Valide',
@@ -241,19 +294,19 @@ export function buildFleetCertificateActionReportHierarchy(
       findings: (findingsByCertificate.get(certificate.id) || []).slice()
         .sort((left, right) => frenchSort.compare(left.reference, right.reference)),
     });
-    vessel.set(certificate.categoryLabel, category);
+    vessel.set(meta.key, category);
     vessels.set(certificate.vesselName, vessel);
   });
 
   return Array.from(vessels, ([name, categories]) => ({
     name,
-    categories: Array.from(categories, ([label, documents]) => ({
-      label,
-      documents: documents.slice().sort((left, right) => frenchSort.compare(
+    categories: Array.from(categories.values()).map((category) => ({
+      ...category,
+      documents: category.documents.slice().sort((left, right) => frenchSort.compare(
         left.certificate.documentTitle,
         right.certificate.documentTitle,
       )),
-    })).sort((left, right) => frenchSort.compare(left.label, right.label)),
+    })).sort(compareReportCategories),
   })).sort((left, right) => frenchSort.compare(left.name, right.name));
 }
 
@@ -374,11 +427,26 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
     doc.text(metrics, pageWidth - 16, y + 5.3, { align: 'right' });
   };
 
-  const renderCategoryHeading = (label: string, y: number, continued = false): void => {
-    doc.setFillColor(239, 244, 250);
-    doc.rect(12, y, pageWidth - 24, 6.5, 'F');
-    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.7);
-    doc.text(`${label}${continued ? ' · suite' : ''}`, 15, y + 4.5, { maxWidth: pageWidth - 30 });
+  const renderCategoryHeading = (
+    label: string,
+    y: number,
+    continued = false,
+    isSubcategory = false,
+  ): void => {
+    if (isSubcategory) doc.setFillColor(248, 250, 253);
+    else doc.setFillColor(232, 239, 248);
+    doc.rect(isSubcategory ? 18 : 12, y, pageWidth - (isSubcategory ? 30 : 24), 6.5, 'F');
+    if (isSubcategory) {
+      doc.setFillColor(...blue);
+      doc.rect(18, y, 1.2, 6.5, 'F');
+    }
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(isSubcategory ? 7.2 : 7.7);
+    doc.text(
+      `${isSubcategory ? 'SOUS-CATÉGORIE · ' : ''}${label}${continued ? ' · suite' : ''}`,
+      isSubcategory ? 22 : 15,
+      y + 4.5,
+      { maxWidth: pageWidth - (isSubcategory ? 42 : 30) },
+    );
   };
 
   const startVesselPage = (vessel: FleetCertificateActionReportVesselGroup, addPage: boolean): void => {
@@ -390,14 +458,18 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
 
   const startContinuationPage = (
     vessel: FleetCertificateActionReportVesselGroup,
-    categoryLabel?: string,
+    category?: FleetCertificateActionReportCategoryGroup,
   ): void => {
     doc.addPage();
     drawHeader();
     renderVesselHeading(vessel, 25, true);
     tableY = 37;
-    if (categoryLabel) {
-      renderCategoryHeading(categoryLabel, tableY, true);
+    if (category) {
+      if (category.parentLabel) {
+        renderCategoryHeading(category.parentLabel, tableY, true);
+        tableY += 8.5;
+      }
+      renderCategoryHeading(category.label, tableY, true, Boolean(category.parentKey));
       tableY += 8.5;
     }
   };
@@ -405,23 +477,32 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   const ensureVesselSpace = (
     vessel: FleetCertificateActionReportVesselGroup,
     requiredHeight: number,
-    categoryLabel?: string,
+    category?: FleetCertificateActionReportCategoryGroup,
   ): boolean => {
     if (tableY <= pageHeight - requiredHeight) return false;
-    startContinuationPage(vessel, categoryLabel);
+    startContinuationPage(vessel, category);
     return true;
   };
 
   const drawCategoryTableHeader = (
     data: { pageNumber: number },
     vessel: FleetCertificateActionReportVesselGroup,
-    categoryLabel: string,
+    category: FleetCertificateActionReportCategoryGroup,
   ): void => {
     drawHeader();
     if (data.pageNumber <= 1) return;
     renderVesselHeading(vessel, 25, true);
-    renderCategoryHeading(categoryLabel, 36, true);
+    if (category.parentLabel) {
+      renderCategoryHeading(category.parentLabel, 36, true);
+      renderCategoryHeading(category.label, 44.5, true, true);
+    } else {
+      renderCategoryHeading(category.label, 36, true);
+    }
   };
+
+  const categoryTableTop = (category: FleetCertificateActionReportCategoryGroup): number => (
+    category.parentKey ? 54 : 45
+  );
 
   if (!reportHierarchy.length) {
     drawHeader();
@@ -430,19 +511,35 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   } else if (includeDocuments && !includeFindings) {
     reportHierarchy.forEach((vessel, vesselIndex) => {
       startVesselPage(vessel, vesselIndex > 0);
-      const body = vessel.categories.flatMap((category) => [
-        [{
+      let activeParentKey = '';
+      const body = vessel.categories.flatMap((category) => {
+        const rows = [];
+        if (category.parentKey && activeParentKey !== category.parentKey) {
+          rows.push([{
+            content: category.parentLabel || '',
+            colSpan: 3,
+            styles: {
+              fillColor: [218, 230, 244] as [number, number, number],
+              textColor: navy,
+              fontStyle: 'bold' as const,
+              fontSize: 7.35,
+              cellPadding: { top: 1.45, right: 1.6, bottom: 1.45, left: 2.2 },
+            },
+          }]);
+        }
+        activeParentKey = category.parentKey || category.key;
+        rows.push([{
           content: category.label,
           colSpan: 3,
           styles: {
-            fillColor: [232, 239, 248] as [number, number, number],
+            fillColor: (category.parentKey ? [246, 249, 252] : [232, 239, 248]) as [number, number, number],
             textColor: navy,
             fontStyle: 'bold' as const,
-            fontSize: 7.2,
-            cellPadding: { top: 1.35, right: 1.6, bottom: 1.35, left: 2.2 },
+            fontSize: category.parentKey ? 6.9 : 7.2,
+            cellPadding: { top: 1.35, right: 1.6, bottom: 1.35, left: category.parentKey ? 5.4 : 2.2 },
           },
-        }],
-        ...category.documents.map((group) => [
+        }]);
+        rows.push(...category.documents.map((group) => [
           group.reportRow.documentTitle,
           formatFleetCertificateDocumentExpiry(group.reportRow.expiresOn),
           {
@@ -456,8 +553,9 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
               halign: 'center' as const,
             },
           },
-        ]),
-      ]);
+        ]));
+        return rows;
+      });
 
       autoTable(doc, {
         startY: tableY,
@@ -486,10 +584,17 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   } else {
     reportHierarchy.forEach((vessel, vesselIndex) => {
       startVesselPage(vessel, vesselIndex > 0);
+      let activeParentKey = '';
 
       vessel.categories.forEach((category) => {
-      ensureVesselSpace(vessel, 38);
-      renderCategoryHeading(category.label, tableY);
+      const shouldRenderParent = Boolean(category.parentKey && activeParentKey !== category.parentKey);
+      ensureVesselSpace(vessel, shouldRenderParent ? 46 : 38);
+      if (shouldRenderParent && category.parentLabel) {
+        renderCategoryHeading(category.parentLabel, tableY);
+        tableY += 8.5;
+      }
+      activeParentKey = category.parentKey || category.key;
+      renderCategoryHeading(category.label, tableY, false, Boolean(category.parentKey));
       tableY += 8.5;
 
       if (includeDocuments) {
@@ -521,8 +626,8 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
           headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [249, 251, 253] },
           columnStyles: { 1: { cellWidth: 39 }, 2: { cellWidth: 22, halign: 'center' } },
-          margin: { left: 12, right: 12, top: 45 },
-          willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+          margin: { left: 12, right: 12, top: categoryTableTop(category) },
+          willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
         });
         tableY = lastTableY() + 5;
       }
@@ -533,14 +638,14 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
         ));
 
         if (!categoryFindings.length) {
-          ensureVesselSpace(vessel, 17, category.label);
+          ensureVesselSpace(vessel, 17, category);
           doc.setFillColor(238, 248, 243);
           doc.roundedRect(12, tableY, pageWidth - 24, 9, 1.3, 1.3, 'F');
           doc.setTextColor(...green); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
           doc.text('Aucun écart enregistré pour cette catégorie.', 16, tableY + 5.8);
           tableY += 13;
         } else {
-          ensureVesselSpace(vessel, 34, category.label);
+          ensureVesselSpace(vessel, 34, category);
           autoTable(doc, {
             startY: tableY,
             head: [
@@ -581,13 +686,13 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
               3: { cellWidth: 24 },
               4: { cellWidth: 30, halign: 'center' },
             },
-            margin: { left: 12, right: 12, top: 45 },
-            willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+            margin: { left: 12, right: 12, top: categoryTableTop(category) },
+            willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
           });
           tableY = lastTableY() + 7;
 
           categoryFindings.forEach(({ group, finding }) => {
-            ensureVesselSpace(vessel, 48, category.label);
+            ensureVesselSpace(vessel, 48, category);
             autoTable(doc, {
               startY: tableY,
               head: [[{
@@ -618,12 +723,12 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
                 2: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
                 3: { cellWidth: 62 },
               },
-              margin: { left: 12, right: 12, top: 45 },
-              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+              margin: { left: 12, right: 12, top: categoryTableTop(category) },
+              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
             });
             tableY = lastTableY() + 3;
 
-            ensureVesselSpace(vessel, 28, category.label);
+            ensureVesselSpace(vessel, 28, category);
             autoTable(doc, {
               startY: tableY,
               head: [
@@ -645,8 +750,8 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
               styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
               headStyles: { fillColor: [45, 63, 87], textColor: 255 },
               columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 39 } },
-              margin: { left: 12, right: 12, top: 45 },
-              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category.label),
+              margin: { left: 12, right: 12, top: categoryTableTop(category) },
+              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
             });
             tableY = lastTableY() + 7;
 
@@ -660,7 +765,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
                 const properties = doc.getImageProperties(dataUrl);
                 const size = calculateContainSize(properties.width, properties.height, 184, 145);
                 const requiredHeight = size.height + 18;
-                if (tableY + requiredHeight > pageHeight - 14) startContinuationPage(vessel, category.label);
+                if (tableY + requiredHeight > pageHeight - 14) startContinuationPage(vessel, category);
                 doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.7);
                 doc.text(`${finding.reference} · ${attachment.kind === 'finding' ? 'Photo du constat' : 'Preuve du traitement'}`, 12, tableY);
                 doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);

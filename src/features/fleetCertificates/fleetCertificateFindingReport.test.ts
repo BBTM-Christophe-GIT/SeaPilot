@@ -96,6 +96,28 @@ describe('fleet certificate action plan report', () => {
     expect(hierarchy[1].categories[0].documents[0].findings).toEqual([]);
   });
 
+  it('keeps the parent category above its LSA subcategory', () => {
+    const lsaCertificate = {
+      ...certificate,
+      categoryKey: '07-1-radeaux-hru',
+      categoryLabel: '07.1 - Radeaux / HRU',
+      documentTitle: 'Radeau de survie bâbord',
+    } as FleetCertificateRecord;
+
+    const hierarchy = buildFleetCertificateActionReportHierarchy(
+      [lsaCertificate],
+      [],
+      new Date('2026-08-19T12:00:00Z'),
+    );
+
+    expect(hierarchy[0].categories[0]).toMatchObject({
+      key: '07-1-radeaux-hru',
+      label: '07.1 - Radeaux / HRU',
+      parentKey: '07-lsa',
+      parentLabel: '07 - LSA',
+    });
+  });
+
   it('preserves image proportions inside the requested box', () => {
     expect(calculateContainSize(500, 500, 34, 15)).toEqual({ width: 15, height: 15 });
     expect(calculateContainSize(1200, 600, 184, 150)).toEqual({ width: 184, height: 92 });
@@ -166,7 +188,10 @@ describe('fleet certificate action plan report', () => {
       ...certificate,
       id: 100 + index,
       vesselName: 'SUROIT',
-      categoryLabel: categoryLabels[Math.min(index, categoryLabels.length - 1)],
+      categoryKey: index === 0 ? '07-1-radeaux-hru' : `category-${Math.min(index, categoryLabels.length - 1)}`,
+      categoryLabel: index === 0
+        ? '07.1 - Radeaux / HRU'
+        : categoryLabels[Math.min(index, categoryLabels.length - 1)],
       documentTitle: `Document réglementaire ${String(index + 1).padStart(2, '0')}`,
       expiresOn: index % 4 === 0 ? '' : '2027-09-15',
     } as FleetCertificateRecord));

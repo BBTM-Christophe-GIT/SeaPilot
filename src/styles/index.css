@@ -19959,6 +19959,33 @@ button.planning-p12-conflict-card {
 .fcx-certificates-ribbon .planning-ribbon-group-label { padding: 2px 5px 4px; }
 .fcx-workbench-library .fcx-library-row { padding-left: 258px; }
 .fcx-workbench-library .fcx-library-row:before { width: 186px; }
+.fcx-tree-subcategory { position: relative; }
+.fcx-tree-subcategory:before { position: absolute; z-index: 1; top: 0; bottom: 0; left: 72px; width: 1px; background: #dbe5ee; content: ''; }
+.fcx-tree-subcategory-row { position: relative; display: flex; width: 100%; min-height: 43px; align-items: center; padding: 6px 16px 6px 81px; color: #3b536d; text-align: left; border: 0; border-top: 1px solid #edf1f5; background: #fff; cursor: pointer; }
+.fcx-tree-subcategory-row:before { position: absolute; z-index: 1; top: 50%; left: 72px; width: 9px; height: 1px; background: #dbe5ee; content: ''; }
+.fcx-tree-subcategory-row:hover { background: #f7fafd; }
+.fcx-tree-subcategory-row:focus-visible { z-index: 2; outline: 2px solid #1680d8; outline-offset: -2px; }
+.fcx-tree-subcategory-row.is-scope-selected { color: #075faa; background: #e8f4ff; box-shadow: inset 3px 0 #0875d2; }
+.fcx-tree-subcategory-row > svg { flex: 0 0 auto; margin-right: 7px; color: #8394a6; transition: transform .16s ease; }
+.fcx-tree-subcategory-row > svg.is-open { transform: rotate(90deg); }
+.fcx-tree-icon.subcategory { width: 27px; height: 27px; color: #638db0; background: #f0f5f9; }
+.fcx-tree-subcategory-row strong { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.fcx-tree-subcategory-row small { margin-left: auto; padding-left: 12px; color: #718195; font-size: .62rem; font-weight: 750; white-space: nowrap; }
+.fcx-tree-subcategory-row em.fcx-action-count { display: inline-flex; flex: 0 0 auto; margin-left: 9px; padding: 3px 7px; border-radius: 99px; color: #b52b25; background: #ffebe9; font-size: .57rem; font-style: normal; font-weight: 900; white-space: nowrap; }
+.fcx-tree-documents.is-subcategory:before { left: 104px; }
+.fcx-tree-documents.is-subcategory .fcx-library-row { padding-left: 115px; }
+.fcx-tree-documents.is-subcategory .fcx-library-row:before { left: 104px; }
+.fcx-tree-documents.is-subcategory .fcx-library-document-actions { left: 115px; }
+.fcx-workbench-library .fcx-tree-documents.is-subcategory .fcx-library-row { padding-left: 290px; }
+.fcx-workbench-library .fcx-tree-documents.is-subcategory .fcx-library-row:before { width: 186px; }
+.fcx-command-library .fcx-tree-subcategory:before { left: 47px; }
+.fcx-command-library .fcx-tree-subcategory-row { min-height: 39px; padding: 6px 9px 6px 57px; }
+.fcx-command-library .fcx-tree-subcategory-row:before { left: 47px; width: 10px; }
+.fcx-command-library .fcx-tree-subcategory-row strong { font-size: .64rem; }
+.fcx-command-library .fcx-tree-subcategory-row small { font-size: .56rem; }
+.fcx-command-library .fcx-tree-documents.is-subcategory:before { left: 75px; }
+.fcx-command-library .fcx-tree-documents.is-subcategory .fcx-library-row { padding-left: 85px; }
+.fcx-command-library .fcx-tree-documents.is-subcategory .fcx-library-row:before { left: 75px; width: 10px; }
 
 .fcx-dialog-section-title { display: flex; align-items: flex-start; gap: 9px; }
 .fcx-dialog-section-title > span { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #fff; background: #1769dc; font-size: .68rem; font-weight: 900; }
@@ -20030,6 +20057,13 @@ button.planning-p12-conflict-card {
   .fcx-certificates-ribbon .planning-ribbon-command { min-width: 130px; }
   .fcx-workbench-library .fcx-library-row { min-height: 88px; padding-top: 41px; padding-left: 60px; }
   .fcx-workbench-library .fcx-library-row:before { width: 0; }
+  .fcx-tree-subcategory:before { left: 49px; }
+  .fcx-tree-subcategory-row { padding-left: 58px; }
+  .fcx-tree-subcategory-row:before { left: 49px; }
+  .fcx-tree-documents.is-subcategory:before { left: 67px; }
+  .fcx-workbench-library .fcx-tree-documents.is-subcategory .fcx-library-row { padding-left: 78px; }
+  .fcx-tree-documents.is-subcategory .fcx-library-row:before { left: 67px; width: 11px; }
+  .fcx-tree-documents.is-subcategory .fcx-library-document-actions { left: 60px; }
   .fcx-library-document-actions { top: 24px; left: 60px; transform: none; }
   .fcx-report-dialog { height: 100%; max-height: 100%; border-radius: 0; }
   .fcx-report-dialog-body { max-height: none; }

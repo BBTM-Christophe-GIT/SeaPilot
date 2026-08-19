@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FLEET_CERTIFICATE_CATEGORY_CATALOG, getFleetCertificateCategoryOptions } from './fleetCertificateCategories';
+import {
+  FLEET_CERTIFICATE_CATEGORY_CATALOG,
+  getFleetCertificateCategory,
+  getFleetCertificateCategoryOptions,
+  getFleetCertificateCategoryParent,
+} from './fleetCertificateCategories';
 
 describe('fleet certificate categories', () => {
   it('contains the requested parent categories and subcategories', () => {
@@ -45,5 +50,16 @@ describe('fleet certificate categories', () => {
       expect.objectContaining({ key: '15-dotation-medicale', label: '15 - Dotation Médicale' }),
     ]));
     expect(options.some((category) => category.key === '08-grue-et-bossoir')).toBe(false);
+  });
+
+  it('resolves the parent of an LSA subcategory', () => {
+    const subcategory = getFleetCertificateCategory('07-1-radeaux-hru', '07.1 - Radeaux / HRU');
+
+    expect(subcategory).toMatchObject({
+      key: '07-1-radeaux-hru',
+      label: '07.1 - Radeaux / HRU',
+      parentKey: '07-lsa',
+    });
+    expect(getFleetCertificateCategoryParent(subcategory)).toEqual({ key: '07-lsa', label: '07 - LSA' });
   });
 });
