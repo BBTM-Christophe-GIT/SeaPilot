@@ -6,6 +6,10 @@ import {
   getEffectiveFleetCertificateStatus, getFleetCertificateStatusLabel,
   type FleetCertificateRecord,
 } from './fleetCertificateQueries';
+import {
+  getFleetCertificateCategory,
+  getFleetCertificateCategoryParent,
+} from './fleetCertificateCategories';
 
 interface FleetCertificateLibraryTreeProps {
   certificates: FleetCertificateRecord[];
@@ -28,17 +32,19 @@ interface FleetCertificateLibraryTreeProps {
   onToggleSelection?: (certificateId: number) => void;
 }
 
-interface CategoryBranch {
+export interface FleetCertificateLibraryCategoryBranch {
   key: string;
+  categoryKey: string;
   label: string;
   certificates: FleetCertificateRecord[];
   actionCount: number;
+  subcategories: FleetCertificateLibraryCategoryBranch[];
 }
 
-interface VesselBranch {
+export interface FleetCertificateLibraryVesselBranch {
   key: string;
   name: string;
-  categories: CategoryBranch[];
+  categories: FleetCertificateLibraryCategoryBranch[];
   documentCount: number;
   expiredCount: number;
   actionCount: number;
@@ -47,10 +53,10 @@ interface VesselBranch {
 const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 const EMPTY_SELECTION = new Set<number>();
 
-function buildTree(
+export function buildFleetCertificateLibraryTree(
   certificates: FleetCertificateRecord[],
   findingCountByCertificate: ReadonlyMap<number, number>,
-): VesselBranch[] {
+): FleetCertificateLibraryVesselBranch[] {
   const vessels = new Map<string, { name: string; certificates: FleetCertificateRecord[] }>();
 
   certificates.forEach((certificate) => {
@@ -61,18 +67,42 @@ function buildTree(
   });
 
   return Array.from(vessels, ([key, vessel]) => {
-    const categories = new Map<string, CategoryBranch>();
+    const categories = new Map<string, FleetCertificateLibraryCategoryBranch>();
     vessel.certificates.forEach((certificate) => {
-      const categoryKey = certificate.categoryKey || certificate.categoryLabel;
-      const category = categories.get(categoryKey) || {
-        key: `${key}:${categoryKey}`,
-        label: certificate.categoryLabel,
+      const resolvedCategory = getFleetCertificateCategory(
+        certificate.categoryKey || certificate.categoryLabel,
+        certificate.categoryLabel,
+      );
+      const parentCategory = getFleetCertificateCategoryParent(resolvedCategory);
+      const topLevelCategory = parentCategory || resolvedCategory;
+      const category = categories.get(topLevelCategory.key) || {
+        key: `${key}:${topLevelCategory.key}`,
+        categoryKey: topLevelCategory.key,
+        label: topLevelCategory.label,
         certificates: [],
         actionCount: 0,
+        subcategories: [],
       };
-      category.certificates.push(certificate);
+      if (parentCategory) {
+        let subcategory = category.subcategories.find((item) => item.categoryKey === resolvedCategory.key);
+        if (!subcategory) {
+          subcategory = {
+            key: `${key}:${resolvedCategory.key}`,
+            categoryKey: resolvedCategory.key,
+            label: resolvedCategory.label,
+            certificates: [],
+            actionCount: 0,
+            subcategories: [],
+          };
+          category.subcategories.push(subcategory);
+        }
+        subcategory.certificates.push(certificate);
+        subcategory.actionCount += findingCountByCertificate.get(certificate.id) || 0;
+      } else {
+        category.certificates.push(certificate);
+      }
       category.actionCount += findingCountByCertificate.get(certificate.id) || 0;
-      categories.set(categoryKey, category);
+      categories.set(topLevelCategory.key, category);
     });
 
     return {
@@ -84,6 +114,14 @@ function buildTree(
           certificates: category.certificates
             .slice()
             .sort((left, right) => frenchSort.compare(left.documentTitle, right.documentTitle)),
+          subcategories: category.subcategories
+            .map((subcategory) => ({
+              ...subcategory,
+              certificates: subcategory.certificates
+                .slice()
+                .sort((left, right) => frenchSort.compare(left.documentTitle, right.documentTitle)),
+            }))
+            .sort((left, right) => frenchSort.compare(left.label, right.label)),
         }))
         .sort((left, right) => frenchSort.compare(left.label, right.label)),
       documentCount: vessel.certificates.length,
@@ -126,12 +164,15 @@ export function FleetCertificateLibraryTree({
   onToggleSelection,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(
-    () => buildTree(certificates, findingCountByCertificate),
+    () => buildFleetCertificateLibraryTree(certificates, findingCountByCertificate),
     [certificates, findingCountByCertificate],
   );
   const allVesselKeys = useMemo(() => branches.map((vessel) => vessel.key), [branches]);
   const allCategoryKeys = useMemo(
-    () => branches.flatMap((vessel) => vessel.categories.map((category) => category.key)),
+    () => branches.flatMap((vessel) => vessel.categories.flatMap((category) => [
+      category.key,
+      ...category.subcategories.map((subcategory) => subcategory.key),
+    ])),
     [branches],
   );
   const [openVessels, setOpenVessels] = useState<Set<string>>(
@@ -154,13 +195,39 @@ export function FleetCertificateLibraryTree({
     }
   }
 
+  function renderDocuments(category: FleetCertificateLibraryCategoryBranch, isSubcategory = false) {
+    return <div className={`fcx-tree-documents${isSubcategory ? ' is-subcategory' : ''}`} role="group">
+      {category.certificates.map((certificate) => {
+        const state = getEffectiveFleetCertificateStatus(certificate);
+        const actionCount = findingCountByCertificate.get(certificate.id) || 0;
+        const hasFile = Boolean(certificate.storageBucket && certificate.storagePath);
+        return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
+          <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
+          <div className="fcx-library-document-actions">
+            {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} disabled={!hasFile} onChange={() => onToggleSelection(certificate.id)} title={hasFile ? 'Sélectionner pour le téléchargement' : 'Aucun fichier à télécharger'} type="checkbox" /> : null}
+            {canManage && onSchedule ? <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} onClick={() => onSchedule(certificate)} title="Programmer une visite" type="button"><CalendarPlus size={15} /></button> : null}
+            {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
+            {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
+            <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
+          </div>
+          <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
+            <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || 'Aucun fichier joint'}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
+            <span>{formatDate(certificate.expiresOn)}</span>
+            <em className={state}>{getFleetCertificateStatusLabel(state)}</em>
+          </button>
+          </div>
+        </div>;
+      })}
+    </div>;
+  }
+
   if (!branches.length) {
     return <div className="fcx-library-empty"><FileText size={20} /> Aucun document ne correspond aux filtres.</div>;
   }
 
   return <>
     <div className="fcx-tree-toolbar">
-      <span>Classement&nbsp;: <b>Navire</b><i>›</i><b>Catégorie</b><i>›</i><b>Document</b></span>
+      <span>Classement&nbsp;: <b>Navire</b><i>›</i><b>Catégorie</b><i>›</i><b>Sous-catégorie</b><i>›</i><b>Document</b></span>
       <div className="fcx-tree-toolbar-actions">
         {onDownloadSelected ? <button aria-label={selectedDocumentIds.size ? `Télécharger (${selectedDocumentIds.size})` : 'Télécharger'} disabled={!selectedDocumentIds.size} onClick={onDownloadSelected} type="button"><Download size={15} /> Télécharger</button> : null}
         <button onClick={toggleAll} type="button">
@@ -185,34 +252,31 @@ export function FleetCertificateLibraryTree({
           {vesselOpen && <div className="fcx-tree-children" role="group">
             {vessel.categories.map((category) => {
               const categoryOpen = openCategories.has(category.key);
+              const categoryDocumentCount = category.certificates.length + category.subcategories.reduce(
+                (total, subcategory) => total + subcategory.certificates.length,
+                0,
+              );
               return <div aria-label={`Catégorie ${category.label}`} className="fcx-tree-category" key={category.key} role="treeitem" aria-expanded={categoryOpen}>
-                <button className={`fcx-tree-category-row${selectedScopeVesselName === vessel.name && selectedScopeCategoryKey === category.certificates[0]?.categoryKey ? ' is-scope-selected' : ''}`} onClick={() => { setOpenCategories((current) => toggleKey(current, category.key)); onSelectCategory?.(vessel.name, category.certificates[0]?.categoryKey || category.label, category.label); }} type="button">
+                <button className={`fcx-tree-category-row${selectedScopeVesselName === vessel.name && selectedScopeCategoryKey === category.categoryKey ? ' is-scope-selected' : ''}`} onClick={() => { setOpenCategories((current) => toggleKey(current, category.key)); onSelectCategory?.(vessel.name, category.categoryKey, category.label); }} type="button">
                   <ChevronRight className={categoryOpen ? 'is-open' : ''} size={16} />
                   <span className="fcx-tree-icon category"><Folder size={16} /></span>
                   <strong>{category.label}</strong>
                   {category.actionCount > 0 && <em className="fcx-action-count">{category.actionCount} à traiter</em>}
-                  <small>{category.certificates.length} document{category.certificates.length > 1 ? 's' : ''}</small>
+                  <small>{categoryDocumentCount} document{categoryDocumentCount > 1 ? 's' : ''}</small>
                 </button>
-                {categoryOpen && <div className="fcx-tree-documents" role="group">
-                  {category.certificates.map((certificate) => {
-                    const state = getEffectiveFleetCertificateStatus(certificate);
-                    const actionCount = findingCountByCertificate.get(certificate.id) || 0;
-                    const hasFile = Boolean(certificate.storageBucket && certificate.storagePath);
-                    return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
-                      <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
-                      <div className="fcx-library-document-actions">
-                        {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} disabled={!hasFile} onChange={() => onToggleSelection(certificate.id)} title={hasFile ? 'Sélectionner pour le téléchargement' : 'Aucun fichier à télécharger'} type="checkbox" /> : null}
-                        {canManage && onSchedule ? <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} onClick={() => onSchedule(certificate)} title="Programmer une visite" type="button"><CalendarPlus size={15} /></button> : null}
-                        {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
-                        {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
-                        <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
-                      </div>
-                      <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
-                        <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || 'Aucun fichier joint'}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
-                        <span>{formatDate(certificate.expiresOn)}</span>
-                        <em className={state}>{getFleetCertificateStatusLabel(state)}</em>
+                {categoryOpen && <div role="group">
+                  {category.certificates.length ? renderDocuments(category) : null}
+                  {category.subcategories.map((subcategory) => {
+                    const subcategoryOpen = openCategories.has(subcategory.key);
+                    return <div aria-label={`Sous-catégorie ${subcategory.label}`} className="fcx-tree-subcategory" key={subcategory.key} role="treeitem" aria-expanded={subcategoryOpen}>
+                      <button className={`fcx-tree-subcategory-row${selectedScopeVesselName === vessel.name && selectedScopeCategoryKey === subcategory.categoryKey ? ' is-scope-selected' : ''}`} onClick={() => { setOpenCategories((current) => toggleKey(current, subcategory.key)); onSelectCategory?.(vessel.name, subcategory.categoryKey, subcategory.label); }} type="button">
+                        <ChevronRight className={subcategoryOpen ? 'is-open' : ''} size={15} />
+                        <span className="fcx-tree-icon subcategory"><Folder size={15} /></span>
+                        <strong>{subcategory.label}</strong>
+                        {subcategory.actionCount > 0 && <em className="fcx-action-count">{subcategory.actionCount} à traiter</em>}
+                        <small>{subcategory.certificates.length} document{subcategory.certificates.length > 1 ? 's' : ''}</small>
                       </button>
-                      </div>
+                      {subcategoryOpen ? renderDocuments(subcategory, true) : null}
                     </div>;
                   })}
                 </div>}

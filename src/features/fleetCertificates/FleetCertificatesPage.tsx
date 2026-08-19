@@ -19,7 +19,7 @@ import {
   type FleetCertificateRecord,
   type UpdateFleetCertificateDocumentMetadataInput,
 } from './fleetCertificateQueries';
-import { getFleetCertificateCategoryOptions } from './fleetCertificateCategories';
+import { getFleetCertificateCategory, getFleetCertificateCategoryOptions } from './fleetCertificateCategories';
 import {
   addFleetFindingComment, createFleetCertificateFinding, deleteFleetCertificateFinding,
   fetchFleetCertificateFindings, fetchFleetFindingResponsibles, FLEET_FINDING_LABELS,
@@ -75,6 +75,11 @@ function daysFromToday(value: string): number {
 
 function isOverdue(finding: FleetCertificateFinding): boolean {
   return finding.status !== 'closed' && Boolean(finding.treatmentDueOn && finding.treatmentDueOn < TODAY);
+}
+
+function isCertificateInCategoryScope(certificate: FleetCertificateRecord, categoryKey: string): boolean {
+  const category = getFleetCertificateCategory(certificate.categoryKey, certificate.categoryLabel);
+  return category.key === categoryKey || category.parentKey === categoryKey;
 }
 
 function typeTone(type: FleetFindingType): string {
@@ -398,7 +403,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }), [active, openFindings, search, statusFilter, upcoming]);
   const scopedCertificates = useMemo(() => active.filter((item) => (
     (!scopeVesselName || item.vesselName === scopeVesselName)
-    && (!scopeCategoryKey || item.categoryKey === scopeCategoryKey)
+    && (!scopeCategoryKey || isCertificateInCategoryScope(item, scopeCategoryKey))
   )), [active, scopeCategoryKey, scopeVesselName]);
   const scopedCertificateIds = useMemo(
     () => new Set(scopedCertificates.map((item) => item.id)),
