@@ -5199,6 +5199,24 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.project-client-representative {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding: 2px 0 4px;
+}
+
+.project-client-representative > strong {
+  color: var(--navy);
+  font-size: 0.85rem;
+}
+
+.project-client-representative > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .project-editor input,
 .project-editor select,
 .project-editor textarea {
@@ -12384,6 +12402,10 @@ button.planning-p12-conflict-card {
 }
 
 @media (max-width: 900px) {
+  .project-client-representative > div {
+    grid-template-columns: 1fr;
+  }
+
   .project-towed-asset-heading {
     align-items: stretch;
     flex-direction: column;

@@ -82,6 +82,7 @@ const PROJECT_DOCUMENT_SELECT = [
 const CLIENT_SELECT = [
   'id',
   'name',
+  'represented_by',
   'code',
   'email',
   'phone',
@@ -211,6 +212,7 @@ interface ProjectDocumentRow {
 interface ClientRow {
   id: number;
   name: string;
+  represented_by: string | null;
   code: string | null;
   email: string | null;
   phone: string | null;
@@ -398,6 +400,7 @@ export interface ProjectDocumentRecord {
 export interface ClientRecord {
   id: number;
   name: string;
+  representedBy: string;
   code: string;
   email: string;
   phone: string;
@@ -709,6 +712,7 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
+    representedBy: nullableText(row.represented_by),
     code: nullableText(row.code),
     email: nullableText(row.email),
     phone: nullableText(row.phone),

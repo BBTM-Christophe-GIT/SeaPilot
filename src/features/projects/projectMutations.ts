@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus } from './projectStatus';
-import { DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
+import { DEFAULT_PROJECT_FUEL_TERMS, DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
 
 export interface ProjectMutationResult {
   id: number;
@@ -97,6 +97,7 @@ export interface ProjectWriteInput {
 export interface ClientWriteInput {
   clientId: number | null;
   name: string;
+  representedBy: string;
   code: string;
   email: string;
   phone: string;
@@ -142,7 +143,7 @@ export const EMPTY_PROJECT_WRITE_INPUT: ProjectWriteInput = {
   hireCurrency: '',
   hireUnit: '',
   maxAuditPeriod: '',
-  supplytimeData: {},
+  supplytimeData: { box19_special_fuel: DEFAULT_PROJECT_FUEL_TERMS },
   expectedUpdatedAt: '',
 };
 
@@ -335,6 +336,7 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
   const { data, error } = await client.rpc('clients_save', {
     target_client_id: input.clientId,
     target_name: input.name.trim(),
+    target_represented_by: optionalText(input.representedBy),
     target_code: optionalText(input.code),
     target_email: optionalText(input.email),
     target_phone: optionalText(input.phone),

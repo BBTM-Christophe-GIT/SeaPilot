@@ -1,5 +1,7 @@
 export const DEFAULT_PROJECT_OWNER_IDENTITY = 'BBTM\n15, impasse du pou\n50340 Le Rozel';
 
+export const DEFAULT_PROJECT_FUEL_TERMS = "A la charge de l'affréteur";
+
 export const PROJECT_CONTRACT_TYPES = [
   'Affrètement à temps',
   'Oil Spill Response',

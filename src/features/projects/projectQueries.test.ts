@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   fetchProjectsData,
+  mapClientRows,
   mapProjectContractHirePeriodRows,
   mapProjectContractRows,
   mapProjectPlanningOccurrenceRows,
@@ -62,6 +63,27 @@ function createReadClient(results: Record<string, { data: unknown[] | null; erro
 }
 
 describe('projectQueries', () => {
+  it('maps the client representative stored in Supabase', () => {
+    expect(mapClientRows([{
+      id: 50,
+      name: 'COSMA',
+      represented_by: 'Jean DUPONT',
+      code: null,
+      email: null,
+      phone: null,
+      address: null,
+      city: null,
+      country: null,
+      active: true,
+      source_label: 'seapilot',
+      sharepoint_list_title: null,
+      sharepoint_item_id: null,
+      source_modified_at: null,
+      archived_at: null,
+      updated_at: '2026-08-20T10:00:00Z',
+    }])).toEqual([expect.objectContaining({ representedBy: 'Jean DUPONT' })]);
+  });
+
   it('maps reusable towed assets and their numeric dimensions', () => {
     expect(mapProjectTowedAssetRows([{
       id: 8,

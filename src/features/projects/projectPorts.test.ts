@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   filterProjectPortGroups,
+  formatProjectOfferPort,
   formatProjectPort,
   PROJECT_PORT_GROUPS,
   PROJECT_PORTS,
@@ -80,5 +81,10 @@ describe('projectPorts', () => {
       .toContain('Côtes-d’Armor (22)');
     expect(filterProjectPortGroups('FR BES').flatMap((group) => group.ports.map((port) => port.port)))
       .toContain('Brest');
+  });
+
+  it('places the LOCODE below a known port for the commercial offer', () => {
+    expect(formatProjectOfferPort('Brest')).toBe('Brest\nFR BES');
+    expect(formatProjectOfferPort('Port libre')).toBe('Port libre');
   });
 });

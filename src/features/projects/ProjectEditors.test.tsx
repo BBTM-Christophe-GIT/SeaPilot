@@ -1,10 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
-import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 
 const mutationMocks = vi.hoisted(() => ({
   saveProject: vi.fn(),
+  saveProjectPlanningOccurrence: vi.fn(),
+  saveClient: vi.fn(),
   saveProjectContractDetails: vi.fn(),
   saveProjectContractHirePeriods: vi.fn(),
   saveProjectTowedAsset: vi.fn(),
@@ -13,12 +15,20 @@ const mutationMocks = vi.hoisted(() => ({
 vi.mock('./projectMutations', async (importOriginal) => ({
   ...await importOriginal<typeof import('./projectMutations')>(),
   saveProject: mutationMocks.saveProject,
+  saveProjectPlanningOccurrence: mutationMocks.saveProjectPlanningOccurrence,
+  saveClient: mutationMocks.saveClient,
   saveProjectContractDetails: mutationMocks.saveProjectContractDetails,
   saveProjectContractHirePeriods: mutationMocks.saveProjectContractHirePeriods,
   saveProjectTowedAsset: mutationMocks.saveProjectTowedAsset,
 }));
 
 mutationMocks.saveProjectContractDetails.mockResolvedValue(undefined);
+mutationMocks.saveProjectPlanningOccurrence.mockResolvedValue(901);
+mutationMocks.saveClient.mockResolvedValue(52);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const project = {
   id: 145,
@@ -63,6 +73,111 @@ describe('ProjectPlanningEditor permissions', () => {
 });
 
 describe('ProjectEditor contract hire periods', () => {
+  it('copies project boundaries to planning timestamps and defaults the Fuel terms', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
+    fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
+
+    expect(screen.getByLabelText('Livraison *')).toHaveValue('2026-09-04T10:00');
+    expect(screen.getByLabelText('Début d’affrètement')).toHaveValue('2026-09-04T10:00');
+    expect(screen.getByLabelText('Restitution *')).toHaveValue('2026-09-11T18:00');
+    expect(screen.getByLabelText('Fin d’affrètement')).toHaveValue('2026-09-11T18:00');
+
+    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    expect(screen.getByLabelText('Fuel')).toHaveValue("A la charge de l'affréteur");
+  });
+
+  it('asks for the vessel, delivery and redelivery before creating a new planning operation', async () => {
+    const user = userEvent.setup();
+    mutationMocks.saveProject.mockClear();
+    mutationMocks.saveProjectPlanningOccurrence.mockClear();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'renseignez le navire principal, la livraison, la restitution',
+    );
+    expect(screen.getByRole('button', { name: /Planning/ })).toHaveAttribute('aria-current', 'step');
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
+  });
+
+  it('creates a non-validated planning operation from Delivery, Redelivery and selected vessels', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mutationMocks.saveProject.mockClear();
+    mutationMocks.saveProjectPlanningOccurrence.mockClear();
+    mutationMocks.saveProject.mockResolvedValueOnce({
+      id: 501,
+      projectCode: 'P501',
+      title: 'Mission automatique',
+      updatedAt: '2026-08-20T15:00:00Z',
+    });
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P501', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
+    await user.type(screen.getByLabelText('Description'), 'Inspection en mer');
+    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
+    fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
+    await user.click(screen.getByRole('button', { name: /Facturation/ }));
+    await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
+    await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+
+    await waitFor(() => {
+      expect(mutationMocks.saveProjectPlanningOccurrence).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          endsOn: '2026-09-11',
+          projectId: 501,
+          startsOn: '2026-09-04',
+          status: 'Non validé',
+          vesselIds: [1, 2],
+        }),
+      );
+    });
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 501, projectCode: 'P501' }));
+  });
+
   it('shows contractual defaults and loads an editable towed asset for a towage contract', async () => {
     const user = userEvent.setup();
     render(
@@ -204,5 +319,42 @@ describe('ProjectEditor contract hire periods', () => {
     });
     expect(mutationMocks.saveProject).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 145, projectCode: 'P144' }));
+  });
+});
+
+describe('ClientEditor representative', () => {
+  it('formats first and last names and saves their combined display value', async () => {
+    const user = userEvent.setup();
+    render(
+      <ClientEditor
+        client={{ rpc: vi.fn() } as never}
+        clientRecord={{
+          id: 50,
+          name: 'COSMA',
+          representedBy: 'Marie DUPONT DE LA TOUR',
+          updatedAt: '2026-08-20T10:00:00Z',
+        } as never}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Prénom')).toHaveValue('Marie');
+    expect(screen.getByLabelText('NOM')).toHaveValue('DUPONT DE LA TOUR');
+
+    await user.clear(screen.getByLabelText('Prénom'));
+    await user.type(screen.getByLabelText('Prénom'), 'jEAN-pIERRE');
+    await user.clear(screen.getByLabelText('NOM'));
+    await user.type(screen.getByLabelText('NOM'), 'dupré martin');
+    expect(screen.getByLabelText('Prénom')).toHaveValue('Jean-Pierre');
+    expect(screen.getByLabelText('NOM')).toHaveValue('DUPRÉ MARTIN');
+
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+    await waitFor(() => {
+      expect(mutationMocks.saveClient).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ representedBy: 'Jean-Pierre DUPRÉ MARTIN' }),
+      );
+    });
   });
 });

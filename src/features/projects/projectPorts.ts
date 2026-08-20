@@ -168,6 +168,13 @@ export function formatProjectPort(port: ProjectPort): string {
   return [port.port, port.municipality, formatLocode(port.locode)].filter(Boolean).join(' – ');
 }
 
+export function formatProjectOfferPort(value: string): string {
+  const normalizedValue = normalizePortSearch(value);
+  const port = PROJECT_PORTS.find((candidate) => normalizePortSearch(candidate.port) === normalizedValue);
+  if (!port?.locode) return value;
+  return `${port.port}\n${formatLocode(port.locode)}`;
+}
+
 function normalizePortSearch(value: string): string {
   return String(value || '')
     .normalize('NFD')
