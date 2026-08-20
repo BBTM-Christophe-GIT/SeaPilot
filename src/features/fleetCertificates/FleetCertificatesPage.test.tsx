@@ -300,6 +300,34 @@ describe('FleetCertificatesPage', () => {
     expect(await screen.findByText('Document ajouté.')).toBeInTheDocument();
   });
 
+  it('submits the new issue and expiry dates when renewing a certificate', async () => {
+    const user = userEvent.setup(); const { client, rpc, storageApi } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Renouveler Certificat de Franc-Bord' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Renouveler le certificat' });
+    fireEvent.change(within(dialog).getByLabelText('Date d’émission'), { target: { value: '2026-08-20' } });
+    expect(within(dialog).getByLabelText('Nouvelle échéance (facultative)')).toHaveValue('2027-08-20');
+    fireEvent.change(within(dialog).getByLabelText('Nouvelle échéance (facultative)'), { target: { value: '2028-08-20' } });
+    await user.upload(
+      within(dialog).getByLabelText('Nouveau certificat signé'),
+      new File(['certificat'], 'franc-bord-signe.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+
+    expect(await screen.findByText('Renouvellement enregistré.')).toBeInTheDocument();
+    expect(storageApi.upload).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('submit_fleet_certificate_renewal', expect.objectContaining({
+      p_certificate_id: 42,
+      p_original_file_name: 'franc-bord-signe.pdf',
+      p_issued_on: '2026-08-20',
+      p_expires_on: '2028-08-20',
+    }));
+  });
+
   it('opens the centered visit agenda from the Planning-style ribbon with searchable grouped ports', async () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);

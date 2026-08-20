@@ -624,6 +624,9 @@ export async function submitFleetCertificateRenewal(
 ): Promise<void> {
   if (!input.file) throw new Error('Sélectionnez un document.');
   if (!input.issuedOn) throw new Error("Renseignez la date d'émission du document.");
+  if (input.expiresOn && input.expiresOn < input.issuedOn) {
+    throw new Error("La date d'échéance ne peut pas être antérieure à la date d'émission.");
+  }
   if (input.file.size > 50 * 1024 * 1024) throw new Error('Le document dépasse la limite de 50 Mo.');
   const extension = input.file.name.split('.').pop()?.toLowerCase() || '';
   if (!['pdf', 'png', 'jpg', 'jpeg', 'xlsx'].includes(extension)) {

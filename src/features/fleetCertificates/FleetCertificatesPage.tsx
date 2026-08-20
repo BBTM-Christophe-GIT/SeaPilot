@@ -158,10 +158,17 @@ function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCerti
   const [formError, setFormError] = useState('');
   const [issuedOn, setIssuedOn] = useState('');
   const [expiresOn, setExpiresOn] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('document.pdf');
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setFormError(''); setSaving(true);
-    try { await onSave(new FormData(event.currentTarget)); onClose(); }
+    try {
+      if (!selectedFile) throw new Error('Sélectionnez un document.');
+      const form = new FormData(event.currentTarget);
+      form.set('file', selectedFile);
+      await onSave(form);
+      onClose();
+    }
     catch (caught) { setFormError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer le document.'); }
     finally { setSaving(false); }
   }
@@ -169,10 +176,10 @@ function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCerti
   const firstDocument = !certificate.storagePath;
   return <Modal title={firstDocument ? 'Ajouter le document' : 'Renouveler le certificat'} onClose={onClose}><form className="fcx-form" onSubmit={submit}>
     <p className="fcx-form-context"><RefreshCw size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
-    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Nouvelle échéance (facultative)<input aria-label="Nouvelle échéance (facultative)" name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label></div>
+    <div className="fcx-form-grid"><label>Date d’émission<input name="issued" onChange={(event) => { const value = event.target.value; setIssuedOn(value); setExpiresOn(getDefaultFleetCertificateExpiryDate(value)); }} required type="date" value={issuedOn} /></label><label>Nouvelle échéance (facultative)<input aria-label="Nouvelle échéance (facultative)" min={issuedOn || undefined} name="expires" onChange={(event) => setExpiresOn(event.target.value)} type="date" value={expiresOn} /></label></div>
     {finalFileName && <p className="fcx-file-name-preview"><FileText size={16} /><span>Nom final du fichier<strong>{finalFileName}</strong></span></p>}
     <label>Note de renouvellement<textarea name="notes" rows={3} /></label>
-    <label className="fcx-drop"><UploadCloud size={22} /><span>Nouveau certificat signé</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" name="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || 'document.pdf')} required type="file" /></label>
+    <label className="fcx-drop"><UploadCloud size={22} /><span>Nouveau certificat signé</span><input accept=".pdf,.png,.jpg,.jpeg,.xlsx" aria-required="true" name="file" onChange={(event) => { const file = event.target.files?.[0] || null; setSelectedFile(file); setFileName(file?.name || 'document.pdf'); }} type="file" /></label>
     {formError ? <p className="fcx-form-error" role="alert">{formError}</p> : null}
     <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><RefreshCw size={16} /> {saving ? 'Enregistrement…' : firstDocument ? 'Ajouter le document' : 'Enregistrer la nouvelle version'}</button></footer>
   </form></Modal>;
