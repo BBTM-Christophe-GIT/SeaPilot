@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { X } from 'lucide-react';
+import { Check, Copy, X } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useId, useState } from 'react';
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
@@ -7,12 +7,13 @@ import {
   fetchAdminInviteCandidates,
   inviteSeaPilotUser,
   type AdminInviteCandidate,
+  type AdminInvitationResult,
 } from './adminQueries';
 
 interface InviteUserDialogProps {
   client: SupabaseClient;
   onClose: () => void;
-  onInvited: () => Promise<void> | void;
+  onInvited: (delivery: AdminInvitationResult['delivery']) => Promise<void> | void;
 }
 
 export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialogProps) {
@@ -26,6 +27,8 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [manualActivationLink, setManualActivationLink] = useState('');
+  const [isLinkCopied, setIsLinkCopied] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -92,17 +95,31 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
     setIsSubmitting(true);
 
     try {
-      await inviteSeaPilotUser(client, {
+      const result = await inviteSeaPilotUser(client, {
         email,
         displayName,
         roleKeys,
         personId: selectedPersonId ? Number(selectedPersonId) : null,
       });
-      await onInvited();
+      if (result.delivery === 'manual_link') {
+        setManualActivationLink(result.activationLink);
+      }
+      await onInvited(result.delivery);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible d'envoyer l'invitation.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function copyActivationLink() {
+    setErrorMessage(null);
+
+    try {
+      await navigator.clipboard.writeText(manualActivationLink);
+      setIsLinkCopied(true);
+    } catch {
+      setErrorMessage('La copie automatique a échoué. Sélectionnez puis copiez le lien affiché.');
     }
   }
 
@@ -133,10 +150,49 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
         </header>
 
         <p className="admin-dialog-description" id={descriptionId}>
-          SeaPilot enverra un lien personnel pour activer le compte et choisir un mot de passe.
+          {manualActivationLink
+            ? 'Le compte est créé. Transmettez maintenant son lien personnel d’activation.'
+            : 'SeaPilot enverra un lien personnel pour activer le compte et choisir un mot de passe.'}
         </p>
 
-        <form className="admin-invite-form" onSubmit={handleSubmit}>
+        {manualActivationLink ? (
+          <div className="admin-invite-fallback">
+            <div className="admin-invite-fallback-notice" role="status">
+              <strong>Quota d’envoi d’emails atteint</strong>
+              <p>
+                L’invitation a été enregistrée, mais Supabase ne peut plus envoyer d’email pour le moment.
+                Copiez ce lien et transmettez-le uniquement à {displayName}.
+              </p>
+            </div>
+
+            <label>
+              Lien d’activation personnel
+              <input
+                onFocus={(event) => event.currentTarget.select()}
+                readOnly
+                type="url"
+                value={manualActivationLink}
+              />
+            </label>
+
+            <p className="admin-invite-fallback-security">
+              Ce lien est à usage unique et donne accès à la création du mot de passe du compte.
+            </p>
+
+            {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+
+            <footer className="admin-dialog-actions">
+              <button className="admin-secondary-button" onClick={onClose} type="button">
+                Fermer
+              </button>
+              <button className="admin-primary-button" onClick={copyActivationLink} type="button">
+                {isLinkCopied ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}
+                {isLinkCopied ? 'Lien copié' : 'Copier le lien d’activation'}
+              </button>
+            </footer>
+          </div>
+        ) : (
+          <form className="admin-invite-form" onSubmit={handleSubmit}>
           <label>
             Associer à un marin (facultatif)
             <select
@@ -208,7 +264,8 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
               {isSubmitting ? 'Envoi en cours…' : "Envoyer l'invitation"}
             </button>
           </footer>
-        </form>
+          </form>
+        )}
       </section>
     </div>
   );
