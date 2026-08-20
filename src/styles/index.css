@@ -20274,6 +20274,141 @@ button.planning-p12-conflict-card {
   .fleet-detail > header { align-items: flex-start; flex-direction: column; }
 }
 
+/* Navires — registre d'actifs master/detail ----------------------------- */
+.fleet-heading-actions,
+.fleet-detail-heading,
+.fleet-detail-heading > div,
+.fleet-kind-tabs,
+.fleet-detail-tabs,
+.fleet-highlight-grid > div,
+.fleet-photo-field,
+.fleet-empty-detail {
+  display: flex;
+  align-items: center;
+}
+.fleet-heading-actions { gap: 8px !important; }
+.fleet-heading-actions button,
+.fleet-detail-heading button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #b9cbd6;
+  border-radius: 7px;
+  color: #16445d;
+  background: #fff;
+  font-weight: 750;
+  cursor: pointer;
+}
+.fleet-heading-actions button.is-primary { color: #fff; border-color: #075e74; background: #075e74; }
+.fleet-kind-tabs {
+  gap: 7px;
+  width: max-content;
+  max-width: 100%;
+  padding: 5px;
+  border: 1px solid #d7e2ea;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgb(21 55 79 / 4%);
+}
+.fleet-kind-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  color: #526c7f;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+.fleet-kind-tabs button strong { min-width: 24px; padding: 3px 7px; border-radius: 999px; color: #456477; background: #e9f0f4; font-size: 11px; }
+.fleet-kind-tabs button.is-active { color: #fff; background: #075e74; box-shadow: 0 6px 16px rgb(7 94 116 / 20%); }
+.fleet-kind-tabs button.is-active strong { color: #075e74; background: #fff; }
+.fleet-layout { grid-template-columns: minmax(300px, 32%) minmax(0, 1fr); align-items: start; min-height: 680px; }
+.fleet-roster { position: sticky; top: 12px; }
+.fleet-vessel-list { max-height: 600px; }
+.fleet-vessel-list > button { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; justify-content: stretch; }
+.fleet-vessel-list > button .fleet-list-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; color: #3f7086; background: #e8f1f4; }
+.fleet-vessel-list > button.is-active .fleet-list-icon { color: #fff; background: #075e74; }
+.fleet-vessel-list > p { margin: 10px 4px; color: #708797; font-size: 13px; }
+.fleet-detail { overflow: hidden; padding: 0; }
+.fleet-vessel-photo,
+.fleet-place-hero { position: relative; height: 260px; overflow: hidden; background: #dfe9ef; }
+.fleet-vessel-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 48%; }
+.fleet-vessel-photo.is-empty,
+.fleet-place-hero { display: grid; place-items: center; align-content: center; gap: 10px; color: #5d788a; }
+.fleet-place-hero { height: 180px; color: #fff; background: linear-gradient(135deg, #123b59, #076e78); }
+.fleet-place-hero.is-quay { background: linear-gradient(135deg, #30485c, #51768c); }
+.fleet-place-hero span { font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.fleet-photo-gradient { position: absolute; inset: auto 0 0; height: 40%; background: linear-gradient(transparent, rgb(6 36 58 / 52%)); pointer-events: none; }
+.fleet-detail-heading { align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 18px; border-bottom: 1px solid #dfe8ed; }
+.fleet-detail-heading > div:first-child { align-items: flex-start; flex-direction: column; }
+.fleet-detail-heading > div:last-child { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.fleet-detail-heading h2 { color: #0b2c43; font-size: 25px; }
+.fleet-detail-heading p { color: #657b8b; font-size: 13px; }
+.fleet-detail-heading button.is-danger { color: #9e3e36; border-color: #e2b6b2; }
+.fleet-status { margin-top: 4px; padding: 4px 8px; border-radius: 999px; color: #91542f; background: #fff0e6; font-size: 10px; font-weight: 850; text-transform: uppercase; }
+.fleet-status.is-active { color: #176542; background: #e6f6ed; }
+.fleet-detail-tabs { gap: 2px; padding: 0 22px; border-bottom: 1px solid #dfe8ed; }
+.fleet-detail-tabs button { position: relative; min-height: 46px; padding: 0 14px; border: 0; color: #61798a; background: transparent; font-weight: 800; cursor: pointer; }
+.fleet-detail-tabs button.is-active { color: #075e74; }
+.fleet-detail-tabs button.is-active:after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 3px; border-radius: 3px 3px 0 0; background: #0b9bac; content: ''; }
+.fleet-highlight-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 18px 22px 4px; }
+.fleet-highlight-grid > div { gap: 9px; min-width: 0; padding: 12px; border: 1px solid #dce7ec; border-radius: 9px; color: #0a7080; background: #f6fafb; }
+.fleet-highlight-grid span { display: grid; gap: 2px; min-width: 0; }
+.fleet-highlight-grid small { color: #6d8392; font-size: 9px; }
+.fleet-highlight-grid strong { overflow: hidden; color: #153f57; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-detail-section { padding: 20px 22px 0; }
+.fleet-detail-section + .fleet-detail-section { margin-top: 10px; border-top: 1px solid #e7eef2; }
+.fleet-detail-section h3,
+.fleet-dialog-grid > h3 { margin: 0; color: #173f56; font-size: 15px; }
+.fleet-detail-section h3:before,
+.fleet-dialog-grid > h3:before { display: inline-block; width: 3px; height: 14px; margin-right: 8px; border-radius: 2px; background: #0b9bac; vertical-align: -2px; content: ''; }
+.fleet-detail-section.is-source { margin: 14px 0 0; padding-bottom: 18px; background: #f8fafb; }
+.fleet-detail-section .fleet-detail-grid { margin-bottom: 0; }
+.fleet-detail-grid .is-wide { grid-column: 1 / -1; }
+.fleet-detail-grid dd { overflow-wrap: anywhere; }
+.fleet-manning-panel { border: 0; border-radius: 0; padding: 18px 22px 24px; box-shadow: none; }
+.fleet-disconnected-note { margin: 0 0 14px !important; padding: 10px 12px; border: 1px solid #b8dfe4; border-radius: 7px; color: #1a6370 !important; background: #edf8f9; font-size: 12px !important; font-weight: 700; }
+.fleet-empty-detail { min-height: 430px; justify-content: center; flex-direction: column; color: #718898; }
+.fleet-dialog.is-wide { width: min(980px, 100%); }
+.fleet-dialog-grid input,
+.fleet-dialog-grid select,
+.fleet-dialog-grid textarea { min-height: 40px; padding: 8px 10px; border: 1px solid #c8d7e0; border-radius: 6px; color: #173d55; background: #fff; font: inherit; }
+.fleet-dialog-grid textarea { min-height: 78px; resize: vertical; }
+.fleet-dialog-grid > h3 { padding-top: 8px; border-top: 1px solid #e2e9ed; }
+.fleet-photo-field { grid-template-columns: auto minmax(0, 1fr) auto !important; gap: 10px !important; padding: 12px; border: 1px dashed #8ebdca; border-radius: 8px; color: #15586a !important; background: #f0f8fa; }
+.fleet-photo-field > span { display: grid; gap: 2px; }
+.fleet-photo-field small { color: #718898; font-size: 10px; text-transform: none; }
+.fleet-photo-field input { min-height: auto; padding: 0; border: 0; background: transparent; }
+
+@media (max-width: 1100px) {
+  .fleet-highlight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-detail-heading { flex-direction: column; }
+  .fleet-detail-heading > div:last-child { justify-content: flex-start; }
+}
+@media (max-width: 900px) {
+  .fleet-layout { grid-template-columns: minmax(0, 1fr); }
+  .fleet-kind-tabs { width: 100%; overflow-x: auto; }
+  .fleet-kind-tabs button { flex: 1 0 auto; }
+  .fleet-roster { position: static; }
+  .fleet-vessel-list { max-height: 340px; }
+}
+@media (max-width: 620px) {
+  .fleet-heading-actions { width: 100%; flex-wrap: wrap; }
+  .fleet-heading-actions button { flex: 1; }
+  .fleet-vessel-photo { height: 210px; }
+  .fleet-highlight-grid { grid-template-columns: 1fr; }
+  .fleet-detail-tabs { overflow-x: auto; }
+  .fleet-detail-grid .is-wide { grid-column: auto; }
+  .fleet-photo-field { grid-template-columns: 1fr !important; }
+}
+
 .planning-assignment-note-cell.has-staffing-alert {
   outline: 2px solid #d94343;
   outline-offset: -2px;

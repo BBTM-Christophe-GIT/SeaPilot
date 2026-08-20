@@ -35,7 +35,7 @@ import {
 import { formatPlanningPerson, type PlanningDateRange } from './planningModel';
 import type { PlanningOverview } from './planningQueries';
 
-type P11Tab = 'rotations' | 'templates' | 'manning';
+type P11Tab = 'rotations' | 'templates';
 type OperationalChange = 'assignments' | 'projects' | 'handovers';
 
 const EMPTY_DATA: PlanningP11Data = { rotations: [], templates: [], matrices: [], certificates: [] };
@@ -261,14 +261,16 @@ function TemplateTab({ client, data, overview, editable, onReload, onOperational
   </section>;
 }
 
-export function ManningTab({ client, data, overview, range, editable, onReload, setFeedback }: {
+export function ManningTab({ client, data, overview, range, editable, fixedVesselId, linkToPlanning = true, onReload, setFeedback }: {
   client: SupabaseClient; data: PlanningP11Data; overview: PlanningOverview; range: PlanningDateRange;
-  editable: boolean; onReload: () => Promise<void>; setFeedback: (message: string, error?: boolean) => void;
+  editable: boolean; fixedVesselId?: number; linkToPlanning?: boolean;
+  onReload: () => Promise<void>; setFeedback: (message: string, error?: boolean) => void;
 }) {
-  const vessels = overview.vessels.filter((vessel) => vessel.active);
+  const vessels = overview.vessels.filter((vessel) => vessel.active && (!fixedVesselId || vessel.id === fixedVesselId));
+  const matrices = data.matrices.filter((matrix) => !fixedVesselId || matrix.vesselId === fixedVesselId);
   const situations = Array.from({ length: 6 }, (_, index) => `Situation ${index + 1}`);
   const emptyForm = (): SavePlanningManningMatrixInput => ({
-    vesselId: vessels[0]?.id || 0,
+    vesselId: fixedVesselId || vessels[0]?.id || 0,
     name: situations[0],
     navigationGenre: '',
     activityDescription: '',
@@ -281,10 +283,12 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
   const [form, setForm] = useState<SavePlanningManningMatrixInput>(emptyForm);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isCustomActivityDescription, setIsCustomActivityDescription] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | null>(data.matrices[0]?.id || null);
+  const [selectedId, setSelectedId] = useState<number | null>(matrices[0]?.id || null);
   const [isSaving, setIsSaving] = useState(false);
-  const selected = data.matrices.find((matrix) => matrix.id === selectedId) || data.matrices[0] || null;
-  const comparison = useMemo(() => selected ? buildManningMatrixComparison(overview, selected, range.start, range.end) : [], [overview, range.end, range.start, selected]);
+  const selected = matrices.find((matrix) => matrix.id === selectedId) || matrices[0] || null;
+  const comparison = linkToPlanning && selected
+    ? buildManningMatrixComparison(overview, selected, range.start, range.end)
+    : [];
   const certificateGroups = useMemo(
     () => groupCertificates(data.certificates, MANNING_CERTIFICATE_CATEGORIES),
     [data.certificates],
@@ -370,7 +374,7 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
     {isFormOpen ? <form className="planning-p11-form" onSubmit={submit}>
       <div className="planning-p11-form-grid">
         <label>Situation<select required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}>{situations.map((situation) => <option key={situation}>{situation}</option>)}</select></label>
-        <label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
+        {!fixedVesselId ? <label>Navire<select value={form.vesselId} onChange={(event) => setForm({ ...form, vesselId: Number(event.target.value) })}>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label> : null}
         <label className="is-wide">Genre(s) de navigation<select required value={form.navigationGenre} onChange={(event) => setForm({ ...form, navigationGenre: event.target.value })}><option value="">Sélectionner un genre de navigation</option>{PLANNING_NAVIGATION_GENRES.map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select></label>
         <label className="is-wide">Description de l’activité, des conditions d’exploitation, des limites d’exploitation<select required value={isCustomActivityDescription ? CUSTOM_ACTIVITY_DESCRIPTION : form.activityDescription} onChange={(event) => {
           if (event.target.value === CUSTOM_ACTIVITY_DESCRIPTION) {
@@ -410,13 +414,13 @@ export function ManningTab({ client, data, overview, range, editable, onReload, 
       </div>
       <footer><button className="is-secondary" onClick={() => setIsFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Enregistrer la situation</button></footer>
     </form> : null}
-    {data.matrices.length ? <><div className="planning-p11-matrix-picker">{data.matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>Contrôle automatique</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><dl className="planning-p11-situation-context"><div><dt>Genre(s) de navigation</dt><dd>{selected.navigationGenre || 'Non renseigné'}</dd></div><div><dt>Description de l’activité, des conditions d’exploitation, des limites d’exploitation</dt><dd>{selected.activityDescription || 'Non renseignée'}</dd></div><div><dt>Prescriptions ou conditions spéciales</dt><dd>{selected.notes || 'Aucune'}</dd></div></dl><div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div></div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée.</p></div>}
+    {matrices.length ? <><div className="planning-p11-matrix-picker">{matrices.map((matrix) => <button className={matrix.id === selected?.id ? 'is-active' : ''} key={matrix.id} onClick={() => setSelectedId(matrix.id)} type="button"><span><strong>{matrix.name}</strong><small>{overview.vessels.find((vessel) => vessel.id === matrix.vesselId)?.name} · v{matrix.version}</small></span></button>)}</div>{selected ? <div className="planning-p11-comparison"><header><div><small>{linkToPlanning ? 'Contrôle automatique' : 'Référentiel du navire'}</small><h4>{selected.name}</h4></div>{editable ? <button onClick={() => openMatrix(selected)} type="button"><Edit3 size={15} />Configurer</button> : null}</header><dl className="planning-p11-situation-context"><div><dt>Genre(s) de navigation</dt><dd>{selected.navigationGenre || 'Non renseigné'}</dd></div><div><dt>Description de l’activité, des conditions d’exploitation, des limites d’exploitation</dt><dd>{selected.activityDescription || 'Non renseignée'}</dd></div><div><dt>Prescriptions ou conditions spéciales</dt><dd>{selected.notes || 'Aucune'}</dd></div></dl>{linkToPlanning ? <div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Affecté</th><th>Vacant</th><th>Conformité des brevets</th></tr></thead><tbody>{comparison.map((row) => <tr className={row.vacantCount || row.noncompliant.length ? 'has-alert' : ''} key={row.functionLabel}><td><strong>{row.functionLabel}</strong></td><td>{row.plannedCount}</td><td>{row.vacantCount}</td><td>{row.noncompliant.length ? row.noncompliant.map((item) => <span key={item.personId}>{item.personName} : {item.missing.join(', ')}</span>) : <span className="is-ok"><ShieldCheck size={14} />Conforme</span>}</td></tr>)}</tbody></table></div> : <div className="planning-p11-comparison-table"><table><thead><tr><th>Poste</th><th>Brevets requis</th><th>Habilitations requises</th></tr></thead><tbody>{selected.requirements.map((requirement) => <tr key={requirement.id || requirement.displayOrder}><td><strong>{requirement.functionLabel}</strong></td><td>{requirement.requiredCertificates.join(', ') || 'Aucun'}</td><td>{requirement.requiredAuthorizations.join(', ') || 'Aucune'}</td></tr>)}</tbody></table></div>}</div> : null}</> : <div className="planning-calendar-empty"><ShieldCheck size={24} /><p>Aucune décision d’effectif configurée pour ce navire.</p></div>}
   </section>;
 }
 
-export function PlanningP11Panel({ client, overview, range, canManageRotations, canManageTemplates, canManageManning, onClose, onOperationalChange }: {
-  client: SupabaseClient; overview: PlanningOverview; range: PlanningDateRange;
-  canManageRotations: boolean; canManageTemplates: boolean; canManageManning: boolean;
+export function PlanningP11Panel({ client, overview, canManageRotations, canManageTemplates, onClose, onOperationalChange }: {
+  client: SupabaseClient; overview: PlanningOverview;
+  canManageRotations: boolean; canManageTemplates: boolean;
   onClose: () => void; onOperationalChange: (kind: OperationalChange) => Promise<void>;
 }) {
   const [tab, setTab] = useState<P11Tab>('rotations');
@@ -435,5 +439,5 @@ export function PlanningP11Panel({ client, overview, range, canManageRotations, 
   }, [client]);
   const setFeedback = (message: string, level: boolean | 'warning' = false) => setFeedbackState({ message, level: level === true ? 'error' : level === 'warning' ? 'warning' : 'success' });
   const feedbackClassName = feedback?.level === 'error' ? 'form-error' : feedback?.level === 'warning' ? 'planning-warning' : 'admin-success';
-  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations, modèles et décision d’effectif" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et armement</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button><button aria-selected={tab === 'manning'} className={tab === 'manning' ? 'is-active' : ''} onClick={() => setTab('manning')} role="tab" type="button">Décision d’effectif</button></nav>{feedback ? <p className={`${feedbackClassName} planning-p11-feedback`} role={feedback.level === 'error' ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations, modèles et décisions d’effectif…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : tab === 'templates' ? <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : <ManningTab client={client} data={data} editable={canManageManning} onReload={reload} overview={overview} range={range} setFeedback={setFeedback} />}</div></section></div>;
+  return <div className="planning-dialog-backdrop is-side-panel" role="presentation"><section aria-label="Rotations et modèles" aria-modal="true" className="planning-dialog is-side-panel planning-p11-panel" role="dialog"><header><div><Anchor aria-hidden="true" size={20} /><span><small>Planification structurée · P1.1</small><h2>Rotations et modèles</h2></span></div><div><button aria-label="Actualiser la planification structurée" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={17} /></button><button aria-label="Fermer" onClick={onClose} type="button"><X size={18} /></button></div></header><nav aria-label="Sections P1.1" className="planning-p11-tabs"><button aria-selected={tab === 'rotations'} className={tab === 'rotations' ? 'is-active' : ''} onClick={() => setTab('rotations')} role="tab" type="button">Rotations</button><button aria-selected={tab === 'templates'} className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')} role="tab" type="button">Modèles</button></nav>{feedback ? <p className={`${feedbackClassName} planning-p11-feedback`} role={feedback.level === 'error' ? 'alert' : 'status'}>{feedback.message}</p> : null}<div className="planning-p11-body">{isLoading ? <div className="admin-state" role="status">Chargement des rotations et modèles…</div> : tab === 'rotations' ? <RotationTab client={client} data={data} editable={canManageRotations} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} /> : <TemplateTab client={client} data={data} editable={canManageTemplates} onOperationalChange={onOperationalChange} onReload={reload} overview={overview} setFeedback={setFeedback} />}</div></section></div>;
 }

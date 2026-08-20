@@ -2,7 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PlanningP11Panel } from './PlanningP11Panel';
+import { ManningTab, PlanningP11Panel } from './PlanningP11Panel';
+import type { PlanningP11Data } from './planningP11';
 import type { PlanningOverview } from './planningQueries';
 import {
   applyPlanningTemplate,
@@ -46,8 +47,9 @@ describe('Planning P1.1 panel', () => {
   it('generates a 14/14 rotation and refreshes only assignments', async () => {
     const user = userEvent.setup();
     const onOperationalChange = vi.fn().mockResolvedValue(undefined);
-    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={onOperationalChange} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
+    render(<PlanningP11Panel canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={onOperationalChange} overview={overview} />);
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
+    expect(screen.queryByRole('tab', { name: 'Décision d’effectif' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Nouvelle rotation' }));
     const form = screen.getByRole('button', { name: 'Générer la série' }).closest('form')!;
     expect(within(form).getByLabelText('Rythme')).toHaveValue('14_14');
@@ -63,7 +65,7 @@ describe('Planning P1.1 panel', () => {
     const user = userEvent.setup();
     const consoleWarning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const onOperationalChange = vi.fn().mockRejectedValue(new Error('refresh failed'));
-    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={onOperationalChange} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
+    render(<PlanningP11Panel canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={onOperationalChange} overview={overview} />);
     await screen.findByRole('heading', { name: 'Rotations d’équipage' });
     await user.click(screen.getByRole('button', { name: 'Nouvelle rotation' }));
     await user.click(screen.getByRole('button', { name: 'Générer la série' }));
@@ -75,27 +77,25 @@ describe('Planning P1.1 panel', () => {
     consoleWarning.mockRestore();
   });
 
-  it('shows vacancies in read-only mode and does not expose matrix editing', async () => {
-    vi.mocked(fetchPlanningP11Data).mockResolvedValue({
+  it('shows the vessel staffing reference without Planning comparison in read-only mode', async () => {
+    const data: PlanningP11Data = {
       rotations: [], templates: [], certificates: [], matrices: [{
         id: 2, vesselId: 1, name: 'Armement COTENTIN', navigationGenre: 'CN-CABOTAGE NATIONAL', activityDescription: 'Navigation côtière', effectiveFrom: '2026-01-01', effectiveTo: '', status: 'active', notes: '', version: 1,
         requirements: [{ id: 3, matrixId: 2, functionLabel: 'Capitaine', minimumCount: 1, targetCount: 1, requiredCertificates: [], requiredQualifications: [], requiredAuthorizations: [], requiredTrainings: [], restrictions: [], displayOrder: 0 }],
       }],
-    });
-    const user = userEvent.setup();
-    render(<PlanningP11Panel canManageManning={false} canManageRotations={false} canManageTemplates={false} client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
-    await screen.findByRole('heading', { name: 'Rotations d’équipage' });
-    await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
+    };
+    render(<ManningTab client={client} data={data} editable={false} fixedVesselId={1} linkToPlanning={false} onReload={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} setFeedback={vi.fn()} />);
     expect(await screen.findByRole('heading', { name: 'Armement COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText('CN-CABOTAGE NATIONAL')).toBeInTheDocument();
     expect(screen.getByText('Navigation côtière')).toBeInTheDocument();
     const row = screen.getByRole('cell', { name: 'Capitaine' }).closest('tr')!;
-    expect(within(row).getAllByRole('cell')[2]).toHaveTextContent('1');
+    expect(within(row).getAllByRole('cell')).toHaveLength(3);
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('Aucun');
     expect(screen.queryByRole('button', { name: 'Configurer' })).not.toBeInTheDocument();
   });
 
   it('uses a Situation selector and a STCW multi-select without the removed matrix fields', async () => {
-    vi.mocked(fetchPlanningP11Data).mockResolvedValue({
+    const data: PlanningP11Data = {
       rotations: [], templates: [], matrices: [],
       certificates: [
         { id: 1, sourceItemId: 3, name: 'Capitaine 200', category: 'Pont', stcwRules: ['II/3'] },
@@ -104,11 +104,9 @@ describe('Planning P1.1 panel', () => {
         { id: 4, sourceItemId: 47, name: 'CACES', category: 'Conduite d’Engin', stcwRules: [] },
         { id: 5, sourceItemId: 38, name: 'Contrat', category: 'Ressources Humaines', stcwRules: [] },
       ],
-    });
+    };
     const user = userEvent.setup();
-    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
-    await screen.findByRole('heading', { name: 'Rotations d’équipage' });
-    await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
+    render(<ManningTab client={client} data={data} editable fixedVesselId={1} linkToPlanning={false} onReload={vi.fn().mockResolvedValue(undefined)} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} setFeedback={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Nouvelle situation' }));
 
     expect(screen.getByLabelText('Situation')).toHaveValue('Situation 1');
@@ -176,7 +174,7 @@ describe('Planning P1.1 panel', () => {
   });
 
   it('reclassifies catalog values without deleting legacy staffing requirements', async () => {
-    vi.mocked(fetchPlanningP11Data).mockResolvedValue({
+    const data: PlanningP11Data = {
       rotations: [], templates: [],
       certificates: [
         { id: 1, sourceItemId: 3, name: 'Capitaine 200', category: 'Pont', stcwRules: ['II/3'] },
@@ -190,11 +188,9 @@ describe('Planning P1.1 panel', () => {
           requiredAuthorizations: ['Legacy habilitation', 'Capitaine 200'], requiredTrainings: [], restrictions: [], displayOrder: 0,
         }],
       }],
-    });
+    };
     const user = userEvent.setup();
-    render(<PlanningP11Panel canManageManning canManageRotations canManageTemplates client={client} onClose={vi.fn()} onOperationalChange={vi.fn()} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} />);
-    await screen.findByRole('heading', { name: 'Rotations d’équipage' });
-    await user.click(screen.getByRole('tab', { name: 'Décision d’effectif' }));
+    render(<ManningTab client={client} data={data} editable fixedVesselId={1} linkToPlanning={false} onReload={vi.fn().mockResolvedValue(undefined)} overview={overview} range={{ start: '2026-08-01', end: '2026-08-31' }} setFeedback={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Configurer' }));
     await user.click(screen.getByRole('button', { name: 'Enregistrer la situation' }));
 

@@ -10,6 +10,22 @@ select has_function(
   'public', 'planning_staffing_board_status', array['bigint', 'text', 'date'],
   'staffing compliance is evaluated for one vessel, board and day'
 );
+select has_column(
+  'public', 'companies', 'staffing_decision_planning_enabled',
+  'the Planning integration is controlled by a company feature switch'
+);
+select has_column(
+  'public', 'vessels', 'asset_kind',
+  'the mixed SharePoint source is classified as vessel, office or quay'
+);
+select has_column(
+  'public', 'vessels', 'photo_storage_path',
+  'a vessel can reference an uploaded photo'
+);
+select has_column(
+  'public', 'vessels', 'brochure_subtitle',
+  'structured brochure characteristics are stored with the vessel'
+);
 select has_function(
   'public', 'planning_staffing_alerts', array['date', 'date'],
   'administrators can load staffing alerts for the visible planning range'
@@ -44,7 +60,17 @@ select matches(
 select matches(
   pg_get_functiondef('public.publish_planning_release()'::regprocedure),
   '(?is)planning_staffing_release_has_blockers.*PLANNING_STAFFING_REVIEW_REQUIRED',
-  'publication is blocked server-side while a staffing discrepancy remains blocking'
+  'the dormant publication hook remains available for future reactivation'
+);
+select matches(
+  pg_get_functiondef('public.planning_staffing_release_has_blockers(bigint)'::regprocedure),
+  '(?is)staffing_decision_planning_enabled.*return false',
+  'publication ignores staffing discrepancies while the switch is disabled'
+);
+select matches(
+  pg_get_functiondef('public.planning_staffing_alerts(date,date)'::regprocedure),
+  '(?is)staffing_decision_planning_enabled.*return',
+  'Planning alerts are silent while the switch is disabled'
 );
 
 select * from finish();

@@ -1180,29 +1180,22 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Accident du Travail enregistré pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
   });
 
-  it('creates a board from the vessel staffing decision and proposes compatible available sailors', async () => {
+  it('creates a board independently from the vessel staffing decision', async () => {
     const user = userEvent.setup();
-    const visibleRange = timelineRange(buildPlanningTimeline(todayPlanningDate(), 'month'));
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
-      matrices: [{ id: 5, vessel_id: 1, name: 'Situation 1', effective_from: '2026-01-01', effective_to: null, status: 'active', notes: null, version: 1 }],
-      manningRequirements: [{ id: 9, matrix_id: 5, function_label: 'Capitaine', minimum_count: 1, target_count: 1, required_certificates: [], required_qualifications: [], required_authorizations: [], required_trainings: [], restrictions: [], display_order: 0 }],
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Ajouter une bordée à COTENTIN' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Créer Bordée 1' });
-    expect(within(dialog).getByText('Capitaine')).toBeInTheDocument();
-    await user.selectOptions(within(dialog).getByLabelText('Marin pour Capitaine'), '10');
-    await user.click(within(dialog).getByRole('button', { name: 'Créer la bordée' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Bordée 1' });
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Jean MARTIN' }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_planning_board_assignments', {
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
       p_vessel_id: 1,
       p_watch_group: 'Bordée 1',
-      p_starts_on: visibleRange.start,
-      p_ends_on: visibleRange.end,
-      p_positions: [{ personId: 10, functionLabel: 'Capitaine' }],
+      p_person_id: 10,
     }));
   });
 

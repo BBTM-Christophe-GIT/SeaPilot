@@ -1,5 +1,15 @@
 # SeaPilot design system — Projects redesign
 
+## Extension — module Navires
+
+- Le module `Navires` reste dans le shell opérationnel existant et conserve les mêmes tokens, typographies et composants.
+- Le niveau principal sépare clairement `Navires`, `Bureaux` et `Quais`, avec une liste filtrable à gauche et une fiche détaillée à droite.
+- Chaque navire possède ses propres sections `Vue d’ensemble` et `Décision d’effectif`; la décision n’est jamais présentée comme un onglet global de la flotte.
+- La fiche navire est structurée par familles : identité maritime, dimensions et capacités, propulsion et performances, équipements de pont, communications, autonomie et aménagement.
+- Une photographie principale sert de point focal dans l’en-tête de la fiche. Les bureaux et quais utilisent une présentation sobre sans fonctions maritimes ni décision d’effectif.
+- L’action `Éditer brochure` est réservée aux navires et reste visible avec les actions d’administration. La brochure générée reprend l’identité BBTM uniquement et ne mentionne jamais SeaPilot.
+- Le design doit privilégier une grande fiche ouverte et des listes structurées, sans grille de cartes décoratives répétitives.
+
 ## Product context
 
 SeaPilot is an internal maritime operations application for BBTM. The Projects module is used by administrative and management roles to browse the project portfolio, create and update clients/projects, add planning operations, review commercial and contractual information, generate project documents, and open SharePoint records.
