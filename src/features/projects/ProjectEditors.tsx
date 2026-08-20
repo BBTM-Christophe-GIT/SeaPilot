@@ -382,7 +382,14 @@ export function ProjectEditor({
   towedAssets,
   vessels,
 }: ProjectEditorProps) {
-  const initialForm = projectToWriteInput(project, contract);
+  const baseInitialForm = projectToWriteInput(project, contract);
+  const initialForm = !project && initialOperation ? {
+    ...baseInitialForm,
+    ...projectStartDateFields(initialOperation.startsOn),
+    ...projectEndDateFields(initialOperation.endsOn),
+    primaryVesselId: initialOperation.vesselIds[0] ?? null,
+    secondaryVesselId: initialOperation.vesselIds[1] ?? null,
+  } : baseInitialForm;
   const initialHirePeriods = projectContractHirePeriodsToWriteInput(project, contract);
   const initialTowedAsset = towedAssetToWriteInput(
     towedAssets.find((asset) => asset.id === contract?.towedAssetId),
@@ -399,18 +406,18 @@ export function ProjectEditor({
   const [errorMessage, setErrorMessage] = useState('');
   const [initialOperationFiles, setInitialOperationFiles] = useState<File[]>([]);
   const [initialOperationForm, setInitialOperationForm] = useState<ProjectPlanningOccurrenceWriteInput | null>(() => (
-    initialOperation ? {
+    !project ? {
       charterHire: null,
       charterHireOverride: false,
       description: '',
-      endsOn: initialOperation.endsOn,
+      endsOn: initialOperation?.endsOn || '',
       hireCurrency: '',
       hireUnit: '',
       occurrenceId: null,
       projectId: 0,
-      startsOn: initialOperation.startsOn,
+      startsOn: initialOperation?.startsOn || '',
       status: 'Non validé',
-      vesselIds: initialOperation.vesselIds,
+      vesselIds: initialOperation?.vesselIds || [],
     } : null
   ));
   const [nextProjectCode, setNextProjectCode] = useState(project?.projectCode || 'P…');
@@ -453,6 +460,30 @@ export function ProjectEditor({
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+    const operationVesselIds = [form.primaryVesselId, form.secondaryVesselId]
+      .filter((vesselId): vesselId is number => vesselId !== null);
+    if (!project) {
+      const missingOperationFields = [
+        !form.primaryVesselId ? 'le navire principal' : '',
+        !form.deliveryAt ? 'la livraison' : '',
+        !form.redeliveryAt ? 'la restitution' : '',
+      ].filter(Boolean);
+      if (missingOperationFields.length > 0) {
+        setActiveStep(!form.deliveryAt || !form.redeliveryAt ? 'planning' : 'billing');
+        setErrorMessage(
+          `Pour créer l’opération dans le planning, renseignez ${missingOperationFields.join(', ')}.`,
+        );
+        return;
+      }
+    }
+    const automaticOperation = !project && initialOperationForm ? {
+      ...initialOperationForm,
+      description: initialOperationForm.description.trim() || form.description.trim(),
+      endsOn: dateOnly(form.redeliveryAt),
+      startsOn: dateOnly(form.deliveryAt),
+      status: 'Non validé',
+      vesselIds: operationVesselIds,
+    } : null;
     setIsSaving(true);
     let savedProject: ProjectMutationResult | null = null;
     try {
@@ -504,13 +535,14 @@ export function ProjectEditor({
         await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
       }
       if (hirePeriodsChanged) await saveProjectContractHirePeriods(client, result.id, hirePeriods);
-      if (initialOperationForm) {
+      if (automaticOperation) {
         const occurrenceId = await saveProjectPlanningOccurrence(client, {
-          ...initialOperationForm,
+          ...automaticOperation,
           projectId: result.id,
         });
         setInitialOperationForm((current) => current ? {
           ...current,
+          ...automaticOperation,
           occurrenceId,
           projectId: result.id,
         } : null);
@@ -624,54 +656,13 @@ export function ProjectEditor({
           <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>2</span> Planning</legend>
             <div className="project-editor-grid">
-              {initialOperationForm ? (
+              {initialOperation && initialOperationForm ? (
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
                   <div className="project-initial-operation-heading">
                     <strong>Première opération</strong>
-                    <small>Cette opération sera créée et rattachée au nouveau Projet/Contrat.</small>
+                    <small>Les dates et navires seront repris depuis Livraison, Restitution et Mission et facturation.</small>
                   </div>
                   <div className="project-editor-grid">
-                    <Field label="Début de l’opération *">
-                      <input
-                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, startsOn: event.target.value } : null)}
-                        required
-                        type="date"
-                        value={initialOperationForm.startsOn}
-                      />
-                    </Field>
-                    <Field label="Fin de l’opération *">
-                      <input
-                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, endsOn: event.target.value } : null)}
-                        required
-                        type="date"
-                        value={initialOperationForm.endsOn}
-                      />
-                    </Field>
-                    <Field label="Navires de l’opération *" wide>
-                      <select
-                        aria-label="Navires de la première opération"
-                        multiple
-                        onChange={(event) => setInitialOperationForm((current) => current ? {
-                          ...current,
-                          vesselIds: Array.from(event.target.selectedOptions, (option) => Number(option.value)),
-                        } : null)}
-                        required
-                        size={Math.min(5, Math.max(2, eligibleVessels.length))}
-                        value={initialOperationForm.vesselIds.map(String)}
-                      >
-                        {eligibleVessels.map((vessel) => (
-                          <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Statut Planning">
-                      <select
-                        onChange={(event) => setInitialOperationForm((current) => current ? { ...current, status: event.target.value } : null)}
-                        value={initialOperationForm.status}
-                      >
-                        {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                      </select>
-                    </Field>
                     <Field label="Description / mission" wide>
                       <textarea
                         onChange={(event) => setInitialOperationForm((current) => current ? { ...current, description: event.target.value } : null)}
@@ -697,8 +688,8 @@ export function ProjectEditor({
                 const value = event.currentTarget.value;
                 setForm((current) => ({ ...current, ...projectEndDateFields(value) }));
               }} type="date" value={form.endsOn} /></Field>
-              <Field label="Livraison"><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
-              <Field label="Restitution"><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
+              <Field label="Livraison *"><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
+              <Field label="Restitution *"><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
               <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
               <Field label="Fin d’affrètement"><input onChange={(event) => update('charterEndsAt', event.target.value)} type="datetime-local" value={form.charterEndsAt} /></Field>
               <PortSelect label="Port de livraison" onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
@@ -822,7 +813,7 @@ export function ProjectEditor({
           <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
             <legend><span>4</span> Mission et facturation</legend>
             <div className="project-editor-grid">
-              <Field label="Navire principal">
+              <Field label="Navire principal *">
                 <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
                   <option value="">Non renseigné</option>
                   {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}

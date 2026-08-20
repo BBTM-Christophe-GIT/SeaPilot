@@ -7,6 +7,7 @@ import {
   buildGeneratedDocumentFileName,
   buildProjectOfferRows,
   buildProjectSupplytimePdfFields,
+  formatOfferGenerationDate,
   generateProjectDocument,
 } from './projectDocumentGeneration';
 
@@ -159,6 +160,10 @@ describe('projectDocumentGeneration', () => {
     expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
       'Campagne - Atlantique - BIMCO SUPPLYTIME 2017 - R1.pdf',
     );
+  });
+
+  it('formats the commercial offer generation date for the PDF footer', () => {
+    expect(formatOfferGenerationDate(new Date('2026-08-20T12:00:00Z'))).toBe('20/08/2026');
   });
 
   it('generates an offer PDF with the BBTM logo asset', async () => {

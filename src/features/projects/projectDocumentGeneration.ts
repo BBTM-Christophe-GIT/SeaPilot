@@ -89,6 +89,14 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(date);
 }
 
+export function formatOfferGenerationDate(value: Date): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(value);
+}
+
 const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
   EUR: '€',
   GBP: '£',
@@ -282,6 +290,14 @@ export async function generateProjectDocument(
       pdf.text(valueLines, 70, y + 6);
       y += rowHeight;
     });
+    const generatedOn = `Offre générée le ${formatOfferGenerationDate(new Date())}`;
+    for (let pageNumber = 1; pageNumber <= pdf.getNumberOfPages(); pageNumber += 1) {
+      pdf.setPage(pageNumber);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setFontSize(8);
+      pdf.setTextColor(92, 111, 124);
+      pdf.text(generatedOn, 196, 290, { align: 'right' });
+    }
   } else {
     const [page01, page02] = await Promise.all([
       loadAssetBytes(supplytimePage01Url),

@@ -494,6 +494,8 @@ describe('ProjectsPage', () => {
     await user.type(screen.getByLabelText('Nom du projet *'), 'Projet SeaPilot');
     await user.selectOptions(screen.getByLabelText('Client / affréteur'), '50');
     await user.click(screen.getByRole('button', { name: /Planning/ }));
+    fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
+    fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
     const deliveryPort = screen.getByLabelText('Port de livraison');
     await user.click(deliveryPort);
     expect(screen.getByRole('group', { name: 'Finistère' })).toHaveTextContent('Brest');
@@ -510,7 +512,7 @@ describe('ProjectsPage', () => {
     await user.type(redeliveryPort, 'Cherbourg');
     await user.click(screen.getByRole('option', { name: /Cherbourg.*FR CER/ }));
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
-    await user.selectOptions(screen.getByLabelText('Navire principal'), '12');
+    await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
     expect(await screen.findByText('P1196 enregistré dans Supabase.')).toBeInTheDocument();
@@ -521,6 +523,13 @@ describe('ProjectsPage', () => {
       target_client_id: 50,
       target_primary_vessel_id: 12,
       target_redelivery_port: 'Cherbourg',
+    }));
+    expect(rpc).toHaveBeenCalledWith('projects_save_planning_occurrence', expect.objectContaining({
+      target_ends_on: '2026-09-11',
+      target_project_id: 990,
+      target_starts_on: '2026-09-04',
+      target_status: 'Non validé',
+      target_vessel_ids: [12],
     }));
   });
 
@@ -561,6 +570,11 @@ describe('ProjectsPage', () => {
     await screen.findByRole('heading', { name: 'Projets' });
     await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
     await user.type(screen.getByLabelText('Nom du projet *'), 'Projet hors ligne');
+    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
+    fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
+    await user.click(screen.getByRole('button', { name: /Facturation/ }));
+    await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch');
