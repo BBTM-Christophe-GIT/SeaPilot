@@ -59,12 +59,32 @@ describe('administrator invitations', () => {
       personId: 42,
     };
 
-    await inviteSeaPilotUser({ functions: { invoke } } as never, {
+    await expect(inviteSeaPilotUser({ functions: { invoke } } as never, {
       ...input,
       roleKeys: [...input.roleKeys],
-    });
+    })).resolves.toEqual({ delivery: 'email', activationLink: '' });
 
     expect(invoke).toHaveBeenCalledWith('admin-invite-user', { body: input });
+  });
+
+  it('returns the secure manual activation link when email delivery is rate limited', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: {
+        delivery: 'manual_link',
+        activationLink: 'https://project.supabase.co/auth/v1/verify?token=one-time',
+      },
+      error: null,
+    });
+
+    await expect(inviteSeaPilotUser({ functions: { invoke } } as never, {
+      email: 'nouveau@example.test',
+      displayName: 'Nouvel Utilisateur',
+      roleKeys: ['marin'],
+      personId: null,
+    })).resolves.toEqual({
+      delivery: 'manual_link',
+      activationLink: 'https://project.supabase.co/auth/v1/verify?token=one-time',
+    });
   });
 
   it('invokes the secure user-management function to resend access', async () => {

@@ -1528,6 +1528,49 @@ button:disabled {
   gap: 16px;
 }
 
+.admin-invite-fallback {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-invite-fallback-notice {
+  border: 1px solid #f0c36a;
+  border-left: 4px solid #d97706;
+  border-radius: 7px;
+  padding: 13px 14px;
+  color: #713f12;
+  background: #fffbeb;
+}
+
+.admin-invite-fallback-notice p,
+.admin-invite-fallback-security {
+  margin: 5px 0 0;
+  line-height: 1.45;
+}
+
+.admin-invite-fallback > label {
+  display: grid;
+  gap: 7px;
+  color: #354259;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-invite-fallback input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c7d2df;
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: #172033;
+  background: #f8fafc;
+}
+
+.admin-invite-fallback-security {
+  color: #667085;
+  font-size: 0.84rem;
+}
+
 .admin-invite-form > label {
   display: grid;
   gap: 7px;

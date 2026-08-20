@@ -1617,6 +1617,25 @@ export const previewSupabaseClient = {
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
   },
+  functions: {
+    invoke: (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName === 'admin-invite-user') {
+        const email = String(options?.body?.email || '').toLowerCase();
+        return Promise.resolve({
+          data: email === 'quota-demo@bbtm.fr'
+            ? {
+                invitation: { invitationId: 9901 },
+                delivery: 'manual_link',
+                activationLink: 'https://preview.supabase.invalid/auth/v1/verify?token=preview-only',
+              }
+            : { invitation: { invitationId: 9901 }, delivery: 'email', activationLink: null },
+          error: null,
+        });
+      }
+
+      return Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+    },
+  },
   storage: {
     from: (bucket: string) => ({
       createSignedUrl: () => Promise.resolve({ data: { signedUrl: bucket === 'fleet-certificates' ? '/demo/action-plan-closure-proof.webp' : '' }, error: null }),

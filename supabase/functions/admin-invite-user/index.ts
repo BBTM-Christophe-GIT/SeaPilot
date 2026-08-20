@@ -33,6 +33,7 @@ function corsHeaders(request: Request): HeadersInit {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Origin': allowedOrigin,
+    'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
     Vary: 'Origin',
   };
@@ -66,6 +67,11 @@ function parseInput(body: InvitationRequest) {
   }
 
   return { email, displayName, roleKeys, personId };
+}
+
+function isEmailRateLimit(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === 'over_email_send_rate_limit'
+    || /email.*rate.*limit|rate.*limit.*email/i.test(error?.message || '');
 }
 
 Deno.serve(async (request) => {
@@ -112,15 +118,40 @@ Deno.serve(async (request) => {
   }
 
   const appUrl = (Deno.env.get('SEAPILOT_APP_URL') || DEFAULT_APP_URL).replace(/\/$/, '');
+  const invitationOptions = {
+    data: { display_name: input.displayName },
+    redirectTo: `${appUrl}/auth/update-password`,
+  };
   const { data: invitation, error: invitationError } = await serviceClient.auth.admin.inviteUserByEmail(
     input.email,
-    {
-      data: { display_name: input.displayName },
-      redirectTo: `${appUrl}/auth/update-password`,
-    },
+    invitationOptions,
   );
 
-  if (invitationError || !invitation.user) {
+  let invitedUser = invitation.user;
+  let delivery: 'email' | 'manual_link' = 'email';
+  let activationLink: string | null = null;
+
+  if (invitationError && isEmailRateLimit(invitationError)) {
+    const { data: generated, error: generationError } = await serviceClient.auth.admin.generateLink({
+      type: 'invite',
+      email: input.email,
+      options: invitationOptions,
+    });
+
+    if (generationError || !generated.user || !generated.properties?.action_link) {
+      console.error('admin-invite-user: manual activation link generation failed', {
+        code: generationError?.code,
+      });
+      return json(request, 502, {
+        code: 'ACTIVATION_LINK_FAILED',
+        message: 'Le quota d’envoi est atteint et le lien d’activation de secours n’a pas pu être généré.',
+      });
+    }
+
+    invitedUser = generated.user;
+    delivery = 'manual_link';
+    activationLink = generated.properties.action_link;
+  } else if (invitationError || !invitedUser) {
     const isExistingUser = /already|registered|exists/i.test(invitationError?.message || '');
     console.warn('admin-invite-user: Auth invitation rejected', {
       code: invitationError?.code,
@@ -137,7 +168,7 @@ Deno.serve(async (request) => {
   const { data: provisioned, error: provisionError } = await serviceClient.rpc(
     'provision_invited_seapilot_user',
     {
-      p_user_id: invitation.user.id,
+      p_user_id: invitedUser.id,
       p_email: input.email,
       p_display_name: input.displayName,
       p_role_keys: input.roleKeys,
@@ -147,7 +178,7 @@ Deno.serve(async (request) => {
   );
 
   if (provisionError) {
-    await serviceClient.auth.admin.deleteUser(invitation.user.id);
+    await serviceClient.auth.admin.deleteUser(invitedUser.id);
     const forbidden = provisionError.message.includes('USER_INVITATION_FORBIDDEN');
     console.error('admin-invite-user: profile provisioning failed', {
       code: provisionError.code,
@@ -163,9 +194,10 @@ Deno.serve(async (request) => {
 
   console.info('admin-invite-user: invitation sent', {
     invitationId: (provisioned as { invitationId?: unknown } | null)?.invitationId,
-    invitedUserId: invitation.user.id,
+    invitedUserId: invitedUser.id,
     invitedBy: authData.user.id,
+    delivery,
   });
 
-  return json(request, 201, { invitation: provisioned });
+  return json(request, 201, { invitation: provisioned, delivery, activationLink });
 });

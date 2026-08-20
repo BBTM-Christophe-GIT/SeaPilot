@@ -16,6 +16,7 @@ import {
   fetchSharePointImportSources,
   removeUserRole,
   resendSeaPilotUserAccess,
+  type AdminInvitationResult,
   type AdminUser,
   type SharePointImportSource,
 } from './adminQueries';
@@ -180,15 +181,19 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     }
   }
 
-  async function handleUserInvited() {
-    setIsInviteDialogOpen(false);
-    setStatusMessage("Invitation envoyée. L'utilisateur doit maintenant activer son compte depuis l'email reçu.");
+  async function handleUserInvited(delivery: AdminInvitationResult['delivery']) {
+    if (delivery === 'email') {
+      setIsInviteDialogOpen(false);
+      setStatusMessage("Invitation envoyée. L'utilisateur doit maintenant activer son compte depuis l'email reçu.");
+    } else {
+      setStatusMessage("Compte créé. Utilisez le lien d'activation personnel affiché dans la fenêtre.");
+    }
 
     try {
       const loadedUsers = await fetchAdminUsers(client);
       setUsers(loadedUsers);
     } catch {
-      setErrorMessage("L'invitation a bien été envoyée, mais la liste des utilisateurs n'a pas pu être actualisée.");
+      setErrorMessage("Le compte a bien été créé, mais la liste des utilisateurs n'a pas pu être actualisée.");
     }
   }
 

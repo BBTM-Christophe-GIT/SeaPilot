@@ -61,6 +61,16 @@ export interface AdminInvitationInput {
   personId: number | null;
 }
 
+export interface AdminInvitationResult {
+  delivery: 'email' | 'manual_link';
+  activationLink: string;
+}
+
+interface AdminInvitationResponse {
+  delivery?: unknown;
+  activationLink?: unknown;
+}
+
 interface AdminUserActionResponse {
   message?: unknown;
 }
@@ -172,14 +182,29 @@ async function readFunctionError(error: unknown, fallbackMessage: string): Promi
 export async function inviteSeaPilotUser(
   client: SupabaseClient,
   input: AdminInvitationInput,
-): Promise<void> {
-  const { error } = await client.functions.invoke('admin-invite-user', {
+): Promise<AdminInvitationResult> {
+  const { data, error } = await client.functions.invoke('admin-invite-user', {
     body: input,
   });
 
   if (error) {
     throw new Error(await readFunctionError(error, "Impossible d'envoyer l'invitation."));
   }
+
+  const response = data as AdminInvitationResponse | null;
+  if (response?.delivery === 'manual_link') {
+    const activationLink = typeof response.activationLink === 'string'
+      ? response.activationLink.trim()
+      : '';
+
+    if (!activationLink.startsWith('https://')) {
+      throw new Error("Le compte a été créé, mais son lien d'activation n'est pas disponible.");
+    }
+
+    return { delivery: 'manual_link', activationLink };
+  }
+
+  return { delivery: 'email', activationLink: '' };
 }
 
 async function manageSeaPilotUser(

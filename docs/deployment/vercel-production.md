@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.22.1` distingue la limite d'envoi Supabase des autres erreurs d'invitation. Lorsque le quota du SMTP
+intégré est atteint, l'administrateur peut copier un lien personnel à usage unique au lieu de perdre la saisie.
+Voir [user-invitations-v3-22-1.md](./user-invitations-v3-22-1.md).
+
 Version `3.22.0` transforme `Navires` en référentiel d’actifs structuré : import idempotent des 14 lignes de la
 source `BBTM - Flotte`, catégories Navires/Bureaux/Quais, fiche détaillée, photo privée, décision d’effectif propre
 à chaque navire et brochure PDF BBTM générée à la demande. Le contrôle des décisions d’effectif dans le Planning
