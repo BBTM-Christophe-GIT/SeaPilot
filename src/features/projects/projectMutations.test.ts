@@ -112,6 +112,7 @@ describe('projectMutations', () => {
       expectedUpdatedAt: '',
       name: 'Nouveau client',
       phone: '',
+      representedBy: 'Jean DUPONT',
     })).resolves.toBe(52);
     await expect(archiveProject({ rpc } as never, 901)).resolves.toBeUndefined();
     expect(rpc.mock.calls.map(([name]) => name)).toEqual(['clients_save', 'projects_archive']);
@@ -132,10 +133,12 @@ describe('projectMutations', () => {
       expectedUpdatedAt,
       name: 'ETPO',
       phone: '',
+      representedBy: 'Marie MARTIN',
     });
 
     expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
       target_expected_updated_at: expectedUpdatedAt,
+      target_represented_by: 'Marie MARTIN',
     }));
   });
 

@@ -31,6 +31,7 @@ import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
 import {
+  DEFAULT_PROJECT_FUEL_TERMS,
   DEFAULT_PROJECT_OWNER_IDENTITY,
   PROJECT_CURRENCIES,
   TOWAGE_CONTRACT_TYPE,
@@ -99,6 +100,61 @@ function toLocalDateTime(value: string): string {
   return shifted.toISOString().slice(0, 16);
 }
 
+function projectDateTime(value: string, time: string): string {
+  return value ? `${value}T${time}` : '';
+}
+
+function projectStartDateFields(value: string) {
+  return {
+    startsOn: value,
+    deliveryAt: projectDateTime(value, '10:00'),
+    charterStartsAt: projectDateTime(value, '10:00'),
+  };
+}
+
+function projectEndDateFields(value: string) {
+  return {
+    endsOn: value,
+    redeliveryAt: projectDateTime(value, '18:00'),
+    charterEndsAt: projectDateTime(value, '18:00'),
+  };
+}
+
+function formatRepresentativeFirstName(value: string): string {
+  return value
+    .toLocaleLowerCase('fr-FR')
+    .replace(/(^|[\s'’-])(\p{L})/gu, (_match, separator: string, letter: string) => (
+      `${separator}${letter.toLocaleUpperCase('fr-FR')}`
+    ));
+}
+
+function formatRepresentativeLastName(value: string): string {
+  return value.toLocaleUpperCase('fr-FR');
+}
+
+function combineRepresentativeName(firstName: string, lastName: string): string {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+}
+
+function splitRepresentativeName(value: string): { firstName: string; lastName: string } {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: '', lastName: '' };
+
+  let lastNameStart = parts.length;
+  while (lastNameStart > 0) {
+    const part = parts[lastNameStart - 1];
+    const letters = part.replace(/[^\p{L}]/gu, '');
+    if (!letters || letters !== letters.toLocaleUpperCase('fr-FR')) break;
+    lastNameStart -= 1;
+  }
+
+  if (lastNameStart === parts.length) lastNameStart = Math.max(0, parts.length - 1);
+  return {
+    firstName: parts.slice(0, lastNameStart).join(' '),
+    lastName: parts.slice(lastNameStart).join(' '),
+  };
+}
+
 function optionalNumber(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -109,7 +165,12 @@ export function projectToWriteInput(
   project?: ProjectRecord,
   contract?: ProjectContractRecord,
 ): ProjectWriteInput {
-  if (!project) return { ...EMPTY_PROJECT_WRITE_INPUT, supplytimeData: {} };
+  if (!project) {
+    return {
+      ...EMPTY_PROJECT_WRITE_INPUT,
+      supplytimeData: { ...EMPTY_PROJECT_WRITE_INPUT.supplytimeData },
+    };
+  }
   return {
     ...EMPTY_PROJECT_WRITE_INPUT,
     projectId: project.id,
@@ -146,7 +207,10 @@ export function projectToWriteInput(
     hireCurrency: contract?.hireCurrency || '',
     hireUnit: contract?.hireUnit || '',
     maxAuditPeriod: contract?.maxAuditPeriod || '',
-    supplytimeData: { ...(contract?.supplytimeData || {}) },
+    supplytimeData: {
+      ...(contract?.supplytimeData || {}),
+      box19_special_fuel: contract?.supplytimeData?.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS,
+    },
     expectedUpdatedAt: project.updatedAt,
   };
 }
@@ -625,8 +689,14 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              <Field label="Début du projet"><input onChange={(event) => update('startsOn', event.target.value)} type="date" value={form.startsOn} /></Field>
-              <Field label="Fin du projet"><input onChange={(event) => update('endsOn', event.target.value)} type="date" value={form.endsOn} /></Field>
+              <Field label="Début du projet"><input onInput={(event) => {
+                const value = event.currentTarget.value;
+                setForm((current) => ({ ...current, ...projectStartDateFields(value) }));
+              }} type="date" value={form.startsOn} /></Field>
+              <Field label="Fin du projet"><input onInput={(event) => {
+                const value = event.currentTarget.value;
+                setForm((current) => ({ ...current, ...projectEndDateFields(value) }));
+              }} type="date" value={form.endsOn} /></Field>
               <Field label="Livraison"><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
               <Field label="Restitution"><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
               <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
@@ -709,6 +779,13 @@ export function ProjectEditor({
                 </select>
               </Field>
               <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
+              <Field label="Fuel" wide>
+                <input
+                  onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
+                  type="text"
+                  value={form.supplytimeData.box19_special_fuel || ''}
+                />
+              </Field>
               <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
                 <div className="project-hire-periods-heading">
                   <div><strong>Barème des loyers d’affrètement</strong><small>Le tarif applicable est déterminé automatiquement pour chaque date d’opération.</small></div>
@@ -778,7 +855,7 @@ export function ProjectEditor({
               {SUPPLYTIME_GROUPS.map((group) => (
                 <section key={group.id}>
                   <h3>{group.label}</h3>
-                  {group.fields.map((field) => (
+                  {group.fields.filter((field) => field.key !== 'box19_special_fuel').map((field) => (
                     <Field key={field.key} label={field.label} wide>
                       <textarea
                         onChange={(event) => update('supplytimeData', { ...form.supplytimeData, [field.key]: event.target.value })}
@@ -813,9 +890,11 @@ export function ProjectEditor({
 }
 
 export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientEditorProps) {
+  const representative = splitRepresentativeName(clientRecord?.representedBy || '');
   const [form, setForm] = useState<ClientWriteInput>({
     clientId: clientRecord?.id ?? null,
     name: clientRecord?.name || '',
+    representedBy: clientRecord?.representedBy || '',
     code: clientRecord?.code || '',
     email: clientRecord?.email || '',
     phone: clientRecord?.phone || '',
@@ -825,6 +904,12 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     active: clientRecord?.active ?? true,
     expectedUpdatedAt: clientRecord?.updatedAt || '',
   });
+  const [representativeFirstName, setRepresentativeFirstName] = useState(
+    formatRepresentativeFirstName(representative.firstName),
+  );
+  const [representativeLastName, setRepresentativeLastName] = useState(
+    formatRepresentativeLastName(representative.lastName),
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -837,7 +922,11 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     setErrorMessage('');
     setIsSaving(true);
     try {
-      onSaved(await saveClient(client, form), form);
+      const savedForm = {
+        ...form,
+        representedBy: combineRepresentativeName(representativeFirstName, representativeLastName),
+      };
+      onSaved(await saveClient(client, savedForm), savedForm);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible d’enregistrer le client.");
     } finally {
@@ -855,6 +944,23 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
         <form onSubmit={submit}>
           <div className="project-editor-grid">
             <Field label="Nom du client *" wide><input autoFocus onChange={(event) => update('name', event.target.value)} required value={form.name} /></Field>
+            <section aria-labelledby="client-representative-title" className="project-client-representative">
+              <strong id="client-representative-title">Représenté par :</strong>
+              <div>
+                <Field label="Prénom">
+                  <input
+                    onChange={(event) => setRepresentativeFirstName(formatRepresentativeFirstName(event.target.value))}
+                    value={representativeFirstName}
+                  />
+                </Field>
+                <Field label="NOM">
+                  <input
+                    onChange={(event) => setRepresentativeLastName(formatRepresentativeLastName(event.target.value))}
+                    value={representativeLastName}
+                  />
+                </Field>
+              </div>
+            </section>
             <Field label="Code"><input onChange={(event) => update('code', event.target.value)} value={form.code} /></Field>
             <Field label="Courriel"><input onChange={(event) => update('email', event.target.value)} type="email" value={form.email} /></Field>
             <Field label="Téléphone"><input onChange={(event) => update('phone', event.target.value)} type="tel" value={form.phone} /></Field>

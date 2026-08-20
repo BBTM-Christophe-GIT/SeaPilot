@@ -7,6 +7,8 @@ import type {
 } from './projectQueries';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
+import { DEFAULT_PROJECT_FUEL_TERMS } from './projectContractOptions';
+import { formatProjectOfferPort } from './projectPorts';
 import supplytimePage01Url from './assets/supplytime-page-01.png';
 import supplytimePage02Url from './assets/supplytime-page-02.png';
 
@@ -77,20 +79,38 @@ const SUPPLYTIME_PDF_FIELDS: SupplytimePdfField[] = [
 ];
 
 function present(value: string | number | null | undefined): string {
-  return value === null || value === undefined || value === '' ? 'Non renseign\u00e9' : String(value);
+  return value === null || value === undefined || value === '' ? '' : String(value);
 }
 
 function formatDate(value: string): string {
-  if (!value) return 'Non renseign\u00e9e';
+  if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(date);
 }
 
+const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  USD: '$',
+};
+
+function formatHireUnit(unit: string): string {
+  const normalized = unit.trim().toLocaleLowerCase('fr-FR');
+  if (['jour', 'jours', 'journalier', 'journalière'].includes(normalized)) return 'Jour';
+  return normalized ? `${normalized[0].toLocaleUpperCase('fr-FR')}${normalized.slice(1)}` : '';
+}
+
 function formatMoney(value: number | null | undefined, currency: string, unit = ''): string {
-  if (value === null || value === undefined) return 'Non renseign\u00e9';
-  const amount = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
-  return [amount, currency, unit ? `/ ${unit}` : ''].filter(Boolean).join(' ');
+  if (value === null || value === undefined || !Number.isFinite(value)) return '';
+  const amount = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
+    .format(value)
+    .replace(/[\s\u00a0\u202f]+/g, ' ');
+  const normalizedCurrency = currency.trim().toLocaleUpperCase('fr-FR');
+  const currencyLabel = CURRENCY_SYMBOLS[normalizedCurrency] || normalizedCurrency;
+  const unitLabel = formatHireUnit(unit);
+  return [amount, currencyLabel, 'HT', unitLabel ? `/ ${unitLabel}` : ''].filter(Boolean).join(' ');
 }
 
 function projectReference(project: ProjectRecord): string {
@@ -98,22 +118,44 @@ function projectReference(project: ProjectRecord): string {
 }
 
 function extensionLabel(contract?: ProjectContractRecord): string {
-  if (!contract || contract.extensionCount === null || contract.extensionDuration === null) return 'Non renseign\u00e9e';
+  if (!contract || contract.extensionCount === null || contract.extensionDuration === null) return '';
   return `${contract.extensionCount} x ${contract.extensionDuration} ${contract.extensionUnit}`.trim();
+}
+
+function hireRateLine(
+  label: string,
+  value: number | null | undefined,
+  currency: string,
+  unit: string,
+): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return '';
+  return `${label} : ${formatMoney(value, currency, unit)}.`;
 }
 
 function contractHireScheduleLabel(contract?: ProjectContractRecord): string {
   if (!contract?.hirePeriods?.length) {
-    return formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit);
+    return hireRateLine(
+      'En Opération',
+      contract?.charterHire,
+      contract?.hireCurrency || '',
+      contract?.hireUnit || '',
+    );
   }
-  return contract.hirePeriods
-    .map((period) => [
-      `${formatDate(period.startsOn)}${period.endsOn ? ` - ${formatDate(period.endsOn)}` : ' et après'}`,
-      `En Opération : ${formatMoney(period.charterHire, period.hireCurrency, period.hireUnit)}`,
-      `Stand-by : ${formatMoney(period.standbyHire, period.hireCurrency, period.hireUnit)}`,
-      `Weather Stand-by : ${formatMoney(period.weatherStandbyHire, period.hireCurrency, period.hireUnit)}`,
-    ].join(' — '))
-    .join('\n');
+  const schedules = contract.hirePeriods.flatMap((period) => {
+    const lines = [
+      hireRateLine('En Opération', period.charterHire, period.hireCurrency, period.hireUnit),
+      hireRateLine('Weather Stand-by', period.weatherStandbyHire, period.hireCurrency, period.hireUnit),
+      hireRateLine('Stand-by', period.standbyHire, period.hireCurrency, period.hireUnit),
+    ].filter(Boolean);
+    return lines.length > 0 ? [{ period, lines }] : [];
+  });
+  const showPeriodHeadings = schedules.length > 1;
+  return schedules.map(({ period, lines }) => [
+    showPeriodHeadings
+      ? `${formatDate(period.startsOn)}${period.endsOn ? ` - ${formatDate(period.endsOn)}` : ' et après'}`
+      : '',
+    ...lines,
+  ].filter(Boolean).join('\n')).join('\n\n');
 }
 
 export function buildProjectOfferRows({
@@ -124,15 +166,15 @@ export function buildProjectOfferRows({
   const supplytime = contract?.supplytimeData || {};
   return [
     { label: 'Client', value: present(client?.name || project.clientName) },
-    { label: 'Represented by', value: present(supplytime.box02_charterers) },
+    { label: 'Represented by', value: present(client?.representedBy) },
     { label: 'Project', value: present(projectReference(project)) },
     { label: 'Contract form', value: present(project.contractType) },
     { label: 'Vessel(s)', value: present([project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' / ')) },
     { label: 'Duties', value: present(project.description) },
-    { label: 'Port of Delivery', value: present(project.deliveryPort) },
+    { label: 'Port of Delivery', value: present(formatProjectOfferPort(project.deliveryPort)) },
     { label: 'Date of Delivery', value: formatDate(project.deliveryAt || project.startsOn) },
     { label: 'Mobilization costs HT', value: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') },
-    { label: 'Port of Redelivery', value: present(project.redeliveryPort) },
+    { label: 'Port of Redelivery', value: present(formatProjectOfferPort(project.redeliveryPort)) },
     { label: 'Date of Redelivery', value: formatDate(project.redeliveryAt || project.endsOn) },
     { label: 'Demobilization costs HT', value: formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '') },
     { label: 'Dur\u00e9e ferme affr\u00e8tement', value: present(supplytime.box09_period) },
@@ -140,11 +182,11 @@ export function buildProjectOfferRows({
     { label: 'Rythme', value: present(contract?.hireUnit) },
     { label: 'Day rate normal', value: contractHireScheduleLabel(contract) },
     { label: 'Day rate extension', value: formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit) },
-    { label: 'Fuel', value: present(supplytime.box14_bunker_delivery || supplytime.box19_special_fuel) },
+    { label: 'Fuel', value: present(supplytime.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS) },
     { label: 'Port / zone', value: present(project.operationArea || project.deliveryPort) },
     { label: 'Invoicing period', value: present(supplytime.box22_invoice_remittance) },
     { label: 'Payment terms', value: present(supplytime.box23_payment) },
-  ];
+  ].filter((row) => row.value.trim() && !/^non renseign[ée]e?$/i.test(row.value.trim()));
 }
 
 export function buildProjectSupplytimePdfFields(
@@ -204,15 +246,19 @@ export async function generateProjectDocument(
   });
 
   if (kind === 'offer') {
-    const rows = buildProjectOfferRows(input);
+    const [rows, logoBytes] = await Promise.all([
+      Promise.resolve(buildProjectOfferRows(input)),
+      loadAssetBytes('/bbtm-report-logo.png'),
+    ]);
     pdf.setFillColor(9, 31, 50);
     pdf.rect(0, 0, 210, 29, 'F');
+    pdf.addImage(logoBytes, 'PNG', 14, 5, 20, 20, undefined, 'FAST');
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(20);
-    pdf.text('BBTM', 14, 13);
+    pdf.text('BBTM', 39, 13);
     pdf.setFontSize(14);
-    pdf.text('OFFRE COMMERCIALE', 14, 22);
+    pdf.text('OFFRE COMMERCIALE', 39, 22);
     pdf.setFontSize(8);
     pdf.text(title, 196, 20, { align: 'right', maxWidth: 90 });
     pdf.setTextColor(24, 33, 50);
@@ -236,9 +282,6 @@ export async function generateProjectDocument(
       pdf.text(valueLines, 70, y + 6);
       y += rowHeight;
     });
-    pdf.setFontSize(7);
-    pdf.setTextColor(92, 111, 124);
-    pdf.text('Document g\u00e9n\u00e9r\u00e9 depuis les donn\u00e9es structur\u00e9es SeaPilot. Validation commerciale requise avant envoi.', 14, 290);
   } else {
     const [page01, page02] = await Promise.all([
       loadAssetBytes(supplytimePage01Url),
