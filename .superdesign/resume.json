@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/modules/fleet": {
+      "targetKind": "existing-ui",
+      "projectId": "e8178c0c-e02c-4c2c-854e-d7f7d9ec45d4",
+      "baselineDraftId": "15fe7b1d-425f-4c01-b196-a82dff9c2053",
+      "activeDraftId": "15fe7b1d-425f-4c01-b196-a82dff9c2053",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "public-bbtm-logo.png",
+        "2a0baedb-3c4b-4801-8f4c-c4d67917a7c5"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/e8178c0c-e02c-4c2c-854e-d7f7d9ec45d4/brand-assets/public-bbtm-logo.png/bbtm-logo.png",
+          "sourcePath": "public/bbtm-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/shell/AppShell.tsx",
+        "src/features/fleet/FleetPage.tsx",
+        "src/features/planning/PlanningP11Panel.tsx:264:437",
+        "src/styles/index.css:1:260",
+        "src/styles/index.css:239:785",
+        "src/styles/index.css:20076:20274"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "2d0007024f4059570e6ca902d670272b4ece4873047cbf33b3ba46996e295f1f",
+        "src/features/shell/AppShell.tsx": "8af0ce2b396d66d2739ce67a625e19601ae5e6abc8fc26a4aab0502969f11260",
+        "src/features/fleet/FleetPage.tsx": "92562c882b8cea9dbbc1866364de947126976f815d0c16a2e75bb32c374e6a98",
+        "src/features/planning/PlanningP11Panel.tsx": "4fa64c792f6dbafebc04c4f9faabe086264ee8c42cc9cdeb5a0857fd48f60956",
+        "src/styles/index.css": "6bba58be1ee4782f8a35c4e7761fb6072e1b0c232b9d79064504795dfd9e86b4"
+      },
+      "components": [
+        {
+          "name": "AppShell",
+          "id": "fca9187e-1772-46a3-b585-60703769da7b",
+          "sourcePath": "src/features/shell/AppShell.tsx",
+          "logoAssetKey": "public-bbtm-logo.png"
+        }
+      ],
+      "drafts": {
+        "15fe7b1d-425f-4c01-b196-a82dff9c2053": {
+          "title": "Navires — gestion d’actifs",
+          "visualDirection": "master-detail BBTM, décision d’effectif par navire",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-08-20T07:50:00Z"
+    }
+  }
+}

@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.22.0` transforme `Navires` en référentiel d’actifs structuré : import idempotent des 14 lignes de la
+source `BBTM - Flotte`, catégories Navires/Bureaux/Quais, fiche détaillée, photo privée, décision d’effectif propre
+à chaque navire et brochure PDF BBTM générée à la demande. Le contrôle des décisions d’effectif dans le Planning
+est désactivé par un commutateur serveur. Appliquer
+`supabase/migrations/20260820070225_restructure_fleet_assets_and_decouple_planning.sql` avant le client. Voir
+[fleet-assets-v3-22-0.md](./fleet-assets-v3-22-0.md).
+
 Version `3.12.10` affiche toute la frise journalière sur les panneaux étroits et permet d’ajouter plusieurs périodes
 par clic-glissé avant un enregistrement atomique unique. Aucune migration Supabase n’est requise. Voir
 [working-time-v3-12-10-multi-period-entry.md](./working-time-v3-12-10-multi-period-entry.md).
