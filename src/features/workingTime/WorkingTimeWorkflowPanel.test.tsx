@@ -12,7 +12,7 @@ import {
   validateWorkingTimeDayWithComment,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
-import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
+import { WorkingTimeWorkflowPanel, workingTimeInitialDay } from './WorkingTimeWorkflowPanel';
 
 vi.mock('./useWorkingTimeWorkspace', () => ({ useWorkingTimeWorkspace: vi.fn() }));
 vi.mock('./workingTimeQueries', async (importOriginal) => {
@@ -97,6 +97,17 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
     validations: [],
     dayApprovals: [],
     vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
+    policies: [{
+      id: 1,
+      name: 'Accords Collectifs du 27/06/2025',
+      maxWork24h: 12,
+      minRest24h: 10,
+      maxWork7d: 84,
+      minRest7d: 52,
+      minConsecutiveRestHours: 6,
+      maxRestPeriods24h: 6,
+      maxNightWork24h: 10,
+    }],
   };
 }
 
@@ -181,6 +192,11 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
   });
 
+  it('selects today when the current month opens and the first day for a historical month', () => {
+    expect(workingTimeInitialDay({ start: '2026-08-01', end: '2026-08-31' }, '2026-08-21')).toBe('2026-08-21');
+    expect(workingTimeInitialDay({ start: '2026-07-01', end: '2026-07-31' }, '2026-08-21')).toBe('2026-07-01');
+  });
+
   it('removes manual register and refresh commands when no HR person is editable', () => {
     const data = workspace('draft', 20);
     data.editablePeople = [];
@@ -243,7 +259,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     data.calculations = [{
       id: 401, companyId: 1, personId: 20, windowEnd: '2026-08-03T18:00:00Z', localWindowEndDate: '2026-08-03',
       timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 28_800, rest24hSeconds: 57_600,
-      longestRest24hSeconds: 36_000, restPeriodCount24h: 2, work7dSeconds: 120_000, rest7dSeconds: 484_800,
+      longestRest24hSeconds: 18_000, restPeriodCount24h: 2, work7dSeconds: 120_000, rest7dSeconds: 484_800,
       nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['consecutive_rest'], calculationVersion: 1,
       calculatedAt: '2026-08-03T18:00:01Z',
     }];
@@ -256,9 +272,66 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('heading', { name: 'Détail des heures du registre' })).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveTextContent('08:00–16:00');
     expect(screen.getByRole('table')).toHaveTextContent('Non conforme');
+    expect(screen.getByRole('table')).toHaveTextContent('Repos consécutif sur 24 h : 5 h / minimum 6 h');
   });
 
-  it('does not flag an empty day because of a rolling-window breach inherited from the previous day', () => {
+  it('keeps the alarm on the contributing day and shows the inherited impact on the next day', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    const interval = data.intervals[0];
+    data.intervals.push(
+      { ...interval, id: 210, localWorkDate: '2026-08-17', startsAt: '2026-08-17T04:30:00Z', endsAt: '2026-08-17T10:00:00Z' },
+      { ...interval, id: 211, localWorkDate: '2026-08-17', startsAt: '2026-08-17T10:30:00Z', endsAt: '2026-08-17T18:00:00Z' },
+      { ...interval, id: 212, localWorkDate: '2026-08-18', startsAt: '2026-08-18T06:30:00Z', endsAt: '2026-08-18T12:00:00Z' },
+      { ...interval, id: 213, localWorkDate: '2026-08-18', startsAt: '2026-08-18T13:30:00Z', endsAt: '2026-08-18T17:00:00Z' },
+    );
+    data.calculations = [{
+      id: 409, companyId: 1, personId: 20, windowEnd: '2026-08-17T18:00:00Z', localWindowEndDate: '2026-08-17',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 46_800, rest24hSeconds: 39_600,
+      longestRest24hSeconds: 37_800, restPeriodCount24h: 2, work7dSeconds: 46_800, rest7dSeconds: 558_000,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['work_24h'], calculationVersion: 1,
+      calculatedAt: '2026-08-17T18:00:01Z',
+    }, {
+      id: 410, companyId: 1, personId: 20, windowEnd: '2026-08-18T04:30:00Z', localWindowEndDate: '2026-08-18',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 46_800, rest24hSeconds: 39_600,
+      longestRest24hSeconds: 37_800, restPeriodCount24h: 2, work7dSeconds: 46_800, rest7dSeconds: 558_000,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['work_24h'], calculationVersion: 1,
+      calculatedAt: '2026-08-18T04:30:01Z',
+    }, {
+      id: 411, companyId: 1, personId: 20, windowEnd: '2026-08-18T18:00:00Z', localWindowEndDate: '2026-08-18',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 32_400, rest24hSeconds: 54_000,
+      longestRest24hSeconds: 45_000, restPeriodCount24h: 3, work7dSeconds: 79_200, rest7dSeconds: 525_600,
+      nightWork24hSeconds: 0, isCompliant: true, violationCodes: [], calculationVersion: 1,
+      calculatedAt: '2026-08-18T18:00:01Z',
+    }];
+    renderPanel(['admin'], data);
+
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    const alarmRow = screen.getByRole('button', { name: /lun 17 août/ }).closest('tr');
+    const impactRow = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
+    expect(alarmRow).toHaveClass('is-non-compliant');
+    expect(alarmRow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(impactRow).not.toHaveClass('is-non-compliant');
+    expect(impactRow).toHaveTextContent('Conforme');
+    expect(impactRow).toHaveTextContent('15 h 00');
+    expect(impactRow).toHaveTextContent('22 h 00');
+    expect(impactRow).not.toHaveTextContent('Non conforme');
+
+    await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
+    const rollingWindow = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
+    expect(rollingWindow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(rollingWindow).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
+    expect(rollingWindow).toHaveTextContent('Alarme rattachée au lun 17 août.');
+    expect(screen.getByText('24 h glissantes')).toBeInTheDocument();
+    expect(screen.getByText('J−1 06:30')).toBeInTheDocument();
+    expect(screen.getByText('fin 06:30')).toBeInTheDocument();
+    expect(rollingWindow.querySelector('.working-time-rolling-window-line')).toHaveStyle({ width: '27.083333333333332%' });
+    expect(screen.getByRole('tab', { name: /mar 18 août$/ })).not.toHaveClass('is-non-compliant');
+    expect(screen.queryByText('2026-08-18', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
+  });
+
+  it('does not flag an empty day because of a rolling-window breach inherited from the previous day', async () => {
+    const user = userEvent.setup();
     const data = workspace('draft', 20);
     data.calculations = [{
       id: 402, companyId: 1, personId: 20, windowEnd: '2026-08-04T01:00:00Z', localWindowEndDate: '2026-08-04',
@@ -272,6 +345,9 @@ describe('WorkingTimeWorkflowPanel', () => {
     const emptyDay = screen.getByRole('tab', { name: /mar 04 août$/ });
     expect(emptyDay).not.toHaveClass('is-non-compliant');
     expect(screen.queryByText('2026-08-04', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
+    await user.click(emptyDay);
+    expect(screen.getByText('Alertes').closest('article')).toHaveTextContent('0Aucune alerte détectée');
+    expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toBeInTheDocument();
   });
 
   it('discards an unsigned draft from its card without saving its changes', async () => {

@@ -1,7 +1,13 @@
 import { AlertTriangle, CheckCircle2, Clock3 } from 'lucide-react';
+import {
+  workingTimeStatusCalculation,
+  workingTimeViolationDetails,
+  workingTimeViolationText,
+  workingTimeViolationWindowText,
+} from './workingTimeCompliance';
 import type { WorkingTimeCalculationWindow, WorkingTimeInterval } from './workingTimeModel';
 import { workingTimeIntervalMinutes } from './workingTimeModel';
-import type { WorkingTimeVesselOption } from './workingTimeQueries';
+import type { WorkingTimePolicyThresholds, WorkingTimeVesselOption } from './workingTimeQueries';
 
 interface WorkingTimeMonthlyViewProps {
   calculations: WorkingTimeCalculationWindow[];
@@ -10,6 +16,7 @@ interface WorkingTimeMonthlyViewProps {
   onSelectDay: (day: string) => void;
   periodEnd: string;
   periodStart: string;
+  policies: WorkingTimePolicyThresholds[];
   vessels: WorkingTimeVesselOption[];
 }
 
@@ -52,17 +59,11 @@ export function WorkingTimeMonthlyView({
   onSelectDay,
   periodEnd,
   periodStart,
+  policies,
   vessels,
 }: WorkingTimeMonthlyViewProps) {
   const days = periodDays(periodStart, periodEnd);
   const nonCompliant = new Set(nonCompliantDates);
-  const latestCalculationByDay = new Map<string, WorkingTimeCalculationWindow>();
-  calculations.forEach((calculation) => {
-    const previous = latestCalculationByDay.get(calculation.localWindowEndDate);
-    if (!previous || calculation.windowEnd > previous.windowEnd) {
-      latestCalculationByDay.set(calculation.localWindowEndDate, calculation);
-    }
-  });
   const vesselNames = new Map(vessels.map((vessel) => [vessel.id, vessel.name]));
   const monthMinutes = intervals.reduce((sum, interval) => sum + workingTimeIntervalMinutes(interval), 0);
 
@@ -77,12 +78,13 @@ export function WorkingTimeMonthlyView({
       </header>
       <div className="working-time-monthly-table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Phases de travail</th><th>Total</th><th>Navire / bordée</th><th>Repos 24 h</th><th>Travail 7 jours</th><th>Statut</th></tr></thead>
+          <thead><tr><th>Date</th><th>Phases de travail</th><th>Total</th><th>Navire / bordée</th><th>Repos 24 h</th><th>Travail 7 jours</th><th>Statut / motif</th></tr></thead>
           <tbody>
             {days.map((day) => {
               const dayIntervals = intervals.filter((interval) => interval.localWorkDate === day)
                 .sort((left, right) => left.startsAt.localeCompare(right.startsAt));
-              const calculation = latestCalculationByDay.get(day);
+              const calculation = workingTimeStatusCalculation(calculations, intervals, day);
+              const violations = workingTimeViolationDetails(calculations, intervals, day, policies);
               const dayMinutes = dayIntervals.reduce((sum, interval) => sum + workingTimeIntervalMinutes(interval), 0);
               const assignments = Array.from(new Set(dayIntervals.map((interval) => {
                 const vessel = interval.vesselId ? vesselNames.get(interval.vesselId) : 'Sans navire';
@@ -98,7 +100,13 @@ export function WorkingTimeMonthlyView({
                   <td>{formatDuration(calculation?.rest24hSeconds)}</td>
                   <td>{formatDuration(calculation?.work7dSeconds)}</td>
                   <td>{isNonCompliant
-                    ? <span className="working-time-month-status is-non-compliant"><AlertTriangle aria-hidden="true" size={14} />Non conforme</span>
+                    ? <div className="working-time-month-status-detail">
+                      <span className="working-time-month-status is-non-compliant"><AlertTriangle aria-hidden="true" size={14} />Non conforme</span>
+                      {violations.map((violation) => <span className="working-time-month-violation" key={violation.code}>
+                        <strong>{workingTimeViolationText(violation)}</strong>
+                        <small>{workingTimeViolationWindowText(violation)}</small>
+                      </span>)}
+                    </div>
                     : calculation?.isCompliant === true
                       ? <span className="working-time-month-status is-compliant"><CheckCircle2 aria-hidden="true" size={14} />Conforme</span>
                       : <span className="working-time-month-status"><Clock3 aria-hidden="true" size={14} />À calculer</span>}</td>

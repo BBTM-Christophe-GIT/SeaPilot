@@ -86,6 +86,7 @@ const workspace: WorkingTimeWorkspace = {
     nonComplianceSnapshot: [], comment: 'Signature explicite', occurredAt: '2026-08-03T18:00:00Z',
   }],
   vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT', imoNumber: '9213870', flagState: 'France' }],
+  policies: [],
 };
 
 describe('working-time PDF', () => {
