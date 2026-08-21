@@ -275,7 +275,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('table')).toHaveTextContent('Repos consécutif sur 24 h : 5 h / minimum 6 h');
   });
 
-  it('explains an inherited rolling breach with the failing window instead of compliant end-of-day metrics', async () => {
+  it('keeps the alarm on the contributing day and shows the inherited impact on the next day', async () => {
     const user = userEvent.setup();
     const data = workspace('draft', 20);
     const interval = data.intervals[0];
@@ -286,6 +286,12 @@ describe('WorkingTimeWorkflowPanel', () => {
       { ...interval, id: 213, localWorkDate: '2026-08-18', startsAt: '2026-08-18T13:30:00Z', endsAt: '2026-08-18T17:00:00Z' },
     );
     data.calculations = [{
+      id: 409, companyId: 1, personId: 20, windowEnd: '2026-08-17T18:00:00Z', localWindowEndDate: '2026-08-17',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 46_800, rest24hSeconds: 39_600,
+      longestRest24hSeconds: 37_800, restPeriodCount24h: 2, work7dSeconds: 46_800, rest7dSeconds: 558_000,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['work_24h'], calculationVersion: 1,
+      calculatedAt: '2026-08-17T18:00:01Z',
+    }, {
       id: 410, companyId: 1, personId: 20, windowEnd: '2026-08-18T04:30:00Z', localWindowEndDate: '2026-08-18',
       timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 46_800, rest24hSeconds: 39_600,
       longestRest24hSeconds: 37_800, restPeriodCount24h: 2, work7dSeconds: 46_800, rest7dSeconds: 558_000,
@@ -301,11 +307,23 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['admin'], data);
 
     await user.click(screen.getByRole('button', { name: 'Mois' }));
-    const row = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
-    expect(row).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
-    expect(row).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
-    expect(row).toHaveTextContent('11 h 00');
-    expect(row).not.toHaveTextContent('15 h 00');
+    const alarmRow = screen.getByRole('button', { name: /lun 17 août/ }).closest('tr');
+    const impactRow = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
+    expect(alarmRow).toHaveClass('is-non-compliant');
+    expect(alarmRow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(impactRow).not.toHaveClass('is-non-compliant');
+    expect(impactRow).toHaveTextContent('Conforme');
+    expect(impactRow).toHaveTextContent('15 h 00');
+    expect(impactRow).toHaveTextContent('22 h 00');
+    expect(impactRow).not.toHaveTextContent('Non conforme');
+
+    await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
+    const impactBand = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
+    expect(impactBand).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(impactBand).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
+    expect(impactBand).toHaveTextContent('Alarme rattachée au lun 17 août.');
+    expect(screen.getByRole('tab', { name: /mar 18 août$/ })).not.toHaveClass('is-non-compliant');
+    expect(screen.queryByText('2026-08-18', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
   });
 
   it('does not flag an empty day because of a rolling-window breach inherited from the previous day', async () => {
@@ -325,6 +343,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByText('2026-08-04', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
     await user.click(emptyDay);
     expect(screen.getByText('Alertes').closest('article')).toHaveTextContent('0Aucune alerte détectée');
+    expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toBeInTheDocument();
   });
 
   it('discards an unsigned draft from its card without saving its changes', async () => {

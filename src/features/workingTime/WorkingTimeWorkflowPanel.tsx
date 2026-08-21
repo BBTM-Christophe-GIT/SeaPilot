@@ -48,6 +48,8 @@ import {
 } from './workingTimeQueries';
 import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
 import {
+  workingTimeNonCompliantDates,
+  workingTimeRollingImpactDetails,
   workingTimeStatusCalculation,
   workingTimeViolationDetails,
   workingTimeViolationText,
@@ -192,6 +194,12 @@ function formatSelectedDay(value: string): string {
   return label.charAt(0).toLocaleUpperCase('fr-FR') + label.slice(1);
 }
 
+function formatAlarmDay(value: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: '2-digit', month: 'long' })
+    .format(new Date(`${value}T12:00:00`))
+    .replace('.', '');
+}
+
 export function workingTimeInitialDay(range: WorkingTimeRange, today: string): string {
   return today >= range.start && today <= range.end ? today : range.start;
 }
@@ -330,12 +338,16 @@ export function WorkingTimeWorkflowPanel({
     && calculation.localWindowEndDate >= range.start
     && calculation.localWindowEndDate <= range.end) || [], [range.end, range.start, selectedPersonId, workspace?.calculations]);
   const selectedCalculation = useMemo(
-    () => workingTimeStatusCalculation(selectedCalculations, selectedDay),
-    [selectedCalculations, selectedDay],
+    () => workingTimeStatusCalculation(selectedCalculations, selectedIntervals, selectedDay),
+    [selectedCalculations, selectedDay, selectedIntervals],
   );
   const selectedViolationDetails = useMemo(
-    () => workingTimeViolationDetails(selectedCalculations, selectedDay, workspace?.policies || []),
-    [selectedCalculations, selectedDay, workspace?.policies],
+    () => workingTimeViolationDetails(selectedCalculations, selectedIntervals, selectedDay, workspace?.policies || []),
+    [selectedCalculations, selectedDay, selectedIntervals, workspace?.policies],
+  );
+  const selectedRollingImpactDetails = useMemo(
+    () => workingTimeRollingImpactDetails(selectedCalculations, selectedIntervals, selectedDay, workspace?.policies || []),
+    [selectedCalculations, selectedDay, selectedIntervals, workspace?.policies],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = isExactHrCaptain;
@@ -358,18 +370,10 @@ export function WorkingTimeWorkflowPanel({
     ));
 
   const nonCompliantDates = useMemo(() => {
-    if (!workspace || !selectedRegister) return [];
-    const workedDates = new Set(workspace.intervals
-      .filter((interval) => interval.registerId === selectedRegister.id)
-      .map((interval) => interval.localWorkDate));
-    return Array.from(new Set(workspace.calculations
-      .filter((calculation) => calculation.personId === selectedRegister.personId
-        && calculation.localWindowEndDate >= selectedRegister.periodStart
-        && calculation.localWindowEndDate <= selectedRegister.periodEnd
-        && workedDates.has(calculation.localWindowEndDate)
-        && calculation.isCompliant === false)
-      .map((calculation) => calculation.localWindowEndDate))).sort();
-  }, [selectedRegister, workspace]);
+    if (!selectedRegister) return [];
+    return workingTimeNonCompliantDates(selectedCalculations, selectedIntervals)
+      .filter((day) => day >= selectedRegister.periodStart && day <= selectedRegister.periodEnd);
+  }, [selectedCalculations, selectedIntervals, selectedRegister]);
 
   const currentSignature = workspace?.signatures.find((signature) => signature.personId === currentPersonId);
   const subjectSignature = workspace?.signatures.find((signature) => signature.personId === selectedRegister?.personId);
@@ -797,6 +801,15 @@ export function WorkingTimeWorkflowPanel({
                     planningVesselId={dayContext?.vesselId || null}
                     planningWatchGroup={dayContext?.watchGroup || null}
                     nonCompliantDates={nonCompliantDates}
+                    rollingImpact={selectedRollingImpactDetails.length ? (
+                      <div aria-label="Impact des 24 heures glissantes" className="working-time-rolling-impact" role="status">
+                        <span>Impact des 24 h glissantes</span>
+                        {selectedRollingImpactDetails.map((violation) => <p key={violation.code}>
+                          <strong>{workingTimeViolationText(violation)}</strong>
+                          <small>{workingTimeViolationWindowText(violation)} Alarme rattachée au {formatAlarmDay(violation.alarmDay)}.</small>
+                        </p>)}
+                      </div>
+                    ) : null}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
                     showSubmitToCaptain={canEdit && isOwnRegister && !selectedDayApproval}
@@ -838,7 +851,7 @@ export function WorkingTimeWorkflowPanel({
                     <p>Le commentaire et les mesures prises documentent l’écart sans jamais rendre la journée conforme. Les cinq champs sont obligatoires avant validation.</p>
                     {nonCompliantDates.map((date) => {
                       const response = dayResponses[date] || EMPTY_NON_COMPLIANCE;
-                      const violationDetails = workingTimeViolationDetails(selectedCalculations, date, workspace.policies);
+                      const violationDetails = workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
                         && (hasManagementValidationRole

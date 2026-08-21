@@ -8,6 +8,7 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
@@ -40,6 +41,7 @@ interface WorkingTimeEntryBoardProps {
   submitDisabled?: boolean;
   showValidate?: boolean;
   validateDisabled?: boolean;
+  rollingImpact?: ReactNode;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
@@ -135,6 +137,7 @@ export function WorkingTimeEntryBoard({
   submitDisabled = false,
   showValidate = false,
   validateDisabled = false,
+  rollingImpact = null,
   onStartsAtChange,
   onEndsAtChange,
   onCommentChange,
@@ -154,6 +157,7 @@ export function WorkingTimeEntryBoard({
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
+  const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
@@ -230,6 +234,9 @@ export function WorkingTimeEntryBoard({
   const selectedRecordedInterval = intervals.find((interval) => interval.id === selectedRecordedIntervalId) || null;
 
   useEffect(() => { setSelectedRecordedIntervalId(null); }, [selectedDay]);
+  useEffect(() => {
+    dayButtonRefs.current.get(selectedDay)?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  }, [selectedDay]);
 
   const pendingSlots = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
     const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
@@ -341,9 +348,11 @@ export function WorkingTimeEntryBoard({
           const label = dateLabel(day);
           const isNonCompliant = nonCompliantDaySet.has(day);
           const className = [day === selectedDay ? 'is-active' : '', isNonCompliant ? 'is-non-compliant' : ''].filter(Boolean).join(' ');
-          return <button aria-label={`${label.weekday} ${label.day}${isNonCompliant ? ', journée non conforme' : ''}`} aria-selected={day === selectedDay} className={className} key={day} onClick={() => selectDay(day)} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong></button>;
+          return <button aria-label={`${label.weekday} ${label.day}${isNonCompliant ? ', journée non conforme' : ''}`} aria-selected={day === selectedDay} className={className} key={day} onClick={() => selectDay(day)} ref={(element) => { if (element) dayButtonRefs.current.set(day, element); else dayButtonRefs.current.delete(day); }} role="tab" type="button"><span>{label.weekday}</span><strong>{label.day}</strong></button>;
         })}
       </div>
+
+      {rollingImpact}
 
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">

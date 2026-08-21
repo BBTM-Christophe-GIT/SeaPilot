@@ -83,8 +83,8 @@ export function WorkingTimeMonthlyView({
             {days.map((day) => {
               const dayIntervals = intervals.filter((interval) => interval.localWorkDate === day)
                 .sort((left, right) => left.startsAt.localeCompare(right.startsAt));
-              const calculation = workingTimeStatusCalculation(calculations, day);
-              const violations = workingTimeViolationDetails(calculations, day, policies);
+              const calculation = workingTimeStatusCalculation(calculations, intervals, day);
+              const violations = workingTimeViolationDetails(calculations, intervals, day, policies);
               const dayMinutes = dayIntervals.reduce((sum, interval) => sum + workingTimeIntervalMinutes(interval), 0);
               const assignments = Array.from(new Set(dayIntervals.map((interval) => {
                 const vessel = interval.vesselId ? vesselNames.get(interval.vesselId) : 'Sans navire';
