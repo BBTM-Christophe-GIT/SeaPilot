@@ -8,7 +8,6 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
@@ -17,6 +16,13 @@ import {
   type WorkingTimeEntryRecommendation,
   type WorkingTimePhaseInput,
 } from './workingTimeQueries';
+
+export interface WorkingTimeRollingWindowMarker {
+  description: string;
+  endLabel: string;
+  endMinute: number;
+  startLabel: string;
+}
 
 interface WorkingTimeEntryBoardProps {
   client: SupabaseClient;
@@ -41,7 +47,7 @@ interface WorkingTimeEntryBoardProps {
   submitDisabled?: boolean;
   showValidate?: boolean;
   validateDisabled?: boolean;
-  rollingImpact?: ReactNode;
+  rollingWindow?: WorkingTimeRollingWindowMarker | null;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
@@ -54,6 +60,7 @@ interface WorkingTimeEntryBoardProps {
 }
 
 const pad = (value: number) => String(value).padStart(2, '0');
+const MINUTES_PER_DAY = 24 * 60;
 
 function addDays(value: string, amount: number): string {
   const date = new Date(`${value}T12:00:00`);
@@ -137,7 +144,7 @@ export function WorkingTimeEntryBoard({
   submitDisabled = false,
   showValidate = false,
   validateDisabled = false,
-  rollingImpact = null,
+  rollingWindow = null,
   onStartsAtChange,
   onEndsAtChange,
   onCommentChange,
@@ -352,42 +359,61 @@ export function WorkingTimeEntryBoard({
         })}
       </div>
 
-      {rollingImpact}
-
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
-          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span><small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small></div>
-          <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
-            {Array.from({ length: 48 }, (_, slot) => {
-              const label = slotLocalValue(selectedDay, slot).slice(11);
-              const recordedInterval = recordedIntervalBySlot[slot];
-              const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
-              return (
-                <button
-                  aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
-                  aria-selected={selectedSlots[slot]}
-                  className={className}
-                  disabled={!canEdit}
-                  key={slot}
-                  onKeyDown={(event) => handleSlotKeyDown(event, slot)}
-                  onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
-                  onPointerDown={() => {
-                    if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
-                    dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot);
-                  }}
-                  onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
-                  onPointerUp={() => {
-                    if (dragStart.current !== null) commitSlots(dragStart.current, slot);
-                    dragStart.current = null;
-                  }}
-                  ref={(element) => { slotRefs.current[slot] = element; }}
-                  role="gridcell"
-                  type="button"
+          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small>}</div>
+          <div className="working-time-timeline-track">
+            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
+              {Array.from({ length: 48 }, (_, slot) => {
+                const label = slotLocalValue(selectedDay, slot).slice(11);
+                const recordedInterval = recordedIntervalBySlot[slot];
+                const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
+                return (
+                  <button
+                    aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
+                    aria-selected={selectedSlots[slot]}
+                    className={className}
+                    disabled={!canEdit}
+                    key={slot}
+                    onKeyDown={(event) => handleSlotKeyDown(event, slot)}
+                    onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
+                    onPointerDown={() => {
+                      if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
+                      dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot);
+                    }}
+                    onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
+                    onPointerUp={() => {
+                      if (dragStart.current !== null) commitSlots(dragStart.current, slot);
+                      dragStart.current = null;
+                    }}
+                    ref={(element) => { slotRefs.current[slot] = element; }}
+                    role="gridcell"
+                    type="button"
+                  >
+                    <time>{slot % 2 === 0 ? `${label.slice(0, 2)}h` : ''}</time><span />
+                  </button>
+                );
+              })}
+            </div>
+            {rollingWindow ? (
+              <div
+                aria-label="Impact des 24 heures glissantes"
+                className="working-time-rolling-window"
+                role="status"
+                title={rollingWindow.description}
+              >
+                <span className="sr-only">{rollingWindow.description}</span>
+                <div
+                  aria-hidden="true"
+                  className="working-time-rolling-window-line"
+                  style={{ width: `${(Math.max(0, Math.min(MINUTES_PER_DAY, rollingWindow.endMinute)) / MINUTES_PER_DAY) * 100}%` }}
+                  title={rollingWindow.description}
                 >
-                  <time>{slot % 2 === 0 ? `${label.slice(0, 2)}h` : ''}</time><span />
-                </button>
-              );
-            })}
+                  <span>J−1 {rollingWindow.startLabel}</span>
+                  <strong>fin {rollingWindow.endLabel}</strong>
+                </div>
+              </div>
+            ) : null}
           </div>
           {selectedRecordedInterval ? <div className="working-time-recorded-period-actions" role="group" aria-label="Actions de la plage enregistrée"><span><strong>{formatDateTime(selectedRecordedInterval.startsAt)}</strong> → {formatDateTime(selectedRecordedInterval.endsAt)}</span><div><button onClick={() => { setSelectedRecordedIntervalId(null); onEditInterval(selectedRecordedInterval); }} type="button"><PenLine size={15} />Corriger</button><button onClick={() => { setSelectedRecordedIntervalId(null); onRequestVoid(selectedRecordedInterval); }} type="button"><Trash2 size={15} />Retirer</button><button aria-label="Fermer les actions" onClick={() => setSelectedRecordedIntervalId(null)} type="button">×</button></div></div> : null}
         </div>

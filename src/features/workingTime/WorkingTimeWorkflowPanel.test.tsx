@@ -318,10 +318,14 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(impactRow).not.toHaveTextContent('Non conforme');
 
     await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
-    const impactBand = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
-    expect(impactBand).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
-    expect(impactBand).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
-    expect(impactBand).toHaveTextContent('Alarme rattachée au lun 17 août.');
+    const rollingWindow = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
+    expect(rollingWindow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(rollingWindow).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
+    expect(rollingWindow).toHaveTextContent('Alarme rattachée au lun 17 août.');
+    expect(screen.getByText('24 h glissantes')).toBeInTheDocument();
+    expect(screen.getByText('J−1 06:30')).toBeInTheDocument();
+    expect(screen.getByText('fin 06:30')).toBeInTheDocument();
+    expect(rollingWindow.querySelector('.working-time-rolling-window-line')).toHaveStyle({ width: '27.083333333333332%' });
     expect(screen.getByRole('tab', { name: /mar 18 août$/ })).not.toHaveClass('is-non-compliant');
     expect(screen.queryByText('2026-08-18', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
   });

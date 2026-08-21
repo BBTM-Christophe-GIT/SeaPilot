@@ -55,7 +55,7 @@ import {
   workingTimeViolationText,
   workingTimeViolationWindowText,
 } from './workingTimeCompliance';
-import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
+import { WorkingTimeEntryBoard, type WorkingTimeRollingWindowMarker } from './WorkingTimeEntryBoard';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
@@ -198,6 +198,31 @@ function formatAlarmDay(value: string): string {
   return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: '2-digit', month: 'long' })
     .format(new Date(`${value}T12:00:00`))
     .replace('.', '');
+}
+
+function formatTimeInZone(value: Date, timezoneName: string): { label: string; minute: number } {
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezoneName,
+  }).formatToParts(value);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
+  return { label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, minute: (hour * 60) + minute };
+}
+
+function rollingWindowMarker(details: ReturnType<typeof workingTimeRollingImpactDetails>): WorkingTimeRollingWindowMarker | null {
+  const detail = details.find(({ code }) => code !== 'work_7d' && code !== 'rest_7d');
+  if (!detail) return null;
+  const windowEnd = new Date(detail.calculation.windowEnd);
+  const windowStart = new Date(windowEnd.getTime() - (24 * 60 * 60 * 1000));
+  const start = formatTimeInZone(windowStart, detail.calculation.timezoneName);
+  const end = formatTimeInZone(windowEnd, detail.calculation.timezoneName);
+  if (end.minute <= 0) return null;
+  return {
+    description: `${workingTimeViolationText(detail)} ${workingTimeViolationWindowText(detail)} Alarme rattachée au ${formatAlarmDay(detail.alarmDay)}.`,
+    endLabel: end.label,
+    endMinute: end.minute,
+    startLabel: start.label,
+  };
 }
 
 export function workingTimeInitialDay(range: WorkingTimeRange, today: string): string {
@@ -348,6 +373,10 @@ export function WorkingTimeWorkflowPanel({
   const selectedRollingImpactDetails = useMemo(
     () => workingTimeRollingImpactDetails(selectedCalculations, selectedIntervals, selectedDay, workspace?.policies || []),
     [selectedCalculations, selectedDay, selectedIntervals, workspace?.policies],
+  );
+  const selectedRollingWindow = useMemo(
+    () => rollingWindowMarker(selectedRollingImpactDetails),
+    [selectedRollingImpactDetails],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = isExactHrCaptain;
@@ -801,15 +830,7 @@ export function WorkingTimeWorkflowPanel({
                     planningVesselId={dayContext?.vesselId || null}
                     planningWatchGroup={dayContext?.watchGroup || null}
                     nonCompliantDates={nonCompliantDates}
-                    rollingImpact={selectedRollingImpactDetails.length ? (
-                      <div aria-label="Impact des 24 heures glissantes" className="working-time-rolling-impact" role="status">
-                        <span>Impact des 24 h glissantes</span>
-                        {selectedRollingImpactDetails.map((violation) => <p key={violation.code}>
-                          <strong>{workingTimeViolationText(violation)}</strong>
-                          <small>{workingTimeViolationWindowText(violation)} Alarme rattachée au {formatAlarmDay(violation.alarmDay)}.</small>
-                        </p>)}
-                      </div>
-                    ) : null}
+                    rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
                     showSubmitToCaptain={canEdit && isOwnRegister && !selectedDayApproval}
