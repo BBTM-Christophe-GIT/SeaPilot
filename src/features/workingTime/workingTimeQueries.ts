@@ -80,6 +80,18 @@ interface CalculationRow {
   calculated_at: string;
 }
 
+interface PolicyRow {
+  id: number | string;
+  name: string;
+  max_work_24h: number | string;
+  min_rest_24h: number | string;
+  max_work_7d: number | string;
+  min_rest_7d: number | string;
+  min_consecutive_rest_hours: number | string;
+  max_rest_periods_24h: number | string;
+  max_night_work_24h: number | string;
+}
+
 interface CommentRow {
   id: number | string;
   register_id: number | string;
@@ -282,6 +294,18 @@ export interface WorkingTimeVesselOption {
   flagState?: string;
 }
 
+export interface WorkingTimePolicyThresholds {
+  id: number;
+  name: string;
+  maxWork24h: number;
+  minRest24h: number;
+  maxWork7d: number;
+  minRest7d: number;
+  minConsecutiveRestHours: number;
+  maxRestPeriods24h: number;
+  maxNightWork24h: number;
+}
+
 export interface WorkingTimeWorkspace {
   currentPersonId: number;
   readablePeople: WorkingTimeEditablePerson[];
@@ -294,6 +318,7 @@ export interface WorkingTimeWorkspace {
   validations: WorkingTimeValidationEvent[];
   dayApprovals: WorkingTimeDayApproval[];
   vessels: WorkingTimeVesselOption[];
+  policies: WorkingTimePolicyThresholds[];
 }
 
 export interface WorkingTimeRange {
@@ -379,6 +404,7 @@ export interface SaveWorkingTimePhasesInput {
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,requested_captain_person_id,requested_signature_date,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
+const POLICY_SELECT = 'id,name,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,max_night_work_24h';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
 const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id,subject_signature_snapshot,approver_signature_snapshot';
 
@@ -463,6 +489,20 @@ function mapCalculation(row: CalculationRow): WorkingTimeCalculationWindow {
   };
 }
 
+function mapPolicy(row: PolicyRow): WorkingTimePolicyThresholds {
+  return {
+    id: Number(row.id),
+    name: row.name,
+    maxWork24h: Number(row.max_work_24h),
+    minRest24h: Number(row.min_rest_24h),
+    maxWork7d: Number(row.max_work_7d),
+    minRest7d: Number(row.min_rest_7d),
+    minConsecutiveRestHours: Number(row.min_consecutive_rest_hours),
+    maxRestPeriods24h: Number(row.max_rest_periods_24h),
+    maxNightWork24h: Number(row.max_night_work_24h),
+  };
+}
+
 function textArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
@@ -512,7 +552,7 @@ export async function fetchWorkingTimeWorkspace(
   });
   assertResult(ensureResult.error, 'Impossible de préparer les registres mensuels.');
 
-  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult] = await Promise.all([
+  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
     client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
     client.from('working_time_registers').select(REGISTER_SELECT)
       .is('discarded_at', null)
@@ -528,6 +568,7 @@ export async function fetchWorkingTimeWorkspace(
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
     client.from('working_time_day_approvals').select(DAY_APPROVAL_SELECT).order('local_work_date', { ascending: false }).limit(2000),
     client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
+    client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
 
   assertResult(contextResult.error, 'Impossible de déterminer le périmètre de saisie.');
@@ -539,6 +580,7 @@ export async function fetchWorkingTimeWorkspace(
   assertResult(validationResult.error, 'Impossible de charger les instantanés de validation.');
   assertResult(dayApprovalResult.error, 'Impossible de charger les approbations journalières.');
   assertResult(vesselResult.error, 'Impossible de charger les navires.');
+  assertResult(policyResult.error, 'Impossible de charger les seuils de conformité.');
 
   const context = (contextResult.data || {}) as EntryContextRow;
   const mapPeople = (rows: unknown[]) => (rows as EditablePersonRow[]).map((person) => ({
@@ -614,6 +656,7 @@ export async function fetchWorkingTimeWorkspace(
       imoNumber: vessel.imo_number || '',
       flagState: vessel.flag_state || '',
     })),
+    policies: ((policyResult.data || []) as PolicyRow[]).map(mapPolicy),
   };
 }
 

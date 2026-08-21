@@ -49,6 +49,11 @@ function workspaceClient() {
       is_compliant: false, violation_codes: ['work_24h'], calculation_version: 1,
       calculated_at: '2026-08-03T16:00:01Z',
     }],
+    planning_work_rest_policies: [{
+      id: 5, name: 'Politique datée', max_work_24h: 12, min_rest_24h: 10,
+      max_work_7d: 84, min_rest_7d: 52, min_consecutive_rest_hours: 6,
+      max_rest_periods_24h: 6, max_night_work_24h: 10,
+    }],
     working_time_day_comments: [{
       id: 40, register_id: 10, person_id: 42, local_work_date: '2026-08-03',
       cause_category: 'unexpected_operation', operational_context: 'Opération pont prolongée',
@@ -101,6 +106,7 @@ describe('working-time workflow queries', () => {
     expect(workspace.registers[0]).toMatchObject({ id: 10, personName: 'Alex MARIN', status: 'draft' });
     expect(workspace.intervals[0]).toMatchObject({ id: 20, timezoneName: 'Europe/Paris' });
     expect(workspace.calculations[0]).toMatchObject({ isCompliant: false, violationCodes: ['work_24h'] });
+    expect(workspace.policies[0]).toMatchObject({ id: 5, name: 'Politique datée', maxWork24h: 12 });
     expect(workspace.dayComments[0].comment).toBe('Opération urgente');
     expect(workspace.dayComments[0].causeCategory).toBe('unexpected_operation');
     expect(workspace.signatures[0]).toMatchObject({ personId: 42, versionNumber: 2 });

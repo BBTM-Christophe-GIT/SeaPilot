@@ -13076,6 +13076,10 @@ button.planning-p12-conflict-card {
 .working-time-non-compliance-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .working-time-non-compliance-card > header strong { color: #263b48; font-size: .84rem; }
 .working-time-non-compliance-card > header span { padding: 3px 7px; border-radius: 999px; color: #8b2635; background: #fdecef; font-size: .68rem; font-weight: 850; }
+.working-time-non-compliance-reasons { display: grid; gap: 7px; }
+.working-time-non-compliance-reasons p { display: grid; gap: 2px; margin: 0; padding: 9px 10px; border-left: 3px solid #cf3f52; border-radius: 5px; color: #5d3440; background: #fff3f4; font-size: .75rem; }
+.working-time-non-compliance-reasons span,
+.working-time-non-compliance-reasons small { color: #6c5660; }
 .working-time-non-compliance-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .working-time-non-compliance-fields .is-wide { grid-column: 1 / -1; }
 .working-time-non-compliance textarea { min-height: 68px; resize: vertical; }
@@ -19447,6 +19451,12 @@ button.planning-p12-conflict-card {
 .working-time-month-title { color: #12346f; font-size: .9rem; text-transform: lowercase; }
 .working-time-register-detail > .working-time-signatures { grid-column: 2; grid-row: 2 / span 3; align-self: stretch; }
 .working-time-register-detail > .working-time-intervals { grid-column: 1; grid-row: 2; padding-top: 0; border-top: 0; }
+.working-time-register-detail.is-monthly { grid-template-columns: minmax(0, 1fr); }
+.working-time-register-detail.is-monthly > .working-time-intervals { grid-column: 1; grid-row: 2; }
+.working-time-register-detail.is-monthly > .working-time-signatures { grid-column: 1; grid-row: 3; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.working-time-register-detail.is-monthly > .working-time-signatures > .working-time-side-tabs { grid-column: 1 / -1; }
+.working-time-register-detail.is-monthly > .working-time-non-compliance { grid-column: 1; grid-row: 4; }
+.working-time-register-detail.is-monthly > .working-time-workflow-actions { grid-column: 1; grid-row: 5; position: static; }
 .working-time-signatures { align-content: start; gap: 5px; padding: 12px; border: 1px solid #dce6ed; border-radius: 8px; }
 .working-time-signatures > h4 { margin: 0 0 8px; color: #12346f; font-size: .72rem; text-transform: uppercase; }
 .working-time-side-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 7px; padding: 3px; border: 1px solid #d6e2ea; border-radius: 7px; background: #f4f8fa; }
@@ -19546,10 +19556,16 @@ button.planning-p12-conflict-card {
 .working-time-monthly-view td { padding: 8px; border-bottom: 1px solid #e2eaf0; vertical-align: middle; }
 .working-time-monthly-view tr.is-non-compliant td { background: #fff3f4; }
 .working-time-monthly-view td:first-child button { border: 0; padding: 0; color: #12346f; background: transparent; font: inherit; font-weight: 800; text-transform: capitalize; cursor: pointer; }
+.working-time-monthly-view th:last-child,
+.working-time-monthly-view td:last-child { min-width: 260px; }
 .working-time-monthly-view .is-empty { color: #8798a6; font-style: italic; }
 .working-time-month-status { display: inline-flex; align-items: center; gap: 4px; color: #657b8d; white-space: nowrap; }
 .working-time-month-status.is-compliant { color: #137746; }
 .working-time-month-status.is-non-compliant { color: #b52b40; font-weight: 800; }
+.working-time-month-status-detail { display: grid; gap: 5px; }
+.working-time-month-violation { display: grid; gap: 2px; line-height: 1.35; }
+.working-time-month-violation strong { color: #8f2335; font-size: .69rem; }
+.working-time-month-violation small { color: #735360; font-size: .64rem; white-space: normal; }
 
 .working-time-compliance-report { display: grid; gap: 12px; color: #28445c; }
 .working-time-report-builder { display: grid; grid-template-columns: minmax(0, 2.15fr) minmax(280px, 1fr); gap: 16px; align-items: stretch; }

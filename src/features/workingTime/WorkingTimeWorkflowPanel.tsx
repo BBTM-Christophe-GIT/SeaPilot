@@ -47,6 +47,12 @@ import {
   type WorkingTimeSignatureSnapshot,
 } from './workingTimeQueries';
 import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
+import {
+  workingTimeStatusCalculation,
+  workingTimeViolationDetails,
+  workingTimeViolationText,
+  workingTimeViolationWindowText,
+} from './workingTimeCompliance';
 import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
@@ -186,6 +192,10 @@ function formatSelectedDay(value: string): string {
   return label.charAt(0).toLocaleUpperCase('fr-FR') + label.slice(1);
 }
 
+export function workingTimeInitialDay(range: WorkingTimeRange, today: string): string {
+  return today >= range.start && today <= range.end ? today : range.start;
+}
+
 function SignatureCard({ signature, imageUrl, label }: {
   signature: SignatureEvidence | undefined;
   imageUrl: string | undefined;
@@ -246,7 +256,8 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [selectedDay, setSelectedDay] = useState(range.start);
+  const localToday = useMemo(() => todayPlanningDate(), []);
+  const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
@@ -287,7 +298,6 @@ export function WorkingTimeWorkflowPanel({
     [monthlyRegisters],
   );
   const normalizedSearch = registerSearch.trim().toLocaleLowerCase('fr-FR');
-  const localToday = useMemo(() => todayPlanningDate(), []);
   const catalogPeople = useMemo(() => visibleReadablePeople.filter((person) => (
     isVisibleForPersonnelFilter(person, personnelFilter, localToday)
     && (!normalizedSearch
@@ -316,13 +326,17 @@ export function WorkingTimeWorkflowPanel({
     () => selectedIntervals.filter((interval) => interval.localWorkDate === selectedDay),
     [selectedDay, selectedIntervals],
   );
-  const selectedCalculation = useMemo(() => workspace?.calculations
-    .filter((calculation) => calculation.personId === selectedPersonId && calculation.localWindowEndDate === selectedDay)
-    .sort((left, right) => left.windowEnd.localeCompare(right.windowEnd)).at(-1) || null,
-  [selectedDay, selectedPersonId, workspace?.calculations]);
   const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId
     && calculation.localWindowEndDate >= range.start
     && calculation.localWindowEndDate <= range.end) || [], [range.end, range.start, selectedPersonId, workspace?.calculations]);
+  const selectedCalculation = useMemo(
+    () => workingTimeStatusCalculation(selectedCalculations, selectedDay),
+    [selectedCalculations, selectedDay],
+  );
+  const selectedViolationDetails = useMemo(
+    () => workingTimeViolationDetails(selectedCalculations, selectedDay, workspace?.policies || []),
+    [selectedCalculations, selectedDay, workspace?.policies],
+  );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = isExactHrCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
@@ -419,11 +433,12 @@ export function WorkingTimeWorkflowPanel({
   }, [catalogPeople, groupedPeople, selectedPersonId]);
 
   useEffect(() => {
-    setSelectedDay(range.start);
-    setStartsAt(`${range.start}T00:00`);
-    setEndsAt(`${range.start}T00:00`);
+    const initialDay = workingTimeInitialDay(range, localToday);
+    setSelectedDay(initialDay);
+    setStartsAt(`${initialDay}T00:00`);
+    setEndsAt(`${initialDay}T00:00`);
     setPendingPhases([]);
-  }, [range.start]);
+  }, [localToday, range.end, range.start]);
 
   useEffect(() => {
     if (!approvalNavigationTarget
@@ -706,7 +721,7 @@ export function WorkingTimeWorkflowPanel({
             </nav>
 
             {selectedRegister ? (
-              <article className="working-time-register-detail">
+              <article className={`working-time-register-detail ${registerView === 'monthly' ? 'is-monthly' : ''}`}>
                 <header>
                   <div>
                     <h3>{selectedRegister.personName} <span>· {selectedRegister.functionLabel || 'Personnel maritime'}</span></h3>
@@ -732,7 +747,7 @@ export function WorkingTimeWorkflowPanel({
                   {rightPanelTab === 'compliance' ? <>
                     <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedRegister.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
                     <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
-                    <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedCalculation?.violationCodes.length || 1 : 0}</strong><small>{nonCompliantDates.includes(selectedDay) ? 'Journée non conforme' : 'Aucune alerte détectée'}</small></article>
+                    <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedViolationDetails.length : 0}</strong><small>{nonCompliantDates.includes(selectedDay) && selectedViolationDetails[0] ? workingTimeViolationText(selectedViolationDetails[0]) : 'Aucune alerte détectée'}</small></article>
                     <SignatureCard imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined} label="Titulaire du registre" signature={subjectSignatureEvidence} />
                     {validatorSignatureEvidence ? (
                     <SignatureCard
@@ -811,6 +826,7 @@ export function WorkingTimeWorkflowPanel({
                     onSelectDay={(day) => { setSelectedDay(day); setRegisterView('daily'); }}
                     periodEnd={selectedRegister.periodEnd}
                     periodStart={selectedRegister.periodStart}
+                    policies={workspace.policies}
                     vessels={workspace.vessels}
                   />}
 
@@ -822,6 +838,7 @@ export function WorkingTimeWorkflowPanel({
                     <p>Le commentaire et les mesures prises documentent l’écart sans jamais rendre la journée conforme. Les cinq champs sont obligatoires avant validation.</p>
                     {nonCompliantDates.map((date) => {
                       const response = dayResponses[date] || EMPTY_NON_COMPLIANCE;
+                      const violationDetails = workingTimeViolationDetails(selectedCalculations, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
                         && (hasManagementValidationRole
@@ -834,6 +851,13 @@ export function WorkingTimeWorkflowPanel({
                       return (
                         <div className="working-time-non-compliance-card" key={date}>
                           <header><strong>{date}</strong><span>NON CONFORME</span></header>
+                          <div className="working-time-non-compliance-reasons">
+                            {violationDetails.map((violation) => <p key={violation.code}>
+                              <strong>{workingTimeViolationText(violation)}</strong>
+                              <span>{workingTimeViolationWindowText(violation)}</span>
+                              {violation.policyName ? <small>Politique appliquée : {violation.policyName}</small> : null}
+                            </p>)}
+                          </div>
                           <div className="working-time-non-compliance-fields">
                             <label>Catégorie de cause
                               <select disabled={disabled} onChange={(event) => update('causeCategory', event.target.value)} value={response.causeCategory}>
