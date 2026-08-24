@@ -1212,7 +1212,13 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
     expect(within(dialog).getByText('Alain ANCIEN')).toBeInTheDocument();
     expect(within(dialog).getByText('Camille FUTURE')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Déjà présent Paul DURAND' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Ajouter Paul DURAND' })).toBeEnabled();
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Capitaine', 'Matelot']);
+    const captainGroup = within(dialog).getByRole('region', { name: 'Capitaine' });
+    const sailorGroup = within(dialog).getByRole('region', { name: 'Matelot' });
+    expect(within(captainGroup).getByText('Jean MARTIN')).toBeInTheDocument();
+    expect(within(sailorGroup).getByText('Paul DURAND')).toBeInTheDocument();
+    expect(within(captainGroup).queryByText('Paul DURAND')).not.toBeInTheDocument();
     expect(within(dialog).queryByText('Étienne PASSÉ')).not.toBeInTheDocument();
     expect(within(dialog).queryByText('Aline AUJOURD’HUI')).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter Camille FUTURE' }));
@@ -1225,7 +1231,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Camille FUTURE a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
   });
 
-  it('keeps an eligible sailor with an existing record visible but disables adding a duplicate row', async () => {
+  it('allows adding an eligible sailor even when an existing planning record is present', async () => {
     const user = userEvent.setup();
     const departedAssignment = {
       ...assignmentOverviewRow,
@@ -1233,7 +1239,7 @@ describe('PlanningPage cockpit', () => {
       crew_person_id: 13,
       crew_name: 'Alain ANCIEN',
     };
-    const { client } = createClient({
+    const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow, departedAssignment],
       people: [captainRow, crewRow, departedCrewRow],
     });
@@ -1242,7 +1248,13 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
-    expect(within(dialog).getByRole('button', { name: 'Déjà présent Alain ANCIEN' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Alain ANCIEN' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
+      p_vessel_id: 1,
+      p_watch_group: 'Affectation',
+      p_person_id: 13,
+    }));
   });
 
   it('offers row deletion only for a sailor without planning records', async () => {

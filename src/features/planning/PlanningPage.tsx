@@ -769,17 +769,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     Number(crewListForm.vesselId),
     crewListForm.date,
   ), [crewListForm.date, crewListForm.vesselId, overview]);
-  const departedDialogExistingPersonIds = useMemo(() => {
-    if (!departedPeopleDialog) return new Set<number>();
-    return new Set([
-      ...(overview.boardRows || [])
-        .filter((row) => row.vesselId === departedPeopleDialog.vesselId && row.watchGroup === departedPeopleDialog.watchGroup)
-        .map((row) => row.personId),
-      ...allPlanningCrewEvents
-        .filter((event) => event.vesselId === departedPeopleDialog.vesselId && event.board === departedPeopleDialog.watchGroup && event.personId !== null)
-        .map((event) => event.personId as number),
-    ]);
-  }, [allPlanningCrewEvents, departedPeopleDialog, overview.boardRows]);
   const conflictDatesByEvent = useMemo(
     () => getPlanningConflictDatesByEvent(overview, allPlanningCrewEvents),
     [allPlanningCrewEvents, overview],
@@ -2540,7 +2529,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
-      {departedPeopleDialog ? <PlanningDepartedPeopleDialog existingPersonIds={departedDialogExistingPersonIds} isSaving={isSaving} onAdd={(person) => void addDepartedPersonToBoard(person)} onClose={() => setDepartedPeopleDialog(null)} pendingId={pendingMutationId} people={departedPeople} state={departedPeopleDialog} /> : null}
+      {departedPeopleDialog ? <PlanningDepartedPeopleDialog isSaving={isSaving} onAdd={(person) => void addDepartedPersonToBoard(person)} onClose={() => setDepartedPeopleDialog(null)} pendingId={pendingMutationId} people={departedPeople} state={departedPeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
       {isAssignmentOpen ? (
@@ -2770,27 +2759,51 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   </div>;
 }
 
-function PlanningDepartedPeopleDialog({ state, people, existingPersonIds, isSaving, pendingId, onAdd, onClose }: {
+function PlanningDepartedPeopleDialog({ state, people, isSaving, pendingId, onAdd, onClose }: {
   state: PlanningDepartedPeopleDialogState;
   people: PlanningPerson[];
-  existingPersonIds: ReadonlySet<number>;
   isSaving: boolean;
   pendingId: string | null;
   onAdd: (person: PlanningPerson) => void;
   onClose: () => void;
 }) {
+  const peopleByFunction = useMemo(() => {
+    const groups = new Map<string, PlanningPerson[]>();
+    people.forEach((person) => {
+      const functionLabel = person.functionLabel.trim() || 'Fonction non renseignée';
+      const functionPeople = groups.get(functionLabel);
+      if (functionPeople) functionPeople.push(person);
+      else groups.set(functionLabel, [person]);
+    });
+    return [...groups.entries()]
+      .sort(([left], [right]) => {
+        if (left === 'Fonction non renseignée') return 1;
+        if (right === 'Fonction non renseignée') return -1;
+        return left.localeCompare(right, 'fr', { sensitivity: 'base' });
+      })
+      .map(([functionLabel, functionPeople]) => ({
+        functionLabel,
+        people: functionPeople.sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
+      }));
+  }, [people]);
+
   return <div className="planning-dialog-backdrop" role="presentation">
     <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
       <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-      <p className="planning-dialog-intro">Marins sans date de départ ou dont la date de départ est postérieure à aujourd’hui. L’ajout crée une ligne vide, sans case colorée.</p>
-      {people.length ? <div className="planning-departed-people-list">{people.map((person) => {
-        const isAlreadyPresent = existingPersonIds.has(person.id);
-        const isPending = pendingId === `departed-person-${person.id}`;
-        return <article key={person.id}>
-          <span><strong>{formatPlanningPerson(person)}</strong><small>{[person.functionLabel || person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Marin'}</small></span>
-          <span><small>Date de départ</small><strong>{formatPlanningDate(person.departedOn)}</strong></span>
-          <button aria-label={`${isAlreadyPresent ? 'Déjà présent' : 'Ajouter'} ${formatPlanningPerson(person)}`} disabled={isSaving || isAlreadyPresent} onClick={() => onAdd(person)} type="button">{isPending ? 'Ajout…' : isAlreadyPresent ? 'Déjà présent' : 'Ajouter'}</button>
-        </article>;
+      <p className="planning-dialog-intro">Marins sans date de départ ou dont la date de départ est postérieure à aujourd’hui. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
+      {people.length ? <div className="planning-departed-people-groups">{peopleByFunction.map((group, groupIndex) => {
+        const densityClass = group.people.length > 12 ? ' is-expanded' : group.people.length > 6 ? ' is-wide' : '';
+        const headingId = `planning-people-function-${groupIndex}`;
+        return <section aria-labelledby={headingId} className={`planning-departed-people-group${densityClass}`} key={group.functionLabel}>
+          <header><h3 id={headingId}>{group.functionLabel}</h3><span>{group.people.length}</span></header>
+          <div>{group.people.map((person) => {
+            const isPending = pendingId === `departed-person-${person.id}`;
+            return <article aria-busy={isPending} key={person.id}>
+              <span><strong>{formatPlanningPerson(person)}</strong><small>{[person.contractType, person.departedOn ? `Départ ${formatPlanningDate(person.departedOn)}` : 'Départ non renseigné'].filter(Boolean).join(' · ')}</small></span>
+              <button aria-label={`Ajouter ${formatPlanningPerson(person)}`} disabled={isSaving} onClick={() => onAdd(person)} type="button">{isPending ? 'Ajout…' : 'Ajouter'}</button>
+            </article>;
+          })}</div>
+        </section>;
       })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin sans date de départ ou avec une date de départ postérieure à aujourd’hui.</p></div>}
       <footer><button className="is-secondary" onClick={onClose} type="button">Fermer</button></footer>
     </section>
