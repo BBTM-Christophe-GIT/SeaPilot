@@ -17013,21 +17013,24 @@ button.planning-p12-conflict-card {
 }
 
 .planning-departed-people-group > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px;
   min-height: 24px;
   padding: 0 2px 5px;
   border-bottom: 1px solid #dce5ef;
 }
 
 .planning-departed-people-group h3 {
-  overflow: hidden;
   margin: 0;
   color: #40526b;
   font-size: .67rem;
   font-weight: 850;
+  line-height: 1.25;
   letter-spacing: .025em;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .planning-departed-people-group > header > span {

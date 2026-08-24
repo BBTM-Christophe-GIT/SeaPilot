@@ -123,12 +123,31 @@ const MONTH_LABELS = [
   'Décembre',
 ];
 
-const ROLE_RANKS = [
+export const PLANNING_PERSONNEL_FUNCTIONS = [
+  'Président',
+  'Capitaine',
+  'Chef Mécanicien',
+  '2nd Capitaine',
+  "Maître d'Equipage",
+  'Matelot polyvalent',
+  'Matelot Qualifié',
+  'Directeur QHSE / Chef de Projet',
+  'Directrice Administrative et Financière',
+  'Stagiaire',
+] as const;
+
+const PLANNING_PERSONNEL_FUNCTION_ALIASES = [
+  ['PRESIDENT'],
   ['CAPITAINE'],
   ['CHEFMECANICIEN', 'CHEFMECANICIENNE'],
   ['2NDCAPITAINE', 'SECONDCAPITAINE', '2EMECAPITAINE'],
   ['BOSCO', 'MAITREDEQUIPAGE'],
-];
+  ['MATELOTPOLYVALENT', 'MATELOTPOLYVALENTPONTMACHINE'],
+  ['MATELOTQUALIFIE', 'MATELOTQUALIFIEPONT'],
+  ['DIRECTEURQHSECHEFDEPROJET'],
+  ['DIRECTRICEADMINISTRATIVEETFINANCIERE'],
+  ['STAGIAIRE'],
+] as const;
 
 function buildDays(start: string, count: number): PlanningTimelineDay[] {
   return Array.from({ length: count }, (_, index) => {
@@ -268,10 +287,15 @@ export function projectStatusTone(value: string): string {
   return 'other';
 }
 
-function personRoleRank(value: string): number {
+export function planningPersonnelFunctionRank(value: string): number {
   const key = normalizePlanningText(value);
-  const rank = ROLE_RANKS.findIndex((aliases) => aliases.some((alias) => key.includes(alias)));
-  return rank === -1 ? 99 : rank;
+  const rank = PLANNING_PERSONNEL_FUNCTION_ALIASES.findIndex((aliases) => aliases.some((alias) => key === alias));
+  return rank === -1 ? PLANNING_PERSONNEL_FUNCTIONS.length : rank;
+}
+
+export function comparePlanningPersonnelFunctions(left: string, right: string): number {
+  return planningPersonnelFunctionRank(left) - planningPersonnelFunctionRank(right)
+    || left.localeCompare(right, 'fr', { sensitivity: 'base' });
 }
 
 function crewEventFromPeriod(period: PlanningPeriodRecord, vesselName = period.vesselName): PlanningCrewEvent {
@@ -549,9 +573,9 @@ export function buildPlanningCrewRows(
           });
           [...people.entries()]
             .sort(([leftName, leftEvents], [rightName, rightEvents]) => {
-              const leftRole = leftEvents[0]?.functionLabel || peopleByName.get(leftName)?.functionLabel || '';
-              const rightRole = rightEvents[0]?.functionLabel || peopleByName.get(rightName)?.functionLabel || '';
-              return personRoleRank(leftRole) - personRoleRank(rightRole) || leftName.localeCompare(rightName, 'fr');
+              const leftRole = peopleByName.get(leftName)?.functionLabel || leftEvents[0]?.functionLabel || '';
+              const rightRole = peopleByName.get(rightName)?.functionLabel || rightEvents[0]?.functionLabel || '';
+              return comparePlanningPersonnelFunctions(leftRole, rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
               const linkedPerson = peopleByName.get(person);

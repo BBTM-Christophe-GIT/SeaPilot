@@ -415,3 +415,36 @@ final result: passed
 - P2 : aucun.
 
 final result: passed
+
+---
+
+# Planning add-person modal — visual QA
+
+- Source visual truth: `C:\Users\chris\AppData\Local\Temp\codex-clipboard-2eb51068-f4e3-4f87-8fb5-0ac79ad005e4.png`
+- Implementation capture: `C:\Users\chris\.codex\visualizations\2026\08\24\01a0327a-13eb-7632-9610-dbc4a742732b\planning-function-order-modal-1758x1035.png`
+- Comparison viewport: 1758 × 1035 CSS pixels, device scale 1. Both captures are 1758 × 1035 pixels, so no density normalization was required.
+- State: Planning demonstration data, GOURY / Bordée 1, “Ajouter un marin” dialog open.
+
+## Comparison evidence
+
+The source and implementation were inspected together at the same dimensions. The implementation intentionally keeps the existing SeaPilot component styling while applying the requested content and hierarchy changes.
+
+- Full view: all ten requested HR functions are visible without dialog or group scrolling at the desktop reference size. Dialog client/scroll height is 612/612 px and the groups area is 425/425 px.
+- Focused region: the long “Directrice Administrative et Financière” heading uses normal white-space in a two-column grid. Its measured box is 228 × 27 px and ends 6 px before the count badge, so it wraps without clipping or overlap.
+- Typography and wrapping: existing font, weights and hierarchy are preserved; the long function name wraps cleanly.
+- Spacing and layout: the existing four-column desktop grid is preserved, with the exact requested function sequence. The modal remains single-column on the 390 × 844 responsive check with no horizontal overflow.
+- Colors and tokens: existing SeaPilot surfaces, borders, badges and primary buttons are unchanged.
+- Images and icons: no raster asset was introduced; the existing icon library remains in use.
+- Copy and content: undated CDI metadata and the “Fonction non renseignée” group are absent. Boris BROT displays “CDD · Départ 31/12/2026”.
+- Interaction: the dialog opens and closes, every visible personnel entry keeps its Ajouter action, and the GOURY Bordée 1 hierarchy is ordered by the same HR-function sequence.
+- Runtime: no browser console errors were observed in desktop or mobile checks.
+
+## Comparison history
+
+1. Source finding (P1): the long administrative/financial function collided with its count badge. Fixed with a resilient grid header and wrapping; post-fix measurement confirms no overlap.
+2. Source finding (P1): modal groups and board-tree personnel did not follow the requested HR-function sequence. Fixed with one shared normalized comparator; post-fix DOM order matches the ten-function sequence.
+3. Source finding (P2): undated CDI metadata and the missing-function group added noise. Fixed by rendering contract metadata only with a departure date and excluding blank HR functions.
+
+No actionable P0, P1 or P2 visual issue remains in the verified states.
+
+final result: passed

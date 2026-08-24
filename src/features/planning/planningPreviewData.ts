@@ -6,7 +6,7 @@ function previewPerson(
   firstName: string,
   lastName: string,
   functionLabel: string,
-  options: { departedOn?: string; active?: boolean } = {},
+  options: { departedOn?: string; active?: boolean; contractType?: string } = {},
 ): PlanningPerson {
   return {
     id,
@@ -16,7 +16,7 @@ function previewPerson(
     gradeLabel: functionLabel,
     roleLabel: 'Marin',
     sailorNumber: `20${String(id).padStart(6, '0')}`,
-    contractType: 'CDI',
+    contractType: options.contractType || 'CDI',
     hiredOn: '2024-01-01',
     departedOn: options.departedOn || '',
     birthDate: '1990-01-15',
@@ -29,20 +29,23 @@ function previewPerson(
 export function createPlanningPreviewOverview(anchorDate: string): PlanningOverview {
   const people = [
     previewPerson(101, 'Pierre', 'LEPRETRE', 'Capitaine'),
-    previewPerson(102, 'Pierre', 'HARACHE', 'Chef mecanicien'),
-    previewPerson(103, 'Boris', 'BROT', 'Second capitaine'),
-    previewPerson(104, 'Emilien', 'LAFFAITEUR', 'Matelot'),
-    previewPerson(105, 'Alexandre', 'ROUPSARD', 'Mecanicien'),
+    previewPerson(102, 'Pierre', 'HARACHE', 'Chef Mécanicien'),
+    previewPerson(103, 'Boris', 'BROT', '2nd Capitaine', { contractType: 'CDD', departedOn: '2026-12-31' }),
+    previewPerson(104, 'Emilien', 'LAFFAITEUR', 'Matelot polyvalent'),
+    previewPerson(105, 'Alexandre', 'ROUPSARD', 'Matelot Qualifié'),
     previewPerson(106, 'David', 'FIDELIN', 'Capitaine'),
-    previewPerson(107, 'Mathieu', 'RIDARD', 'Chef mecanicien'),
-    previewPerson(108, 'Nicolas', 'BOUVILLE', 'Matelot'),
-    previewPerson(109, 'Adrien', 'BOIS', 'Mecanicien'),
-    previewPerson(110, 'Matthieu', 'DURAND', 'Matelot'),
-    previewPerson(111, 'Sophie', 'HAMEL', 'Marin disponible'),
-    previewPerson(112, 'Julien', 'LECOCQ', 'Marin disponible'),
-    previewPerson(113, 'Alain', 'ANCIEN', 'Matelot', { active: false }),
-    previewPerson(114, 'Camille', 'FUTURE', 'Mecanicien', { departedOn: '2099-12-31', active: false }),
+    previewPerson(107, 'Mathieu', 'RIDARD', 'Chef Mécanicien'),
+    previewPerson(108, 'Nicolas', 'BOUVILLE', 'Matelot polyvalent'),
+    previewPerson(109, 'Adrien', 'BOIS', '2nd Capitaine'),
+    previewPerson(110, 'Matthieu', 'DURAND', "Maître d'Equipage"),
+    previewPerson(111, 'Sophie', 'HAMEL', 'Directrice Administrative et Financière'),
+    previewPerson(112, 'Christophe', 'MINASSIAN', 'Directeur QHSE / Chef de Projet'),
+    previewPerson(113, 'Alain', 'ANCIEN', 'Stagiaire', { active: false }),
+    previewPerson(114, 'Camille', 'FUTURE', 'Président', { departedOn: '2099-12-31', active: false }),
     previewPerson(115, 'Étienne', 'PASSÉ', 'Matelot', { departedOn: '2000-01-01', active: false }),
+    previewPerson(116, 'Benjamin', 'BON', 'Président'),
+    previewPerson(117, 'Adam', 'DEBORDEAUX', 'Stagiaire'),
+    previewPerson(118, 'Équipages', 'GOURY', ''),
   ];
   const firstWatchStart = addPlanningDays(anchorDate, -14);
   const firstWatchEnd = addPlanningDays(anchorDate, 14);
