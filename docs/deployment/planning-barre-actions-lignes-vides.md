@@ -7,6 +7,8 @@
 - Le volet latéral est masqué lorsque le calendrier passe en plein écran.
 - `Ajouter un marin` ouvre la liste des marins dont `departed_on` est vide ou strictement postérieure à la date du jour.
 - Les marins sont regroupés par la valeur du champ RH `fonction` dans une grille compacte, sans défilement interne de la liste sur ordinateur.
+- Les groupes suivent l’ordre métier `Président`, `Capitaine`, `Chef Mécanicien`, `2nd Capitaine`, `Maître d'Equipage`, `Matelot polyvalent`, `Matelot Qualifié`, `Directeur QHSE / Chef de Projet`, `Directrice Administrative et Financière`, puis `Stagiaire`. Cet ordre est aussi appliqué aux marins de chaque bordée dans l’arborescence.
+- Les profils sans fonction RH ne sont pas affichés dans cette fenêtre. Les CDI sans date de départ n’affichent plus de ligne contractuelle ; une date de départ renseignée reste affichée avec le type de contrat, par exemple `CDD · Départ 31/12/2026`.
 - Chaque marin reste ajoutable même s’il possède déjà une ligne ou un enregistrement dans la bordée ; les conflits éventuels sont traités séparément.
 - Le marin ajouté apparaît sur une ligne persistante sans événement coloré.
 - La suppression est proposée uniquement tant que cette ligne ne possède aucune affectation, période ou journée.
@@ -26,9 +28,10 @@ Les deux fonctions exigent la capacité Planning `edit_event`. Les accès direct
 1. Ouvrir le module Planning avec un rôle autorisé à modifier les événements.
 2. Vérifier l’alignement de la barre d’actions avec le calendrier et du bandeau de diffusion avec le volet droit.
 3. Passer en plein écran et vérifier que le volet `Marins non affectés` disparaît.
-4. Cliquer sur `Ajouter un marin` dans une bordée et contrôler que seuls les profils sans date de départ ou avec une date de départ future sont proposés, regroupés selon leur fonction RH et visibles sans faire défiler la liste sur ordinateur.
-5. Ajouter un profil déjà présent, vérifier que l’action est acceptée, puis ajouter un autre profil et supprimer sa ligne vide.
-6. Ajouter un enregistrement sur une telle ligne et vérifier que le bouton de suppression n’est plus affiché.
+4. Cliquer sur `Ajouter un marin` dans une bordée et contrôler que seuls les profils sans date de départ ou avec une date de départ future et une fonction RH renseignée sont proposés, dans l’ordre métier documenté et sans faire défiler la liste sur ordinateur.
+5. Vérifier que `Directrice Administrative et Financière` est lisible en entier, qu’un CDI sans départ n’affiche aucun sous-texte et qu’un CDD daté affiche `CDD · Départ JJ/MM/AAAA`.
+6. Ajouter un profil déjà présent, vérifier que l’action est acceptée, puis ajouter un autre profil et supprimer sa ligne vide.
+7. Ajouter un enregistrement sur une telle ligne et vérifier que le bouton de suppression n’est plus affiché.
 
 ## Retour arrière
 

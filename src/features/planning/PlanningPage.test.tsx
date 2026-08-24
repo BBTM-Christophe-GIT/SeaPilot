@@ -1231,6 +1231,48 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Camille FUTURE a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
   });
 
+  it('orders function groups, hides missing functions and only shows dated contract details', async () => {
+    const user = userEvent.setup();
+    const orderedPeople = [
+      { ...crewRow, id: 1001, first_name: 'Benjamin', last_name: 'BON', function_label: 'Président' },
+      { ...crewRow, id: 1002, first_name: 'Adrien', last_name: 'BOIS', function_label: 'Capitaine' },
+      { ...crewRow, id: 1003, first_name: 'Arnaud', last_name: 'HAUTEMANIERE', function_label: 'Chef Mécanicien' },
+      { ...crewRow, id: 1004, first_name: 'Boris', last_name: 'BROT', function_label: '2nd Capitaine', contract_type: 'CDD', departed_on: '2026-12-31' },
+      { ...crewRow, id: 1005, first_name: 'Matthieu', last_name: 'DURAND', function_label: "Maître d'Equipage" },
+      { ...crewRow, id: 1006, first_name: 'Alexandre', last_name: 'ROUPSARD', function_label: 'Matelot polyvalent' },
+      { ...crewRow, id: 1007, first_name: 'Clément', last_name: 'DEROBERT', function_label: 'Matelot Qualifié' },
+      { ...crewRow, id: 1008, first_name: 'Christophe', last_name: 'MINASSIAN', function_label: 'Directeur QHSE / Chef de Projet' },
+      { ...crewRow, id: 1009, first_name: 'Sophie', last_name: 'HAMEL', function_label: 'Directrice Administrative et Financière' },
+      { ...crewRow, id: 1010, first_name: 'Adam', last_name: 'DEBORDEAUX', function_label: 'Stagiaire' },
+      { ...crewRow, id: 1011, first_name: 'Profil', last_name: 'SANS-FONCTION', function_label: '' },
+    ];
+    const { client } = createClient({ assignments: [assignmentOverviewRow], people: orderedPeople });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Président',
+      'Capitaine',
+      'Chef Mécanicien',
+      '2nd Capitaine',
+      "Maître d'Equipage",
+      'Matelot polyvalent',
+      'Matelot Qualifié',
+      'Directeur QHSE / Chef de Projet',
+      'Directrice Administrative et Financière',
+      'Stagiaire',
+    ]);
+    expect(within(dialog).queryByText('Profil SANS-FONCTION')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Fonction non renseignée')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('CDI · Départ non renseigné')).not.toBeInTheDocument();
+    const presidentCard = within(dialog).getByText('Benjamin BON').closest('article')!;
+    expect(within(presidentCard).queryByText(/CDI|Départ/)).not.toBeInTheDocument();
+    const cddCard = within(dialog).getByText('Boris BROT').closest('article')!;
+    expect(within(cddCard).getByText('CDD · Départ 31/12/2026')).toBeInTheDocument();
+  });
+
   it('allows adding an eligible sailor even when an existing planning record is present', async () => {
     const user = userEvent.setup();
     const departedAssignment = {

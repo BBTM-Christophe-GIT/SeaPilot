@@ -19,5 +19,11 @@ describe('Planning preview data', () => {
     expect(rows.some((row) => row.type === 'person' && row.label === 'Pierre LEPRETRE')).toBe(true);
     expect(rows.some((row) => row.type === 'person' && row.label === 'Alain ANCIEN' && row.events.length === 0)).toBe(true);
     expect(rows.some((row) => row.type === 'vessel' && row.label === 'NAVIRES SANS EQUIPAGE')).toBe(false);
+    expect(overview.people.find((person) => person.firstName === 'Boris')).toMatchObject({
+      contractType: 'CDD',
+      departedOn: '2026-12-31',
+      functionLabel: '2nd Capitaine',
+    });
+    expect(overview.people.some((person) => person.functionLabel === 'Directrice Administrative et Financière')).toBe(true);
   });
 });

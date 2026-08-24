@@ -48,6 +48,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
   buildPlanningCertificateAlerts,
+  comparePlanningPersonnelFunctions,
   buildPlanningControlCenter,
   buildPlanningHrAlerts,
   buildPlanningMonthSegments,
@@ -2770,17 +2771,14 @@ function PlanningDepartedPeopleDialog({ state, people, isSaving, pendingId, onAd
   const peopleByFunction = useMemo(() => {
     const groups = new Map<string, PlanningPerson[]>();
     people.forEach((person) => {
-      const functionLabel = person.functionLabel.trim() || 'Fonction non renseignée';
+      const functionLabel = person.functionLabel.trim();
+      if (!functionLabel) return;
       const functionPeople = groups.get(functionLabel);
       if (functionPeople) functionPeople.push(person);
       else groups.set(functionLabel, [person]);
     });
     return [...groups.entries()]
-      .sort(([left], [right]) => {
-        if (left === 'Fonction non renseignée') return 1;
-        if (right === 'Fonction non renseignée') return -1;
-        return left.localeCompare(right, 'fr', { sensitivity: 'base' });
-      })
+      .sort(([left], [right]) => comparePlanningPersonnelFunctions(left, right))
       .map(([functionLabel, functionPeople]) => ({
         functionLabel,
         people: functionPeople.sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
@@ -2791,20 +2789,23 @@ function PlanningDepartedPeopleDialog({ state, people, isSaving, pendingId, onAd
     <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
       <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
       <p className="planning-dialog-intro">Marins sans date de départ ou dont la date de départ est postérieure à aujourd’hui. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
-      {people.length ? <div className="planning-departed-people-groups">{peopleByFunction.map((group, groupIndex) => {
+      {peopleByFunction.length ? <div className="planning-departed-people-groups">{peopleByFunction.map((group, groupIndex) => {
         const densityClass = group.people.length > 12 ? ' is-expanded' : group.people.length > 6 ? ' is-wide' : '';
         const headingId = `planning-people-function-${groupIndex}`;
         return <section aria-labelledby={headingId} className={`planning-departed-people-group${densityClass}`} key={group.functionLabel}>
           <header><h3 id={headingId}>{group.functionLabel}</h3><span>{group.people.length}</span></header>
           <div>{group.people.map((person) => {
             const isPending = pendingId === `departed-person-${person.id}`;
+            const departureDetail = person.departedOn
+              ? [person.contractType.trim(), `Départ ${formatPlanningDate(person.departedOn)}`].filter(Boolean).join(' · ')
+              : '';
             return <article aria-busy={isPending} key={person.id}>
-              <span><strong>{formatPlanningPerson(person)}</strong><small>{[person.contractType, person.departedOn ? `Départ ${formatPlanningDate(person.departedOn)}` : 'Départ non renseigné'].filter(Boolean).join(' · ')}</small></span>
+              <span><strong>{formatPlanningPerson(person)}</strong>{departureDetail ? <small>{departureDetail}</small> : null}</span>
               <button aria-label={`Ajouter ${formatPlanningPerson(person)}`} disabled={isSaving} onClick={() => onAdd(person)} type="button">{isPending ? 'Ajout…' : 'Ajouter'}</button>
             </article>;
           })}</div>
         </section>;
-      })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin sans date de départ ou avec une date de départ postérieure à aujourd’hui.</p></div>}
+      })}</div> : <div className="planning-side-empty"><CalendarOff aria-hidden="true" size={24} /><p>Aucun marin éligible avec une fonction RH renseignée.</p></div>}
       <footer><button className="is-secondary" onClick={onClose} type="button">Fermer</button></footer>
     </section>
   </div>;

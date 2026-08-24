@@ -218,6 +218,40 @@ describe('planning hierarchy and side panels', () => {
     expect(rows[0].projects).toHaveLength(2);
   });
 
+  it('orders every board hierarchy by the HR function sequence', () => {
+    const functions = [
+      'Président',
+      'Capitaine',
+      'Chef Mécanicien',
+      '2nd Capitaine',
+      "Maître d'Equipage",
+      'Matelot polyvalent',
+      'Matelot Qualifié',
+      'Directeur QHSE / Chef de Projet',
+      'Directrice Administrative et Financière',
+      'Stagiaire',
+    ];
+    const firstNames = ['Zoé', 'Yann', 'Xavier', 'William', 'Victor', 'Ulysse', 'Thomas', 'Simon', 'Rémi', 'Quentin'];
+    const people = functions.map((functionLabel, index) => ({
+      ...overview.people[0],
+      id: index + 100,
+      firstName: firstNames[index],
+      lastName: `ROLE${index + 1}`,
+      functionLabel,
+    }));
+    const periods = functions.map((functionLabel, index) => ({
+      ...overview.periods[0],
+      id: index + 100,
+      personId: people[index].id,
+      crewName: `${people[index].firstName} ${people[index].lastName}`,
+      functionLabel,
+    })).reverse();
+
+    const rows = buildPlanningCrewRows({ ...overview, people, periods }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
+
+    expect(rows.filter((row) => row.type === 'person').map((row) => row.functionLabel)).toEqual(functions);
+  });
+
   it('uses the catalog vessel label to merge historical Armement spellings', () => {
     const armementOverview: PlanningOverview = {
       ...overview,
