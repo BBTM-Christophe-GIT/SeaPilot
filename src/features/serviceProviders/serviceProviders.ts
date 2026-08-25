@@ -36,6 +36,16 @@ export interface ServiceProvider {
   contacts: ServiceProviderContact[];
 }
 
+export interface ServiceProviderCatalogEntry {
+  id: number;
+  name: string;
+  serviceType?: string;
+  activity?: string;
+  supplies?: string;
+  city?: string;
+  specialties?: Array<{ id?: number; name: string; active: boolean }>;
+}
+
 export interface ServiceProviderDraft {
   name: string;
   category: string;
@@ -134,6 +144,46 @@ export function groupServiceProviders(providers: ServiceProvider[]): Array<{
   return Array.from(groups, ([category, groupedProviders]) => ({ category, providers: groupedProviders }));
 }
 
+export function serviceProviderSpecialtyNames(provider: ServiceProviderCatalogEntry): string[] {
+  const specialties = (provider.specialties || [])
+    .filter((specialty) => specialty.active && specialty.name.trim())
+    .map((specialty) => specialty.name.trim());
+  if (specialties.length) {
+    return Array.from(new Set(specialties)).sort((left, right) => left.localeCompare(right, 'fr', { sensitivity: 'base' }));
+  }
+  return provider.serviceType?.trim() ? [provider.serviceType.trim()] : [];
+}
+
+export function groupServiceProvidersBySpecialty<T extends ServiceProviderCatalogEntry>(providers: T[]): Array<{
+  specialty: string;
+  providers: T[];
+}> {
+  const groups = new Map<string, T[]>();
+  providers.forEach((provider) => {
+    const specialties = serviceProviderSpecialtyNames(provider);
+    (specialties.length ? specialties : ['Sans spécialité']).forEach((specialty) => {
+      groups.set(specialty, [...(groups.get(specialty) || []), provider]);
+    });
+  });
+  return Array.from(groups, ([specialty, groupedProviders]) => ({
+    specialty,
+    providers: groupedProviders.sort((left, right) => left.name.localeCompare(right.name, 'fr', { sensitivity: 'base' })),
+  })).sort((left, right) => left.specialty.localeCompare(right.specialty, 'fr', { sensitivity: 'base' }));
+}
+
+export function filterServiceProviders<T extends ServiceProviderCatalogEntry>(providers: T[], query: string): T[] {
+  const normalizedQuery = query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr');
+  if (!normalizedQuery) return providers;
+  return providers.filter((provider) => [
+    provider.name,
+    provider.serviceType || '',
+    provider.activity || '',
+    provider.supplies || '',
+    provider.city || '',
+    ...serviceProviderSpecialtyNames(provider),
+  ].some((value) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').includes(normalizedQuery)));
+}
+
 export async function fetchServiceProviders(client: SupabaseClient): Promise<ServiceProvider[]> {
   const { data, error } = await client
     .from('service_providers')
@@ -172,6 +222,20 @@ export async function saveServiceProvider(
   const { data, error } = await query.select(PROVIDER_SELECT).single();
   if (error) throw new Error(`Impossible d’enregistrer la société. ${error.message || ''}`.trim());
   return mapProvider(data as unknown as Record<string, unknown>);
+}
+
+export async function saveServiceProviderWithPrimarySpecialty(
+  client: SupabaseClient,
+  draft: ServiceProviderDraft,
+  providerId?: number,
+): Promise<ServiceProvider> {
+  const provider = await saveServiceProvider(client, draft, providerId);
+  const specialtyName = draft.serviceType.trim();
+  if (!specialtyName || provider.specialties.some((specialty) => specialty.name.localeCompare(specialtyName, 'fr', { sensitivity: 'base' }) === 0)) {
+    return provider;
+  }
+  const specialty = await saveServiceProviderSpecialty(client, provider, specialtyName);
+  return { ...provider, specialties: [...provider.specialties, specialty].sort((left, right) => left.name.localeCompare(right.name, 'fr')) };
 }
 
 export async function saveServiceProviderSpecialty(

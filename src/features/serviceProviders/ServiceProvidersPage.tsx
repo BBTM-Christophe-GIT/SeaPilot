@@ -19,12 +19,13 @@ import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { ServiceProviderEditorDialog } from './ServiceProviderEditorDialog';
 import {
   fetchServiceProviders,
   groupServiceProviders,
-  saveServiceProvider,
   saveServiceProviderContact,
   saveServiceProviderSpecialty,
+  saveServiceProviderWithPrimarySpecialty,
   serviceProviderDraft,
   type ServiceProvider,
   type ServiceProviderContactDraft,
@@ -142,7 +143,7 @@ export function ServiceProvidersPage({ client, roles }: ServiceProvidersPageProp
     setIsSaving(true);
     setError('');
     try {
-      const saved = await saveServiceProvider(effectiveClient, providerEditor.draft, providerEditor.id);
+      const saved = await saveServiceProviderWithPrimarySpecialty(effectiveClient, providerEditor.draft, providerEditor.id);
       setProviderEditor(null);
       setMessage(providerEditor.id ? 'Fiche société mise à jour.' : 'Société ajoutée au référentiel.');
       await reload(saved.id);
@@ -243,7 +244,7 @@ export function ServiceProvidersPage({ client, roles }: ServiceProvidersPageProp
         </article>
       </div>
 
-      {providerEditor ? <AppDialog description="Les informations sont enregistrées dans le référentiel Supabase et restent reliées à la source SharePoint lorsqu’elle existe." footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={isSaving} onClick={() => setProviderEditor(null)} type="button">Annuler</button><button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer la société'}</button></div>} icon={<Building2 aria-hidden="true" size={20} />} isBusy={isSaving} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} size="lg" title={providerEditor.id ? 'Modifier la société' : 'Ajouter une société'}><div className="service-provider-form"><label>Nom de la société *<input autoFocus required value={providerEditor.draft.name} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, name: event.target.value } } : null)} /></label><label>Catégorie<input list="service-provider-categories" value={providerEditor.draft.category} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, category: event.target.value } } : null)} /></label><label>Type de service<input value={providerEditor.draft.serviceType} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, serviceType: event.target.value } } : null)} /></label><label>Ville<input value={providerEditor.draft.city} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, city: event.target.value } } : null)} /></label><label className="is-wide">Activité<textarea rows={2} value={providerEditor.draft.activity} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, activity: event.target.value } } : null)} /></label><label className="is-wide">Adresse<input value={providerEditor.draft.address} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, address: event.target.value } } : null)} /></label><label>Téléphone<input value={providerEditor.draft.phone} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, phone: event.target.value } } : null)} /></label><label>Forme juridique<input value={providerEditor.draft.legalForm} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, legalForm: event.target.value } } : null)} /></label><label>Email société<input type="email" value={providerEditor.draft.companyEmail} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, companyEmail: event.target.value } } : null)} /></label><label>Email comptable<input type="email" value={providerEditor.draft.accountingEmail} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, accountingEmail: event.target.value } } : null)} /></label><label className="is-wide">Fournitures / services<textarea rows={2} value={providerEditor.draft.supplies} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, supplies: event.target.value } } : null)} /></label><label>Évaluation<input placeholder="Ex. 4,5" value={providerEditor.draft.evaluation} onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, evaluation: event.target.value } } : null)} /></label><label className="service-provider-active-check"><input checked={providerEditor.draft.active} type="checkbox" onChange={(event) => setProviderEditor((current) => current ? { ...current, draft: { ...current.draft, active: event.target.checked } } : null)} /> Société active</label></div><datalist id="service-provider-categories">{categories.map((item) => <option key={item} value={item} />)}</datalist></AppDialog> : null}
+      {providerEditor ? <ServiceProviderEditorDialog categories={categories} draft={providerEditor.draft} isSaving={isSaving} onChange={(draft) => setProviderEditor((current) => current ? { ...current, draft } : null)} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} title={providerEditor.id ? 'Modifier la société' : 'Ajouter une société'} /> : null}
 
       {isSpecialtyOpen && selectedProvider ? <AppDialog footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={isSaving} onClick={() => setIsSpecialtyOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter</button></div>} icon={<Tag aria-hidden="true" size={20} />} isBusy={isSaving} onClose={() => setIsSpecialtyOpen(false)} onSubmit={submitSpecialty} title="Ajouter une spécialité"><label className="service-provider-dialog-field">Spécialité *<input autoFocus required value={specialtyDraft} onChange={(event) => setSpecialtyDraft(event.target.value)} /></label></AppDialog> : null}
 

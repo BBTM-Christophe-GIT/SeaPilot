@@ -34,6 +34,7 @@ export interface ProjectChargeableExpense {
   category: BillingExpenseCategory;
   nature: string;
   supplier: string;
+  supplierSpecialties: string[];
   invoiceDate: string;
   invoiceNumber: string;
   amountHt: number;
@@ -94,6 +95,7 @@ export interface BillingExpenseDraft {
   category: BillingExpenseCategory;
   nature: string;
   supplier: string;
+  supplierSpecialties: string[];
   invoiceDate: string;
   invoiceNumber: string;
   amountHt: number;
@@ -121,6 +123,12 @@ function number(value: unknown): number {
 
 function nullableNumber(value: unknown): number | null {
   return value === null || value === undefined || value === '' ? null : number(value);
+}
+
+export function billingExpenseSpecialtyLabel(expense: Pick<ProjectChargeableExpense, 'supplierSpecialties' | 'nature' | 'category'>): string {
+  if (expense.supplierSpecialties.length) return expense.supplierSpecialties.join(' · ');
+  if (expense.nature.trim()) return expense.nature.trim();
+  return ({ fuel: 'Gasoil', port: 'Frais de port', water: 'Eau', other: 'Non renseignée' } as const)[expense.category];
 }
 
 function mapPeriod(row: Record<string, unknown>): ProjectBillingPeriod {
@@ -153,6 +161,7 @@ function mapExpense(row: Record<string, unknown>): ProjectChargeableExpense {
     category: text(row.category) as BillingExpenseCategory,
     nature: text(row.nature),
     supplier: text(row.supplier),
+    supplierSpecialties: Array.isArray(row.supplier_specialties) ? row.supplier_specialties.map(String).filter(Boolean) : [],
     invoiceDate: text(row.invoice_date),
     invoiceNumber: text(row.invoice_number),
     amountHt: number(row.amount_ht),
@@ -264,6 +273,7 @@ export async function saveProjectChargeableExpense(
     category: draft.category,
     nature: draft.category === 'other' ? draft.nature.trim() : null,
     supplier: draft.supplier.trim(),
+    supplier_specialties: draft.supplierSpecialties,
     invoice_date: draft.invoiceDate,
     invoice_number: draft.invoiceNumber.trim() || null,
     amount_ht: draft.amountHt,
@@ -948,12 +958,12 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
   drawSortArrow(82, 441, 'up');
   if (includeExpenses) {
-    pdf.text('Date Facture', 1296, 423);
-    pdf.text('N° Facture', 1504, 423);
-    pdf.text('Type de Service', 1675, 423);
-    pdf.text('Société', 2108, 423, { align: 'center' });
+    pdf.text('Société', 1296, 423);
+    pdf.text('Spécialités', 1680, 423);
+    pdf.text('Date Facture', 2090, 423);
+    pdf.text('N° Facture', 2290, 423);
     pdf.text('Montant HT', 2508, 423, { align: 'center' });
-    drawSortArrow(1296, 441, 'down');
+    drawSortArrow(1296, 441, 'up');
   }
 
   setFont(28);
@@ -974,17 +984,11 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   });
 
   let expenseY = 486;
-  const categoryLabels: Record<BillingExpenseCategory, string> = {
-    fuel: 'Fuel',
-    port: 'Frais de Port',
-    water: 'Eau',
-    other: 'Autre',
-  };
   expenses.forEach((expense) => {
-    pdf.text(formatDate(expense.invoiceDate), 1297, expenseY);
-    pdf.text(expense.invoiceNumber || '—', 1505, expenseY);
-    pdf.text(expense.category === 'other' ? expense.nature : categoryLabels[expense.category], 1675, expenseY);
-    pdf.text(expense.supplier, 1920, expenseY);
+    pdf.text(fitText(expense.supplier, 350), 1297, expenseY);
+    pdf.text(fitText(billingExpenseSpecialtyLabel(expense), 380), 1680, expenseY);
+    pdf.text(formatDate(expense.invoiceDate), 2090, expenseY);
+    pdf.text(fitText(expense.invoiceNumber || '—', 170), 2290, expenseY);
     pdf.text(money(expense.amountHt), 2598, expenseY, { align: 'right' });
     expenseY += 38.25;
   });

@@ -394,7 +394,7 @@ describe('ProjectsPage', () => {
     });
   });
 
-  it('uses the categorized supplier catalog and removes the obsolete billing flags', async () => {
+  it('searches suppliers by specialty and opens the Supabase company dialog', async () => {
     const user = userEvent.setup();
     const { client } = createClient({
       project_billing_periods: {
@@ -442,9 +442,16 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Facturation' }));
     await user.click(await screen.findByRole('button', { name: 'Ajouter un frais' }));
 
-    const supplier = screen.getByLabelText('Fournisseur');
-    expect(within(supplier).getByRole('group', { name: 'Approvisionnement' })).toHaveTextContent('Würth');
-    expect(within(supplier).getByRole('group', { name: 'Prestataire de Service' })).toHaveTextContent('SERVAUX');
+    const expenseDialog = screen.getByRole('dialog', { name: 'Ajouter un frais imputable' });
+    const supplier = within(expenseDialog).getByLabelText('Fournisseur');
+    await user.click(supplier);
+    expect(within(expenseDialog).getByRole('group', { name: 'Matériel et fournitures' })).toHaveTextContent('Würth');
+    expect(within(expenseDialog).getByRole('group', { name: 'Radeaux' })).toHaveTextContent('SERVAUX');
+    await user.type(supplier, 'radeaux');
+    await user.click(within(expenseDialog).getByRole('option', { name: /SERVAUX/ }));
+    expect(within(expenseDialog).getByLabelText('Spécialités')).toHaveValue('Radeaux');
+    expect(within(expenseDialog).queryByLabelText('Catégorie')).not.toBeInTheDocument();
+    expect(within(expenseDialog).queryByText(/Saisir une nouvelle société/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Refacturable au client')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Inclus à la facture client')).not.toBeInTheDocument();
 
@@ -455,9 +462,10 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Unité')).toHaveAttribute('list', 'project-billing-units');
     expect(document.querySelectorAll('#project-billing-units option')).toHaveLength(4);
 
-    await user.selectOptions(supplier, '__new__');
-    expect(screen.getByLabelText('Nouvelle société')).toBeInTheDocument();
-    expect(screen.getByLabelText('Catégorie fournisseur')).toBeInTheDocument();
+    await user.click(within(expenseDialog).getByRole('button', { name: 'Ajouter' }));
+    const companyDialog = await screen.findByRole('dialog', { name: 'Ajouter une société' });
+    expect(within(companyDialog).getByLabelText('Nom de la société *')).toBeInTheDocument();
+    expect(within(companyDialog).getByText(/référentiel Supabase/)).toBeInTheDocument();
   });
 
   it('shows an explicit technical error and retry action when the projects query fails', async () => {

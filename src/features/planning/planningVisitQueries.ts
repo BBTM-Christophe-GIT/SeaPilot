@@ -5,6 +5,7 @@ import { planningEntityId } from './planningValidation';
 
 export const PLANNING_VISIT_TYPES = [
   'water_analysis',
+  'technical_stop',
   'client_audit',
   'imca_audit',
   'internal_audit',
@@ -21,6 +22,7 @@ export type PlanningVisitType = typeof PLANNING_VISIT_TYPES[number];
 
 const VISIT_TYPE_LABELS: Record<PlanningVisitType, string> = {
   water_analysis: 'Analyse d’Eau',
+  technical_stop: 'Arrêt Technique',
   client_audit: 'Audit Client',
   imca_audit: 'Audit IMCA',
   internal_audit: 'Audit Interne',
@@ -43,6 +45,8 @@ export interface PlanningServiceProvider {
   city: string;
   phone: string;
   companyEmail: string;
+  supplies: string;
+  specialties: Array<{ id: number; name: string; active: boolean }>;
   contactName: string;
   contactRole: string;
   contactPhone: string;
@@ -87,10 +91,12 @@ interface ProviderRow {
   city: string | null;
   phone: string | null;
   company_email: string | null;
+  supplies: string | null;
   contact_name: string | null;
   contact_role: string | null;
   contact_phone: string | null;
   contact_email: string | null;
+  specialties?: Array<{ id: number; name: string; active: boolean }>;
 }
 
 interface VisitRow {
@@ -133,6 +139,12 @@ function mapProvider(row: ProviderRow): PlanningServiceProvider {
     city: row.city || '',
     phone: row.phone || '',
     companyEmail: row.company_email || '',
+    supplies: row.supplies || '',
+    specialties: (row.specialties || []).map((specialty) => ({
+      id: specialty.id,
+      name: specialty.name,
+      active: specialty.active !== false,
+    })),
     contactName: row.contact_name || '',
     contactRole: row.contact_role || '',
     contactPhone: row.contact_phone || '',
@@ -178,7 +190,7 @@ export function mapPlanningVisitRows(rows: VisitRow[]): PlanningVesselVisit[] {
 export async function fetchPlanningServiceProviders(client: SupabaseClient): Promise<PlanningServiceProvider[]> {
   const { data, error } = await client
     .from('service_providers')
-    .select('id, name, category, service_type, activity, address, city, phone, company_email, contact_name, contact_role, contact_phone, contact_email')
+    .select('id, name, category, service_type, activity, address, city, phone, company_email, supplies, contact_name, contact_role, contact_phone, contact_email, specialties:service_provider_specialties(id, name, active)')
     .eq('active', true)
     .order('name');
   if (error) throwPlanningDataError('load-service-providers', 'Impossible de charger les prestataires.', error);
@@ -192,7 +204,8 @@ export async function fetchPlanningVesselVisits(client: SupabaseClient): Promise
       id, vessel_id, visit_type, provider_id, comments, created_at, updated_at,
       provider:service_providers!vessel_visits_provider_id_fkey(
         id, name, category, service_type, activity, address, city, phone,
-        company_email, contact_name, contact_role, contact_phone, contact_email
+        company_email, supplies, contact_name, contact_role, contact_phone, contact_email,
+        specialties:service_provider_specialties(id, name, active)
       ),
       occurrences:vessel_visit_occurrences(id, scheduled_at),
       attachments:vessel_visit_attachments(id, bucket_name, object_path, original_file_name, mime_type, file_size)

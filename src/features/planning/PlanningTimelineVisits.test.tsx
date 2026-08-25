@@ -20,6 +20,8 @@ const provider: PlanningServiceProvider = {
   contactRole: '',
   contactPhone: '',
   contactEmail: 'clement.noel@apave.com',
+  supplies: '',
+  specialties: [],
 };
 
 const visits: PlanningVesselVisit[] = [
