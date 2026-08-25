@@ -169,7 +169,7 @@ describe('managerHomeDashboard', () => {
           first_name: 'Nicolas',
           last_name: 'BOUVILLE',
           function_label: 'Matelot polyvalent',
-          departed_on: '2026-08-25',
+          departed_on: '2026-06-25',
           active: false,
         },
         {
@@ -179,6 +179,14 @@ describe('managerHomeDashboard', () => {
           function_label: 'QHSE',
           departed_on: null,
           active: true,
+        },
+        {
+          id: 11,
+          first_name: 'Départ',
+          last_name: 'AUJOURD’HUI',
+          function_label: 'Matelot',
+          departed_on: '2026-08-25',
+          active: false,
         },
       ],
       hrDocuments: [
@@ -194,7 +202,7 @@ describe('managerHomeDashboard', () => {
         },
         {
           id: 90,
-          person_id: 9,
+          person_id: null,
           person_name: 'Nicolas BOUVILLE',
           category_key: 'medical_visit',
           title: 'Visite médicale',
@@ -226,7 +234,7 @@ describe('managerHomeDashboard', () => {
         },
         {
           id: 91,
-          person_id: 9,
+          person_id: 11,
           local_window_end_date: '2026-08-25',
           rest_24h_seconds: 36_000,
           longest_rest_24h_seconds: 18_000,
@@ -238,10 +246,10 @@ describe('managerHomeDashboard', () => {
     }), TODAY);
 
     expect(items.map((item) => item.id)).not.toContain('hr-document-80');
+    expect(items.map((item) => item.id)).not.toContain('hr-document-90');
     expect(items.map((item) => item.id)).not.toContain('working-time-81');
     expect(items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'working-time-91' }),
-      expect.objectContaining({ id: 'hr-document-90', title: 'Nicolas BOUVILLE - Visite médicale' }),
       expect.objectContaining({ id: 'hr-document-100', title: 'Sophie LE GALL - LEMS - HSE Induction' }),
     ]));
   });
