@@ -2,13 +2,14 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
+import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { HomePage } from './HomePage';
 
 function renderHome(role: RoleKey, previewMode = false) {
   const context: AppShellOutletContext = {
     roles: [role],
-    client: {} as never,
+    client: previewSupabaseClient,
     previewMode,
     currentPerson: {
       id: 9301,
@@ -32,8 +33,6 @@ function renderHome(role: RoleKey, previewMode = false) {
 
 describe('HomePage', () => {
   it.each([
-    ['admin', 'Gérer les utilisateurs', 'Supervision SeaPilot'],
-    ['direction', 'Consulter la synthèse', 'Vue consolidée'],
     ['armement', 'Ajuster le planning', 'Préparation des relèves'],
     ['capitaine', 'Créer le DPR du jour', 'Mon navire'],
     ['marin', 'Saisir mes heures', 'Mon embarquement'],
@@ -45,6 +44,21 @@ describe('HomePage', () => {
     expect(screen.getByRole('heading', { name: contextLabel })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'À traiter aujourd’hui' })).toBeInTheDocument();
     expect(screen.getAllByRole('link')).toHaveLength(14);
+  });
+
+  it.each(['admin', 'direction'] as const)('renders the consolidated manager dashboard for the %s role', async (role) => {
+    renderHome(role);
+
+    expect(screen.getByRole('heading', { name: 'Bonjour Arthur' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Priorités & échéances' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Consulter les indicateurs' })).toHaveAttribute('href', '/modules/kpi');
+    expect(screen.queryByRole('link', { name: 'Ouvrir le planning' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Accès rapides')).not.toBeInTheDocument();
+    expect(screen.queryByText('Supervision SeaPilot')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contrôles recommandés')).not.toBeInTheDocument();
+    expect(await screen.findByText(/DA-\d{4}-086/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Achats' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Temps de travail' })).toBeInTheDocument();
   });
 
   it('links the captain primary workflow to the DPR module', () => {

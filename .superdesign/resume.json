@@ -1,6 +1,59 @@
 {
   "schemaVersion": 1,
   "targets": {
+    "/": {
+      "targetKind": "existing-ui",
+      "projectId": "fa1d67aa-0246-45ea-b927-0ae3a6253e35",
+      "baselineDraftId": "ea8f9834-6f01-473d-8ec6-313bb514b23c",
+      "activeDraftId": "ea8f9834-6f01-473d-8ec6-313bb514b23c",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "9b7733a6-7d69-4931-907a-b118dac707d4",
+        "public-bbtm-logo.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/fa1d67aa-0246-45ea-b927-0ae3a6253e35/brand-assets/public-bbtm-logo.png/bbtm-logo.png",
+          "sourcePath": "public/bbtm-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx",
+        "src/features/shell/AppShell.tsx",
+        "src/features/home/HomePage.tsx",
+        "src/features/permissions/moduleAccess.ts",
+        "src/features/permissions/roles.ts",
+        "src/styles/index.css:1:785",
+        "src/styles/index.css:850:1370"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/App.tsx": "728d380bcea19801855514201d5ad5b5d72841782558413d36ed68ef5411c82f",
+        "src/features/shell/AppShell.tsx": "8af0ce2b396d66d2739ce67a625e19601ae5e6abc8fc26a4aab0502969f11260",
+        "src/features/home/HomePage.tsx": "b83ab2859969dd0ecc2ced5b722317ef10c080b3ceb4450fbe1596951e60e295",
+        "src/features/permissions/moduleAccess.ts": "1aeb80917a834f8e22d3023389fd3412fa0b50fe734c559e7a3936dae5af83a1",
+        "src/features/permissions/roles.ts": "84d0afd324be211295913f39129b30087b9d87d9d79424ec947d6e956c7d3d95",
+        "src/styles/index.css": "2be1aa9553bb39ecea43015c5ac84f450bc961750e34e4e894966dd5cca01433"
+      },
+      "components": [
+        {
+          "name": "AppShell",
+          "id": "c1e033cf-ba1d-402c-b0d6-8fbf4ddba1f5",
+          "sourcePath": "src/features/shell/AppShell.tsx",
+          "logoAssetKey": "public-bbtm-logo.png"
+        }
+      ],
+      "drafts": {
+        "ea8f9834-6f01-473d-8ec6-313bb514b23c": {
+          "title": "Tableau de bord manager SeaPilot",
+          "visualDirection": "cockpit manager compact avec calendrier mensuel et file consolidée multi-modules regroupée par catégories métier, sans bandeau d’accès rapides ni bouton planning",
+          "currentVersion": 3
+        }
+      },
+      "updatedAt": "2026-08-25T08:21:27Z"
+    },
     "/modules/fleet": {
       "targetKind": "existing-ui",
       "projectId": "e8178c0c-e02c-4c2c-854e-d7f7d9ec45d4",
@@ -28,7 +81,7 @@
         "src/styles/index.css:20076:20274"
       ],
       "fingerprints": {
-        ".superdesign/design-system.md": "2d0007024f4059570e6ca902d670272b4ece4873047cbf33b3ba46996e295f1f",
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
         "src/features/shell/AppShell.tsx": "8af0ce2b396d66d2739ce67a625e19601ae5e6abc8fc26a4aab0502969f11260",
         "src/features/fleet/FleetPage.tsx": "92562c882b8cea9dbbc1866364de947126976f815d0c16a2e75bb32c374e6a98",
         "src/features/planning/PlanningP11Panel.tsx": "4fa64c792f6dbafebc04c4f9faabe086264ee8c42cc9cdeb5a0857fd48f60956",
