@@ -97,6 +97,7 @@ describe('planning timeline rules', () => {
     expect(planningStatusTone('Formation')).toBe('training');
     expect(projectStatusTone('À facturer')).toBe('billed');
     expect(projectStatusTone('Validé')).toBe('valid');
+    expect(projectStatusTone('Non validé')).toBe('unvalidated');
   });
 
   it('detects a sailor assigned to two different vessels on overlapping dates', () => {

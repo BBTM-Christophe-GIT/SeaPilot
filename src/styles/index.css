@@ -8064,6 +8064,15 @@ button:disabled {
   --planning-event-shadow: var(--planning-event-unavailability-shadow);
 }
 
+.planning-project-bar.is-unvalidated {
+  --planning-event-color: #f6c453;
+  --planning-event-color-hover: #e8ad2b;
+  --planning-event-color-selected: #d99a12;
+  --planning-event-shadow: rgba(169, 103, 5, .32);
+  border-color: rgba(132, 79, 0, .42);
+  color: #3f2700;
+}
+
 .planning-project-bar:hover {
   background: var(--planning-event-color-hover);
   box-shadow: 0 5px 13px var(--planning-event-shadow);
@@ -8110,6 +8119,10 @@ button:disabled {
 
 .planning-project-bar.is-progress .planning-project-status-rail {
   background: #38bdf8;
+}
+
+.planning-project-bar.is-unvalidated .planning-project-status-rail {
+  background: #d97706;
 }
 
 .planning-project-status-rail img {

@@ -279,7 +279,7 @@ export function isSedentaryPlanningFunction(value: string): boolean {
 export function projectStatusTone(value: string): string {
   const key = normalizePlanningText(value);
   if (key.includes('FACTUR')) return 'billed';
-  if (key === 'NON VALIDE') return 'planned';
+  if (key === 'NONVALIDE') return 'unvalidated';
   if (key.includes('STAND') && key.includes('METEO')) return 'progress';
   if (key.includes('VALID')) return 'valid';
   if (key.includes('COURS') || key.includes('PROGRESS')) return 'progress';
