@@ -266,6 +266,7 @@ function createClient(
     };
     query.select = vi.fn(() => query);
     query.eq = vi.fn(() => query);
+    query.is = vi.fn(() => query);
     query.lte = vi.fn(() => query);
     query.or = vi.fn(() => query);
     query.order = vi.fn(() => query);
@@ -387,9 +388,76 @@ describe('ProjectsPage', () => {
           'project_billing_services',
           'project_chargeable_expenses',
           'project_billing_documents',
+          'service_providers',
         ]),
       );
     });
+  });
+
+  it('uses the categorized supplier catalog and removes the obsolete billing flags', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      project_billing_periods: {
+        data: [{
+          id: 501,
+          company_id: 1,
+          project_id: 880,
+          period_month: '2026-08-01',
+          amount_ht: 0,
+          include_operations_in_pdf: true,
+          include_expenses_in_pdf: true,
+          include_bbtm_in_pdf: true,
+          excluded_operation_keys: [],
+        }],
+        error: null,
+      },
+      service_providers: {
+        data: [{
+          id: 701,
+          company_id: 1,
+          name: 'Würth',
+          category: 'Approvisionnement',
+          service_type: 'Matériel et fournitures',
+          active: true,
+          merged_into_provider_id: null,
+          specialties: [],
+          contacts: [],
+        }, {
+          id: 702,
+          company_id: 1,
+          name: 'SERVAUX',
+          category: 'Prestataire de Service',
+          service_type: 'Radeaux',
+          active: true,
+          merged_into_provider_id: null,
+          specialties: [],
+          contacts: [],
+        }],
+        error: null,
+      },
+    });
+
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Facturation' }));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un frais' }));
+
+    const supplier = screen.getByLabelText('Fournisseur');
+    expect(within(supplier).getByRole('group', { name: 'Approvisionnement' })).toHaveTextContent('Würth');
+    expect(within(supplier).getByRole('group', { name: 'Prestataire de Service' })).toHaveTextContent('SERVAUX');
+    expect(screen.queryByLabelText('Refacturable au client')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Inclus à la facture client')).not.toBeInTheDocument();
+
+    const amount = screen.getByLabelText('Montant HT');
+    await user.click(amount);
+    await user.type(amount, '125.50');
+    expect(amount).toHaveValue(125.5);
+    expect(screen.getByLabelText('Unité')).toHaveAttribute('list', 'project-billing-units');
+    expect(document.querySelectorAll('#project-billing-units option')).toHaveLength(4);
+
+    await user.selectOptions(supplier, '__new__');
+    expect(screen.getByLabelText('Nouvelle société')).toBeInTheDocument();
+    expect(screen.getByLabelText('Catégorie fournisseur')).toBeInTheDocument();
   });
 
   it('shows an explicit technical error and retry action when the projects query fails', async () => {

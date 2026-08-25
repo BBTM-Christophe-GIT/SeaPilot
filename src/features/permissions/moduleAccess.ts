@@ -9,6 +9,7 @@ export type ModuleKey =
   | 'actionPlan'
   | 'dpr'
   | 'purchaseRequests'
+  | 'serviceProviders'
   | 'planning'
   | 'fleet'
   | 'humanResources'
@@ -92,6 +93,13 @@ export const APP_MODULES: AppModule[] = [
     family: 'Achats',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'serviceProviders',
+    label: 'Gestion des Sous-Traitants',
+    family: 'Achats',
+    navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction'],
   },
   { key: 'planning', label: 'Planning', family: 'Planning', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   {

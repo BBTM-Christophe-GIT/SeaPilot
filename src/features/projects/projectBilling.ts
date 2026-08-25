@@ -42,8 +42,6 @@ export interface ProjectChargeableExpense {
   quantity: number | null;
   unit: string;
   comments: string;
-  chargeable: boolean;
-  includedInClientInvoice: boolean;
   dprReportId: number | null;
   includeInPdf?: boolean;
 }
@@ -104,8 +102,6 @@ export interface BillingExpenseDraft {
   quantity: number | null;
   unit: string;
   comments: string;
-  chargeable: boolean;
-  includedInClientInvoice: boolean;
   dprReportId: number | null;
 }
 
@@ -165,8 +161,6 @@ function mapExpense(row: Record<string, unknown>): ProjectChargeableExpense {
     quantity: nullableNumber(row.quantity),
     unit: text(row.unit),
     comments: text(row.comments),
-    chargeable: row.chargeable !== false,
-    includedInClientInvoice: row.included_in_client_invoice === true,
     dprReportId: nullableNumber(row.dpr_report_id),
     includeInPdf: row.include_in_pdf !== false,
   };
@@ -278,8 +272,8 @@ export async function saveProjectChargeableExpense(
     quantity: draft.quantity,
     unit: draft.unit.trim() || null,
     comments: draft.comments.trim() || null,
-    chargeable: draft.chargeable,
-    included_in_client_invoice: draft.includedInClientInvoice,
+    chargeable: true,
+    included_in_client_invoice: false,
     dpr_report_id: draft.dprReportId,
     updated_at: new Date().toISOString(),
   };
@@ -806,7 +800,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     : 0;
   const expenses = input.period.includeExpensesInPdf === false
     ? []
-    : input.expenses.filter((expense) => expense.chargeable && expense.includeInPdf !== false);
+    : input.expenses.filter((expense) => expense.includeInPdf !== false);
   const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const includeBbtmService = input.period.includeBbtmInPdf !== false && input.includeBbtmService !== false;
   const services = includeBbtmService ? input.services.filter((service) => service.includeInPdf !== false) : [];

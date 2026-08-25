@@ -103,6 +103,57 @@
         }
       },
       "updatedAt": "2026-08-20T07:50:00Z"
+    },
+    "/modules/serviceProviders": {
+      "targetKind": "new-ui",
+      "projectId": "e1b66d2a-3e99-40e7-9cdd-8e97a8fe69d1",
+      "activeDraftId": "7c7c554e-afe8-44a2-8055-73fc0450cab1",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "public-bbtm-logo.png",
+        "50cddb84-d0eb-43c7-a267-21ec3432d6db"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/e1b66d2a-3e99-40e7-9cdd-8e97a8fe69d1/brand-assets/public-bbtm-logo.png/bbtm-logo.png",
+          "sourcePath": "public/bbtm-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/shell/AppShell.tsx",
+        "src/features/permissions/moduleAccess.ts",
+        "src/features/humanResources/HumanResourcesPage.tsx:1189:1435",
+        "src/features/humanResources/HumanResourcesPage.tsx:1729:1960",
+        "src/features/humanResources/HumanResourcesPage.tsx:2927:3078",
+        "src/styles/index.css:1:785",
+        "src/styles/index.css:9779:9808",
+        "src/styles/index.css:10101:10925"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/features/shell/AppShell.tsx": "8af0ce2b396d66d2739ce67a625e19601ae5e6abc8fc26a4aab0502969f11260",
+        "src/features/permissions/moduleAccess.ts": "1aeb80917a834f8e22d3023389fd3412fa0b50fe734c559e7a3936dae5af83a1",
+        "src/features/humanResources/HumanResourcesPage.tsx": "5d7f414c8b2887e330bfd5ecbade0ea8c24c58fddac7459f85a6d264154bd4b3",
+        "src/styles/index.css": "6cb324facfea81e402604b1032a3ff0830f70f3fb7a1b9c9469c54f7108b35d0"
+      },
+      "components": [
+        {
+          "name": "AppShell",
+          "id": "bfc5dd98-1c46-49da-afbd-163f8ac3e21b",
+          "sourcePath": "src/features/shell/AppShell.tsx",
+          "logoAssetKey": "public-bbtm-logo.png"
+        }
+      ],
+      "drafts": {
+        "7c7c554e-afe8-44a2-8055-73fc0450cab1": {
+          "title": "Gestion des Sous-Traitants — master-detail",
+          "visualDirection": "master-detail inspiré de RH / Brevets, sociétés groupées par catégorie avec fiche détaillée",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-08-25T10:03:28Z"
     }
   }
 }

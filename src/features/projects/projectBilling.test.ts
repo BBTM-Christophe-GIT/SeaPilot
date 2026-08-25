@@ -424,8 +424,6 @@ describe('monthly billing completion', () => {
       quantity: null,
       unit: '',
       comments: '',
-      chargeable: true,
-      includedInClientInvoice: false,
       dprReportId: null,
     });
     expect(renamed.name).toBe('2026-06-10 - R202600790 - Frais de port.pdf');
