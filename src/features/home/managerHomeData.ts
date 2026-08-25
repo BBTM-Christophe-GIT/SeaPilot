@@ -166,6 +166,59 @@ function personName(person: PersonRow | undefined, fallback = 'Personne non rens
   return `${person.first_name || ''} ${person.last_name || ''}`.trim() || fallback;
 }
 
+function normalizedPersonLabel(value: string | null | undefined): string {
+  return normalize(value).replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function personAliases(person: PersonRow): string[] {
+  const firstName = person.first_name?.trim() || '';
+  const lastName = person.last_name?.trim() || '';
+  return [
+    normalizedPersonLabel(`${firstName} ${lastName}`),
+    normalizedPersonLabel(`${lastName} ${firstName}`),
+  ].filter((alias, index, aliases) => Boolean(alias) && aliases.indexOf(alias) === index);
+}
+
+function buildPeopleByUniqueAlias(people: PersonRow[]): Map<string, PersonRow> {
+  const uniquePeople = new Map<string, PersonRow>();
+  const ambiguousAliases = new Set<string>();
+
+  people.forEach((person) => {
+    personAliases(person).forEach((alias) => {
+      const existing = uniquePeople.get(alias);
+      if (existing && existing.id !== person.id) {
+        uniquePeople.delete(alias);
+        ambiguousAliases.add(alias);
+      } else if (!ambiguousAliases.has(alias)) {
+        uniquePeople.set(alias, person);
+      }
+    });
+  });
+
+  return uniquePeople;
+}
+
+function resolveHrDocumentPerson(
+  row: HrDocumentRow,
+  peopleById: Map<number, PersonRow>,
+  peopleByUniqueAlias: Map<string, PersonRow>,
+): PersonRow | undefined {
+  const linkedPerson = row.person_id ? peopleById.get(row.person_id) : undefined;
+  if (linkedPerson) return linkedPerson;
+
+  const importedName = normalizedPersonLabel(row.person_name);
+  if (importedName) {
+    const namedPerson = peopleByUniqueAlias.get(importedName);
+    if (namedPerson) return namedPerson;
+  }
+
+  const normalizedTitle = normalizedPersonLabel(row.title);
+  if (!normalizedTitle) return undefined;
+  return [...peopleByUniqueAlias.entries()]
+    .sort(([left], [right]) => right.length - left.length)
+    .find(([alias]) => normalizedTitle === alias || normalizedTitle.startsWith(`${alias} `))?.[1];
+}
+
 function personDepartedBeforeToday(person: PersonRow | undefined, today: Date): boolean {
   const departedOn = person?.departed_on?.slice(0, 10) || '';
   return Boolean(departedOn) && daysFromToday(departedOn, today) < 0;
@@ -291,9 +344,10 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
 
 function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const peopleByUniqueAlias = buildPeopleByUniqueAlias(people);
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
-    const person = row.person_id ? peopleById.get(row.person_id) : undefined;
+    const person = resolveHrDocumentPerson(row, peopleById, peopleByUniqueAlias);
     if (personDepartedBeforeToday(person, today)) return [];
 
     const status = normalize(row.status);
