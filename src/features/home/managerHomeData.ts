@@ -166,6 +166,19 @@ function personName(person: PersonRow | undefined, fallback = 'Personne non rens
   return `${person.first_name || ''} ${person.last_name || ''}`.trim() || fallback;
 }
 
+function personDepartedBeforeToday(person: PersonRow | undefined, today: Date): boolean {
+  const departedOn = person?.departed_on?.slice(0, 10) || '';
+  return Boolean(departedOn) && daysFromToday(departedOn, today) < 0;
+}
+
+function documentTitleWithPerson(name: string, documentTitle: string): string {
+  const cleanTitle = documentTitle.trim() || 'Document RH';
+  const normalizedName = normalize(name);
+  const normalizedTitle = normalize(cleanTitle);
+  if (normalizedTitle === normalizedName || normalizedTitle.startsWith(`${normalizedName} -`)) return cleanTitle;
+  return `${name} - ${cleanTitle}`;
+}
+
 function formatRequestNumber(row: PurchaseRequestRow): string {
   const raw = String(row.request_number || row.id).trim();
   if (/^DA-/i.test(raw)) return raw.toUpperCase();
@@ -280,6 +293,9 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
+    const person = row.person_id ? peopleById.get(row.person_id) : undefined;
+    if (personDepartedBeforeToday(person, today)) return [];
+
     const status = normalize(row.status);
     const expiry = row.expires_on?.slice(0, 10) || '';
     const remainingDays = expiry ? daysFromToday(expiry, today) : null;
@@ -290,10 +306,10 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
     const forceDanger = Boolean(row.medical_unfit) || remainingDays === null || (remainingDays !== null && remainingDays < 0) || status.includes('missing') || status.includes('manquant');
     const tone = toneForDueDate(expiry || dueDate, today, forceDanger);
     const urgent = tone === 'danger';
-    const person = row.person_id ? peopleById.get(row.person_id) : undefined;
-    const name = row.person_name || personName(person);
+    const name = person ? personName(person) : (row.person_name || personName(undefined));
     const medical = normalize(row.category_key).includes('medical') || normalize(row.title).includes('medical');
-    const title = medical ? `Visite médicale · ${name}` : (row.title || `Document RH · ${name}`);
+    const documentTitle = row.title || (medical ? 'Visite médicale' : 'Document RH');
+    const title = documentTitleWithPerson(name, documentTitle);
     const deadline = row.medical_unfit ? 'Inaptitude déclarée' : expiry ? deadlineForDate(expiry, today, medical ? 'Visite' : 'Expire') : 'Document manquant';
 
     return [{
@@ -359,14 +375,16 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
       if (!latestByPerson.has(row.person_id)) latestByPerson.set(row.person_id, row);
     });
 
-  return [...latestByPerson.values()].map((row) => {
+  return [...latestByPerson.values()].flatMap((row) => {
     const dueDate = row.local_window_end_date.slice(0, 10);
     const person = peopleById.get(row.person_id);
+    if (personDepartedBeforeToday(person, today)) return [];
+
     const name = personName(person, `Personne ${row.person_id}`);
     const restHours = Number(row.longest_rest_24h_seconds || row.rest_24h_seconds || 0) / 3600;
     const deadline = restHours > 0 ? `Repos continu limité à ${restHours.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h` : 'Non-conformité détectée';
 
-    return {
+    return [{
       id: `working-time-${row.id}`,
       group: 'workingTime',
       tags: ['workingTime'],
@@ -380,7 +398,7 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
       tone: 'danger',
       urgent: true,
       thisWeek: daysFromToday(dueDate, today) >= -7 && daysFromToday(dueDate, today) <= 7,
-    } satisfies ManagerHomeItem;
+    } satisfies ManagerHomeItem];
   });
 }
 

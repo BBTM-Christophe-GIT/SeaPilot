@@ -152,4 +152,97 @@ describe('managerHomeDashboard', () => {
     expect(items[0]).toMatchObject({ id: 'working-time-2', title: 'Dépassement du temps de travail', urgent: true });
     expect(items[0].visibleDates).toEqual(expect.arrayContaining(['2026-08-24', '2026-08-25']));
   });
+
+  it('excludes personnel alarms after departure and prefixes every HR document with the person name', () => {
+    const items = buildManagerHomeItems(sources({
+      people: [
+        {
+          id: 8,
+          first_name: 'Ancien',
+          last_name: 'MARIN',
+          function_label: 'Matelot',
+          departed_on: '2026-08-24',
+          active: false,
+        },
+        {
+          id: 9,
+          first_name: 'Nicolas',
+          last_name: 'BOUVILLE',
+          function_label: 'Matelot polyvalent',
+          departed_on: '2026-08-25',
+          active: false,
+        },
+        {
+          id: 10,
+          first_name: 'Sophie',
+          last_name: 'LE GALL',
+          function_label: 'QHSE',
+          departed_on: null,
+          active: true,
+        },
+      ],
+      hrDocuments: [
+        {
+          id: 80,
+          person_id: 8,
+          person_name: 'Ancien MARIN',
+          category_key: 'safety_training',
+          title: 'LEMS - HSE Induction',
+          status: 'renew_due',
+          expires_on: '2026-09-08',
+          medical_unfit: false,
+        },
+        {
+          id: 90,
+          person_id: 9,
+          person_name: 'Nicolas BOUVILLE',
+          category_key: 'medical_visit',
+          title: 'Visite médicale',
+          status: 'renew_due',
+          expires_on: '2026-08-31',
+          medical_unfit: false,
+        },
+        {
+          id: 100,
+          person_id: 10,
+          person_name: 'Sophie LE GALL',
+          category_key: 'safety_training',
+          title: 'LEMS - HSE Induction',
+          status: 'renew_due',
+          expires_on: '2026-09-08',
+          medical_unfit: false,
+        },
+      ],
+      workingTimeCalculations: [
+        {
+          id: 81,
+          person_id: 8,
+          local_window_end_date: '2026-08-24',
+          rest_24h_seconds: 36_000,
+          longest_rest_24h_seconds: 18_000,
+          is_compliant: false,
+          violation_codes: ['rest_24h'],
+          calculated_at: '2026-08-24T18:00:00Z',
+        },
+        {
+          id: 91,
+          person_id: 9,
+          local_window_end_date: '2026-08-25',
+          rest_24h_seconds: 36_000,
+          longest_rest_24h_seconds: 18_000,
+          is_compliant: false,
+          violation_codes: ['rest_24h'],
+          calculated_at: '2026-08-25T08:00:00Z',
+        },
+      ],
+    }), TODAY);
+
+    expect(items.map((item) => item.id)).not.toContain('hr-document-80');
+    expect(items.map((item) => item.id)).not.toContain('working-time-81');
+    expect(items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'working-time-91' }),
+      expect.objectContaining({ id: 'hr-document-90', title: 'Nicolas BOUVILLE - Visite médicale' }),
+      expect.objectContaining({ id: 'hr-document-100', title: 'Sophie LE GALL - LEMS - HSE Induction' }),
+    ]));
+  });
 });
