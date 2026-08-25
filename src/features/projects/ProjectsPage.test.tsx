@@ -466,6 +466,12 @@ describe('ProjectsPage', () => {
     const companyDialog = await screen.findByRole('dialog', { name: 'Ajouter une société' });
     expect(within(companyDialog).getByLabelText('Nom de la société *')).toBeInTheDocument();
     expect(within(companyDialog).getByText(/référentiel Supabase/)).toBeInTheDocument();
+    const serviceType = within(companyDialog).getByLabelText('Type de service');
+    const serviceTypeList = document.getElementById(serviceType.getAttribute('list') || '');
+    expect(Array.from(serviceTypeList?.querySelectorAll('option') || []).map((option) => option.value)).toEqual([
+      'Matériel et fournitures',
+      'Radeaux',
+    ]);
   });
 
   it('shows an explicit technical error and retry action when the projects query fails', async () => {

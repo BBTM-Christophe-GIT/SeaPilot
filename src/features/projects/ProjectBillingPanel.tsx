@@ -21,6 +21,7 @@ import {
   saveServiceProviderWithPrimarySpecialty,
   serviceProviderDraft,
   serviceProviderSpecialtyNames,
+  serviceProviderTypeOptions,
   type ServiceProvider,
   type ServiceProviderDraft,
 } from '../serviceProviders/serviceProviders';
@@ -194,6 +195,7 @@ export function ProjectBillingPanel({
     () => Array.from(new Set(serviceProviders.map((provider) => provider.category).filter((category) => category !== 'Non classé'))).sort((left, right) => left.localeCompare(right, 'fr')),
     [serviceProviders],
   );
+  const providerServiceTypes = useMemo(() => serviceProviderTypeOptions(serviceProviders), [serviceProviders]);
   const unitOptions = useMemo(
     () => Array.from(new Set([...BILLING_UNIT_OPTIONS, ...data.expenses.map((expense) => expense.unit).filter(Boolean)])),
     [data.expenses],
@@ -755,7 +757,7 @@ export function ProjectBillingPanel({
           </div>
         </AppDialog>
       ) : null}
-      {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} /> : null}
+      {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
     </section>
   );
 }

@@ -65,7 +65,13 @@ describe('PlanningVisitsPanel', () => {
     expect(within(dialog).getByLabelText('Spécialités')).toHaveValue('Visite Radeaux');
 
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
-    expect(await screen.findByRole('dialog', { name: 'Ajouter une société' })).toBeInTheDocument();
+    const companyDialog = await screen.findByRole('dialog', { name: 'Ajouter une société' });
+    const serviceType = within(companyDialog).getByLabelText('Type de service');
+    const serviceTypeList = document.getElementById(serviceType.getAttribute('list') || '');
+    expect(Array.from(serviceTypeList?.querySelectorAll('option') || []).map((option) => option.value)).toEqual([
+      'Visite Grue',
+      'Visite Radeaux',
+    ]);
   });
 
   it('keeps the standard visit fields when technical stop is not selected', () => {

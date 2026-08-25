@@ -154,6 +154,20 @@ export function serviceProviderSpecialtyNames(provider: ServiceProviderCatalogEn
   return provider.serviceType?.trim() ? [provider.serviceType.trim()] : [];
 }
 
+export function serviceProviderTypeOptions<T extends ServiceProviderCatalogEntry>(providers: T[]): string[] {
+  const options = new Map<string, string>();
+  providers.forEach((provider) => {
+    [provider.serviceType || '', ...(provider.specialties || []).filter((specialty) => specialty.active).map((specialty) => specialty.name)]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .forEach((value) => {
+        const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr');
+        if (!options.has(key)) options.set(key, value);
+      });
+  });
+  return Array.from(options.values()).sort((left, right) => left.localeCompare(right, 'fr', { sensitivity: 'base' }));
+}
+
 export function groupServiceProvidersBySpecialty<T extends ServiceProviderCatalogEntry>(providers: T[]): Array<{
   specialty: string;
   providers: T[];

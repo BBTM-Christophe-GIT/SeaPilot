@@ -20,6 +20,7 @@ import {
   saveServiceProviderWithPrimarySpecialty,
   serviceProviderDraft,
   serviceProviderSpecialtyNames,
+  serviceProviderTypeOptions,
   type ServiceProviderDraft,
 } from '../serviceProviders/serviceProviders';
 import { formatPlanningDateTime, utcToPlanningLocalDateTime } from './planningDates';
@@ -102,6 +103,7 @@ export function PlanningVisitsPanel({
     () => Array.from(new Set(availableProviders.map((item) => item.category).filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr')),
     [availableProviders],
   );
+  const providerServiceTypes = useMemo(() => serviceProviderTypeOptions(availableProviders), [availableProviders]);
   const isTechnicalStop = form.visitType === 'technical_stop';
 
   async function submitProvider(event: FormEvent<HTMLFormElement>) {
@@ -216,7 +218,7 @@ export function PlanningVisitsPanel({
         ) : null}
       </section>
     </div>
-    {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={isSaving} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} /> : null}
+    {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={isSaving} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
     </>
   );
 }

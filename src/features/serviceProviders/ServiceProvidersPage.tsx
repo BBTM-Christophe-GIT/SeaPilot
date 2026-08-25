@@ -27,6 +27,7 @@ import {
   saveServiceProviderSpecialty,
   saveServiceProviderWithPrimarySpecialty,
   serviceProviderDraft,
+  serviceProviderTypeOptions,
   type ServiceProvider,
   type ServiceProviderContactDraft,
   type ServiceProviderDraft,
@@ -106,6 +107,7 @@ export function ServiceProvidersPage({ client, roles }: ServiceProvidersPageProp
     () => Array.from(new Set(providers.map((provider) => provider.category))).sort((left, right) => left.localeCompare(right, 'fr')),
     [providers],
   );
+  const serviceTypes = useMemo(() => serviceProviderTypeOptions(providers), [providers]);
   const filteredProviders = useMemo(() => {
     const needle = normalized(query.trim());
     return providers.filter((provider) => {
@@ -244,7 +246,7 @@ export function ServiceProvidersPage({ client, roles }: ServiceProvidersPageProp
         </article>
       </div>
 
-      {providerEditor ? <ServiceProviderEditorDialog categories={categories} draft={providerEditor.draft} isSaving={isSaving} onChange={(draft) => setProviderEditor((current) => current ? { ...current, draft } : null)} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} title={providerEditor.id ? 'Modifier la société' : 'Ajouter une société'} /> : null}
+      {providerEditor ? <ServiceProviderEditorDialog categories={categories} draft={providerEditor.draft} isSaving={isSaving} onChange={(draft) => setProviderEditor((current) => current ? { ...current, draft } : null)} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={serviceTypes} title={providerEditor.id ? 'Modifier la société' : 'Ajouter une société'} /> : null}
 
       {isSpecialtyOpen && selectedProvider ? <AppDialog footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={isSaving} onClick={() => setIsSpecialtyOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter</button></div>} icon={<Tag aria-hidden="true" size={20} />} isBusy={isSaving} onClose={() => setIsSpecialtyOpen(false)} onSubmit={submitSpecialty} title="Ajouter une spécialité"><label className="service-provider-dialog-field">Spécialité *<input autoFocus required value={specialtyDraft} onChange={(event) => setSpecialtyDraft(event.target.value)} /></label></AppDialog> : null}
 

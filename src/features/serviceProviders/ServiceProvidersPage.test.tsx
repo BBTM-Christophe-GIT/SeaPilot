@@ -90,6 +90,30 @@ describe('ServiceProvidersPage', () => {
     expect(screen.getByRole('button', { name: /SERVAUX/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Würth/ })).not.toBeInTheDocument();
   });
+
+  it('offers existing service types while keeping the field editable', async () => {
+    const user = userEvent.setup();
+    render(<ServiceProvidersPage client={createClient() as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Gestion des Sous-Traitants' });
+
+    await user.click(screen.getByRole('button', { name: /SERVAUX/ }));
+    await user.click(screen.getByRole('button', { name: 'Modifier la fiche' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier la société' });
+    const serviceType = within(dialog).getByLabelText('Type de service');
+    const listId = serviceType.getAttribute('list');
+    const list = listId ? document.getElementById(listId) : null;
+
+    expect(list).not.toBeNull();
+    expect(Array.from(list?.querySelectorAll('option') || []).map((option) => option.value)).toEqual(expect.arrayContaining([
+      'Matériel et fournitures',
+      'Radeaux · Équipements incendie',
+      'Visite Radeaux',
+    ]));
+
+    await user.clear(serviceType);
+    await user.type(serviceType, 'Inspection par drone');
+    expect(serviceType).toHaveValue('Inspection par drone');
+  });
 });
 
 describe('groupServiceProviders', () => {

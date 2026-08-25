@@ -10,6 +10,7 @@ interface ServiceProviderEditorDialogProps {
   onChange: (draft: ServiceProviderDraft) => void;
   onClose: () => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
+  serviceTypes: string[];
   title?: string;
 }
 
@@ -20,9 +21,11 @@ export function ServiceProviderEditorDialog({
   onChange,
   onClose,
   onSubmit,
+  serviceTypes,
   title = 'Ajouter une société',
 }: ServiceProviderEditorDialogProps) {
   const categoryListId = useId();
+  const serviceTypeListId = useId();
   const update = <K extends keyof ServiceProviderDraft>(key: K, value: ServiceProviderDraft[K]) => onChange({ ...draft, [key]: value });
 
   return (
@@ -39,7 +42,7 @@ export function ServiceProviderEditorDialog({
       <div className="service-provider-form">
         <label>Nom de la société *<input autoFocus required value={draft.name} onChange={(event) => update('name', event.target.value)} /></label>
         <label>Catégorie<input list={categoryListId} value={draft.category} onChange={(event) => update('category', event.target.value)} /></label>
-        <label>Type de service<input value={draft.serviceType} onChange={(event) => update('serviceType', event.target.value)} /></label>
+        <label>Type de service<input list={serviceTypeListId} value={draft.serviceType} onChange={(event) => update('serviceType', event.target.value)} /></label>
         <label>Ville<input value={draft.city} onChange={(event) => update('city', event.target.value)} /></label>
         <label className="is-wide">Activité<textarea rows={2} value={draft.activity} onChange={(event) => update('activity', event.target.value)} /></label>
         <label className="is-wide">Adresse<input value={draft.address} onChange={(event) => update('address', event.target.value)} /></label>
@@ -52,6 +55,7 @@ export function ServiceProviderEditorDialog({
         <label className="service-provider-active-check"><input checked={draft.active} type="checkbox" onChange={(event) => update('active', event.target.checked)} /> Société active</label>
       </div>
       <datalist id={categoryListId}>{categories.map((category) => <option key={category} value={category} />)}</datalist>
+      <datalist id={serviceTypeListId}>{serviceTypes.map((serviceType) => <option key={serviceType} value={serviceType} />)}</datalist>
     </AppDialog>
   );
 }
