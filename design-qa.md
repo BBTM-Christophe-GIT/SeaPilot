@@ -1,6 +1,50 @@
-Exit code: 0
-Wall time: 0.3 seconds
-Output:
+# Design QA — Tableau de bord manager (2026-08-25)
+
+## Cibles et état comparés
+
+- Référence validée : `C:/CODEX/SeaPilot/docs/design/home-manager-dashboard-grouped.png` (1920 × 889 px).
+- Instruction visuelle finale : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-96919f44-3d9a-4702-804d-1d982d69e22e.png`, utilisée pour supprimer le bandeau `Accès rapides`.
+- Implémentation au même format : `C:/CODEX/SeaPilot/docs/design/home-manager-dashboard-implementation-qa.png` (1920 × 889 px, densité 1).
+- Capture au viewport natif de travail : `C:/CODEX/SeaPilot/docs/design/home-manager-dashboard-native-qa.png` (1440 × 900 px).
+- Capture responsive : `C:/CODEX/SeaPilot/docs/design/home-manager-dashboard-mobile-qa.png` (viewport demandé 390 × 844 px ; surface capturée 375 × 812 px).
+- État : préversion Admin, données de démonstration, mardi 25 août 2026 sélectionné, filtre `Tous`, aucun dialogue ouvert.
+- La référence complète et la capture d’implémentation finale ont été ouvertes ensemble dans la même comparaison visuelle après la dernière modification du code.
+
+## Résultat visuel
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- La synthèse tient dans un écran de bureau et conserve la hiérarchie validée : salutation, titre, trois compteurs, calendrier à gauche et file consolidée à droite.
+- Le calendrier reprend la grille mensuelle, les marqueurs sémantiques, la date active, la légende et les deux prochaines dates clés ; cliquer une date met à jour la file.
+- La file est organisée dans l’ordre validé `Achats`, `Temps de travail`, `Flotte & documents`, `Ressources humaines`, avec en-têtes de groupe, quantités et rails de criticité.
+- Les filtres, les échéances, les libellés d’action et les chevrons respectent la densité et l’alignement de la référence ; une première passe plaçait les compteurs trop à droite et a été corrigée avant la capture finale.
+- Les séparateurs, bordures fines, espacements, tailles de caractères et couleurs d’urgence/échéance/visite suivent le vocabulaire SeaPilot existant.
+- La surface manager n’introduit aucun asset raster, dégradé ou illustration : le logo existant et les icônes Lucide déjà utilisées par le produit sont conservés.
+- Le bandeau inférieur `Accès rapides` et le bouton `Ouvrir le planning`, présents sur la référence antérieure, sont intentionnellement absents conformément à la dernière demande.
+- La coque de navigation noire actuellement livrée par SeaPilot est conservée ; la référence utilisait une approximation bleu marine de cette coque, hors du périmètre de la page d’accueil.
+
+## Données et copie
+
+- Les 21 éléments de la préversion proviennent des jeux de données réalistes des modules ; les compteurs et le nombre de lignes changent avec les données disponibles.
+- Les sources consolidées sont les demandes d’achat, alertes de temps de travail, certificats et documents flotte, documents RH, visites médicales et fins de contrat.
+- La seule action globale conservée est `Consulter les indicateurs`.
+- Les exemples fixes de la maquette sont remplacés par les intitulés, navires, personnes, dates et statuts réels de chaque module ; c’est une différence de contenu attendue, pas un écart visuel.
+- Les écrans Armement, Capitaine et Marin restent sur leur accueil existant ; seuls Admin et Direction utilisent le nouveau cockpit.
+
+## Vérification des interactions
+
+- Les filtres `Tous`, `Urgents`, `Cette semaine`, `Achats`, `Documents`, `Flotte`, `Temps de travail` et `Ressources humaines` mettent à jour les catégories et leurs quantités.
+- Le filtre `Flotte` n’affiche que le groupe flotte/document ; revenir à `Tous` restaure la file complète.
+- Le clic sur la date clé `5 sept — Permis d’Armement` bascule le calendrier sur septembre et affiche les trois éléments associés.
+- Les lignes ouvrent la page du module source et `Consulter les indicateurs` cible `/modules/kpi`.
+- Aucun débordement horizontal n’est présent aux viewports 1920 × 889, 1440 × 900 et 390 × 844.
+- `Accès rapides` et `Ouvrir le planning` sont absents du DOM final.
+- Erreurs et avertissements console : aucun.
+
+final result: passed
+
+---
+
 # Design QA - Daily Progress Report v3.7.8
 
 ## Comparison targets

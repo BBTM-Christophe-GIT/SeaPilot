@@ -25,6 +25,7 @@ import {
 import { Link, useOutletContext } from 'react-router-dom';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { ManagerHomeDashboard } from './ManagerHomeDashboard';
 
 type StatusTone = 'blue' | 'green' | 'amber' | 'slate';
 
@@ -242,10 +243,14 @@ function SectionLink({ action }: { action: HomeAction }) {
 }
 
 export function HomePage() {
-  const { roles, currentPerson, previewMode } = useOutletContext<AppShellOutletContext>();
+  const { roles, client, currentPerson, previewMode } = useOutletContext<AppShellOutletContext>();
   const role = getPrimaryRole(roles);
-  const profile = HOME_PROFILES[role];
   const firstName = currentPerson?.firstName.trim();
+  if (role === 'admin' || role === 'direction') {
+    return <ManagerHomeDashboard client={client} firstName={firstName || ''} />;
+  }
+
+  const profile = HOME_PROFILES[role];
   const ContextIcon = profile.contextIcon;
   const contextTitle = previewMode && (role === 'capitaine' || role === 'marin')
     ? 'M/V Démonstration'

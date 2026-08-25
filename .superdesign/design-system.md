@@ -1,4 +1,20 @@
-# SeaPilot design system — Projects redesign
+# SeaPilot design system
+
+## Extension — accueil manager
+
+- La route d’accueil `/` devient un tableau de bord de pilotage pour le profil manager/direction, toujours rendu dans le shell SeaPilot existant.
+- Supprimer du nouvel accueil les blocs et intitulés statiques `Supervision SeaPilot`, `Contrôles recommandés` et l’ancienne section `À traiter aujourd’hui`.
+- Le nouvel écran doit tenir dans un viewport desktop de 1440 × 900, shell compris, sans défilement vertical pour consulter les priorités essentielles.
+- Après le message `Bonjour Christophe`, afficher une synthèse compacte : volume d’éléments nécessitant une action et commandes utiles, sans hero marketing ni statistiques décoratives.
+- Le cœur de l’écran est un espace ouvert en deux zones : mini calendrier mensuel à gauche, file opérationnelle multi-modules à droite. Éviter une grille de cartes répétitives et les panneaux imbriqués.
+- Le calendrier affiche le mois complet, met en évidence les dates contenant des échéances ou alertes, distingue l’urgence par la couleur et possède un état de date sélectionnée évident. Un clic sur une date filtre la file de droite.
+- La file agrège les demandes d’achat à approuver, documents arrivant à échéance, certificats flotte, alertes du suivi du temps de travail, fins de contrat, visites et actions planifiées.
+- Chaque ligne est entièrement cliquable et montre : urgence, module source, objet précis, entité concernée (navire/personne/contrat), échéance relative et date, action attendue, chevron de navigation.
+- Prévoir des filtres compacts et accessibles `Tous`, `Urgents`, `Cette semaine`, puis des filtres par module avec leurs comptes réels issus de la liste. Les états sélectionnés utilisent le bleu SeaPilot ; rouge/ambre restent réservés à la criticité.
+- Regrouper la file sous quatre en-têtes métier compacts : `Achats`, `Temps de travail`, `Flotte & documents` et `Ressources humaines`. Chaque groupe affiche son nombre d’éléments visibles, conserve l’ordre de criticité puis d’échéance, et disparaît lorsque la date ou le filtre actif ne contient aucun élément de cette catégorie.
+- Utiliser des exemples français réalistes : `DA-2026-084`, `M/V BBTM Pioneer`, `Certificat de classe`, `Alerte repos insuffisant`, `Visite médicale — Sophie Le Gall` et `Contrat Lucas Martin`.
+- Ne pas afficher de bandeau `Accès rapides` sur cet accueil. Dans l’en-tête de synthèse, conserver uniquement l’action `Consulter les indicateurs` et ne pas afficher de bouton `Ouvrir le planning`.
+- Interactions à rendre explicites dans le concept : clic date → filtre, clic filtre → nouvelle liste, clic ligne → module et détail source, survol/focus visible, état vide si aucune échéance.
 
 ## Extension — module Navires
 
