@@ -420,6 +420,10 @@ export interface UpdatePersonDetailsInput {
   craneInductionOn: string;
 }
 
+export interface UpdatePersonDetailsOptions {
+  selfService?: boolean;
+}
+
 type CreatePersonRequiredField = 'firstName' | 'lastName' | 'email' | 'functionLabel' | 'gradeLabel';
 
 export type CreatePersonInput = Pick<UpdatePersonDetailsInput, CreatePersonRequiredField> &
@@ -1563,8 +1567,24 @@ export async function updatePersonDetails(
   client: SupabaseClient,
   personId: number,
   input: UpdatePersonDetailsInput,
+  options: UpdatePersonDetailsOptions = {},
 ): Promise<PersonRecord> {
   const payload = buildPersonDetailsPayload(input);
+
+  if (options.selfService) {
+    const { data, error } = await client.rpc('update_own_hr_profile', {
+      p_person_id: personId,
+      p_details: payload,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return mapPersonRows([row as unknown as PersonRow])[0];
+  }
+
   const { data, error } = await client.from('people').update(payload).eq('id', personId).select(PEOPLE_SELECT).single();
 
   if (error) {

@@ -169,19 +169,27 @@ const unassignedDocument: HrDocumentFixture = {
 };
 
 function createOrderedSelect(data: unknown[]) {
+  const result = Object.assign(Promise.resolve({ data, error: null }), {
+    eq: vi.fn(),
+  });
+  result.eq.mockReturnValue(result);
   return {
     select: vi.fn().mockReturnValue({
       order: vi.fn().mockReturnValue({
-        order: vi.fn().mockResolvedValue({ data, error: null }),
+        order: vi.fn().mockReturnValue(result),
       }),
     }),
   };
 }
 
 function createDocumentsSelect(data: HrDocumentFixture[] = documents) {
+  const result = Object.assign(Promise.resolve({ data, error: null }), {
+    eq: vi.fn(),
+  });
+  result.eq.mockReturnValue(result);
   return {
     select: vi.fn().mockReturnValue({
-      order: vi.fn().mockResolvedValue({ data, error: null }),
+      order: vi.fn().mockReturnValue(result),
     }),
   };
 }
@@ -956,12 +964,23 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByText('Collaborateur ajoute.')).toBeInTheDocument();
   });
 
-  it('keeps marins in read-only mode', async () => {
+  it('allows a Marin profile to edit its own HR record through the self-service RPC', async () => {
     const user = userEvent.setup();
+    const rpc = vi.fn().mockResolvedValue({ data: activePerson, error: null });
+    const client = { ...createClient([activePerson], [...documents, unassignedDocument]), rpc };
 
-    render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['marin']} />);
+    render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={['marin']} />);
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnées' }));
+    fireEvent.change(within(profile).getByLabelText('Telephone'), { target: { value: '+33 6 55 44 33 22' } });
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('update_own_hr_profile', {
+      p_person_id: 1,
+      p_details: expect.objectContaining({ phone: '+33 6 55 44 33 22' }),
+    }));
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
 
     expect(within(profile).getByText('AA01A')).toBeInTheDocument();
@@ -971,19 +990,21 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Informations à jour').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
     expect(screen.queryByText('Brevet pont a rattacher')).not.toBeInTheDocument();
   });
 
-  it('shows a captain only the read-only watch roster without collective indicators', async () => {
+  it('allows a Captain profile to edit only its own HR record in the watch roster', async () => {
     const user = userEvent.setup();
+    const watchMate = { ...activePerson, id: 2, user_id: 'user-2', first_name: 'Paul', last_name: 'DURAND' };
 
-    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} roles={['capitaine']} />);
+    render(<HumanResourcesPage client={createClient([activePerson, watchMate], documents) as never} currentPersonId={1} roles={['capitaine']} />);
 
     expect(await screen.findByText(/Ma bordée/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    expect(within(profile).getByRole('button', { name: 'Modifier la fiche RH' })).toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
 
     expect(within(profile).getByText('AA01A')).toBeInTheDocument();
@@ -992,6 +1013,9 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Paul DURAND' }));
+    const watchMateProfile = screen.getByRole('complementary', { name: 'Fiche RH de Paul DURAND' });
+    expect(within(watchMateProfile).queryByRole('button', { name: 'Modifier la fiche RH' })).not.toBeInTheDocument();
+    expect(within(watchMateProfile).getByText('Lecture seule')).toBeInTheDocument();
   });
 });

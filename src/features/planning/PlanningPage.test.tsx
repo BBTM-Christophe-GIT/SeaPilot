@@ -475,7 +475,7 @@ function createClient(options: {
     if (functionName === 'create_planning_board_assignments') {
       return Promise.resolve({ data: [301], error: null });
     }
-    if (functionName === 'add_planning_board_row') {
+    if (functionName === 'add_planning_board_row_for_month') {
       return Promise.resolve({ data: 901, error: null });
     }
     if (functionName === 'delete_planning_board_row') {
@@ -1193,10 +1193,11 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Bordée 1' });
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter Jean MARTIN' }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row_for_month', {
       p_vessel_id: 1,
       p_watch_group: 'Bordée 1',
       p_person_id: 10,
+      p_reference_month: '2026-06-01',
     }));
   });
 
@@ -1224,10 +1225,11 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByText('Aline AUJOURD’HUI')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter Camille FUTURE' }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row_for_month', {
       p_vessel_id: 1,
       p_watch_group: 'Affectation',
       p_person_id: 14,
+      p_reference_month: '2026-06-01',
     }));
     expect(await screen.findByText('Camille FUTURE a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
   });
@@ -1299,7 +1301,7 @@ describe('PlanningPage cockpit', () => {
       starts_on: '2025-01-01',
       ends_on: '2025-01-31',
     };
-    const { client } = createClient({ assignments: [januaryAssignment], people: [loicAlix, hiredLater] });
+    const { client, rpc } = createClient({ assignments: [januaryAssignment], people: [loicAlix, hiredLater] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
@@ -1310,6 +1312,14 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByText(/mois de référence/)).toHaveTextContent('janvier 2025');
     expect(within(dialog).getByRole('button', { name: 'Ajouter Loïc ALIX' })).toBeEnabled();
     expect(within(dialog).queryByText('Après JANVIER')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Loïc ALIX' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row_for_month', {
+      p_vessel_id: 1,
+      p_watch_group: 'Affectation',
+      p_person_id: 1012,
+      p_reference_month: '2025-01-01',
+    }));
   });
 
   it('allows adding an eligible sailor even when an existing planning record is present', async () => {
@@ -1331,10 +1341,11 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter Alain ANCIEN' }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row', {
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('add_planning_board_row_for_month', {
       p_vessel_id: 1,
       p_watch_group: 'Affectation',
       p_person_id: 13,
+      p_reference_month: '2026-06-01',
     }));
   });
 

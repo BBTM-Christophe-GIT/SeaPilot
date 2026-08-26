@@ -1371,6 +1371,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         vesselId: eligiblePeopleDialog.vesselId,
         watchGroup: eligiblePeopleDialog.watchGroup,
         personId: person.id,
+        referenceMonth: referenceMonthRange.start,
       });
       await loadPlanning();
       setEligiblePeopleDialog(null);
