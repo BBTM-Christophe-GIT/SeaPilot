@@ -114,6 +114,57 @@ describe('planning timeline rules', () => {
     expect(isPlanningPersonEmployedDuring({ hiredOn: '2020-01-01', departedOn: '2024-12-31' }, january2025)).toBe(false);
   });
 
+  it('uses employment dates instead of the current active flag for historical assignments', () => {
+    const historicalPerson = {
+      ...overview.people[1],
+      id: 37,
+      firstName: 'Loic',
+      lastName: 'ALIX',
+      hiredOn: '2024-07-01',
+      departedOn: '2025-12-02',
+      active: false,
+    };
+    const historicalOverview = {
+      ...overview,
+      people: [...overview.people, historicalPerson],
+      rules: [{
+        id: 90,
+        code: 'inactive_person',
+        name: 'Période d’emploi',
+        description: '',
+        scope: 'availability',
+        controlLevel: 'blocking' as const,
+        active: true,
+        effectiveFrom: '2020-01-01',
+        configuration: {},
+        sourceReference: '',
+        version: 1,
+      }],
+    };
+
+    expect(evaluatePlanningAssignment(historicalOverview, {
+      id: 'historical-valid',
+      personId: historicalPerson.id,
+      person: 'Loic ALIX',
+      vessel: 'GOURY',
+      functionLabel: 'Matelot',
+      status: 'En Mer',
+      startsOn: '2025-01-10',
+      endsOn: '2025-01-20',
+    })).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'inactive_person' })]));
+
+    expect(evaluatePlanningAssignment(historicalOverview, {
+      id: 'historical-invalid',
+      personId: historicalPerson.id,
+      person: 'Loic ALIX',
+      vessel: 'GOURY',
+      functionLabel: 'Matelot',
+      status: 'En Mer',
+      startsOn: '2026-01-10',
+      endsOn: '2026-01-20',
+    })).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'inactive_person' })]));
+  });
+
   it('detects a sailor assigned to two different vessels on overlapping dates', () => {
     const event = getAllPlanningCrewEvents(overview)[0];
     const conflicts = getPlanningConflicts(overview, { ...event, id: 'new', vessel: 'SUROIT', startsOn: '2026-07-10', endsOn: '2026-07-12' });

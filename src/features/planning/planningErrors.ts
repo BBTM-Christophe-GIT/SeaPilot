@@ -47,7 +47,7 @@ export function throwPlanningDataError(operation: string, fallbackMessage: strin
   } else if (blockedRule === 'crew_unavailability') {
     message = 'Ce marin est indisponible pendant cette période.';
   } else if (blockedRule === 'inactive_person') {
-    message = "Ce marin n'est pas actif pendant toute la période sélectionnée.";
+    message = "La période d'emploi de ce marin ne couvre pas toute la période sélectionnée.";
   } else if (blockedRule === 'expired_medical' || blockedRule === 'medical_unfit') {
     message = 'La visite médicale de ce marin ne permet pas cette affectation.';
   } else if (blockedRule === 'expired_certificate' || blockedRule === 'expiring_certificate') {
