@@ -286,6 +286,7 @@ const PLANNING_ASSIGNMENT_FUNCTIONS = [
   'Capitaine',
   'Chef Mécanicien',
   '2nd Capitaine',
+  '2nd Mécanicien',
   "Maître d'Equipage",
   'Matelot polyvalent',
   'Matelot Qualifié',
@@ -294,6 +295,7 @@ const PLANNING_ASSIGNMENT_FUNCTIONS = [
 const PLANNING_ASSIGNMENT_FUNCTION_ALIASES = new Map<string, (typeof PLANNING_ASSIGNMENT_FUNCTIONS)[number]>([
   ...PLANNING_ASSIGNMENT_FUNCTIONS.map((functionLabel) => [normalizePlanningText(functionLabel), functionLabel] as const),
   [normalizePlanningText('Second capitaine'), '2nd Capitaine'],
+  [normalizePlanningText('Second mécanicien'), '2nd Mécanicien'],
   [normalizePlanningText('Matelot polyvalent pont/machine'), 'Matelot polyvalent'],
   [normalizePlanningText('Matelot qualifié pont'), 'Matelot Qualifié'],
 ]);

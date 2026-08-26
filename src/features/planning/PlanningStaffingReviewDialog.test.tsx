@@ -34,6 +34,7 @@ describe('PlanningStaffingReviewDialog', () => {
     expect(screen.getAllByRole('cell', { name: 'Capitaine' })).toHaveLength(2);
     expect(screen.getByText(/La fonction RH reste inchangée/)).toBeInTheDocument();
     expect(screen.getAllByText('2026-08-03 → 2026-08-10')).toHaveLength(3);
+    expect(screen.getAllByRole('option', { name: '2nd Mécanicien' })).toHaveLength(3);
 
     await user.selectOptions(screen.getByLabelText('Fonction Planning de Camille CAPITAINE'), 'Capitaine');
     await user.selectOptions(screen.getByLabelText('Fonction Planning de Morgan CAPITAINE'), '2nd Capitaine');
