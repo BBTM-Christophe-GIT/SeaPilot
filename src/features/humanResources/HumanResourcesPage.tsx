@@ -51,6 +51,7 @@ import {
   getFileExtension,
   getHrDocumentDisplayName,
   getHrDocumentCategoryLabel,
+  getHrEnimClassification,
   getHrFunctionVisibilityKey,
   HR_PRIMARY_FUNCTIONS,
   HR_SEDENTARY_FUNCTIONS,
@@ -260,6 +261,8 @@ function personMatchesSearch(person: PersonRecord, query: string): boolean {
       person.lastName,
       person.email,
       person.functionLabel,
+      person.enimFunctionCode,
+      person.enimCategory,
       person.gradeLabel,
       person.roleLabel,
       person.registerLabel,
@@ -576,6 +579,15 @@ function FieldValue({ label, value }: { label: string; value: string }) {
       <dt>{label}</dt>
       <dd>{value || '-'}</dd>
     </div>
+  );
+}
+
+function ReadonlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="hr-edit-field">
+      {label}
+      <input readOnly value={value} />
+    </label>
   );
 }
 
@@ -2320,6 +2332,7 @@ function CreatePersonDialog({
 }) {
   const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>('identity');
   const [formError, setFormError] = useState('');
+  const enimClassification = getHrEnimClassification(form.functionLabel);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     if (!form.firstName.trim() || !form.lastName.trim()) {
@@ -2376,6 +2389,8 @@ function CreatePersonDialog({
           <section>
             <h3>Contrat et dates</h3>
             <DetailsGrid isEditing>
+              <ReadonlyField label="Code Fonction ENIM" value={enimClassification.functionCode} />
+              <ReadonlyField label="Catégorie" value={enimClassification.category?.toString() || ''} />
               <EditableField
                 field="contractType"
                 form={form}
@@ -2582,6 +2597,11 @@ function PersonDetailsPanel({
   const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
     buildMedicalDetailsForms(documents),
   );
+  const formEnimClassification = getHrEnimClassification(form.functionLabel);
+  const storedEnimClassification = {
+    functionCode: person.enimFunctionCode || getHrEnimClassification(person.functionLabel).functionCode,
+    category: person.enimCategory ?? getHrEnimClassification(person.functionLabel).category,
+  };
   const availableSections = HR_DETAILS_SECTIONS.filter((section) => visibleSectionKeys.has(section.key));
   const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>(availableSections[0]?.key || 'identity');
 
@@ -2704,6 +2724,8 @@ function PersonDetailsPanel({
             <DetailsGrid isEditing={isEditing}>
               {isEditing ? (
                 <>
+                  <ReadonlyField label="Code Fonction ENIM" value={formEnimClassification.functionCode} />
+                  <ReadonlyField label="Catégorie" value={formEnimClassification.category?.toString() || ''} />
                   <EditableField
                     field="contractType"
                     form={form}
@@ -2726,6 +2748,8 @@ function PersonDetailsPanel({
                 </>
               ) : (
                 <>
+                  <FieldValue label="Code Fonction ENIM" value={storedEnimClassification.functionCode} />
+                  <FieldValue label="Catégorie" value={storedEnimClassification.category?.toString() || ''} />
                   <FieldValue label="Type de contrat" value={person.contractType} />
                   <FieldValue label="Date embauche" value={person.hiredOn} />
                   <FieldValue label="Date depart" value={person.departedOn} />

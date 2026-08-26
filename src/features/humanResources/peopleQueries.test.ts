@@ -12,6 +12,7 @@ import {
   createPerson,
   fetchHumanResourcesData,
   fetchPeople,
+  getHrEnimClassification,
   getHrFunctionVisibilityKey,
   isPersonEmployedOn,
   isPersonFormerOn,
@@ -33,6 +34,8 @@ const personRow = {
   last_name: 'MARTIN',
   email: 'jean@example.test',
   function_label: 'Capitaine',
+  enim_function_code: 'AA01A',
+  enim_category: 15,
   grade_label: 'Capitaine 200',
   role_label: 'Navigant',
   register_label: 'RIF',
@@ -96,6 +99,8 @@ describe('mapPersonRows', () => {
         lastName: 'MARTIN',
         email: 'jean@example.test',
         functionLabel: 'Capitaine',
+        enimFunctionCode: 'AA01A',
+        enimCategory: 15,
         gradeLabel: 'Capitaine 200',
         roleLabel: 'Navigant',
         registerLabel: 'RIF',
@@ -143,6 +148,8 @@ describe('mapPersonRows', () => {
           user_id: null,
           email: null,
           function_label: null,
+          enim_function_code: null,
+          enim_category: null,
           grade_label: null,
           role_label: null,
           register_label: null,
@@ -187,6 +194,8 @@ describe('mapPersonRows', () => {
         lastName: 'MARTIN',
         email: '',
         functionLabel: '',
+        enimFunctionCode: '',
+        enimCategory: null,
         gradeLabel: '',
         roleLabel: '',
         registerLabel: '',
@@ -524,6 +533,7 @@ describe('updateHrDocumentMedicalDetails', () => {
 describe('HR function ordering', () => {
   it('removes numeric prefixes, normalizes primary labels and omits empty functions', () => {
     expect(normalizeHrFunctionLabel('3-2nd Capitaine')).toBe('2nd Capitaine');
+    expect(normalizeHrFunctionLabel('Second mécanicien')).toBe('2nd Mécanicien');
     expect(normalizeHrFunctionLabel(' 5 - Matelot Polyvalent ')).toBe('Matelot polyvalent');
     expect(getHrFunctionVisibilityKey("Maître d'Equipage")).toBe('maitre-d-equipage');
 
@@ -560,6 +570,24 @@ describe('HR function ordering', () => {
       'Pr\u00e9sident',
     ]);
     expect(sedentaryGroup?.people).toHaveLength(3);
+  });
+});
+
+describe('ENIM function classification', () => {
+  it.each([
+    ['Capitaine', 'AA01A', 15],
+    ['2nd Capitaine', 'CA01A', 12],
+    ['Chef mécanicien', 'CB01A', 15],
+    ['2nd Mécanicien', 'EB01A', 12],
+    ["Maître d'Equipage", 'MA01A', 7],
+    ['Matelot qualifié', 'PA01A', 5],
+    ['Matelot Polyvalent', 'PA01A', 5],
+  ])('maps %s to %s and category %i', (functionLabel, functionCode, category) => {
+    expect(getHrEnimClassification(functionLabel)).toEqual({ functionCode, category });
+  });
+
+  it('leaves non-ENIM functions unclassified', () => {
+    expect(getHrEnimClassification('Stagiaire')).toEqual({ functionCode: '', category: null });
   });
 });
 
@@ -873,6 +901,8 @@ describe('fetchPeople', () => {
         lastName: 'MARTIN',
         email: 'jean@example.test',
         functionLabel: 'Capitaine',
+        enimFunctionCode: 'AA01A',
+        enimCategory: 15,
         gradeLabel: 'Capitaine 200',
         roleLabel: 'Navigant',
         registerLabel: 'RIF',
@@ -912,7 +942,7 @@ describe('fetchPeople', () => {
     ]);
     expect(from).toHaveBeenCalledWith('people');
     expect(select).toHaveBeenCalledWith(
-      'id, user_id, first_name, last_name, email, function_label, grade_label, role_label, register_label, sex, sailor_number, m365_account, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
+      'id, user_id, first_name, last_name, email, function_label, enim_function_code, enim_category, grade_label, role_label, register_label, sex, sailor_number, m365_account, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
     );
     expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
     expect(orderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });

@@ -19,6 +19,8 @@ const activePerson = {
   last_name: 'MARTIN',
   email: 'jean@example.test',
   function_label: 'Capitaine',
+  enim_function_code: 'AA01A',
+  enim_category: 15,
   grade_label: 'Capitaine 200',
   role_label: 'Navigant',
   register_label: 'RIF',
@@ -429,6 +431,10 @@ describe('HumanResourcesPage', () => {
     await user.click(contractSection);
 
     expect(contractSection).toHaveAttribute('aria-current', 'page');
+    expect(within(profile).getByText('Code Fonction ENIM')).toBeInTheDocument();
+    expect(within(profile).getByText('AA01A')).toBeInTheDocument();
+    expect(within(profile).getByText('Catégorie')).toBeInTheDocument();
+    expect(within(profile).getByText('15')).toBeInTheDocument();
     expect(within(profile).getByText('Date naissance')).toBeInTheDocument();
     expect(within(profile).getByText('1985-04-12')).toBeInTheDocument();
     expect(within(profile).getByText('Lieu naissance')).toBeInTheDocument();
@@ -654,8 +660,11 @@ describe('HumanResourcesPage', () => {
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.selectOptions(within(profile).getByLabelText('Fonction'), '2nd Mécanicien');
     await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
 
+    expect(within(profile).getByLabelText('Code Fonction ENIM')).toHaveValue('EB01A');
+    expect(within(profile).getByLabelText('Catégorie')).toHaveValue('12');
     const departureReason = within(profile).getByLabelText('Cause depart');
     expect(departureReason).toHaveRole('combobox');
     expect(within(departureReason).getAllByRole('option').map((option) => option.textContent)).toEqual([
@@ -853,7 +862,9 @@ describe('HumanResourcesPage', () => {
       first_name: 'Marie',
       last_name: 'LEGRAND',
       email: 'marie@example.test',
-      function_label: 'Lieutenant',
+      function_label: 'Matelot Polyvalent',
+      enim_function_code: 'PA01A',
+      enim_category: 5,
       grade_label: 'Pont',
       role_label: null,
       register_label: null,
@@ -892,9 +903,11 @@ describe('HumanResourcesPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Prénom'), { target: { value: 'Marie' } });
     fireEvent.change(within(dialog).getByLabelText('Nom'), { target: { value: 'LEGRAND' } });
     fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: 'marie@example.test' } });
-    fireEvent.change(within(dialog).getByLabelText('Fonction'), { target: { value: 'Lieutenant' } });
+    fireEvent.change(within(dialog).getByLabelText('Fonction'), { target: { value: 'Matelot Polyvalent' } });
     fireEvent.change(within(dialog).getByLabelText('Grade'), { target: { value: 'Pont' } });
     await user.click(within(dialog).getByRole('button', { name: 'Contrat et dates' }));
+    expect(within(dialog).getByLabelText('Code Fonction ENIM')).toHaveValue('PA01A');
+    expect(within(dialog).getByLabelText('Catégorie')).toHaveValue('5');
     await user.selectOptions(within(dialog).getByLabelText('Type de contrat'), 'CDI');
     fireEvent.change(within(dialog).getByLabelText('Date embauche'), { target: { value: '2026-08-01' } });
     fireEvent.change(within(dialog).getByLabelText('Date naissance'), { target: { value: '1990-05-12' } });
@@ -922,7 +935,7 @@ describe('HumanResourcesPage', () => {
         first_name: 'Marie',
         last_name: 'LEGRAND',
         email: 'marie@example.test',
-        function_label: 'Lieutenant',
+        function_label: 'Matelot Polyvalent',
         grade_label: 'Pont',
         contract_type: 'CDI',
         hired_on: '2026-08-01',
@@ -944,9 +957,15 @@ describe('HumanResourcesPage', () => {
   });
 
   it('keeps marins in read-only mode', async () => {
+    const user = userEvent.setup();
+
     render(<HumanResourcesPage client={createClient([activePerson], [...documents, unassignedDocument]) as never} roles={['marin']} />);
 
-    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+
+    expect(within(profile).getByText('AA01A')).toBeInTheDocument();
+    expect(within(profile).getByText('15')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).not.toBeInTheDocument();
     expect(screen.queryByText('Marins par fonction')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
@@ -958,11 +977,17 @@ describe('HumanResourcesPage', () => {
   });
 
   it('shows a captain only the read-only watch roster without collective indicators', async () => {
+    const user = userEvent.setup();
+
     render(<HumanResourcesPage client={createClient([activePerson], documents) as never} roles={['capitaine']} />);
 
     expect(await screen.findByText(/Ma bordée/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+
+    expect(within(profile).getByText('AA01A')).toBeInTheDocument();
+    expect(within(profile).getByText('15')).toBeInTheDocument();
     expect(screen.getByText('Marins par fonction')).toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();

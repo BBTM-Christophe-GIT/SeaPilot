@@ -8,6 +8,8 @@ const PEOPLE_SELECT = [
   'last_name',
   'email',
   'function_label',
+  'enim_function_code',
+  'enim_category',
   'grade_label',
   'role_label',
   'register_label',
@@ -85,6 +87,7 @@ export const HR_PRIMARY_FUNCTIONS = [
   'Capitaine',
   'Chef Mécanicien',
   '2nd Capitaine',
+  '2nd Mécanicien',
   "Maître d'Equipage",
   'Matelot polyvalent',
   'Matelot Qualifié',
@@ -104,6 +107,8 @@ const HR_FUNCTION_ALIASES = new Map<string, string>([
   ['chef mecanicien', 'Chef Mécanicien'],
   ['2nd capitaine', '2nd Capitaine'],
   ['second capitaine', '2nd Capitaine'],
+  ['2nd mecanicien', '2nd Mécanicien'],
+  ['second mecanicien', '2nd Mécanicien'],
   ["maitre d'equipage", "Maître d'Equipage"],
   ['maitre equipage', "Maître d'Equipage"],
   ['matelot polyvalent', 'Matelot polyvalent'],
@@ -129,6 +134,8 @@ interface PersonRow {
   last_name: string;
   email: string | null;
   function_label: string | null;
+  enim_function_code: string | null;
+  enim_category: number | string | null;
   grade_label: string | null;
   role_label: string | null;
   register_label: string | null;
@@ -204,6 +211,8 @@ export interface PersonRecord {
   lastName: string;
   email: string;
   functionLabel: string;
+  enimFunctionCode: string;
+  enimCategory: number | null;
   gradeLabel: string;
   roleLabel: string;
   registerLabel: string;
@@ -522,6 +531,25 @@ export function normalizeHrFunctionLabel(value: string): string {
   return HR_FUNCTION_ALIASES.get(normalizeSearchValue(withoutOrderPrefix)) || withoutOrderPrefix;
 }
 
+export interface HrEnimClassification {
+  functionCode: string;
+  category: number | null;
+}
+
+const HR_ENIM_CLASSIFICATIONS = new Map<string, HrEnimClassification>([
+  ['Capitaine', { functionCode: 'AA01A', category: 15 }],
+  ['2nd Capitaine', { functionCode: 'CA01A', category: 12 }],
+  ['Chef Mécanicien', { functionCode: 'CB01A', category: 15 }],
+  ['2nd Mécanicien', { functionCode: 'EB01A', category: 12 }],
+  ["Maître d'Equipage", { functionCode: 'MA01A', category: 7 }],
+  ['Matelot Qualifié', { functionCode: 'PA01A', category: 5 }],
+  ['Matelot polyvalent', { functionCode: 'PA01A', category: 5 }],
+]);
+
+export function getHrEnimClassification(functionLabel: string): HrEnimClassification {
+  return HR_ENIM_CLASSIFICATIONS.get(normalizeHrFunctionLabel(functionLabel)) || { functionCode: '', category: null };
+}
+
 export function getHrFunctionVisibilityKey(value: string): string {
   return normalizeSearchValue(normalizeHrFunctionLabel(value)).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -772,6 +800,8 @@ export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
     lastName: row.last_name,
     email: nullableText(row.email),
     functionLabel: nullableText(row.function_label),
+    enimFunctionCode: nullableText(row.enim_function_code),
+    enimCategory: nullableNumber(row.enim_category),
     gradeLabel: nullableText(row.grade_label),
     roleLabel: nullableText(row.role_label),
     registerLabel: nullableText(row.register_label),
