@@ -785,11 +785,11 @@ export function evaluatePlanningAssignment(
   const person = candidate.personId !== null
     ? overview.people.find((item) => item.id === candidate.personId)
     : overview.people.find((item) => normalizePlanningText(formatPlanningPerson(item)) === normalizePlanningText(candidate.person));
-  if (person && (!person.active || (person.hiredOn && person.hiredOn > candidate.endsOn) || (person.departedOn && person.departedOn < candidate.startsOn))) {
+  if (person && ((person.hiredOn && person.hiredOn > candidate.endsOn) || (person.departedOn && person.departedOn < candidate.startsOn))) {
     add(controlResult(overview, candidate, 'inactive_person', {
       id: `inactive-person-${candidate.id}-${person.id}`,
       title: 'Marin indisponible administrativement',
-      detail: `${formatPlanningPerson(person)} n'est pas actif pendant toute la période sélectionnée.`,
+      detail: `La période d'emploi de ${formatPlanningPerson(person)} ne couvre pas toute la période sélectionnée.`,
       date: candidate.startsOn,
     }));
   }

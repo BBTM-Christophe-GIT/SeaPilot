@@ -765,6 +765,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     [anchorDate, overview],
   );
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const assignmentPeople = useMemo(() => {
+    const start = assignmentForm.startsOn || referenceMonthRange.start;
+    const end = assignmentForm.endsOn || start;
+    return overview.people
+      .filter((person) => isPlanningPersonEmployedDuring(person, { start, end }))
+      .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr'));
+  }, [assignmentForm.endsOn, assignmentForm.startsOn, overview.people, referenceMonthRange.start]);
   const eligibleBoardPeople = useMemo(
     () => overview.people
       .filter((person) => isPlanningPersonEmployedDuring(person, referenceMonthRange))
@@ -1589,7 +1596,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   function duplicateSelectedEvent() {
     if (!selectedEvent) return;
     const vessel = activeVessels.find((item) => item.name === selectedEvent.vessel);
-    const person = activePeople.find((item) => item.id === selectedEvent.personId || formatPlanningPerson(item) === selectedEvent.person);
+    const person = overview.people.find((item) => item.id === selectedEvent.personId || formatPlanningPerson(item) === selectedEvent.person);
     openAssignment({
       vesselId: vessel ? String(vessel.id) : '',
       crewPersonId: person ? String(person.id) : '',
@@ -2180,7 +2187,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function openLaneAssignment(targetLane: PlanningCrewLane, date: string) {
-    const person = activePeople.find((item) => item.id === targetLane.personId);
+    const person = overview.people.find((item) => item.id === targetLane.personId);
     const currentVessel = activeVessels.find((item) => item.id === targetLane.events[0]?.vesselId || item.name === targetLane.events[0]?.vessel);
     openAssignment({
       vesselId: currentVessel ? String(currentVessel.id) : '',
@@ -2550,12 +2557,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{isAssignmentQuick ? 'Formulaire rapide' : 'Formulaire complet'}</small><h2>Nouvelle affectation</h2></span></div><button aria-label="Fermer" onClick={() => setIsAssignmentOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
             <div className="planning-dialog-grid">
               <label>Navire<select aria-label="Navire" onChange={(event) => setAssignmentForm((current) => ({ ...current, vesselId: event.target.value }))} required value={assignmentForm.vesselId}><option value="">Choisir</option>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label>
-              <label>Marin<select aria-label="Marin" onChange={(event) => setAssignmentForm((current) => ({ ...current, crewPersonId: event.target.value }))} required value={assignmentForm.crewPersonId}><option value="">Choisir</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label>
+              <label>Marin<select aria-label="Marin" onChange={(event) => setAssignmentForm((current) => ({ ...current, crewPersonId: event.target.value }))} required value={assignmentForm.crewPersonId}><option value="">Choisir</option>{assignmentPeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label>
               <label>Début<input aria-label="Debut" onChange={(event) => setAssignmentForm((current) => ({ ...current, startsAt: event.target.value, startsOn: event.target.value.slice(0, 10), endsAt: isAssignmentQuick ? localDateTime(event.target.value.slice(0, 10), '20:00') : current.endsAt, endsOn: isAssignmentQuick ? event.target.value.slice(0, 10) : current.endsOn }))} required type="datetime-local" value={assignmentForm.startsAt} /></label>
               <label>Fin<input aria-label="Fin" onChange={(event) => setAssignmentForm((current) => ({ ...current, endsAt: event.target.value, endsOn: event.target.value.slice(0, 10) }))} required type="datetime-local" value={assignmentForm.endsAt} /></label>
               <label>Statut<select aria-label="Statut" onChange={(event) => setAssignmentForm((current) => ({ ...current, statusLabel: event.target.value }))} value={assignmentForm.statusLabel}>{PLANNING_STATUSES.map((status) => <option key={status} value={status}>{planningStatusDisplayLabel(status)}</option>)}</select></label>
               <label>Confirmation<select aria-label="Confirmation" onChange={(event) => setAssignmentForm((current) => ({ ...current, confirmationStatus: event.target.value as PlanningConfirmationStatus }))} value={assignmentForm.confirmationStatus}><option value="provisional">Provisoire</option><option value="confirmed">Confirmée</option></select></label>
-              {!isAssignmentQuick ? <><label>Capitaine<select aria-label="Capitaine" onChange={(event) => setAssignmentForm((current) => ({ ...current, captainPersonId: event.target.value }))} value={assignmentForm.captainPersonId}><option value="">Aucun</option>{activePeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label><label>Fonction<select aria-label="Fonction" onChange={(event) => setAssignmentForm((current) => ({ ...current, assignmentRole: event.target.value }))} value={assignmentForm.assignmentRole}><option disabled hidden value="">Choisir</option>{PLANNING_ASSIGNMENT_FUNCTIONS.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label><label>Bordée / groupe<select aria-label="Bordée" onChange={(event) => setAssignmentForm((current) => ({ ...current, watchGroup: event.target.value }))} value={assignmentForm.watchGroup}>{uniqueSorted([...watchGroupOptions, assignmentForm.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea aria-label="Annotation" onChange={(event) => setAssignmentForm((current) => ({ ...current, comments: event.target.value }))} value={assignmentForm.comments} /></label></> : null}
+              {!isAssignmentQuick ? <><label>Capitaine<select aria-label="Capitaine" onChange={(event) => setAssignmentForm((current) => ({ ...current, captainPersonId: event.target.value }))} value={assignmentForm.captainPersonId}><option value="">Aucun</option>{assignmentPeople.map((person) => <option key={person.id} value={person.id}>{personOptionLabel(person)}</option>)}</select></label><label>Fonction<select aria-label="Fonction" onChange={(event) => setAssignmentForm((current) => ({ ...current, assignmentRole: event.target.value }))} value={assignmentForm.assignmentRole}><option disabled hidden value="">Choisir</option>{PLANNING_ASSIGNMENT_FUNCTIONS.map((functionLabel) => <option key={functionLabel} value={functionLabel}>{functionLabel}</option>)}</select></label><label>Bordée / groupe<select aria-label="Bordée" onChange={(event) => setAssignmentForm((current) => ({ ...current, watchGroup: event.target.value }))} value={assignmentForm.watchGroup}>{uniqueSorted([...watchGroupOptions, assignmentForm.watchGroup]).map((group) => <option key={group}>{group}</option>)}</select></label><label className="is-wide">Annotation<textarea aria-label="Annotation" onChange={(event) => setAssignmentForm((current) => ({ ...current, comments: event.target.value }))} value={assignmentForm.comments} /></label></> : null}
             </div>
             <PlanningControlSummary results={assignmentControls} />
             <footer>{isAssignmentQuick ? <button className="is-secondary" onClick={() => { setIsAssignmentQuick(false); setAssignmentForm((current) => ({ ...current, endsOn: current.endsOn || current.startsOn })); }} type="button">Formulaire complet</button> : <span />}<span><button className="is-secondary" onClick={() => setIsAssignmentOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">Ajouter</button></span></footer>

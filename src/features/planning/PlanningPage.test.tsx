@@ -1322,6 +1322,63 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
+  it('keeps a historical sailor selectable when creating an assignment inside employment dates', async () => {
+    const user = userEvent.setup();
+    const loicAlix = {
+      ...crewRow,
+      id: 1012,
+      first_name: 'Loic',
+      last_name: 'ALIX',
+      hired_on: '2024-07-01',
+      departed_on: '2025-12-02',
+      active: false,
+    };
+    const hiredLater = {
+      ...crewRow,
+      id: 1013,
+      first_name: 'Après',
+      last_name: 'JANVIER',
+      hired_on: '2025-02-01',
+      active: false,
+    };
+    const createdAssignment = {
+      ...assignmentRow,
+      id: 102,
+      crew_person_id: loicAlix.id,
+      starts_on: '2025-01-10',
+      ends_on: '2025-01-10',
+      watch_group: 'Affectation',
+      status_label: 'En Mer',
+    };
+    const { client, insertAssignment } = createClient({
+      assignments: [],
+      people: [loicAlix, hiredLater],
+      createdAssignment,
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-01' } });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(screen.getByRole('button', { name: 'Créer une affectation' }));
+    fireEvent.change(screen.getByLabelText('Debut'), { target: { value: '2025-01-10T08:00' } });
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2025-01-10T20:00' } });
+
+    const sailorSelect = screen.getByLabelText<HTMLSelectElement>('Marin');
+    expect(Array.from(sailorSelect.options).map((option) => option.textContent)).toContain('Loic ALIX · Matelot');
+    expect(Array.from(sailorSelect.options).map((option) => option.textContent)).not.toContain('Après JANVIER · Matelot');
+    await user.selectOptions(screen.getByLabelText('Navire'), '1');
+    await user.selectOptions(sailorSelect, String(loicAlix.id));
+    await user.selectOptions(screen.getByLabelText('Fonction'), 'Matelot polyvalent');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
+
+    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
+      crew_person_id: loicAlix.id,
+      starts_on: '2025-01-10',
+      ends_on: '2025-01-10',
+    })));
+  });
+
   it('allows adding an eligible sailor even when an existing planning record is present', async () => {
     const user = userEvent.setup();
     const departedAssignment = {
