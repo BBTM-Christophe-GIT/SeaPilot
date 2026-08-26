@@ -224,6 +224,7 @@ describe('planning hierarchy and side panels', () => {
       'Capitaine',
       'Chef Mécanicien',
       '2nd Capitaine',
+      '2nd Mécanicien',
       "Maître d'Equipage",
       'Matelot polyvalent',
       'Matelot Qualifié',
@@ -231,7 +232,7 @@ describe('planning hierarchy and side panels', () => {
       'Directrice Administrative et Financière',
       'Stagiaire',
     ];
-    const firstNames = ['Zoé', 'Yann', 'Xavier', 'William', 'Victor', 'Ulysse', 'Thomas', 'Simon', 'Rémi', 'Quentin'];
+    const firstNames = ['Zoé', 'Yann', 'Xavier', 'William', 'Violette', 'Victor', 'Ulysse', 'Thomas', 'Simon', 'Rémi', 'Quentin'];
     const people = functions.map((functionLabel, index) => ({
       ...overview.people[0],
       id: index + 100,

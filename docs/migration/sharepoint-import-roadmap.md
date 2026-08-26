@@ -115,6 +115,7 @@ Le script accepte aussi `VITE_SUPABASE_URL`, `SUPABASE_ANON_KEY` et `VITE_SUPABA
 
 - `list-bbtm-flotte` vers `vessels`
 - `list-rh-personnel-bbtm` vers `people`
+  - `enim_function_code` et `enim_category` sont calculés par Supabase depuis `function_label` : les imports RH ne doivent pas tenter de renseigner ces colonnes générées.
 - `list-smtr-journees-planning` vers `planning_days`
 - `list-smtr-planning-periodes` vers `planning_periods`
 - `list-kpi-projets-planning` vers `planning_projects`

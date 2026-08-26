@@ -7,7 +7,7 @@ const FUNCTION_OPTIONS = [
   'Capitaine',
   '2nd Capitaine',
   'Chef Mécanicien',
-  'Second Mécanicien',
+  '2nd Mécanicien',
   "Maître d'Equipage",
   'Matelot polyvalent',
   'Matelot Qualifié',
