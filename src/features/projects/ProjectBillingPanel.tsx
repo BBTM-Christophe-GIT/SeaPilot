@@ -12,11 +12,23 @@ import {
   Save,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
+import { ServiceProviderEditorDialog } from '../serviceProviders/ServiceProviderEditorDialog';
+import { ServiceProviderPicker } from '../serviceProviders/ServiceProviderPicker';
+import {
+  fetchServiceProviders,
+  saveServiceProviderWithPrimarySpecialty,
+  serviceProviderDraft,
+  serviceProviderSpecialtyNames,
+  serviceProviderTypeOptions,
+  type ServiceProvider,
+  type ServiceProviderDraft,
+} from '../serviceProviders/serviceProviders';
 import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
 import {
   billingExpenseAttachmentName,
+  billingExpenseSpecialtyLabel,
   billingOperationKey,
   billingServicesTotal,
   completeBillingDprs,
@@ -34,7 +46,6 @@ import {
   setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
   uploadProjectBillingDocument,
-  type BillingExpenseCategory,
   type BillingExpenseDraft,
   type BillingExportFormat,
   type BillingPeriodDraft,
@@ -48,12 +59,7 @@ import {
 } from './projectBilling';
 
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
-const CATEGORY_LABELS: Record<BillingExpenseCategory, string> = {
-  fuel: 'Gasoil',
-  port: 'Frais de port',
-  water: 'Eau',
-  other: 'Autre',
-};
+const BILLING_UNIT_OPTIONS = ['Unité', 'm²', 'm³', 'L'];
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -90,9 +96,10 @@ function billingDraft(project: ProjectRecord, period?: ProjectBillingPeriod): Bi
 
 function expenseDraft(periodMonth: string, expense?: ProjectChargeableExpense): BillingExpenseDraft {
   return {
-    category: expense?.category || 'fuel',
+    category: expense?.category || 'other',
     nature: expense?.nature || '',
     supplier: expense?.supplier || '',
+    supplierSpecialties: expense?.supplierSpecialties || [],
     invoiceDate: expense?.invoiceDate || `${periodMonth}-01`,
     invoiceNumber: expense?.invoiceNumber || '',
     amountHt: expense?.amountHt || 0,
@@ -101,8 +108,6 @@ function expenseDraft(periodMonth: string, expense?: ProjectChargeableExpense): 
     quantity: expense?.quantity ?? null,
     unit: expense?.unit || '',
     comments: expense?.comments || '',
-    chargeable: expense?.chargeable ?? true,
-    includedInClientInvoice: expense?.includedInClientInvoice ?? false,
     dprReportId: expense?.dprReportId ?? null,
   };
 }
@@ -132,7 +137,12 @@ export function ProjectBillingPanel({
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [periodDraft, setPeriodDraft] = useState<BillingPeriodDraft>(() => billingDraft(project));
-  const [expenseEditor, setExpenseEditor] = useState<{ id?: number; draft: BillingExpenseDraft } | null>(null);
+  const [expenseEditor, setExpenseEditor] = useState<{
+    id?: number;
+    draft: BillingExpenseDraft;
+  } | null>(null);
+  const [serviceProviders, setServiceProviders] = useState<ServiceProvider[]>([]);
+  const [providerEditor, setProviderEditor] = useState<ServiceProviderDraft | null>(null);
   const [periodMode, setPeriodMode] = useState<BillingPeriodMode>('calendar-month');
   const [customStart, setCustomStart] = useState(`${currentMonth()}-01`);
   const [customEnd, setCustomEnd] = useState(monthRange(currentMonth()).end);
@@ -167,6 +177,7 @@ export function ProjectBillingPanel({
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
     void reload();
+    void reloadServiceProviders();
   }, [project.id]);
 
   const selectedPeriod = data.periods.find((period) => period.periodMonth.startsWith(selectedMonth));
@@ -179,7 +190,16 @@ export function ProjectBillingPanel({
   const periodServices = selectedPeriod
     ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
     : [];
-  const expenseTotal = periodExpenses.filter((expense) => expense.chargeable).reduce((sum, expense) => sum + expense.amountHt, 0);
+  const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amountHt, 0);
+  const providerCategories = useMemo(
+    () => Array.from(new Set(serviceProviders.map((provider) => provider.category).filter((category) => category !== 'Non classé'))).sort((left, right) => left.localeCompare(right, 'fr')),
+    [serviceProviders],
+  );
+  const providerServiceTypes = useMemo(() => serviceProviderTypeOptions(serviceProviders), [serviceProviders]);
+  const unitOptions = useMemo(
+    () => Array.from(new Set([...BILLING_UNIT_OPTIONS, ...data.expenses.map((expense) => expense.unit).filter(Boolean)])),
+    [data.expenses],
+  );
   const vesselOptions = useMemo(
     () => Array.from(new Set(operations.map((operation) => operation.primaryVesselName).filter(Boolean))).sort(),
     [operations],
@@ -293,6 +313,14 @@ export function ProjectBillingPanel({
     }
   }
 
+  async function reloadServiceProviders() {
+    try {
+      setServiceProviders(await fetchServiceProviders(client));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Le référentiel fournisseurs est indisponible.');
+    }
+  }
+
   async function toggleExpensePdf(expense: ProjectChargeableExpense) {
     if (!isManager || busy) return;
     const includeInPdf = expense.includeInPdf === false;
@@ -340,12 +368,8 @@ export function ProjectBillingPanel({
 
   async function saveExpense() {
     if (!selectedPeriod || !expenseEditor || busy) return;
-    if (!expenseEditor.draft.supplier || !expenseEditor.draft.invoiceDate || expenseEditor.draft.amountHt < 0) {
-      setError('Renseignez le fournisseur, la date et un montant HT valide.');
-      return;
-    }
-    if (expenseEditor.draft.category === 'other' && !expenseEditor.draft.nature.trim()) {
-      setError('Précisez la nature du service « Autre ».');
+    if (!expenseEditor.draft.supplier || !expenseEditor.draft.invoiceDate || expenseEditor.draft.amountHt <= 0) {
+      setError('Renseignez le fournisseur, la date et un montant HT supérieur à 0.');
       return;
     }
     setBusy('expense');
@@ -366,6 +390,53 @@ export function ProjectBillingPanel({
       setMessage('Frais imputable enregistré.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer ce frais.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function openExpenseEditor(expense?: ProjectChargeableExpense) {
+    const draft = expenseDraft(selectedMonth, expense);
+    const provider = serviceProviders.find((item) => item.name.localeCompare(draft.supplier, 'fr', { sensitivity: 'base' }) === 0);
+    const specialties = draft.supplierSpecialties.length ? draft.supplierSpecialties : provider ? serviceProviderSpecialtyNames(provider) : [];
+    setExpenseEditor({
+      id: expense?.id,
+      draft: {
+        ...draft,
+        category: 'other',
+        nature: specialties.join(' · '),
+        supplierSpecialties: specialties,
+      },
+    });
+  }
+
+  async function submitProvider(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!providerEditor || busy) return;
+    if (!providerEditor.name.trim()) {
+      setError('Le nom de la société est obligatoire.');
+      return;
+    }
+    setBusy('provider');
+    setError('');
+    try {
+      const saved = await saveServiceProviderWithPrimarySpecialty(client, providerEditor);
+      const specialties = serviceProviderSpecialtyNames(saved);
+      setServiceProviders((current) => [...current.filter((provider) => provider.id !== saved.id), saved]);
+      setExpenseEditor((current) => current ? {
+        ...current,
+        draft: {
+          ...current.draft,
+          category: 'other',
+          nature: specialties.join(' · '),
+          supplier: saved.name,
+          supplierSpecialties: specialties,
+        },
+      } : current);
+      setProviderEditor(null);
+      setMessage('Société ajoutée au référentiel Supabase.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la société.');
     } finally {
       setBusy('');
     }
@@ -503,26 +574,26 @@ export function ProjectBillingPanel({
 
       <article className="project-billing-card">
         <header className="project-billing-card-heading">
-          <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT à refacturer</small><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} type="checkbox" /> Inclure les services refacturables dans le PDF</label></span></div>
+          <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} type="checkbox" /> Inclure les services refacturables dans le PDF</label></span></div>
           <div className="project-billing-card-actions">
-            {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => setExpenseEditor({ draft: expenseDraft(selectedMonth) })} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
+            {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
         </header>
         <div className="project-billing-table-scroll">
           <table>
-            <thead><tr><th>PDF</th><th>Date</th><th>Catégorie</th><th>Fournisseur</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Fournisseur</th><th>Spécialités</th><th>PDF</th><th>Date</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
             <tbody>
               {periodExpenses.map((expense) => {
                 const documents = periodDocuments.filter((document) => document.chargeableExpenseId === expense.id);
                 return (
                   <tr key={expense.id}>
+                    <td>{expense.supplier}</td>
+                    <td>{billingExpenseSpecialtyLabel(expense)}</td>
                     <td><input aria-label={`Inclure le frais ${expense.invoiceNumber || expense.supplier} dans le PDF`} checked={expense.includeInPdf !== false} disabled={!isManager || Boolean(busy)} onChange={() => void toggleExpensePdf(expense)} type="checkbox" /></td>
                     <td>{expense.invoiceDate}</td>
-                    <td>{expense.category === 'other' ? expense.nature : CATEGORY_LABELS[expense.category]}</td>
-                    <td>{expense.supplier}</td>
                     <td>{expense.invoiceNumber || '—'}</td>
                     <td>{money(expense.amountHt, expense.currency)}</td>
-                    <td>{expense.includedInClientInvoice ? 'Inclus à la facture' : expense.chargeable ? 'À refacturer' : 'Non refacturable'}</td>
+                    <td>{expense.includeInPdf !== false ? 'Sélectionné pour le PDF' : 'Exclu du PDF'}</td>
                     <td>
                       <div className="project-billing-expense-documents">
                         {documents.map((document) => (
@@ -556,7 +627,7 @@ export function ProjectBillingPanel({
                       </div>
                     </td>
                     <td><div className="project-billing-row-actions">
-                      {isManager ? <button onClick={() => setExpenseEditor({ id: expense.id, draft: expenseDraft(selectedMonth, expense) })} type="button">Modifier</button> : null}
+                      {isManager ? <button onClick={() => openExpenseEditor(expense)} type="button">Modifier</button> : null}
                       {isManager ? <button aria-label={`Supprimer ${expense.invoiceNumber || expense.supplier}`} className="is-danger" disabled={Boolean(busy)} onClick={() => void removeExpense(expense)} type="button"><Trash2 aria-hidden="true" size={14} /></button> : null}
                     </div></td>
                   </tr>
@@ -669,22 +740,24 @@ export function ProjectBillingPanel({
           title={expenseEditor.id ? 'Modifier le frais imputable' : 'Ajouter un frais imputable'}
         >
           <div className="project-billing-form">
-            <label>Catégorie<select onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, category: event.target.value as BillingExpenseCategory } } : null)} value={expenseEditor.draft.category}>{Object.entries(CATEGORY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-            {expenseEditor.draft.category === 'other' ? <label>Nature<input required onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, nature: event.target.value } } : null)} value={expenseEditor.draft.nature} /></label> : null}
-            <label>Fournisseur<input required onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, supplier: event.target.value } } : null)} value={expenseEditor.draft.supplier} /></label>
+            <ServiceProviderPicker label="Fournisseur" onAdd={() => setProviderEditor(serviceProviderDraft())} onChange={(provider) => {
+              const specialties = serviceProviderSpecialtyNames(provider);
+              setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, category: 'other', nature: specialties.join(' · '), supplier: provider.name, supplierSpecialties: specialties } } : null);
+            }} providers={serviceProviders.filter((provider) => provider.active)} required value={expenseEditor.draft.supplier} />
+            <label>Spécialités<input disabled value={expenseEditor.draft.supplierSpecialties.join(' · ') || 'Non renseignée'} /></label>
             <label>Date facture<input required onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, invoiceDate: event.target.value } } : null)} type="date" value={expenseEditor.draft.invoiceDate} /></label>
             <label>N° facture<input onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, invoiceNumber: event.target.value } } : null)} value={expenseEditor.draft.invoiceNumber} /></label>
-            <label>Montant HT<input min="0" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, amountHt: Number(event.target.value) } } : null)} required step="0.01" type="number" value={expenseEditor.draft.amountHt} /></label>
+            <label>Montant HT<input inputMode="decimal" min="0" onFocus={(event) => event.currentTarget.select()} onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, amountHt: Number(event.target.value) } } : null)} placeholder="0,00" required step="0.01" type="number" value={!expenseEditor.id && expenseEditor.draft.amountHt === 0 ? '' : expenseEditor.draft.amountHt} /></label>
             <label>Montant TTC<input min="0" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, amountTtc: event.target.value ? Number(event.target.value) : null } } : null)} step="0.01" type="number" value={expenseEditor.draft.amountTtc ?? ''} /></label>
             <label>Devise<input maxLength={3} onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, currency: event.target.value.toUpperCase() } } : null)} value={expenseEditor.draft.currency} /></label>
             <label>Quantité<input min="0" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, quantity: event.target.value ? Number(event.target.value) : null } } : null)} step="0.001" type="number" value={expenseEditor.draft.quantity ?? ''} /></label>
-            <label>Unité<input onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, unit: event.target.value } } : null)} value={expenseEditor.draft.unit} /></label>
+            <label>Unité<input list="project-billing-units" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, unit: event.target.value } } : null)} placeholder="Choisir ou saisir une unité" value={expenseEditor.draft.unit} /></label>
             <label className="is-wide">Commentaires<textarea onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, comments: event.target.value } } : null)} rows={3} value={expenseEditor.draft.comments} /></label>
-            <label className="project-billing-check"><input checked={expenseEditor.draft.chargeable} onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, chargeable: event.target.checked } } : null)} type="checkbox" /> Refacturable au client</label>
-            <label className="project-billing-check"><input checked={expenseEditor.draft.includedInClientInvoice} onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, includedInClientInvoice: event.target.checked } } : null)} type="checkbox" /> Inclus à la facture client</label>
+            <datalist id="project-billing-units">{unitOptions.map((unit) => <option key={unit} value={unit} />)}</datalist>
           </div>
         </AppDialog>
       ) : null}
+      {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
     </section>
   );
 }

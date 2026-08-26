@@ -14,12 +14,22 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
+import { ServiceProviderEditorDialog } from '../serviceProviders/ServiceProviderEditorDialog';
+import { ServiceProviderPicker } from '../serviceProviders/ServiceProviderPicker';
+import {
+  saveServiceProviderWithPrimarySpecialty,
+  serviceProviderDraft,
+  serviceProviderSpecialtyNames,
+  serviceProviderTypeOptions,
+  type ServiceProviderDraft,
+} from '../serviceProviders/serviceProviders';
 import { formatPlanningDateTime, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import type { PlanningVessel } from './planningQueries';
 import {
   createPlanningVisitAttachmentUrl,
   deletePlanningVesselVisit,
+  fetchPlanningServiceProviders,
   PLANNING_VISIT_TYPES,
   planningVisitTypeLabel,
   savePlanningVesselVisit,
@@ -64,6 +74,7 @@ export function PlanningVisitsPanel({
   visit,
   canEdit,
   canDelete,
+  canManageProviders,
   onClose,
   onSaved,
 }: {
@@ -73,18 +84,46 @@ export function PlanningVisitsPanel({
   visit: PlanningVesselVisit | null;
   canEdit: boolean;
   canDelete: boolean;
+  canManageProviders: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [isEditing, setIsEditing] = useState(visit === null);
   const [form, setForm] = useState<VisitFormState>(() => initialForm(visit, providers));
+  const [availableProviders, setAvailableProviders] = useState(providers);
+  const [providerEditor, setProviderEditor] = useState<ServiceProviderDraft | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null);
   const provider = useMemo(
-    () => providers.find((item) => item.id === Number(form.providerId)) || visit?.provider || null,
-    [form.providerId, providers, visit?.provider],
+    () => availableProviders.find((item) => item.id === Number(form.providerId)) || visit?.provider || null,
+    [availableProviders, form.providerId, visit?.provider],
   );
+  const providerCategories = useMemo(
+    () => Array.from(new Set(availableProviders.map((item) => item.category).filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr')),
+    [availableProviders],
+  );
+  const providerServiceTypes = useMemo(() => serviceProviderTypeOptions(availableProviders), [availableProviders]);
+  const isTechnicalStop = form.visitType === 'technical_stop';
+
+  async function submitProvider(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!providerEditor || isSaving) return;
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      const saved = await saveServiceProviderWithPrimarySpecialty(client, providerEditor);
+      const refreshed = await fetchPlanningServiceProviders(client);
+      setAvailableProviders(refreshed);
+      setForm((current) => ({ ...current, providerId: String(saved.id) }));
+      setProviderEditor(null);
+      setFeedback({ message: 'Société ajoutée au référentiel Supabase.', error: false });
+    } catch (error) {
+      setFeedback({ message: planningErrorMessage(error, 'Impossible d’enregistrer la société.'), error: true });
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -135,6 +174,7 @@ export function PlanningVisitsPanel({
   }
 
   return (
+    <>
     <div className="planning-dialog-backdrop is-side-panel" role="presentation">
       <section aria-label="Visite ou audit du navire" aria-modal="true" className="planning-dialog is-side-panel planning-visits-panel" role="dialog">
         <header>
@@ -146,9 +186,10 @@ export function PlanningVisitsPanel({
         {feedback ? <p className={feedback.error ? 'form-error planning-p12-feedback' : 'admin-success planning-p12-feedback'} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p> : null}
 
         {isEditing ? (
-          <form className="planning-visits-form" onSubmit={submit}>
+          <form className={`planning-visits-form${isTechnicalStop ? ' is-technical-stop' : ''}`} onSubmit={submit}>
             <label>Type de visite<select required value={form.visitType} onChange={(event) => setForm({ ...form, visitType: event.target.value as PlanningVisitType })}>{PLANNING_VISIT_TYPES.map((type) => <option key={type} value={type}>{planningVisitTypeLabel(type)}</option>)}</select></label>
-            <label>Prestataire<select required value={form.providerId} onChange={(event) => setForm({ ...form, providerId: event.target.value })}><option value="">Choisir un prestataire</option>{providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <ServiceProviderPicker label="Prestataire" onAdd={canManageProviders ? () => setProviderEditor(serviceProviderDraft()) : undefined} onChange={(item) => setForm({ ...form, providerId: String(item.id) })} providers={availableProviders} required value={provider?.name || ''} />
+            {isTechnicalStop ? <label>Spécialités<input disabled value={provider ? serviceProviderSpecialtyNames(provider).join(' · ') || 'Non renseignée' : 'Sélectionnez un prestataire'} /></label> : null}
 
             <fieldset className="planning-visits-dates">
               <legend>Date de la ou des visite(s)</legend>
@@ -164,7 +205,7 @@ export function PlanningVisitsPanel({
             <label>Commentaires<textarea maxLength={2000} rows={4} value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} /></label>
             <label className="planning-visits-file"><Paperclip aria-hidden="true" size={17} /><span>Pièces jointes<small>PDF, images, Word ou Excel · 20 Mo maximum par fichier</small></span><input accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} type="file" /></label>
             {files.length ? <ul className="planning-visits-pending-files">{files.map((file) => <li key={`${file.name}-${file.size}`}><FileText aria-hidden="true" size={14} />{file.name}</li>)}</ul> : null}
-            <footer><button className="is-secondary" onClick={visit ? () => setIsEditing(false) : onClose} type="button">Annuler</button><button disabled={isSaving || !providers.length} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
+            <footer><button className="is-secondary" onClick={visit ? () => setIsEditing(false) : onClose} type="button">Annuler</button><button disabled={isSaving || !availableProviders.length} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
           </form>
         ) : visit ? (
           <div className="planning-visits-detail">
@@ -177,5 +218,7 @@ export function PlanningVisitsPanel({
         ) : null}
       </section>
     </div>
+    {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={isSaving} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
+    </>
   );
 }

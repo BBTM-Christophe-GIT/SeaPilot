@@ -60,8 +60,11 @@ import {
   getUnbilledPlanningProjects,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
+  isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningText,
+  planningReferenceMonthLabel,
+  planningReferenceMonthRange,
   planningStatusDisplayLabel,
   shiftPlanningAnchor,
   timelineRange,
@@ -232,7 +235,7 @@ interface PlanningDayStateForm {
   status: PlanningGridStatus;
   note: string;
 }
-interface PlanningDepartedPeopleDialogState {
+interface PlanningEligiblePeopleDialogState {
   vesselId: number;
   vesselName: string;
   watchGroup: string;
@@ -409,9 +412,9 @@ function createPreviewVisitData(anchorDate: string): {
   visits: PlanningVesselVisit[];
 } {
   const providers: PlanningServiceProvider[] = [
-    { id: 28, name: 'APAVE', category: 'Prestataire de Service', serviceType: 'Visite Grue / Bossoir', activity: '', address: '235 Route du Mesnil', city: '76290 Montivilliers', phone: '02 32 79 56 46', companyEmail: '', contactName: 'Clément NOEL', contactRole: 'Inspecteur', contactPhone: '', contactEmail: 'clement.noel@apave.com' },
-    { id: 11, name: 'Agence Nationale des Fréquences (ANFR)', category: 'Prestataire de Service', serviceType: 'Visite ANFR', activity: '', address: '', city: '', phone: '', companyEmail: '', contactName: 'Eric PHELIPPEAU', contactRole: 'Contrôleur de conformité', contactPhone: '06 07 31 90 76', contactEmail: 'eric.phelippeau@anfr.fr' },
-    { id: 33, name: 'AgroQual', category: 'Prestataire de Service', serviceType: 'Analyse Eau', activity: '', address: 'Site Normandial, 8 Av. du Pays de Caen', city: '14460 Colombelles', phone: '02 31 38 24 24', companyEmail: '', contactName: 'Delphine DEBRAY', contactRole: '', contactPhone: '06 03 10 07 53', contactEmail: 'delphine.debray@agroqual.fr' },
+    { id: 28, name: 'APAVE', category: 'Prestataire de Service', serviceType: 'Visite Grue / Bossoir', activity: '', address: '235 Route du Mesnil', city: '76290 Montivilliers', phone: '02 32 79 56 46', companyEmail: '', supplies: '', specialties: [{ id: 280, name: 'Visite Grue / Bossoir', active: true }], contactName: 'Clément NOEL', contactRole: 'Inspecteur', contactPhone: '', contactEmail: 'clement.noel@apave.com' },
+    { id: 11, name: 'Agence Nationale des Fréquences (ANFR)', category: 'Prestataire de Service', serviceType: 'Visite ANFR', activity: '', address: '', city: '', phone: '', companyEmail: '', supplies: '', specialties: [{ id: 110, name: 'Visite ANFR', active: true }], contactName: 'Eric PHELIPPEAU', contactRole: 'Contrôleur de conformité', contactPhone: '06 07 31 90 76', contactEmail: 'eric.phelippeau@anfr.fr' },
+    { id: 33, name: 'AgroQual', category: 'Prestataire de Service', serviceType: 'Analyse Eau', activity: '', address: 'Site Normandial, 8 Av. du Pays de Caen', city: '14460 Colombelles', phone: '02 31 38 24 24', companyEmail: '', supplies: '', specialties: [{ id: 330, name: 'Analyse Eau', active: true }], contactName: 'Delphine DEBRAY', contactRole: '', contactPhone: '06 03 10 07 53', contactEmail: 'delphine.debray@agroqual.fr' },
   ];
   const scheduledOn = addPlanningDays(anchorDate, 7);
   const visitDefinitions: Array<{ id: number; provider: PlanningServiceProvider; type: PlanningVesselVisit['visitType']; hour: string }> = [
@@ -498,7 +501,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
-  const [departedPeopleDialog, setDepartedPeopleDialog] = useState<PlanningDepartedPeopleDialogState | null>(null);
+  const [eligiblePeopleDialog, setEligiblePeopleDialog] = useState<PlanningEligiblePeopleDialogState | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBoardingCertificateOpen, setIsBoardingCertificateOpen] = useState(false);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
@@ -679,6 +682,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const days = timelineDays;
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(timelineDays), [timelineDays]);
+  const referenceMonthRange = useMemo(() => planningReferenceMonthRange(anchorDate), [anchorDate]);
+  const referenceMonthLabel = useMemo(
+    () => planningReferenceMonthLabel(anchorDate).toLocaleLowerCase('fr-FR'),
+    [anchorDate],
+  );
   const permissions = getPlanningPermissions(effectiveRoles);
   const canManageCommercialProjects = effectiveRoles.includes('admin') || effectiveRoles.includes('direction');
   const activeVessels = useMemo(() => overview.vessels.filter((vessel) => vessel.active), [overview.vessels]);
@@ -757,11 +765,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     [anchorDate, overview],
   );
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
-  const departedPeople = useMemo(
+  const eligibleBoardPeople = useMemo(
     () => overview.people
-      .filter((person) => !person.departedOn || person.departedOn > todayDate)
+      .filter((person) => isPlanningPersonEmployedDuring(person, referenceMonthRange))
       .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
-    [overview.people, todayDate],
+    [overview.people, referenceMonthRange],
   );
   const crewListVessels = useMemo(
     () => activeVessels.filter((vessel) => availablePlanningCrewListBoards(overview, vessel.id, crewListForm.date).length > 0),
@@ -1340,7 +1348,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       .map((row) => Number(row.board.match(/\d+/)?.[0] || 0));
     const watchGroup = `Bordée ${Math.max(0, ...boardNumbers) + 1}`;
     setErrorMessage(null);
-    setDepartedPeopleDialog({ vesselId: lane.vesselId, vesselName: lane.label, watchGroup });
+    setEligiblePeopleDialog({ vesselId: lane.vesselId, vesselName: lane.label, watchGroup });
   }
 
   function openBoardAssignment(vesselId: number | null, watchGroup: string) {
@@ -1350,23 +1358,24 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setErrorMessage('Ce navire est indisponible. Actualisez le planning.');
       return;
     }
-    setDepartedPeopleDialog({ vesselId, vesselName: vessel.name, watchGroup });
+    setEligiblePeopleDialog({ vesselId, vesselName: vessel.name, watchGroup });
   }
 
-  async function addDepartedPersonToBoard(person: PlanningPerson) {
-    if (!departedPeopleDialog) return;
+  async function addEligiblePersonToBoard(person: PlanningPerson) {
+    if (!eligiblePeopleDialog) return;
     setIsSaving(true);
     setPendingMutationId(`departed-person-${person.id}`);
     setErrorMessage(null);
     try {
       await addPlanningBoardRow(effectiveClient, {
-        vesselId: departedPeopleDialog.vesselId,
-        watchGroup: departedPeopleDialog.watchGroup,
+        vesselId: eligiblePeopleDialog.vesselId,
+        watchGroup: eligiblePeopleDialog.watchGroup,
         personId: person.id,
+        referenceMonth: referenceMonthRange.start,
       });
       await loadPlanning();
-      setDepartedPeopleDialog(null);
-      setStatusMessage(`${formatPlanningPerson(person)} a été ajouté comme ligne vide à ${departedPeopleDialog.watchGroup}.`);
+      setEligiblePeopleDialog(null);
+      setStatusMessage(`${formatPlanningPerson(person)} a été ajouté comme ligne vide à ${eligiblePeopleDialog.watchGroup}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’ajouter ce marin à la bordée.'));
     } finally {
@@ -2532,7 +2541,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
-      {departedPeopleDialog ? <PlanningDepartedPeopleDialog isSaving={isSaving} onAdd={(person) => void addDepartedPersonToBoard(person)} onClose={() => setDepartedPeopleDialog(null)} pendingId={pendingMutationId} people={departedPeople} state={departedPeopleDialog} /> : null}
+      {eligiblePeopleDialog ? <PlanningEligiblePeopleDialog isSaving={isSaving} onAdd={(person) => void addEligiblePersonToBoard(person)} onClose={() => setEligiblePeopleDialog(null)} pendingId={pendingMutationId} people={eligibleBoardPeople} referenceMonthLabel={referenceMonthLabel} state={eligiblePeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
       {isAssignmentOpen ? (
@@ -2558,7 +2567,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} /> : null}
       {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
-      {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
+      {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} canManageProviders={effectiveRoles.includes('admin') || effectiveRoles.includes('direction')} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
@@ -2762,9 +2771,10 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   </div>;
 }
 
-function PlanningDepartedPeopleDialog({ state, people, isSaving, pendingId, onAdd, onClose }: {
-  state: PlanningDepartedPeopleDialogState;
+function PlanningEligiblePeopleDialog({ state, people, referenceMonthLabel, isSaving, pendingId, onAdd, onClose }: {
+  state: PlanningEligiblePeopleDialogState;
   people: PlanningPerson[];
+  referenceMonthLabel: string;
   isSaving: boolean;
   pendingId: string | null;
   onAdd: (person: PlanningPerson) => void;
@@ -2790,7 +2800,7 @@ function PlanningDepartedPeopleDialog({ state, people, isSaving, pendingId, onAd
   return <div className="planning-dialog-backdrop" role="presentation">
     <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
       <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-      <p className="planning-dialog-intro">Marins sans date de départ ou dont la date de départ est postérieure à aujourd’hui. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
+      <p className="planning-dialog-intro">Marins dont la période d’emploi recouvre le mois de référence <strong>{referenceMonthLabel}</strong>. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
       {peopleByFunction.length ? <div className="planning-departed-people-groups">{peopleByFunction.map((group, groupIndex) => {
         const densityClass = group.people.length > 12 ? ' is-expanded' : group.people.length > 6 ? ' is-wide' : '';
         const headingId = `planning-people-function-${groupIndex}`;

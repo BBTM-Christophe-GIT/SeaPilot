@@ -10,6 +10,7 @@ describe('planning vessel visit contracts', () => {
   it('keeps the requested visit types in French alphabetical order', () => {
     const labels = [
       'Analyse d’Eau',
+      'Arrêt Technique',
       'Audit Client',
       'Audit IMCA',
       'Audit Interne',
@@ -23,6 +24,7 @@ describe('planning vessel visit contracts', () => {
     ];
     expect(labels).toEqual([...labels].sort((left, right) => left.localeCompare(right, 'fr')));
     expect(planningVisitTypeLabel('annual_classification_society')).toBe('Visite annuelle - Société de Classification');
+    expect(planningVisitTypeLabel('technical_stop')).toBe('Arrêt Technique');
   });
 
   it('maps multiple occurrences on the same day and provider contact details', () => {
@@ -44,6 +46,8 @@ describe('planning vessel visit contracts', () => {
         city: 'Montivilliers',
         phone: '02 32 79 56 46',
         company_email: 'contact@apave.example',
+        supplies: 'Contrôles techniques',
+        specialties: [{ id: 18, name: 'Visite Grue', active: true }],
         contact_name: 'Clément NOEL',
         contact_role: 'Inspecteur',
         contact_phone: '06 00 00 00 00',
@@ -56,7 +60,7 @@ describe('planning vessel visit contracts', () => {
       attachments: [],
     }]);
 
-    expect(visit.provider).toMatchObject({ name: 'APAVE', contactName: 'Clément NOEL' });
+    expect(visit.provider).toMatchObject({ name: 'APAVE', contactName: 'Clément NOEL', specialties: [{ name: 'Visite Grue' }] });
     expect(visit.occurrences.map((occurrence) => occurrence.scheduledOn)).toEqual(['2026-08-11', '2026-08-11']);
     expect(visit.occurrences[0].scheduledAt).toBe('2026-08-11T07:00:00Z');
   });

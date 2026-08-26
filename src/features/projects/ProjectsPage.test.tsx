@@ -266,6 +266,7 @@ function createClient(
     };
     query.select = vi.fn(() => query);
     query.eq = vi.fn(() => query);
+    query.is = vi.fn(() => query);
     query.lte = vi.fn(() => query);
     query.or = vi.fn(() => query);
     query.order = vi.fn(() => query);
@@ -387,9 +388,90 @@ describe('ProjectsPage', () => {
           'project_billing_services',
           'project_chargeable_expenses',
           'project_billing_documents',
+          'service_providers',
         ]),
       );
     });
+  });
+
+  it('searches suppliers by specialty and opens the Supabase company dialog', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      project_billing_periods: {
+        data: [{
+          id: 501,
+          company_id: 1,
+          project_id: 880,
+          period_month: '2026-08-01',
+          amount_ht: 0,
+          include_operations_in_pdf: true,
+          include_expenses_in_pdf: true,
+          include_bbtm_in_pdf: true,
+          excluded_operation_keys: [],
+        }],
+        error: null,
+      },
+      service_providers: {
+        data: [{
+          id: 701,
+          company_id: 1,
+          name: 'Würth',
+          category: 'Approvisionnement',
+          service_type: 'Matériel et fournitures',
+          active: true,
+          merged_into_provider_id: null,
+          specialties: [],
+          contacts: [],
+        }, {
+          id: 702,
+          company_id: 1,
+          name: 'SERVAUX',
+          category: 'Prestataire de Service',
+          service_type: 'Radeaux',
+          active: true,
+          merged_into_provider_id: null,
+          specialties: [],
+          contacts: [],
+        }],
+        error: null,
+      },
+    });
+
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Facturation' }));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un frais' }));
+
+    const expenseDialog = screen.getByRole('dialog', { name: 'Ajouter un frais imputable' });
+    const supplier = within(expenseDialog).getByLabelText('Fournisseur');
+    await user.click(supplier);
+    expect(within(expenseDialog).getByRole('group', { name: 'Matériel et fournitures' })).toHaveTextContent('Würth');
+    expect(within(expenseDialog).getByRole('group', { name: 'Radeaux' })).toHaveTextContent('SERVAUX');
+    await user.type(supplier, 'radeaux');
+    await user.click(within(expenseDialog).getByRole('option', { name: /SERVAUX/ }));
+    expect(within(expenseDialog).getByLabelText('Spécialités')).toHaveValue('Radeaux');
+    expect(within(expenseDialog).queryByLabelText('Catégorie')).not.toBeInTheDocument();
+    expect(within(expenseDialog).queryByText(/Saisir une nouvelle société/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Refacturable au client')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Inclus à la facture client')).not.toBeInTheDocument();
+
+    const amount = screen.getByLabelText('Montant HT');
+    await user.click(amount);
+    await user.type(amount, '125.50');
+    expect(amount).toHaveValue(125.5);
+    expect(screen.getByLabelText('Unité')).toHaveAttribute('list', 'project-billing-units');
+    expect(document.querySelectorAll('#project-billing-units option')).toHaveLength(4);
+
+    await user.click(within(expenseDialog).getByRole('button', { name: 'Ajouter' }));
+    const companyDialog = await screen.findByRole('dialog', { name: 'Ajouter une société' });
+    expect(within(companyDialog).getByLabelText('Nom de la société *')).toBeInTheDocument();
+    expect(within(companyDialog).getByText(/référentiel Supabase/)).toBeInTheDocument();
+    const serviceType = within(companyDialog).getByLabelText('Type de service');
+    const serviceTypeList = document.getElementById(serviceType.getAttribute('list') || '');
+    expect(Array.from(serviceTypeList?.querySelectorAll('option') || []).map((option) => option.value)).toEqual([
+      'Matériel et fournitures',
+      'Radeaux',
+    ]);
   });
 
   it('shows an explicit technical error and retry action when the projects query fails', async () => {

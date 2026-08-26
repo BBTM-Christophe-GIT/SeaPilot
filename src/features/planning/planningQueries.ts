@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
-import { planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
+import { isPlanningDate, planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
 import { isPlanningGridStatus, type PlanningGridStatus } from './planningGrid';
 import {
@@ -787,6 +787,7 @@ export interface AddPlanningBoardRowInput {
   vesselId: number;
   watchGroup: string;
   personId: number;
+  referenceMonth: string;
 }
 
 export interface SavePlanningHandoverInput {
@@ -1781,10 +1782,13 @@ export async function addPlanningBoardRow(
   const vesselId = planningEntityId(input.vesselId, 'Le navire');
   const personId = planningEntityId(input.personId, 'Le marin');
   const watchGroup = requiredPlanningText(input.watchGroup, 'La bordée');
-  const { data, error } = await client.rpc('add_planning_board_row', {
+  const referenceMonth = input.referenceMonth;
+  if (!isPlanningDate(referenceMonth)) throw new Error('Le mois de référence doit être une date valide.');
+  const { data, error } = await client.rpc('add_planning_board_row_for_month', {
     p_vessel_id: vesselId,
     p_watch_group: watchGroup,
     p_person_id: personId,
+    p_reference_month: referenceMonth,
   });
   if (error) throwPlanningDataError('add-board-row', 'Impossible d’ajouter cette ligne de marin.', error);
   const id = Number(data);

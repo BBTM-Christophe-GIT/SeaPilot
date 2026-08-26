@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   billingExpenseAttachmentName,
+  billingExpenseSpecialtyLabel,
   billingInvoiceTotal,
   billingOperationHire,
   billingServicesTotal,
@@ -416,6 +417,7 @@ describe('monthly billing completion', () => {
       category: 'port',
       nature: '',
       supplier: 'Port',
+      supplierSpecialties: ['Frais de port'],
       invoiceDate: '2026-06-10',
       invoiceNumber: 'R202600790',
       amountHt: 72.01,
@@ -424,11 +426,22 @@ describe('monthly billing completion', () => {
       quantity: null,
       unit: '',
       comments: '',
-      chargeable: true,
-      includedInClientInvoice: false,
       dprReportId: null,
     });
     expect(renamed.name).toBe('2026-06-10 - R202600790 - Frais de port.pdf');
+  });
+
+  it('uses the saved supplier specialties before legacy expense values', () => {
+    expect(billingExpenseSpecialtyLabel({
+      supplierSpecialties: ['Inspection', 'Radeaux'],
+      nature: 'Ancienne nature',
+      category: 'other',
+    })).toBe('Inspection · Radeaux');
+    expect(billingExpenseSpecialtyLabel({
+      supplierSpecialties: [],
+      nature: 'Frais de port',
+      category: 'port',
+    })).toBe('Frais de port');
   });
 });
 

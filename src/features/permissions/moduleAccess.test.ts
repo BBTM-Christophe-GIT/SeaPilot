@@ -43,6 +43,7 @@ describe('module access', () => {
       ['Opérations', 'Projets', 'submenu'],
       ['Opérations', 'Navires', 'submenu'],
       ['Achats', "Demande d'Achat", 'submenu'],
+      ['Achats', 'Gestion des Sous-Traitants', 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],

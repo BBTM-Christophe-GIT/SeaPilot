@@ -1069,11 +1069,13 @@ describe('planning writes', () => {
       vesselId: 3,
       watchGroup: 'Bordée 2',
       personId: 8,
+      referenceMonth: '2025-01-01',
     })).resolves.toBe(77);
-    expect(rpc).toHaveBeenNthCalledWith(1, 'add_planning_board_row', {
+    expect(rpc).toHaveBeenNthCalledWith(1, 'add_planning_board_row_for_month', {
       p_vessel_id: 3,
       p_watch_group: 'Bordée 2',
       p_person_id: 8,
+      p_reference_month: '2025-01-01',
     });
 
     await expect(deletePlanningBoardRow({ rpc } as never, 77)).resolves.toBeUndefined();

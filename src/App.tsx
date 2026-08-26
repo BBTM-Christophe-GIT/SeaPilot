@@ -18,6 +18,7 @@ import { ProceduresPage } from './features/procedures/ProceduresPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
 import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
+import { ServiceProvidersPage } from './features/serviceProviders/ServiceProvidersPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
@@ -80,6 +81,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <ProjectsPage />
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
+                ) : module.key === 'serviceProviders' ? (
+                  <ServiceProvidersPage />
                 ) : module.key === 'qhse' ? (
                   <QhseDocumentsPage />
                 ) : (

@@ -79,6 +79,7 @@ import { ProfileSignaturePanel } from '../workingTime/ProfileSignaturePanel';
 
 interface HumanResourcesPageProps {
   client?: SupabaseClient;
+  currentPersonId?: number | null;
   roles?: RoleKey[];
 }
 
@@ -684,7 +685,7 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
   };
 }
 
-export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
+export function HumanResourcesPage({ client, currentPersonId, roles }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -694,7 +695,7 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
   const isCaptainView = effectiveRoles.includes('capitaine')
     && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const isRestrictedHrView = isMarinView || isCaptainView;
-  const ownPersonId = outletContext?.currentPerson?.id;
+  const ownPersonId = currentPersonId === undefined ? outletContext?.currentPerson?.id : currentPersonId;
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
@@ -1153,13 +1154,21 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
     setIsSaving(true);
 
     try {
+      const isSelfServiceEdit = !isManager
+        && isRestrictedHrView
+        && ownPersonId !== undefined
+        && ownPersonId !== null
+        && personId === ownPersonId;
+      if (!isManager && !isSelfServiceEdit) {
+        throw new Error('person-details-update-forbidden');
+      }
       const [updatedPerson, updatedMedicalDocuments] = await Promise.all([
-        updatePersonDetails(effectiveClient, personId, input),
-        Promise.all(
+        updatePersonDetails(effectiveClient, personId, input, { selfService: isSelfServiceEdit }),
+        isManager ? Promise.all(
           medicalUpdates.map(({ documentId, ...medicalInput }) =>
             updateHrDocumentMedicalDetails(effectiveClient, documentId, medicalInput),
           ),
-        ),
+        ) : Promise.resolve([]),
       ]);
       setPeople((currentPeople) =>
         sortPeople(currentPeople.map((currentPerson) => (currentPerson.id === personId ? updatedPerson : currentPerson))),
@@ -1444,6 +1453,10 @@ export function HumanResourcesPage({ client, roles }: HumanResourcesPageProps) {
         </section> : null}
 
         <PersonProfileCard
+          canEdit={Boolean(
+            isManager
+            || (isRestrictedHrView && selectedPerson && selectedPerson.id === ownPersonId)
+          )}
           canManageSignature={Boolean(selectedPerson && (
             selectedPerson.id === ownPersonId
             || effectiveRoles.includes('admin')
@@ -1868,6 +1881,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  canEdit,
   canManageSignature,
   canClose = true,
   client,
@@ -1884,6 +1898,7 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canEdit: boolean;
   canManageSignature: boolean;
   canClose?: boolean;
   client: SupabaseClient;
@@ -1944,6 +1959,7 @@ function PersonProfileCard({
         <ProfileMetric label="Manquants" tone="danger" value={missingCount} />
       </div>
       <PersonDetailsPanel
+        canEdit={canEdit}
         canManageSignature={canManageSignature}
         client={client}
         documents={documents}
@@ -2560,6 +2576,7 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  canEdit,
   canManageSignature,
   client,
   documents,
@@ -2574,6 +2591,7 @@ function PersonDetailsPanel({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canEdit: boolean;
   canManageSignature: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
@@ -2890,7 +2908,7 @@ function PersonDetailsPanel({
             </DetailsGrid>
             <MedicalDetailsList
               documents={documents.filter((document) => document.categoryKey === 'medical_visit')}
-              isEditing={isEditing}
+              isEditing={isEditing && isManager}
               medicalForms={medicalForms}
               onMedicalFormUpdate={updateMedicalForm}
             />
@@ -2969,9 +2987,9 @@ function PersonDetailsPanel({
         ))}
       </nav>
       <div className="hr-profile-editor-toolbar">
-        <span>{isEditing ? 'Modification en cours' : isManager ? 'Informations à jour' : 'Lecture seule'}</span>
+        <span>{isEditing ? 'Modification en cours' : canEdit ? 'Informations à jour' : 'Lecture seule'}</span>
         <div>
-          {isManager && !isEditing ? (
+          {canEdit && !isEditing ? (
             <button className="hr-secondary-button" onClick={() => setIsEditing(true)} type="button">
               Modifier la fiche RH
             </button>

@@ -11,9 +11,12 @@ import {
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
   getUnbilledPlanningProjects,
+  isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningStatus,
   planningExpiredDocumentsForDate,
+  planningReferenceMonthLabel,
+  planningReferenceMonthRange,
   planningStatusDisplayLabel,
   planningStatusTone,
   projectStatusTone,
@@ -97,6 +100,18 @@ describe('planning timeline rules', () => {
     expect(planningStatusTone('Formation')).toBe('training');
     expect(projectStatusTone('À facturer')).toBe('billed');
     expect(projectStatusTone('Validé')).toBe('valid');
+    expect(projectStatusTone('Non validé')).toBe('unvalidated');
+  });
+
+  it('checks employment dates against the complete reference month', () => {
+    const january2025 = planningReferenceMonthRange('2025-01-18');
+    expect(january2025).toEqual({ start: '2025-01-01', end: '2025-01-31' });
+    expect(planningReferenceMonthLabel('2025-01-18')).toBe('Janvier 2025');
+    expect(planningReferenceMonthLabel('2026-08-25')).toBe('Août 2026');
+    expect(isPlanningPersonEmployedDuring({ hiredOn: '2022-03-01', departedOn: '2025-01-12' }, january2025)).toBe(true);
+    expect(isPlanningPersonEmployedDuring({ hiredOn: '2025-01-31', departedOn: '' }, january2025)).toBe(true);
+    expect(isPlanningPersonEmployedDuring({ hiredOn: '2025-02-01', departedOn: '' }, january2025)).toBe(false);
+    expect(isPlanningPersonEmployedDuring({ hiredOn: '2020-01-01', departedOn: '2024-12-31' }, january2025)).toBe(false);
   });
 
   it('detects a sailor assigned to two different vessels on overlapping dates', () => {

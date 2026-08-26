@@ -200,6 +200,28 @@ export function timelineRange(days: PlanningTimelineDay[]): PlanningDateRange {
   return { start: days[0]?.date || '', end: days[days.length - 1]?.date || '' };
 }
 
+export function planningReferenceMonthRange(anchorDate: string): PlanningDateRange {
+  const start = `${anchorDate.slice(0, 7)}-01`;
+  return { start, end: addPlanningDays(shiftPlanningMonths(start, 1), -1) };
+}
+
+export function planningReferenceMonthLabel(anchorDate: string): string {
+  const [year, month] = anchorDate.split('-').map(Number);
+  return `${MONTH_LABELS[month - 1]} ${year}`;
+}
+
+export function isPlanningPersonEmployedDuring(
+  person: Pick<PlanningPerson, 'hiredOn' | 'departedOn'>,
+  range: PlanningDateRange,
+): boolean {
+  return rangesOverlap(
+    person.hiredOn || range.start,
+    person.departedOn || range.end,
+    range.start,
+    range.end,
+  );
+}
+
 export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningViewMode): string {
   if (!days.length) return '';
   if (mode === 'year') return String(days[0].year);
@@ -281,7 +303,7 @@ export function isSedentaryPlanningFunction(value: string): boolean {
 export function projectStatusTone(value: string): string {
   const key = normalizePlanningText(value);
   if (key.includes('FACTUR')) return 'billed';
-  if (key === 'NON VALIDE') return 'planned';
+  if (key === 'NONVALIDE') return 'unvalidated';
   if (key.includes('STAND') && key.includes('METEO')) return 'progress';
   if (key.includes('VALID')) return 'valid';
   if (key.includes('COURS') || key.includes('PROGRESS')) return 'progress';
