@@ -105,7 +105,9 @@ describe('Planning timeline visit and leave rendering', () => {
       onOpenCell={vi.fn()}
       onOpenVessel={vi.fn()}
       onOpenVisit={vi.fn()}
+      onMoveVisit={vi.fn()}
       onResize={vi.fn()}
+      onResizeVisit={vi.fn()}
       onSelect={vi.fn()}
       onToggle={vi.fn()}
       pendingId={null}
@@ -142,7 +144,9 @@ describe('Planning timeline visit and leave rendering', () => {
       onOpenCell={vi.fn()}
       onOpenVessel={vi.fn()}
       onOpenVisit={onOpenVisit}
+      onMoveVisit={vi.fn()}
       onResize={vi.fn()}
+      onResizeVisit={vi.fn()}
       onSelect={vi.fn()}
       onToggle={vi.fn()}
       pendingId={null}
@@ -160,6 +164,116 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(vesselActions).toHaveClass('planning-vessel-actions');
     expect(vesselActions.querySelectorAll('button')).toHaveLength(3);
     expect(vesselActions.parentElement).toBe(container.querySelector('.planning-tree-row.is-vessel'));
+  });
+
+  it('renders one multi-day technical-stop bar and lets an editor move or resize it', () => {
+    const technicalStop: PlanningVesselVisit = {
+      ...visits[0],
+      id: 9,
+      visitType: 'technical_stop',
+      occurrences: [
+        { id: 91, scheduledAt: '2026-08-10T22:00:00Z', scheduledOn: '2026-08-11' },
+        { id: 92, scheduledAt: '2026-08-13T21:59:00Z', scheduledOn: '2026-08-13' },
+      ],
+    };
+    const onMoveVisit = vi.fn();
+    const onResizeVisit = vi.fn();
+    const { container } = render(<PlanningFleetTimelineRow
+      crewCount={4}
+      dayWidth={110}
+      days={buildPlanningTimeline('2026-08-11', 'week')}
+      editable
+      expanded
+      hasBoards
+      lane={{ key: 'vessel-2', vesselId: 2, label: 'GOURY', detail: 'GRY', vessel: 'GOURY', projects: [], assignments: [], locations: [] }}
+      onAddBoard={vi.fn()}
+      onAssignPerson={vi.fn()}
+      onCreateVisit={vi.fn()}
+      onMove={vi.fn()}
+      onMoveVisit={onMoveVisit}
+      onOpen={vi.fn()}
+      onOpenCell={vi.fn()}
+      onOpenVessel={vi.fn()}
+      onOpenVisit={vi.fn()}
+      onResize={vi.fn()}
+      onResizeVisit={onResizeVisit}
+      onSelect={vi.fn()}
+      onToggle={vi.fn()}
+      pendingId={null}
+      selectedId={null}
+      touchDropTarget={null}
+      visits={[technicalStop]}
+    />);
+
+    const bar = container.querySelector<HTMLButtonElement>('.planning-visit-bar.is-technical-stop')!;
+    expect(bar).toHaveAttribute('draggable', 'true');
+    expect(bar.style.gridColumn).toContain('span 3');
+    expect(bar.querySelectorAll('.planning-resize-handle')).toHaveLength(2);
+
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: 'move',
+      effectAllowed: 'move',
+      types: [] as string[],
+      getData: (type: string) => values.get(type) || '',
+      setData: (type: string, value: string) => {
+        values.set(type, value);
+        dataTransfer.types = [...values.keys()];
+      },
+    };
+    fireEvent.dragStart(bar, { dataTransfer });
+    const target = container.querySelector<HTMLElement>('[data-planning-drop-date="2026-08-14"]')!;
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+    expect(onMoveVisit).toHaveBeenCalledWith(9, expect.objectContaining({ vesselId: 2 }), '2026-08-14');
+
+    const endHandle = bar.querySelector<HTMLElement>('.planning-resize-handle.is-end')!;
+    fireEvent.pointerDown(endHandle, { clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 210 });
+    fireEvent.pointerUp(window, { clientX: 210 });
+    expect(onResizeVisit).toHaveBeenCalledWith(technicalStop, 'end', 1);
+  });
+
+  it('keeps technical-stop drag and resize controls hidden in read-only role views', () => {
+    const technicalStop: PlanningVesselVisit = {
+      ...visits[0],
+      id: 10,
+      visitType: 'technical_stop',
+      occurrences: [
+        { id: 101, scheduledAt: '2026-08-10T22:00:00Z', scheduledOn: '2026-08-11' },
+        { id: 102, scheduledAt: '2026-08-12T21:59:00Z', scheduledOn: '2026-08-12' },
+      ],
+    };
+    const { container } = render(<PlanningFleetTimelineRow
+      crewCount={4}
+      dayWidth={110}
+      days={buildPlanningTimeline('2026-08-11', 'week')}
+      editable={false}
+      expanded
+      hasBoards
+      lane={{ key: 'vessel-2', vesselId: 2, label: 'GOURY', detail: 'GRY', vessel: 'GOURY', projects: [], assignments: [], locations: [] }}
+      onAddBoard={vi.fn()}
+      onAssignPerson={vi.fn()}
+      onCreateVisit={vi.fn()}
+      onMove={vi.fn()}
+      onMoveVisit={vi.fn()}
+      onOpen={vi.fn()}
+      onOpenCell={vi.fn()}
+      onOpenVessel={vi.fn()}
+      onOpenVisit={vi.fn()}
+      onResize={vi.fn()}
+      onResizeVisit={vi.fn()}
+      onSelect={vi.fn()}
+      onToggle={vi.fn()}
+      pendingId={null}
+      selectedId={null}
+      touchDropTarget={null}
+      visits={[technicalStop]}
+    />);
+
+    const bar = container.querySelector<HTMLButtonElement>('.planning-visit-bar.is-technical-stop')!;
+    expect(bar).toHaveAttribute('draggable', 'false');
+    expect(bar.querySelector('.planning-resize-handle')).not.toBeInTheDocument();
   });
 
   it('renders approved leave as a black Vacances bar and lets an administrator move it', () => {

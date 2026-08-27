@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   mapPlanningVisitRows,
+  planningTechnicalStopScheduledAt,
+  planningVesselVisitDateRange,
   planningVisitTypeLabel,
   savePlanningVesselVisit,
 } from './planningVisitQueries';
@@ -81,5 +83,19 @@ describe('planning vessel visit contracts', () => {
       p_visit_type: 'imca_audit',
       p_scheduled_at: ['2026-08-11T07:00:00.000Z', '2026-08-11T12:00:00.000Z'],
     }));
+  });
+
+  it('represents an inclusive technical-stop period with two ordered bounds', () => {
+    expect(planningTechnicalStopScheduledAt('2026-08-11', '2026-08-14')).toEqual([
+      '2026-08-11T00:00',
+      '2026-08-14T23:59',
+    ]);
+    expect(planningVesselVisitDateRange({
+      occurrences: [
+        { id: 2, scheduledAt: '', scheduledOn: '2026-08-14' },
+        { id: 1, scheduledAt: '', scheduledOn: '2026-08-11' },
+      ],
+    })).toEqual({ startsOn: '2026-08-11', endsOn: '2026-08-14' });
+    expect(() => planningTechnicalStopScheduledAt('2026-08-14', '2026-08-11')).toThrow(/date de fin/i);
   });
 });

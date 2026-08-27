@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningVisitsPanel } from './PlanningVisitsPanel';
@@ -56,6 +56,9 @@ describe('PlanningVisitsPanel', () => {
     const dialog = screen.getByRole('dialog', { name: 'Visite ou audit du navire' });
     await user.selectOptions(within(dialog).getByLabelText('Type de visite'), 'technical_stop');
     expect(within(dialog).getByRole('option', { name: 'Arrêt Technique' })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Date de début')).toHaveAttribute('type', 'date');
+    expect(within(dialog).getByLabelText('Date de fin')).toHaveAttribute('type', 'date');
+    expect(within(dialog).queryByText('Date de la ou des visite(s)')).not.toBeInTheDocument();
 
     const provider = within(dialog).getByLabelText('Prestataire');
     await user.clear(provider);
@@ -92,5 +95,35 @@ describe('PlanningVisitsPanel', () => {
     expect(within(dialog).queryByLabelText('Spécialités')).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
     expect(within(dialog).getByText('Date de la ou des visite(s)')).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Date de début')).not.toBeInTheDocument();
+  });
+
+  it('saves the start and end dates of a multi-day technical stop', async () => {
+    const user = userEvent.setup();
+    const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
+    const onClose = vi.fn();
+    render(<PlanningVisitsPanel
+      canDelete
+      canEdit
+      canManageProviders={false}
+      client={{ rpc } as never}
+      onClose={onClose}
+      onSaved={vi.fn().mockResolvedValue(undefined)}
+      providers={providers}
+      vessel={{ id: 1, name: 'GOURY' } as never}
+      visit={null}
+    />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Visite ou audit du navire' });
+    await user.selectOptions(within(dialog).getByLabelText('Type de visite'), 'technical_stop');
+    fireEvent.change(within(dialog).getByLabelText('Date de début'), { target: { value: '2026-08-28' } });
+    fireEvent.change(within(dialog).getByLabelText('Date de fin'), { target: { value: '2026-08-31' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+
+    expect(rpc).toHaveBeenCalledWith('save_vessel_visit', expect.objectContaining({
+      p_visit_type: 'technical_stop',
+      p_scheduled_at: ['2026-08-27T22:00:00.000Z', '2026-08-31T21:59:00.000Z'],
+    }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
