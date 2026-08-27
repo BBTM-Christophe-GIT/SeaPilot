@@ -16,9 +16,15 @@ const openAction = {
   status: 'Ecart Non Soldé',
   deviation_type: 'Non Conformité Majeure',
   opened_on: '2026-07-03',
+  occurred_at: '2026-07-03T08:45:00+02:00',
   due_on: '2026-08-31',
   issuer_name: 'Christophe MINASSIAN',
+  issuer_person_id: 1008,
+  issuer_signature_snapshot: {},
   owner_name: 'Arthur MAREST',
+  vessel_maneuver: 'Navire à quai',
+  weather_conditions: 'Vent faible, mer belle',
+  workflow_status: 'approved',
   corrective_action: 'Programmer le laboratoire',
   photo_1_path: '1/810/photo-source.jpg',
   photo_2_path: null,
@@ -63,10 +69,6 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
     issuer_name: 'Christophe MINASSIAN',
     source_label: 'seapilot',
   };
-  const insert = vi.fn().mockReturnValue({
-    select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: created, error: null }) }),
-  });
-
   const client = {
     storage: { from: vi.fn().mockReturnValue({
       createSignedUrls: vi.fn().mockImplementation((paths: string[]) => Promise.resolve({
@@ -74,6 +76,24 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       })),
     }) },
     rpc: vi.fn().mockImplementation((functionName: string, parameters?: Record<string, unknown>) => {
+      if (functionName === 'action_item_create') {
+        return Promise.resolve({ data: {
+          ...created,
+          title: parameters?.p_title,
+          vessel_id: parameters?.p_vessel_id,
+          occurred_at: parameters?.p_occurred_at,
+          due_on: parameters?.p_due_on,
+          action_type_key: parameters?.p_action_type_key,
+          deviation_type: parameters?.p_deviation_type,
+          vessel_maneuver: parameters?.p_vessel_maneuver,
+          weather_conditions: parameters?.p_weather_conditions,
+          corrective_action: parameters?.p_corrective_action,
+          lost_days: parameters?.p_lost_days,
+          workflow_status: 'pending_approval',
+          approver_person_id: 1008,
+          status: "En attente d'approbation",
+        }, error: null });
+      }
       if (functionName === 'action_item_treat') {
         const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
         return Promise.resolve({ data: {
@@ -83,6 +103,14 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
           closure_photo_path: parameters?.p_closure_photo_path,
           status: parameters?.p_close_action ? 'Ecart Soldé' : action?.status,
           closed_on: parameters?.p_close_action ? '2026-08-27' : null,
+        }, error: null });
+      }
+      if (functionName === 'action_item_approve') {
+        const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
+        return Promise.resolve({ data: {
+          ...action, anomaly_cause: parameters?.p_anomaly_cause,
+          owner_name: 'Arthur MAREST, Équipage — GOURY', workflow_status: 'approved',
+          status: 'Ecart Non Soldé', approved_by_person_id: 1008, approved_at: '2026-08-27T15:00:00Z',
         }, error: null });
       }
       return Promise.resolve(functionName === 'refresh_hse_exposure_hours'
@@ -95,7 +123,7 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       }, error: null });
     }),
     from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)), insert };
+      if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)) };
       if (table === 'action_documents') return { select: vi.fn().mockReturnValue(ordered([])) };
       if (table === 'action_type_catalog') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered(actionTypes)) }) };
@@ -103,20 +131,33 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       if (table === 'vessels') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }])) }) };
       }
+      if (table === 'people') {
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([
+          { id: 1008, first_name: 'Christophe', last_name: 'MINASSIAN', function_label: 'Directeur QHSE' },
+          { id: 1010, first_name: 'Arthur', last_name: 'MAREST', function_label: 'Chef mécanicien' },
+        ])) }) };
+      }
+      if (table === 'action_item_assignees') return { select: vi.fn().mockReturnValue(ordered([])) };
       if (table === 'hse_exposure_methodologies') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [{ id: 7 }], error: null }) }) }) };
       }
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, insert };
+  return { client };
 }
 
 function renderWithProfile(client: unknown) {
   const context = {
     client,
     roles: ['armement'],
-    currentPerson: { firstName: 'Christophe', lastName: 'MINASSIAN' },
+    currentPerson: {
+      id: 1008,
+      firstName: 'Christophe',
+      lastName: 'MINASSIAN',
+      functionLabel: 'Directeur QHSE',
+      gradeLabel: '',
+    },
   };
   return render(
     <MemoryRouter>
@@ -154,7 +195,7 @@ describe('ActionPlanPage', () => {
     expect(within(closedRow!).queryByRole('button', { name: 'Traiter' })).not.toBeInTheDocument();
     expect(within(closedRow!).getByRole('img', { name: /Preuve de traitement/ })).toHaveAttribute('src', 'https://evidence.example/1/811/preuve-traitement.jpg');
 
-    fireEvent.change(screen.getByLabelText("Type d'action"), { target: { value: 'Audit Interne - BBTM' } });
+    fireEvent.change(screen.getByLabelText("Type d'évènement"), { target: { value: 'Audit Interne - BBTM' } });
     expect(screen.getByText("Réaliser une analyse d'eau")).toBeInTheDocument();
     expect(screen.queryByText('Vérifier la filtration machine')).not.toBeInTheDocument();
 
@@ -162,31 +203,30 @@ describe('ActionPlanPage', () => {
 
   it("defaults the issuer to the current profile and creates an exposure-linked action", async () => {
     const user = userEvent.setup();
-    const { client, insert } = createClient([]);
+    const { client } = createClient([]);
     renderWithProfile(client);
 
     await screen.findByRole('heading', { name: "Plan d'action" });
-    await user.click(screen.getByRole('button', { name: 'Nouvelle action' }));
-    const dialog = within(screen.getByRole('dialog', { name: "Nouvelle fiche d'action" }));
+    await user.click(screen.getByRole('button', { name: 'Nouveau rapport' }));
+    const dialog = within(screen.getByRole('dialog', { name: "Nouveau rapport d'évènement" }));
     fireEvent.change(dialog.getByLabelText('Constat *'), { target: { value: 'Accident pont arrière' } });
     expect(dialog.getByLabelText('Émetteur *')).toHaveValue('Christophe MINASSIAN');
     await user.selectOptions(dialog.getByLabelText('Navire / lieu *'), '12');
-    await user.type(dialog.getByLabelText('Responsable du traitement *'), 'Arthur MAREST');
+    fireEvent.change(dialog.getByLabelText("Manœuvre du navire au moment de l'évènement *"), { target: { value: 'Navire à quai' } });
+    fireEvent.change(dialog.getByLabelText('Conditions météo *'), { target: { value: 'Vent faible, mer belle' } });
     fireEvent.change(dialog.getByLabelText('À traiter avant *'), { target: { value: '2026-09-30' } });
-    await user.selectOptions(dialog.getByLabelText("Type d'action *"), 'lost_time_injury');
+    await user.selectOptions(dialog.getByLabelText("Type d'évènement *"), 'lost_time_injury');
+    expect(dialog.queryByLabelText("Type d'écart *")).not.toBeInTheDocument();
     fireEvent.change(dialog.getByLabelText("Jours d'arrêt"), { target: { value: '10' } });
-    await user.type(dialog.getByLabelText('Action proposée *'), 'Sécuriser la zone et analyser la cause.');
-    await user.click(dialog.getByRole('button', { name: 'Créer la fiche' }));
+    fireEvent.change(dialog.getByLabelText('Action proposée *'), { target: { value: 'Sécuriser la zone et analyser la cause.' } });
+    await user.click(dialog.getByRole('button', { name: 'Créer et soumettre' }));
 
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Accident pont arrière',
-      issuer_name: 'Christophe MINASSIAN',
-      vessel_id: 12,
-      vessel_name: 'GOURY',
-      action_type_key: 'lost_time_injury',
-      lost_days: 10,
+    expect(client.rpc).toHaveBeenCalledWith('action_item_create', expect.objectContaining({
+      p_title: 'Accident pont arrière', p_vessel_id: 12,
+      p_action_type_key: 'lost_time_injury', p_lost_days: 10,
+      p_vessel_maneuver: 'Navire à quai', p_weather_conditions: 'Vent faible, mer belle',
     }));
-    expect(await screen.findByText('Fiche créée.')).toBeInTheDocument();
+    expect(await screen.findByText('Rapport créé et soumis à Christophe MINASSIAN.')).toBeInTheDocument();
   });
 
   it('lets a Capitaine treat an open action without exposing action creation', async () => {
@@ -195,12 +235,12 @@ describe('ActionPlanPage', () => {
     render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
 
     await screen.findByRole('heading', { name: "Plan d'action" });
-    expect(screen.queryByRole('button', { name: 'Nouvelle action' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouveau rapport' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Traiter' }));
     const dialog = within(screen.getByRole('dialog', { name: openAction.title }));
-    await user.type(dialog.getByLabelText('Action réalisée'), 'Filtre remplacé');
-    await user.type(dialog.getByLabelText('Commentaire'), 'Contrôle terminé');
+    fireEvent.change(dialog.getByLabelText('Action réalisée'), { target: { value: 'Filtre remplacé' } });
+    fireEvent.change(dialog.getByLabelText('Commentaire'), { target: { value: 'Contrôle terminé' } });
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
 
     expect(client.rpc).toHaveBeenCalledWith('action_item_treat', {
@@ -211,5 +251,29 @@ describe('ActionPlanPage', () => {
       p_closure_photo_path: null,
     });
     expect(await screen.findByText('Action mise à jour.')).toBeInTheDocument();
+  });
+
+  it('lets Christophe approve a pending report and assign people and a vessel crew', async () => {
+    const user = userEvent.setup();
+    const pendingAction = {
+      ...openAction, id: 812, status: "En attente d'approbation", owner_name: null,
+      anomaly_cause: null, workflow_status: 'pending_approval', approver_person_id: 1008,
+      source_label: 'seapilot',
+    };
+    const { client } = createClient([pendingAction]);
+    renderWithProfile(client);
+
+    await screen.findByRole('heading', { name: "Plan d'action" });
+    await user.click(screen.getByRole('button', { name: 'Approuver' }));
+    const dialog = within(screen.getByRole('dialog', { name: pendingAction.title }));
+    await user.selectOptions(dialog.getByLabelText("Cause de l'anomalie *"), 'Panne Equipement');
+    await user.click(dialog.getByRole('checkbox', { name: /Arthur MAREST/ }));
+    await user.click(dialog.getByRole('checkbox', { name: /Équipage — GOURY/ }));
+    await user.click(dialog.getByRole('button', { name: 'Approuver et affecter' }));
+
+    expect(client.rpc).toHaveBeenCalledWith('action_item_approve', {
+      p_action_id: 812, p_anomaly_cause: 'Panne Equipement', p_person_ids: [1010], p_vessel_ids: [12],
+    });
+    expect(await screen.findByText('Rapport approuvé et responsables affectés.')).toBeInTheDocument();
   });
 });

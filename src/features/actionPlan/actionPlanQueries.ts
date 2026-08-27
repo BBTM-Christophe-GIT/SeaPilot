@@ -7,6 +7,8 @@ const ACTION_ITEM_SELECT = [
   'issuer_name', 'owner_name', 'auditor_name', 'description', 'corrective_action', 'realized_action',
   'anomaly_cause', 'comments', 'level_label', 'location_detail', 'photo_1_path', 'photo_2_path',
   'closure_photo_path', 'victim_person_id', 'victim_sharepoint_item_id', 'lost_days', 'safety_event_details',
+  'occurred_at', 'vessel_maneuver', 'weather_conditions', 'issuer_person_id', 'issuer_signature_snapshot',
+  'workflow_status', 'approval_requested_at', 'approver_person_id', 'approved_at', 'approved_by_person_id',
   'source_label', 'sharepoint_list_title', 'sharepoint_item_id', 'source_modified_at',
 ].join(', ');
 
@@ -40,15 +42,25 @@ export interface ActionItemRecord {
   priorityLabel: string;
   deviationType: string;
   openedOn: string;
+  occurredAt: string;
   dueOn: string;
   closedOn: string;
   issuerName: string;
+  issuerPersonId: number | null;
+  issuerSignatureSnapshot: Record<string, unknown>;
   ownerName: string;
   auditorName: string;
   description: string;
   correctiveAction: string;
   realizedAction: string;
   anomalyCause: string;
+  vesselManeuver: string;
+  weatherConditions: string;
+  workflowStatus: 'draft' | 'pending_approval' | 'approved' | 'closed';
+  approvalRequestedAt: string;
+  approverPersonId: number | null;
+  approvedAt: string;
+  approvedByPersonId: number | null;
   comments: string;
   levelLabel: string;
   locationDetail: string;
@@ -93,11 +105,28 @@ export interface VesselOption {
   name: string;
 }
 
+export interface PersonOption {
+  id: number;
+  name: string;
+  functionLabel: string;
+}
+
+export interface ActionAssigneeRecord {
+  id: number;
+  actionItemId: number;
+  kind: 'person' | 'vessel_crew';
+  personId: number | null;
+  vesselId: number | null;
+  displayName: string;
+}
+
 export interface ActionPlanData {
   actions: ActionItemRecord[];
   documents: ActionDocumentRecord[];
   actionTypes: ActionTypeCatalogRecord[];
   vessels: VesselOption[];
+  people: PersonOption[];
+  assignees: ActionAssigneeRecord[];
   exposureHours: number;
   hseKpis: Record<string, number | string | boolean | null> | null;
   hseDashboard: ActionPlanHseDashboard | null;
@@ -153,9 +182,10 @@ export interface CreateActionItemInput {
   actionTypeKey: string;
   actionType: string;
   deviationType: string;
-  openedOn: string;
+  occurredAt: string;
   dueOn: string;
-  ownerName: string;
+  vesselManeuver: string;
+  weatherConditions: string;
   description: string;
   correctiveAction: string;
   lostDays: number;
@@ -186,14 +216,17 @@ export function isActionClosed(action: Pick<ActionItemRecord, 'status' | 'closed
   return Boolean(action.closedOn) || status.includes('solde') || status.includes('clos') || status.includes('termine');
 }
 
-export interface CreateActionItemOptions {
-  draft?: boolean;
+export interface ActionApprovalInput {
+  anomalyCause: string;
+  personIds: number[];
+  vesselIds: number[];
 }
 
 export interface ActionEvidenceUrls {
   photo1Url: string;
   photo2Url: string;
   closurePhotoUrl: string;
+  issuerSignatureUrl: string;
 }
 
 export function actionThumbnailPath(
@@ -222,15 +255,27 @@ export function mapActionItemRows(rows: ActionItemRow[]): ActionItemRecord[] {
     priorityLabel: nullableText(row.priority_label),
     deviationType: nullableText(row.deviation_type),
     openedOn: nullableText(row.opened_on),
+    occurredAt: nullableText(row.occurred_at),
     dueOn: nullableText(row.due_on),
     closedOn: nullableText(row.closed_on),
     issuerName: nullableText(row.issuer_name),
+    issuerPersonId: row.issuer_person_id == null ? null : Number(row.issuer_person_id),
+    issuerSignatureSnapshot: row.issuer_signature_snapshot && typeof row.issuer_signature_snapshot === 'object'
+      ? row.issuer_signature_snapshot as Record<string, unknown>
+      : {},
     ownerName: nullableText(row.owner_name),
     auditorName: nullableText(row.auditor_name),
     description: nullableText(row.description),
     correctiveAction: nullableText(row.corrective_action),
     realizedAction: nullableText(row.realized_action),
     anomalyCause: nullableText(row.anomaly_cause),
+    vesselManeuver: nullableText(row.vessel_maneuver),
+    weatherConditions: nullableText(row.weather_conditions),
+    workflowStatus: (nullableText(row.workflow_status) || 'approved') as ActionItemRecord['workflowStatus'],
+    approvalRequestedAt: nullableText(row.approval_requested_at),
+    approverPersonId: row.approver_person_id == null ? null : Number(row.approver_person_id),
+    approvedAt: nullableText(row.approved_at),
+    approvedByPersonId: row.approved_by_person_id == null ? null : Number(row.approved_by_person_id),
     comments: nullableText(row.comments),
     levelLabel: nullableText(row.level_label),
     locationDetail: nullableText(row.location_detail),
@@ -304,23 +349,28 @@ async function hydrateActionThumbnailUrls(client: SupabaseClient, actions: Actio
 
 export async function fetchActionEvidenceUrls(
   client: SupabaseClient,
-  action: Pick<ActionItemRecord, 'photo1Path' | 'photo2Path' | 'closurePhotoPath'>,
+  action: Pick<ActionItemRecord, 'photo1Path' | 'photo2Path' | 'closurePhotoPath' | 'issuerSignatureSnapshot'>,
 ): Promise<ActionEvidenceUrls> {
   const paths = [action.photo1Path, action.photo2Path, action.closurePhotoPath].filter(Boolean);
-  if (!paths.length) return { photo1Url: '', photo2Url: '', closurePhotoUrl: '' };
+  const signaturePath = nullableText(action.issuerSignatureSnapshot.storage_path);
+  const [evidenceResult, signatureResult] = await Promise.all([
+    paths.length
+      ? client.storage.from(ACTION_PLAN_EVIDENCE_BUCKET).createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS)
+      : Promise.resolve({ data: [], error: null }),
+    signaturePath
+      ? client.storage.from('working-time-signatures').createSignedUrls([signaturePath], ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (evidenceResult.error) throw evidenceResult.error;
 
-  const { data, error } = await client.storage
-    .from(ACTION_PLAN_EVIDENCE_BUCKET)
-    .createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS);
-  if (error) throw error;
-
-  const urlsByPath = new Map((data || [])
+  const urlsByPath = new Map((evidenceResult.data || [])
     .filter((item) => item.path && item.signedUrl)
     .map((item) => [item.path, item.signedUrl]));
   return {
     photo1Url: urlsByPath.get(action.photo1Path) || '',
     photo2Url: urlsByPath.get(action.photo2Path) || '',
     closurePhotoUrl: urlsByPath.get(action.closurePhotoPath) || '',
+    issuerSignatureUrl: signatureResult.error ? '' : signatureResult.data?.[0]?.signedUrl || '',
   };
 }
 
@@ -348,6 +398,31 @@ async function fetchVessels(client: SupabaseClient): Promise<VesselOption[]> {
   const { data, error } = await client.from('vessels').select('id,name').eq('active', true).order('name', { ascending: true });
   if (error) throw error;
   return (data || []).map((row) => ({ id: Number(row.id), name: String(row.name || '') })).filter((row) => row.name);
+}
+
+async function fetchPeople(client: SupabaseClient): Promise<PersonOption[]> {
+  const { data, error } = await client.from('people').select('id,first_name,last_name,function_label')
+    .eq('active', true).order('last_name', { ascending: true }).order('first_name', { ascending: true });
+  if (error) return [];
+  return (data || []).map((row) => ({
+    id: Number(row.id),
+    name: `${String(row.first_name || '')} ${String(row.last_name || '')}`.trim(),
+    functionLabel: nullableText(row.function_label),
+  })).filter((row) => row.name);
+}
+
+async function fetchActionAssignees(client: SupabaseClient): Promise<ActionAssigneeRecord[]> {
+  const { data, error } = await client.from('action_item_assignees')
+    .select('id,action_item_id,assignee_kind,person_id,vessel_id,display_name_snapshot')
+    .order('display_name_snapshot', { ascending: true });
+  if (error) return [];
+  return (data || []).map((row) => ({
+    id: Number(row.id), actionItemId: Number(row.action_item_id),
+    kind: row.assignee_kind as ActionAssigneeRecord['kind'],
+    personId: row.person_id == null ? null : Number(row.person_id),
+    vesselId: row.vessel_id == null ? null : Number(row.vessel_id),
+    displayName: nullableText(row.display_name_snapshot),
+  }));
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -446,8 +521,9 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
 
 export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
-  const [actionsResult, documentsResult, typesResult, vesselsResult, hseResult] = await Promise.allSettled([
-    fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client), fetchActionPlanHseDashboard(client, currentYear),
+  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, hseResult] = await Promise.allSettled([
+    fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
+    fetchPeople(client), fetchActionAssignees(client), fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actions = await hydrateActionThumbnailUrls(client, actionsResult.value);
@@ -456,6 +532,8 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes: typesResult.status === 'fulfilled' ? typesResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
+    people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
+    assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
     exposureHours: hseResult.status === 'fulfilled' ? hseResult.value?.totals.exposureHours || 0 : 0,
     hseKpis: hseResult.status === 'fulfilled' && hseResult.value ? hseResult.value.totals as unknown as ActionPlanData['hseKpis'] : null,
     hseDashboard: hseResult.status === 'fulfilled' ? hseResult.value : null,
@@ -477,33 +555,29 @@ export async function createActionItem(
   client: SupabaseClient,
   input: CreateActionItemInput,
   photos: File[] = [],
-  options: CreateActionItemOptions = {},
 ): Promise<ActionItemRecord> {
   const title = input.title.trim();
   if (!title) throw new Error("Le constat de l'action est obligatoire.");
   if (!input.issuerName.trim()) throw new Error("L'émetteur est obligatoire.");
   if (!input.actionTypeKey) throw new Error("Le type d'action est obligatoire.");
 
-  const payload = {
-    vessel_id: input.vesselId, vessel_name: optionalText(input.vesselName), category_key: 'action',
-    action_type_key: input.actionTypeKey, action_type: optionalText(input.actionType), title,
-    status: options.draft ? 'Brouillon' : 'Ecart Non Soldé', deviation_type: optionalText(input.deviationType),
-    opened_on: optionalText(input.openedOn) || new Date().toISOString().slice(0, 10), due_on: optionalText(input.dueOn),
-    issuer_name: optionalText(input.issuerName), owner_name: optionalText(input.ownerName),
-    description: optionalText(input.description), corrective_action: optionalText(input.correctiveAction),
-    lost_days: input.lostDays || 0, source_label: 'seapilot',
-  };
-  const { data, error } = await client.from('action_items').insert(payload).select(ACTION_ITEM_SELECT).single();
+  const { data, error } = await client.rpc('action_item_create', {
+    p_title: title, p_vessel_id: input.vesselId, p_action_type_key: input.actionTypeKey,
+    p_deviation_type: optionalText(input.deviationType), p_occurred_at: input.occurredAt,
+    p_due_on: input.dueOn, p_vessel_maneuver: optionalText(input.vesselManeuver),
+    p_weather_conditions: optionalText(input.weatherConditions), p_description: optionalText(input.description),
+    p_corrective_action: optionalText(input.correctiveAction), p_lost_days: input.lostDays || 0,
+  });
   if (error) throw error;
-  let row = data as unknown as ActionItemRow;
+  let row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
   const companyId = Number(row.company_id);
   if (photos.length && companyId) {
     const uploaded = await Promise.all(photos.slice(0, 2).map((file, index) => uploadEvidence(client, companyId, Number(row.id), `photo-${index + 1}`, file)));
-    const { data: updated, error: updateError } = await client.from('action_items').update({
-      photo_1_path: uploaded[0] || null, photo_2_path: uploaded[1] || null,
-    }).eq('id', row.id).select(ACTION_ITEM_SELECT).single();
+    const { data: updated, error: updateError } = await client.rpc('action_item_attach_finding_photos', {
+      p_action_id: row.id, p_photo_1_path: uploaded[0] || null, p_photo_2_path: uploaded[1] || null,
+    });
     if (updateError) throw updateError;
-    row = updated as unknown as ActionItemRow;
+    row = (Array.isArray(updated) ? updated[0] : updated) as unknown as ActionItemRow;
   }
   return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
 }
@@ -524,6 +598,22 @@ export async function updateActionItemTreatment(
     p_realized_action: optionalText(input.realizedAction),
     p_close_action: input.closeAction,
     p_closure_photo_path: closurePhotoPath,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function approveActionItem(
+  client: SupabaseClient,
+  actionId: number,
+  input: ActionApprovalInput,
+): Promise<ActionItemRecord> {
+  const { data, error } = await client.rpc('action_item_approve', {
+    p_action_id: actionId,
+    p_anomaly_cause: input.anomalyCause,
+    p_person_ids: input.personIds,
+    p_vessel_ids: input.vesselIds,
   });
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;

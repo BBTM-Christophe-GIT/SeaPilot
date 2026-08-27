@@ -13,11 +13,15 @@ const completeCreationData: ActionSheetData = {
   title: 'Signalétique dégradée sur le pont',
   description: 'Deux panneaux doivent être remplacés.',
   correctiveAction: 'Remplacer les panneaux et contrôler la zone.',
-  openedOn: '2026-08-27',
+  occurredAt: '2026-08-27T14:35:00+02:00',
   dueOn: '2026-09-10',
   vesselName: 'M/V Démonstration',
+  vesselManeuver: 'Navire à quai',
+  weatherConditions: 'Vent 12 nœuds, mer belle',
   issuerName: 'Paul SIMON',
-  ownerName: 'Hugo BERNARD',
+  ownerName: '',
+  anomalyCause: '',
+  actionTypeKey: 'action_progress',
   actionType: 'Action de Progrès - BBTM',
   deviationType: "Proposition d'Amélioration",
   status: 'Brouillon',
@@ -25,14 +29,14 @@ const completeCreationData: ActionSheetData = {
 };
 
 describe('actionPlanPdf', () => {
-  it('tracks the five creation sections and the four future closure sections', () => {
+  it('tracks creation, approval and future closure sections', () => {
     const completion = actionSheetCompletion(completeCreationData);
 
-    expect(completion).toHaveLength(9);
+    expect(completion).toHaveLength(12);
     expect(completion.filter((item) => item.complete).map((item) => item.key)).toEqual([
-      'identification', 'qualification', 'finding', 'photos', 'proposal',
+      'identification', 'vessel-weather', 'qualification', 'finding', 'photos', 'proposal',
     ]);
-    expect(actionSheetCompletionPercent(completeCreationData)).toBe(56);
+    expect(actionSheetCompletionPercent(completeCreationData)).toBe(50);
   });
 
   it('formats the printable reference and file name', () => {

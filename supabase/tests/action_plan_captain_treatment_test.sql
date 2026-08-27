@@ -52,7 +52,7 @@ cross join public.companies company
 where company.code = 'bbtm';
 
 insert into public.action_items (company_id, title, status, opened_on, closed_on, source_label)
-select company.id, fixture.title, fixture.status, '2026-08-20'::date, fixture.closed_on, 'seapilot'
+select company.id, fixture.title, fixture.status, '2026-08-20'::date, fixture.closed_on, 'sharepoint'
 from (
   values
     ('ACTION-CAPTAIN-OPEN', 'Ecart Non Soldé', null::date),
@@ -118,10 +118,11 @@ select ok(
    from public.action_items where title = 'ACTION-CAPTAIN-TO-CLOSE'),
   'closing an action sets its sold status and closure date atomically'
 );
-select lives_ok(
+select throws_ok(
   $$update public.action_items set title = 'CAPTAIN-BYPASS'
     where title = 'ACTION-CAPTAIN-OPEN'$$,
-  'a direct Capitaine update is safely filtered by RLS'
+  '42501', null,
+  'a direct Capitaine update is rejected before it can bypass the workflow'
 );
 select is(
   (select title from public.action_items where id = (

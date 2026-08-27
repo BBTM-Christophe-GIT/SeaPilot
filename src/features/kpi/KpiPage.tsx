@@ -18,7 +18,8 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 interface KpiPageProps { client?: SupabaseClient }
 
 const EMPTY_DATA: ActionPlanData = {
-  actions: [], documents: [], actionTypes: [], vessels: [], exposureHours: 0, hseKpis: null, hseDashboard: null,
+  actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [],
+  exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
 function formatHours(value: number): string {
