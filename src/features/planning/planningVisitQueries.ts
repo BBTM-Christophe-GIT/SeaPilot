@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { planningDateFromTimestamp, planningLocalDateTimeToUtc } from './planningDates';
+import { isPlanningDate, planningDateFromTimestamp, planningLocalDateTimeToUtc } from './planningDates';
 import { planningErrorMessage, throwPlanningDataError } from './planningErrors';
 import { planningEntityId } from './planningValidation';
 
@@ -154,6 +154,26 @@ function mapProvider(row: ProviderRow): PlanningServiceProvider {
 
 export function planningVisitTypeLabel(type: PlanningVisitType): string {
   return VISIT_TYPE_LABELS[type];
+}
+
+export function planningVesselVisitDateRange(
+  visit: Pick<PlanningVesselVisit, 'occurrences'>,
+): { startsOn: string; endsOn: string } | null {
+  const dates = visit.occurrences
+    .map((occurrence) => occurrence.scheduledOn)
+    .filter(isPlanningDate)
+    .sort((left, right) => left.localeCompare(right));
+  return dates.length ? { startsOn: dates[0], endsOn: dates.at(-1)! } : null;
+}
+
+export function planningTechnicalStopScheduledAt(startsOn: string, endsOn: string): string[] {
+  if (!isPlanningDate(startsOn) || !isPlanningDate(endsOn)) {
+    throw new Error('Renseignez les dates de début et de fin de l’arrêt technique.');
+  }
+  if (endsOn < startsOn) {
+    throw new Error('La date de fin de l’arrêt technique doit être postérieure ou égale à sa date de début.');
+  }
+  return [`${startsOn}T00:00`, `${endsOn}T23:59`];
 }
 
 export function mapPlanningVisitRows(rows: VisitRow[]): PlanningVesselVisit[] {

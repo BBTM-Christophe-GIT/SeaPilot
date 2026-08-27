@@ -23,7 +23,7 @@ import {
   serviceProviderTypeOptions,
   type ServiceProviderDraft,
 } from '../serviceProviders/serviceProviders';
-import { formatPlanningDateTime, utcToPlanningLocalDateTime } from './planningDates';
+import { formatPlanningDate, formatPlanningDateTime, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import type { PlanningVessel } from './planningQueries';
 import {
@@ -32,6 +32,8 @@ import {
   fetchPlanningServiceProviders,
   PLANNING_VISIT_TYPES,
   planningVisitTypeLabel,
+  planningTechnicalStopScheduledAt,
+  planningVesselVisitDateRange,
   savePlanningVesselVisit,
   uploadPlanningVisitAttachments,
   type PlanningServiceProvider,
@@ -44,6 +46,8 @@ interface VisitFormState {
   providerId: string;
   comments: string;
   scheduledAt: string[];
+  technicalStopStartsOn: string;
+  technicalStopEndsOn: string;
 }
 
 function defaultScheduledAt(): string {
@@ -54,16 +58,23 @@ function defaultScheduledAt(): string {
 }
 
 function initialForm(visit: PlanningVesselVisit | null, providers: PlanningServiceProvider[]): VisitFormState {
+  const fallbackDateTime = defaultScheduledAt();
+  const fallbackDate = fallbackDateTime.slice(0, 10);
+  const technicalStopRange = visit ? planningVesselVisitDateRange(visit) : null;
   return visit ? {
     visitType: visit.visitType,
     providerId: String(visit.providerId),
     comments: visit.comments,
     scheduledAt: visit.occurrences.map((occurrence) => utcToPlanningLocalDateTime(occurrence.scheduledAt)),
+    technicalStopStartsOn: technicalStopRange?.startsOn || fallbackDate,
+    technicalStopEndsOn: technicalStopRange?.endsOn || fallbackDate,
   } : {
     visitType: PLANNING_VISIT_TYPES[0],
     providerId: providers[0] ? String(providers[0].id) : '',
     comments: '',
-    scheduledAt: [defaultScheduledAt()],
+    scheduledAt: [fallbackDateTime],
+    technicalStopStartsOn: fallbackDate,
+    technicalStopEndsOn: fallbackDate,
   };
 }
 
@@ -136,7 +147,9 @@ export function PlanningVisitsPanel({
         visitType: form.visitType,
         providerId: Number(form.providerId),
         comments: form.comments,
-        scheduledAt: form.scheduledAt,
+        scheduledAt: isTechnicalStop
+          ? planningTechnicalStopScheduledAt(form.technicalStopStartsOn, form.technicalStopEndsOn)
+          : form.scheduledAt,
       });
       if (files.length) await uploadPlanningVisitAttachments(client, visitId, files);
       await onSaved();
@@ -191,7 +204,19 @@ export function PlanningVisitsPanel({
             <ServiceProviderPicker label="Prestataire" onAdd={canManageProviders ? () => setProviderEditor(serviceProviderDraft()) : undefined} onChange={(item) => setForm({ ...form, providerId: String(item.id) })} providers={availableProviders} required value={provider?.name || ''} />
             {isTechnicalStop ? <label>Spécialités<input disabled value={provider ? serviceProviderSpecialtyNames(provider).join(' · ') || 'Non renseignée' : 'Sélectionnez un prestataire'} /></label> : null}
 
-            <fieldset className="planning-visits-dates">
+            {isTechnicalStop ? (
+              <fieldset className="planning-visits-dates planning-technical-stop-dates">
+                <legend>Période de l’arrêt technique</legend>
+                <div>
+                  <label>Date de début<input required type="date" value={form.technicalStopStartsOn} onChange={(event) => setForm((current) => ({
+                    ...current,
+                    technicalStopStartsOn: event.target.value,
+                    technicalStopEndsOn: current.technicalStopEndsOn < event.target.value ? event.target.value : current.technicalStopEndsOn,
+                  }))} /></label>
+                  <label>Date de fin<input min={form.technicalStopStartsOn} required type="date" value={form.technicalStopEndsOn} onChange={(event) => setForm((current) => ({ ...current, technicalStopEndsOn: event.target.value }))} /></label>
+                </div>
+              </fieldset>
+            ) : <fieldset className="planning-visits-dates">
               <legend>Date de la ou des visite(s)</legend>
               {form.scheduledAt.map((dateTime, index) => (
                 <div key={`${index}-${dateTime}`}>
@@ -200,7 +225,7 @@ export function PlanningVisitsPanel({
                 </div>
               ))}
               <button className="is-secondary planning-visits-add-date" disabled={form.scheduledAt.length >= 10} onClick={() => setForm({ ...form, scheduledAt: [...form.scheduledAt, form.scheduledAt.at(-1) || defaultScheduledAt()] })} type="button"><Plus aria-hidden="true" size={15} />Ajouter une date</button>
-            </fieldset>
+            </fieldset>}
 
             <label>Commentaires<textarea maxLength={2000} rows={4} value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} /></label>
             <label className="planning-visits-file"><Paperclip aria-hidden="true" size={17} /><span>Pièces jointes<small>PDF, images, Word ou Excel · 20 Mo maximum par fichier</small></span><input accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} type="file" /></label>
@@ -209,7 +234,10 @@ export function PlanningVisitsPanel({
           </form>
         ) : visit ? (
           <div className="planning-visits-detail">
-            <section><h3>Dates prévues</h3><ol>{visit.occurrences.map((occurrence) => <li key={occurrence.id}><CalendarCheck2 aria-hidden="true" size={16} /><strong>{formatPlanningDateTime(occurrence.scheduledAt)}</strong></li>)}</ol></section>
+            {visit.visitType === 'technical_stop' ? (() => {
+              const range = planningVesselVisitDateRange(visit);
+              return <section><h3>Période prévue</h3><ol><li><CalendarCheck2 aria-hidden="true" size={16} /><strong>{range ? `Du ${formatPlanningDate(range.startsOn)} au ${formatPlanningDate(range.endsOn)}` : 'Dates non renseignées'}</strong></li></ol></section>;
+            })() : <section><h3>Dates prévues</h3><ol>{visit.occurrences.map((occurrence) => <li key={occurrence.id}><CalendarCheck2 aria-hidden="true" size={16} /><strong>{formatPlanningDateTime(occurrence.scheduledAt)}</strong></li>)}</ol></section>}
             <section><h3>Prestataire</h3><div className="planning-visits-provider-card"><strong>{provider?.name || 'Prestataire non renseigné'}</strong>{provider?.activity || provider?.serviceType ? <small>{provider.activity || provider.serviceType}</small> : null}<dl>{provider?.address || provider?.city ? <div><dt><MapPin aria-hidden="true" size={15} />Adresse</dt><dd>{[provider.address, provider.city].filter(Boolean).join(', ')}</dd></div> : null}{provider?.phone ? <div><dt><Phone aria-hidden="true" size={15} />Téléphone</dt><dd><a href={`tel:${provider.phone}`}>{provider.phone}</a></dd></div> : null}{provider?.companyEmail ? <div><dt><Mail aria-hidden="true" size={15} />E-mail</dt><dd><a href={`mailto:${provider.companyEmail}`}>{provider.companyEmail}</a></dd></div> : null}{provider?.contactName ? <div><dt>Contact</dt><dd>{provider.contactName}{provider.contactRole ? ` · ${provider.contactRole}` : ''}{provider.contactPhone ? <><br /><a href={`tel:${provider.contactPhone}`}>{provider.contactPhone}</a></> : null}{provider.contactEmail ? <><br /><a href={`mailto:${provider.contactEmail}`}>{provider.contactEmail}</a></> : null}</dd></div> : null}</dl></div></section>
             {visit.comments ? <section><h3>Commentaires</h3><p>{visit.comments}</p></section> : null}
             {visit.attachments.length ? <section><h3>Pièces jointes</h3><div className="planning-visits-attachments">{visit.attachments.map((attachment) => <button key={attachment.id} onClick={() => void openAttachment(attachment)} type="button"><FileText aria-hidden="true" size={16} /><span>{attachment.originalFileName}</span><Download aria-hidden="true" size={15} /></button>)}</div></section> : null}

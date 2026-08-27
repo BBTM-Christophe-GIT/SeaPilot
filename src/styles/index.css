@@ -16702,6 +16702,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-visit-bar {
+  position: relative;
   display: flex;
   z-index: 23;
   min-width: 0;
@@ -16739,6 +16740,39 @@ button.planning-p12-conflict-card {
   outline: 2px solid #fff;
   outline-offset: -3px;
   background: #6542b5;
+}
+
+.planning-visit-bar.is-technical-stop {
+  justify-content: center;
+  padding-inline: 16px;
+  border-color: #a74712;
+  background: #c65d16;
+  box-shadow: 0 2px 5px rgba(132, 60, 14, .28);
+  cursor: grab;
+}
+
+.planning-visit-bar.is-technical-stop:hover,
+.planning-visit-bar.is-technical-stop:focus-visible {
+  border-color: #843709;
+  background: #aa4b10;
+}
+
+.planning-visit-bar.is-technical-stop.is-dragging,
+.planning-visit-bar.is-technical-stop.is-resize-preview {
+  opacity: .72;
+}
+
+.planning-visit-bar.is-technical-stop.is-dragging {
+  cursor: grabbing;
+}
+
+.planning-visit-bar.is-pending {
+  cursor: wait;
+  opacity: .62;
+}
+
+.planning-visit-bar.is-technical-stop .planning-resize-handle {
+  width: 13px;
 }
 
 .planning-dialog.planning-visits-panel {
@@ -16816,6 +16850,18 @@ button.planning-p12-conflict-card {
 .planning-visits-dates > div button {
   width: 39px;
   padding: 0;
+}
+
+.planning-technical-stop-dates > div {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.planning-technical-stop-dates label {
+  display: grid;
+  gap: 6px;
+  color: #485e6a;
+  font-size: .7rem;
+  font-weight: 760;
 }
 
 .planning-visits-add-date {
@@ -16982,6 +17028,7 @@ button.planning-p12-conflict-card {
 }
 
 @media (max-width: 640px) {
+  .planning-technical-stop-dates > div,
   .planning-visits-provider-card dl {
     grid-template-columns: 1fr;
   }
@@ -17258,6 +17305,13 @@ button.planning-p12-conflict-card {
 .planning-move-preview.is-project {
   height: 23px;
   align-self: start;
+}
+
+.planning-move-preview.is-technical-stop {
+  height: 21px;
+  align-self: start;
+  border-color: #a74712;
+  background: repeating-linear-gradient(135deg, rgba(198, 93, 22, .38) 0 10px, rgba(246, 172, 104, .18) 10px 20px);
 }
 
 .planning-crew-bar.is-selected {

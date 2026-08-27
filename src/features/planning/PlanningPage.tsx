@@ -72,7 +72,7 @@ import {
   type PlanningControlResult,
   type PlanningFilters,
 } from './planningModel';
-import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
+import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, planningLocalDateTimeToUtc, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
@@ -158,6 +158,9 @@ import { fetchPlanningAbsences, movePlanningApprovedAbsence } from './planningP1
 import {
   fetchPlanningServiceProviders,
   fetchPlanningVesselVisits,
+  planningTechnicalStopScheduledAt,
+  planningVesselVisitDateRange,
+  savePlanningVesselVisit,
   type PlanningServiceProvider,
   type PlanningVesselVisit,
 } from './planningVisitQueries';
@@ -415,8 +418,11 @@ function createPreviewVisitData(anchorDate: string): {
     { id: 28, name: 'APAVE', category: 'Prestataire de Service', serviceType: 'Visite Grue / Bossoir', activity: '', address: '235 Route du Mesnil', city: '76290 Montivilliers', phone: '02 32 79 56 46', companyEmail: '', supplies: '', specialties: [{ id: 280, name: 'Visite Grue / Bossoir', active: true }], contactName: 'Clément NOEL', contactRole: 'Inspecteur', contactPhone: '', contactEmail: 'clement.noel@apave.com' },
     { id: 11, name: 'Agence Nationale des Fréquences (ANFR)', category: 'Prestataire de Service', serviceType: 'Visite ANFR', activity: '', address: '', city: '', phone: '', companyEmail: '', supplies: '', specialties: [{ id: 110, name: 'Visite ANFR', active: true }], contactName: 'Eric PHELIPPEAU', contactRole: 'Contrôleur de conformité', contactPhone: '06 07 31 90 76', contactEmail: 'eric.phelippeau@anfr.fr' },
     { id: 33, name: 'AgroQual', category: 'Prestataire de Service', serviceType: 'Analyse Eau', activity: '', address: 'Site Normandial, 8 Av. du Pays de Caen', city: '14460 Colombelles', phone: '02 31 38 24 24', companyEmail: '', supplies: '', specialties: [{ id: 330, name: 'Analyse Eau', active: true }], contactName: 'Delphine DEBRAY', contactRole: '', contactPhone: '06 03 10 07 53', contactEmail: 'delphine.debray@agroqual.fr' },
+    { id: 34, name: 'Ports Normands Associés', category: 'Prestataire de Service', serviceType: 'Construction et Réparation Navale', activity: 'Construction et Réparation Navale', address: '', city: 'Cherbourg-en-Cotentin', phone: '', companyEmail: '', supplies: '', specialties: [{ id: 340, name: 'Arrêt Technique', active: true }], contactName: '', contactRole: '', contactPhone: '', contactEmail: '' },
   ];
   const scheduledOn = addPlanningDays(anchorDate, 7);
+  const technicalStopStartsOn = addPlanningDays(anchorDate, 2);
+  const technicalStopEndsOn = addPlanningDays(anchorDate, 5);
   const visitDefinitions: Array<{ id: number; provider: PlanningServiceProvider; type: PlanningVesselVisit['visitType']; hour: string }> = [
     { id: 9101, provider: providers[0], type: 'crane_visit', hour: '07:00:00Z' },
     { id: 9102, provider: providers[1], type: 'anfr_visit', hour: '11:00:00Z' },
@@ -424,7 +430,7 @@ function createPreviewVisitData(anchorDate: string): {
   ];
   return {
     providers,
-    visits: visitDefinitions.map((definition, index) => ({
+    visits: [...visitDefinitions.map((definition, index) => ({
       id: definition.id,
       vesselId: 1,
       visitType: definition.type,
@@ -435,6 +441,39 @@ function createPreviewVisitData(anchorDate: string): {
       attachments: [],
       createdAt: `${anchorDate}T08:00:00Z`,
       updatedAt: `${anchorDate}T08:00:00Z`,
+    })), {
+      id: 9104,
+      vesselId: 1,
+      visitType: 'technical_stop',
+      providerId: providers[3].id,
+      provider: providers[3],
+      comments: 'Arrêt technique planifié.',
+      occurrences: planningTechnicalStopScheduledAt(technicalStopStartsOn, technicalStopEndsOn).map((dateTime, index) => ({
+        id: 9204 + index,
+        scheduledAt: planningLocalDateTimeToUtc(dateTime),
+        scheduledOn: dateTime.slice(0, 10),
+      })),
+      attachments: [],
+      createdAt: `${anchorDate}T08:00:00Z`,
+      updatedAt: `${anchorDate}T08:00:00Z`,
+    }],
+  };
+}
+
+function replaceTechnicalStopRange(
+  visit: PlanningVesselVisit,
+  vesselId: number,
+  startsOn: string,
+  endsOn: string,
+): PlanningVesselVisit {
+  const scheduledAt = planningTechnicalStopScheduledAt(startsOn, endsOn);
+  return {
+    ...visit,
+    vesselId,
+    occurrences: scheduledAt.map((dateTime, index) => ({
+      id: visit.occurrences[index]?.id ?? -(visit.id * 10 + index + 1),
+      scheduledAt: planningLocalDateTimeToUtc(dateTime),
+      scheduledOn: dateTime.slice(0, 10),
     })),
   };
 }
@@ -1962,6 +2001,76 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     } finally { setPendingMutationId(null); }
   }
 
+  async function moveTechnicalStop(visitId: number, lane: PlanningFleetLane, startsOn: string) {
+    if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
+    const visit = vesselVisits.find((item) => item.id === visitId && item.visitType === 'technical_stop');
+    const vessel = activeVessels.find((item) => item.id === lane.vesselId);
+    const range = visit ? planningVesselVisitDateRange(visit) : null;
+    if (!visit || !vessel || !range) return setErrorMessage('Cet arrêt technique ou ce navire ne peut pas être modifié.');
+    if (visit.vesselId !== vessel.id && !window.confirm(`Déplacer l’arrêt technique vers ${vessel.name} ?`)) return;
+
+    const endsOn = addPlanningDays(startsOn, daysBetween(range.startsOn, range.endsOn));
+    const optimistic = replaceTechnicalStopRange(visit, vessel.id, startsOn, endsOn);
+    const previous = vesselVisits;
+    setVesselVisits((current) => current.map((item) => item.id === visit.id ? optimistic : item));
+    setPendingMutationId(`visit-${visit.id}`);
+    setErrorMessage(null);
+    try {
+      await savePlanningVesselVisit(effectiveClient, {
+        id: visit.id,
+        vesselId: vessel.id,
+        visitType: visit.visitType,
+        providerId: visit.providerId,
+        comments: visit.comments,
+        scheduledAt: planningTechnicalStopScheduledAt(startsOn, endsOn),
+      });
+      const refreshed = await loadVesselVisits();
+      setStatusMessage(refreshed
+        ? 'Arrêt technique déplacé et synchronisé.'
+        : 'Arrêt technique enregistré ; actualisez le planning pour confirmer sa position.');
+    } catch (error) {
+      setVesselVisits(previous);
+      setErrorMessage(`${planningErrorMessage(error, 'Impossible de déplacer cet arrêt technique.')} Sa position a été restaurée.`);
+    } finally {
+      setPendingMutationId(null);
+    }
+  }
+
+  async function resizeTechnicalStop(visit: PlanningVesselVisit, edge: 'start' | 'end', delta: number) {
+    if (!delta) return;
+    if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
+    const range = planningVesselVisitDateRange(visit);
+    if (!range) return setErrorMessage('Les dates de cet arrêt technique sont indisponibles.');
+    const startsOn = edge === 'start' ? addPlanningDays(range.startsOn, delta) : range.startsOn;
+    const endsOn = edge === 'end' ? addPlanningDays(range.endsOn, delta) : range.endsOn;
+    if (endsOn < startsOn) return setErrorMessage('Un arrêt technique doit durer au moins un jour.');
+
+    const optimistic = replaceTechnicalStopRange(visit, visit.vesselId, startsOn, endsOn);
+    const previous = vesselVisits;
+    setVesselVisits((current) => current.map((item) => item.id === visit.id ? optimistic : item));
+    setPendingMutationId(`visit-${visit.id}`);
+    setErrorMessage(null);
+    try {
+      await savePlanningVesselVisit(effectiveClient, {
+        id: visit.id,
+        vesselId: visit.vesselId,
+        visitType: visit.visitType,
+        providerId: visit.providerId,
+        comments: visit.comments,
+        scheduledAt: planningTechnicalStopScheduledAt(startsOn, endsOn),
+      });
+      const refreshed = await loadVesselVisits();
+      setStatusMessage(refreshed
+        ? 'Durée de l’arrêt technique synchronisée.'
+        : 'Durée enregistrée ; actualisez le planning pour la confirmer.');
+    } catch (error) {
+      setVesselVisits(previous);
+      setErrorMessage(`${planningErrorMessage(error, 'Impossible de redimensionner cet arrêt technique.')} Sa durée a été restaurée.`);
+    } finally {
+      setPendingMutationId(null);
+    }
+  }
+
   async function addVessel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setIsSaving(true);
     try { await createVessel(effectiveClient, newVessel); await loadPlanning(); setNewVessel({ name: '', acronym: '' }); setStatusMessage('Navire ajouté.'); }
@@ -2426,7 +2535,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
                       onOpenVisit={openVesselVisit}
                       onOpenVessel={openVesselEditor}
+                      onMoveVisit={(visitId, targetLane, date) => void moveTechnicalStop(visitId, targetLane, date)}
                       onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
+                      onResizeVisit={(visit, edge, delta) => void resizeTechnicalStop(visit, edge, delta)}
                       onSelect={setSelectedTimelineId}
                       onToggle={() => toggleFleetNode(row.key)}
                       pendingId={pendingMutationId}
