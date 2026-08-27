@@ -36,8 +36,24 @@ describe('DPR Supabase commands', () => {
     expect(context.project).toEqual({ id: 60, code: 'P268', title: 'ETPO FORT BOYARD' });
   });
 
-  it('does not load DPR history for a Marin dashboard', async () => {
-    const reports = queryResult([]);
+  it('loads only the DPRs created by the Marin dashboard user', async () => {
+    const reports = queryResult([{
+      id: 42,
+      dpr_number: null,
+      status: 'draft',
+      report_date: '2026-08-14',
+      project_id: null,
+      unlisted_project_name: 'Navire à quai',
+      vessel_id: null,
+      validator_person_id: null,
+      validator_name_snapshot: null,
+      issuer_name_snapshot: 'Arthur RICHER',
+      description: 'Quart du matin',
+      qhse_note: null,
+      created_by: 'sailor-user',
+      created_at: '2026-08-14T08:00:00Z',
+      updated_at: '2026-08-14T09:00:00Z',
+    }]);
     const profiles = queryResult({ display_name: 'Arthur RICHER' });
     const people = queryResult({ id: 18, first_name: 'Arthur', last_name: 'Richer', function_label: '2nd Capitaine', grade_label: 'Officier' });
     const empty = queryResult([]);
@@ -52,10 +68,13 @@ describe('DPR Supabase commands', () => {
       rpc,
     };
 
-    const dashboard = await fetchDprDashboard(client as never, { hideHistory: true });
+    const dashboard = await fetchDprDashboard(client as never, { ownReportsOnly: true });
 
-    expect(reports.order).not.toHaveBeenCalled();
-    expect(dashboard.reports).toEqual([]);
+    expect(reports.eq).toHaveBeenCalledWith('created_by', 'sailor-user');
+    expect(reports.order).toHaveBeenCalledWith('report_date', { ascending: false });
+    expect(dashboard.reports).toEqual([
+      expect.objectContaining({ id: 42, createdBy: 'sailor-user', createdAt: '2026-08-14T08:00:00Z' }),
+    ]);
     expect(dashboard.currentUserId).toBe('sailor-user');
   });
 

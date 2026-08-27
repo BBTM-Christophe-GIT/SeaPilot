@@ -241,7 +241,15 @@ export function buildPlanningCrewLanes(
         events: laneEvents,
       };
     })
-    .sort((left, right) => left.label.localeCompare(right.label, 'fr'));
+    .sort((left, right) => {
+      if (grouping !== 'people') return left.label.localeCompare(right.label, 'fr');
+
+      const leftPerson = left.personId === null ? null : peopleById.get(left.personId);
+      const rightPerson = right.personId === null ? null : peopleById.get(right.personId);
+      return (leftPerson?.lastName || left.label).localeCompare(rightPerson?.lastName || right.label, 'fr')
+        || (leftPerson?.firstName || '').localeCompare(rightPerson?.firstName || '', 'fr')
+        || left.label.localeCompare(right.label, 'fr');
+    });
 }
 
 export function patchPlanningEvent(

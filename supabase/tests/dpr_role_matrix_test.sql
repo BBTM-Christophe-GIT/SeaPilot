@@ -1,6 +1,6 @@
 begin;
 
-select plan(32);
+select plan(34);
 
 insert into public.companies (code, name)
 values ('dpr-other', 'DPR other company');
@@ -72,8 +72,8 @@ limit 1;
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
--- A pure Marin can author and directly validate when their role has DPR module access,
--- while the report and audit history remain absent from ordinary SELECTs.
+-- A pure Marin can author, read and directly validate their own DPR when their
+-- role has module access.
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000005', true);
 select lives_ok(
   $$select set_config('test.dpr_marin_id', created.id::text, false),
@@ -87,7 +87,7 @@ select lives_ok(
   'a Marin with DPR module access can create a complete draft'
 );
 select is(current_setting('test.dpr_marin_issuer'), 'DPR Marin', 'the RPC derives the issuer from the authenticated profile');
-select is((select count(*)::integer from public.dpr_reports), 0, 'a pure Marin has no DPR history, including their own report');
+select is((select count(*)::integer from public.dpr_reports), 1, 'a pure Marin sees the DPR they created');
 select lives_ok(
   $$select public.dpr_update_draft(
       current_setting('test.dpr_marin_id')::bigint,
@@ -111,8 +111,35 @@ select ok(
   current_setting('test.dpr_marin_submitted_at') <> '',
   'direct validation preserves the legacy submission timestamp metadata'
 );
-select is((select count(*)::integer from public.dpr_reports), 0, 'the Marin still cannot browse DPR history after validation');
-select is((select count(*)::integer from public.dpr_audit_events), 0, 'the Marin cannot browse DPR audit history');
+select is((select count(*)::integer from public.dpr_reports), 1, 'the Marin can still browse their own DPR after validation');
+select is((select count(*)::integer from public.dpr_audit_events), 3, 'the Marin can browse the audit history of their own DPR');
+
+select set_config('test.dpr_expired_marin_id', created.id::text, false)
+from public.dpr_create_draft(
+  current_date,
+  target_unlisted_project_name => 'Expired Marin project',
+  target_vessel_id => current_setting('test.dpr_vessel_id')::bigint,
+  target_description => 'Expired Marin draft'
+) created;
+
+reset role;
+update public.dpr_reports
+set created_at = now() - interval '3 days 1 minute'
+where id = current_setting('test.dpr_expired_marin_id')::bigint;
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000005', true);
+select throws_ok(
+  $$select public.dpr_update_draft(
+      current_setting('test.dpr_expired_marin_id')::bigint,
+      current_date,
+      target_unlisted_project_name => 'Expired Marin project',
+      target_vessel_id => current_setting('test.dpr_vessel_id')::bigint,
+      target_description => 'Late Marin update'
+    )$$,
+  '42501', 'Insufficient permission to update this DPR draft',
+  'a Marin cannot update their own DPR after the three-day window'
+);
 
 -- A Capitaine with module access sees every company DPR and can run the same
 -- direct validation workflow without a designated-validator rule.
@@ -130,11 +157,11 @@ select lives_ok(
 );
 select lives_ok($$select public.dpr_validate(current_setting('test.dpr_captain_id')::bigint)$$, 'a Capitaine can validate their draft directly');
 select is((select status from public.dpr_reports where id = current_setting('test.dpr_captain_id')::bigint), 'validated', 'the Capitaine direct validation is persisted');
-select is((select count(*)::integer from public.dpr_reports), 2, 'the Capitaine sees all company DPRs');
+select is((select count(*)::integer from public.dpr_reports), 3, 'the Capitaine sees all company DPRs');
 
 -- The administrator overview remains complete even when a Capitaine role exists.
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000001', true);
-select is((select count(*)::integer from public.dpr_reports), 2, 'an administrator still sees all DPRs when a Capitaine is assigned');
+select is((select count(*)::integer from public.dpr_reports), 3, 'an administrator still sees all DPRs when a Capitaine is assigned');
 select lives_ok(
   $$select set_config('test.dpr_admin_id', created.id::text, false)
     from public.dpr_create_draft(
@@ -164,11 +191,21 @@ select throws_ok(
 );
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000002', true);
-select is((select count(*)::integer from public.dpr_reports), 3, 'Direction reads every company DPR');
+select is((select count(*)::integer from public.dpr_reports), 4, 'Direction reads every company DPR');
+select lives_ok(
+  $$select public.dpr_update_draft(
+      current_setting('test.dpr_expired_marin_id')::bigint,
+      current_date,
+      target_unlisted_project_name => 'Expired Marin project',
+      target_vessel_id => current_setting('test.dpr_vessel_id')::bigint,
+      target_description => 'Direction update after Marin window'
+    )$$,
+  'Direction can update a Marin DPR after the three-day window'
+);
 select lives_ok($$select public.dpr_validate(current_setting('test.dpr_admin_id')::bigint)$$, 'Direction can validate another author DPR with module access');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000003', true);
-select is((select count(*)::integer from public.dpr_reports), 3, 'Armement reads every company DPR');
+select is((select count(*)::integer from public.dpr_reports), 4, 'Armement reads every company DPR');
 select lives_ok($$select public.dpr_create_draft(current_date, target_description => 'Armement draft')$$, 'Armement can create a DPR');
 
 select set_config('request.jwt.claim.sub', '70000000-0000-0000-0000-000000000006', true);

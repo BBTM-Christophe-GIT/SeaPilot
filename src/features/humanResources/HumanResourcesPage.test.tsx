@@ -211,6 +211,16 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
 }
 
 describe('HumanResourcesPage', () => {
+  it('shows the person deletion action only to Administrators', async () => {
+    const adminView = render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+    expect(await screen.findByRole('button', { name: 'Supprimer la personne' })).toBeInTheDocument();
+    adminView.unmount();
+
+    render(<HumanResourcesPage client={createClient() as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    expect(screen.queryByRole('button', { name: 'Supprimer la personne' })).not.toBeInTheDocument();
+  });
+
   it('renders the RH dashboard with active collaborators, document metrics and category summaries', async () => {
     render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
 

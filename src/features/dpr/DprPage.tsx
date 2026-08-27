@@ -57,9 +57,26 @@ const STATUS_LABELS: Record<DprReportRecord['status'], string> = {
 
 function cloneEmptyPayload(): DprFormPayload { return structuredClone(EMPTY_DPR_PAYLOAD); }
 function hasOfficeRole(roles: RoleKey[]): boolean { return roles.some((role) => ['admin', 'direction', 'armement'].includes(role)); }
-function canEdit(report: DprReportRecord | null): boolean {
+const DPR_MARIN_EDIT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+function isPureMarin(roles: RoleKey[]): boolean {
+  return roles.includes('marin')
+    && !roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));
+}
+function canManageReport(
+  report: DprReportRecord | null,
+  roles: RoleKey[],
+  currentUserId: string | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!report || !isPureMarin(roles)) return true;
+  const createdAt = Date.parse(report.createdAt);
+  return report.createdBy === currentUserId
+    && Number.isFinite(createdAt)
+    && now < createdAt + DPR_MARIN_EDIT_WINDOW_MS;
+}
+function canEdit(report: DprReportRecord | null, roles: RoleKey[], currentUserId: string | null | undefined): boolean {
   if (!report) return true;
-  return ['draft', 'reopened'].includes(report.status);
+  return ['draft', 'reopened'].includes(report.status) && canManageReport(report, roles, currentUserId);
 }
 function reportTitle(report: DprReportRecord): string { return report.number ? `DPR-${report.number}` : `Brouillon #${report.id}`; }
 function projectLabel(report: DprReportRecord): string { return report.projectCode || report.unlistedProjectName || 'Sans projet'; }
@@ -111,8 +128,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const outlet = useOutletContext<AppShellOutletContext | undefined>();
   const db = client || outlet?.client || supabase;
   const currentRoles = roles || outlet?.roles || [];
-  const isMarinView = currentRoles.includes('marin')
-    && !currentRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
+  const isMarinView = isPureMarin(currentRoles);
   const [dashboard, setDashboard] = useState<DprDashboardData | null>(null);
   const [filters, setFilters] = useState<DprFilters>(EMPTY_FILTERS);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -135,7 +151,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [issuerName, setIssuerName] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
-    const data = await fetchDprDashboard(db, { hideHistory: isMarinView });
+    const data = await fetchDprDashboard(db, { ownReportsOnly: isMarinView });
     setDashboard(data);
     return data;
   };
@@ -143,7 +159,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchDprDashboard(db, { hideHistory: isMarinView }).then((data) => { if (active) setDashboard(data); })
+    fetchDprDashboard(db, { ownReportsOnly: isMarinView }).then((data) => { if (active) setDashboard(data); })
       .catch((reason: Error) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -398,11 +414,9 @@ export function DprPage({ client, roles }: DprPageProps) {
       setReport(nextReport); setInitialSignature(JSON.stringify(payload));
       if (isMarinView && action === 'validate') {
         setModalOpen(false);
-        setReport(null);
-        setFiles([]);
       }
       setNotice(action === 'validate'
-        ? 'DPR validé. Il est transmis dans l’historique accessible aux profils autorisés.'
+        ? isMarinView ? 'DPR validé. Il reste consultable dans Mes DPR.' : 'DPR validé. Le PDF sera généré uniquement à la demande.'
         : 'Brouillon enregistré.');
       return id;
     } catch (reason) { setError((reason as Error).message); return null; }
@@ -450,7 +464,7 @@ export function DprPage({ client, roles }: DprPageProps) {
     finally { setBusy(false); }
   };
 
-  const editable = canEdit(report);
+  const editable = canEdit(report, currentRoles, dashboard?.currentUserId);
   const updatePayload = (recipe: (current: DprFormPayload) => void) => setPayload((current) => { const next = structuredClone(current); recipe(next); return next; });
   const updateReportDate = async (reportDate: string) => {
     if (report) { updatePayload((current) => { current.reportDate = reportDate; }); return; }
@@ -497,15 +511,15 @@ export function DprPage({ client, roles }: DprPageProps) {
 
     {isMarinView ? <section className="dpr-marin-entry-only" aria-label="Accès DPR Marin">
       <FolderOpen aria-hidden="true"/>
-      <div><h2>Saisie DPR</h2><p>Votre profil peut saisir et valider un DPR. L’historique reste réservé aux profils Capitaine et aux autres profils autorisés.</p></div>
-    </section> : <>
-    <div className="dpr-kpi-strip" aria-label="Indicateurs Daily Progress Report">
+      <div><h2>Mes DPR</h2><p>Vous retrouvez les DPR dont vous êtes l’émetteur et pouvez les modifier pendant 3 jours après leur création.</p></div>
+    </section> : null}
+    {!isMarinView ? <div className="dpr-kpi-strip" aria-label="Indicateurs Daily Progress Report">
       <article><Gauge/><span><small>DPR ce mois</small><strong>{kpis.currentMonth}</strong></span></article>
       <article><ListChecks/><span><small>À valider</small><strong>{kpis.submitted}</strong></span></article>
       <article><FileCheck2/><span><small>Prêts à produire</small><strong>{kpis.validated}</strong></span></article>
       <article><ShieldAlert/><span><small>Incidents QHSE</small><strong>{kpis.incidents}</strong></span></article>
       <article><Fuel/><span><small>Fuel consommé</small><strong>{kpis.fuel.toLocaleString('fr-FR')} L</strong></span></article>
-    </div>
+    </div> : null}
 
     <div className={`dpr-workspace${isMarinView ? ' is-read-only' : ''}`}>
       <section className="dpr-master" aria-label="Liste des DPR">
@@ -537,7 +551,7 @@ export function DprPage({ client, roles }: DprPageProps) {
                   {!isMarinView ? <button className="dpr-row__preview" aria-label={`Aperçu ${reportTitle(item)}`} onClick={() => void preparePreview(item)}><Eye size={16}/></button> : null}
                   <strong>{reportTitle(item)}</strong><span><small>DATE</small>{formatDate(item.reportDate)}</span><span><small>AUTEUR</small>{item.issuerName || '-'}</span><span><small>FUEL</small>{item.fuelConsumedLiters.toLocaleString('fr-FR')} L</span>
                   <span className={`dpr-status dpr-status--${item.status}`}>{STATUS_LABELS[item.status]}</span>
-                  <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item) ? 'Modifier' : 'Consulter'}</button>
+                  <button className="dpr-row__open" onClick={() => void openReport(item)}>{canEdit(item, currentRoles, dashboard?.currentUserId) ? 'Modifier' : 'Consulter'}</button>
                 </article>)}
               </div>)}
             </section>;
@@ -557,7 +571,6 @@ export function DprPage({ client, roles }: DprPageProps) {
         <footer>{exportProgress ? <span className="dpr-export-progress">Production {exportProgress}</span> : null}<button className="button button--primary" onClick={() => void downloadSelection()} disabled={!pdfPreview || !selectedReports.length || busy}>{selectedReports.length > 1 ? <FileArchive/> : <Download/>}{selectedReports.length > 1 ? `Télécharger le ZIP (${selectedReports.length})` : 'Télécharger le PDF'}</button></footer>
       </aside> : null}
     </div>
-    </>}
 
     {modalOpen && dashboard && <div className="dpr-modal" role="dialog" aria-modal="true" aria-label="Saisie Daily Progress Report">
       <div className="dpr-modal__panel">
@@ -583,10 +596,10 @@ export function DprPage({ client, roles }: DprPageProps) {
         <footer className="dpr-modal__footer">
           {dirty && <span className="dpr-unsaved"><AlertTriangle size={15}/> Modifications non enregistrées</span>}
           <button className="button" onClick={closeModal}>Annuler</button>
-          {editable && !isMarinView && <button className="button" onClick={() => void save('draft')} disabled={busy}><Save size={16}/> Enregistrer le brouillon</button>}
+          {editable && <button className="button" onClick={() => void save('draft')} disabled={busy}><Save size={16}/> Enregistrer le brouillon</button>}
           {editable && <button className="button button--primary" onClick={() => void save('validate')} disabled={busy}><ShieldCheck size={16}/> Valider le DPR</button>}
-          {report?.status === 'submitted' && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider le DPR</button>}
-          {report?.status === 'validated' && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
+          {report?.status === 'submitted' && canManageReport(report, currentRoles, dashboard.currentUserId) && <button className="button button--primary" onClick={() => void transition('validate')} disabled={busy}><ShieldCheck size={16}/> Valider le DPR</button>}
+          {report?.status === 'validated' && canManageReport(report, currentRoles, dashboard.currentUserId) && <button className="button" onClick={() => void transition('reopen')} disabled={busy}>Réouvrir</button>}
           {report && hasOfficeRole(currentRoles) && <button className="button button--danger" onClick={() => void transition('delete')} disabled={busy}><Trash2 size={16}/> Supprimer</button>}
         </footer>
       </div>

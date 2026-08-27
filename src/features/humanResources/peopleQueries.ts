@@ -1363,6 +1363,14 @@ export async function createPerson(client: SupabaseClient, input: CreatePersonIn
   return mapPersonRows([data as unknown as PersonRow])[0];
 }
 
+export async function deletePerson(client: SupabaseClient, personId: number): Promise<void> {
+  const { error } = await client.from('people').delete().eq('id', personId).select('id').single();
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function updatePersonActive(
   client: SupabaseClient,
   personId: number,

@@ -10,6 +10,7 @@ import {
   buildWorkforceTurnover,
   createHrDocument,
   createPerson,
+  deletePerson,
   fetchHumanResourcesData,
   fetchPeople,
   getHrEnimClassification,
@@ -946,6 +947,21 @@ describe('fetchPeople', () => {
     );
     expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
     expect(orderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });
+  });
+});
+
+describe('deletePerson', () => {
+  it('deletes exactly one personnel record', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { id: 1 }, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ select });
+    const remove = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ delete: remove });
+
+    await expect(deletePerson({ from } as never, 1)).resolves.toBeUndefined();
+    expect(from).toHaveBeenCalledWith('people');
+    expect(eq).toHaveBeenCalledWith('id', 1);
+    expect(select).toHaveBeenCalledWith('id');
   });
 });
 

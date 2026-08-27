@@ -21,6 +21,7 @@ const report: DprReportRecord = {
   description: 'Opération de surveillance',
   qhseNote: 'RAS',
   createdBy: 'user-1',
+  createdAt: '2026-07-30T08:00:00+02:00',
   updatedAt: '2026-07-30T00:47:00+02:00',
   fuelConsumedLiters: 600,
   incidentCount: 0,
