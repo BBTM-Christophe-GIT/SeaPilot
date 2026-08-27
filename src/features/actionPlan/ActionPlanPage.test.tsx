@@ -167,15 +167,16 @@ describe('ActionPlanPage', () => {
 
     await screen.findByRole('heading', { name: "Plan d'action" });
     await user.click(screen.getByRole('button', { name: 'Nouvelle action' }));
-    const dialog = within(screen.getByRole('dialog', { name: 'Nouvelle Action' }));
+    const dialog = within(screen.getByRole('dialog', { name: "Nouvelle fiche d'action" }));
     fireEvent.change(dialog.getByLabelText('Constat *'), { target: { value: 'Accident pont arrière' } });
-    await user.click(dialog.getByRole('button', { name: /2Émetteur/ }));
-    expect(dialog.getByLabelText('Émetteur')).toHaveValue('Christophe MINASSIAN');
-    await user.selectOptions(dialog.getByLabelText('Navire / lieu'), '12');
-    await user.click(dialog.getByRole('button', { name: /3Catégorie/ }));
+    expect(dialog.getByLabelText('Émetteur *')).toHaveValue('Christophe MINASSIAN');
+    await user.selectOptions(dialog.getByLabelText('Navire / lieu *'), '12');
+    await user.type(dialog.getByLabelText('Responsable du traitement *'), 'Arthur MAREST');
+    fireEvent.change(dialog.getByLabelText('À traiter avant *'), { target: { value: '2026-09-30' } });
     await user.selectOptions(dialog.getByLabelText("Type d'action *"), 'lost_time_injury');
     fireEvent.change(dialog.getByLabelText("Jours d'arrêt"), { target: { value: '10' } });
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await user.type(dialog.getByLabelText('Action proposée *'), 'Sécuriser la zone et analyser la cause.');
+    await user.click(dialog.getByRole('button', { name: 'Créer la fiche' }));
 
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Accident pont arrière',
@@ -185,7 +186,7 @@ describe('ActionPlanPage', () => {
       action_type_key: 'lost_time_injury',
       lost_days: 10,
     }));
-    expect(await screen.findByText('Action ajoutée.')).toBeInTheDocument();
+    expect(await screen.findByText('Fiche créée.')).toBeInTheDocument();
   });
 
   it('lets a Capitaine treat an open action without exposing action creation', async () => {

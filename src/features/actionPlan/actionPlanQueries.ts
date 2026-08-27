@@ -186,6 +186,16 @@ export function isActionClosed(action: Pick<ActionItemRecord, 'status' | 'closed
   return Boolean(action.closedOn) || status.includes('solde') || status.includes('clos') || status.includes('termine');
 }
 
+export interface CreateActionItemOptions {
+  draft?: boolean;
+}
+
+export interface ActionEvidenceUrls {
+  photo1Url: string;
+  photo2Url: string;
+  closurePhotoUrl: string;
+}
+
 export function actionThumbnailPath(
   action: Pick<ActionItemRecord, 'status' | 'closedOn' | 'photo1Path' | 'photo2Path' | 'closurePhotoPath'>,
 ): string {
@@ -290,6 +300,28 @@ async function hydrateActionThumbnailUrls(client: SupabaseClient, actions: Actio
     ...action,
     thumbnailUrl: urlsByPath.get(actionThumbnailPath(action)) || '',
   }));
+}
+
+export async function fetchActionEvidenceUrls(
+  client: SupabaseClient,
+  action: Pick<ActionItemRecord, 'photo1Path' | 'photo2Path' | 'closurePhotoPath'>,
+): Promise<ActionEvidenceUrls> {
+  const paths = [action.photo1Path, action.photo2Path, action.closurePhotoPath].filter(Boolean);
+  if (!paths.length) return { photo1Url: '', photo2Url: '', closurePhotoUrl: '' };
+
+  const { data, error } = await client.storage
+    .from(ACTION_PLAN_EVIDENCE_BUCKET)
+    .createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS);
+  if (error) throw error;
+
+  const urlsByPath = new Map((data || [])
+    .filter((item) => item.path && item.signedUrl)
+    .map((item) => [item.path, item.signedUrl]));
+  return {
+    photo1Url: urlsByPath.get(action.photo1Path) || '',
+    photo2Url: urlsByPath.get(action.photo2Path) || '',
+    closurePhotoUrl: urlsByPath.get(action.closurePhotoPath) || '',
+  };
 }
 
 async function fetchActionDocuments(client: SupabaseClient): Promise<ActionDocumentRecord[]> {
@@ -445,6 +477,7 @@ export async function createActionItem(
   client: SupabaseClient,
   input: CreateActionItemInput,
   photos: File[] = [],
+  options: CreateActionItemOptions = {},
 ): Promise<ActionItemRecord> {
   const title = input.title.trim();
   if (!title) throw new Error("Le constat de l'action est obligatoire.");
@@ -454,7 +487,7 @@ export async function createActionItem(
   const payload = {
     vessel_id: input.vesselId, vessel_name: optionalText(input.vesselName), category_key: 'action',
     action_type_key: input.actionTypeKey, action_type: optionalText(input.actionType), title,
-    status: 'Ecart Non Soldé', deviation_type: optionalText(input.deviationType),
+    status: options.draft ? 'Brouillon' : 'Ecart Non Soldé', deviation_type: optionalText(input.deviationType),
     opened_on: optionalText(input.openedOn) || new Date().toISOString().slice(0, 10), due_on: optionalText(input.dueOn),
     issuer_name: optionalText(input.issuerName), owner_name: optionalText(input.ownerName),
     description: optionalText(input.description), corrective_action: optionalText(input.correctiveAction),
