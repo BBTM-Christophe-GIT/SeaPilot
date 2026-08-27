@@ -345,7 +345,7 @@ describe('FleetCertificatesPage', () => {
     const portInput = within(dialog).getByRole('combobox', { name: 'Lieu de visite' });
     await user.clear(portInput);
     await user.type(portInput, 'Cherbourg');
-    expect(within(dialog).getByRole('option', { name: /Cherbourg/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: /^CherbourgFR CER$/ })).toBeInTheDocument();
     expect(within(dialog).getByText('Manche', { selector: 'h3' })).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Inclure les sujets, constats, suivis et photos')).toBeChecked();
     expect(within(dialog).getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();

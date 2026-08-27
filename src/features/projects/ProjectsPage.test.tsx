@@ -585,14 +585,14 @@ describe('ProjectsPage', () => {
       "Port de Boyardville",
     );
     await user.type(deliveryPort, 'Brest');
-    await user.click(screen.getByRole('option', { name: /Brest.*FR BES/ }));
+    await user.click(screen.getByRole('option', { name: /^BrestFR BES$/ }));
 
     const redeliveryPort = screen.getByLabelText('Port de restitution');
     await user.click(redeliveryPort);
     expect(screen.getByRole('group', { name: 'Bouches-du-Rhône (13)' }))
       .toHaveTextContent('Port des Goudes');
     await user.type(redeliveryPort, 'Cherbourg');
-    await user.click(screen.getByRole('option', { name: /Cherbourg.*FR CER/ }));
+    await user.click(screen.getByRole('option', { name: /^CherbourgFR CER$/ }));
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));

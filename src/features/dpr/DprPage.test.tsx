@@ -203,7 +203,7 @@ describe('DprPage Phase 7', () => {
     await user.click(port);
     expect(screen.getByRole('group', { name: 'Manche' })).toHaveTextContent('Cherbourg');
     await user.type(port, 'FR CER');
-    await user.click(screen.getByRole('option', { name: /Cherbourg.*FR CER/ }));
+    await user.click(screen.getByRole('option', { name: /^CherbourgFR CER$/ }));
 
     expect(port).toHaveValue('Cherbourg');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();

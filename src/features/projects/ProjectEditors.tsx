@@ -1,5 +1,5 @@
 import { CalendarDays, CreditCard, ExternalLink, FileText, FileUp, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   saveProjectContractDetails,
@@ -15,7 +15,12 @@ import {
   type ProjectTowedAssetWriteInput,
   type ProjectWriteInput,
 } from './projectMutations';
-import { storeOperationDocuments, type OperationDocumentUploadResult } from './projectDocumentStorage';
+import {
+  storeOperationDocuments,
+  storeProjectAttachments,
+  type OperationDocumentUploadResult,
+  type ProjectAttachmentDraft,
+} from './projectDocumentStorage';
 import type {
   ClientRecord,
   ProjectContractRecord,
@@ -31,8 +36,18 @@ import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
 import {
+  cloneDefaultProjectDocumentCategories,
+  fetchProjectDocumentCategories,
+  newProjectDocumentCategoryKey,
+  projectDocumentCategorySnapshot,
+  saveProjectDocumentCategories,
+  type ProjectDocumentCategory,
+} from './projectDocumentCategories';
+import {
+  COMMERCIAL_OFFER_CONTRACT_TYPE,
   DEFAULT_PROJECT_FUEL_TERMS,
   DEFAULT_PROJECT_OWNER_IDENTITY,
+  normalizeProjectContractType,
   PROJECT_CURRENCIES,
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
@@ -50,6 +65,7 @@ interface ProjectEditorProps {
   onClose: () => void;
   onSaved: (result: ProjectMutationResult) => void;
   project?: ProjectRecord;
+  projectAttachments?: ProjectOperationDocumentRecord[];
   statuses: string[];
   towedAssets: ProjectTowedAssetRecord[];
   vessels: VesselRecord[];
@@ -188,7 +204,7 @@ export function projectToWriteInput(
     charterEndsAt: toLocalDateTime(project.charterEndsAt),
     deliveryPort: project.deliveryPort,
     redeliveryPort: project.redeliveryPort,
-    contractType: project.contractType,
+    contractType: normalizeProjectContractType(project.contractType),
     operationArea: project.operationArea,
     isRovSupport: project.isRovSupport,
     isDivingSupport: project.isDivingSupport,
@@ -339,7 +355,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   );
 }
 
-type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'documents';
+type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents';
 
 const PROJECT_ASSISTANT_STEPS: {
   description: string;
@@ -351,7 +367,8 @@ const PROJECT_ASSISTANT_STEPS: {
   { description: 'Prise en charge et arrivée', icon: CalendarDays, id: 'planning', label: 'Planning' },
   { description: 'Tarifs et conditions', icon: ReceiptText, id: 'offer', label: 'Offre commerciale' },
   { description: 'Frais et paiement', icon: CreditCard, id: 'billing', label: 'Facturation' },
-  { description: 'Contrats et procédures', icon: FileText, id: 'documents', label: 'Documents' },
+  { description: 'Clauses contractuelles SUPPLYTIME', icon: FileText, id: 'bimco', label: 'BIMCO' },
+  { description: 'Pièces jointes classées', icon: FileUp, id: 'documents', label: 'Documents' },
 ];
 
 function PortSelect({
@@ -379,6 +396,7 @@ export function ProjectEditor({
   onClose,
   onSaved,
   project,
+  projectAttachments = [],
   towedAssets,
   vessels,
 }: ProjectEditorProps) {
@@ -405,6 +423,14 @@ export function ProjectEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [initialOperationFiles, setInitialOperationFiles] = useState<File[]>([]);
+  const [documentCategories, setDocumentCategories] = useState<ProjectDocumentCategory[]>(
+    cloneDefaultProjectDocumentCategories,
+  );
+  const [initialDocumentCategories, setInitialDocumentCategories] = useState<ProjectDocumentCategory[]>(
+    cloneDefaultProjectDocumentCategories,
+  );
+  const [documentCategoriesEditing, setDocumentCategoriesEditing] = useState(false);
+  const [projectAttachmentDrafts, setProjectAttachmentDrafts] = useState<ProjectAttachmentDraft[]>([]);
   const [initialOperationForm, setInitialOperationForm] = useState<ProjectPlanningOccurrenceWriteInput | null>(() => (
     !project ? {
       charterHire: null,
@@ -424,6 +450,17 @@ export function ProjectEditor({
   const eligibleVessels = vessels.filter(
     (vessel) => vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId,
   );
+  const isCommercialOffer = normalizeProjectContractType(form.contractType) === COMMERCIAL_OFFER_CONTRACT_TYPE;
+  const { activeDocumentCategories, documentCategoryByKey, rootDocumentCategories } = useMemo(() => {
+    const activeCategories = documentCategories
+      .filter((category) => category.active)
+      .sort((left, right) => left.displayOrder - right.displayOrder || left.label.localeCompare(right.label, 'fr'));
+    return {
+      activeDocumentCategories: activeCategories,
+      documentCategoryByKey: new Map(documentCategories.map((category) => [category.key, category])),
+      rootDocumentCategories: activeCategories.filter((category) => category.parentKey === null),
+    };
+  }, [documentCategories]);
 
   useEffect(() => {
     if (project?.projectCode) {
@@ -446,6 +483,17 @@ export function ProjectEditor({
     });
   }, [clients]);
 
+  useEffect(() => {
+    if (typeof client.from !== 'function') return;
+    let active = true;
+    void fetchProjectDocumentCategories(client).then((categories) => {
+      if (!active || categories.length === 0) return;
+      setDocumentCategories(categories);
+      setInitialDocumentCategories(categories.map((category) => ({ ...category })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [client]);
+
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
@@ -455,6 +503,61 @@ export function ProjectEditor({
     value: ProjectTowedAssetWriteInput[K],
   ) {
     setTowedAsset((current) => ({ ...(current || EMPTY_TOWED_ASSET), [key]: value }));
+  }
+
+  function updateDocumentCategory(key: string, label: string) {
+    setDocumentCategories((categories) => categories.map((category) => (
+      category.key === key ? { ...category, label } : category
+    )));
+  }
+
+  function addDocumentCategory() {
+    const displayOrder = Math.max(0, ...documentCategories.map((category) => category.displayOrder)) + 10;
+    setDocumentCategories((categories) => [...categories, {
+      active: true,
+      displayOrder,
+      key: newProjectDocumentCategoryKey('category'),
+      label: 'Nouvelle catégorie',
+      parentKey: null,
+    }]);
+  }
+
+  function addDocumentSubcategory(parentKey: string) {
+    const siblings = documentCategories.filter((category) => category.parentKey === parentKey);
+    const parent = documentCategories.find((category) => category.key === parentKey);
+    const displayOrder = Math.max(parent?.displayOrder || 0, ...siblings.map((category) => category.displayOrder)) + 1;
+    setDocumentCategories((categories) => [...categories, {
+      active: true,
+      displayOrder,
+      key: newProjectDocumentCategoryKey('subcategory'),
+      label: 'Nouvelle sous-catégorie',
+      parentKey,
+    }]);
+  }
+
+  function removeDocumentCategory(key: string) {
+    const removedKeys = new Set([
+      key,
+      ...documentCategories.filter((category) => category.parentKey === key).map((category) => category.key),
+    ]);
+    setDocumentCategories((categories) => categories.map((category) => (
+      removedKeys.has(category.key) ? { ...category, active: false } : category
+    )));
+    setProjectAttachmentDrafts((drafts) => drafts.filter((draft) => (
+      !removedKeys.has(draft.categoryKey) && !removedKeys.has(draft.subcategoryKey || '')
+    )));
+  }
+
+  function addProjectAttachmentFiles(categoryKey: string, subcategoryKey: string | null, files: FileList | null) {
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) return;
+    setProjectAttachmentDrafts((drafts) => [...drafts, ...selectedFiles.map((file) => ({
+      categoryKey,
+      expiresOn: '',
+      file,
+      id: crypto.randomUUID(),
+      subcategoryKey,
+    }))]);
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -487,27 +590,28 @@ export function ProjectEditor({
     setIsSaving(true);
     let savedProject: ProjectMutationResult | null = null;
     try {
-      const firstHirePeriod = [...hirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
+      const isCommercialOffer = normalizeProjectContractType(form.contractType) === COMMERCIAL_OFFER_CONTRACT_TYPE;
+      const effectiveHirePeriods = isCommercialOffer ? [] : hirePeriods;
+      const firstHirePeriod = [...effectiveHirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
       const projectCoreChanged = !project
         || projectCoreSnapshot(form) !== projectCoreSnapshot(initialForm);
       const projectContractChanged = !project
         || !contract
         || projectContractSnapshot(form) !== projectContractSnapshot(initialForm);
       const hirePeriodsChanged = !project
-        || hirePeriodsSnapshot(hirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
+        || hirePeriodsSnapshot(effectiveHirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
       const formWithEffectiveHire = firstHirePeriod ? {
         ...form,
         charterHire: firstHirePeriod.charterHire,
         hireCurrency: firstHirePeriod.hireCurrency,
         hireUnit: firstHirePeriod.hireUnit,
+      } : isCommercialOffer ? {
+        ...form,
+        hireCurrency: 'EUR',
+        hireUnit: 'jour',
       } : form;
       const result = projectCoreChanged
-        ? await saveProject(client, firstHirePeriod ? {
-          ...form,
-          charterHire: firstHirePeriod.charterHire,
-          hireCurrency: firstHirePeriod.hireCurrency,
-          hireUnit: firstHirePeriod.hireUnit,
-        } : form)
+        ? await saveProject(client, formWithEffectiveHire)
         : {
           id: project.id,
           projectCode: project.projectCode,
@@ -531,10 +635,23 @@ export function ProjectEditor({
       }
 
       const towedAssetLinkChanged = effectiveTowedAssetId !== (contract?.towedAssetId ?? null);
-      if ((!projectCoreChanged && projectContractChanged) || towedAssetLinkChanged) {
+      const shouldSaveContractDetails = (!projectCoreChanged && projectContractChanged) || towedAssetLinkChanged;
+      if (isCommercialOffer && hirePeriodsChanged) {
+        await saveProjectContractHirePeriods(client, result.id, []);
+        await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
+      } else if (shouldSaveContractDetails) {
         await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
       }
-      if (hirePeriodsChanged) await saveProjectContractHirePeriods(client, result.id, hirePeriods);
+      if (!isCommercialOffer && hirePeriodsChanged) {
+        await saveProjectContractHirePeriods(client, result.id, effectiveHirePeriods);
+      }
+      if (
+        projectDocumentCategorySnapshot(documentCategories)
+        !== projectDocumentCategorySnapshot(initialDocumentCategories)
+      ) {
+        await saveProjectDocumentCategories(client, documentCategories);
+        setInitialDocumentCategories(documentCategories.map((category) => ({ ...category })));
+      }
       if (automaticOperation) {
         const occurrenceId = await saveProjectPlanningOccurrence(client, {
           ...automaticOperation,
@@ -555,6 +672,19 @@ export function ProjectEditor({
           if (uploads.failed.length > 0) {
             throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
           }
+        }
+      }
+      if (projectAttachmentDrafts.length > 0) {
+        const uploads = await storeProjectAttachments(client, {
+          drafts: projectAttachmentDrafts,
+          projectId: result.id,
+        });
+        const storedIds = new Set(uploads.stored.map((document) => document.draftId));
+        setProjectAttachmentDrafts((drafts) => drafts.filter((draft) => !storedIds.has(draft.id)));
+        if (uploads.failed.length > 0) {
+          throw new Error(
+            `${uploads.failed.length} pièce(s) jointe(s) n’ont pas pu être classées dans SharePoint. ${uploads.failed[0].message}`,
+          );
         }
       }
       onSaved(result);
@@ -769,7 +899,9 @@ export function ProjectEditor({
                   {PROJECT_CURRENCIES.map((currency) => <option key={currency.code} value={currency.code}>{currency.label}</option>)}
                 </select>
               </Field>
-              <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
+              {!isCommercialOffer ? (
+                <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
+              ) : null}
               <Field label="Fuel" wide>
                 <input
                   onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
@@ -777,6 +909,25 @@ export function ProjectEditor({
                   value={form.supplytimeData.box19_special_fuel || ''}
                 />
               </Field>
+              {isCommercialOffer ? (
+                <Field label="Loyer d’affrètement" wide>
+                  <span className="project-commercial-hire-input">
+                    <input
+                      min="0"
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        charterHire: optionalNumber(event.target.value),
+                        hireCurrency: 'EUR',
+                        hireUnit: 'jour',
+                      }))}
+                      step="0.01"
+                      type="number"
+                      value={form.charterHire ?? ''}
+                    />
+                    <strong>€ / jour</strong>
+                  </span>
+                </Field>
+              ) : (
               <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
                 <div className="project-hire-periods-heading">
                   <div><strong>Barème des loyers d’affrètement</strong><small>Le tarif applicable est déterminé automatiquement pour chaque date d’opération.</small></div>
@@ -807,6 +958,7 @@ export function ProjectEditor({
                 ))}
                 {!hirePeriods.length ? <p>Aucune période tarifaire. Ajoutez-en une pour alimenter automatiquement les opérations.</p> : null}
               </section>
+              )}
             </div>
           </fieldset>
 
@@ -831,8 +983,8 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>5</span> Documents · BIMCO SUPPLYTIME</legend>
+          <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
+            <legend><span>5</span> BIMCO · SUPPLYTIME</legend>
             <div className="project-editor-grid">
               <Field label="Limite d’affectation navire"><input onChange={(event) => update('vesselAssignmentLimit', event.target.value)} value={form.vesselAssignmentLimit} /></Field>
               <Field label="Nombre de prolongations"><input min="1" onChange={(event) => update('extensionCount', optionalNumber(event.target.value))} step="1" type="number" value={form.extensionCount ?? ''} /></Field>
@@ -857,6 +1009,135 @@ export function ProjectEditor({
                 </section>
               ))}
             </div>
+          </fieldset>
+
+          <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
+            <legend><span>6</span> Documents</legend>
+            <section className="project-document-library" aria-label="Pièces jointes du projet">
+              <div className="project-document-library-heading">
+                <div>
+                  <strong>Pièces jointes classées</strong>
+                  <small>Ajoutez plusieurs documents par catégorie, avec ou sans date d’échéance.</small>
+                </div>
+                <button onClick={() => setDocumentCategoriesEditing((editing) => !editing)} type="button">
+                  {documentCategoriesEditing ? 'Terminer' : 'Modifier les catégories'}
+                </button>
+              </div>
+
+              {documentCategoriesEditing ? (
+                <div className="project-document-category-editor">
+                  {rootDocumentCategories.map((category) => {
+                    const subcategories = activeDocumentCategories.filter((item) => item.parentKey === category.key);
+                    return <section key={category.key}>
+                      <div>
+                        <input
+                          aria-label={`Nom de la catégorie ${category.label}`}
+                          onChange={(event) => updateDocumentCategory(category.key, event.target.value)}
+                          value={category.label}
+                        />
+                        <button aria-label={`Supprimer la catégorie ${category.label}`} onClick={() => removeDocumentCategory(category.key)} type="button">
+                          <X aria-hidden="true" size={15} />
+                        </button>
+                      </div>
+                      {subcategories.map((subcategory) => <div className="project-document-subcategory-editor" key={subcategory.key}>
+                        <input
+                          aria-label={`Nom de la sous-catégorie ${subcategory.label}`}
+                          onChange={(event) => updateDocumentCategory(subcategory.key, event.target.value)}
+                          value={subcategory.label}
+                        />
+                        <button aria-label={`Supprimer la sous-catégorie ${subcategory.label}`} onClick={() => removeDocumentCategory(subcategory.key)} type="button">
+                          <X aria-hidden="true" size={15} />
+                        </button>
+                      </div>)}
+                      <button className="project-document-add-subcategory" onClick={() => addDocumentSubcategory(category.key)} type="button">
+                        <Plus aria-hidden="true" size={14} /> Ajouter une sous-catégorie
+                      </button>
+                    </section>;
+                  })}
+                  <button className="project-document-add-category" onClick={addDocumentCategory} type="button">
+                    <Plus aria-hidden="true" size={15} /> Ajouter une catégorie
+                  </button>
+                </div>
+              ) : (
+                <div className="project-document-category-list">
+                  {rootDocumentCategories.map((category) => {
+                    const subcategories = activeDocumentCategories.filter((item) => item.parentKey === category.key);
+                    const uploadTargets = subcategories.length > 0 ? subcategories : [category];
+                    return <section key={category.key}>
+                      <h3>{category.label}</h3>
+                      <div>
+                        {uploadTargets.map((target) => <label className="project-document-upload-target" key={target.key}>
+                          <span>{target.parentKey ? target.label : 'Documents'}</span>
+                          <span>
+                            <FileUp aria-hidden="true" size={17} />
+                            <strong>Ajouter des fichiers</strong>
+                          </span>
+                          <input
+                            aria-label={`Ajouter des documents · ${category.label}${target.parentKey ? ` · ${target.label}` : ''}`}
+                            multiple
+                            onChange={(event) => {
+                              addProjectAttachmentFiles(category.key, target.parentKey ? target.key : null, event.target.files);
+                              event.currentTarget.value = '';
+                            }}
+                            type="file"
+                          />
+                        </label>)}
+                      </div>
+                    </section>;
+                  })}
+                </div>
+              )}
+
+              {projectAttachmentDrafts.length > 0 ? (
+                <div className="project-document-pending">
+                  <h3>Documents à enregistrer</h3>
+                  {projectAttachmentDrafts.map((draft) => {
+                    const category = documentCategoryByKey.get(draft.categoryKey);
+                    const subcategory = draft.subcategoryKey ? documentCategoryByKey.get(draft.subcategoryKey) : undefined;
+                    return <div key={draft.id}>
+                      <FileText aria-hidden="true" size={16} />
+                      <span><strong>{draft.file.name}</strong><small>{[category?.label, subcategory?.label].filter(Boolean).join(' · ')}</small></span>
+                      <label>
+                        <span>Échéance facultative</span>
+                        <input
+                          aria-label={`Date d’échéance de ${draft.file.name}`}
+                          onChange={(event) => setProjectAttachmentDrafts((drafts) => drafts.map((item) => (
+                            item.id === draft.id ? { ...item, expiresOn: event.target.value } : item
+                          )))}
+                          type="date"
+                          value={draft.expiresOn}
+                        />
+                      </label>
+                      <button aria-label={`Retirer ${draft.file.name}`} onClick={() => setProjectAttachmentDrafts((drafts) => drafts.filter((item) => item.id !== draft.id))} type="button">
+                        <X aria-hidden="true" size={15} />
+                      </button>
+                    </div>;
+                  })}
+                </div>
+              ) : null}
+
+              {projectAttachments.length > 0 ? (
+                <div className="project-document-existing">
+                  <h3>Documents déjà classés</h3>
+                  {projectAttachments.map((document) => {
+                    const category = document.categoryKey ? documentCategoryByKey.get(document.categoryKey) : undefined;
+                    const subcategory = document.subcategoryKey ? documentCategoryByKey.get(document.subcategoryKey) : undefined;
+                    const expired = Boolean(document.expiresOn && document.expiresOn < new Date().toISOString().slice(0, 10));
+                    return <a href={document.sharePointWebUrl} key={document.id} rel="noreferrer" target="_blank">
+                      <FileText aria-hidden="true" size={16} />
+                      <span>
+                        <strong>{document.fileName}</strong>
+                        <small>{[category?.label, subcategory?.label].filter(Boolean).join(' · ') || 'Document projet'}</small>
+                      </span>
+                      <em className={expired ? 'is-expired' : undefined}>
+                        {document.expiresOn ? `${expired ? 'Échu' : 'Valide'} · ${document.expiresOn}` : 'Sans échéance'}
+                      </em>
+                      <ExternalLink aria-hidden="true" size={14} />
+                    </a>;
+                  })}
+                </div>
+              ) : null}
+            </section>
           </fieldset>
 
             </main>

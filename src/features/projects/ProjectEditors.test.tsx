@@ -73,6 +73,62 @@ describe('ProjectPlanningEditor permissions', () => {
 });
 
 describe('ProjectEditor contract hire periods', () => {
+  it('replaces the hire schedule with one daily EUR hire for a commercial offer', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={['Affrètement à temps', 'Offre commerciale']}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    fireEvent.change(screen.getByLabelText('Type de contrat'), { target: { value: 'Offre commerciale' } });
+
+    expect(screen.queryByRole('region', { name: 'Barème des loyers d’affrètement' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Loyer en prolongation')).not.toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ })).toBeInTheDocument();
+    expect(screen.getByText('€ / jour')).toBeInTheDocument();
+  });
+
+  it('separates BIMCO from the categorized document library and accepts several expiring files', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={['Offre commerciale']}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /BIMCO/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Documents/ }));
+    expect(screen.getByRole('region', { name: 'Pièces jointes du projet' })).toBeInTheDocument();
+    expect(screen.getByText('Offre Commerciale')).toBeInTheDocument();
+    expect(screen.getByText('HSE')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Facturation' })).toBeInTheDocument();
+
+    const fileInput = screen.getByLabelText('Ajouter des documents · Offre Commerciale · Contrat');
+    await user.upload(fileInput, [
+      new File(['contrat'], 'contrat.pdf', { type: 'application/pdf' }),
+      new File(['annexe'], 'annexe.pdf', { type: 'application/pdf' }),
+    ]);
+    expect(screen.getByText('contrat.pdf')).toBeInTheDocument();
+    expect(screen.getByText('annexe.pdf')).toBeInTheDocument();
+    expect(screen.getByLabelText('Date d’échéance de contrat.pdf')).toHaveAttribute('type', 'date');
+  });
+
   it('copies project boundaries to planning timestamps and defaults the Fuel terms', async () => {
     const user = userEvent.setup();
     render(

@@ -8,6 +8,7 @@ const ALLOWED_DOCUMENT_TYPES = new Set([
   'bareboat_charter',
   'intellectual_service',
   'operation_attachment',
+  'project_attachment',
 ]);
 const MAX_FILE_BYTES = 18 * 1024 * 1024;
 
@@ -19,7 +20,10 @@ interface UploadRequest {
   fileName?: unknown;
   mimeType?: unknown;
   base64Content?: unknown;
+  categoryKey?: unknown;
+  expiresOn?: unknown;
   sha256?: unknown;
+  subcategoryKey?: unknown;
 }
 
 interface GraphDriveItem {
@@ -73,6 +77,12 @@ function parsePositiveInteger(value: unknown, required: boolean): number | null 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function parseInput(body: UploadRequest) {
   const projectId = parsePositiveInteger(body.projectId, true);
   const planningOccurrenceId = parsePositiveInteger(body.planningOccurrenceId, false);
@@ -81,6 +91,9 @@ function parseInput(body: UploadRequest) {
   const fileName = typeof body.fileName === 'string' ? cleanFileName(body.fileName) : '';
   const mimeType = typeof body.mimeType === 'string' ? body.mimeType.trim().toLowerCase() : '';
   const base64Content = typeof body.base64Content === 'string' ? body.base64Content : '';
+  const categoryKey = typeof body.categoryKey === 'string' ? body.categoryKey.trim() : '';
+  const subcategoryKey = typeof body.subcategoryKey === 'string' ? body.subcategoryKey.trim() : '';
+  const expiresOn = typeof body.expiresOn === 'string' ? body.expiresOn.trim() : '';
   const sha256 = typeof body.sha256 === 'string' ? body.sha256.trim().toLowerCase() : '';
 
   if (
@@ -99,10 +112,32 @@ function parseInput(body: UploadRequest) {
   if (documentType === 'operation_attachment' && planningOccurrenceId === null) {
     throw new Error('INVALID_INPUT');
   }
+  if (
+    documentType === 'project_attachment'
+    && (
+      !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(categoryKey)
+      || (subcategoryKey && !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(subcategoryKey))
+      || (expiresOn && !isIsoDate(expiresOn))
+    )
+  ) {
+    throw new Error('INVALID_INPUT');
+  }
 
   const bytes = Uint8Array.from(atob(base64Content), (character) => character.charCodeAt(0));
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_FILE_BYTES) throw new Error('INVALID_INPUT');
-  return { projectId: projectId as number, planningOccurrenceId, revision: revision as number, documentType, fileName, mimeType, bytes, sha256 };
+  return {
+    projectId: projectId as number,
+    planningOccurrenceId,
+    revision: revision as number,
+    documentType,
+    fileName,
+    mimeType,
+    bytes,
+    sha256,
+    categoryKey,
+    subcategoryKey,
+    expiresOn,
+  };
 }
 
 async function graphRequest<T>(accessToken: string, url: string, init: RequestInit = {}): Promise<T> {
@@ -197,6 +232,29 @@ Deno.serve(async (request) => {
     if (!occurrence) return json(request, 400, { code: 'INVALID_OCCURRENCE', message: 'La mission sélectionnée ne correspond pas au projet.' });
   }
 
+  let categoryLabel = '';
+  let subcategoryLabel = '';
+  if (input.documentType === 'project_attachment') {
+    const requestedKeys = [input.categoryKey, input.subcategoryKey].filter(Boolean);
+    const { data: categories, error: categoryError } = await serviceClient
+      .from('project_document_categories')
+      .select('category_key,parent_key,label,active')
+      .eq('company_id', project.company_id)
+      .in('category_key', requestedKeys);
+    if (categoryError) {
+      return json(request, 503, { code: 'DOCUMENT_CATEGORIES_UNAVAILABLE', message: 'Les catégories documentaires sont indisponibles.' });
+    }
+    const category = categories?.find((item) => item.category_key === input.categoryKey && !item.parent_key && item.active);
+    const subcategory = input.subcategoryKey
+      ? categories?.find((item) => item.category_key === input.subcategoryKey && item.parent_key === input.categoryKey && item.active)
+      : null;
+    if (!category || (input.subcategoryKey && !subcategory)) {
+      return json(request, 400, { code: 'INVALID_DOCUMENT_CATEGORY', message: 'La catégorie documentaire sélectionnée est invalide.' });
+    }
+    categoryLabel = category.label;
+    subcategoryLabel = subcategory?.label || '';
+  }
+
   try {
     const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
       method: 'POST',
@@ -217,6 +275,17 @@ Deno.serve(async (request) => {
       const operationFolder = `OP-${input.planningOccurrenceId}`;
       await ensureFolder(tokenPayload.access_token, driveId, `${folderPath}/Operations`, operationFolder);
       folderPath = `${folderPath}/Operations/${operationFolder}`;
+    } else if (input.documentType === 'project_attachment') {
+      await ensureFolder(tokenPayload.access_token, driveId, folderPath, 'Documents');
+      folderPath = `${folderPath}/Documents`;
+      const categoryFolder = cleanFolderSegment(categoryLabel);
+      await ensureFolder(tokenPayload.access_token, driveId, folderPath, categoryFolder);
+      folderPath = `${folderPath}/${categoryFolder}`;
+      if (subcategoryLabel) {
+        const subcategoryFolder = cleanFolderSegment(subcategoryLabel);
+        await ensureFolder(tokenPayload.access_token, driveId, folderPath, subcategoryFolder);
+        folderPath = `${folderPath}/${subcategoryFolder}`;
+      }
     }
     const uploadUrl = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root:/${folderPath.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(input.fileName)}:/content`;
     const item = await graphRequest<GraphDriveItem>(tokenPayload.access_token, uploadUrl, {
@@ -239,6 +308,9 @@ Deno.serve(async (request) => {
       sharepoint_drive_item_id: item.id,
       sharepoint_web_url: item.webUrl,
       sharepoint_folder_path: folderPath,
+      category_key: input.categoryKey || null,
+      subcategory_key: input.subcategoryKey || null,
+      expires_on: input.expiresOn || null,
       created_by: authData.user.id,
     }, { onConflict: 'company_id,sharepoint_drive_id,sharepoint_drive_item_id' }).select('id').single();
     if (storeError) throw new Error(`METADATA:${storeError.code}`);

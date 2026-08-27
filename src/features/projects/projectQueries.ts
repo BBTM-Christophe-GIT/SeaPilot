@@ -103,6 +103,9 @@ const PROJECT_OPERATION_DOCUMENT_SELECT = [
   'project_id',
   'planning_occurrence_id',
   'document_type',
+  'category_key',
+  'subcategory_key',
+  'expires_on',
   'file_name',
   'mime_type',
   'file_size_bytes',
@@ -252,6 +255,9 @@ interface ProjectOperationDocumentRow {
   project_id: number;
   planning_occurrence_id: number | null;
   document_type: string;
+  category_key: string | null;
+  subcategory_key: string | null;
+  expires_on: string | null;
   file_name: string;
   mime_type: string;
   file_size_bytes: number | string;
@@ -447,8 +453,11 @@ export interface ProjectPlanningOccurrenceRecord {
 export interface ProjectOperationDocumentRecord {
   id: number;
   projectId: number;
-  planningOccurrenceId: number;
+  planningOccurrenceId: number | null;
   documentType: string;
+  categoryKey?: string;
+  subcategoryKey?: string;
+  expiresOn?: string;
   fileName: string;
   mimeType: string;
   fileSizeBytes: number;
@@ -763,12 +772,19 @@ export function mapProjectOperationDocumentRows(
   rows: ProjectOperationDocumentRow[],
 ): ProjectOperationDocumentRecord[] {
   return rows.flatMap((row) => {
-    if (!Number.isInteger(row.planning_occurrence_id) || Number(row.planning_occurrence_id) <= 0) return [];
+    const planningOccurrenceId = Number.isInteger(row.planning_occurrence_id)
+      && Number(row.planning_occurrence_id) > 0
+      ? Number(row.planning_occurrence_id)
+      : null;
+    if (planningOccurrenceId === null && row.document_type !== 'project_attachment') return [];
     return [{
       id: row.id,
       projectId: row.project_id,
-      planningOccurrenceId: Number(row.planning_occurrence_id),
+      planningOccurrenceId,
       documentType: row.document_type,
+      categoryKey: nullableText(row.category_key),
+      subcategoryKey: nullableText(row.subcategory_key),
+      expiresOn: nullableText(row.expires_on),
       fileName: row.file_name,
       mimeType: row.mime_type,
       fileSizeBytes: Number(row.file_size_bytes) || 0,
