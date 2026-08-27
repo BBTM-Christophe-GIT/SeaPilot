@@ -1,6 +1,6 @@
 begin;
 
-select plan(3);
+select plan(10);
 
 insert into auth.users (id, email)
 values
@@ -68,6 +68,31 @@ cross join lateral (
 ) fixture
 where company.code = 'bbtm';
 
+insert into public.working_time_profile_signatures (
+  company_id, person_id, version_number, storage_bucket, storage_path,
+  mime_type, file_size_bytes, sha256, valid_from
+)
+select company.id, person.id, 1, 'working-time-signatures',
+       concat(company.id, '/', person.id, '/captain-direct-validation.png'),
+       'image/png', 128,
+       case when person.sailor_number = 'ROLE-CAPTAIN' then repeat('c', 64) else repeat('d', 64) end,
+       '2026-08-25 00:00:00+02'::timestamptz
+from public.companies company
+join public.people person on person.company_id = company.id
+where company.code = 'bbtm'
+  and person.sailor_number in ('ROLE-CAPTAIN', 'ROLE-SAILOR');
+
+insert into public.working_time_registers (
+  company_id, person_id, period_kind, period_start, period_end, status
+)
+select company.id, sailor.id, 'monthly', '2026-08-01', '2026-08-31', 'draft'
+from public.companies company
+join public.people sailor
+  on sailor.company_id = company.id
+ and sailor.sailor_number = 'ROLE-SAILOR'
+where company.code = 'bbtm'
+on conflict (company_id, person_id, period_kind, period_start, period_end) do nothing;
+
 select set_config('request.jwt.claim.sub', '78900000-0000-0000-0000-000000000002', true);
 
 select is(
@@ -99,6 +124,81 @@ select ok(
     'Bordée 2'
   ),
   'the exact HR Capitaine can access the same-watch period with a different Planning duty label'
+);
+
+select ok(
+  public.working_time_actor_can_edit_day(
+    (select id from public.working_time_registers
+      where person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+        and period_start = '2026-08-01'),
+    date '2026-08-26'
+  ),
+  'the assigned exact HR Capitaine can prepare an unsubmitted sailor day'
+);
+
+select lives_ok(
+  format(
+    $sql$select public.save_working_time_phases(
+      %s,
+      '[{"starts_at":"2026-08-26T08:30:00+02:00","ends_at":"2026-08-26T12:00:00+02:00"}]'::jsonb,
+      'Europe/Paris', null, null, 'Saisie préparée par le capitaine'
+    )$sql$,
+    (select id from public.working_time_registers
+      where person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+        and period_start = '2026-08-01')
+  ),
+  'the assigned Captain can persist the sailor phases before validation'
+);
+
+select lives_ok(
+  format(
+    $sql$select public.submit_working_time_day(%s, date '2026-08-26')$sql$,
+    (select id from public.working_time_registers
+      where person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+        and period_start = '2026-08-01')
+  ),
+  'the assigned Captain can submit and validate the compliant sailor day atomically'
+);
+
+select is(
+  (select approval.status
+   from public.working_time_day_approvals approval
+   where approval.person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+     and approval.local_work_date = '2026-08-26'),
+  'validated',
+  'the Captain-prepared compliant day is closed immediately'
+);
+
+select is(
+  (select approval.subject_signature_snapshot->>'apposition_mode'
+   from public.working_time_day_approvals approval
+   where approval.person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+     and approval.local_work_date = '2026-08-26'),
+  'assigned_captain',
+  'the subject signature snapshot records the on-behalf apposition mode'
+);
+
+select is(
+  (select (approval.subject_signature_snapshot->>'signer_person_id')::bigint
+   from public.working_time_day_approvals approval
+   where approval.person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+     and approval.local_work_date = '2026-08-26'),
+  (select id from public.people where sailor_number = 'ROLE-SAILOR'),
+  'the frozen subject signature still belongs to the sailor'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.working_time_day_approvals approval
+    where approval.person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+      and approval.local_work_date = '2026-08-26'
+      and approval.submitted_by_person_id = (select id from public.people where sailor_number = 'ROLE-CAPTAIN')
+      and approval.validated_by_person_id = (select id from public.people where sailor_number = 'ROLE-CAPTAIN')
+      and (approval.approver_signature_snapshot->>'signer_person_id')::bigint =
+        (select id from public.people where sailor_number = 'ROLE-CAPTAIN')
+  ),
+  'the audit identifies the Captain as both apposition actor and validator'
 );
 
 select * from finish();

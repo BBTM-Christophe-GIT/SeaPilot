@@ -390,6 +390,11 @@ export function WorkingTimeWorkflowPanel({
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
+  const isAssignedCaptainForSelectedDay = Boolean(
+    hasCaptainRole
+      && !isOwnRegister
+      && activeDayContext?.approverPersonId === currentPersonId,
+  );
   const pendingApprovals = useMemo(() => workspace?.dayApprovals
     .filter((approval) => approval.status === 'submitted'
       && (approval.approverPersonId === currentPersonId || hasManagementValidationRole))
@@ -844,11 +849,14 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
-                    showSubmitToCaptain={canEdit && isOwnRegister && !selectedDayApproval}
+                    showSubmitToCaptain={canEdit
+                      && !selectedDayApproval
+                      && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
                       && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole)}
-                    submitDisabled={!currentSignature}
+                    submitDisabled={!currentSignature
+                      || (isAssignedCaptainForSelectedDay && !subjectSignature)}
                     validateDisabled={!canValidate}
                     />
                     {!selectedIntervals.length ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
@@ -933,6 +941,8 @@ export function WorkingTimeWorkflowPanel({
 
                 {missingCaptainComments.length > 0 && selectedDayApproval?.status === 'submitted' ? <p className="working-time-message is-error">Justification de non-conformité incomplète pour le {selectedDay}.</p> : null}
                 {!currentSignature && isOwnRegister && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
+                {!subjectSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
+                {!currentSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
                 {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || hasManagementValidationRole) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
                 {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
               </article>

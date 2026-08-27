@@ -953,6 +953,7 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_SUBMITTED_DAY_MOVE_FORBIDDEN', 'Une journée soumise ne peut pas être déplacée vers une autre date.'],
   ['WORKING_TIME_ALERT_COMMENT_REQUIRED', 'Le commentaire est obligatoire lorsqu’une alerte ou une non-conformité est détectée.'],
   ['WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED', 'Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.'],
+  ['WORKING_TIME_SUBJECT_SIGNATURE_REQUIRED', 'Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.'],
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
   ['WORKING_TIME_REGISTER_LOCKED', 'Ce registre validé est verrouillé. Réouvrez-le avec un motif pour le corriger.'],
   ['WORKING_TIME_REGISTER_NOT_EDITABLE', 'Ce registre doit être rouvert avant toute correction.'],
