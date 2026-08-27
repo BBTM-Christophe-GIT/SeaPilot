@@ -12,17 +12,22 @@ export interface ActionSheetData {
   correctiveAction: string;
   realizedAction?: string;
   comments?: string;
-  openedOn: string;
+  occurredAt: string;
   dueOn: string;
   closedOn?: string;
   vesselName: string;
+  vesselManeuver: string;
+  weatherConditions: string;
   issuerName: string;
   ownerName: string;
+  anomalyCause: string;
+  actionTypeKey: string;
   actionType: string;
   deviationType: string;
   status?: string;
   findingPhotos: ActionSheetEvidence[];
   closurePhoto?: ActionSheetEvidence;
+  issuerSignature?: ActionSheetEvidence;
   logoSource?: Blob | string;
 }
 
@@ -45,19 +50,24 @@ function hasText(value?: string): boolean {
 
 export function actionSheetCompletion(data: ActionSheetData): ActionSheetCompletionItem[] {
   const identificationComplete = [
-    data.openedOn,
-    data.vesselName,
+    data.occurredAt,
     data.issuerName,
-    data.ownerName,
     data.dueOn,
   ].every(hasText);
+  const deviationRequired = [
+    'audit_client', 'audit_ecmid', 'audit_internal', 'visit_davit',
+    'visit_crane', 'visit_hse', 'visit_radio', 'visit_classification',
+  ].includes(data.actionTypeKey);
 
   return [
     { key: 'identification', label: 'Identification', complete: identificationComplete, future: false },
-    { key: 'qualification', label: 'Qualification', complete: hasText(data.actionType) && hasText(data.deviationType), future: false },
+    { key: 'vessel-weather', label: 'Navire et conditions météo', complete: [data.vesselName, data.vesselManeuver, data.weatherConditions].every(hasText), future: false },
+    { key: 'qualification', label: 'Qualification', complete: hasText(data.actionType) && (!deviationRequired || hasText(data.deviationType)), future: false },
     { key: 'finding', label: 'Constat', complete: hasText(data.title), future: false },
     { key: 'photos', label: 'Photos ou pièces jointes', complete: data.findingPhotos.length > 0, future: false },
     { key: 'proposal', label: 'Action proposée', complete: hasText(data.correctiveAction), future: false },
+    { key: 'cause', label: "Cause de l'anomalie", complete: hasText(data.anomalyCause), future: true },
+    { key: 'assignment', label: 'Responsable du traitement', complete: hasText(data.ownerName), future: true },
     { key: 'treatment', label: 'Traitement et clôture', complete: hasText(data.realizedAction), future: true },
     { key: 'closure-proof', label: 'Photo de preuve', complete: Boolean(data.closurePhoto), future: true },
     { key: 'closed-on', label: 'Date de clôture', complete: hasText(data.closedOn), future: true },
@@ -78,6 +88,16 @@ function formatDate(value: string): string {
   if (!value) return 'Non renseignée';
   const [year, month, day] = value.slice(0, 10).split('-');
   return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatDateTime(value: string): string {
+  if (!value) return 'Non renseignée';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }).format(date).replace(' à ', ' · ');
 }
 
 function safeFileName(value: string): string {
@@ -143,11 +163,15 @@ export function actionSheetDataFromForm(
     title: form.title,
     description: form.description,
     correctiveAction: form.correctiveAction,
-    openedOn: form.openedOn,
+    occurredAt: form.occurredAt,
     dueOn: form.dueOn,
     vesselName: form.vesselName,
+    vesselManeuver: form.vesselManeuver,
+    weatherConditions: form.weatherConditions,
     issuerName: form.issuerName,
-    ownerName: form.ownerName,
+    ownerName: '',
+    anomalyCause: '',
+    actionTypeKey: form.actionTypeKey,
     actionType: form.actionType,
     deviationType: form.deviationType,
     status: 'Brouillon',
@@ -157,7 +181,7 @@ export function actionSheetDataFromForm(
 
 export function actionSheetDataFromRecord(
   action: ActionItemRecord,
-  evidenceUrls: { photo1Url?: string; photo2Url?: string; closurePhotoUrl?: string },
+  evidenceUrls: { photo1Url?: string; photo2Url?: string; closurePhotoUrl?: string; issuerSignatureUrl?: string },
 ): ActionSheetData {
   const findingPhotoUrls = [evidenceUrls.photo1Url, evidenceUrls.photo2Url]
     .filter((source): source is string => Boolean(source));
@@ -168,18 +192,25 @@ export function actionSheetDataFromRecord(
     correctiveAction: action.correctiveAction,
     realizedAction: action.realizedAction,
     comments: action.comments,
-    openedOn: action.openedOn,
+    occurredAt: action.occurredAt || action.openedOn,
     dueOn: action.dueOn,
     closedOn: action.closedOn,
     vesselName: action.vesselName,
+    vesselManeuver: action.vesselManeuver,
+    weatherConditions: action.weatherConditions,
     issuerName: action.issuerName,
     ownerName: action.ownerName,
+    anomalyCause: action.anomalyCause,
+    actionTypeKey: action.actionTypeKey,
     actionType: action.actionType || action.auditType,
     deviationType: action.deviationType,
     status: action.status,
     findingPhotos: findingPhotoUrls.map((source, index) => ({ label: `Photo du constat ${index + 1}`, source })),
     closurePhoto: evidenceUrls.closurePhotoUrl
       ? { label: 'Preuve du traitement', source: evidenceUrls.closurePhotoUrl }
+      : undefined,
+    issuerSignature: evidenceUrls.issuerSignatureUrl
+      ? { label: "Signature de l'émetteur", source: evidenceUrls.issuerSignatureUrl }
       : undefined,
   };
 }
@@ -204,7 +235,7 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
     doc.setTextColor(...INK);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text("FICHE D'ACTION", pageWidth / 2, 17, { align: 'center' });
+    doc.text("RAPPORT D'EVENEMENT", pageWidth / 2, 17, { align: 'center' });
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...MUTED);
@@ -253,14 +284,14 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
     y += height + 2;
   };
 
-  const addIdentification = () => {
+  const addIdentification = async () => {
     addSectionTitle('Identification');
     const rows = [
-      ['Date du constat', formatDate(data.openedOn), 'Navire / lieu', data.vesselName || 'Non renseigné'],
+      ['Date du constat', formatDateTime(data.occurredAt), 'Référence', actionSheetReference(data)],
       ['Émetteur', data.issuerName || 'Non renseigné', 'Responsable', data.ownerName || 'Non renseigné'],
-      ['Échéance', formatDate(data.dueOn), "Type d'action", data.actionType || 'Non renseigné'],
-      ["Type d'écart", data.deviationType || 'Non renseigné', 'Référence', actionSheetReference(data)],
+      ['Échéance', formatDate(data.dueOn), "Type d'Evènement", data.actionType || 'Non renseigné'],
     ];
+    if (hasText(data.deviationType)) rows.push(["Type d'écart", data.deviationType, 'Statut', data.status || 'Non renseigné']);
     const rowHeight = 8;
     const labelWidth = 31;
     const half = contentWidth / 2;
@@ -283,6 +314,32 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
       doc.text(doc.splitTextToSize(row[3], half - labelWidth - 4)[0] || '', margin + half + labelWidth + 2, y + 5);
       y += rowHeight;
     });
+
+    ensureSpace(23);
+    doc.setDrawColor(...LINE);
+    doc.setFillColor(...PALE);
+    doc.rect(margin, y, 42, 20, 'FD');
+    doc.rect(margin + 42, y, contentWidth - 42, 20);
+    doc.setTextColor(...BLUE);
+    doc.setFont('helvetica', 'bold');
+    doc.text("Signature de l'émetteur", margin + 2, y + 5);
+    if (data.issuerSignature) {
+      try {
+        const signature = await imageSourceToJpeg(data.issuerSignature.source);
+        const properties = doc.getImageProperties(signature);
+        const ratio = Math.min(48 / properties.width, 15 / properties.height);
+        doc.addImage(signature, 'JPEG', margin + 45, y + 2.5, properties.width * ratio, properties.height * ratio, undefined, 'FAST');
+      } catch {
+        doc.setTextColor(...MUTED);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Signature non disponible', margin + 45, y + 11);
+      }
+    } else {
+      doc.setTextColor(...MUTED);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Signature non renseignée', margin + 45, y + 11);
+    }
+    y += 20;
     y += 3;
   };
 
@@ -320,10 +377,18 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
   };
 
   addPageHeader();
-  addIdentification();
+  await addIdentification();
+  addSectionTitle('Navire et conditions météo');
+  addTextBlock('Navire / lieu', data.vesselName, 'Navire non renseigné');
+  addTextBlock("Manœuvre du navire au moment de l'évènement", data.vesselManeuver);
+  addTextBlock('Conditions météo', data.weatherConditions);
   addSectionTitle('Constat');
   addTextBlock('Constat', data.title, 'Constat non renseigné');
   if (hasText(data.description)) addTextBlock('Description complémentaire', data.description);
+  if (hasText(data.anomalyCause)) {
+    addSectionTitle("Cause de l'anomalie");
+    addTextBlock('Cause retenue', data.anomalyCause);
+  }
   addSectionTitle('Action proposée');
   addTextBlock('Proposition', data.correctiveAction, 'Aucune action proposée');
   await addEvidence('Photos du constat', data.findingPhotos);
@@ -353,7 +418,7 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
     doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
     doc.setTextColor(...MUTED);
     doc.setFontSize(6.8);
-    doc.text('BBTM · Fiche générée depuis SeaPilot', margin, pageHeight - 7);
+    doc.text("BBTM · Rapport d'évènement généré depuis SeaPilot", margin, pageHeight - 7);
     doc.text(`Page ${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
 
@@ -362,7 +427,7 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
 
 export function actionSheetFileName(data: ActionSheetData): string {
   const reference = actionSheetReference(data).toLowerCase();
-  const title = safeFileName(data.title) || 'fiche-action';
+  const title = safeFileName(data.title) || 'rapport-evenement';
   return `${reference}-${title}.pdf`;
 }
 

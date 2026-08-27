@@ -128,7 +128,8 @@ describe('previewSupabaseClient', () => {
     expect(actions.error).toBeNull();
     expect(actions.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ sharepoint_list_title: "Plan d'Action", status: 'Non soldé' }),
-      expect.objectContaining({ sharepoint_list_title: 'Indicateurs QHSE', action_type_key: 'first-aid-case' }),
+      expect.objectContaining({ sharepoint_list_title: 'Indicateurs QHSE', action_type_key: 'first_aid_case' }),
+      expect.objectContaining({ workflow_status: 'pending_approval', approver_person_id: 9301 }),
     ]));
     expect(actionTypes.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ hse_classification: 'LWDC', tracks_exposure_rate: true }),

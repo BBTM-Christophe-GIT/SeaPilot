@@ -11,17 +11,19 @@ Le module SeaPilot consolide deux vues SharePoint dans `public.action_items` :
 
 Chaque ligne conserve l’identifiant, le GUID, la date de modification, le site et la liste SharePoint. Le catalogue navire est rapproché par `vessel_sharepoint_item_id`.
 
-## Workflow adapté
+## Workflow Rapport d'évènement
 
-L’audit de l’application SharePoint a confirmé le parcours suivant :
+Les nouvelles fiches SeaPilot suivent désormais le parcours suivant :
 
-1. liste groupée par statut, navire puis type d’action ;
-2. filtres navire, type, statut et type d’écart ;
-3. création en cinq sections : titre, émetteur, catégorie, proposition, photos ;
-4. traitement avec action réalisée, commentaire et photo de clôture ;
-5. sauvegarde intermédiaire ou clôture de l’action.
+1. l'émetteur renseigne l'identification, la date et l'heure du constat, le navire, sa manœuvre, les conditions météo, la qualification, le constat, l'action proposée et les photos ;
+2. le type d'écart n'est demandé que pour les audits client, eCMID/IMCA et interne BBTM, ainsi que les visites bossoir, grue, HSE/exploitation, radio et société de classification ;
+3. le rapport est soumis à Christophe MINASSIAN sans responsable ni cause préaffectés ;
+4. Christophe sélectionne la cause de l'anomalie puis affecte une ou plusieurs personnes et/ou l'équipage dynamique d'un navire ;
+5. après approbation, les responsables traitent l'action, ajoutent leur commentaire et la photo de preuve, puis clôturent la fiche.
 
-SeaPilot conserve ce parcours et ajoute une barre de fonctions `Actions`, `Indicateurs HSE` et `Sources importées`. L’émetteur d’une nouvelle action est prérempli avec le prénom et le nom du profil connecté. Les preuves sont enregistrées dans le bucket privé `action-plan-evidence` (10 Mo maximum par fichier).
+L'émetteur est prérempli depuis le profil connecté et sa signature active est figée lors de la création. Le PDF A4 porte le titre `RAPPORT D'EVENEMENT`, reprend la date et l'heure, la signature, les conditions du navire et les photos. La ligne `Type d'écart` est absente lorsque cette donnée ne s'applique pas. Les preuves restent enregistrées dans le bucket privé `action-plan-evidence` (10 Mo maximum par fichier).
+
+Les affectations d'équipage sont dynamiques : un Marin voit et peut traiter l'action lorsqu'une affectation Planning confirmée le rattache au navire concerné. Les politiques RLS et les RPC appliquent ce périmètre côté base, indépendamment de l'interface.
 
 ## Catégories HSE et temps d’exposition
 

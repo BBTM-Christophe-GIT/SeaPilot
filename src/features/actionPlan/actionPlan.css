@@ -230,7 +230,9 @@
 .action-plan-row-main em { display: inline-flex; justify-content: flex-start; padding: 4px 8px; border-radius: 99px; font-size: .7rem; font-style: normal; font-weight: 800; text-align: left; }
 .action-plan-row-main em.is-open { background: #fff0df; color: #aa4a00; }
 .action-plan-row-main em.is-closed { background: #dff6e8; color: #0d7a40; }
+.action-plan-row-main em.is-pending { background: #e8efff; color: #2459bc; }
 .action-plan-treat { grid-column: 1; min-height: 34px !important; padding: 0 11px !important; border-color: #cddcf0 !important; background: #f7fbff !important; color: #2056a8 !important; font-size: .73rem; }
+.action-plan-treat.is-approval { border-color: #a9c7b7 !important; background: #effbf4 !important; color: #167244 !important; }
 .action-plan-treat-spacer { grid-column: 1; width: 78px; }
 .action-plan-thumbnail { display: grid; grid-column: 2; width: 46px; height: 40px; place-items: center; overflow: hidden; border: 1px solid #d8e2ee; border-radius: 8px; background: #f4f7fb; color: #7b8da4; }
 .action-plan-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
@@ -302,7 +304,8 @@
 }
 
 .action-plan-dialog,
-.action-plan-treatment {
+.action-plan-treatment,
+.action-plan-approval {
   border: 1px solid #d8e2ee;
   border-radius: 22px;
   background: white;
@@ -311,6 +314,7 @@
 
 .action-plan-dialog { width: min(1540px, 98vw); height: min(980px, 96vh); overflow: hidden; }
 .action-plan-treatment { width: min(720px, 96vw); max-height: min(850px, 94vh); overflow: auto; }
+.action-plan-approval { width: min(920px, 96vw); max-height: min(900px, 94vh); overflow: auto; }
 .action-plan-dialog > header,
 .action-plan-treatment > header { position: relative; padding: 24px 30px; border-bottom: 1px solid var(--ap-line); background: white; }
 .action-plan-dialog > header > span,
@@ -335,6 +339,9 @@
 .action-sheet-form textarea { min-height: 86px; font-size: .83rem; line-height: 1.45; text-transform: none; }
 .action-plan-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
 .action-plan-form-grid.is-identification { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.action-plan-form-grid .is-wide { grid-column: 1 / -1; }
+.action-sheet-form input[readonly],
+.action-sheet-form select:disabled { background: #f1f5f9; color: #607087; cursor: not-allowed; }
 .action-plan-link-note { display: flex; gap: 8px; align-items: center; margin: 20px 0 0; padding: 12px; border-radius: 10px; background: #eef8fa; color: #176b79; font-size: .78rem; }
 .action-sheet-dialog form > footer { z-index: 2; display: flex; min-height: 66px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 22px; border-top: 1px solid var(--ap-line); background: white; box-shadow: 0 -8px 22px rgb(23 35 58 / 4%); }
 .action-sheet-dialog form > footer > span { display: flex; gap: 8px; align-items: center; color: var(--ap-muted); font-size: .76rem; font-weight: 700; }
@@ -368,6 +375,9 @@
 .action-sheet-paper th,
 .action-sheet-paper td { padding: 4px 6px; border: 1px solid #cad3df; text-align: left; }
 .action-sheet-paper th { width: 38%; border-left: 8px solid #0c3f78; background: #f2f5f9; color: #174778; }
+.action-sheet-paper .action-sheet-signature-row td { height: 34px; }
+.action-sheet-paper .action-sheet-signature-row img { width: 92px; height: 28px; object-fit: contain; object-position: left center; }
+.action-sheet-paper .action-sheet-signature-row em { color: #6a788b; font-size: .52rem; font-style: normal; }
 .action-sheet-paper section { margin-top: 9px; border: 1px solid #cad3df; }
 .action-sheet-paper section h4 { margin: 0; padding: 4px 6px; background: #0c3f78; color: white; font-size: .58rem; letter-spacing: .02em; text-transform: uppercase; }
 .action-sheet-paper section h5 { margin: 0; padding: 5px 6px 0; color: #174778; font-size: .51rem; }
@@ -412,6 +422,25 @@
 .action-plan-treatment > label { margin: 18px 26px 0; }
 .action-plan-treatment footer { display: flex; justify-content: flex-end; gap: 9px; margin: 22px 26px 0; }
 .action-plan-treatment .action-plan-message { margin: 14px 26px 0; }
+.action-plan-approval > header { position: relative; padding: 24px 28px; border-bottom: 1px solid var(--ap-line); }
+.action-plan-approval > header > span { color: #197149; font-size: .7rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.action-plan-approval > header h2 { margin: 5px 52px 0 0; font-size: 1.45rem; }
+.action-plan-approval > header p { margin: 7px 52px 0 0; color: var(--ap-muted); font-size: .8rem; }
+.action-plan-approval > header button { position: absolute; top: 22px; right: 24px; width: 42px; padding: 0; border-color: var(--ap-line); background: white; color: var(--ap-ink); }
+.action-plan-approval form { display: grid; gap: 18px; padding: 22px 28px 26px; }
+.action-plan-approval form > label { display: grid; gap: 7px; color: var(--ap-muted); font-size: .74rem; font-weight: 850; letter-spacing: .03em; text-transform: uppercase; }
+.action-plan-approval label b { color: #d32d2d; }
+.action-plan-approval fieldset { min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--ap-line); border-radius: 13px; }
+.action-plan-approval legend { padding: 0 7px; color: #283a52; font-size: .78rem; font-weight: 850; }
+.action-plan-assignee-grid { display: grid; max-height: 230px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; }
+.action-plan-assignee-grid label { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid #e0e7f0; border-radius: 9px; background: #fafbfd; cursor: pointer; }
+.action-plan-assignee-grid label:has(input:checked) { border-color: #82a9ef; background: #eef4ff; }
+.action-plan-assignee-grid input { width: 17px; min-height: 17px; margin: 2px 0 0; accent-color: #2663eb; }
+.action-plan-assignee-grid span { display: grid; min-width: 0; }
+.action-plan-assignee-grid strong { color: #26384f; font-size: .78rem; }
+.action-plan-assignee-grid small { margin-top: 2px; color: var(--ap-muted); font-size: .68rem; }
+.action-plan-approval-selection { display: flex; align-items: center; gap: 8px; margin: 0; color: #256046; font-size: .78rem; font-weight: 750; }
+.action-plan-approval footer { display: flex; justify-content: flex-end; gap: 9px; }
 .action-plan-definitions { width: min(980px, 96vw); max-height: min(820px, 94vh); overflow: auto; border: 1px solid var(--ap-line); border-radius: 20px; background: white; box-shadow: 0 30px 80px rgb(15 35 65 / 28%); }
 .action-plan-definitions > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 24px 28px; border-bottom: 1px solid var(--ap-line); }
 .action-plan-definitions > header span { color: var(--ap-muted); font-size: .7rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }

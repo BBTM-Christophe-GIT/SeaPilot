@@ -1050,25 +1050,35 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   hse_exposure_hours: [],
   hse_safety_events: [],
   action_type_catalog: [
-    { type_key: 'progress-action', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, sort_order: 10, active: true },
-    { type_key: 'internal-audit', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 20, active: true },
-    { type_key: 'fatality', label: 'Décès (FAT)', family: 'event', hse_classification: 'FAT', tracks_exposure_rate: true, sort_order: 100, active: true },
-    { type_key: 'lost-time-injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, sort_order: 110, active: true },
-    { type_key: 'restricted-work-case', label: 'Blessure - Travail adapté (RWC)', family: 'event', hse_classification: 'RWC', tracks_exposure_rate: true, sort_order: 120, active: true },
-    { type_key: 'medical-treatment-case', label: 'Accident avec traitement médical (MTC)', family: 'event', hse_classification: 'MTC', tracks_exposure_rate: true, sort_order: 130, active: true },
-    { type_key: 'first-aid-case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, sort_order: 140, active: true },
-    { type_key: 'near-miss', label: 'Presque-accident', family: 'event', hse_classification: 'NEAR_MISS', tracks_exposure_rate: true, sort_order: 150, active: true },
-    { type_key: 'safety-observation', label: 'Observation sécurité', family: 'event', hse_classification: 'SAFETY_OBSERVATION', tracks_exposure_rate: true, sort_order: 160, active: true },
+    { type_key: 'action_progress', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, sort_order: 10, active: true },
+    { type_key: 'audit_client', label: 'Audit Client', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 20, active: true },
+    { type_key: 'audit_ecmid', label: 'Audit eCMID - IMCA', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 30, active: true },
+    { type_key: 'audit_internal', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 40, active: true },
+    { type_key: 'visit_davit', label: 'Visite Bossoir', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 60, active: true },
+    { type_key: 'visit_crane', label: 'Visite Grue', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 70, active: true },
+    { type_key: 'visit_hse', label: 'Visite HSE/Exploitation', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 80, active: true },
+    { type_key: 'visit_radio', label: 'Visite Radio', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 90, active: true },
+    { type_key: 'visit_classification', label: 'Visite Société de Classification', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 100, active: true },
+    { type_key: 'fatality', label: 'Décès (FAT)', family: 'event', hse_classification: 'FAT', tracks_exposure_rate: true, sort_order: 200, active: true },
+    { type_key: 'lost_time_injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, sort_order: 210, active: true },
+    { type_key: 'restricted_work_case', label: 'Blessure - Travail adapté (RWC)', family: 'event', hse_classification: 'RWC', tracks_exposure_rate: true, sort_order: 220, active: true },
+    { type_key: 'medical_treatment_case', label: 'Accident avec traitement médical (MTC)', family: 'event', hse_classification: 'MTC', tracks_exposure_rate: true, sort_order: 230, active: true },
+    { type_key: 'first_aid_case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, sort_order: 240, active: true },
+    { type_key: 'near_miss', label: 'Presque-accident', family: 'event', hse_classification: 'NEAR_MISS', tracks_exposure_rate: true, sort_order: 250, active: true },
+    { type_key: 'safety_observation', label: 'Observation sécurité', family: 'event', hse_classification: 'SAFETY_OBSERVATION', tracks_exposure_rate: true, sort_order: 260, active: true },
   ],
   action_items: [
     {
       id: 9861, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
       project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
       vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'audit',
-      action_type_key: 'internal-audit', action_type: 'Audit Interne - BBTM', audit_type: 'Audit interne',
+      action_type_key: 'audit_internal', action_type: 'Audit Interne - BBTM', audit_type: 'Audit interne',
       title: 'Contrôler la protection du poste de manœuvre', status: 'Non soldé', priority_label: 'Haute',
       deviation_type: 'Non Conformité Majeure', opened_on: '2026-07-28', due_on: '2026-08-14', closed_on: null,
-      issuer_name: 'Arthur DEMO', owner_name: 'Luc MARTIN', auditor_name: 'Arthur DEMO',
+      occurred_at: '2026-07-28T09:20:00+02:00', issuer_name: 'Arthur DEMO', issuer_person_id: 9301,
+      issuer_signature_snapshot: { storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png' },
+      owner_name: 'Luc MARTIN', auditor_name: 'Arthur DEMO', workflow_status: 'approved',
+      vessel_maneuver: 'Navire à quai pendant une opération de manutention', weather_conditions: 'Vent 12 nœuds, mer belle',
       description: 'La protection latérale du poste de manœuvre doit être remise en conformité.',
       corrective_action: 'Remplacer le garde-corps et consigner le contrôle final.', realized_action: null,
       anomaly_cause: 'Usure constatée pendant la ronde pont.', comments: 'Action issue de la liste Audit SharePoint.',
@@ -1080,10 +1090,13 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9862, company_id: 1, project_id: null, project_sharepoint_item_id: null, project_code: null,
       project_title: null, vessel_id: 9201, vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration',
-      category_key: 'event', action_type_key: 'first-aid-case', action_type: 'Accident sans arrêt de travail (FAC)',
+      category_key: 'event', action_type_key: 'first_aid_case', action_type: 'Accident sans arrêt de travail (FAC)',
       audit_type: 'Indicateur QHSE', title: 'Coupure superficielle pendant une manutention', status: 'Soldé',
       priority_label: 'Normale', deviation_type: 'Remarque', opened_on: '2026-07-19', due_on: '2026-07-19',
-      closed_on: '2026-07-19', issuer_name: 'Arthur DEMO', owner_name: 'Hugo BERNARD', auditor_name: null,
+      closed_on: '2026-07-19', occurred_at: '2026-07-19T11:35:00+02:00', issuer_name: 'Arthur DEMO', issuer_person_id: 9301,
+      issuer_signature_snapshot: { storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png' },
+      owner_name: 'Hugo BERNARD', auditor_name: null, workflow_status: 'closed', vessel_maneuver: 'Transit à vitesse réduite',
+      weather_conditions: 'Couvert, vent faible',
       description: 'Premiers soins réalisés à bord sans arrêt de travail.', corrective_action: 'Rappel port des gants anticoupure.',
       realized_action: 'Brief sécurité réalisé à la relève.', anomaly_cause: 'Gants inadaptés à la tâche.', comments: null,
       level_label: 'Mineur', location_detail: 'Zone de manutention', photo_1_path: null, photo_2_path: null,
@@ -1095,10 +1108,13 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       id: 9863, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
       project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
       vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'action',
-      action_type_key: 'progress-action', action_type: 'Action de Progrès - BBTM', audit_type: 'Ronde QHSE',
-      title: 'Mettre à jour le balisage de la zone grue', status: 'Non soldé', priority_label: 'Normale',
-      deviation_type: "Proposition d'Amélioration", opened_on: '2026-08-02', due_on: '2026-08-21', closed_on: null,
-      issuer_name: 'Arthur DEMO', owner_name: 'Hugo BERNARD', auditor_name: null,
+      action_type_key: 'action_progress', action_type: 'Action de Progrès - BBTM', audit_type: 'Ronde QHSE',
+      title: 'Mettre à jour le balisage de la zone grue', status: "En attente d'approbation", priority_label: 'Normale',
+      deviation_type: null, opened_on: '2026-08-02', occurred_at: '2026-08-02T14:10:00+02:00', due_on: '2026-08-21', closed_on: null,
+      issuer_name: 'Arthur DEMO', issuer_person_id: 9301,
+      issuer_signature_snapshot: { storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png' },
+      owner_name: null, auditor_name: null, workflow_status: 'pending_approval', approver_person_id: 9301,
+      approval_requested_at: '2026-08-02T12:11:00Z', vessel_maneuver: 'Navire à quai', weather_conditions: 'Ensoleillé, vent 8 nœuds',
       description: 'Le balisage au sol est partiellement effacé.', corrective_action: 'Refaire le marquage et contrôler la signalétique.',
       realized_action: null, anomaly_cause: null, comments: null, level_label: 'Amélioration', location_detail: 'Pont de travail',
       photo_1_path: 'demo/action-plan-finding-lifting-zone.png',
@@ -1106,6 +1122,10 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       victim_sharepoint_item_id: null, lost_days: 0, safety_event_details: {}, source_label: 'sharepoint-list-audit',
       sharepoint_list_title: "Plan d'Action", sharepoint_item_id: 'preview-action-102', source_modified_at: '2026-08-08T10:00:00Z',
     },
+  ],
+  action_item_assignees: [
+    { id: 9881, company_id: 1, action_item_id: 9861, assignee_kind: 'person', person_id: 9303, vessel_id: null, created_at: '2026-07-28T08:30:00Z' },
+    { id: 9882, company_id: 1, action_item_id: 9861, assignee_kind: 'vessel_crew', person_id: null, vessel_id: 9201, created_at: '2026-07-28T08:30:00Z' },
   ],
   action_documents: [
     {
@@ -1434,6 +1454,109 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'action_item_create') {
+    const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));
+    const type = previewRows('action_type_catalog').find((row) => row.type_key === args.p_action_type_key);
+    const actionId = nextPreviewId('action_items', 9900);
+    const action = {
+      id: actionId,
+      company_id: 1,
+      project_id: null,
+      project_sharepoint_item_id: null,
+      project_code: null,
+      project_title: null,
+      vessel_id: vessel?.id || null,
+      vessel_sharepoint_item_id: null,
+      vessel_name: vessel?.name || '',
+      category_key: type?.family || 'event',
+      action_type_key: type?.type_key || String(args.p_action_type_key || ''),
+      action_type: type?.label || '',
+      audit_type: null,
+      title: String(args.p_title || ''),
+      status: "En attente d'approbation",
+      priority_label: 'Normale',
+      deviation_type: args.p_deviation_type || null,
+      opened_on: String(args.p_occurred_at || '').slice(0, 10),
+      occurred_at: args.p_occurred_at || new Date().toISOString(),
+      due_on: args.p_due_on || null,
+      closed_on: null,
+      issuer_name: 'Arthur DEMO',
+      issuer_person_id: 9301,
+      issuer_signature_snapshot: { storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png' },
+      owner_name: null,
+      auditor_name: null,
+      workflow_status: 'pending_approval',
+      approver_person_id: 9301,
+      approval_requested_at: new Date().toISOString(),
+      vessel_maneuver: args.p_vessel_maneuver || null,
+      weather_conditions: args.p_weather_conditions || null,
+      description: args.p_description || null,
+      corrective_action: args.p_corrective_action || null,
+      realized_action: null,
+      anomaly_cause: null,
+      comments: null,
+      level_label: null,
+      location_detail: null,
+      photo_1_path: null,
+      photo_2_path: null,
+      closure_photo_path: null,
+      victim_person_id: null,
+      victim_sharepoint_item_id: null,
+      lost_days: Number(args.p_lost_days || 0),
+      safety_event_details: {},
+      source_label: 'seapilot',
+      sharepoint_list_title: null,
+      sharepoint_item_id: null,
+      source_modified_at: new Date().toISOString(),
+    };
+    PREVIEW_ROWS.action_items.unshift(action);
+    return createPreviewQuery({ data: action, error: null });
+  }
+  if (functionName === 'action_item_attach_finding_photos') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    if (!action) return createPreviewQuery({ data: null, error: { message: 'Rapport introuvable.' } });
+    action.photo_1_path = args.p_photo_1_path || null;
+    action.photo_2_path = args.p_photo_2_path || null;
+    return createPreviewQuery({ data: action, error: null });
+  }
+  if (functionName === 'action_item_approve') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    if (!action) return createPreviewQuery({ data: null, error: { message: 'Rapport introuvable.' } });
+    const personIds = Array.isArray(args.p_person_ids) ? args.p_person_ids.map(Number) : [];
+    const vesselIds = Array.isArray(args.p_vessel_ids) ? args.p_vessel_ids.map(Number) : [];
+    const personNames = previewRows('people').filter((person) => personIds.includes(Number(person.id)))
+      .map((person) => `${person.first_name} ${person.last_name}`.trim());
+    const vesselNames = previewRows('vessels').filter((vesselRow) => vesselIds.includes(Number(vesselRow.id)))
+      .map((vesselRow) => `Équipage — ${vesselRow.name}`);
+    action.anomaly_cause = args.p_anomaly_cause || null;
+    action.owner_name = [...personNames, ...vesselNames].join(', ');
+    action.workflow_status = 'approved';
+    action.status = 'Ecart Non Soldé';
+    action.approved_by_person_id = 9301;
+    action.approved_at = new Date().toISOString();
+    personIds.forEach((personId) => PREVIEW_ROWS.action_item_assignees.push({
+      id: nextPreviewId('action_item_assignees', 9950), company_id: 1, action_item_id: action.id,
+      assignee_kind: 'person', person_id: personId, vessel_id: null, created_at: new Date().toISOString(),
+    }));
+    vesselIds.forEach((vesselId) => PREVIEW_ROWS.action_item_assignees.push({
+      id: nextPreviewId('action_item_assignees', 9950), company_id: 1, action_item_id: action.id,
+      assignee_kind: 'vessel_crew', person_id: null, vessel_id: vesselId, created_at: new Date().toISOString(),
+    }));
+    return createPreviewQuery({ data: action, error: null });
+  }
+  if (functionName === 'action_item_treat') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    if (!action) return createPreviewQuery({ data: null, error: { message: 'Action introuvable.' } });
+    action.comments = args.p_comments || null;
+    action.realized_action = args.p_realized_action || null;
+    action.closure_photo_path = args.p_closure_photo_path || action.closure_photo_path || null;
+    if (args.p_close_action) {
+      action.status = 'Ecart Soldé';
+      action.workflow_status = 'closed';
+      action.closed_on = new Date().toISOString().slice(0, 10);
+    }
+    return createPreviewQuery({ data: action, error: null });
+  }
   if (functionName === 'create_fleet_certificate_line') {
     const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));
     const categoryKey = String(args.p_category_key || '').trim();
