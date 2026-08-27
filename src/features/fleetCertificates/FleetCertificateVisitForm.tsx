@@ -1,8 +1,8 @@
 import {
   CalendarDays, CalendarPlus, Download, Mail, MapPin, Phone, Plus, Search, Trash2, X,
 } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
-import { formatProjectPort, PROJECT_PORT_GROUPS } from '../projects/projectPorts';
+import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
+import { filterProjectPortGroups, formatProjectPort } from '../projects/projectPorts';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import type {
   FleetServiceProvider,
@@ -77,16 +77,11 @@ export function FleetCertificateVisitForm({
   const [error, setError] = useState('');
 
   const providerById = useMemo(() => new Map(providers.map((provider) => [provider.id, provider])), [providers]);
-  const matchingPortGroups = useMemo(() => {
-    const query = portSearch.trim().toLocaleLowerCase('fr');
-    if (!query) return PROJECT_PORT_GROUPS;
-    return PROJECT_PORT_GROUPS.map((group) => ({
-      ...group,
-      ports: group.ports.filter((port) => (
-        `${group.department} ${formatProjectPort(port)}`.toLocaleLowerCase('fr').includes(query)
-      )),
-    })).filter((group) => group.ports.length);
-  }, [portSearch]);
+  const deferredPortSearch = useDeferredValue(portSearch);
+  const matchingPortGroups = useMemo(
+    () => filterProjectPortGroups(deferredPortSearch),
+    [deferredPortSearch],
+  );
   const agendaDays = useMemo(() => {
     const days = new Map<string, AssignmentState[]>();
     assignments.forEach((assignment) => {
@@ -173,7 +168,7 @@ export function FleetCertificateVisitForm({
           <div className="fcx-visit-context"><CalendarPlus size={19} /><span><b>{certificate.documentTitle}</b><small>{certificate.vesselName} · {certificate.categoryLabel}</small></span></div>
           {error && <p className="fcx-visit-error" role="alert">{error}</p>}
           <div className="fcx-visit-main-fields">
-            <label>Lieu de visite<div className="fcx-port-combobox"><div className="fcx-input-icon"><MapPin size={16} /><input aria-autocomplete="list" aria-controls="fleet-visit-port-list" aria-expanded={portsOpen} autoComplete="off" maxLength={250} placeholder="Rechercher un port, un département ou un LOCODE…" role="combobox" value={portSearch} onBlur={() => setPortsOpen(false)} onChange={(event) => { setPortSearch(event.target.value); setLocation(event.target.value); setPortsOpen(true); }} onFocus={() => setPortsOpen(true)} /></div>{portsOpen && <div className="fcx-port-results" id="fleet-visit-port-list" role="listbox"><div><Search size={14} /> Ports classés par département</div>{matchingPortGroups.map((group) => <section key={group.department}><h3>{group.department}</h3>{group.ports.map((port) => { const label = formatProjectPort(port); return <button key={`${port.port}-${port.locode}`} onMouseDown={(event) => event.preventDefault()} onClick={() => { setLocation(label); setPortSearch(label); setPortsOpen(false); }} role="option" type="button"><b>{port.port}</b><small>{port.municipality || port.locode.replace(/^([A-Z]{2})([A-Z0-9]{3})$/, '$1 $2')}</small></button>; })}</section>)}{!matchingPortGroups.length && <p>Aucun port ne correspond à cette recherche.</p>}</div>}</div></label>
+            <label>Lieu de visite<div className="fcx-port-combobox"><div className="fcx-input-icon"><MapPin size={16} /><input aria-autocomplete="list" aria-controls="fleet-visit-port-list" aria-expanded={portsOpen} autoComplete="off" maxLength={250} placeholder="Rechercher un port français ou anglais, un département ou un LOCODE…" role="combobox" value={portSearch} onBlur={() => setPortsOpen(false)} onChange={(event) => { setPortSearch(event.target.value); setLocation(event.target.value); setPortsOpen(true); }} onFocus={() => setPortsOpen(true)} /></div>{portsOpen && <div className="fcx-port-results" id="fleet-visit-port-list" role="listbox"><div><Search size={14} /> Ports français et anglais · classés par département</div>{matchingPortGroups.map((group) => <section key={group.department}><h3>{group.department}</h3>{group.ports.map((port) => { const label = formatProjectPort(port); return <button key={`${port.port}-${port.locode}`} onMouseDown={(event) => event.preventDefault()} onClick={() => { setLocation(label); setPortSearch(label); setPortsOpen(false); }} role="option" type="button"><b>{port.port}</b><small>{label.slice(port.port.length).replace(/^ – /, '')}</small></button>; })}</section>)}{!matchingPortGroups.length && <p>Aucun port ne correspond à cette recherche.</p>}</div>}</div></label>
             <label>Objet<input maxLength={250} required value={purpose} onChange={(event) => setPurpose(event.target.value)} /></label>
           </div>
         </section>

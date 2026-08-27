@@ -12,7 +12,7 @@ interface ProjectPortComboboxProps {
 export function ProjectPortCombobox({
   disabled = false,
   onChange,
-  placeholder = 'Rechercher un port, un département ou un LOCODE…',
+  placeholder = 'Rechercher un port français ou anglais, un département ou un LOCODE…',
   value = '',
 }: ProjectPortComboboxProps) {
   const listboxId = useId();
@@ -90,7 +90,7 @@ export function ProjectPortCombobox({
       <ChevronDown aria-hidden="true" size={16} />
     </div>
     {open && !disabled ? <div className="project-port-combobox__results" id={listboxId} role="listbox">
-      <header><Search aria-hidden="true" size={14} /> Ports classés par département</header>
+      <header><Search aria-hidden="true" size={14} /> Ports français et anglais · classés par département</header>
       {matchingGroups.map((group) => <section aria-label={group.department} key={group.department} role="group">
         <h3>{group.department}</h3>
         {group.ports.map((port) => {

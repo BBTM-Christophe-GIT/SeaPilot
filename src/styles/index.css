@@ -13310,6 +13310,227 @@ button.planning-p12-conflict-card {
 
 .project-hire-period-row > button { min-height: 40px; width: 40px; }
 
+.project-commercial-hire-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #bac7d8;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.project-commercial-hire-input input {
+  border: 0;
+  border-radius: 0;
+}
+
+.project-commercial-hire-input strong {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  color: #173b69;
+  background: #eef4ff;
+  border-left: 1px solid #c9d7ec;
+  font-size: .82rem;
+  white-space: nowrap;
+}
+
+.project-document-library {
+  display: grid;
+  gap: 16px;
+}
+
+.project-document-library-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  background: #f6f9ff;
+  border: 1px solid #cbd9f4;
+  border-radius: 10px;
+}
+
+.project-document-library-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-document-library-heading small {
+  color: #617381;
+}
+
+.project-document-library-heading button,
+.project-document-category-editor button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 11px;
+  color: #0b5e88;
+  background: #fff;
+  border: 1px solid #b9cbe7;
+  border-radius: 7px;
+  font-weight: 800;
+}
+
+.project-document-category-list,
+.project-document-category-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.project-document-category-list > section,
+.project-document-category-editor > section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #dce4ef;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.project-document-category-list h3,
+.project-document-pending h3,
+.project-document-existing h3 {
+  margin: 0;
+  color: #142a45;
+  font-size: .9rem;
+}
+
+.project-document-category-list > section > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-document-upload-target {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  color: #506278;
+  border: 1px dashed #9ab6d2;
+  border-radius: 8px;
+  background: #f7faff;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.project-document-upload-target > span:last-of-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #0c5598;
+}
+
+.project-document-upload-target input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.project-document-category-editor > section > div,
+.project-document-subcategory-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+}
+
+.project-document-subcategory-editor {
+  margin-left: 24px;
+}
+
+.project-document-category-editor > section > div > button,
+.project-document-subcategory-editor > button {
+  width: 38px;
+  padding: 0;
+  color: #a72a2a;
+}
+
+.project-document-add-subcategory,
+.project-document-add-category {
+  justify-self: start;
+}
+
+.project-document-pending,
+.project-document-existing {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dce4ef;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.project-document-pending > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(170px, .45fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e6ebf2;
+}
+
+.project-document-pending > div > span,
+.project-document-pending label,
+.project-document-existing a > span {
+  display: grid;
+  gap: 3px;
+}
+
+.project-document-pending small,
+.project-document-existing small {
+  color: #68788d;
+  font-size: .7rem;
+}
+
+.project-document-pending label > span {
+  color: #68788d;
+  font-size: .68rem;
+  font-weight: 750;
+}
+
+.project-document-pending > div > button {
+  display: grid;
+  width: 38px;
+  min-height: 40px;
+  place-items: center;
+  color: #a72a2a;
+  background: #fff;
+  border: 1px solid #d8e0ea;
+  border-radius: 7px;
+}
+
+.project-document-existing a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  color: #174678;
+  background: #fff;
+  border: 1px solid #e0e6ee;
+  border-radius: 7px;
+  text-decoration: none;
+}
+
+.project-document-existing em {
+  color: #267149;
+  font-size: .7rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.project-document-existing em.is-expired {
+  color: #b42318;
+}
+
 .project-operation-hire-source {
   align-items: center;
   background: #eef7ff;
@@ -13336,6 +13557,19 @@ button.planning-p12-conflict-card {
 
   .project-towed-asset-grid {
     grid-template-columns: 1fr;
+  }
+
+  .project-document-category-list > section > div,
+  .project-document-pending > div {
+    grid-template-columns: 1fr;
+  }
+
+  .project-document-existing a {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .project-document-existing em {
+    grid-column: 2;
   }
 }
 .hr-signature-panel > header,

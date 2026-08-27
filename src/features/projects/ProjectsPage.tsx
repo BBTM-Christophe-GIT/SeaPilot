@@ -29,7 +29,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
-import { PROJECT_CONTRACT_TYPES } from './projectContractOptions';
+import { normalizeProjectContractType, PROJECT_CONTRACT_TYPES } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
@@ -859,7 +859,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const contractTypeOptions = useMemo(
     () => uniqueSorted([
       ...PROJECT_CONTRACT_TYPES,
-      ...projectsData.projects.map((project) => project.contractType),
+      ...projectsData.projects.map((project) => normalizeProjectContractType(project.contractType)),
     ]),
     [projectsData.projects],
   );
@@ -1256,6 +1256,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             setLoadAttempt((attempt) => attempt + 1);
           }}
           project={editingProject}
+          projectAttachments={editingProject
+            ? selectedOperationDocuments.filter((document) => document.documentType === 'project_attachment')
+            : []}
           statuses={statusOptions}
           towedAssets={projectsData.towedAssets}
           vessels={projectsData.vessels}

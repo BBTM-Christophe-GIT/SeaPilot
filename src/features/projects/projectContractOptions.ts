@@ -4,11 +4,20 @@ export const DEFAULT_PROJECT_FUEL_TERMS = "A la charge de l'affréteur";
 
 export const PROJECT_CONTRACT_TYPES = [
   'Affrètement à temps',
+  'Offre commerciale',
   'Oil Spill Response',
   'Contrat de Remorquage - BBTM',
 ] as const;
 
 export const TOWAGE_CONTRACT_TYPE = 'Contrat de Remorquage - BBTM';
+export const COMMERCIAL_OFFER_CONTRACT_TYPE = 'Offre commerciale';
+
+export function normalizeProjectContractType(value?: string | null): string {
+  const normalizedValue = value?.trim() || '';
+  return normalizedValue.toLocaleLowerCase('fr') === 'autre'
+    ? COMMERCIAL_OFFER_CONTRACT_TYPE
+    : normalizedValue;
+}
 
 export const PROJECT_CURRENCIES = [
   { code: 'EUR', label: '€ — EUR' },
