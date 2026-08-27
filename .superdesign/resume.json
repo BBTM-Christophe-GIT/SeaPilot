@@ -1,6 +1,49 @@
 {
   "schemaVersion": 1,
   "targets": {
+    "/modules/actionPlan:new-action-dialog": {
+      "targetKind": "existing-ui",
+      "projectId": "60144cb8-a548-4802-85f3-1b45ec434e52",
+      "baselineDraftId": "89b30a30-e305-4756-9e1d-a46950b21d66",
+      "activeDraftId": "89b30a30-e305-4756-9e1d-a46950b21d66",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "147757a0-8255-4dfc-8ce0-ac83847548e9",
+        "c1973532-abf3-4e24-bb80-0e0dd179c849",
+        "abe7240c-ca9a-495b-9849-75b025931bdb",
+        "public-bbtm-report-logo.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-report-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/60144cb8-a548-4802-85f3-1b45ec434e52/brand-assets/public-bbtm-report-logo.png/bbtm-report-logo.png",
+          "sourcePath": "public/bbtm-report-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/actionPlan/ActionPlanPage.tsx",
+        "src/features/actionPlan/actionPlan.css",
+        "src/features/actionPlan/actionPlanQueries.ts",
+        "src/styles/index.css:1:260"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/features/actionPlan/ActionPlanPage.tsx": "cabe52428051c78ec12cd572e77657422e9a5da3d2251ddfc21815b40f9d0fdb",
+        "src/features/actionPlan/actionPlan.css": "18cadac71d7854e018fb370d11904d3b6c73d3e49dab44ca29a68418d6a1a1bc",
+        "src/features/actionPlan/actionPlanQueries.ts": "a5915ab9b59fd0e70061669393ad72cff56aa6304b3c2854cffc5bbff13e1380",
+        "src/styles/index.css": "5263c9a07b3e6e482558c8429102a43577dda58543e2af9cdd554ddfc3cbf6bf"
+      },
+      "components": [],
+      "drafts": {
+        "89b30a30-e305-4756-9e1d-a46950b21d66": {
+          "title": "Nouvelle Fiche d'Action — SeaPilot",
+          "visualDirection": "proposition 1 approuvée, formulaire continu et aperçu A4 en direct avec suivi de complétude",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-08-27T12:05:00Z"
+    },
     "/": {
       "targetKind": "existing-ui",
       "projectId": "fa1d67aa-0246-45ea-b927-0ae3a6253e35",
