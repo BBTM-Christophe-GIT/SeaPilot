@@ -5,10 +5,11 @@ Le référentiel officiel embarqué dans `src/features/projects/projectPortsData
 - 669 ports maritimes français, métropolitains et ultramarins ;
 - 202 ports anglais majeurs, mineurs et ports de déclaration rattachés à un port statistique.
 
-Les libellés historiques déjà utilisés par SeaPilot (par exemple `Brest`, `Cherbourg` ou
-`Nantes - Saint-Nazaire`) restent disponibles comme alias dans la même liste. Ils évitent de
-modifier les projets et les offres existants tout en permettant de sélectionner les installations
-portuaires plus précises du référentiel officiel.
+Les libellés historiques déjà utilisés par SeaPilot restent utilisables comme termes de recherche.
+Lorsqu'un LOCODE est déjà couvert par le référentiel officiel, l'alias générique n'est pas ajouté à
+la liste : la forme officielle commençant par `Port…` est conservée. Les alias dont le LOCODE n'est
+pas représenté par une entrée officielle restent disponibles pour préserver la compatibilité avec
+les projets et les offres existants.
 
 ## Sources
 

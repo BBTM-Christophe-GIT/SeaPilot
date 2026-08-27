@@ -39,6 +39,27 @@ describe('projectPorts', () => {
       .toBe('Port de Cherbourg – Cherbourg-en-Cotentin – FR CER');
   });
 
+  it('removes legacy duplicates when an official port already covers the LOCODE', () => {
+    const normalize = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('fr')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const normalizedPortName = (value: string) => normalize(value)
+      .replace(/^port\s+(?:(?:de|du|des|le|la)\s+|d\s+)?/, '')
+      .replace(/^(?:le|la|les|l)\s+/, '');
+    const identities = PROJECT_PORTS
+      .filter((port) => Boolean(port.locode))
+      .map((port) => `${port.country}:${normalize(port.locode)}:${normalizedPortName(port.port)}`);
+
+    expect(new Set(identities).size).toBe(identities.length);
+    expect(PROJECT_PORTS.some((port) => port.port === 'Diélette')).toBe(false);
+    expect(PROJECT_PORTS.some((port) => port.port === 'Port Diélette')).toBe(true);
+    expect(PROJECT_PORTS.some((port) => port.port === 'Cherbourg')).toBe(false);
+    expect(PROJECT_PORTS.some((port) => port.port === 'Port de Cherbourg')).toBe(true);
+  });
+
   it('explains associated LOCODEs, reporting-port links and ports without a dedicated LOCODE', () => {
     const boyardville = PROJECT_PORTS.find((port) => port.port === 'Port de Boyardville')!;
     const cattewater = PROJECT_PORTS.find((port) => port.port === 'Cattewater Harbour')!;

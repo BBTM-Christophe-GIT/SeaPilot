@@ -102,11 +102,15 @@ const LEGACY_PROJECT_PORT_ALIASES: readonly ProjectPort[] = [
 const officialPortNames = new Set(PROJECT_PORTS_DATA.map((port) => (
   `${port.country}:${normalizePortSearch(port.port)}`
 )));
+const officialPortLocodes = new Set(PROJECT_PORTS_DATA
+  .map((port) => normalizePortSearch(port.locode))
+  .filter(Boolean));
 
 export const PROJECT_PORTS: readonly ProjectPort[] = [
   ...PROJECT_PORTS_DATA,
   ...LEGACY_PROJECT_PORT_ALIASES.filter((port) => (
     !officialPortNames.has(`${port.country}:${normalizePortSearch(port.port)}`)
+    && !officialPortLocodes.has(normalizePortSearch(port.locode))
   )),
 ];
 

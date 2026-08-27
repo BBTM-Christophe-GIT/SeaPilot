@@ -585,26 +585,26 @@ describe('ProjectsPage', () => {
       "Port de Boyardville",
     );
     await user.type(deliveryPort, 'Brest');
-    await user.click(screen.getByRole('option', { name: /^BrestFR BES$/ }));
+    await user.click(screen.getByRole('option', { name: /^Port de BrestBrest – FR BES$/ }));
 
     const redeliveryPort = screen.getByLabelText('Port de restitution');
     await user.click(redeliveryPort);
     expect(screen.getByRole('group', { name: 'Bouches-du-Rhône (13)' }))
       .toHaveTextContent('Port des Goudes');
     await user.type(redeliveryPort, 'Cherbourg');
-    await user.click(screen.getByRole('option', { name: /^CherbourgFR CER$/ }));
+    await user.click(screen.getByRole('option', { name: /^Port de CherbourgCherbourg-en-Cotentin – FR CER$/ }));
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
     expect(await screen.findByText('P1196 enregistré dans Supabase.')).toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
-      target_delivery_port: 'Brest',
+      target_delivery_port: 'Port de Brest',
       target_project_id: null,
       target_title: 'Projet SeaPilot',
       target_client_id: 50,
       target_primary_vessel_id: 12,
-      target_redelivery_port: 'Cherbourg',
+      target_redelivery_port: 'Port de Cherbourg',
     }));
     expect(rpc).toHaveBeenCalledWith('projects_save_planning_occurrence', expect.objectContaining({
       target_ends_on: '2026-09-11',
