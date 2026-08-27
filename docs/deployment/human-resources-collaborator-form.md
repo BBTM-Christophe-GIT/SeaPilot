@@ -15,6 +15,8 @@ Les champs structurés sont enregistrés directement dans la table Supabase `pub
 
 Les fichiers de l’onglet **Documents** sont ajoutés après la création du collaborateur : ils nécessitent l’identifiant Supabase de la ligne `people` pour être rattachés dans `public.hr_documents` et stockés dans le bucket RH prévu par l’application.
 
+La suppression définitive d'une personne est proposée uniquement au profil **Administrateur**. La même restriction est appliquée par la politique RLS `people_company_admin_delete` ; Direction et Armement conservent la création et la modification, mais ne peuvent pas supprimer. Une suppression reste refusée si des données opérationnelles protégées référencent encore la personne.
+
 Depuis la fiche d’un collaborateur existant, les rôles de gestion disposent de l’action **Ajouter un document**. Le type vient du catalogue partagé `public.stcw_certificates`, la date d’échéance est obligatoire et le fichier est renommé selon la règle du Dashboard SPFx : `Collaborateur - Document - Année.extension`. Les fichiers restent dans le bucket privé `hr-documents`; un nom existant n’est jamais écrasé.
 
 Le catalogue RH reprend les **54 éléments actifs** de la liste SharePoint QHSE `8c8561d7-9fb4-420f-8290-b66309d07e92`. La colonne Supabase `file_name` conserve désormais le champ SharePoint **Nom de Fichier** et devient prioritaire pour le renommage automatique. Le mode de prévisualisation utilise le même catalogue complet.

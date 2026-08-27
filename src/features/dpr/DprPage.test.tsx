@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_DPR_PAYLOAD } from './dprFormModel.ts';
@@ -33,7 +33,7 @@ const report: DprReportRecord = {
   projectCode: 'P144', projectTitle: 'Guard Vessel EMDT', unlistedProjectName: '', vesselId: 3,
   vesselName: 'GOURY', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures', qhseNote: 'RAS',
   validatorPersonId: 12, validatorName: 'Pierre LEPRETRE',
-  createdBy: 'user-1', updatedAt: '2026-07-21T18:00:00Z', fuelConsumedLiters: 650,
+  createdBy: 'user-1', createdAt: new Date().toISOString(), updatedAt: '2026-07-21T18:00:00Z', fuelConsumedLiters: 650,
   incidentCount: 0, files: [],
 };
 
@@ -116,8 +116,9 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('button', { name: 'Produire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exports ZIP' })).not.toBeInTheDocument();
     expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
-    expect(screen.getByText(/L’historique reste réservé/)).toBeInTheDocument();
-    expect(screen.queryByText('DPR-1056')).not.toBeInTheDocument();
+    expect(screen.getByText(/modifier pendant 3 jours/)).toBeInTheDocument();
+    expect(screen.getByText('DPR-1056')).toBeInTheDocument();
+    expect(mocks.fetchDashboard).toHaveBeenCalledWith(expect.anything(), { ownReportsOnly: true });
 
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -137,6 +138,35 @@ describe('DprPage Phase 7', () => {
     fireEvent.change(screen.getByDisplayValue(currentDate), { target: { value: changedDate } });
     await waitFor(() => expect(mocks.fetchEntryContext).toHaveBeenLastCalledWith(expect.anything(), changedDate, 3));
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
+  });
+
+  it('lets a Marin edit an own draft for three days, then switches it to consultation', async () => {
+    const user = userEvent.setup();
+    const freshDraft: DprReportRecord = {
+      ...report,
+      id: 1058,
+      number: null,
+      status: 'draft',
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const expiredDraft: DprReportRecord = {
+      ...freshDraft,
+      id: 1059,
+      createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    mocks.fetchDashboard.mockResolvedValueOnce({ ...dashboard, reports: [freshDraft, expiredDraft] });
+
+    render(<DprPage client={{} as never} roles={['marin']} />);
+
+    const freshRow = (await screen.findByText('Brouillon #1058')).closest('article');
+    const expiredRow = screen.getByText('Brouillon #1059').closest('article');
+    expect(freshRow).not.toBeNull();
+    expect(expiredRow).not.toBeNull();
+    expect(within(freshRow!).getByRole('button', { name: 'Modifier' })).toBeInTheDocument();
+    expect(within(expiredRow!).getByRole('button', { name: 'Consulter' })).toBeInTheDocument();
+
+    await user.click(within(freshRow!).getByRole('button', { name: 'Modifier' }));
+    expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
   });
 
   it('defaults to Navire à quai when Planning has a vessel without an active project', async () => {

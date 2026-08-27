@@ -329,7 +329,7 @@ describe('App', () => {
         id: 1200, number: 1200, status: 'validated', reportDate: '2026-07-01', projectId: 880,
         projectCode: 'P-2026-014', projectTitle: 'Campagne Atlantique 2026', unlistedProjectName: '',
         vesselId: 12, vesselName: 'COTENTIN', issuerName: 'Pierre LEPRETRE', description: 'Transit et mesures',
-        qhseNote: 'RAS', createdBy: 'user-1', updatedAt: '2026-07-01T18:30:00Z', fuelConsumedLiters: 1250.5,
+        qhseNote: 'RAS', createdBy: 'user-1', createdAt: '2026-07-01T08:00:00Z', updatedAt: '2026-07-01T18:30:00Z', fuelConsumedLiters: 1250.5,
         incidentCount: 0, files: [],
       }],
     });

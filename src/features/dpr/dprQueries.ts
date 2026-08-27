@@ -70,6 +70,7 @@ export interface DprReportRecord {
   description: string;
   qhseNote: string;
   createdBy: string | null;
+  createdAt: string;
   updatedAt: string;
   fuelConsumedLiters: number;
   incidentCount: number;
@@ -146,17 +147,19 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
   };
 }
 
-export async function fetchDprDashboard(client: SupabaseClient, options: { hideHistory?: boolean } = {}): Promise<DprDashboardData> {
+export async function fetchDprDashboard(client: SupabaseClient, options: { ownReportsOnly?: boolean } = {}): Promise<DprDashboardData> {
   const profile = await loadCurrentProfile(client);
-  if (options.hideHistory && !profile.id) throw new Error('Session utilisateur introuvable.');
+  if (options.ownReportsOnly && !profile.id) throw new Error('Session utilisateur introuvable.');
 
-  const reportQuery = client
+  let reportQuery = client
     .from('dpr_reports')
-    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,updated_at')
+    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,created_at,updated_at')
     .is('deleted_at', null);
-  const reportPromise = options.hideHistory
-    ? Promise.resolve({ data: [], error: null })
-    : reportQuery.order('report_date', { ascending: false }).order('dpr_number', { ascending: false, nullsFirst: false }).limit(1000);
+  if (options.ownReportsOnly) reportQuery = reportQuery.eq('created_by', profile.id);
+  const reportPromise = reportQuery
+    .order('report_date', { ascending: false })
+    .order('dpr_number', { ascending: false, nullsFirst: false })
+    .limit(1000);
 
   const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
     reportPromise,
@@ -205,7 +208,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { hideH
       vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '',
       validatorPersonId: numberOrNull(row.validator_person_id), validatorName: text(row.validator_name_snapshot), issuerName: text(row.issuer_name_snapshot),
       description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
-      updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
+      createdAt: text(row.created_at), updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
       incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;
   });

@@ -89,7 +89,7 @@ Les simulations d’absence et d’immobilisation ajoutent un événement synth�
 | --- | --- | --- | --- | --- |
 | Route et intégration SeaPilot | Opérationnel | Opérationnel | Route protégée sous `/modules/planning`, navigation et authentification conservées | Maintenir |
 | Données navires, marins et projets | Opérationnel | Opérationnel | Données réelles Supabase et historiques SharePoint | Maintenir |
-| Vue équipages | Opérationnel | Opérationnel P0.2 | Marins ou équipes en lignes ; première colonne et dates fixes ; affectations provisoires/confirmées | Maintenir |
+| Vue équipages | Opérationnel | Opérationnel P0.2 | Marins classés par nom puis prénom, ou équipes en lignes ; première colonne et dates fixes ; affectations provisoires/confirmées | Maintenir |
 | Vue flotte | Partiel | Opérationnel P0.2 | Arborescence navire → bordée → marin ; navires vides masqués ; opérations et lieux sur le navire, affectations sur le marin, dépôt direct disponible | Maintenir |
 | Échelles temporelles | Partiel | Opérationnel P0.2 | Jour mobile de 7 jours, semaine, deux semaines, mois glissant de 49 jours et année, tous avec défilement horizontal | Maintenir |
 | Filtres et navigation temporelle | Opérationnel | Opérationnel P0.2 | Période, navire, marin, type, statut, responsable, zoom et défilement horizontal permanent ; les week-ends restent toujours visibles | Maintenir |

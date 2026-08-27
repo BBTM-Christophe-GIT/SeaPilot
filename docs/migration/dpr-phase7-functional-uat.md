@@ -12,7 +12,7 @@ SeaPilot utilise Supabase comme source des nouveaux DPR, de leurs relations et d
 - Référentiels Supabase pour projets, navires, personnes, exercices d'urgence et motifs d'escale.
 - Choix uniques pour projet, navire et niveaux d'incident ; choix multiples pour équipage, exercices, motifs d'escale et fichiers.
 - Cycle de vie brouillon, soumis, validé, réouvert et suppression logique.
-- Modification par un Marin de ses propres brouillons ; validation par Capitaine, Admin, Direction ou Armement.
+- Le Marin consulte uniquement les DPR dont il est l'émetteur et peut modifier ses propres DPR pendant les trois jours suivant leur création ; après cette échéance, seuls les autres profils DPR autorisés peuvent les modifier.
 - Verrouillage des DPR soumis ou validés ; réouverture obligatoire et versionnée avant correction.
 - Ajout, prévisualisation par URL signée et retrait logique des fichiers privés.
 - Deux photos maximum par DPR, contrôlé dans l'interface et dans le RPC Supabase.
@@ -39,12 +39,12 @@ Les chemins Storage sont alloués par `dpr_prepare_file_upload`; le navigateur n
 
 La bascule ne doit être validée qu'après exécution des cas suivants par les utilisateurs métier :
 
-1. Marin : créer, enregistrer et corriger son brouillon, ajouter deux photos et plusieurs pièces jointes, puis soumettre.
-2. Marin : vérifier l'impossibilité de modifier le brouillon d'un autre auteur et de valider un DPR.
+1. Marin : créer et valider un DPR, puis vérifier qu'il reste visible dans « Mes DPR ».
+2. Marin : vérifier la modification de son propre brouillon avant trois jours, son passage en consultation après trois jours et l'absence des DPR d'autres émetteurs.
 3. Capitaine : consulter tous les DPR, modifier un brouillon, valider tout DPR soumis et télécharger le PDF généré.
 4. Admin/Direction/Armement : modifier, valider, réouvrir avec motif et supprimer logiquement avec motif.
 5. Admin : ouvrir le diagnostic ; vérifier que les autres rôles ne voient pas le bouton.
-6. Tous les rôles : consulter tous les DPR de la compagnie et ouvrir PDF, photos et pièces jointes par URL signée.
+6. Capitaine/Admin/Direction/Armement : consulter tous les DPR de la compagnie et reprendre la modification d'un DPR Marin après sa fenêtre de trois jours.
 7. Vérifier les trois incidents en choix unique T0/T1/T2 et les exercices/motifs d'escale en choix multiples.
 8. Vérifier le rejet des nombres négatifs, d'un appareillage antérieur, d'un TBT sans thème et d'une troisième photo.
 9. Modifier une valeur puis fermer la fenêtre ou l'onglet ; vérifier l'avertissement de données non enregistrées.

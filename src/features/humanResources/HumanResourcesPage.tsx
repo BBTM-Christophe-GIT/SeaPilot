@@ -16,6 +16,7 @@ import {
   MapPin,
   Ruler,
   SlidersHorizontal,
+  Trash2,
   Upload,
   Search,
   TrendingUp,
@@ -44,6 +45,7 @@ import {
   compareHrFunctionLabels,
   createHrDocument,
   createPerson,
+  deletePerson,
   createHrDocumentSignedUrl,
   downloadHrDocumentBlob,
   fetchHumanResourcesData,
@@ -690,6 +692,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
+  const canDeletePerson = effectiveRoles.includes('admin');
   const isMarinView = effectiveRoles.includes('marin')
     && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
   const isCaptainView = effectiveRoles.includes('capitaine')
@@ -1188,6 +1191,38 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     }
   }
 
+  async function handleDeletePerson(person: PersonRecord) {
+    if (!canDeletePerson) {
+      setErrorMessage('Seul un profil Administrateur peut supprimer une personne.');
+      return;
+    }
+    if (!window.confirm(`Supprimer définitivement ${formatPersonName(person)} ? Cette action est irréversible.`)) return;
+
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setIsSaving(true);
+    try {
+      await deletePerson(effectiveClient, person.id);
+      const removedDocumentIds = new Set(
+        documents.filter((document) => document.personId === person.id).map((document) => document.id),
+      );
+      setPeople((currentPeople) => currentPeople.filter((currentPerson) => currentPerson.id !== person.id));
+      setDocuments((currentDocuments) => currentDocuments.filter((document) => document.personId !== person.id));
+      setSelectedDocumentIds((currentIds) => new Set(
+        [...currentIds].filter((documentId) => !removedDocumentIds.has(documentId)),
+      ));
+      setSelectedPersonId(null);
+      setStatusMessage(`${formatPersonName(person)} a été supprimé(e).`);
+    } catch (reason) {
+      const code = typeof reason === 'object' && reason !== null && 'code' in reason ? String(reason.code) : '';
+      setErrorMessage(code === '23503'
+        ? 'Cette personne ne peut pas être supprimée car des données opérationnelles lui sont encore rattachées.'
+        : 'Impossible de supprimer cette personne.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
       documents: roleVisibleDocuments,
@@ -1453,6 +1488,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         </section> : null}
 
         <PersonProfileCard
+          canDelete={canDeletePerson}
           canEdit={Boolean(
             isManager
             || (isRestrictedHrView && selectedPerson && selectedPerson.id === ownPersonId)
@@ -1472,6 +1508,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
           onDocumentSelect={toggleDocumentSelection}
+          onDelete={handleDeletePerson}
           onSave={handleSavePersonDetails}
           person={selectedPerson}
           selectedDocumentIds={selectedDocumentIds}
@@ -1881,6 +1918,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  canDelete,
   canEdit,
   canManageSignature,
   canClose = true,
@@ -1893,11 +1931,13 @@ function PersonProfileCard({
   onDocumentOpen,
   onDocumentRenew,
   onDocumentSelect,
+  onDelete,
   onSave,
   person,
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
   canClose?: boolean;
@@ -1910,6 +1950,7 @@ function PersonProfileCard({
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
   onDocumentSelect: (documentId: number) => void;
+  onDelete: (person: PersonRecord) => Promise<void>;
   onSave: (
     personId: number,
     input: UpdatePersonDetailsInput,
@@ -1959,6 +2000,7 @@ function PersonProfileCard({
         <ProfileMetric label="Manquants" tone="danger" value={missingCount} />
       </div>
       <PersonDetailsPanel
+        canDelete={canDelete}
         canEdit={canEdit}
         canManageSignature={canManageSignature}
         client={client}
@@ -1969,6 +2011,7 @@ function PersonProfileCard({
         onDocumentOpen={onDocumentOpen}
         onDocumentRenew={onDocumentRenew}
         onDocumentSelect={onDocumentSelect}
+        onDelete={() => onDelete(person)}
         onSave={onSave}
         person={person}
         selectedDocumentIds={selectedDocumentIds}
@@ -2576,6 +2619,7 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  canDelete,
   canEdit,
   canManageSignature,
   client,
@@ -2586,11 +2630,13 @@ function PersonDetailsPanel({
   onDocumentOpen,
   onDocumentRenew,
   onDocumentSelect,
+  onDelete,
   onSave,
   person,
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
   client: SupabaseClient;
@@ -2601,6 +2647,7 @@ function PersonDetailsPanel({
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
   onDocumentSelect: (documentId: number) => void;
+  onDelete: () => Promise<void>;
   onSave: (
     personId: number,
     input: UpdatePersonDetailsInput,
@@ -2989,6 +3036,12 @@ function PersonDetailsPanel({
       <div className="hr-profile-editor-toolbar">
         <span>{isEditing ? 'Modification en cours' : canEdit ? 'Informations à jour' : 'Lecture seule'}</span>
         <div>
+          {canDelete && !isEditing ? (
+            <button className="hr-danger-button" disabled={isSaving} onClick={() => void onDelete()} type="button">
+              <Trash2 aria-hidden="true" size={16} />
+              Supprimer la personne
+            </button>
+          ) : null}
           {canEdit && !isEditing ? (
             <button className="hr-secondary-button" onClick={() => setIsEditing(true)} type="button">
               Modifier la fiche RH

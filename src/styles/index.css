@@ -2849,6 +2849,7 @@ button:disabled {
 .hr-action-button,
 .hr-secondary-button,
 .hr-primary-button,
+.hr-danger-button,
 .hr-icon-button {
   display: inline-flex;
   align-items: center;
@@ -2865,6 +2866,19 @@ button:disabled {
   padding: 0 12px;
   color: #0c3f78;
   background: #ffffff;
+}
+
+.hr-danger-button {
+  min-height: 34px;
+  border: 1px solid #e1a5ac;
+  padding: 0 12px;
+  color: #a2182a;
+  background: #fff7f8;
+}
+
+.hr-danger-button:hover:not(:disabled) {
+  border-color: #c62d41;
+  background: #ffebee;
 }
 
 .hr-action-button {

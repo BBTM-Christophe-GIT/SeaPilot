@@ -54,6 +54,26 @@ describe('planning P0.2 views', () => {
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
   });
 
+  it('sorts the personnel lanes by last name, then first name', () => {
+    const personnelOverview: PlanningOverview = {
+      ...overview,
+      people: [
+        { ...overview.people[0], id: 11, firstName: 'Alain', lastName: 'ZULU' },
+        { ...overview.people[0], id: 12, firstName: 'Zoé', lastName: 'ALPHA' },
+        overview.people[0],
+      ],
+      assignments: [
+        { ...overview.assignments[0], id: 101, crewPersonId: 11, crewName: 'Alain ZULU' },
+        { ...overview.assignments[0], id: 102, crewPersonId: 12, crewName: 'Zoé ALPHA' },
+        overview.assignments[0],
+      ],
+      periods: [],
+    };
+
+    expect(buildPlanningCrewLanes(personnelOverview, range, emptyFilters, 'people').map((lane) => lane.label))
+      .toEqual(['Zoé ALPHA', 'Paul DURAND', 'Alain ZULU']);
+  });
+
   it('shows one synchronized operation on every selected vessel lane without a vessel limit', () => {
     const multiVesselOverview: PlanningOverview = {
       ...overview,

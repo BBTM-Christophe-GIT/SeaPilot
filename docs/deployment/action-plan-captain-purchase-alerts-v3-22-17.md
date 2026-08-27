@@ -9,7 +9,7 @@
 
 ## Déploiement
 
-Appliquer `20260827085307_captain_action_treatment.sql` avant d’exposer la version frontend. La migration ajoute la RPC de traitement et remplace uniquement la politique d’insertion du bucket de preuves ; elle ne modifie aucune donnée existante.
+Appliquer `20260827092326_captain_action_treatment.sql` avant d’exposer la version frontend. La migration ajoute la RPC de traitement et remplace uniquement la politique d’insertion du bucket de preuves ; elle ne modifie aucune donnée existante.
 
 ## Vérifications
 
