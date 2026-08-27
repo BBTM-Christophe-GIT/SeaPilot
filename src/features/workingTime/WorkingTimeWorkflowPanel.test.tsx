@@ -45,6 +45,14 @@ const onOpenHse = vi.fn();
 const onOpenImport = vi.fn();
 const onOpenReport = vi.fn();
 const onOpenWorkRest = vi.fn();
+const defaultDayContext = {
+  assignmentId: 1,
+  vesselId: 7,
+  watchGroup: 'Bordée 1',
+  statusLabel: 'En Mer',
+  approverPersonId: 11,
+  captainCandidates: [{ personId: 11, firstName: 'Claude', lastName: 'CAPITAINE', name: 'Claude CAPITAINE' }],
+};
 
 function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], personId = 10): WorkingTimeWorkspace {
   return {
@@ -137,6 +145,7 @@ describe('WorkingTimeWorkflowPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     reload.mockResolvedValue(true);
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
   });
 
   it('lets an unlinked administrator browse the catalogue while keeping mutations protected', () => {
@@ -171,7 +180,7 @@ describe('WorkingTimeWorkflowPanel', () => {
 
   it('lets an exact HR Capitaine validate their own signed day independently of the application role', async () => {
     const user = userEvent.setup();
-    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValueOnce({
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
       assignmentId: 1,
       vesselId: 7,
       watchGroup: 'Bordée 1',
@@ -389,6 +398,31 @@ describe('WorkingTimeWorkflowPanel', () => {
     const validateButton = screen.getByRole('button', { name: 'Valider la journée' });
     await user.click(validateButton);
     expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 501);
+  });
+
+  it('lets the assigned exact HR Captain validate a compliant sailor draft directly', async () => {
+    const user = userEvent.setup();
+    const data = workspace('validated', 20);
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
+      assignmentId: 1,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      statusLabel: 'En Mer',
+      approverPersonId: 10,
+      captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
+    });
+    renderPanel(['capitaine'], data);
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    const validateButton = screen.getByRole('button', { name: 'Valider' });
+    expect(validateButton).toBeEnabled();
+    await user.click(validateButton);
+
+    expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, {
+      registerId: 100,
+      localWorkDate: '2026-08-03',
+    });
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
   });
 
   it('keeps validation disabled until every non-compliant day has a saved captain comment', async () => {
