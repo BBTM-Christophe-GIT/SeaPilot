@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from './previewSupabaseClient';
 
 describe('previewSupabaseClient', () => {
+  it('keeps a sold urgent purchase request for alert-regression checks', async () => {
+    const requests = await previewSupabaseClient.from('purchase_requests').select('*').order('id');
+
+    expect(requests.error).toBeNull();
+    expect(requests.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 9955, status: 'Traitée', urgent: true, received_on: '2026-07-20' }),
+    ]));
+  });
+
   it('exposes the P1.1 planning catalog without enabling writes', async () => {
     const catalog = await previewSupabaseClient
       .from('stcw_certificates')

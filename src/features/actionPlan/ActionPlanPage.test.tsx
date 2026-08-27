@@ -73,14 +73,27 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
         data: paths.map((path) => ({ path, signedUrl: `https://evidence.example/${path}` })), error: null,
       })),
     }) },
-    rpc: vi.fn().mockImplementation((functionName: string) => Promise.resolve(functionName === 'refresh_hse_exposure_hours'
-      ? { data: { actual_days: 24, planning_days: 0, methodology_id: 7 }, error: null }
-      : { data: {
+    rpc: vi.fn().mockImplementation((functionName: string, parameters?: Record<string, unknown>) => {
+      if (functionName === 'action_item_treat') {
+        const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
+        return Promise.resolve({ data: {
+          ...action,
+          comments: parameters?.p_comments,
+          realized_action: parameters?.p_realized_action,
+          closure_photo_path: parameters?.p_closure_photo_path,
+          status: parameters?.p_close_action ? 'Ecart Soldé' : action?.status,
+          closed_on: parameters?.p_close_action ? '2026-08-27' : null,
+        }, error: null });
+      }
+      return Promise.resolve(functionName === 'refresh_hse_exposure_hours'
+        ? { data: { actual_days: 24, planning_days: 0, methodology_id: 7 }, error: null }
+        : { data: {
         methodology_version: '2026-08', configuration_complete: true, exposure_hours: 124500,
         FAT: 0, LWDC: 1, LTI: 1, RWC: 0, MTC: 1, FAC: 3, near_miss: 4, safety_observation: 12, lost_days: 7,
         LTIFR: 8.03, TRIR: 16.06, FAR: 0, FAC_rate: 24.1, MTC_rate: 8.03, RWC_rate: 0,
         SOFR: 19.28, french_frequency_rate: 8.03, french_severity_rate: 0.056,
-      }, error: null })),
+      }, error: null });
+    }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)), insert };
       if (table === 'action_documents') return { select: vi.fn().mockReturnValue(ordered([])) };
@@ -173,5 +186,29 @@ describe('ActionPlanPage', () => {
       lost_days: 10,
     }));
     expect(await screen.findByText('Action ajoutée.')).toBeInTheDocument();
+  });
+
+  it('lets a Capitaine treat an open action without exposing action creation', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction]);
+    render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
+
+    await screen.findByRole('heading', { name: "Plan d'action" });
+    expect(screen.queryByRole('button', { name: 'Nouvelle action' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Traiter' }));
+    const dialog = within(screen.getByRole('dialog', { name: openAction.title }));
+    await user.type(dialog.getByLabelText('Action réalisée'), 'Filtre remplacé');
+    await user.type(dialog.getByLabelText('Commentaire'), 'Contrôle terminé');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+
+    expect(client.rpc).toHaveBeenCalledWith('action_item_treat', {
+      p_action_id: openAction.id,
+      p_comments: 'Contrôle terminé',
+      p_realized_action: 'Filtre remplacé',
+      p_close_action: false,
+      p_closure_photo_path: null,
+    });
+    expect(await screen.findByText('Action mise à jour.')).toBeInTheDocument();
   });
 });

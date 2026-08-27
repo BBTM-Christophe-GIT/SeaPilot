@@ -42,6 +42,10 @@ function canManage(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
 
+function canTreat(roles: RoleKey[]): boolean {
+  return canManage(roles) || roles.includes('capitaine');
+}
+
 function display(value: string, fallback = 'Non renseigné'): string { return value || fallback }
 
 function unique(values: string[]): string[] {
@@ -203,6 +207,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const effectiveRoles = roles || context?.roles || [];
   const profileName = context?.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '';
   const isManager = canManage(effectiveRoles);
+  const treatmentAllowed = canTreat(effectiveRoles);
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [expandedActionId, setExpandedActionId] = useState<number | null>(null);
@@ -273,7 +278,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
               {unique(vesselActions.map(actionTypeLabel)).map((type) => { const typeActions = vesselActions.filter((a) => actionTypeLabel(a) === type);
                 return <details key={`${statusGroup.key}-${vessel}-${type}`} open><summary><span className="action-plan-count type">{typeActions.length}</span>{type}</summary>
                   {typeActions.map((action) => <article className={`action-plan-row ${severityClass(action.deviationType)}`} key={action.id}>
-                    {isManager && !isActionClosed(action)
+                    {treatmentAllowed && !isActionClosed(action)
                       ? <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>
                       : <span aria-hidden="true" className="action-plan-treat-spacer" />}
                     {action.thumbnailUrl

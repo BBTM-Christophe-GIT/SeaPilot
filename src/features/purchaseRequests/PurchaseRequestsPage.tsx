@@ -41,6 +41,7 @@ import {
   fetchCurrentAssignedVessel,
   fetchPurchaseRequests,
   fetchPurchaseVessels,
+  isActiveUrgentPurchaseRequest,
   transitionPurchaseRequest,
   type CreatePurchaseRequestInput,
   type PurchaseRequestAction,
@@ -236,7 +237,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const baseRequests = useMemo(() => requests.filter((request) => {
     if (filters.vesselName && request.vesselName !== filters.vesselName) return false;
     if (filters.category && request.categoryLabel !== filters.category) return false;
-    if (filters.urgentOnly && !request.urgent) return false;
+    if (filters.urgentOnly && !isActiveUrgentPurchaseRequest(request)) return false;
     if (!search.trim()) return true;
     const searchable = [request.requestNumber, request.title, request.reference, request.vesselName, request.supplierName, request.requesterName].join(' ');
     return normalize(searchable).includes(normalize(search.trim()));

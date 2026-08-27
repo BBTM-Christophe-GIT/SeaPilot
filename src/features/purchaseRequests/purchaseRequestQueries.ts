@@ -278,6 +278,10 @@ export function derivePurchaseRequestStage(input: Pick<PurchaseRequestRecord, 'e
   return 'to_process';
 }
 
+export function isActiveUrgentPurchaseRequest(request: Pick<PurchaseRequestRecord, 'stage' | 'urgent'>): boolean {
+  return request.urgent && request.stage !== 'completed';
+}
+
 function mapEventRows(rows: PurchaseEventRow[]): Map<number, PurchaseRequestEvent[]> {
   const eventsByRequest = new Map<number, PurchaseRequestEvent[]>();
   rows.forEach((row) => {
@@ -390,7 +394,7 @@ export function buildPurchaseRequestMetrics(requests: PurchaseRequestRecord[]): 
     requestCount: requests.length,
     supplierCount: new Set(requests.map((request) => request.supplierName).filter(Boolean)).size,
     totalAmountHt: requests.reduce((total, request) => total + request.amountHt, 0),
-    urgentCount: requests.filter((request) => request.urgent).length,
+    urgentCount: requests.filter(isActiveUrgentPurchaseRequest).length,
   };
 }
 
