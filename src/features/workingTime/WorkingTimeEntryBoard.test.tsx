@@ -37,12 +37,14 @@ function Harness({
   intervals = [],
   onEditInterval = vi.fn(),
   onRequestVoid = vi.fn(),
+  planningContextLoading = false,
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
   submitToCaptain?: boolean;
   intervals?: WorkingTimeInterval[];
   onEditInterval?: (interval: WorkingTimeInterval) => void;
   onRequestVoid?: (interval: WorkingTimeInterval) => void;
+  planningContextLoading?: boolean;
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
@@ -70,6 +72,7 @@ function Harness({
       personId={42}
       pendingPhases={pendingPhases}
       planningVesselId={7}
+      planningContextLoading={planningContextLoading}
       showSubmitToCaptain={submitToCaptain}
       planningWatchGroup="Bordée 1"
       startsAt={startsAt}
@@ -188,6 +191,13 @@ describe('WorkingTimeEntryBoard', () => {
       [{ startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T09:00' }],
       'submit-day',
     );
+  });
+
+  it('does not report a missing Planning assignment while its context is loading', () => {
+    render(<Harness planningContextLoading />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
+    expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
   });
 
   it('makes the comment mandatory when the server detects an alert', async () => {

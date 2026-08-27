@@ -192,6 +192,14 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
   });
 
+  it('shows a Planning loading state before the selected-day context resolves', () => {
+    vi.mocked(fetchWorkingTimeDayContext).mockReturnValueOnce(new Promise(() => undefined));
+    renderPanel(['marin'], workspace('draft'));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
+    expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
+  });
+
   it('selects today when the current month opens and the first day for a historical month', () => {
     expect(workingTimeInitialDay({ start: '2026-08-01', end: '2026-08-31' }, '2026-08-21')).toBe('2026-08-21');
     expect(workingTimeInitialDay({ start: '2026-07-01', end: '2026-07-31' }, '2026-08-21')).toBe('2026-07-01');

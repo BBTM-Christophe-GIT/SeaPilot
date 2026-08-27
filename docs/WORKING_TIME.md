@@ -8,7 +8,7 @@ Le formulaire quotidien ne demande plus Début, Fin, Navire ni Bordée : la fris
 
 Le workflow porte désormais sur une journée, pas sur tout le registre mensuel. Sous le commentaire, le Marin ou le Capitaine choisit « Valider ». Une signature active de l’auteur est obligatoire et figée avec la journée. La qualité de Capitaine vient exclusivement du libellé RH exact `Capitaine`, indépendamment du rôle applicatif : `Capitaine 200`, `Second capitaine` ou toute variante de casse ne confèrent pas cette qualité.
 
-Le Capitaine RH valide directement sa propre journée avec sa signature active. Pour un Marin, le serveur résout l’unique personne de la même bordée dont la fonction RH est exactement `Capitaine` et dont la fonction Planning `Capitaine` a été confirmée. Cette personne reçoit la demande dans l’onglet « Approbation », avec une pastille rouge indiquant le nombre de demandes. Elle peut corriger les phases et valide avec sa propre signature active ; les signatures du Marin et du Capitaine sont conservées séparément. Pour une journée non conforme, le Capitaine renseigne la justification puis utilise l’action atomique « Valider la saisie des heures et la justification ». Les rôles Admin et Armement conservent la validation de secours. Seule la journée validée devient en lecture seule.
+Le Capitaine RH valide directement sa propre journée avec sa signature active. Pour un Marin, le serveur résout l’unique personne de la même bordée dont la fonction RH est exactement `Capitaine` et dont l’affectation Planning est confirmée sur le même navire. Le rôle opérationnel de cette affectation peut être `Capitaine`, `2nd Capitaine` ou un autre libellé : il ne remplace jamais la fonction RH comme source de vérité. Cette personne reçoit la demande dans l’onglet « Approbation », avec une pastille rouge indiquant le nombre de demandes. Elle peut corriger les phases et valide avec sa propre signature active ; les signatures du Marin et du Capitaine sont conservées séparément. Pour une journée non conforme, le Capitaine renseigne la justification puis utilise l’action atomique « Valider la saisie des heures et la justification ». Les rôles Admin et Armement conservent la validation de secours. Seule la journée validée devient en lecture seule.
 
 ## Cockpit mensuel
 
@@ -80,7 +80,7 @@ correspond dans la même société ; toute ambiguïté reste à traiter manuelle
 | Minuit, chevauchements, doublons, repos total/consécutif | `working_time_server_calculations_test.sql` |
 | Fenêtre entre deux mois et exactement 7 jours | `working_time_server_calculations_test.sql` |
 | Changement de bordée publié pendant l’année | `working_time_excel_import_test.sql` |
-| Vérité RH exacte `Capitaine`, auto-validation Capitaine et approbateur automatique de bordée | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
+| Vérité RH exacte `Capitaine`, rôle Planning opérationnel distinct, auto-validation Capitaine et approbateur automatique de bordée | `working_time_daily_approval_test.sql`, `working_time_captain_assignment_role_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
 | Verrouillage limité au jour validé, justification atomique et deux instantanés de signature | `working_time_daily_approval_test.sql` et `WorkingTimeWorkflowPanel.test.tsx` |
 | RLS/RPC, import réservé à l’admin, remplacement validé sans réouverture et import annuel de 104 journées sous 8 s | `working_time_excel_import_test.sql` |
 | XLSM, macro neutralisée, phases disjointes, correction | `workingTimeExcelImport.test.ts` et `WorkingTimeImportWizard.test.tsx` |

@@ -36,6 +36,7 @@ interface WorkingTimeEntryBoardProps {
   endsAt: string;
   planningVesselId: number | null;
   planningWatchGroup: string | null;
+  planningContextLoading?: boolean;
   comment: string;
   editingIntervalId: number | null;
   pendingPhases?: WorkingTimePhaseInput[];
@@ -133,6 +134,7 @@ export function WorkingTimeEntryBoard({
   endsAt,
   planningVesselId,
   planningWatchGroup,
+  planningContextLoading = false,
   comment,
   editingIntervalId,
   pendingPhases = [],
@@ -444,7 +446,11 @@ export function WorkingTimeEntryBoard({
           onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'submit-day' | 'validate-day');
         }}>
           <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
-          {!planningVesselId ? <p className="working-time-planning-context is-missing">Aucune affectation Planning « En mer » ou « A terre » active pour cette journée.</p> : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
+          {planningContextLoading
+            ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p>
+            : !planningVesselId
+              ? <p className="working-time-planning-context is-missing">Aucune affectation Planning « En mer » ou « A terre » active pour cette journée.</p>
+              : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
           <div className="working-time-form-actions">
             {editingIntervalId ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save-correction"><Save aria-hidden="true" size={16} />Enregistrer la correction</button> : null}
             {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}

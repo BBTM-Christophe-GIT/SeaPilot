@@ -286,6 +286,7 @@ export function WorkingTimeWorkflowPanel({
   const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
   const [filterOpen, setFilterOpen] = useState(false);
   const [dayContext, setDayContext] = useState<WorkingTimeDayContext | null>(null);
+  const [resolvedDayContextKey, setResolvedDayContextKey] = useState('');
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -347,6 +348,11 @@ export function WorkingTimeWorkflowPanel({
     }))
     .sort((left, right) => compareHrFunctionLabels(left.label, right.label)), [catalogPeople]);
   const selectedRegister = selectedPersonId ? monthlyRegisterByPerson.get(selectedPersonId) || null : null;
+  const selectedDayContextKey = selectedRegister && selectedDay
+    ? `${selectedRegister.personId}:${selectedDay}`
+    : '';
+  const activeDayContext = resolvedDayContextKey === selectedDayContextKey ? dayContext : null;
+  const isDayContextLoading = Boolean(selectedDayContextKey && resolvedDayContextKey !== selectedDayContextKey);
   const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
   const displayedMonthLabel = formatMonthLabel(range.start);
   const selectedIntervals = useMemo(
@@ -504,18 +510,22 @@ export function WorkingTimeWorkflowPanel({
   useEffect(() => {
     if (!selectedRegister || !selectedDay) {
       setDayContext(null);
+      setResolvedDayContextKey('');
       return;
     }
     let active = true;
+    const requestKey = `${selectedRegister.personId}:${selectedDay}`;
     void fetchWorkingTimeDayContext(client, {
       personId: selectedRegister.personId,
       localWorkDate: selectedDay,
     }).then((context) => {
       if (!active) return;
       setDayContext(context);
+      setResolvedDayContextKey(requestKey);
     }).catch((reason) => {
       if (!active) return;
       setDayContext(null);
+      setResolvedDayContextKey(requestKey);
       setActionError(workingTimeErrorMessage(reason));
     });
     return () => { active = false; };
@@ -805,7 +815,7 @@ export function WorkingTimeWorkflowPanel({
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
                     <WorkingTimeEntryBoard
-                    approverName={dayContext?.captainCandidates.find((candidate) => candidate.personId === dayContext.approverPersonId)?.name || null}
+                    approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
                     client={client}
                     comment={intervalComment}
@@ -827,8 +837,9 @@ export function WorkingTimeWorkflowPanel({
                     periodStart={selectedRegister.periodStart}
                     personId={selectedRegister.personId}
                     pendingPhases={pendingPhases}
-                    planningVesselId={dayContext?.vesselId || null}
-                    planningWatchGroup={dayContext?.watchGroup || null}
+                    planningVesselId={activeDayContext?.vesselId || null}
+                    planningWatchGroup={activeDayContext?.watchGroup || null}
+                    planningContextLoading={isDayContextLoading}
                     nonCompliantDates={nonCompliantDates}
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
