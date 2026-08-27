@@ -56,6 +56,15 @@ const urgentRequest = {
   urgency_reason: 'Sécurité navigation',
 };
 
+const completedUrgentRequest = {
+  ...urgentRequest,
+  id: 87,
+  request_number: '87',
+  title: 'Ancienne commande urgente soldée',
+  status: 'Commandes traitées',
+  received_on: '2026-08-26',
+};
+
 function orderedResult(data: unknown[]) {
   return {
     select: vi.fn().mockReturnValue({
@@ -150,6 +159,22 @@ describe('PurchaseRequestsPage', () => {
     expect(await screen.findByRole('heading', { name: /#101.*Moteur de commande/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Planifier la livraison' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
+  });
+
+  it('excludes sold urgent requests from the alert badge and urgency filter', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([urgentRequest, completedUrgentRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: /#86.*Ampoule feu de navigation/i });
+
+    expect(screen.getByText('1 demandes ouvertes · 1 urgentes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Urgences (1)' }));
+    expect(screen.getByRole('tab', { name: /Traitées 0/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Traitées 0/i }));
+    expect(screen.queryByRole('heading', { name: /Ancienne commande urgente soldée/i })).not.toBeInTheDocument();
+    expect(screen.getByText('0 demande')).toBeInTheDocument();
   });
 
   it('runs the take-charge transition through the secured workflow RPC', async () => {

@@ -745,7 +745,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9955, request_number: '53', title: 'Joint torique NBR 20x2', requested_on: '2026-07-12', requester_name: 'Luc MARTIN',
       supplier_name: 'Atlantic Joints', vessel_id: 9201, vessel_name: 'M/V Démonstration', quantity: 10, unit_label: 'Unité',
-      amount_ht: 64, currency: 'EUR', status: 'Traitée', description: 'Stock machine.', urgent: false, owner_name: 'Camille DURAND',
+      amount_ht: 64, currency: 'EUR', status: 'Traitée', description: 'Stock machine.', urgent: true,
+      urgency_reason: 'Ancienne urgence déjà soldée', owner_name: 'Camille DURAND',
       ordered_on: '2026-07-14', expected_delivery_on: '2026-07-20', received_on: '2026-07-20', delivery_location: 'A bord',
       category_label: 'Approvisionnement', approval_status: 'Approuvée', source_label: 'preview', created_at: '2026-07-12T10:00:00Z', updated_at: '2026-07-20T16:00:00Z',
     },

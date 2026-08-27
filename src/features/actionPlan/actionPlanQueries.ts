@@ -485,12 +485,14 @@ export async function updateActionItemTreatment(
   if (closurePhoto && action.companyId) {
     closurePhotoPath = await uploadEvidence(client, action.companyId, action.id, 'cloture', closurePhoto);
   }
-  const payload = {
-    comments: optionalText(input.comments), realized_action: optionalText(input.realizedAction), closure_photo_path: closurePhotoPath,
-    status: input.closeAction ? 'Ecart Soldé' : action.status || 'Ecart Non Soldé',
-    closed_on: input.closeAction ? new Date().toISOString().slice(0, 10) : action.closedOn || null,
-  };
-  const { data, error } = await client.from('action_items').update(payload).eq('id', action.id).select(ACTION_ITEM_SELECT).single();
+  const { data, error } = await client.rpc('action_item_treat', {
+    p_action_id: action.id,
+    p_comments: optionalText(input.comments),
+    p_realized_action: optionalText(input.realizedAction),
+    p_close_action: input.closeAction,
+    p_closure_photo_path: closurePhotoPath,
+  });
   if (error) throw error;
-  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([data as unknown as ActionItemRow])))[0];
+  const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
 }
