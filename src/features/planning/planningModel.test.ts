@@ -381,7 +381,29 @@ describe('planning hierarchy and side panels', () => {
   });
 
   it('finds active unassigned marins for the visible range', () => {
-    expect(getUnassignedPlanningPeople(overview, { start: '2026-07-01', end: '2026-07-31' }, { vesselName: '', personName: '' }).map((person) => person.id)).toEqual([2]);
+    const overviewWithDepartedDuplicate = {
+      ...overview,
+      people: [
+        ...overview.people,
+        {
+          ...overview.people[1],
+          id: 55,
+          firstName: 'Nicolas',
+          lastName: 'BODINIER',
+          hiredOn: '2025-05-05',
+          departedOn: '2025-07-31',
+          active: false,
+        },
+      ],
+    };
+
+    expect(
+      getUnassignedPlanningPeople(
+        overviewWithDepartedDuplicate,
+        { start: '2026-07-01', end: '2026-07-31' },
+        { vesselName: '', personName: '' },
+      ).map((person) => person.id),
+    ).toEqual([2]);
   });
 
   it('builds the 90-day certificate/RH alarms and excludes billed projects', () => {

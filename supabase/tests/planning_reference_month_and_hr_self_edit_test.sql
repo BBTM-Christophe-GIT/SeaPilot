@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(13);
 
 select ok(
   to_regprocedure('public.add_planning_board_row_for_month(bigint,text,bigint,date)') is not null,
@@ -126,11 +126,21 @@ select is(
   (
     public.update_own_hr_profile(
       (select id from public.people where user_id = '74000000-0000-0000-0000-000000000102'),
-      '{"first_name":"Loic","last_name":"REFERENCE","phone":"+33 6 00 00 00 01"}'::jsonb
+      '{"first_name":"Loic","last_name":"REFERENCE","phone":"+33 6 00 00 00 01","employee_number":"00004"}'::jsonb
     )
   ).phone,
   '+33 6 00 00 00 01',
   'a Marin can update its own linked HR record'
+);
+
+select is(
+  (
+    select employee_number
+    from public.people
+    where user_id = '74000000-0000-0000-0000-000000000102'
+  ),
+  '00004',
+  'the HR employee number remains text and preserves leading zeroes'
 );
 
 select throws_ok(
