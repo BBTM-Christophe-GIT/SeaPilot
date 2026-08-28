@@ -33,13 +33,15 @@ const recommendation = {
 
 function Harness({
   onSubmit = vi.fn(),
+  saveDraft = false,
   submitToCaptain = true,
   intervals = [],
   onEditInterval = vi.fn(),
   onRequestVoid = vi.fn(),
   planningContextLoading = false,
 }: {
-  onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
+  onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
+  saveDraft?: boolean;
   submitToCaptain?: boolean;
   intervals?: WorkingTimeInterval[];
   onEditInterval?: (interval: WorkingTimeInterval) => void;
@@ -73,6 +75,7 @@ function Harness({
       pendingPhases={pendingPhases}
       planningVesselId={7}
       planningContextLoading={planningContextLoading}
+      showSaveDraft={saveDraft}
       showSubmitToCaptain={submitToCaptain}
       planningWatchGroup="Bordée 1"
       startsAt={startsAt}
@@ -123,7 +126,7 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
   });
 
-  it('removes manual planning fields and the draft action', async () => {
+  it('removes manual planning fields and keeps the draft action profile-gated', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
@@ -134,6 +137,18 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Valider' }));
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('saves the selected periods as a draft without submitting the day', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} saveDraft />);
+
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([
+      { startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' },
+    ], 'save-draft');
   });
 
   it('adds multiple disjoint pointer selections and submits them in one action', async () => {

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
@@ -7,6 +7,7 @@ import {
   discardWorkingTimeDraft,
   fetchWorkingTimeDayContext,
   getOrCreateWorkingTimeRegister,
+  saveWorkingTimePhases,
   submitWorkingTimeDay,
   validateWorkingTimeDay,
   validateWorkingTimeDayWithComment,
@@ -33,6 +34,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
     validateWorkingTimeDayWithComment: vi.fn().mockResolvedValue(1),
     discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
+    saveWorkingTimePhases: vi.fn().mockResolvedValue([301]),
     voidWorkingTimeInterval: vi.fn(),
     saveWorkingTimeDayComment: vi.fn().mockResolvedValue(1),
   };
@@ -119,7 +121,11 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
   };
 }
 
-function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>, data: WorkingTimeWorkspace) {
+function renderPanel(
+  roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
+  data: WorkingTimeWorkspace,
+  person = currentPerson,
+) {
   vi.mocked(useWorkingTimeWorkspace).mockReturnValue({
     workspace: data,
     isLoading: false,
@@ -129,7 +135,7 @@ function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
   return render(
     <WorkingTimeWorkflowPanel
       client={client}
-      currentPerson={currentPerson}
+      currentPerson={person}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
       onOpenHse={onOpenHse}
@@ -207,6 +213,36 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
     expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
+  });
+
+  it('lets a Marin save their own periods as a draft without validating the day', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    data.readablePeople[0].functionLabel = 'Matelot';
+    data.editablePeople[0].functionLabel = 'Matelot';
+    data.registers[0].functionLabel = 'Matelot';
+    renderPanel(['marin'], data, {
+      id: 10,
+      firstName: 'Camille',
+      lastName: 'MARIN',
+      functionLabel: 'Matelot',
+      gradeLabel: '',
+    });
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]);
+    fireEvent.pointerUp(cells[32]);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      phases: expect.any(Array),
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(await screen.findByText('Le brouillon a été enregistré sans validation.')).toBeInTheDocument();
   });
 
   it('selects today when the current month opens and the first day for a historical month', () => {

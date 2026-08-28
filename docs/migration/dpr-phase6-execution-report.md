@@ -95,3 +95,15 @@ supabase test db supabase/tests/dpr_core_model_test.sql supabase/tests/dpr_role_
 Les variables `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont requises pour les commandes distantes. La cle de service ne doit jamais etre ecrite dans un fichier ou un commit.
 
 Le mode `insert-missing` compare les identifiants SharePoint et les numeros DPR du manifeste avec toutes les lignes deja presentes, par pages de 1 000 lignes. Il insere uniquement les DPR absents et leurs nouvelles photos ou pieces jointes, ne met jamais a jour les DPR ou metadonnees de fichier existants, et accepte que des DPR historiques supprimes de SharePoint soient conserves dans Supabase.
+
+## Complément additif du 29 août 2026
+
+Une nouvelle comparaison de la liste SharePoint courante avec Supabase a identifié 25 DPR réellement absents. Aucun doublon métier n’a été retenu et aucun DPR existant n’a été modifié ou supprimé.
+
+- identifiants source importés : `1070`, `1071`, `1072`, `1074`, `1077`, `1080`, `1081`, `1082`, `1083`, `1084`, `1085`, `1086`, `1087`, `1090`, `1092`, `1093`, `1094`, `1096`, `1099`, `1100`, `1102`, `1103`, `1105`, `1106`, `1108` ;
+- numéros SeaPilot réservés : `DPR-1126` à `DPR-1150` ;
+- clé du lot : `dpr-sharepoint-missing-20260829-other-25` ;
+- 25 événements d’audit `imported` et 25 instantanés source conservés ;
+- aucune pièce jointe nouvelle associée à ces 25 entrées ;
+- empreinte des 1 052 DPR antérieurs inchangée avant et après l’import ;
+- compteur suivant : `1151`.

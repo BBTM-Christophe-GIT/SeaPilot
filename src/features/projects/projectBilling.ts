@@ -592,8 +592,7 @@ export function billingDprComment(
   const isSpecialOperation = operation === '24/24 CREW CHANGE'
     || operation === '24/24 WEATHER STAND-BY'
     || operation === 'CONTRACTUAL MAINTENANCE DAY';
-  const isPort = dpr.vesselStatus.trim().toUpperCase() === 'NAVIRE AU PORT';
-  const arrival = isPort && dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
+  const arrival = dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
   const departure = dpr.departureAt ? `Appareillage du quai à ${addUtcOffset(dpr.departureAt)}` : '';
   const refueling = dpr.fuelLiters && dpr.fuelLiters > 0
     ? `Refueling : ${formatWholeNumber(dpr.fuelLiters)} L`
