@@ -97,6 +97,11 @@ export interface PlanningDateRange {
   end: string;
 }
 
+export interface PlanningCrewRowOptions {
+  employmentRange?: PlanningDateRange;
+  visibleAbsencePersonIds?: ReadonlySet<number>;
+}
+
 export interface PlanningAlert {
   id: string;
   title: string;
@@ -481,8 +486,10 @@ export function buildPlanningCrewRows(
   days: PlanningTimelineDay[],
   filters: PlanningFilters,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+  options: PlanningCrewRowOptions = {},
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
+  const employmentRange = options.employmentRange || range;
   const allEvents = eventPool;
   const events = allEvents.filter(
     (event) =>
@@ -602,9 +609,13 @@ export function buildPlanningCrewRows(
               return comparePlanningPersonnelFunctions(leftRole, rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
-              const linkedPerson = peopleByName.get(person);
+              const eventPersonId = personEvents.find((event) => event.personId !== null)?.personId ?? null;
+              const linkedPerson = eventPersonId === null ? peopleByName.get(person) : peopleById.get(eventPersonId);
               const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
-              const personId = personEvents[0]?.personId || linkedPerson?.id || null;
+              const personId = eventPersonId || linkedPerson?.id || null;
+              const hasVisibleAbsence = personId !== null && Boolean(options.visibleAbsencePersonIds?.has(personId));
+              if (!personEvents.length && !hasVisibleAbsence) return;
+              if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (
                 (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))

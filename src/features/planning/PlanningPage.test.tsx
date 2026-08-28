@@ -643,14 +643,17 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByRole('heading', { name: 'Modifier l’événement' })).toBeInTheDocument();
   });
 
-  it('opens billing by default and only lists validated projects without a status pill', async () => {
-    const { client } = createClient({
+  it('opens billing by default, separates pending absences and updates a project status from its card', async () => {
+    const user = userEvent.setup();
+    const { client, updateProject } = createClient({
+      absences: [requestedLeaveRow, approvedLeaveRow],
       projects: [
         { ...planningProjectRow, id: 600, title: 'Mission facturable', status: 'Validé' },
         { ...planningProjectRow, id: 601, title: 'Mission en attente', status: 'Non validé' },
         { ...planningProjectRow, id: 602, title: 'Mission météo', status: 'Stand-by météo' },
         { ...planningProjectRow, id: 603, title: 'Mission terminée', status: 'Facturé' },
       ],
+      updatedProject: { ...planningProjectRow, id: 600, title: 'Mission facturable', status: 'Facturé' },
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
@@ -658,10 +661,63 @@ describe('PlanningPage cockpit', () => {
     const billingPanel = screen.getByLabelText('Suivi opérationnel du planning');
     expect(within(billingPanel).getByText('Facturation')).toBeInTheDocument();
     expect(await within(billingPanel).findByText('Mission facturable')).toBeInTheDocument();
+    expect(within(billingPanel).getByText('À facturer', { selector: '.planning-side-badge' })).toBeInTheDocument();
+    expect(within(billingPanel).getByRole('tab', { name: 'À facturer, 1 projet' })).toHaveAttribute('aria-selected', 'true');
     expect(within(billingPanel).queryByText('Mission en attente')).not.toBeInTheDocument();
     expect(within(billingPanel).queryByText('Mission météo')).not.toBeInTheDocument();
     expect(within(billingPanel).queryByText('Mission terminée')).not.toBeInTheDocument();
-    expect(billingPanel.querySelector('.planning-side-badge')).not.toBeInTheDocument();
+
+    await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
+    expect(within(billingPanel).getByText('Paul DURAND')).toBeInTheDocument();
+    expect(within(billingPanel).getByText('À valider')).toBeInTheDocument();
+    expect(within(billingPanel).queryByText('Mission en attente')).not.toBeInTheDocument();
+
+    await user.click(within(billingPanel).getByRole('tab', { name: 'À facturer, 1 projet' }));
+    await user.click(within(billingPanel).getByRole('button', { name: /Mission facturable/ }));
+    await user.selectOptions(within(billingPanel).getByLabelText('Statut de Mission facturable'), 'Facturé');
+    await waitFor(() => expect(updateProject).toHaveBeenCalledWith(expect.objectContaining({ status: 'Facturé' })));
+    expect(await within(billingPanel).findByText('Aucun projet à facturer.')).toBeInTheDocument();
+    expect(within(billingPanel).getByRole('tab', { name: 'À facturer, 0 projet' })).toBeInTheDocument();
+
+    await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
+    await user.click(within(billingPanel).getByRole('button', { name: /Paul DURAND.*À valider/ }));
+    expect(await screen.findByRole('dialog', { name: 'Absences, remplacements et centre de conflits' })).toBeInTheDocument();
+
+    const planningMenu = screen.getByRole('navigation', { name: 'Menu du planning' });
+    for (const removedButton of ['Facturation', 'Demandes en attente', 'Gérer les navires', 'Conflits', 'Absences et conflits', 'Historique']) {
+      expect(within(planningMenu).queryByRole('button', { name: new RegExp(`^${removedButton}`) })).not.toBeInTheDocument();
+    }
+  });
+
+  it('hides former employees and empty sailor rows for the selected reference month', async () => {
+    const departedBeforeAugust = { ...departedCrewRow, departed_on: '2026-07-31' };
+    const departedAssignment = {
+      ...assignmentOverviewRow,
+      id: 101,
+      crew_person_id: departedBeforeAugust.id,
+      crew_name: 'Alain ANCIEN',
+      starts_on: '2026-08-01',
+      ends_on: '2026-08-10',
+    };
+    const augustAssignment = {
+      ...assignmentOverviewRow,
+      starts_on: '2026-08-01',
+      ends_on: '2026-08-10',
+    };
+    const emptyActiveBoardRow = { ...emptyBoardRow, id: 901, person_id: secondCrewRow.id };
+    const { client } = createClient({
+      assignments: [augustAssignment, departedAssignment],
+      boardRows: [emptyActiveBoardRow],
+      people: [captainRow, crewRow, secondCrewRow, departedBeforeAugust],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-08' } });
+
+    await waitFor(() => expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0));
+    expect(screen.queryByText('Alain ANCIEN')).not.toBeInTheDocument();
+    expect(screen.queryByText('Luc MOREL')).not.toBeInTheDocument();
   });
 
   it('opens the searchable project catalog by double-clicking a vessel cell', async () => {
@@ -760,7 +816,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(menu).getByRole('group', { name: 'Documents' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
-    expect(within(menu).getByRole('button', { name: 'Demandes en attente' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('button', { name: 'Demandes en attente' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Exports' })).toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: "Attestation d'armement" })).toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Exporter un marin' })).not.toBeInTheDocument();
@@ -856,7 +912,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    expect(screen.getByRole('button', { name: /Demandes en attente.*1/ })).toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: 'Demandes en attente, 1 demande' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.click(screen.getByRole('button', { name: /Congés à valider/ }));
 
@@ -868,8 +924,7 @@ describe('PlanningPage cockpit', () => {
     })));
   });
 
-  it('shows immutable versions and the semantic Planning history', async () => {
-    const user = userEvent.setup();
+  it('keeps semantic Planning history loaded without exposing the removed toolbar button', async () => {
     const { client } = createClient({
       publications: [publicationRow],
       versions: [{
@@ -899,10 +954,9 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('button', { name: /Historique/ }));
-    expect(screen.getByText('Version diffusée 1')).toBeInTheDocument();
-    expect(screen.getByText('Planning publié en version 1')).toBeInTheDocument();
-    expect(screen.getAllByText(/Direction BBTM/).length).toBeGreaterThan(0);
+    const menu = screen.getByRole('navigation', { name: 'Menu du planning' });
+    expect(within(menu).queryByRole('button', { name: /Historique/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Diffusion du planning' })).toHaveTextContent('Version 1');
   });
 
   it('shows an expired-document icon on affected cells without blocking the assignment', async () => {
@@ -979,8 +1033,6 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(container.querySelectorAll('.planning-crew-bar.has-conflict')).toHaveLength(2);
-    await user.click(screen.getByRole('button', { name: /Conflits/ }));
-    expect(screen.getByText('Double affectation')).toBeInTheDocument();
     await user.dblClick(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ })[0]);
     expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
     expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
@@ -1428,9 +1480,7 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
-  it('offers row deletion only for a sailor without planning records', async () => {
-    const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('does not render a sailor whose board row has no colored planning cell', async () => {
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
       boardRows: [emptyBoardRow],
@@ -1440,10 +1490,8 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
 
     expect(screen.queryByRole('button', { name: 'Supprimer la ligne vide de Paul DURAND' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne vide de Alain ANCIEN' }));
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('delete_planning_board_row', { p_row_id: 900 }));
-    expect(await screen.findByText('La ligne vide de Alain ANCIEN a été supprimée.')).toBeInTheDocument();
-    confirm.mockRestore();
+    expect(screen.queryByText('Alain ANCIEN')).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', { p_row_id: 900 });
   });
 
   it('colors an empty fleet cell only on double-click without opening the full form', async () => {

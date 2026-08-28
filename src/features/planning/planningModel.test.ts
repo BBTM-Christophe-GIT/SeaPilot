@@ -345,7 +345,7 @@ describe('planning hierarchy and side panels', () => {
     expect(rows.filter((row) => row.type === 'vessel').map((row) => row.label)).toEqual(['Armement - Cherbourg']);
   });
 
-  it('keeps a departed sailor visible as an empty deletable board row', () => {
+  it('hides departed sailors and board rows without a visible colored cell', () => {
     const departedPerson = {
       id: 3,
       firstName: 'Alain',
@@ -371,13 +371,7 @@ describe('planning hierarchy and side panels', () => {
       }],
     }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
 
-    expect(rows.find((row) => row.label === 'Alain ANCIEN')).toMatchObject({
-      type: 'person',
-      board: 'Bordée 2',
-      boardRowId: 90,
-      hasAnyRecords: false,
-      events: [],
-    });
+    expect(rows.find((row) => row.label === 'Alain ANCIEN')).toBeUndefined();
   });
 
   it('finds active unassigned marins for the visible range', () => {

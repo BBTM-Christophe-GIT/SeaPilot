@@ -20299,6 +20299,151 @@ button.planning-p12-conflict-card {
   background: #fff;
 }
 
+.planning-billing-queue {
+  display: grid;
+  min-height: 0;
+}
+
+.planning-billing-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border-bottom: 1px solid #e3eaf1;
+  padding: 9px;
+  background: #f3f7fb;
+}
+
+.planning-billing-tabs button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 6px 8px;
+  color: #596b82;
+  background: transparent;
+  font-size: .66rem;
+  font-weight: 820;
+  line-height: 1.15;
+}
+
+.planning-billing-tabs button.is-active {
+  border-color: #dbe5ef;
+  color: #172942;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(28, 43, 65, .08);
+}
+
+.planning-billing-tabs button span {
+  display: inline-grid;
+  min-width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #fff;
+  background: #ed2947;
+  font-size: .58rem;
+}
+
+.planning-billing-item {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.planning-billing-item:hover,
+.planning-billing-item.is-expanded {
+  border-color: #a9c7ea;
+  box-shadow: 0 5px 16px rgba(27, 82, 145, .1);
+}
+
+.planning-billing-item.is-pending {
+  opacity: .62;
+}
+
+.planning-billing-item-summary {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+  border: 0;
+  padding: 12px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.planning-billing-item-summary > span {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.planning-billing-item-summary strong {
+  color: #152137;
+  font-size: .72rem;
+  line-height: 1.35;
+}
+
+.planning-billing-item-summary small {
+  color: #687890;
+  font-size: .62rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.planning-billing-item-summary em {
+  font-style: normal;
+}
+
+.planning-billing-status-control {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #e6edf4;
+  padding: 10px 12px 12px;
+  color: #50637a;
+  background: #f8fbfe;
+  font-size: .61rem;
+  font-weight: 800;
+}
+
+.planning-billing-status-control select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #cbd8e6;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #1d3049;
+  background: #fff;
+  font: inherit;
+}
+
+.planning-billing-tabs button:focus-visible,
+.planning-billing-item-summary:focus-visible,
+.planning-billing-status-control select:focus-visible,
+.planning-pending-absence-item:focus-visible {
+  outline: 3px solid rgba(23, 105, 220, .2);
+  outline-offset: 1px;
+}
+
+.planning-pending-absence-item {
+  border: 1px solid #e5eaf0;
+  padding: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.planning-pending-absence-item:hover {
+  border-color: #a9c7ea;
+  box-shadow: 0 5px 16px rgba(27, 82, 145, .1);
+}
+
 .project-catalog-sidebar {
   display: flex;
   min-width: 0;
