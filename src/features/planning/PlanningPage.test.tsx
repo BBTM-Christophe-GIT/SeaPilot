@@ -666,6 +666,10 @@ describe('PlanningPage cockpit', () => {
     expect(within(billingPanel).queryByText('Mission en attente')).not.toBeInTheDocument();
     expect(within(billingPanel).queryByText('Mission météo')).not.toBeInTheDocument();
     expect(within(billingPanel).queryByText('Mission terminée')).not.toBeInTheDocument();
+    expect(within(billingPanel).getByText('Période')).toBeInTheDocument();
+    expect(within(billingPanel).getByText('08/07/2026 – 10/07/2026')).toBeInTheDocument();
+    expect(within(billingPanel).getByText('Navire')).toBeInTheDocument();
+    expect(within(billingPanel).getByText('COTENTIN')).toBeInTheDocument();
 
     await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
     expect(within(billingPanel).getByText('Paul DURAND')).toBeInTheDocument();
@@ -674,7 +678,9 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(within(billingPanel).getByRole('tab', { name: 'À facturer, 1 projet' }));
     await user.click(within(billingPanel).getByRole('button', { name: /Mission facturable/ }));
-    await user.selectOptions(within(billingPanel).getByLabelText('Statut de Mission facturable'), 'Facturé');
+    const statusSelect = within(billingPanel).getByLabelText('Statut de Mission facturable');
+    expect(within(statusSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Non validé', 'Validé', 'Stand-by météo', 'Facturé']);
+    await user.selectOptions(statusSelect, 'Facturé');
     await waitFor(() => expect(updateProject).toHaveBeenCalledWith(expect.objectContaining({ status: 'Facturé' })));
     expect(await within(billingPanel).findByText('Aucun projet à facturer.')).toBeInTheDocument();
     expect(within(billingPanel).getByRole('tab', { name: 'À facturer, 0 projet' })).toBeInTheDocument();

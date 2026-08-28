@@ -20301,6 +20301,14 @@ button.planning-p12-conflict-card {
 
 .planning-billing-queue {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.planning-billing-queue > .planning-side-list {
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -20351,6 +20359,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-billing-item {
+  align-self: start;
   gap: 0;
   overflow: hidden;
   padding: 0;
@@ -20370,58 +20379,121 @@ button.planning-p12-conflict-card {
 .planning-billing-item-summary {
   display: grid;
   width: 100%;
-  gap: 7px;
+  gap: 10px;
   border: 0;
-  padding: 12px;
+  padding: 12px 13px 10px;
   color: inherit;
   background: transparent;
   text-align: left;
 }
 
-.planning-billing-item-summary > span {
+.planning-billing-item-heading {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-.planning-billing-item-summary strong {
+.planning-billing-item-heading strong {
+  min-width: 0;
   color: #152137;
-  font-size: .72rem;
-  line-height: 1.35;
+  font-size: .74rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
-.planning-billing-item-summary small {
-  color: #687890;
-  font-size: .62rem;
-  font-style: normal;
-  font-weight: 700;
+.planning-billing-item-heading .planning-side-badge {
+  flex: 0 0 auto;
 }
 
 .planning-billing-item-summary em {
   font-style: normal;
 }
 
+.planning-billing-item-meta {
+  display: grid;
+  gap: 7px;
+}
+
+.planning-billing-item-meta > span {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.planning-billing-item-meta svg {
+  color: #52739b;
+}
+
+.planning-billing-item-meta > span > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.planning-billing-item-meta small {
+  color: #7b899c;
+  font-size: .5rem;
+  font-weight: 820;
+  letter-spacing: .06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.planning-billing-item-meta b {
+  min-width: 0;
+  color: #455a73;
+  font-size: .64rem;
+  font-weight: 720;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.planning-billing-item-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  border-top: 1px solid #edf1f5;
+  padding-top: 8px;
+  color: #1769dc;
+  font-size: .56rem;
+  font-weight: 820;
+}
+
+.planning-billing-item-action svg {
+  transition: transform 120ms ease;
+}
+
+.planning-billing-item-summary[aria-expanded='true'] .planning-billing-item-action svg {
+  transform: rotate(180deg);
+}
+
 .planning-billing-status-control {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   border-top: 1px solid #e6edf4;
-  padding: 10px 12px 12px;
+  padding: 11px 13px 13px;
   color: #50637a;
   background: #f8fbfe;
-  font-size: .61rem;
+  font-size: .64rem;
   font-weight: 800;
 }
 
 .planning-billing-status-control select {
   width: 100%;
-  min-height: 36px;
+  min-height: 40px;
   border: 1px solid #cbd8e6;
   border-radius: 8px;
-  padding: 0 9px;
+  padding: 0 10px;
   color: #1d3049;
   background: #fff;
-  font: inherit;
+  font-family: inherit;
+  font-size: .72rem;
+  font-weight: 700;
 }
 
 .planning-billing-tabs button:focus-visible,

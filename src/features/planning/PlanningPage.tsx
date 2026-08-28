@@ -3032,13 +3032,16 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
             return (
               <article className={`planning-side-item planning-billing-item${isExpanded ? ' is-expanded' : ''}${isPending ? ' is-pending' : ''}`} key={project.id}>
                 <button aria-expanded={isExpanded} className="planning-billing-item-summary" onClick={() => setExpandedBillingProjectId(isExpanded ? null : project.id)} type="button">
-                  <span><strong>{project.title}</strong><em className="planning-side-badge is-danger">À facturer</em></span>
-                  <small>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</small>
-                  <small>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ') || 'Navire à définir'}</small>
+                  <span className="planning-billing-item-heading"><strong>{project.title}</strong><em className="planning-side-badge is-danger">À facturer</em></span>
+                  <span className="planning-billing-item-meta">
+                    <span><CalendarDays aria-hidden="true" size={15} /><span><small>Période</small><b>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</b></span></span>
+                    <span><Ship aria-hidden="true" size={15} /><span><small>Navire</small><b>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ') || 'Navire à définir'}</b></span></span>
+                  </span>
+                  <span className="planning-billing-item-action">{isExpanded ? 'Masquer le statut' : 'Modifier le statut'}<ChevronDown aria-hidden="true" size={14} /></span>
                 </button>
                 {isExpanded ? (
                   <label className="planning-billing-status-control">
-                    <span>Statut du projet</span>
+                    <span>Statut</span>
                     <select aria-label={`Statut de ${project.title}`} disabled={!editable || isPending} onChange={(event) => void onChangeProjectStatus(project, event.target.value as ProjectStatus)} value={project.status}>
                       {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
