@@ -326,6 +326,22 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent('1 contrats');
   });
 
+  it('replaces direct client commands with the two searchable catalogues', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+
+    await screen.findByRole('heading', { name: 'Projets' });
+    expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Liste des clients' }));
+    expect(screen.getByRole('dialog', { name: 'Liste des clients' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Rechercher un client' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Fermer' }));
+    expect(screen.getByRole('button', { name: 'Liste des remorqués' })).toBeInTheDocument();
+  });
+
   it('selects a project and exposes its six read-only sections as accessible tabs', async () => {
     const user = userEvent.setup();
     const { client, from } = createClient();

@@ -257,7 +257,9 @@ describe('ProjectEditor contract hire periods', () => {
           registrationNumber: '',
           ownerName: '',
           hullMachineryInsurer: '',
-          liabilityInsurer: '',
+        liabilityInsurer: '',
+        photoUrl: '',
+        photoStoragePath: '',
           active: true,
         }]}
         vessels={vessels}

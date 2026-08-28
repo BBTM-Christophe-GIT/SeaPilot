@@ -18,8 +18,8 @@ import {
   RotateCcw,
   Rows3,
   Share2,
+  Ship,
   Trash2,
-  UserPlus,
   Users,
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,7 +27,8 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
 import { normalizeProjectContractType, PROJECT_CONTRACT_TYPES } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
@@ -712,12 +713,12 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
-  const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [clientCatalogOpen, setClientCatalogOpen] = useState(false);
+  const [towedAssetCatalogOpen, setTowedAssetCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [compactDensity, setCompactDensity] = useState(true);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
-  const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
@@ -880,12 +881,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setProjectEditorOpen(true);
   }
 
-  function openClientEditor(clientRecord?: ClientRecord) {
-    setMutationError('');
-    setEditingClient(clientRecord);
-    setClientEditorOpen(true);
-  }
-
   function openPlanningEditor(occurrence?: ProjectPlanningOccurrenceRecord) {
     setMutationError('');
     setEditingOccurrence(occurrence);
@@ -1043,9 +1038,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive aria-hidden="true" size={20} />} label="Archiver" onClick={archiveSelectedProject} />
           <ProjectRibbonButton icon={<RefreshCw aria-hidden="true" size={20} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
         </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Clients & opérations">
-          <ProjectRibbonButton disabled={!isManager} icon={<UserPlus aria-hidden="true" size={20} />} label="Nouveau client" onClick={() => openClientEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedClient} icon={<Users aria-hidden="true" size={20} />} label="Modifier le client" onClick={() => selectedClient && openClientEditor(selectedClient)} />
+        <ProjectRibbonGroup label="Référentiels & opérations">
+          <ProjectRibbonButton disabled={!isManager} icon={<Users aria-hidden="true" size={20} />} label="Liste des clients" onClick={() => setClientCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager} icon={<Ship aria-hidden="true" size={20} />} label="Liste des remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Documents">
@@ -1264,16 +1259,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           vessels={projectsData.vessels}
         />
       ) : null}
-      {clientEditorOpen ? (
-        <ClientEditor
+      {clientCatalogOpen ? (
+        <ClientCatalogDialog
+          canManage={isManager}
           client={effectiveClient}
-          clientRecord={editingClient}
-          onClose={() => setClientEditorOpen(false)}
-          onSaved={() => {
-            setClientEditorOpen(false);
-            setMutationMessage('Client enregistré dans Supabase.');
-            setLoadAttempt((attempt) => attempt + 1);
-          }}
+          clients={projectsData.clients}
+          onChanged={() => setLoadAttempt((attempt) => attempt + 1)}
+          onClose={() => setClientCatalogOpen(false)}
+        />
+      ) : null}
+      {towedAssetCatalogOpen ? (
+        <TowedAssetCatalogDialog
+          canManage={isManager}
+          client={effectiveClient}
+          onChanged={() => setLoadAttempt((attempt) => attempt + 1)}
+          onClose={() => setTowedAssetCatalogOpen(false)}
+          towedAssets={projectsData.towedAssets}
         />
       ) : null}
       {planningEditorOpen && selectedProject ? (
