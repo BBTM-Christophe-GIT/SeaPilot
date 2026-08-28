@@ -317,6 +317,8 @@ const EMPTY_TOWED_ASSET: ProjectTowedAssetWriteInput = {
   ownerName: '',
   hullMachineryInsurer: '',
   liabilityInsurer: '',
+  photoUrl: '',
+  photoStoragePath: '',
 };
 
 function towedAssetToWriteInput(asset?: ProjectTowedAssetRecord): ProjectTowedAssetWriteInput | null {
@@ -335,6 +337,8 @@ function towedAssetToWriteInput(asset?: ProjectTowedAssetRecord): ProjectTowedAs
     ownerName: asset.ownerName,
     hullMachineryInsurer: asset.hullMachineryInsurer,
     liabilityInsurer: asset.liabilityInsurer,
+    photoUrl: asset.photoUrl,
+    photoStoragePath: asset.photoStoragePath,
   };
 }
 
@@ -1173,6 +1177,9 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     address: clientRecord?.address || '',
     city: clientRecord?.city || '',
     country: clientRecord?.country || '',
+    website: clientRecord?.website || '',
+    logoUrl: clientRecord?.logoUrl || '',
+    logoStoragePath: clientRecord?.logoStoragePath || '',
     active: clientRecord?.active ?? true,
     expectedUpdatedAt: clientRecord?.updatedAt || '',
   });

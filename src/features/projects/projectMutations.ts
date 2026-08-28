@@ -53,6 +53,8 @@ export interface ProjectTowedAssetWriteInput {
   ownerName: string;
   hullMachineryInsurer: string;
   liabilityInsurer: string;
+  photoUrl: string;
+  photoStoragePath: string;
 }
 
 export interface ProjectWriteInput {
@@ -104,6 +106,9 @@ export interface ClientWriteInput {
   address: string;
   city: string;
   country: string;
+  website: string;
+  logoUrl: string;
+  logoStoragePath: string;
   active: boolean;
   expectedUpdatedAt: string;
 }
@@ -322,6 +327,8 @@ export async function saveProjectTowedAsset(
     target_owner_name: optionalText(input.ownerName),
     target_hull_machinery_insurer: optionalText(input.hullMachineryInsurer),
     target_liability_insurer: optionalText(input.liabilityInsurer),
+    target_photo_url: optionalText(input.photoUrl),
+    target_photo_storage_path: optionalText(input.photoStoragePath),
   });
   if (error) throw mutationError(error, "Impossible d’enregistrer le remorqué.");
   const savedId = Number(data);
@@ -343,6 +350,9 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
     target_address: optionalText(input.address),
     target_city: optionalText(input.city),
     target_country: optionalText(input.country),
+    target_website: optionalText(input.website),
+    target_logo_url: optionalText(input.logoUrl),
+    target_logo_storage_path: optionalText(input.logoStoragePath),
     target_active: input.active,
     target_expected_updated_at: optionalText(input.expectedUpdatedAt),
   });
@@ -380,6 +390,22 @@ export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOcc
     errors.push("L’unité du loyer de l’opération est obligatoire.");
   }
   return errors;
+}
+
+export async function archiveClient(client: SupabaseClient, clientId: number): Promise<void> {
+  if (!Number.isInteger(clientId) || clientId <= 0) throw new Error('Le client à supprimer est invalide.');
+  const { error } = await client.rpc('clients_archive', { target_client_id: clientId });
+  if (error) throw mutationError(error, 'Impossible de supprimer le client.');
+}
+
+export async function archiveProjectTowedAsset(client: SupabaseClient, towedAssetId: number): Promise<void> {
+  if (!Number.isInteger(towedAssetId) || towedAssetId <= 0) {
+    throw new Error('Le remorqué à supprimer est invalide.');
+  }
+  const { error } = await client.rpc('projects_archive_towed_asset', {
+    target_towed_asset_id: towedAssetId,
+  });
+  if (error) throw mutationError(error, 'Impossible de supprimer le remorqué.');
 }
 
 export function validateProjectContractHirePeriods(

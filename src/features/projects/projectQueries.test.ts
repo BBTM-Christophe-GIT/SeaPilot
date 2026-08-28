@@ -74,6 +74,9 @@ describe('projectQueries', () => {
       address: null,
       city: null,
       country: null,
+      website: 'https://cosma.example/',
+      logo_url: 'https://cosma.example/favicon.ico',
+      logo_storage_path: null,
       active: true,
       source_label: 'seapilot',
       sharepoint_list_title: null,
@@ -81,7 +84,11 @@ describe('projectQueries', () => {
       source_modified_at: null,
       archived_at: null,
       updated_at: '2026-08-20T10:00:00Z',
-    }])).toEqual([expect.objectContaining({ representedBy: 'Jean DUPONT' })]);
+    }])).toEqual([expect.objectContaining({
+      logoUrl: 'https://cosma.example/favicon.ico',
+      representedBy: 'Jean DUPONT',
+      website: 'https://cosma.example/',
+    })]);
   });
 
   it('maps reusable towed assets and their numeric dimensions', () => {
@@ -99,6 +106,8 @@ describe('projectQueries', () => {
       owner_name: null,
       hull_machinery_insurer: null,
       liability_insurer: null,
+      photo_url: null,
+      photo_storage_path: 'towed-assets/8/denver.webp',
       active: true,
     }])).toEqual([expect.objectContaining({
       id: 8,
@@ -106,6 +115,7 @@ describe('projectQueries', () => {
       lengthOverallM: 82,
       breadthOverallM: 8.2,
       lightDisplacementT: 700,
+      photoStoragePath: 'towed-assets/8/denver.webp',
     })]);
   });
 

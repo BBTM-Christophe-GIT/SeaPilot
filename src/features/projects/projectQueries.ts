@@ -89,6 +89,9 @@ const CLIENT_SELECT = [
   'address',
   'city',
   'country',
+  'website',
+  'logo_url',
+  'logo_storage_path',
   'active',
   'source_label',
   'sharepoint_list_title',
@@ -222,6 +225,9 @@ interface ClientRow {
   address: string | null;
   city: string | null;
   country: string | null;
+  website: string | null;
+  logo_url: string | null;
+  logo_storage_path: string | null;
   active: boolean | null;
   source_label: string | null;
   sharepoint_list_title: string | null;
@@ -344,6 +350,8 @@ interface ProjectTowedAssetRow {
   owner_name: string | null;
   hull_machinery_insurer: string | null;
   liability_insurer: string | null;
+  photo_url: string | null;
+  photo_storage_path: string | null;
   active: boolean | null;
 }
 
@@ -361,6 +369,8 @@ export interface ProjectTowedAssetRecord {
   ownerName: string;
   hullMachineryInsurer: string;
   liabilityInsurer: string;
+  photoUrl: string;
+  photoStoragePath: string;
   active: boolean;
 }
 
@@ -413,6 +423,9 @@ export interface ClientRecord {
   address: string;
   city: string;
   country: string;
+  website: string;
+  logoUrl: string;
+  logoStoragePath: string;
   active: boolean;
   sourceLabel: string;
   sharePointListTitle: string;
@@ -653,6 +666,8 @@ export function mapProjectTowedAssetRows(rows: ProjectTowedAssetRow[]): ProjectT
     ownerName: nullableText(row.owner_name),
     hullMachineryInsurer: nullableText(row.hull_machinery_insurer),
     liabilityInsurer: nullableText(row.liability_insurer),
+    photoUrl: nullableText(row.photo_url),
+    photoStoragePath: nullableText(row.photo_storage_path),
     active: row.active ?? true,
   }));
 }
@@ -728,6 +743,9 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     address: nullableText(row.address),
     city: nullableText(row.city),
     country: nullableText(row.country),
+    website: nullableText(row.website),
+    logoUrl: nullableText(row.logo_url),
+    logoStoragePath: nullableText(row.logo_storage_path),
     active: row.active ?? true,
     sourceLabel: nullableText(row.source_label),
     sharePointListTitle: nullableText(row.sharepoint_list_title),

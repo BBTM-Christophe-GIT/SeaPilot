@@ -582,6 +582,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       owner_name: null,
       hull_machinery_insurer: null,
       liability_insurer: null,
+      photo_url: '/vessels/goury.jpg',
+      photo_storage_path: null,
       active: true,
     },
   ],
@@ -643,12 +645,16 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9101,
       name: 'Affréteur Démonstration',
+      represented_by: 'Camille MARTIN',
       code: 'DEMO-SP',
       email: '',
       phone: '',
       address: '',
       city: 'Brest',
       country: 'France',
+      website: 'https://example.com/',
+      logo_url: 'https://example.com/favicon.ico',
+      logo_storage_path: null,
       active: true,
       source_label: 'sharepoint',
       sharepoint_list_title: 'BBTM - Clients',
@@ -660,12 +666,16 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9102,
       name: 'Client SeaPilot Démonstration',
+      represented_by: 'Alex MOREAU',
       code: 'DEMO-SPT',
       email: '',
       phone: '',
       address: '',
       city: 'Cherbourg',
       country: 'France',
+      website: '',
+      logo_url: null,
+      logo_storage_path: null,
       active: true,
       source_label: 'seapilot',
       sharepoint_list_title: null,
@@ -1880,6 +1890,38 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'projects_towed_assets') {
     return createPreviewQuery({ data: previewRows('project_towed_assets'), error: null });
   }
+  if (functionName === 'projects_save_towed_asset') {
+    const requestedId = Number(args.target_towed_asset_id || 0);
+    let asset = previewRows('project_towed_assets').find((row) => Number(row.id) === requestedId);
+    if (!asset) {
+      asset = { id: nextPreviewId('project_towed_assets', 9351), active: true };
+      PREVIEW_ROWS.project_towed_assets.push(asset);
+    }
+    Object.assign(asset, {
+      name: String(args.target_name || ''),
+      asset_type: args.target_asset_type || null,
+      length_overall_m: args.target_length_overall_m ?? null,
+      breadth_overall_m: args.target_breadth_overall_m ?? null,
+      max_draft_m: args.target_max_draft_m ?? null,
+      light_displacement_t: args.target_light_displacement_t ?? null,
+      flag: args.target_flag || null,
+      classification_society: args.target_classification_society || null,
+      registration_number: args.target_registration_number || null,
+      owner_name: args.target_owner_name || null,
+      hull_machinery_insurer: args.target_hull_machinery_insurer || null,
+      liability_insurer: args.target_liability_insurer || null,
+      photo_url: args.target_photo_url || null,
+      photo_storage_path: args.target_photo_storage_path || null,
+    });
+    return createPreviewQuery({ data: asset.id, error: null });
+  }
+  if (functionName === 'projects_archive_towed_asset') {
+    const asset = previewRows('project_towed_assets').find(
+      (row) => Number(row.id) === Number(args.target_towed_asset_id),
+    );
+    if (asset) asset.active = false;
+    return createPreviewQuery({ data: null, error: null });
+  }
   if (functionName === 'projects_planning_occurrences') {
     return createPreviewQuery({
       data: previewRows('planning_projects').map((occurrence) => ({
@@ -1895,6 +1937,45 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       data: previewRows('clients').map((client) => ({ id: client.id, name: client.name, active: client.active })),
       error: null,
     });
+  }
+  if (functionName === 'clients_save') {
+    const requestedId = Number(args.target_client_id || 0);
+    let client = previewRows('clients').find((row) => Number(row.id) === requestedId);
+    if (!client) {
+      client = {
+        id: nextPreviewId('clients', 9102),
+        archived_at: null,
+        sharepoint_item_id: null,
+        sharepoint_list_title: null,
+        source_label: 'seapilot-preview',
+        source_modified_at: null,
+      };
+      PREVIEW_ROWS.clients.push(client);
+    }
+    Object.assign(client, {
+      name: String(args.target_name || ''),
+      represented_by: args.target_represented_by || null,
+      code: args.target_code || null,
+      email: args.target_email || null,
+      phone: args.target_phone || null,
+      address: args.target_address || null,
+      city: args.target_city || null,
+      country: args.target_country || null,
+      website: args.target_website || null,
+      logo_url: args.target_logo_url || null,
+      logo_storage_path: args.target_logo_storage_path || null,
+      active: args.target_active !== false,
+      updated_at: new Date().toISOString(),
+    });
+    return createPreviewQuery({ data: client, error: null });
+  }
+  if (functionName === 'clients_archive') {
+    const client = previewRows('clients').find((row) => Number(row.id) === Number(args.target_client_id));
+    if (client) {
+      client.active = false;
+      client.archived_at = new Date().toISOString();
+    }
+    return createPreviewQuery({ data: null, error: null });
   }
   if (functionName === 'planning_schedule_catalog_project') {
     return createPreviewQuery(schedulePreviewProject(args));
@@ -1978,15 +2059,29 @@ export const previewSupabaseClient = {
   },
   storage: {
     from: (bucket: string) => ({
-      createSignedUrl: () => Promise.resolve({ data: { signedUrl: bucket === 'fleet-certificates' ? '/demo/action-plan-closure-proof.webp' : '' }, error: null }),
+      createSignedUrl: (path: string) => Promise.resolve({
+        data: {
+          signedUrl: bucket === 'fleet-certificates'
+            ? '/demo/action-plan-closure-proof.webp'
+            : bucket === 'project-catalog-media'
+              ? path.startsWith('clients/') ? '/bbtm-logo.png' : '/vessels/goury.jpg'
+              : '',
+        },
+        error: null,
+      }),
       createSignedUrls: (paths: string[]) => Promise.resolve({
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
-      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12'
+      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
+        bucket === 'project-catalog-media'
+        || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')
+      )
         ? Promise.resolve({ data: { path: _path }, error: null })
         : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
-      remove: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+      remove: () => bucket === 'project-catalog-media'
+        ? Promise.resolve({ data: [], error: null })
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
     }),
   },
 } as unknown as SupabaseClient;
