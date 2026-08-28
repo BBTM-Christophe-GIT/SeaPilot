@@ -1193,7 +1193,7 @@ describe('PlanningPage cockpit', () => {
     expect(vesselOrder).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the fleet hierarchy without sailor functions or the former Armement location editor', async () => {
+  it('shows sailor functions in the fleet hierarchy without the former Armement location editor', async () => {
     const armementVessel = { ...vesselRow, name: 'ARMEMENT - CHERBOURG', acronym: 'ARM' };
     const armementAssignment = { ...assignmentOverviewRow, vessel_name: 'ARMEMENT - CHERBOURG' };
     const armementLocation = { ...planningLocationRow, vessel_name: 'ARMEMENT - CHERBOURG' };
@@ -1203,7 +1203,7 @@ describe('PlanningPage cockpit', () => {
 
     const calendarBody = container.querySelector('.planning-calendar-body') as HTMLElement;
     expect(within(calendarBody).getByText('Paul DURAND')).toBeInTheDocument();
-    expect(within(calendarBody).queryByText('Pont')).not.toBeInTheDocument();
+    expect(within(calendarBody).getByText('Pont')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /lieu du personnel/i })).not.toBeInTheDocument();
     expect(within(calendarBody).queryByText('Cherbourg')).not.toBeInTheDocument();
   });

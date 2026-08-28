@@ -18683,6 +18683,94 @@ button.planning-p12-conflict-card {
   background: #fff0f2;
 }
 
+/* Planning fleet roster: selected compact hierarchy with personnel functions. */
+.planning-timeline-row.is-fleet-board,
+.planning-timeline-row.is-fleet-person {
+  min-height: 48px;
+  contain-intrinsic-size: auto 48px;
+}
+
+.planning-timeline-row.is-fleet-board .planning-day-cell,
+.planning-timeline-row.is-fleet-person .planning-day-cell {
+  min-height: 48px;
+}
+
+.planning-timeline-row.is-fleet-board .planning-row-label.planning-tree-row.is-board {
+  border-bottom-color: #d6ebe7;
+  border-left-color: #49aa9e;
+  color: #1e4c47;
+  background: #eef9f7;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label {
+  position: sticky;
+  padding: 5px 10px 5px 54px;
+  border-left-color: transparent;
+  color: #233b47;
+  background: #ffffff;
+}
+
+.planning-timeline-row.is-fleet-person:nth-child(even) .planning-row-label {
+  background: #f7fbfc;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label::before {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 31px;
+  width: 1px;
+  background: #7dc8be;
+  content: '';
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label::after {
+  position: absolute;
+  top: 50%;
+  left: 27px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #118b83;
+  box-shadow: 0 0 0 1px #a8d9d3;
+  content: '';
+  transform: translateY(-50%);
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label > span {
+  min-width: 0;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label strong {
+  color: #163c38;
+  font-size: .68rem;
+  font-weight: 790;
+  line-height: 1.2;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label small {
+  margin-top: 3px;
+  color: #6d7f87;
+  font-size: .57rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+@media (max-width: 760px) {
+  .planning-timeline-row.is-fleet-person .planning-row-label {
+    padding-left: 42px;
+  }
+
+  .planning-timeline-row.is-fleet-person .planning-row-label::before {
+    left: 24px;
+  }
+
+  .planning-timeline-row.is-fleet-person .planning-row-label::after {
+    left: 20px;
+  }
+}
+
 .planning-departed-people-dialog {
   width: min(1180px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);

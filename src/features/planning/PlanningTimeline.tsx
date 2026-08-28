@@ -706,7 +706,10 @@ export function PlanningCrewTimelineRow({
   return (
     <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
-        <span><strong>{lane.label}</strong>{hierarchy ? null : <small>{lane.detail || 'Sans détail'}</small>}</span>
+        <span>
+          <strong>{lane.label}</strong>
+          <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
+        </span>
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
       {days.map((day, index) => {
