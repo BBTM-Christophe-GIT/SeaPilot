@@ -381,6 +381,57 @@ export function manifestSha256(manifest: DprMigrationManifest): string {
   return sha256(stableJson(copy));
 }
 
+function buildManifestCounters(reports: DprMigrationReport[], files: DprMigrationFile[]): DprMigrationManifest['counters'] {
+  const pdfReportIds = new Set(files.filter((file) => file.kind === 'pdf').map((file) => file.dprSharePointItemId).filter(Boolean));
+  const pdfNumbers = new Set(files.filter((file) => file.kind === 'pdf').map((file) => file.dprNumber).filter((value): value is number => value !== null));
+  return {
+    reports: reports.length,
+    filesDiscovered: files.length,
+    pdfs: files.filter((file) => file.kind === 'pdf').length,
+    photos: files.filter((file) => file.kind === 'photo').length,
+    attachments: files.filter((file) => file.kind === 'attachment').length,
+    excludedHtml: files.filter((file) => file.exclusionReason === 'temporary-html').length,
+    excludedOther: files.filter((file) => file.kind === 'excluded' && file.exclusionReason !== 'temporary-html').length,
+    reportsWithoutPdf: reports.filter((report) => !pdfReportIds.has(report.sourceItemId) && (report.dprNumber === null || !pdfNumbers.has(report.dprNumber))).length,
+    duplicateReportSourceIds: duplicates(reports.map((report) => report.sourceItemId)),
+    duplicateFileSourceIds: duplicates(files.map((file) => file.sourceItemId)),
+  };
+}
+
+export function selectDprManifestReports(manifest: DprMigrationManifest, sourceItemIds: ReadonlySet<string>): DprMigrationManifest {
+  const reports = manifest.reports.filter((report) => sourceItemIds.has(report.sourceItemId));
+  const selectedReportIds = new Set(reports.map((report) => report.sourceItemId));
+  const selectedDprNumbers = new Set(reports.map((report) => report.dprNumber).filter((value): value is number => value !== null));
+  const files = manifest.files.filter((file) => (
+    (file.dprSharePointItemId !== null && selectedReportIds.has(file.dprSharePointItemId))
+    || (file.dprNumber !== null && selectedDprNumbers.has(file.dprNumber))
+  ));
+  return {
+    ...manifest,
+    reports,
+    files,
+    counters: buildManifestCounters(reports, files),
+  };
+}
+
+export function selectMissingDprManifest(
+  manifest: DprMigrationManifest,
+  existingSourceItemIds: ReadonlySet<string>,
+  existingDprNumbers: ReadonlySet<number>,
+): DprMigrationManifest {
+  const missingSourceItemIds = new Set(manifest.reports
+    .filter((report) => !existingSourceItemIds.has(report.sourceItemId)
+      && (report.dprNumber === null || !existingDprNumbers.has(report.dprNumber)))
+    .map((report) => report.sourceItemId));
+  const selected = selectDprManifestReports(manifest, missingSourceItemIds);
+  const files = selected.files.filter((file) => file.kind === 'photo' || file.kind === 'attachment');
+  return {
+    ...selected,
+    files,
+    counters: buildManifestCounters(selected.reports, files),
+  };
+}
+
 export function buildDprMigrationManifest(bundle: SharePointExportBundle, now = new Date()): DprMigrationManifest {
   const reportSource = bundle.sources.find((source) => source.sourceKey === DPR_SOURCE_KEY);
   const fileSource = bundle.sources.find((source) => source.sourceKey === DPR_LIBRARY_SOURCE_KEY);
@@ -395,8 +446,6 @@ export function buildDprMigrationManifest(bundle: SharePointExportBundle, now = 
     })
     .map(inferFile)
     .sort((a, b) => a.serverRelativeUrl.localeCompare(b.serverRelativeUrl));
-  const pdfReportIds = new Set(files.filter((file) => file.kind === 'pdf').map((file) => file.dprSharePointItemId).filter(Boolean));
-  const pdfNumbers = new Set(files.filter((file) => file.kind === 'pdf').map((file) => file.dprNumber).filter((value): value is number => value !== null));
   const fieldInventory: Record<string, number> = {};
   for (const item of [...reportSource.items, ...fileSource.items]) {
     for (const key of Object.keys(fields(item))) fieldInventory[key] = (fieldInventory[key] || 0) + 1;
@@ -410,18 +459,7 @@ export function buildDprMigrationManifest(bundle: SharePointExportBundle, now = 
     reports,
     files,
     fieldInventory: Object.fromEntries(Object.entries(fieldInventory).sort(([a], [b]) => a.localeCompare(b))),
-    counters: {
-      reports: reports.length,
-      filesDiscovered: files.length,
-      pdfs: files.filter((file) => file.kind === 'pdf').length,
-      photos: files.filter((file) => file.kind === 'photo').length,
-      attachments: files.filter((file) => file.kind === 'attachment').length,
-      excludedHtml: files.filter((file) => file.exclusionReason === 'temporary-html').length,
-      excludedOther: files.filter((file) => file.kind === 'excluded' && file.exclusionReason !== 'temporary-html').length,
-      reportsWithoutPdf: reports.filter((report) => !pdfReportIds.has(report.sourceItemId) && (report.dprNumber === null || !pdfNumbers.has(report.dprNumber))).length,
-      duplicateReportSourceIds: duplicates(reports.map((report) => report.sourceItemId)),
-      duplicateFileSourceIds: duplicates(files.map((file) => file.sourceItemId)),
-    },
+    counters: buildManifestCounters(reports, files),
   };
 }
 

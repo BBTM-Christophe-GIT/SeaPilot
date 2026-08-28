@@ -87,8 +87,11 @@ La reserve visuelle de `DPR-1001` appartient au document historique source. Aucu
 pnpm migrate:dpr:dry-run -- --input .data/sharepoint-dpr-full.json
 pnpm verify:dpr:source-files -- .data/dpr-migration-manifest.json .data/dpr-source-files .data/dpr-source-files-inventory.json
 pnpm migrate:dpr:apply -- --input .data/sharepoint-dpr-full.json --source-files .data/dpr-source-files
+pnpm migrate:dpr:insert-missing --manifest .data/dpr-migration-manifest.json --source-files .data/dpr-source-files
 pnpm validate:dpr:phase6
 supabase test db supabase/tests/dpr_core_model_test.sql supabase/tests/dpr_role_matrix_test.sql
 ```
 
 Les variables `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont requises pour les commandes distantes. La cle de service ne doit jamais etre ecrite dans un fichier ou un commit.
+
+Le mode `insert-missing` compare les identifiants SharePoint et les numeros DPR du manifeste avec toutes les lignes deja presentes, par pages de 1 000 lignes. Il insere uniquement les DPR absents et leurs nouvelles photos ou pieces jointes, ne met jamais a jour les DPR ou metadonnees de fichier existants, et accepte que des DPR historiques supprimes de SharePoint soient conserves dans Supabase.

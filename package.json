@@ -22,6 +22,7 @@
     "migrate:dpr": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts",
     "migrate:dpr:dry-run": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode dry-run",
     "migrate:dpr:apply": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode historical-load",
+    "migrate:dpr:insert-missing": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode insert-missing",
     "migrate:dpr:reconcile": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode reconcile",
     "verify:dpr:source-files": "node --experimental-strip-types scripts/verify-dpr-source-files.ts",
     "validate:dpr:phase6": "node --experimental-strip-types scripts/validate-dpr-phase6.ts",
