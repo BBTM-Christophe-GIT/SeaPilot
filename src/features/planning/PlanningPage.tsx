@@ -57,7 +57,7 @@ import {
   formatPlanningPerson,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
-  getUnbilledPlanningProjects,
+  getBillablePlanningProjects,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   isPlanningPersonEmployedDuring,
@@ -514,8 +514,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<SideTab>('certificates');
-  const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<SideTab>('billing');
+  const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PlanningCrewEvent | null>(null);
   const [selectedProject, setSelectedProject] = useState<PlanningProjectRecord | null>(null);
   const [selectedProjectDocuments, setSelectedProjectDocuments] = useState<PlanningOperationDocumentRecord[]>([]);
@@ -799,8 +799,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => getUnassignedPlanningPeople(overview, range, filters, allPlanningCrewEvents),
     [allPlanningCrewEvents, filters, overview, range],
   );
-  const unbilledProjects = useMemo(
-    () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
+  const billableProjects = useMemo(
+    () => getBillablePlanningProjects(overview, Number(anchorDate.slice(0, 4))),
     [anchorDate, overview],
   );
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
@@ -922,7 +922,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     history: overview.history.length,
     certificates: certificateAlerts.filter((alert) => alert.tone === 'danger').length || certificateAlerts.length,
     unassigned: unassignedPeople.length,
-    billing: unbilledProjects.length,
+    billing: billableProjects.length,
     alerts: hrAlerts.length,
   };
 
@@ -2645,7 +2645,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
-              <PlanningSideContent certificateAlerts={certificateAlerts} hrAlerts={hrAlerts} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} overview={overview} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} unbilledProjects={unbilledProjects} editable={canEditPlanning} />
+              <PlanningSideContent billableProjects={billableProjects} certificateAlerts={certificateAlerts} hrAlerts={hrAlerts} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} overview={overview} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} editable={canEditPlanning} />
             </>
           ) : (
             <>
@@ -2988,14 +2988,14 @@ function PlanningUnassignedPeopleList({ people, editable, pendingId, onPointerDo
   );
 }
 
-function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, unbilledProjects, editable, onOpenHandover, onOpenConflictCenter }: {
+function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, billableProjects, editable, onOpenHandover, onOpenConflictCenter }: {
   sideTab: SideTab;
   certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
   hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
   overview: ReturnType<typeof usePlanningOverview>['overview'];
   planningControls: PlanningControlResult[];
   unassignedPeople: PlanningPerson[];
-  unbilledProjects: PlanningProjectRecord[];
+  billableProjects: PlanningProjectRecord[];
   editable: boolean;
   onOpenHandover: (handover: PlanningHandoverRecord) => void;
   onOpenConflictCenter: () => void;
@@ -3007,7 +3007,7 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
     return <div className="planning-side-list">{unassignedPeople.length ? unassignedPeople.map((person) => <article className={`planning-side-item${editable ? ' is-draggable' : ''}`} draggable={editable} key={person.id} onDragStart={(event) => event.dataTransfer.setData('application/x-seapilot-planning', JSON.stringify({ type: 'person', id: person.id }))}><div><strong>{formatPlanningPerson(person)}</strong><span className="planning-side-badge is-muted">{person.functionLabel || person.gradeLabel || 'Marin'}</span></div><p>{[person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Contrat actif'}</p>{editable ? <small>Glisser sur un navire pour affecter</small> : null}</article>) : <PlanningEmptySide text="Tous les marins sont affectés." />}</div>;
   }
   if (sideTab === 'billing') {
-    return <div className="planning-side-list">{unbilledProjects.length ? unbilledProjects.map((project) => <article className="planning-side-item" key={project.id}><div><strong>{project.title}</strong><span className="planning-side-badge is-warning">{project.status || 'À planifier'}</span></div><p>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</p><p>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ')}</p></article>) : <PlanningEmptySide text="Aucun projet non facturé." />}</div>;
+    return <div className="planning-side-list">{billableProjects.length ? billableProjects.map((project) => <article className="planning-side-item" key={project.id}><div><strong>{project.title}</strong></div><p>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</p><p>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ')}</p></article>) : <PlanningEmptySide text="Aucun projet à facturer." />}</div>;
   }
   if (sideTab === 'handovers') {
     return <div className="planning-side-list">{overview.handovers.length ? overview.handovers.map((handover) => {

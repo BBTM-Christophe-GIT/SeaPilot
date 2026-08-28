@@ -643,6 +643,27 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByRole('heading', { name: 'Modifier l’événement' })).toBeInTheDocument();
   });
 
+  it('opens billing by default and only lists validated projects without a status pill', async () => {
+    const { client } = createClient({
+      projects: [
+        { ...planningProjectRow, id: 600, title: 'Mission facturable', status: 'Validé' },
+        { ...planningProjectRow, id: 601, title: 'Mission en attente', status: 'Non validé' },
+        { ...planningProjectRow, id: 602, title: 'Mission météo', status: 'Stand-by météo' },
+        { ...planningProjectRow, id: 603, title: 'Mission terminée', status: 'Facturé' },
+      ],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Planning' });
+    const billingPanel = screen.getByLabelText('Suivi opérationnel du planning');
+    expect(within(billingPanel).getByText('Facturation')).toBeInTheDocument();
+    expect(await within(billingPanel).findByText('Mission facturable')).toBeInTheDocument();
+    expect(within(billingPanel).queryByText('Mission en attente')).not.toBeInTheDocument();
+    expect(within(billingPanel).queryByText('Mission météo')).not.toBeInTheDocument();
+    expect(within(billingPanel).queryByText('Mission terminée')).not.toBeInTheDocument();
+    expect(billingPanel.querySelector('.planning-side-badge')).not.toBeInTheDocument();
+  });
+
   it('opens the searchable project catalog by double-clicking a vessel cell', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
@@ -1084,6 +1105,7 @@ describe('PlanningPage cockpit', () => {
     const { client, insertAssignment, vesselOrder } = createClient({ assignments: [], people: [captainRow, crewRow], periods: [existingCaptainPeriod] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer le suivi opérationnel' }));
 
     const sailor = screen.getByRole('article', { name: /Paul DURAND.*Glisser pour affecter/ });
     const target = container.querySelector<HTMLElement>('[data-planning-person-drop-vessel-id="1"][data-planning-person-drop-watch-group="Bordée 1"]')!;

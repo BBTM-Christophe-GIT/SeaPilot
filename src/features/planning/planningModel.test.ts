@@ -10,7 +10,7 @@ import {
   hasBlockingPlanningControls,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
-  getUnbilledPlanningProjects,
+  getBillablePlanningProjects,
   isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningStatus,
@@ -406,9 +406,18 @@ describe('planning hierarchy and side panels', () => {
     ).toEqual([2]);
   });
 
-  it('builds the 90-day certificate/RH alarms and excludes billed projects', () => {
+  it('builds the 90-day certificate/RH alarms and keeps only validated projects to bill', () => {
+    const overviewWithEveryBillingStatus: PlanningOverview = {
+      ...overview,
+      projects: [
+        ...overview.projects,
+        { ...overview.projects[0], id: 22, title: 'Mission non validée', status: 'Non validé' },
+        { ...overview.projects[0], id: 23, title: 'Mission météo', status: 'Stand-by météo' },
+      ],
+    };
+
     expect(buildPlanningCertificateAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Franc-bord', tone: 'danger' });
     expect(buildPlanningHrAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Anne CAPITAINE', tone: 'warning' });
-    expect(getUnbilledPlanningProjects(overview, 2026).map((project) => project.title)).toEqual(['Mission A']);
+    expect(getBillablePlanningProjects(overviewWithEveryBillingStatus, 2026).map((project) => project.title)).toEqual(['Mission A']);
   });
 });

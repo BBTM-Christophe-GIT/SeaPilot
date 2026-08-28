@@ -1015,12 +1015,12 @@ export function buildPlanningHrAlerts(overview: PlanningOverview, today: string)
     .sort((left, right) => left.days - right.days || left.title.localeCompare(right.title, 'fr'));
 }
 
-export function getUnbilledPlanningProjects(overview: PlanningOverview, year: number): PlanningProjectRecord[] {
+export function getBillablePlanningProjects(overview: PlanningOverview, year: number): PlanningProjectRecord[] {
   const range = { start: `${year}-01-01`, end: `${year}-12-31` };
   return overview.projects.filter(
     (project) =>
       project.startsOn &&
       rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end) &&
-      !normalizePlanningText(project.status).includes('FACTUR'),
+      normalizePlanningText(project.status) === 'VALIDE',
   );
 }
