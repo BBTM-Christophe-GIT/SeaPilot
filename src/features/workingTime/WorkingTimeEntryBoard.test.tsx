@@ -126,7 +126,7 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
   });
 
-  it('removes manual planning fields and keeps the draft action profile-gated', async () => {
+  it('removes manual planning fields and keeps the draft action permission-gated', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);

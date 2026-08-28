@@ -122,7 +122,7 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
 }
 
 function renderPanel(
-  roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
+  roles: Array<'capitaine' | 'marin' | 'armement' | 'admin' | 'direction'>,
   data: WorkingTimeWorkspace,
   person = currentPerson,
 ) {
@@ -197,6 +197,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['marin'], workspace('draft'));
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
     const submitButton = screen.getByRole('button', { name: 'Valider' });
     expect(submitButton).toBeEnabled();
     await user.click(submitButton);
@@ -262,10 +263,38 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
   });
 
-  it('lets management prepare a draft when the server exposes the HR person', () => {
-    renderPanel(['admin'], workspace('draft', 20));
+  it.each(['admin', 'armement'] as const)('lets %s save an editable day as a draft', async (role) => {
+    const user = userEvent.setup();
+    renderPanel([role], workspace('draft', 20));
 
     expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
+    await user.click(await screen.findByRole('tab', { name: /lun 03 août/ }));
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]);
+    fireEvent.pointerUp(cells[32]);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      phases: expect.any(Array),
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it('keeps Direction read-only when the server exposes no editable person', () => {
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    renderPanel(['direction'], data, {
+      id: 10,
+      firstName: 'Diane',
+      lastName: 'DIRECTION',
+      functionLabel: 'Direction',
+      gradeLabel: '',
+    });
+
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
   });
 
   it('shows one catalogue card per sailor even when legacy weekly and monthly registers overlap', () => {

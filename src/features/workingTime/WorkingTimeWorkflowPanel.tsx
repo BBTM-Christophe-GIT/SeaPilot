@@ -851,10 +851,7 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
-                    showSaveDraft={canEdit
-                      && isSailorOnlyView
-                      && isOwnRegister
-                      && !selectedDayApproval}
+                    showSaveDraft={canEdit && !selectedDayApproval}
                     showSubmitToCaptain={canEdit
                       && !selectedDayApproval
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
