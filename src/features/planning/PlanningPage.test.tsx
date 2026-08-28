@@ -1203,7 +1203,8 @@ describe('PlanningPage cockpit', () => {
 
     const calendarBody = container.querySelector('.planning-calendar-body') as HTMLElement;
     expect(within(calendarBody).getByText('Paul DURAND')).toBeInTheDocument();
-    expect(within(calendarBody).getByText('Pont')).toBeInTheDocument();
+    expect(within(calendarBody).getByText('Matelot')).toBeInTheDocument();
+    expect(within(calendarBody).queryByText('Pont')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /lieu du personnel/i })).not.toBeInTheDocument();
     expect(within(calendarBody).queryByText('Cherbourg')).not.toBeInTheDocument();
   });

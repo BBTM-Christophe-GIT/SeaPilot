@@ -284,6 +284,41 @@ describe('planning hierarchy and side panels', () => {
     expect(rows[0].projects).toHaveLength(2);
   });
 
+  it('uses the current HR function for a crew row without rewriting the historical assignment role', () => {
+    const adrienOverview: PlanningOverview = {
+      ...overview,
+      people: [{
+        ...overview.people[0],
+        id: 6,
+        firstName: 'Adrien',
+        lastName: 'BOIS',
+        functionLabel: 'Capitaine',
+      }],
+      periods: [{
+        ...overview.periods[0],
+        id: 156,
+        personId: 6,
+        crewName: 'Adrien BOIS',
+        watchGroup: 'Bordée 2',
+        functionLabel: '2nd Capitaine',
+      }],
+    };
+
+    const events = getAllPlanningCrewEvents(adrienOverview);
+    const rows = buildPlanningCrewRows(
+      adrienOverview,
+      buildPlanningTimeline('2026-07-12', 'month'),
+      { vesselName: '', personName: '' },
+      events,
+    );
+
+    expect(events[0].functionLabel).toBe('2nd Capitaine');
+    expect(rows.find((row) => row.type === 'person')).toMatchObject({
+      label: 'Adrien BOIS',
+      functionLabel: 'Capitaine',
+    });
+  });
+
   it('orders every board hierarchy by the HR function sequence', () => {
     const functions = [
       'Président',

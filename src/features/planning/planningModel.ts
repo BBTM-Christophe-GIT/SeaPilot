@@ -629,7 +629,7 @@ export function buildPlanningCrewRows(
                 label: person,
                 vessel,
                 board,
-                functionLabel: personEvents[0]?.functionLabel || boardRow?.functionLabel || linkedPerson?.functionLabel || '',
+                functionLabel: linkedPerson?.functionLabel || boardRow?.functionLabel || personEvents[0]?.functionLabel || '',
                 boardRowId: boardRow?.id || null,
                 hasAnyRecords,
                 vesselKey,
