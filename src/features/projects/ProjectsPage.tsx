@@ -303,6 +303,7 @@ function ProjectDocuments({
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
+            document.storageBucket && document.storagePath ? 'Stockage Supabase' : 'Source SharePoint',
           ].filter(Boolean);
 
           return (
@@ -366,7 +367,7 @@ function ProjectStoredAttachments({
   documents: ProjectOperationDocumentRecord[];
 }) {
   if (documents.length === 0) {
-    return <p className="project-section-empty">Aucune pièce jointe Supabase associée.</p>;
+    return <p className="project-section-empty">Aucune pièce jointe classée depuis la fiche projet.</p>;
   }
 
   return (
@@ -591,7 +592,7 @@ function ProjectDetail({
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
-        <h4>Pièces jointes du projet</h4>
+        <h4>Pièces jointes classées depuis la fiche projet</h4>
         <ProjectStoredAttachments client={supabaseClient} documents={projectAttachments} />
         <h4>Documents Projets historiques</h4>
         <ProjectDocuments client={supabaseClient} documents={projectDocuments} emptyLabel="Aucun document projet associé." />

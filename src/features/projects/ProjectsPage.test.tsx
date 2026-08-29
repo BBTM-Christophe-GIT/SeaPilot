@@ -597,6 +597,7 @@ describe('ProjectsPage', () => {
 
     expect(link).toHaveAttribute('href', 'https://storage.example/project-attachment-signed');
     expect(link).toHaveTextContent('Ouvrir le document');
+    expect(screen.getByText(/Stockage Supabase/)).toBeInTheDocument();
     expect(createSignedUrl).toHaveBeenCalledWith(
       'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
       300,
