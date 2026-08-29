@@ -174,6 +174,10 @@ const atlantiqueContractDocumentRow = {
   sharepoint_drive_item_id: 'item-884',
   sharepoint_list_id: 'list-contracts',
   sharepoint_list_title: 'Documents Contractuels',
+  storage_bucket: 'project-files',
+  storage_migrated_at: '2026-08-29T06:45:00Z',
+  storage_path: 'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
+  storage_sha256: 'a'.repeat(64),
   title: 'Contrat Atlantique signé.pdf',
 };
 
@@ -549,11 +553,18 @@ describe('ProjectsPage', () => {
     expect(screen.getByText(/informations contractuelles et SUPPLYTIME sont temporairement indisponibles/)).toBeInTheDocument();
   });
 
-  it('blocks invalid links and explains missing links, moved files, and Microsoft 365 authentication', async () => {
+  it('blocks invalid links and explains missing links and Microsoft 365 authentication', async () => {
     const user = userEvent.setup();
     const { client } = createClient({
       contract_documents: {
-        data: [{ ...atlantiqueContractDocumentRow, file_url: '' }],
+        data: [{
+          ...atlantiqueContractDocumentRow,
+          file_url: '',
+          storage_bucket: null,
+          storage_migrated_at: null,
+          storage_path: null,
+          storage_sha256: null,
+        }],
         error: null,
       },
       project_documents: {
@@ -571,8 +582,25 @@ describe('ProjectsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Contrat / SUPPLYTIME' }));
     expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
-    expect(screen.getByText(/Microsoft 365 demande une connexion/)).toBeInTheDocument();
-    expect(screen.getByText(/déplacé ou supprimé/)).toBeInTheDocument();
+    expect(screen.getByText(/authentification Microsoft 365/)).toBeInTheDocument();
+  });
+
+  it('opens a migrated contractual document from private Supabase Storage', async () => {
+    const user = userEvent.setup();
+    const { client, createSignedUrl } = createClient();
+
+    render(<ProjectsPage client={client as never} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
+    const link = await screen.findByRole('link', { name: /Contrat Atlantique signé.pdf/ });
+
+    expect(link).toHaveAttribute('href', 'https://storage.example/project-attachment-signed');
+    expect(link).toHaveTextContent('Ouvrir le document');
+    expect(createSignedUrl).toHaveBeenCalledWith(
+      'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
+      300,
+    );
   });
 
   it('reports unresolved relations and hides duplicate metadata without hiding the document', async () => {

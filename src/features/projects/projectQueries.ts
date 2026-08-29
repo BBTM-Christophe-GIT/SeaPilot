@@ -79,6 +79,14 @@ const PROJECT_DOCUMENT_SELECT = [
   'is_folder',
 ].join(', ');
 
+const CONTRACT_DOCUMENT_SELECT = [
+  PROJECT_DOCUMENT_SELECT,
+  'storage_bucket',
+  'storage_path',
+  'storage_sha256',
+  'storage_migrated_at',
+].join(', ');
+
 const CLIENT_SELECT = [
   'id',
   'name',
@@ -215,6 +223,10 @@ interface ProjectDocumentRow {
   file_size_bytes: number | string | null;
   source_modified_at: string | null;
   is_folder: boolean | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  storage_sha256?: string | null;
+  storage_migrated_at?: string | null;
 }
 
 interface ClientRow {
@@ -415,6 +427,10 @@ export interface ProjectDocumentRecord {
   fileSizeBytes: number | null;
   sourceModifiedAt: string;
   isFolder: boolean;
+  storageBucket: string;
+  storagePath: string;
+  storageSha256: string;
+  storageMigratedAt: string;
 }
 
 export interface ClientRecord {
@@ -735,6 +751,10 @@ export function mapProjectDocumentRows(rows: ProjectDocumentRow[]): ProjectDocum
     fileSizeBytes: nullableNumber(row.file_size_bytes),
     sourceModifiedAt: nullableText(row.source_modified_at),
     isFolder: row.is_folder ?? false,
+    storageBucket: nullableText(row.storage_bucket),
+    storagePath: nullableText(row.storage_path),
+    storageSha256: nullableText(row.storage_sha256),
+    storageMigratedAt: nullableText(row.storage_migrated_at),
   }));
 }
 
@@ -867,7 +887,7 @@ export async function fetchProjectDocuments(client: SupabaseClient): Promise<Pro
 
 export async function fetchContractDocuments(client: SupabaseClient): Promise<ProjectDocumentRecord[]> {
   return mapProjectDocumentRows(
-    (await fetchRowsById(client, 'contract_documents', PROJECT_DOCUMENT_SELECT)) as ProjectDocumentRow[],
+    (await fetchRowsById(client, 'contract_documents', CONTRACT_DOCUMENT_SELECT)) as ProjectDocumentRow[],
   ).filter((document) => !document.isFolder);
 }
 

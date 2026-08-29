@@ -277,9 +277,11 @@ function DetailField({ label, value, wide = false }: { label: string; value: Rea
 }
 
 function ProjectDocuments({
+  client,
   documents,
   emptyLabel,
 }: {
+  client: SupabaseClient;
   documents: ProjectDocumentRecord[];
   emptyLabel: string;
 }) {
@@ -290,9 +292,8 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        SeaPilot ouvre l’URL SharePoint d’origine sans télécharger le fichier. Si Microsoft 365 demande une connexion,
-        authentifiez-vous avec votre compte autorisé. Un fichier signalé introuvable peut avoir été déplacé ou supprimé et
-        nécessite un rafraîchissement des métadonnées.
+        SeaPilot ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
+        d’origine et peuvent demander une authentification Microsoft 365.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
@@ -315,7 +316,17 @@ function ProjectDocuments({
                   <small className="project-document-warning">Rattachement au projet Supabase non résolu</small>
                 ) : null}
               </div>
-              {linkState.status === 'available' ? (
+              {document.storageBucket && document.storagePath ? (
+                <ProjectStoredDocumentLink
+                  client={client}
+                  document={{
+                    fileName: document.fileName || document.title,
+                    sharePointWebUrl: document.fileUrl,
+                    storageBucket: document.storageBucket,
+                    storagePath: document.storagePath,
+                  }}
+                />
+              ) : linkState.status === 'available' ? (
                 <a href={linkState.href} rel="noreferrer" target="_blank">
                   Ouvrir dans SharePoint
                   <span className="sr-only"> : {document.fileName || document.title}</span>
@@ -583,12 +594,12 @@ function ProjectDetail({
         <h4>Pièces jointes du projet</h4>
         <ProjectStoredAttachments client={supabaseClient} documents={projectAttachments} />
         <h4>Documents Projets historiques</h4>
-        <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
+        <ProjectDocuments client={supabaseClient} documents={projectDocuments} emptyLabel="Aucun document projet associé." />
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (
           <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
         ) : (
-          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <label className="project-document-occurrence-select">
           Mission / occurrence à reprendre dans le document
@@ -745,10 +756,11 @@ function ProjectDetail({
         {contractDocumentsUnavailable ? (
           <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
         ) : (
-          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <p className="project-document-help">
-          Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni. Les fichiers générés sont classés dans SharePoint ; Supabase ne conserve que leurs métadonnées.
+          Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni.
+          Les documents contractuels migrés sont conservés dans l’espace privé Supabase ; leur provenance SharePoint reste tracée.
         </p>
       </section>
       ) : null}

@@ -4,6 +4,7 @@ import {
   mapClientRows,
   mapProjectContractHirePeriodRows,
   mapProjectContractRows,
+  mapProjectDocumentRows,
   mapProjectOperationDocumentRows,
   mapProjectPlanningOccurrenceRows,
   mapProjectRows,
@@ -209,6 +210,43 @@ describe('projectQueries', () => {
       sharePointWebUrl: '',
       storageBucket: 'project-files',
       storagePath: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
+    })]);
+  });
+
+  it('maps migrated contractual document Storage metadata while preserving SharePoint provenance', () => {
+    expect(mapProjectDocumentRows([{
+      id: 884,
+      project_id: 880,
+      project_sharepoint_item_id: '880',
+      project_code: 'P1086',
+      project_title: 'Campagne Atlantique',
+      category_key: 'contract',
+      title: 'Contrat signé.pdf',
+      source_label: 'SharePoint',
+      source_sharepoint_id: '884',
+      file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/contrat.pdf',
+      notes: null,
+      sharepoint_list_id: 'contracts',
+      sharepoint_list_title: 'Documents Contractuels',
+      sharepoint_item_id: '884',
+      sharepoint_drive_id: 'drive-contracts',
+      sharepoint_drive_item_id: 'item-884',
+      file_name: 'Contrat signé.pdf',
+      folder_path: '/sites/QHSE/Documents Contractuels',
+      mime_type: 'application/pdf',
+      file_extension: 'pdf',
+      file_size_bytes: 2048,
+      source_modified_at: '2026-08-29T06:00:00Z',
+      is_folder: false,
+      storage_bucket: 'project-files',
+      storage_path: 'projects/880/contract-documents/884-Contrat-signe.pdf',
+      storage_sha256: 'a'.repeat(64),
+      storage_migrated_at: '2026-08-29T06:45:00Z',
+    }])).toEqual([expect.objectContaining({
+      fileUrl: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels/contrat.pdf',
+      storageBucket: 'project-files',
+      storageMigratedAt: '2026-08-29T06:45:00Z',
+      storagePath: 'projects/880/contract-documents/884-Contrat-signe.pdf',
     })]);
   });
 

@@ -32,6 +32,7 @@
     "import:sharepoint:fleet-certificates": "node --experimental-strip-types scripts/import-fleet-certificates.ts",
     "import:bbtm:preview": "node --experimental-strip-types scripts/bbtm-planning-preview.ts",
     "refresh:sharepoint:project-documents": "node --experimental-strip-types scripts/refresh-sharepoint-project-documents.ts",
+    "migrate:project-contract-documents": "node --experimental-strip-types scripts/migrate-project-contract-documents-to-storage.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
