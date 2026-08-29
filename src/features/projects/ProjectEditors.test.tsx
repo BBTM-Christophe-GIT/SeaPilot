@@ -118,6 +118,8 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByText('Offre Commerciale')).toBeInTheDocument();
     expect(screen.getByText('HSE')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Facturation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Toilette de Mer' })).toBeInTheDocument();
+    expect(screen.getByText('Attestation Expert/BV')).toBeInTheDocument();
 
     const fileInput = screen.getByLabelText('Ajouter des documents · Offre Commerciale · Contrat');
     await user.upload(fileInput, [

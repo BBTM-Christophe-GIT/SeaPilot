@@ -14,7 +14,10 @@ const documentStorageMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
-vi.mock('./projectDocumentStorage', () => documentStorageMocks);
+vi.mock('./projectDocumentStorage', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./projectDocumentStorage')>(),
+  ...documentStorageMocks,
+}));
 
 const atlantiqueProjectRow = {
   archived_at: null,
@@ -286,7 +289,12 @@ function createClient(
         ? Promise.resolve(sources.project_contracts)
       : Promise.resolve(rpcResult)
   ));
-  return { client: { from, rpc }, from, rpc };
+  const createSignedUrl = vi.fn().mockResolvedValue({
+    data: { signedUrl: 'https://storage.example/project-attachment-signed' },
+    error: null,
+  });
+  const storage = { from: vi.fn(() => ({ createSignedUrl })) };
+  return { client: { from, rpc, storage }, createSignedUrl, from, rpc };
 }
 
 describe('ProjectsPage', () => {
@@ -344,7 +352,28 @@ describe('ProjectsPage', () => {
 
   it('selects a project and exposes its six read-only sections as accessible tabs', async () => {
     const user = userEvent.setup();
-    const { client, from } = createClient();
+    const { client, createSignedUrl, from } = createClient({
+      project_generated_documents: {
+        data: [{
+          id: 73,
+          project_id: 880,
+          planning_occurrence_id: null,
+          document_type: 'project_attachment',
+          category_key: 'toilette_de_mer',
+          subcategory_key: 'toilette_de_mer_attestation_expert_bv',
+          expires_on: null,
+          file_name: 'Attestation Expert BV.pdf',
+          mime_type: 'application/pdf',
+          file_size_bytes: 512,
+          sharepoint_web_url: null,
+          sharepoint_folder_path: null,
+          storage_bucket: 'project-files',
+          storage_path: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
+          created_at: '2026-08-29T06:00:00Z',
+        }],
+        error: null,
+      },
+    });
 
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
@@ -377,6 +406,13 @@ describe('ProjectsPage', () => {
     expect(screen.queryByText('Clauses particulières Atlantique')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Documents contractuels' }));
+    expect(screen.getByText('Attestation Expert BV.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/Toilette de Mer · Attestation Expert\/BV/)).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Ouvrir le document.*Attestation Expert BV.pdf/ })).toHaveAttribute(
+      'href',
+      'https://storage.example/project-attachment-signed',
+    );
+    expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/toilette_de_mer/attestation.pdf', 300);
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
       'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',

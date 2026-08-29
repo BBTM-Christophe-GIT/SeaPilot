@@ -2776,6 +2776,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             projectId: planningOperationEditor.project.id,
             sharePointFolderPath: '',
             sharePointWebUrl: document.sharePointWebUrl,
+            storageBucket: '',
+            storagePath: '',
           }))}
           project={planningOperationEditor.project}
           vessels={projectEditorVessels}

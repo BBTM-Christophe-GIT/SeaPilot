@@ -28,6 +28,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
 import { normalizeProjectContractType, PROJECT_CONTRACT_TYPES } from './projectContractOptions';
@@ -332,6 +333,67 @@ function ProjectDocuments({
   );
 }
 
+const PROJECT_ATTACHMENT_CATEGORY_LABELS: Record<string, string> = {
+  billing: 'Facturation',
+  commercial_appendix: 'Prestation annexe',
+  commercial_contract: 'Contrat',
+  commercial_offer: 'Offre Commerciale',
+  hse: 'HSE',
+  hse_audits: 'Audits',
+  hse_kpi: 'KPI',
+  hse_minutes: 'Comptes Rendus',
+  hse_procedure: 'Procédure',
+  toilette_de_mer: 'Toilette de Mer',
+  toilette_de_mer_attestation_expert_bv: 'Attestation Expert/BV',
+};
+
+function ProjectStoredAttachments({
+  client,
+  documents,
+}: {
+  client: SupabaseClient;
+  documents: ProjectOperationDocumentRecord[];
+}) {
+  if (documents.length === 0) {
+    return <p className="project-section-empty">Aucune pièce jointe Supabase associée.</p>;
+  }
+
+  return (
+    <>
+      <p className="project-document-help">
+        Ces pièces jointes sont conservées dans l’espace privé Supabase du projet. Le lien sécurisé est temporaire et
+        réservé aux utilisateurs autorisés de la société.
+      </p>
+      <ul className="project-document-list">
+        {documents.map((document) => {
+          const category = document.categoryKey ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.categoryKey] : '';
+          const subcategory = document.subcategoryKey
+            ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.subcategoryKey]
+            : '';
+          const metadata = [
+            category,
+            subcategory,
+            document.mimeType,
+            formatFileSize(document.fileSizeBytes),
+            document.createdAt ? `ajouté le ${formatDate(document.createdAt)}` : '',
+          ].filter(Boolean);
+          return (
+            <li key={document.id}>
+              <FileText aria-hidden="true" size={18} />
+              <div>
+                <strong>{document.fileName}</strong>
+                {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
+                {document.expiresOn ? <small>Échéance : {formatDate(document.expiresOn)}</small> : null}
+              </div>
+              <ProjectStoredDocumentLink client={client} document={document} />
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 function SupplytimePreview({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
   const groups = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
   const populatedCount = groups.flatMap((group) => group.fields).filter((field) => field.value).length;
@@ -409,6 +471,12 @@ function ProjectDetail({
 }) {
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>('operations');
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
+  const projectAttachments = useMemo(
+    () => operationDocuments.filter((document) => (
+      document.documentType === 'project_attachment' && document.planningOccurrenceId === null
+    )),
+    [operationDocuments],
+  );
   useEffect(() => {
     setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
   }, [planningOccurrences, project.id]);
@@ -506,13 +574,15 @@ function ProjectDetail({
         <div className="project-section-heading">
           <div>
             <strong>Documents contractuels et modèles</strong>
-            <span>Consultez les contrats existants ou générez un document classé dans SharePoint.</span>
+            <span>Consultez les pièces jointes privées du projet et les documents historiques SharePoint.</span>
           </div>
           <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
-        <h4>Documents Projets</h4>
+        <h4>Pièces jointes du projet</h4>
+        <ProjectStoredAttachments client={supabaseClient} documents={projectAttachments} />
+        <h4>Documents Projets historiques</h4>
         <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (

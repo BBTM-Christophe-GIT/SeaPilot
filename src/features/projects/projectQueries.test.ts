@@ -4,6 +4,7 @@ import {
   mapClientRows,
   mapProjectContractHirePeriodRows,
   mapProjectContractRows,
+  mapProjectOperationDocumentRows,
   mapProjectPlanningOccurrenceRows,
   mapProjectRows,
   mapProjectTowedAssetRows,
@@ -184,6 +185,30 @@ describe('projectQueries', () => {
       charterHire: 12000,
       standbyHire: 9000,
       weatherStandbyHire: 6000,
+    })]);
+  });
+
+  it('maps private Supabase project attachments without requiring SharePoint metadata', () => {
+    expect(mapProjectOperationDocumentRows([{
+      id: 73,
+      project_id: 880,
+      planning_occurrence_id: null,
+      document_type: 'project_attachment',
+      category_key: 'toilette_de_mer',
+      subcategory_key: 'toilette_de_mer_attestation_expert_bv',
+      expires_on: null,
+      file_name: 'Attestation Expert BV.pdf',
+      mime_type: 'application/pdf',
+      file_size_bytes: 512,
+      sharepoint_web_url: null,
+      sharepoint_folder_path: null,
+      storage_bucket: 'project-files',
+      storage_path: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
+      created_at: '2026-08-29T06:00:00Z',
+    }])).toEqual([expect.objectContaining({
+      sharePointWebUrl: '',
+      storageBucket: 'project-files',
+      storagePath: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
     })]);
   });
 

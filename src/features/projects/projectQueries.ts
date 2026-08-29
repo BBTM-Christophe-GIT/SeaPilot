@@ -114,6 +114,8 @@ const PROJECT_OPERATION_DOCUMENT_SELECT = [
   'file_size_bytes',
   'sharepoint_web_url',
   'sharepoint_folder_path',
+  'storage_bucket',
+  'storage_path',
   'created_at',
 ].join(', ');
 
@@ -267,8 +269,10 @@ interface ProjectOperationDocumentRow {
   file_name: string;
   mime_type: string;
   file_size_bytes: number | string;
-  sharepoint_web_url: string;
-  sharepoint_folder_path: string;
+  sharepoint_web_url: string | null;
+  sharepoint_folder_path: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
   created_at: string;
 }
 
@@ -476,6 +480,8 @@ export interface ProjectOperationDocumentRecord {
   fileSizeBytes: number;
   sharePointWebUrl: string;
   sharePointFolderPath: string;
+  storageBucket: string;
+  storagePath: string;
   createdAt: string;
 }
 
@@ -806,8 +812,10 @@ export function mapProjectOperationDocumentRows(
       fileName: row.file_name,
       mimeType: row.mime_type,
       fileSizeBytes: Number(row.file_size_bytes) || 0,
-      sharePointWebUrl: row.sharepoint_web_url,
-      sharePointFolderPath: row.sharepoint_folder_path,
+      sharePointWebUrl: nullableText(row.sharepoint_web_url),
+      sharePointFolderPath: nullableText(row.sharepoint_folder_path),
+      storageBucket: nullableText(row.storage_bucket),
+      storagePath: nullableText(row.storage_path),
       createdAt: row.created_at,
     }];
   });

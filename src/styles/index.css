@@ -6617,6 +6617,12 @@ button:disabled {
   text-decoration: underline;
 }
 
+.project-document-link-loading {
+  color: #66758a;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
 .project-missing-link,
 .project-section-empty {
   color: #66758a;
@@ -13869,7 +13875,7 @@ button.planning-p12-conflict-card {
 
 .project-document-pending > div > span,
 .project-document-pending label,
-.project-document-existing a > span {
+.project-document-existing-row > span {
   display: grid;
   gap: 3px;
 }
@@ -13897,16 +13903,24 @@ button.planning-p12-conflict-card {
   border-radius: 7px;
 }
 
-.project-document-existing a {
+.project-document-existing-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
   padding: 9px 10px;
-  color: #174678;
   background: #fff;
   border: 1px solid #e0e6ee;
   border-radius: 7px;
+}
+
+.project-document-existing-row > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #174678;
+  font-size: .75rem;
+  font-weight: 800;
   text-decoration: none;
 }
 
@@ -13954,12 +13968,16 @@ button.planning-p12-conflict-card {
     grid-template-columns: 1fr;
   }
 
-  .project-document-existing a {
+  .project-document-existing-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .project-document-existing em {
     grid-column: 2;
+  }
+
+  .project-document-existing-row > a {
+    grid-column: 2 / -1;
   }
 }
 .hr-signature-panel > header,

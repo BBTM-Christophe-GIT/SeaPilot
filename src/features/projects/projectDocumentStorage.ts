@@ -6,6 +6,8 @@ export interface StoredProjectDocument {
   fileName: string;
   folderPath: string;
   id: number;
+  storageBucket?: string;
+  storagePath?: string;
   webUrl: string;
 }
 
@@ -38,6 +40,38 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+const PROJECT_FILES_BUCKET = 'project-files';
+
+function storageSafeSegment(value: string, fallback: string): string {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+  return normalized || fallback;
+}
+
+export async function createProjectDocumentAccessUrl(
+  client: SupabaseClient,
+  document: {
+    sharePointWebUrl?: string;
+    storageBucket?: string;
+    storagePath?: string;
+  },
+): Promise<string> {
+  if (document.storageBucket && document.storagePath) {
+    const { data, error } = await client.storage
+      .from(document.storageBucket)
+      .createSignedUrl(document.storagePath, 300);
+    if (error) throw new Error(error.message || 'Impossible de préparer l’accès au document Supabase.');
+    if (!data?.signedUrl) throw new Error('Supabase n’a pas retourné de lien sécurisé pour ce document.');
+    return data.signedUrl;
+  }
+  if (document.sharePointWebUrl) return document.sharePointWebUrl;
+  throw new Error('Ce document ne possède aucun emplacement de stockage exploitable.');
 }
 
 export async function storeGeneratedProjectDocument(
@@ -142,32 +176,62 @@ export async function storeProjectAttachment(
   },
 ): Promise<StoredProjectDocument> {
   const buffer = await input.draft.file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
-  const { data, error } = await client.functions.invoke('project-document-upload', {
-    body: {
-      base64Content: bytesToBase64(bytes),
-      categoryKey: input.draft.categoryKey,
-      documentType: 'project_attachment',
-      expiresOn: input.draft.expiresOn || null,
-      fileName: input.draft.file.name,
-      mimeType: input.draft.file.type || 'application/octet-stream',
-      planningOccurrenceId: null,
-      projectId: input.projectId,
-      revision: 1,
-      sha256: bytesToHex(digest),
-      subcategoryKey: input.draft.subcategoryKey,
-    },
-  });
+  const mimeType = input.draft.file.type || 'application/octet-stream';
+  const categoryPath = storageSafeSegment(input.draft.categoryKey, 'categorie');
+  const subcategoryPath = storageSafeSegment(input.draft.subcategoryKey || 'documents', 'documents');
+  const fileName = storageSafeSegment(input.draft.file.name, 'document');
+  const storagePath = [
+    'projects',
+    String(input.projectId),
+    'attachments',
+    categoryPath,
+    subcategoryPath,
+    `${crypto.randomUUID()}-${fileName}`,
+  ].join('/');
 
-  if (error) {
-    const context = await error.context?.json().catch(() => null) as { message?: string } | null;
-    throw new Error(context?.message || `Le document ${input.draft.file.name} n’a pas pu être enregistré dans SharePoint.`);
+  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const { error: uploadError } = await storage.upload(storagePath, input.draft.file, {
+    cacheControl: '3600',
+    contentType: mimeType,
+    upsert: false,
+  });
+  if (uploadError) {
+    throw new Error(uploadError.message || `Le document ${input.draft.file.name} n’a pas pu être envoyé vers Supabase.`);
   }
 
-  const document = (data as { document?: StoredProjectDocument } | null)?.document;
-  if (!document?.webUrl) throw new Error(`SharePoint n’a pas retourné le lien de ${input.draft.file.name}.`);
-  return document;
+  try {
+    const { data, error } = await client.rpc('projects_register_storage_attachment', {
+      target_bucket: PROJECT_FILES_BUCKET,
+      target_category_key: input.draft.categoryKey,
+      target_expires_on: input.draft.expiresOn || null,
+      target_file_name: input.draft.file.name,
+      target_file_size_bytes: input.draft.file.size,
+      target_mime_type: mimeType,
+      target_path: storagePath,
+      target_project_id: input.projectId,
+      target_sha256: bytesToHex(digest),
+      target_subcategory_key: input.draft.subcategoryKey,
+    });
+    if (error) {
+      throw new Error(error.message || `Le document ${input.draft.file.name} n’a pas pu être rattaché au projet.`);
+    }
+    const documentId = Number(data);
+    if (!Number.isInteger(documentId) || documentId <= 0) {
+      throw new Error(`Supabase n’a pas confirmé le rattachement de ${input.draft.file.name}.`);
+    }
+    return {
+      fileName: input.draft.file.name,
+      folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
+      id: documentId,
+      storageBucket: PROJECT_FILES_BUCKET,
+      storagePath,
+      webUrl: '',
+    };
+  } catch (error) {
+    await storage.remove([storagePath]).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function storeProjectAttachments(
@@ -189,7 +253,7 @@ export async function storeProjectAttachments(
       result.failed.push({
         draftId: draft.id,
         fileName: draft.file.name,
-        message: error instanceof Error ? error.message : 'Échec du classement SharePoint.',
+        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans Supabase.',
       });
     }
   }

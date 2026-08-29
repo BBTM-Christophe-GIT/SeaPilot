@@ -32,6 +32,7 @@ import type {
 } from './projectQueries';
 import { SUPPLYTIME_GROUPS } from './projectReadModel';
 import { ProjectPortCombobox } from './ProjectPortCombobox';
+import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
@@ -687,7 +688,7 @@ export function ProjectEditor({
         setProjectAttachmentDrafts((drafts) => drafts.filter((draft) => !storedIds.has(draft.id)));
         if (uploads.failed.length > 0) {
           throw new Error(
-            `${uploads.failed.length} pièce(s) jointe(s) n’ont pas pu être classées dans SharePoint. ${uploads.failed[0].message}`,
+            `${uploads.failed.length} pièce(s) jointe(s) n’ont pas pu être enregistrées dans Supabase. ${uploads.failed[0].message}`,
           );
         }
       }
@@ -1127,7 +1128,7 @@ export function ProjectEditor({
                     const category = document.categoryKey ? documentCategoryByKey.get(document.categoryKey) : undefined;
                     const subcategory = document.subcategoryKey ? documentCategoryByKey.get(document.subcategoryKey) : undefined;
                     const expired = Boolean(document.expiresOn && document.expiresOn < new Date().toISOString().slice(0, 10));
-                    return <a href={document.sharePointWebUrl} key={document.id} rel="noreferrer" target="_blank">
+                    return <div className="project-document-existing-row" key={document.id}>
                       <FileText aria-hidden="true" size={16} />
                       <span>
                         <strong>{document.fileName}</strong>
@@ -1136,8 +1137,8 @@ export function ProjectEditor({
                       <em className={expired ? 'is-expired' : undefined}>
                         {document.expiresOn ? `${expired ? 'Échu' : 'Valide'} · ${document.expiresOn}` : 'Sans échéance'}
                       </em>
-                      <ExternalLink aria-hidden="true" size={14} />
-                    </a>;
+                      <ProjectStoredDocumentLink client={client} document={document} includeIcon />
+                    </div>;
                   })}
                 </div>
               ) : null}
