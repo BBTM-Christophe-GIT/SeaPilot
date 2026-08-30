@@ -192,6 +192,7 @@ const ifremerClientRow = {
   id: 50,
   name: 'Ifremer',
   phone: '',
+  postal_code: '29200',
   sharepoint_item_id: '50',
   sharepoint_list_title: 'BBTM - Clients',
   source_label: 'SharePoint',

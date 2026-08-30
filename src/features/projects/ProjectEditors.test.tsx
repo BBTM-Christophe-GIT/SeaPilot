@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 
 const mutationMocks = vi.hoisted(() => ({
@@ -28,6 +28,10 @@ mutationMocks.saveClient.mockResolvedValue(52);
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const project = {
@@ -471,5 +475,44 @@ describe('ClientEditor representative', () => {
         expect.objectContaining({ representedBy: 'Jean-Pierre DUPRÉ MARTIN' }),
       );
     });
+  });
+
+  it('proposes cities from the postal code and saves the country without displaying its field', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('geo.api.gouv.fr/communes')) {
+        return { ok: true, json: async () => [
+          { nom: 'Les Pieux', population: 3290 },
+          { nom: 'Le Rozel', population: 249 },
+        ] } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({ features: [{ properties: { city: 'Les Pieux', postcode: '50340', score: 0.92 } }] }),
+      } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <ClientEditor
+        client={{ rpc: vi.fn() } as never}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Pays')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Nom du client *'), 'Armement du Cotentin');
+    await user.type(screen.getByLabelText('Code postal'), '50340');
+
+    await waitFor(() => expect(screen.getByLabelText('Ville')).toHaveValue('Les Pieux'));
+    expect(screen.getByRole('option', { name: 'Le Rozel' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Ville'), 'Le Rozel');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+
+    await waitFor(() => expect(mutationMocks.saveClient).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ city: 'Le Rozel', country: 'France', postalCode: '50340' }),
+    ));
   });
 });

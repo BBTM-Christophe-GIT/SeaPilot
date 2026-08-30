@@ -74,6 +74,7 @@ describe('projectQueries', () => {
       email: null,
       phone: null,
       address: null,
+      postal_code: '50100',
       city: null,
       country: null,
       website: 'https://cosma.example/',
@@ -88,6 +89,7 @@ describe('projectQueries', () => {
       updated_at: '2026-08-20T10:00:00Z',
     }])).toEqual([expect.objectContaining({
       logoUrl: 'https://cosma.example/favicon.ico',
+      postalCode: '50100',
       representedBy: 'Jean DUPONT',
       website: 'https://cosma.example/',
     })]);

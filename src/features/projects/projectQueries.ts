@@ -95,6 +95,7 @@ const CLIENT_SELECT = [
   'email',
   'phone',
   'address',
+  'postal_code',
   'city',
   'country',
   'website',
@@ -237,6 +238,7 @@ interface ClientRow {
   email: string | null;
   phone: string | null;
   address: string | null;
+  postal_code: string | null;
   city: string | null;
   country: string | null;
   website: string | null;
@@ -441,6 +443,7 @@ export interface ClientRecord {
   email: string;
   phone: string;
   address: string;
+  postalCode: string;
   city: string;
   country: string;
   website: string;
@@ -767,6 +770,7 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     email: nullableText(row.email),
     phone: nullableText(row.phone),
     address: nullableText(row.address),
+    postalCode: nullableText(row.postal_code),
     city: nullableText(row.city),
     country: nullableText(row.country),
     website: nullableText(row.website),
