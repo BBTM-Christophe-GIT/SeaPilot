@@ -32,6 +32,15 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizedPortName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function enabled(value: string | undefined): boolean {
   return value === 'true' || value === '1';
 }
@@ -42,6 +51,16 @@ export function buildCommercialReserves(supplytimeData: Record<string, string>):
     enabled(supplytimeData[COMMERCIAL_RESERVE_WEATHER_KEY]) ? COMMERCIAL_RESERVE_WEATHER : '',
     text(supplytimeData[COMMERCIAL_RESERVE_OTHER_KEY]),
   ].filter(Boolean);
+}
+
+export function shouldDisplayCommercialOfferRoute(deliveryPort: string, redeliveryPort: string): boolean {
+  const normalizedDeliveryPort = normalizedPortName(deliveryPort);
+  const normalizedRedeliveryPort = normalizedPortName(redeliveryPort);
+  return !(
+    normalizedDeliveryPort
+    && normalizedRedeliveryPort
+    && normalizedDeliveryPort === normalizedRedeliveryPort
+  );
 }
 
 export function formatProjectDocumentEmitterName(emitter?: ProjectDocumentEmitter | null): string {

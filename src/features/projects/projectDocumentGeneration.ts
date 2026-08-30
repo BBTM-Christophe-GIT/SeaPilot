@@ -13,6 +13,7 @@ import { BIMCO_P144_FIELDS } from './projectContractModels';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
+  shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
@@ -394,7 +395,9 @@ export async function generateProjectDocument(
     pdf.text(line(input.project.description || 'Prestation à renseigner.', 105, 5), 18, 75);
     detailRow('Navire', input.project.primaryVesselName || '-', 132, 68, 59);
     detailRow('Période', [formatDate(input.project.startsOn), formatDate(input.project.endsOn)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
-    detailRow('Route', [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+    if (shouldDisplayCommercialOfferRoute(input.project.deliveryPort, input.project.redeliveryPort)) {
+      detailRow('Route', [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+    }
 
     pdf.setDrawColor(216, 226, 237);
     pdf.rect(14, 106, 88, 82);
