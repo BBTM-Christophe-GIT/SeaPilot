@@ -114,6 +114,7 @@ describe('projectMutations', () => {
       expectedUpdatedAt: '',
       name: 'Nouveau client',
       phone: '',
+      postalCode: '29200',
       representedBy: 'Jean DUPONT',
       website: 'https://client.example/',
       logoUrl: 'https://client.example/favicon.ico',
@@ -130,6 +131,7 @@ describe('projectMutations', () => {
     ]);
     expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
       target_logo_url: 'https://client.example/favicon.ico',
+      target_postal_code: '29200',
       target_website: 'https://client.example/',
     }));
   });
@@ -149,6 +151,7 @@ describe('projectMutations', () => {
       expectedUpdatedAt,
       name: 'ETPO',
       phone: '',
+      postalCode: '',
       representedBy: 'Marie MARTIN',
       website: '',
       logoUrl: '',

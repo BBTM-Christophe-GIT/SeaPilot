@@ -31,6 +31,8 @@ import {
   uploadProjectCatalogImage,
   validateProjectCatalogImage,
 } from './projectCatalogMedia';
+import { ClientLocationFields } from './ClientLocationFields';
+import { resolveClientCountry } from './clientLocation';
 
 interface CatalogDialogProps {
   canManage: boolean;
@@ -135,6 +137,7 @@ function ClientDetails({ client, imageUrl }: { client: ClientRecord; imageUrl: s
         <div><dt>Téléphone</dt><dd>{displayValue(client.phone)}</dd></div>
         <div><dt>Site internet</dt><dd>{client.website ? <a href={client.website} rel="noreferrer" target="_blank">{client.website}</a> : 'Non renseigné'}</dd></div>
         <div className="is-wide"><dt>Adresse</dt><dd>{displayValue(client.address)}</dd></div>
+        <div><dt>Code postal</dt><dd>{displayValue(client.postalCode)}</dd></div>
         <div><dt>Ville</dt><dd>{displayValue(client.city)}</dd></div>
         <div><dt>Pays</dt><dd>{displayValue(client.country)}</dd></div>
         <div><dt>Statut</dt><dd>{client.active ? 'Actif' : 'Inactif'}</dd></div>
@@ -157,6 +160,7 @@ function emptyClientForm(): ClientWriteInput {
     logoUrl: '',
     name: '',
     phone: '',
+    postalCode: '',
     representedBy: '',
     website: '',
   };
@@ -177,6 +181,7 @@ function clientForm(client?: ClientRecord): ClientWriteInput {
     logoUrl: client.logoUrl,
     name: client.name,
     phone: client.phone,
+    postalCode: client.postalCode,
     representedBy: client.representedBy,
     website: client.website,
   };
@@ -286,13 +291,15 @@ export function ClientCatalogDialog({
     setSuccessMessage('');
     let uploadedPath = '';
     try {
+      const resolvedCountry = await resolveClientCountry(form);
+      const savedForm = { ...form, country: resolvedCountry };
       const normalizedWebsite = normalizeProjectCatalogUrl(form.website);
       const normalizedLogoUrl = logoRemoved || logoFile ? '' : normalizeProjectCatalogUrl(form.logoUrl);
       const originalId = form.clientId;
       let savedId = originalId;
       if (savedId === null) {
         savedId = await saveClient(client, {
-          ...form,
+          ...savedForm,
           logoStoragePath: '',
           logoUrl: normalizedLogoUrl,
           website: normalizedWebsite,
@@ -304,7 +311,7 @@ export function ClientCatalogDialog({
       const effectivePath = uploadedPath || (logoRemoved ? '' : form.logoStoragePath);
       if (originalId !== null || uploadedPath) {
         await saveClient(client, {
-          ...form,
+          ...savedForm,
           clientId: savedId,
           expectedUpdatedAt: originalId === null ? '' : form.expectedUpdatedAt,
           logoStoragePath: effectivePath,
@@ -325,7 +332,7 @@ export function ClientCatalogDialog({
           sourceLabel: 'seapilot',
           sourceModifiedAt: '',
         }),
-        ...form,
+        ...savedForm,
         id: savedId,
         logoStoragePath: effectivePath,
         logoUrl: uploadedPath ? '' : normalizedLogoUrl,
@@ -440,8 +447,10 @@ export function ClientCatalogDialog({
                 <label><span>Courriel</span><input onChange={(event) => update('email', event.target.value)} type="email" value={form.email} /></label>
                 <label><span>Téléphone</span><input onChange={(event) => update('phone', event.target.value)} type="tel" value={form.phone} /></label>
                 <label className="is-wide"><span>Adresse</span><textarea onChange={(event) => update('address', event.target.value)} value={form.address} /></label>
-                <label><span>Ville</span><input onChange={(event) => update('city', event.target.value)} value={form.city} /></label>
-                <label><span>Pays</span><input onChange={(event) => update('country', event.target.value)} value={form.country} /></label>
+                <ClientLocationFields
+                  onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+                  value={form}
+                />
                 <div className="project-catalog-field is-wide">
                   <label htmlFor={websiteInputId}>Site internet</label>
                   <span className="project-catalog-inline-field"><Globe2 aria-hidden="true" size={17} /><input id={websiteInputId} inputMode="url" onChange={(event) => update('website', event.target.value)} placeholder="https://entreprise.fr" type="text" value={form.website} /><button onClick={() => { try { update('logoUrl', discoverClientLogoUrl(form.website)); setLogoFile(null); setLogoRemoved(false); setErrorMessage(''); } catch (error) { setErrorMessage(error instanceof Error ? error.message : 'Logo introuvable.'); } }} type="button"><ImagePlus aria-hidden="true" size={16} />Trouver le logo</button></span>

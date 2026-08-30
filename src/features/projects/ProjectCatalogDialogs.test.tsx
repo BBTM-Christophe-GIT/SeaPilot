@@ -19,6 +19,7 @@ const clients: ClientRecord[] = [
     logoUrl: '',
     name: 'Compagnie Atlantique',
     phone: '02 98 00 00 00',
+    postalCode: '',
     representedBy: 'Marie MARTIN',
     sharePointItemId: '',
     sharePointListTitle: '',
@@ -40,6 +41,7 @@ const clients: ClientRecord[] = [
     logoUrl: '',
     name: 'Naval Services',
     phone: '',
+    postalCode: '',
     representedBy: '',
     sharePointItemId: '',
     sharePointListTitle: '',
@@ -97,6 +99,10 @@ beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:catalog-preview') });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   vi.stubGlobal('crypto', { randomUUID: () => 'catalog-media' });
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ features: [{ properties: { city: 'Brest', postcode: '29200', score: 0.9 } }] }),
+  }));
 });
 
 afterEach(() => {

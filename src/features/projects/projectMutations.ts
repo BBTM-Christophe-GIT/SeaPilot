@@ -104,6 +104,7 @@ export interface ClientWriteInput {
   email: string;
   phone: string;
   address: string;
+  postalCode: string;
   city: string;
   country: string;
   website: string;
@@ -348,6 +349,7 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
     target_email: optionalText(input.email),
     target_phone: optionalText(input.phone),
     target_address: optionalText(input.address),
+    target_postal_code: optionalText(input.postalCode),
     target_city: optionalText(input.city),
     target_country: optionalText(input.country),
     target_website: optionalText(input.website),

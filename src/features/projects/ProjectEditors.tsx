@@ -33,6 +33,8 @@ import type {
 import { ProjectPortCombobox } from './ProjectPortCombobox';
 import { ProjectContractPreview } from './ProjectContractPreview';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
+import { ClientLocationFields } from './ClientLocationFields';
+import { resolveClientCountry } from './clientLocation';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
@@ -1285,6 +1287,7 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     email: clientRecord?.email || '',
     phone: clientRecord?.phone || '',
     address: clientRecord?.address || '',
+    postalCode: clientRecord?.postalCode || '',
     city: clientRecord?.city || '',
     country: clientRecord?.country || '',
     website: clientRecord?.website || '',
@@ -1313,6 +1316,7 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
     try {
       const savedForm = {
         ...form,
+        country: await resolveClientCountry(form),
         representedBy: combineRepresentativeName(representativeFirstName, representativeLastName),
       };
       onSaved(await saveClient(client, savedForm), savedForm);
@@ -1354,8 +1358,10 @@ export function ClientEditor({ client, clientRecord, onClose, onSaved }: ClientE
             <Field label="Courriel"><input onChange={(event) => update('email', event.target.value)} type="email" value={form.email} /></Field>
             <Field label="Téléphone"><input onChange={(event) => update('phone', event.target.value)} type="tel" value={form.phone} /></Field>
             <Field label="Adresse" wide><textarea onChange={(event) => update('address', event.target.value)} value={form.address} /></Field>
-            <Field label="Ville"><input onChange={(event) => update('city', event.target.value)} value={form.city} /></Field>
-            <Field label="Pays"><input onChange={(event) => update('country', event.target.value)} value={form.country} /></Field>
+            <ClientLocationFields
+              onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+              value={form}
+            />
             <label className="project-editor-check"><input checked={form.active} onChange={(event) => update('active', event.target.checked)} type="checkbox" /> Client actif</label>
           </div>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
