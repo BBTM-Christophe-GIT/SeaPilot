@@ -5833,7 +5833,7 @@ button:disabled {
 
 .project-offer-document {
   display: grid;
-  grid-template-rows: auto auto auto 1fr auto auto;
+  grid-template-rows: auto auto auto 1fr;
   align-content: start;
   gap: 14px;
   padding: 28px 30px 24px;
@@ -5862,14 +5862,18 @@ button:disabled {
 .project-offer-columns h3 { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; color: #123d68; font-size: 9px; }
 .project-offer-columns h3 span { display: grid; width: 17px; height: 17px; place-items: center; border-radius: 50%; background: #2e6de9; color: #fff; font-size: 7px; }
 .project-offer-columns > section > p { min-height: 28px; margin: 5px 0 10px; font-size: 7px; line-height: 1.45; }
-.project-offer-budget { display: grid; gap: 5px; margin: 2px 0 12px; padding: 11px; background: #123d68; color: #fff; }
-.project-offer-budget small { color: #dbe9fa; }
-.project-offer-budget strong { font-size: 14px; }
 .project-offer-columns footer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #dbe4ee; color: #68778a; font-size: 6px; }
 .project-offer-columns footer b { color: #233b57; }
 .project-offer-document > aside { display: flex; gap: 10px; padding: 9px 11px; border: 1px solid #eccb8c; background: #fff9eb; color: #6b552b; font-size: 6px; }
-.project-offer-approval { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; min-height: 48px; padding: 10px; border: 1px solid #cbd7e5; color: #506178; font-size: 6px; }
-.project-offer-approval strong { color: #173c66; }
+.project-offer-document > aside > span { display: grid; gap: 3px; }
+.project-offer-signatures { display: grid; grid-template-columns: 1fr 1fr; min-height: 64px; border: 1px solid #cbd7e5; color: #506178; font-size: 6px; }
+.project-offer-signatures > div { display: grid; align-content: start; gap: 4px; padding: 10px; }
+.project-offer-signatures > div + div { border-left: 1px solid #cbd7e5; }
+.project-offer-signatures strong { color: #173c66; font-size: 7px; }
+.project-offer-signatures b { color: #233b57; font-size: 6.5px; }
+.project-offer-owner-signature img { width: 80px; height: 24px; object-fit: contain; object-position: left center; }
+.project-offer-owner-signature small { color: #7b8797; font-size: 5.5px; font-weight: 650; letter-spacing: 0; }
+.project-offer-client-signature span { padding-bottom: 3px; border-bottom: 1px dotted #b9c6d5; }
 
 .project-editor.is-project-assistant form > footer .is-primary {
   border-color: #2e6de9;
@@ -13868,24 +13872,41 @@ button.planning-p12-conflict-card {
   min-height: 88px;
 }
 
-.project-owner-identity-preview {
+.project-commercial-reserves {
   display: grid;
-  gap: 2px;
-  padding: 10px 12px;
-  color: #314657;
-  background: #f7faff;
-  border: 1px solid #d7e1ef;
-  border-radius: 8px;
-  font-size: .78rem;
-  font-weight: 500;
-  line-height: 1.35;
+  grid-column: 1 / -1;
+  gap: 11px;
+  padding: 15px;
+  border: 1px solid #e4c57c;
+  border-radius: 10px;
+  background: #fffaf0;
 }
 
-.project-owner-identity-preview strong {
-  color: var(--navy);
-  font-size: .86rem;
-  font-weight: 900;
+.project-commercial-reserves > div {
+  display: grid;
+  gap: 3px;
 }
+
+.project-commercial-reserves > div strong { color: #8c5a08; font-size: .84rem; }
+.project-commercial-reserves > div small { color: #78684d; font-weight: 600; }
+
+.project-editor-grid .project-commercial-reserves > label:not(.project-commercial-reserves-other) {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #493c27;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.project-editor-grid .project-commercial-reserves > label > input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 18px;
+  min-height: 18px;
+  margin-top: 1px;
+}
+
+.project-commercial-reserves-other textarea { min-height: 58px; }
 
 .project-towed-asset {
   display: grid;

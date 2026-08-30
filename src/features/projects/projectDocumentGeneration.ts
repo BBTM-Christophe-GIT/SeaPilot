@@ -10,6 +10,11 @@ import { buildSupplytimePreview } from './projectReadModel';
 import { DEFAULT_PROJECT_FUEL_TERMS } from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
+import {
+  buildCommercialReserves,
+  formatProjectDocumentEmitterName,
+  type ProjectDocumentEmitter,
+} from './projectCommercialOffer';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -24,6 +29,7 @@ export interface GeneratedProjectDocument {
 export interface ProjectDocumentGenerationInput {
   client?: ClientRecord;
   contract?: ProjectContractRecord;
+  emitter?: ProjectDocumentEmitter;
   occurrence?: ProjectPlanningOccurrenceRecord;
   project: ProjectRecord;
 }
@@ -302,39 +308,180 @@ export async function generateProjectDocument(
   });
 
   if (kind === 'offer') {
-    const [rows, logoBytes] = await Promise.all([
-      Promise.resolve(buildProjectOfferRows(input)),
+    const [logoBytes, signatureBytes] = await Promise.all([
       loadAssetBytes('/bbtm-report-logo.png'),
+      input.emitter?.signatureUrl
+        ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
+        : Promise.resolve(null),
     ]);
+    const contract = input.contract;
+    const supplytime = contract?.supplytimeData || {};
+    const reserves = buildCommercialReserves(supplytime);
+    const emitterName = formatProjectDocumentEmitterName(input.emitter);
+    const duration = input.project.startsOn && input.project.endsOn
+      ? Math.max(1, Math.round((new Date(input.project.endsOn).getTime() - new Date(input.project.startsOn).getTime()) / 86_400_000) + 1)
+      : null;
+    const reference = `OC-${input.project.projectCode.replace(/^P/i, '') || 'BROUILLON'}`;
+    const line = (value: string, width: number, maximum = 3): string[] => (
+      pdf.splitTextToSize(value || '-', width) as string[]
+    ).slice(0, maximum);
+    const sectionHeading = (number: string, label: string, x: number, y: number) => {
+      pdf.setFillColor(46, 109, 233);
+      pdf.circle(x + 4, y + 4, 4, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7);
+      pdf.text(number, x + 4, y + 5.4, { align: 'center' });
+      pdf.setTextColor(18, 61, 104);
+      pdf.setFontSize(10);
+      pdf.text(label, x + 11, y + 5.5);
+    };
+    const detailRow = (label: string, value: string, x: number, y: number, width: number) => {
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(x, y + 5.5, x + width, y + 5.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(label.toLocaleUpperCase('fr-FR'), x, y + 3.5);
+      pdf.setTextColor(35, 59, 87);
+      pdf.text(line(value, width * 0.58, 1), x + width, y + 3.5, { align: 'right' });
+    };
+
     pdf.setFillColor(9, 31, 50);
     pdf.rect(0, 0, 210, 29, 'F');
     pdf.addImage(logoBytes, 'PNG', 14, 5, 20, 20, undefined, 'FAST');
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(20);
-    pdf.text('BBTM', 39, 13);
-    pdf.setFontSize(14);
-    pdf.text('OFFRE COMMERCIALE', 39, 22);
+    pdf.setFontSize(15);
+    pdf.text('OFFRE COMMERCIALE', 39, 18);
+    pdf.setFontSize(9);
+    pdf.text(reference, 196, 12, { align: 'right' });
     pdf.setFontSize(8);
-    pdf.text(title, 196, 20, { align: 'right', maxWidth: 90 });
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Émise le ${formatOfferGenerationDate(new Date())}`, 196, 19, { align: 'right' });
     pdf.setTextColor(24, 33, 50);
 
-    let y = 38;
-    const rowHeight = Math.min(11.2, Math.max(7.2, 240 / Math.max(1, rows.length)));
-    rows.forEach((row) => {
-      const valueLines = (pdf.splitTextToSize(row.value, 118) as string[])
-        .slice(0, Math.max(1, Math.floor((rowHeight - 3) / 3)));
-      pdf.setDrawColor(205, 216, 224);
-      pdf.setFillColor(244, 248, 250);
-      pdf.rect(14, y, 52, rowHeight, 'FD');
-      pdf.rect(66, y, 130, rowHeight);
+    [[14, 'PROPOSITION ADRESSÉE À', input.client?.name || input.project.clientName || 'CLIENT À RENSEIGNER', input.client?.representedBy ? `À l’attention de ${input.client.representedBy}` : 'Interlocuteur à renseigner'],
+      [108, 'PROJET', title || 'NOUVEAU PROJET', input.project.contractType || 'Offre Commerciale']]
+      .forEach(([xValue, label, primary, secondary]) => {
+        const x = Number(xValue);
+        pdf.setFillColor(243, 246, 250);
+        pdf.rect(x, 35, 88, 22, 'F');
+        pdf.setFillColor(46, 109, 233);
+        pdf.rect(x, 35, 2, 22, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(6.2);
+        pdf.setTextColor(113, 128, 150);
+        pdf.text(String(label), x + 5, 40);
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(23, 59, 101);
+        pdf.text(line(String(primary), 79, 2), x + 5, 46);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.setTextColor(88, 106, 128);
+        pdf.text(line(String(secondary), 79, 1), x + 5, 53);
+      });
+
+    pdf.setDrawColor(219, 228, 238);
+    pdf.rect(14, 63, 182, 37);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.2);
+    pdf.setTextColor(113, 128, 150);
+    pdf.text('NOTRE PROPOSITION', 18, 69);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(23, 38, 58);
+    pdf.text(line(input.project.description || 'Prestation à renseigner.', 105, 5), 18, 75);
+    detailRow('Navire', input.project.primaryVesselName || '-', 132, 68, 59);
+    detailRow('Période', [formatDate(input.project.startsOn), formatDate(input.project.endsOn)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
+    detailRow('Route', [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+
+    pdf.setDrawColor(216, 226, 237);
+    pdf.rect(14, 106, 88, 82);
+    pdf.rect(108, 106, 88, 82);
+    sectionHeading('1', 'Cadre opérationnel', 18, 111);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.2);
+    pdf.setTextColor(113, 128, 150);
+    pdf.text('PÉRIMÈTRE PROPOSÉ', 18, 124);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.1);
+    pdf.setTextColor(23, 38, 58);
+    pdf.text(line(input.project.operationArea || 'Zone d’opération à renseigner', 78, 3), 18, 130);
+    detailRow('Type de contrat', input.project.contractType || 'Offre Commerciale', 18, 145, 78);
+    detailRow('Livraison', [input.project.deliveryPort, formatDate(input.project.deliveryAt)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
+    detailRow('Redélivraison', [input.project.redeliveryPort, formatDate(input.project.redeliveryAt)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
+    detailRow('Durée ferme', duration ? `${duration} jours calendaires` : '-', 18, 169, 78);
+    detailRow('Carburant', supplytime.box19_special_fuel || '-', 18, 177, 78);
+
+    sectionHeading('2', 'Conditions commerciales', 112, 111);
+    detailRow('Mobilisation', formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') || '-', 112, 126, 78);
+    detailRow('Démobilisation', formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '') || '-', 112, 136, 78);
+    detailRow('Opération', formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 146, 78);
+    detailRow('Extension', formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 156, 78);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.2);
+    pdf.setTextColor(113, 128, 150);
+    pdf.text('FACTURATION', 112, 172);
+    pdf.text('PAIEMENT', 151, 172);
+    pdf.setFontSize(6.7);
+    pdf.setTextColor(35, 59, 87);
+    pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
+    pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+
+    let signatureY = 202;
+    if (reserves.length > 0) {
+      const reserveLines = reserves.flatMap((reserve) => line(`- ${reserve}`, 169, 2)).slice(0, 6);
+      const reserveHeight = 10 + reserveLines.length * 4;
+      pdf.setDrawColor(236, 203, 140);
+      pdf.setFillColor(255, 249, 235);
+      pdf.rect(14, 194, 182, reserveHeight, 'FD');
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8);
-      pdf.text(row.label, 17, y + 6, { maxWidth: 46 });
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(139, 90, 8);
+      pdf.text('RÉSERVES COMMERCIALES', 18, 200);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(valueLines, 70, y + 6);
-      y += rowHeight;
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(107, 85, 43);
+      pdf.text(reserveLines, 18, 206);
+      signatureY = 198 + reserveHeight + 4;
+    }
+
+    const signatureHeight = Math.min(54, 279 - signatureY);
+    pdf.setDrawColor(203, 215, 229);
+    pdf.rect(14, signatureY, 91, signatureHeight);
+    pdf.rect(105, signatureY, 91, signatureHeight);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(23, 60, 102);
+    pdf.text('Armateur', 18, signatureY + 7);
+    pdf.text('Client', 109, signatureY + 7);
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(35, 59, 87);
+    pdf.text(emitterName || 'Émetteur à renseigner', 18, signatureY + 14);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.7);
+    pdf.setTextColor(80, 97, 120);
+    pdf.text(input.emitter?.functionLabel || 'Fonction à renseigner', 18, signatureY + 20);
+    if (signatureBytes) {
+      pdf.addImage(signatureBytes, 'PNG', 18, signatureY + 23, 34, Math.min(16, signatureHeight - 25), undefined, 'FAST');
+    } else {
+      pdf.text('Signature non renseignée', 18, signatureY + 29);
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(35, 59, 87);
+    pdf.text('BON POUR ACCORD', 109, signatureY + 14);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(80, 97, 120);
+    ['NOM ET QUALITÉ', 'SIGNATURE', 'Date ET CACHET'].forEach((label, index) => {
+      const labelY = signatureY + 22 + index * 8;
+      pdf.text(label, 109, labelY);
+      pdf.setDrawColor(190, 202, 216);
+      pdf.line(132, labelY, 191, labelY);
     });
+
     const generatedOn = `Offre générée le ${formatOfferGenerationDate(new Date())}`;
     pdf.setFont('helvetica', 'italic');
     pdf.setFontSize(8);

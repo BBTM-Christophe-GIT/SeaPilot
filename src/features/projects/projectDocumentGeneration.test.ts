@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
+import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
 import {
@@ -173,13 +174,27 @@ describe('projectDocumentGeneration', () => {
     );
 
     try {
-      const generated = await generateProjectDocument('offer', { client, contract, project });
+      const generated = await generateProjectDocument('offer', {
+        client,
+        contract,
+        emitter: {
+          firstName: 'Christophe',
+          functionLabel: 'Directeur commercial',
+          lastName: 'MINASSIAN',
+          signatureMimeType: 'image/png',
+          signatureUrl: 'https://signature.test/current.png',
+        },
+        project,
+      });
       const bytes = new Uint8Array(await generated.blob.arrayBuffer());
+      const document = await PDFDocument.load(bytes);
 
       expect(generated.fileName).toBe('P1107 - Offre - R1.pdf');
       expect(generated.mimeType).toBe('application/pdf');
       expect(new TextDecoder('latin1').decode(bytes.slice(0, 5))).toBe('%PDF-');
       expect(bytes.byteLength).toBeGreaterThan(10_000);
+      expect(document.getPageCount()).toBe(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       fetchMock.mockRestore();
     }
