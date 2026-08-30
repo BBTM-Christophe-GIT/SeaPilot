@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
@@ -281,9 +281,19 @@ describe('ProjectEditor contract hire periods', () => {
     await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Devise des frais')).toHaveValue('EUR');
     expect(screen.getByRole('option', { name: '€ — EUR' })).toBeInTheDocument();
-    const ownerPreview = screen.getByLabelText('Aperçu de l’identité armateur');
-    expect(ownerPreview.querySelector('strong')).toHaveTextContent('BBTM');
-    expect(ownerPreview).toHaveTextContent('15, impasse du pou');
+    expect(screen.queryByLabelText('Aperçu de l’identité armateur')).not.toBeInTheDocument();
+    const commercialFields = [
+      screen.getByLabelText('Identité armateur'),
+      screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ }),
+      screen.getByLabelText('Frais de mobilisation'),
+      screen.getByLabelText('Frais de démobilisation'),
+      screen.getByLabelText('Devise des frais'),
+      screen.getByLabelText('Fuel'),
+    ];
+    commercialFields.forEach((field) => expect(field.closest('label')).toHaveClass('is-wide'));
+    commercialFields.slice(1).forEach((field, index) => {
+      expect(commercialFields[index].compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
 
     const contractType = screen.getByLabelText('Type de contrat');
     await user.selectOptions(contractType, 'Contrat de Remorquage');
@@ -291,6 +301,38 @@ describe('ProjectEditor contract hire periods', () => {
     await user.selectOptions(screen.getByLabelText('Nom du remorqué'), '8');
     expect(screen.getByLabelText('Type d’engin, de navire ou de colis')).toHaveValue('AUTOMOTEUR FLUVIAL');
     expect(screen.getByLabelText('Longueur hors tout (m)')).toHaveValue(82);
+  });
+
+  it('shows commercial reserves in the offer only when Operations contains a selection or free text', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    const preview = within(screen.getByRole('region', { name: 'Aperçu du document généré' }));
+    expect(preview.queryByText('RÉSERVES COMMERCIALES')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    const availability = screen.getByRole('checkbox', {
+      name: 'Sous réserve de disponibilité du navire et de validation technique et contractuelle.',
+    });
+    await user.click(availability);
+    expect(preview.getByText('RÉSERVES COMMERCIALES')).toBeInTheDocument();
+    expect(preview.getByText('Sous réserve de disponibilité du navire et de validation technique et contractuelle.')).toBeInTheDocument();
+
+    await user.click(availability);
+    expect(preview.queryByText('RÉSERVES COMMERCIALES')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Autre réserve'), 'Sous réserve de l’accord du port.');
+    expect(preview.getByText('Sous réserve de l’accord du port.')).toBeInTheDocument();
   });
 
   it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {

@@ -21,9 +21,15 @@ import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
 import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
 import towagePage01Url from './assets/contract-previews/towage-contract-page-01.png';
+import {
+  buildCommercialReserves,
+  formatProjectDocumentEmitterName,
+  type ProjectDocumentEmitter,
+} from './projectCommercialOffer';
 
 interface ProjectContractPreviewProps {
   client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'representedBy'>;
+  emitter?: ProjectDocumentEmitter;
   form: ProjectWriteInput;
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
@@ -186,13 +192,12 @@ function buildTowageValues({ client, form, projectCode, towedAsset, vessel }: Pr
   };
 }
 
-function OfferPreview({ client, form, projectCode, vessel }: ProjectContractPreviewProps) {
+function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectContractPreviewProps) {
   const duration = form.startsOn && form.endsOn
     ? Math.max(1, Math.round((new Date(form.endsOn).getTime() - new Date(form.startsOn).getTime()) / 86_400_000) + 1)
     : null;
-  const budget = form.charterHire && duration
-    ? form.charterHire * duration + (form.mobilisationFee || 0) + (form.demobilisationFee || 0)
-    : null;
+  const reserves = buildCommercialReserves(form.supplytimeData);
+  const emitterName = formatProjectDocumentEmitterName(emitter);
   return (
     <div className="project-offer-document">
       <header>
@@ -210,10 +215,24 @@ function OfferPreview({ client, form, projectCode, vessel }: ProjectContractPrev
       </section>
       <div className="project-offer-columns">
         <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>DURÉE FERME</dt><dd>{duration ? `${duration} jours calendaires` : '—'}</dd></div><div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>
-        <section><h3><span>2</span>Conditions commerciales</h3><div className="project-offer-budget"><small>BUDGET INDICATIF DE LA MISSION</small><strong>{budget === null ? 'À calculer' : money(budget, form.hireCurrency || form.feeCurrency)}</strong></div><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div><div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
+        <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div><div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
       </div>
-      <aside><strong>RÉSERVES COMMERCIALES</strong><span>Sous réserve de disponibilité du navire et de validation technique et contractuelle.</span></aside>
-      <section className="project-offer-approval"><strong>BON POUR ACCORD</strong><span>NOM ET QUALITÉ</span><span>SIGNATURE ET CACHET</span></section>
+      {reserves.length > 0 ? <aside><strong>RÉSERVES COMMERCIALES</strong><span>{reserves.map((reserve) => <span key={reserve}>{reserve}</span>)}</span></aside> : null}
+      <section className="project-offer-signatures">
+        <div className="project-offer-owner-signature">
+          <strong>Armateur</strong>
+          <b>{emitterName || 'Émetteur à renseigner'}</b>
+          <span>{emitter?.functionLabel || 'Fonction à renseigner'}</span>
+          {emitter?.signatureUrl ? <img alt={`Signature de ${emitterName}`} src={emitter.signatureUrl} /> : <small>Signature non renseignée</small>}
+        </div>
+        <div className="project-offer-client-signature">
+          <strong>Client</strong>
+          <b>BON POUR ACCORD</b>
+          <span>NOM ET QUALITÉ</span>
+          <span>SIGNATURE</span>
+          <span>Date ET CACHET</span>
+        </div>
+      </section>
     </div>
   );
 }

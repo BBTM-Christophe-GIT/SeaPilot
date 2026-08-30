@@ -40,6 +40,7 @@ import {
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
+import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
   buildProjectMetrics,
   fetchProjectsData,
@@ -1052,9 +1053,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       const occurrence = planningOccurrenceId
         ? selectedPlanningOccurrences.find((item) => item.id === planningOccurrenceId)
         : undefined;
+      const emitter = kind === 'offer'
+        ? await fetchProjectDocumentEmitter(effectiveClient).catch(() => undefined)
+        : undefined;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
         contract: selectedContract,
+        emitter,
         occurrence,
         project: selectedProject,
       });
