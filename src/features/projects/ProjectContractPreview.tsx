@@ -24,6 +24,7 @@ import towagePage01Url from './assets/contract-previews/towage-contract-page-01.
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
+  shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
 
@@ -211,7 +212,7 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
       </section>
       <section className="project-offer-summary">
         <div><small>NOTRE PROPOSITION</small><p>{form.description || 'Décrivez la prestation et le dispositif opérationnel proposé.'}</p></div>
-        <dl><div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div><div><dt>PÉRIODE</dt><dd>{[compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div></dl>
+        <dl><div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div><div><dt>PÉRIODE</dt><dd>{[compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ') || '—'}</dd></div>{shouldDisplayCommercialOfferRoute(form.deliveryPort, form.redeliveryPort) ? <div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div> : null}</dl>
       </section>
       <div className="project-offer-columns">
         <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>DURÉE FERME</dt><dd>{duration ? `${duration} jours calendaires` : '—'}</dd></div><div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>

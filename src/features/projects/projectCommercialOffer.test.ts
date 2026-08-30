@@ -7,6 +7,7 @@ import {
   COMMERCIAL_RESERVE_WEATHER,
   COMMERCIAL_RESERVE_WEATHER_KEY,
   formatProjectDocumentEmitterName,
+  shouldDisplayCommercialOfferRoute,
 } from './projectCommercialOffer';
 
 describe('projectCommercialOffer', () => {
@@ -37,5 +38,12 @@ describe('projectCommercialOffer', () => {
       functionLabel: 'Directeur commercial',
       lastName: 'Minassian',
     })).toBe('Christophe MINASSIAN');
+  });
+
+  it('omits the route when delivery and redelivery use the same port', () => {
+    expect(shouldDisplayCommercialOfferRoute('Port de Dieppe', 'Port de Dieppe')).toBe(false);
+    expect(shouldDisplayCommercialOfferRoute('  PORT DE DIEPPE ', 'Port-de-Dieppe')).toBe(false);
+    expect(shouldDisplayCommercialOfferRoute('Port de Dieppe', 'Le Havre')).toBe(true);
+    expect(shouldDisplayCommercialOfferRoute('Port de Dieppe', '')).toBe(true);
   });
 });
