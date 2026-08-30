@@ -29,15 +29,6 @@ export interface ProjectAttachmentUploadResult {
   stored: Array<StoredProjectDocument & { draftId: string }>;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
@@ -85,29 +76,54 @@ export async function storeGeneratedProjectDocument(
   },
 ): Promise<StoredProjectDocument> {
   const buffer = await input.document.blob.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
-  const { data, error } = await client.functions.invoke('project-document-upload', {
-    body: {
-      base64Content: bytesToBase64(bytes),
-      documentType: input.documentType,
-      fileName: input.document.fileName,
-      mimeType: input.document.mimeType,
-      planningOccurrenceId: input.planningOccurrenceId || null,
-      projectId: input.projectId,
-      revision: input.revision || 1,
-      sha256: bytesToHex(digest),
-    },
+  const fileName = storageSafeSegment(input.document.fileName, 'document.pdf');
+  const storagePath = [
+    'projects',
+    String(input.projectId),
+    'generated',
+    storageSafeSegment(input.documentType, 'document'),
+    `r${input.revision || 1}`,
+    `${crypto.randomUUID()}-${fileName}`,
+  ].join('/');
+  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const { error: uploadError } = await storage.upload(storagePath, input.document.blob, {
+    cacheControl: '3600',
+    contentType: input.document.mimeType,
+    upsert: false,
   });
-
-  if (error) {
-    const context = await error.context?.json().catch(() => null) as { message?: string } | null;
-    throw new Error(context?.message || 'Le document n’a pas pu être enregistré dans SharePoint.');
+  if (uploadError) {
+    throw new Error(uploadError.message || 'Le document n’a pas pu être envoyé vers SeaPilot.');
   }
 
-  const document = (data as { document?: StoredProjectDocument } | null)?.document;
-  if (!document?.webUrl) throw new Error('SharePoint n’a pas retourné le lien du document enregistré.');
-  return document;
+  try {
+    const { data, error } = await client.rpc('projects_register_generated_storage_document', {
+      target_bucket: PROJECT_FILES_BUCKET,
+      target_document_type: input.documentType,
+      target_file_name: input.document.fileName,
+      target_file_size_bytes: input.document.blob.size,
+      target_mime_type: input.document.mimeType,
+      target_path: storagePath,
+      target_planning_occurrence_id: input.planningOccurrenceId || null,
+      target_project_id: input.projectId,
+      target_revision: input.revision || 1,
+      target_sha256: bytesToHex(digest),
+    });
+    if (error) throw new Error(error.message || 'Le document n’a pas pu être rattaché au projet SeaPilot.');
+    const id = Number(data);
+    if (!Number.isInteger(id) || id <= 0) throw new Error('SeaPilot n’a pas confirmé le classement du document.');
+    return {
+      fileName: input.document.fileName,
+      folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
+      id,
+      storageBucket: PROJECT_FILES_BUCKET,
+      storagePath,
+      webUrl: '',
+    };
+  } catch (error) {
+    await storage.remove([storagePath]).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function storeOperationDocument(
@@ -119,29 +135,54 @@ export async function storeOperationDocument(
   },
 ): Promise<StoredProjectDocument> {
   const buffer = await input.file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
-  const { data, error } = await client.functions.invoke('project-document-upload', {
-    body: {
-      base64Content: bytesToBase64(bytes),
-      documentType: 'operation_attachment',
-      fileName: input.file.name,
-      mimeType: input.file.type || 'application/octet-stream',
-      planningOccurrenceId: input.planningOccurrenceId,
-      projectId: input.projectId,
-      revision: 1,
-      sha256: bytesToHex(digest),
-    },
+  const mimeType = input.file.type || 'application/octet-stream';
+  const fileName = storageSafeSegment(input.file.name, 'document');
+  const storagePath = [
+    'projects',
+    String(input.projectId),
+    'operations',
+    String(input.planningOccurrenceId),
+    `${crypto.randomUUID()}-${fileName}`,
+  ].join('/');
+  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const { error: uploadError } = await storage.upload(storagePath, input.file, {
+    cacheControl: '3600',
+    contentType: mimeType,
+    upsert: false,
   });
-
-  if (error) {
-    const context = await error.context?.json().catch(() => null) as { message?: string } | null;
-    throw new Error(context?.message || `Le document ${input.file.name} n’a pas pu être enregistré dans SharePoint.`);
+  if (uploadError) {
+    throw new Error(uploadError.message || `Le document ${input.file.name} n’a pas pu être envoyé vers SeaPilot.`);
   }
 
-  const document = (data as { document?: StoredProjectDocument } | null)?.document;
-  if (!document?.webUrl) throw new Error(`SharePoint n’a pas retourné le lien de ${input.file.name}.`);
-  return document;
+  try {
+    const { data, error } = await client.rpc('projects_register_generated_storage_document', {
+      target_bucket: PROJECT_FILES_BUCKET,
+      target_document_type: 'operation_attachment',
+      target_file_name: input.file.name,
+      target_file_size_bytes: input.file.size,
+      target_mime_type: mimeType,
+      target_path: storagePath,
+      target_planning_occurrence_id: input.planningOccurrenceId,
+      target_project_id: input.projectId,
+      target_revision: 1,
+      target_sha256: bytesToHex(digest),
+    });
+    if (error) throw new Error(error.message || `Le document ${input.file.name} n’a pas pu être rattaché à l’opération.`);
+    const id = Number(data);
+    if (!Number.isInteger(id) || id <= 0) throw new Error(`SeaPilot n’a pas confirmé le classement de ${input.file.name}.`);
+    return {
+      fileName: input.file.name,
+      folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
+      id,
+      storageBucket: PROJECT_FILES_BUCKET,
+      storagePath,
+      webUrl: '',
+    };
+  } catch (error) {
+    await storage.remove([storagePath]).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function storeOperationDocuments(
@@ -160,7 +201,7 @@ export async function storeOperationDocuments(
     } catch (error) {
       result.failed.push({
         fileName: file.name,
-        message: error instanceof Error ? error.message : 'Échec du classement SharePoint.',
+        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans SeaPilot.',
       });
     }
   }

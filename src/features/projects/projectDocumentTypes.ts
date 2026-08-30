@@ -15,7 +15,7 @@ export interface ProjectDocumentTypeDefinition {
 
 export const PROJECT_DOCUMENT_TYPES: ProjectDocumentTypeDefinition[] = [
   { kind: 'offer', label: 'Offre commerciale', description: 'Synthèse commerciale issue du projet et du contrat.', extension: 'pdf', available: true },
-  { kind: 'bimco_supplytime', label: 'BIMCO · SUPPLYTIME 2017', description: 'Part I renseignée et clauses générales Part II.', extension: 'pdf', available: true },
+  { kind: 'bimco_supplytime', label: 'BIMCO', description: 'Partie particulière P144 renseignée et clauses générales.', extension: 'pdf', available: true },
   { kind: 'towage_contract', label: 'Contrat de remorquage BBTM', description: '19 clauses particulières et clauses générales BBTM.', extension: 'docx', available: true },
   { kind: 'bareboat_charter', label: 'Affrètement · Coque nue', description: 'Emplacement prêt ; modèle contractuel attendu.', extension: 'docx', available: false },
   { kind: 'intellectual_service', label: 'Prestation intellectuelle', description: 'Emplacement prêt ; modèle contractuel attendu.', extension: 'docx', available: false },

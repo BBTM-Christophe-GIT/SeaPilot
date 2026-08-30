@@ -158,7 +158,7 @@ describe('projectDocumentGeneration', () => {
   it('creates safe and explicit offer and contract filenames', () => {
     expect(buildGeneratedDocumentFileName('offer', project)).toBe('P1107 - Offre - R1.pdf');
     expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
-      'Campagne - Atlantique - BIMCO SUPPLYTIME 2017 - R1.pdf',
+      'Campagne - Atlantique - BIMCO - R1.pdf',
     );
   });
 

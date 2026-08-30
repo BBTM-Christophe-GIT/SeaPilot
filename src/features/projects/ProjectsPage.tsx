@@ -9,7 +9,6 @@ import {
   FileText,
   Download,
   ExternalLink,
-  FileOutput,
   Filter,
   Info,
   Pencil,
@@ -29,9 +28,15 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
+import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
-import { normalizeProjectContractType, PROJECT_CONTRACT_TYPES } from './projectContractOptions';
+import {
+  BIMCO_CONTRACT_TYPE,
+  normalizeProjectContractType,
+  PROJECT_CONTRACT_TYPES,
+  TOWAGE_CONTRACT_TYPE,
+} from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
@@ -82,6 +87,13 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 const PROJECTS_PER_PAGE = 40;
 const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
+
+function generatedDocumentKindForContract(contractType?: string | null): ProjectGeneratedDocumentKind {
+  const normalized = normalizeProjectContractType(contractType);
+  if (normalized === BIMCO_CONTRACT_TYPE) return 'bimco_supplytime';
+  if (normalized === TOWAGE_CONTRACT_TYPE) return 'towage_contract';
+  return 'offer';
+}
 
 function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
@@ -208,12 +220,12 @@ function ProjectRibbonButton({
 }
 
 const PROJECT_DETAIL_TABS = [
+  { id: 'identification', label: 'Identité & contrat' },
   { id: 'operations', label: 'Opérations' },
   { id: 'billing', label: 'Facturation' },
-  { id: 'contract', label: 'Contrat / SUPPLYTIME' },
-  { id: 'commercial', label: 'Offre commerciale' },
-  { id: 'documents', label: 'Documents contractuels' },
-  { id: 'identification', label: 'Identification' },
+  { id: 'commercial', label: 'Conditions commerciales' },
+  { id: 'contract', label: 'Document contractuel' },
+  { id: 'documents', label: 'Documents' },
 ] as const;
 
 type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]['id'];
@@ -414,7 +426,7 @@ function SupplytimePreview({ project, contract }: { project: ProjectRecord; cont
     <div className="project-supplytime">
       <div className="project-supplytime-heading">
         <div>
-          <h4>Aperçu SUPPLYTIME 2017</h4>
+          <h4>Aperçu BIMCO</h4>
           <p>{`${populatedCount} zone(s) renseignée(s) sur 36. Les champs métier canoniques priment sur leur copie historique.`}</p>
         </div>
         <span>{contract?.supplytimeSchemaVersion || 'supplytime-2017-v1'}</span>
@@ -459,6 +471,7 @@ function ProjectDetail({
   onDeleteOccurrence,
   onEditOccurrence,
   onGenerateDocument,
+  onEditProject,
   onOpenPlanning,
   operationDocuments,
   planningOccurrences,
@@ -477,11 +490,12 @@ function ProjectDetail({
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
+  onEditProject: () => void;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
-  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('operations');
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('identification');
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
   const projectAttachments = useMemo(
     () => operationDocuments.filter((document) => (
@@ -494,6 +508,7 @@ function ProjectDetail({
   }, [planningOccurrences, project.id]);
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
+  const generatedDocumentKind = generatedDocumentKindForContract(project.contractType);
   return (
     <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
       <header className="project-contract-header">
@@ -515,14 +530,17 @@ function ProjectDetail({
             </dl>
           </div>
         </div>
-        <div className="project-contract-counts" aria-label="Indicateurs du contrat">
-          <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
-          <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
+        <div className="project-contract-header-actions">
+          {isManager && !project.archivedAt ? <button onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={15} /> Modifier</button> : null}
+          <div className="project-contract-counts" aria-label="Indicateurs du contrat">
+            <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
+            <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
+          </div>
         </div>
       </header>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
-          Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
+          Les informations contractuelles et BIMCO sont temporairement indisponibles. Les autres sections restent consultables.
         </p>
       ) : !contract ? (
         <p className="project-partial-state" role="status">
@@ -617,7 +635,7 @@ function ProjectDetail({
           </select>
         </label>
         <div className="project-document-factory-grid">
-          {PROJECT_DOCUMENT_TYPES.map((definition) => (
+          {PROJECT_DOCUMENT_TYPES.filter((definition) => definition.kind === generatedDocumentKind).map((definition) => (
             <article className={definition.available ? '' : 'is-pending'} key={definition.kind}>
               <FileText aria-hidden="true" size={22} />
               <div>
@@ -691,10 +709,7 @@ function ProjectDetail({
                         {documents.length > 0 ? (
                           <div className="project-operation-document-links">
                             {documents.map((document) => (
-                              <a href={document.sharePointWebUrl} key={document.id} rel="noreferrer" target="_blank">
-                                <FileText aria-hidden="true" size={14} />
-                                {document.fileName}
-                              </a>
+                              <ProjectStoredDocumentLink client={supabaseClient} document={document} includeIcon key={document.id} />
                             ))}
                           </div>
                         ) : <span className="project-operation-no-document">0 fichier</span>}
@@ -760,7 +775,7 @@ function ProjectDetail({
           <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <p className="project-document-help">
-          Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni.
+          Le BIMCO reprend les quatre pages particulières du P144 et les clauses générales du document de référence fourni.
           Les documents contractuels migrés sont conservés dans l’espace privé Supabase ; leur provenance SharePoint reste tracée.
         </p>
       </section>
@@ -805,7 +820,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
-  const [lastStoredDocument, setLastStoredDocument] = useState<{ fileName: string; webUrl: string } | null>(null);
+  const [lastStoredDocument, setLastStoredDocument] = useState<StoredProjectDocument | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
@@ -932,6 +947,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedOperationDocuments = selectedProject
     ? projectsData.operationDocuments.filter((document) => document.projectId === selectedProject.id)
     : [];
+  const selectedGeneratedDocumentKind = generatedDocumentKindForContract(selectedProject?.contractType);
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -992,7 +1008,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
     const confirmed = window.confirm(
       `Supprimer définitivement l’opération « ${operationLabel} » du Planning ?\n\n`
-      + 'Les documents déjà classés resteront conservés dans SharePoint « Documents Projets » au niveau du contrat.',
+      + 'Les documents déjà classés resteront conservés dans SeaPilot au niveau du projet.',
     );
     if (!confirmed) return;
 
@@ -1016,7 +1032,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setEditingOccurrence(undefined);
       }
       setMutationMessage(
-        'Opération supprimée du Planning. Ses documents restent conservés dans SharePoint « Documents Projets ».',
+        'Opération supprimée du Planning. Ses documents restent conservés dans SeaPilot.',
       );
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Impossible de supprimer l’opération.");
@@ -1051,13 +1067,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           projectId: selectedProject.id,
           revision: 1,
         });
-        setLastStoredDocument({ fileName: stored.fileName, webUrl: stored.webUrl });
-        setMutationMessage(`${stored.fileName} généré et classé automatiquement dans SharePoint.`);
+        setLastStoredDocument(stored);
+        setMutationMessage(`${stored.fileName} généré et classé dans l’espace privé SeaPilot.`);
         setLoadAttempt((attempt) => attempt + 1);
       } catch (storageError) {
         downloadGeneratedProjectDocument(generated);
         setMutationMessage(`${generated.fileName} généré et téléchargé localement.`);
-        setMutationError(storageError instanceof Error ? storageError.message : 'Le classement SharePoint a échoué.');
+        setMutationError(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
       }
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
@@ -1127,9 +1143,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Documents">
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText aria-hidden="true" size={20} />} label="Générer offre" onClick={() => void generateSelectedProjectDocument('offer', null)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<ClipboardList aria-hidden="true" size={20} />} label="Générer contrat" onClick={() => void generateSelectedProjectDocument('bimco_supplytime', selectedPlanningOccurrences[0]?.id ?? null)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileOutput aria-hidden="true" size={20} />} label="Générer OT / CR" onClick={() => void generateSelectedProjectDocument('towage_contract', selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton
+            disabled={!isManager || !selectedProject || generatingDocument !== null}
+            icon={<FileText aria-hidden="true" size={20} />}
+            label="Générer le document"
+            onClick={() => void generateSelectedProjectDocument(
+              selectedGeneratedDocumentKind,
+              selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null,
+            )}
+          />
           <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Affichage">
@@ -1219,9 +1241,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
       {lastStoredDocument ? (
-        <a className="project-stored-document-link" href={lastStoredDocument.webUrl} rel="noreferrer" target="_blank">
-          <ExternalLink aria-hidden="true" size={15} /> Ouvrir {lastStoredDocument.fileName} dans SharePoint
-        </a>
+        <span className="project-stored-document-link">
+          <ProjectStoredDocumentLink client={effectiveClient} document={{
+            fileName: lastStoredDocument.fileName,
+            storageBucket: lastStoredDocument.storageBucket,
+            storagePath: lastStoredDocument.storagePath,
+          }} includeIcon />
+        </span>
       ) : null}
       {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
@@ -1241,8 +1267,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
-                <h2 id="projects-list-title">Contrats</h2>
-                <span>{filteredProjects.length} contrat(s)</span>
+                <h2 id="projects-list-title">Portefeuille projet</h2>
+                <span>{filteredProjects.length} projet(s)</span>
               </div>
               <label>
                 <span className="sr-only">Rechercher un contrat</span>
@@ -1309,6 +1335,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
               onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
+              onEditProject={() => openProjectEditor(selectedProject)}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
               operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
@@ -1379,10 +1406,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 : 'Opération ajoutée au Planning.',
             );
             if (uploads.stored.length > 0) {
-              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SharePoint.`);
+              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SeaPilot.`);
             }
             if (uploads.failed.length > 0) {
-              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
+              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SeaPilot.`);
             }
             setLoadAttempt((attempt) => attempt + 1);
           }}

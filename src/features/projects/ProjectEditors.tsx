@@ -1,4 +1,4 @@
-import { CalendarDays, CreditCard, ExternalLink, FileText, FileUp, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
+import { CalendarDays, CreditCard, FileText, FileUp, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
@@ -30,8 +30,8 @@ import type {
   ProjectTowedAssetRecord,
   VesselRecord,
 } from './projectQueries';
-import { SUPPLYTIME_GROUPS } from './projectReadModel';
 import { ProjectPortCombobox } from './ProjectPortCombobox';
+import { ProjectContractPreview } from './ProjectContractPreview';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -46,12 +46,15 @@ import {
 } from './projectDocumentCategories';
 import {
   COMMERCIAL_OFFER_CONTRACT_TYPE,
+  BIMCO_CONTRACT_TYPE,
   DEFAULT_PROJECT_FUEL_TERMS,
   DEFAULT_PROJECT_OWNER_IDENTITY,
   normalizeProjectContractType,
+  PROJECT_CONTRACT_TYPES,
   PROJECT_CURRENCIES,
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
+import { BIMCO_P144_GROUPS } from './projectContractModels';
 
 interface ProjectEditorProps {
   client: SupabaseClient;
@@ -362,19 +365,12 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 
 type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents';
 
-const PROJECT_ASSISTANT_STEPS: {
+interface ProjectAssistantStepDefinition {
   description: string;
   icon: typeof FolderOpen;
   id: ProjectAssistantStep;
   label: string;
-}[] = [
-  { description: 'Nom du projet, navire et client', icon: FolderOpen, id: 'identification', label: 'Identification' },
-  { description: 'Prise en charge et arrivée', icon: CalendarDays, id: 'planning', label: 'Planning' },
-  { description: 'Tarifs et conditions', icon: ReceiptText, id: 'offer', label: 'Offre commerciale' },
-  { description: 'Frais et paiement', icon: CreditCard, id: 'billing', label: 'Facturation' },
-  { description: 'Clauses contractuelles SUPPLYTIME', icon: FileText, id: 'bimco', label: 'BIMCO' },
-  { description: 'Pièces jointes classées', icon: FileUp, id: 'documents', label: 'Documents' },
-];
+}
 
 function PortSelect({
   label,
@@ -396,7 +392,6 @@ export function ProjectEditor({
   client,
   clients,
   contract,
-  contractTypes,
   initialOperation,
   onClose,
   onSaved,
@@ -455,7 +450,18 @@ export function ProjectEditor({
   const eligibleVessels = vessels.filter(
     (vessel) => vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId,
   );
-  const isCommercialOffer = normalizeProjectContractType(form.contractType) === COMMERCIAL_OFFER_CONTRACT_TYPE;
+  const normalizedContractType = normalizeProjectContractType(form.contractType);
+  const isCommercialOffer = normalizedContractType === COMMERCIAL_OFFER_CONTRACT_TYPE;
+  const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
+  const isBimco = normalizedContractType === BIMCO_CONTRACT_TYPE;
+  const contractStep: ProjectAssistantStep = isBimco ? 'bimco' : 'offer';
+  const assistantSteps: ProjectAssistantStepDefinition[] = [
+    { description: 'Projet, client et contrat', icon: FolderOpen, id: 'identification', label: 'Identification' },
+    { description: isBimco ? 'Cases du formulaire P144' : 'Champs du document', icon: ReceiptText, id: contractStep, label: normalizedContractType },
+    { description: 'Dates, ports et première mission', icon: CalendarDays, id: 'planning', label: 'Opérations' },
+    { description: 'Navires et conditions tarifaires', icon: CreditCard, id: 'billing', label: 'Facturation' },
+    { description: 'Pièces classées dans SeaPilot', icon: FileText, id: 'documents', label: 'Documents' },
+  ];
   const { activeDocumentCategories, documentCategoryByKey, rootDocumentCategories } = useMemo(() => {
     const activeCategories = documentCategories
       .filter((category) => category.active)
@@ -498,6 +504,10 @@ export function ProjectEditor({
     }).catch(() => undefined);
     return () => { active = false; };
   }, [client]);
+
+  useEffect(() => {
+    if (activeStep === 'offer' || activeStep === 'bimco') setActiveStep(contractStep);
+  }, [contractStep]);
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -626,7 +636,7 @@ export function ProjectEditor({
       if (projectCoreChanged) savedProject = result;
 
       let effectiveTowedAssetId: number | null = null;
-      if (form.contractType === TOWAGE_CONTRACT_TYPE) {
+      if (normalizeProjectContractType(form.contractType) === TOWAGE_CONTRACT_TYPE) {
         if (!towedAsset?.name.trim()) {
           throw new Error('Sélectionnez un remorqué ou ajoutez-en un nouveau.');
         }
@@ -675,7 +685,7 @@ export function ProjectEditor({
             projectId: result.id,
           });
           if (uploads.failed.length > 0) {
-            throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
+            throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être enregistrés dans SeaPilot.`);
           }
         }
       }
@@ -723,7 +733,8 @@ export function ProjectEditor({
         <header>
           <div>
             <span>{project ? 'MODIFICATION' : 'CRÉATION'}</span>
-            <h2 id="project-editor-title">{project ? 'Projet' : 'Offre'}</h2>
+            <h2 id="project-editor-title">{project ? 'Modifier le projet' : 'Nouveau projet'}</h2>
+            <small>{nextProjectCode} · {normalizedContractType}</small>
           </div>
           <button aria-label="Fermer le formulaire projet" disabled={isSaving} onClick={onClose} type="button">
             <X aria-hidden="true" size={20} />
@@ -732,9 +743,9 @@ export function ProjectEditor({
         <form onSubmit={submit}>
           <div className="project-assistant-layout">
             <aside aria-label="Étapes de création du projet">
-              <span>ASSISTANT</span>
-              <strong>Projet</strong>
-              {PROJECT_ASSISTANT_STEPS.map((step, index) => {
+              <span>PARCOURS PROJET</span>
+              <strong>{nextProjectCode}</strong>
+              {assistantSteps.map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
                 return (
@@ -754,6 +765,19 @@ export function ProjectEditor({
               })}
             </aside>
             <main>
+          <section className="project-contract-choice" aria-label="Choix du type de contrat">
+            <label>
+              <span>Type de contrat</span>
+              <select
+                aria-label="Type de contrat"
+                onChange={(event) => update('contractType', event.target.value)}
+                value={normalizedContractType}
+              >
+                {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <p><strong>{form.title || 'Projet sans titre'}</strong><span>{availableClients.find((item) => item.id === form.clientId)?.name || 'Client à renseigner'}</span></p>
+          </section>
           <fieldset hidden={activeStep !== 'identification'} id="project-step-identification">
             <legend><span>1</span> Identification <small>8 champs</small></legend>
             <p className="project-code-preview">Nom final : <strong>{nextProjectCode} - {form.title || '…'}</strong><small>Le numéro affiché est un aperçu ; Supabase l’attribue atomiquement à l’enregistrement.</small></p>
@@ -789,7 +813,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
-            <legend><span>2</span> Planning</legend>
+            <legend><span>3</span> Opérations</legend>
             <div className="project-editor-grid">
               {initialOperation && initialOperationForm ? (
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
@@ -832,13 +856,9 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset hidden={activeStep !== 'offer'} id="project-step-offer">
-            <legend><span>3</span> Offre commerciale</legend>
+          <fieldset hidden={activeStep !== 'offer' && !(isBimco && activeStep === 'billing')} id="project-step-offer">
+            <legend><span>{isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
             <div className="project-editor-grid">
-              <Field label="Type de contrat">
-                <input list="project-contract-values" onChange={(event) => update('contractType', event.target.value)} value={form.contractType} />
-                <datalist id="project-contract-values">{contractTypes.map((value) => <option key={value} value={value} />)}</datalist>
-              </Field>
               <label className="project-owner-identity">
                 <span>Identité armateur</span>
                 <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
@@ -850,7 +870,7 @@ export function ProjectEditor({
                   ))}
                 </span>
               </label>
-              {form.contractType === TOWAGE_CONTRACT_TYPE ? (
+              {isTowage ? (
                 <section aria-label="Remorqué" className="project-towed-asset is-wide">
                   <div className="project-towed-asset-heading">
                     <div>
@@ -892,6 +912,33 @@ export function ProjectEditor({
                       <Field label="Assureur RC"><input onChange={(event) => updateTowedAsset('liabilityInsurer', event.target.value)} value={towedAsset.liabilityInsurer} /></Field>
                     </div>
                   ) : null}
+                </section>
+              ) : null}
+              {isTowage ? (
+                <section className="project-towage-contract-fields is-wide" aria-label="Conditions du contrat de remorquage">
+                  <h3>Voyage et conditions particulières</h3>
+                  <div className="project-editor-grid">
+                    {[
+                      ['departure_window', 'Créneau de départ'],
+                      ['arrival_window', 'Créneau d’arrivée'],
+                      ['connection_time', 'Temps de connexion'],
+                      ['disconnection_time', 'Temps de déconnexion'],
+                      ['optional_costs', 'Coûts optionnels'],
+                      ['box23_payment', 'Modalités de paiement'],
+                      ['additional_charges', 'Frais additionnels'],
+                      ['special_conditions', 'Conditions particulières'],
+                      ['charterer_signatory', 'Signataire affréteur'],
+                      ['owner_signatory', 'Signataire armateur'],
+                    ].map(([key, label]) => (
+                      <Field key={key} label={label} wide={key === 'special_conditions'}>
+                        {key === 'special_conditions' ? (
+                          <textarea onChange={(event) => update('supplytimeData', { ...form.supplytimeData, [key]: event.target.value })} value={form.supplytimeData[key] || ''} />
+                        ) : (
+                          <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, [key]: event.target.value })} value={form.supplytimeData[key] || ''} />
+                        )}
+                      </Field>
+                    ))}
+                  </div>
                 </section>
               ) : null}
               <Field label="Frais de mobilisation"><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
@@ -968,7 +1015,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
-            <legend><span>4</span> Mission et facturation</legend>
+            <legend><span>4</span> Facturation</legend>
             <div className="project-editor-grid">
               <Field label="Navire principal *">
                 <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
@@ -989,7 +1036,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
-            <legend><span>5</span> BIMCO · SUPPLYTIME</legend>
+            <legend><span>2</span> BIMCO</legend>
             <div className="project-editor-grid">
               <Field label="Limite d’affectation navire"><input onChange={(event) => update('vesselAssignmentLimit', event.target.value)} value={form.vesselAssignmentLimit} /></Field>
               <Field label="Nombre de prolongations"><input min="1" onChange={(event) => update('extensionCount', optionalNumber(event.target.value))} step="1" type="number" value={form.extensionCount ?? ''} /></Field>
@@ -1000,10 +1047,10 @@ export function ProjectEditor({
               <Field label="Période maximale d’audit"><input onChange={(event) => update('maxAuditPeriod', event.target.value)} value={form.maxAuditPeriod} /></Field>
             </div>
             <div className="project-supplytime-editor">
-              {SUPPLYTIME_GROUPS.map((group) => (
+              {BIMCO_P144_GROUPS.map((group) => (
                 <section key={group.id}>
                   <h3>{group.label}</h3>
-                  {group.fields.filter((field) => field.key !== 'box19_special_fuel').map((field) => (
+                  {group.fields.map((field) => (
                     <Field key={field.key} label={field.label} wide>
                       <textarea
                         onChange={(event) => update('supplytimeData', { ...form.supplytimeData, [field.key]: event.target.value })}
@@ -1017,7 +1064,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>6</span> Documents</legend>
+            <legend><span>5</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
                 <div>
@@ -1146,12 +1193,20 @@ export function ProjectEditor({
           </fieldset>
 
             </main>
+            <ProjectContractPreview
+              client={clients.find((item) => item.id === form.clientId)}
+              form={form}
+              projectCode={nextProjectCode}
+              towedAsset={towedAsset}
+              vessel={vessels.find((item) => item.id === form.primaryVesselId)}
+            />
           </div>
 
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer le projet'}</button>
+            <button disabled={isSaving} onClick={() => update('status', 'En préparation')} type="submit">Enregistrer le brouillon</button>
+            <button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : project ? 'Enregistrer le projet' : 'Créer le projet'}</button>
           </footer>
         </form>
       </section>
@@ -1490,16 +1545,14 @@ export function ProjectPlanningEditor({
               {operationDocuments.map((document) => (
                 <li key={document.id}>
                   <FileText aria-hidden="true" size={16} />
-                  <a href={document.sharePointWebUrl} rel="noreferrer" target="_blank">
-                    {document.fileName}<ExternalLink aria-hidden="true" size={13} />
-                  </a>
+                  <ProjectStoredDocumentLink client={client} document={document} />
                 </li>
               ))}
             </ul>
           ) : null}
           <p className="project-editor-note">
             {canViewCharterHire ? 'Le barème contractuel suit automatiquement la date de début, sauf lorsqu’un tarif personnalisé est activé. ' : ''}
-            Les documents sont classés dans SharePoint · Documents Projets.
+            Les documents sont classés dans l’espace privé SeaPilot du projet.
           </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
       </div>
