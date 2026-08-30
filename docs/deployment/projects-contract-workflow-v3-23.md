@@ -21,7 +21,9 @@ consultables comme historique en lecture seule.
 
 La migration `20260829203000_project_generated_documents_private_storage.sql` ajoute la RPC sécurisée
 `projects_register_generated_storage_document` et étend la politique de lecture du bucket aux documents générés.
-Elle doit être appliquée avant la promotion de l'interface en production.
+La migration corrective `20260830074500_fix_project_generated_document_occurrence_validation.sql` valide les pièces
+d'opération par la relation `planning_projects.catalog_project_id`. Les deux doivent être appliquées avant la
+promotion de l'interface en production.
 
 ## Contrôles de livraison
 
