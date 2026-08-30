@@ -512,6 +512,7 @@ function mapPersonPayload(item: SharePointListItem, source: SharePointMigrationS
     register_label: text(item, ['Registre']),
     sex: text(item, ['Sexe']),
     sailor_number: text(item, ['NumerodeMarin', 'NumeroMarin', 'Numero de Marin', 'Num_x00e9_rodeMarin']),
+    employee_number: text(item, ['Matricule', 'EmployeeNumber', 'Employee_x0020_Number']),
     m365_account: text(item, ['CompteM365', 'Compte_x0020_M365', 'M365Account']),
     phone: text(item, ['N_x00b0_T_x00e9_l_x00e9_phone', 'N° Téléphone', 'Telephone', 'Phone']),
     postal_address: text(item, ['AdressePostale', 'Adresse_x0020_Postale', 'Adresse Postale', 'PostalAddress']),

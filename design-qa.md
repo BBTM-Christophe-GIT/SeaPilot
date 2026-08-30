@@ -45,6 +45,37 @@ final result: passed
 
 ---
 
+# Planning — lisibilité des bordées et fonctions du personnel (2026-08-28)
+
+## Cible
+
+- Référence validée : `C:/Users/chris/.codex/generated_images/01a04724-460b-79b0-afc3-5a1c9b499384/exec-9c8eb63a-ef8c-4d25-92b7-8b0b15410b3d.png`
+- Implémentation locale : `http://127.0.0.1:5173/modules/planning?preview=1`
+- Capture d’implémentation : `C:/Users/chris/AppData/Local/Temp/seapilot-planning-qa-centered.png`
+- Comparaison côte à côte : `C:/Users/chris/AppData/Local/Temp/seapilot-planning-design-qa-comparison.png`
+- Viewport vérifié : 1 936 × 1 048 px, vue Flotte en plein écran, mois d’août 2026.
+
+## Vérifications réalisées
+
+- Chaque ligne de personnel affiche le Prénom NOM puis la fonction métier sur une deuxième ligne.
+- La bordée utilise le fond vert d’eau retenu, une ligne verticale et un marqueur circulaire par marin pour rendre la hiérarchie immédiatement lisible.
+- Les lignes alternent entre blanc et bleu très pâle sans modifier la couleur des affectations dans le calendrier.
+- Les rôles abrégés `MECA`, `PONT` et `CDT` ne sont pas ajoutés à droite des lignes.
+- La densité reste compatible avec le planning existant : cinq marins sont lisibles dans une bordée sans créer de colonne supplémentaire.
+- Le repli de « Bordée 1 » retire ses cinq lignes, puis le dépli les restaure avec leurs fonctions ; 11 lignes passent à 6 puis reviennent à 11 dans les données de démonstration.
+- Le DOM contient les fonctions attendues, notamment « Capitaine » et « Chef Mécanicien ».
+- Aucun avertissement ni erreur applicative n’est présent dans la console du navigateur.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 : les noms et fonctions diffèrent entre la référence et les données de démonstration, ce qui est attendu ; la structure et la hiérarchie visuelle correspondent.
+
+final result: passed
+
+---
+
 # Design QA - Daily Progress Report v3.7.8
 
 ## Comparison targets

@@ -26,6 +26,14 @@ export const DEFAULT_PROJECT_DOCUMENT_CATEGORIES: readonly ProjectDocumentCatego
   { active: true, displayOrder: 23, key: 'hse_kpi', label: 'KPI', parentKey: 'hse' },
   { active: true, displayOrder: 24, key: 'hse_audits', label: 'Audits', parentKey: 'hse' },
   { active: true, displayOrder: 30, key: 'billing', label: 'Facturation', parentKey: null },
+  { active: true, displayOrder: 40, key: 'toilette_de_mer', label: 'Toilette de Mer', parentKey: null },
+  {
+    active: true,
+    displayOrder: 41,
+    key: 'toilette_de_mer_attestation_expert_bv',
+    label: 'Attestation Expert/BV',
+    parentKey: 'toilette_de_mer',
+  },
 ] as const;
 
 export function cloneDefaultProjectDocumentCategories(): ProjectDocumentCategory[] {

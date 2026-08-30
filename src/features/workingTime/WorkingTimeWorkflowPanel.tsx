@@ -667,10 +667,12 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment(interval.comment || '');
   }
 
-  function handleEntryAction(intent: 'save-correction' | 'submit-day' | 'validate-day') {
+  function handleEntryAction(intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
     if (!selectedRegister) return;
     const successMessage = intent === 'save-correction'
       ? 'La correction a été enregistrée.'
+      : intent === 'save-draft'
+        ? 'Le brouillon a été enregistré sans validation.'
       : intent === 'submit-day'
         ? isExactHrCaptain
           ? 'La journée est signée : elle est validée si elle est conforme, sinon sa justification reste à compléter.'
@@ -849,6 +851,7 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
+                    showSaveDraft={canEdit && !selectedDayApproval}
                     showSubmitToCaptain={canEdit
                       && !selectedDayApproval
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}

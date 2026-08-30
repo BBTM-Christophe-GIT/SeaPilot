@@ -9,8 +9,11 @@ import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
 import { DEFAULT_PROJECT_FUEL_TERMS } from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
-import supplytimePage01Url from './assets/supplytime-page-01.png';
-import supplytimePage02Url from './assets/supplytime-page-02.png';
+import { BIMCO_P144_FIELDS } from './projectContractModels';
+import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
+import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
+import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
+import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
 
 export interface GeneratedProjectDocument {
   blob: Blob;
@@ -31,7 +34,7 @@ export interface ProjectOfferRow {
 }
 
 interface SupplytimePdfField {
-  page: 1 | 2;
+  page: 1 | 2 | 3 | 4;
   key: string;
   left: number;
   top: number;
@@ -40,42 +43,42 @@ interface SupplytimePdfField {
 }
 
 const SUPPLYTIME_PDF_FIELDS: SupplytimePdfField[] = [
-  { page: 1, key: 'box01_owners', left: 13.0034, top: 18.8724, width: 36.0738, height: 2.3739 },
-  { page: 1, key: 'box02_charterers', left: 51.594, top: 18.8724, width: 36.0738, height: 2.3739 },
-  { page: 1, key: 'box03_vessel', left: 13.0034, top: 23.3234, width: 36.0738, height: 3.5015 },
-  { page: 1, key: 'box04_delivery_date', left: 51.594, top: 23.3234, width: 17.198, height: 3.5015 },
-  { page: 1, key: 'box05_cancelling_date', left: 70.4698, top: 23.3234, width: 17.198, height: 3.5015 },
-  { page: 1, key: 'box06_port_delivery', left: 13.0034, top: 28.7834, width: 36.0738, height: 2.9674 },
-  { page: 1, key: 'box07_delivery_range', left: 51.594, top: 28.7834, width: 36.0738, height: 2.9674 },
-  { page: 1, key: 'box08_notice_delivery', left: 51.594, top: 34.4214, width: 36.0738, height: 6.0534 },
-  { page: 1, key: 'box09_period', left: 13.0034, top: 34.3027, width: 36.0738, height: 6.1721 },
-  { page: 1, key: 'box10_extension', left: 51.594, top: 42.73, width: 36.0738, height: 4.0356 },
-  { page: 1, key: 'box11_continuation', left: 13.0034, top: 42.8487, width: 36.0738, height: 3.9169 },
-  { page: 1, key: 'box12_mobilisation', left: 51.594, top: 49.5549, width: 36.0738, height: 5.1632 },
-  { page: 1, key: 'box13_early_termination', left: 13.0034, top: 49.5549, width: 36.0738, height: 5.1632 },
-  { page: 1, key: 'box14_bunker_delivery', left: 51.594, top: 57.3294, width: 17.198, height: 6.6469 },
-  { page: 1, key: 'box15_declaration', left: 70.4698, top: 57.3294, width: 17.198, height: 6.6469 },
-  { page: 1, key: 'box16_area_operation', left: 13.0034, top: 57.27, width: 36.0738, height: 6.7062 },
-  { page: 1, key: 'box17_employment', left: 13.0034, top: 66.1721, width: 36.0738, height: 2.1958 },
-  { page: 1, key: 'box18_delivery_hour', left: 51.594, top: 66.1721, width: 36.0738, height: 2.1958 },
-  { page: 1, key: 'box19_special_fuel', left: 13.0034, top: 72.1068, width: 74.6644, height: 12.1662 },
-  { page: 2, key: 'box20_charter_hire', left: 13.4228, top: 10.4451, width: 36.0738, height: 6.5282 },
-  { page: 2, key: 'box21_extension_hire', left: 51.594, top: 10.4451, width: 36.0738, height: 6.5282 },
-  { page: 2, key: 'box22_invoice_remittance', left: 13.4228, top: 20.178, width: 36.0738, height: 11.1573 },
-  { page: 2, key: 'box23_payment', left: 51.594, top: 20.178, width: 36.0738, height: 11.1573 },
-  { page: 2, key: 'box24_account_group', left: 13.4228, top: 33.8279, width: 24.3289, height: 2.4926 },
-  { page: 2, key: 'box25_internal_price', left: 39.4295, top: 33.8279, width: 22.651, height: 2.4926 },
-  { page: 2, key: 'box26_max_price', left: 63.7584, top: 33.8279, width: 23.9094, height: 2.4926 },
-  { page: 2, key: 'box27_war_risk', left: 13.4228, top: 38.2789, width: 24.3289, height: 2.9674 },
-  { page: 2, key: 'box28_terror', left: 39.4295, top: 38.2789, width: 22.651, height: 2.9674 },
-  { page: 2, key: 'box29_notice_money', left: 63.7584, top: 38.2789, width: 23.9094, height: 2.9674 },
-  { page: 2, key: 'box30_cancellation_clause', left: 13.4228, top: 43.2047, width: 74.245, height: 2.1958 },
-  { page: 2, key: 'box31_taxes', left: 13.4228, top: 47.4777, width: 74.245, height: 2.0772 },
-  { page: 2, key: 'box32_other_law', left: 13.4228, top: 52.2255, width: 74.245, height: 10.3264 },
-  { page: 2, key: 'box33_dispute_resolution', left: 13.4228, top: 64.9852, width: 74.245, height: 1.7211 },
-  { page: 2, key: 'box34_additional_clauses', left: 13.4228, top: 69.1988, width: 74.245, height: 2.3739 },
-  { page: 2, key: 'signature_owners', left: 13.4228, top: 74.3027, width: 36.4933, height: 1.6617 },
-  { page: 2, key: 'signature_charterers', left: 51.594, top: 74.3027, width: 36.0738, height: 1.6617 },
+  { page: 1, key: 'p144_box01_place_date', left: 10.2, top: 17.3, width: 80, height: 5.3 },
+  { page: 1, key: 'p144_box02_owners', left: 10.2, top: 25.1, width: 42.5, height: 9.5 },
+  { page: 1, key: 'p144_box03_charterers', left: 58.1, top: 25.1, width: 34.1, height: 9.5 },
+  { page: 1, key: 'p144_box04_vessel_imo', left: 10.2, top: 38.2, width: 42.5, height: 5.2 },
+  { page: 1, key: 'p144_box05_delivery_date', left: 58.1, top: 38.2, width: 16.2, height: 5.2 },
+  { page: 1, key: 'p144_box06_cancelling_date', left: 80.1, top: 38.8, width: 12.1, height: 4.6 },
+  { page: 1, key: 'p144_box07_delivery_place', left: 10.2, top: 45.4, width: 42.5, height: 8.5 },
+  { page: 1, key: 'p144_box08_redelivery', left: 58.1, top: 48.8, width: 34.1, height: 7.2 },
+  { page: 1, key: 'p144_box09_hire_period', left: 10.2, top: 59.4, width: 42.5, height: 8.8 },
+  { page: 1, key: 'p144_box10_extensions', left: 58.1, top: 61.4, width: 34.1, height: 7.4 },
+  { page: 1, key: 'p144_box11_automatic_extension', left: 10.2, top: 72.9, width: 42.5, height: 8.2 },
+  { page: 1, key: 'p144_box12_mobilisation', left: 58.1, top: 72.9, width: 34.1, height: 8.2 },
+  { page: 2, key: 'p144_box13_early_termination', left: 10.2, top: 6.6, width: 42.5, height: 11.5 },
+  { page: 2, key: 'p144_box14_termination_notice', left: 58.1, top: 6.6, width: 16.2, height: 11.5 },
+  { page: 2, key: 'p144_box15_demobilisation', left: 80.1, top: 6.6, width: 12.1, height: 11.5 },
+  { page: 2, key: 'p144_box16_operation_area', left: 10.2, top: 22.5, width: 42.5, height: 5.2 },
+  { page: 2, key: 'p144_box17_employment', left: 58.1, top: 23.4, width: 34.1, height: 5.2 },
+  { page: 2, key: 'p144_box18_specialist_operations', left: 10.2, top: 31.3, width: 42.5, height: 10.5 },
+  { page: 2, key: 'p144_box19_fuel', left: 58.1, top: 31.3, width: 34.1, height: 12.5 },
+  { page: 2, key: 'p144_box20_charter_hire', left: 10.2, top: 49.1, width: 42.5, height: 24.7 },
+  { page: 2, key: 'p144_box21_extension_hire', left: 58.1, top: 49.1, width: 34.1, height: 20.2 },
+  { page: 3, key: 'p144_box22_invoicing', left: 10.2, top: 6.6, width: 42.5, height: 14.8 },
+  { page: 3, key: 'p144_box23_payments', left: 58.1, top: 6.6, width: 34.1, height: 14.8 },
+  { page: 3, key: 'p144_box24_payment_deadline', left: 10.2, top: 25.1, width: 42.5, height: 7.2 },
+  { page: 3, key: 'p144_box25_interest', left: 58.1, top: 25.1, width: 16.2, height: 7.2 },
+  { page: 3, key: 'p144_box26_audit_period', left: 80.1, top: 25.1, width: 12.1, height: 7.2 },
+  { page: 3, key: 'p144_box27_meals', left: 10.2, top: 37.1, width: 18, height: 5 },
+  { page: 3, key: 'p144_box28_accommodation', left: 32.1, top: 37.1, width: 20.5, height: 5 },
+  { page: 3, key: 'p144_box29_sublet', left: 58.1, top: 37.1, width: 34.1, height: 5 },
+  { page: 3, key: 'p144_box30_war_cancellation', left: 10.2, top: 44.2, width: 82, height: 4 },
+  { page: 3, key: 'p144_box31_taxes', left: 10.2, top: 49.6, width: 82, height: 4 },
+  { page: 3, key: 'p144_box32_off_hire', left: 10.2, top: 55.4, width: 82, height: 8.5 },
+  { page: 3, key: 'p144_box33_dispute_resolution', left: 10.2, top: 67.5, width: 82, height: 6.6 },
+  { page: 3, key: 'p144_box34_additional_clauses', left: 10.2, top: 77.2, width: 82, height: 6.5 },
+  { page: 4, key: 'p144_signature_owners', left: 10.2, top: 5.2, width: 42.5, height: 7 },
+  { page: 4, key: 'p144_signature_charterers', left: 58.1, top: 5.2, width: 34.1, height: 7 },
 ];
 
 function present(value: string | number | null | undefined): string {
@@ -209,6 +212,51 @@ export function buildProjectSupplytimePdfFields(
   );
 }
 
+export function buildProjectBimcoP144PdfFields({
+  client,
+  contract,
+  project,
+}: ProjectDocumentGenerationInput): Record<string, string> {
+  const saved = contract?.supplytimeData || {};
+  const clientAddress = [
+    client?.name || project.clientName,
+    client?.address,
+    [client?.city, client?.country].filter(Boolean).join(' '),
+  ].filter(Boolean).join('\n');
+  const hirePeriod = [formatDate(project.charterStartsAt || project.deliveryAt), formatDate(project.charterEndsAt || project.redeliveryAt)]
+    .filter(Boolean)
+    .join(' – ');
+  const specialistOperations = [
+    project.isRovSupport ? 'ROV operations: Yes' : '',
+    project.isDivingSupport ? 'Diving platform: Yes' : '',
+  ].filter(Boolean).join('\n');
+  const canonical: Record<string, string> = {
+    p144_box01_place_date: saved.p144_box01_place_date || formatDate(project.startsOn || project.deliveryAt),
+    p144_box02_owners: saved.p144_box02_owners || contract?.ownerIdentity || '',
+    p144_box03_charterers: saved.p144_box03_charterers || clientAddress,
+    p144_box04_vessel_imo: saved.p144_box04_vessel_imo || project.primaryVesselName,
+    p144_box05_delivery_date: saved.p144_box05_delivery_date || formatDate(project.deliveryAt),
+    p144_box06_cancelling_date: saved.p144_box06_cancelling_date || formatDate(project.charterStartsAt),
+    p144_box07_delivery_place: saved.p144_box07_delivery_place || project.deliveryPort,
+    p144_box08_redelivery: saved.p144_box08_redelivery || project.redeliveryPort,
+    p144_box09_hire_period: saved.p144_box09_hire_period || hirePeriod,
+    p144_box10_extensions: saved.p144_box10_extensions || extensionLabel(contract),
+    p144_box11_automatic_extension: saved.p144_box11_automatic_extension || [contract?.autoExtensionPeriod, contract?.maxExtensionDays ? `${contract.maxExtensionDays} day(s)` : ''].filter(Boolean).join('\n'),
+    p144_box12_mobilisation: saved.p144_box12_mobilisation || formatMoney(contract?.mobilisationFee, contract?.feeCurrency || ''),
+    p144_box15_demobilisation: saved.p144_box15_demobilisation || formatMoney(contract?.demobilisationFee, contract?.feeCurrency || ''),
+    p144_box16_operation_area: saved.p144_box16_operation_area || project.operationArea,
+    p144_box17_employment: saved.p144_box17_employment || project.description,
+    p144_box18_specialist_operations: saved.p144_box18_specialist_operations || specialistOperations,
+    p144_box19_fuel: saved.p144_box19_fuel || saved.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS,
+    p144_box20_charter_hire: saved.p144_box20_charter_hire || contractHireScheduleLabel(contract),
+    p144_box21_extension_hire: saved.p144_box21_extension_hire || formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || ''),
+    p144_box22_invoicing: saved.p144_box22_invoicing || saved.box22_invoice_remittance || '',
+    p144_box23_payments: saved.p144_box23_payments || saved.box23_payment || '',
+    p144_box26_audit_period: saved.p144_box26_audit_period || contract?.maxAuditPeriod || '',
+  };
+  return Object.fromEntries(BIMCO_P144_FIELDS.map((field) => [field.key, canonical[field.key] || saved[field.key] || '']));
+}
+
 export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKind, project: ProjectRecord): string {
   const reference = (project.projectCode || project.title || 'Projet')
     .normalize('NFD')
@@ -218,7 +266,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
     .trim();
   const suffixes: Record<ProjectGeneratedDocumentKind, string> = {
     offer: 'Offre - R1.pdf',
-    bimco_supplytime: 'BIMCO SUPPLYTIME 2017 - R1.pdf',
+    bimco_supplytime: 'BIMCO - R1.pdf',
     towage_contract: 'Contrat de remorquage - R1.docx',
     bareboat_charter: 'Contrat affretement coque nue - R1.docx',
     intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
@@ -228,7 +276,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
 
 async function loadAssetBytes(url: string): Promise<Uint8Array> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Le mod\u00e8le SPFx n'a pas pu \u00eatre charg\u00e9 (${response.status}).`);
+  if (!response.ok) throw new Error(`Le modèle SeaPilot n'a pas pu être chargé (${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -272,13 +320,10 @@ export async function generateProjectDocument(
     pdf.setTextColor(24, 33, 50);
 
     let y = 38;
+    const rowHeight = Math.min(11.2, Math.max(7.2, 240 / Math.max(1, rows.length)));
     rows.forEach((row) => {
-      const valueLines = pdf.splitTextToSize(row.value, 118) as string[];
-      const rowHeight = Math.max(10, valueLines.length * 4 + 4);
-      if (y + rowHeight > 280) {
-        pdf.addPage();
-        y = 18;
-      }
+      const valueLines = (pdf.splitTextToSize(row.value, 118) as string[])
+        .slice(0, Math.max(1, Math.floor((rowHeight - 3) / 3)));
       pdf.setDrawColor(205, 216, 224);
       pdf.setFillColor(244, 248, 250);
       pdf.rect(14, y, 52, rowHeight, 'FD');
@@ -291,20 +336,19 @@ export async function generateProjectDocument(
       y += rowHeight;
     });
     const generatedOn = `Offre générée le ${formatOfferGenerationDate(new Date())}`;
-    for (let pageNumber = 1; pageNumber <= pdf.getNumberOfPages(); pageNumber += 1) {
-      pdf.setPage(pageNumber);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setFontSize(8);
-      pdf.setTextColor(92, 111, 124);
-      pdf.text(generatedOn, 196, 290, { align: 'right' });
-    }
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(8);
+    pdf.setTextColor(92, 111, 124);
+    pdf.text(generatedOn, 196, 290, { align: 'right' });
   } else {
-    const [page01, page02] = await Promise.all([
-      loadAssetBytes(supplytimePage01Url),
-      loadAssetBytes(supplytimePage02Url),
+    const pages = await Promise.all([
+      loadAssetBytes(bimcoPage01Url),
+      loadAssetBytes(bimcoPage02Url),
+      loadAssetBytes(bimcoPage03Url),
+      loadAssetBytes(bimcoPage04Url),
     ]);
-    const values = buildProjectSupplytimePdfFields(input.project, input.contract);
-    [page01, page02].forEach((pageBytes, pageIndex) => {
+    const values = buildProjectBimcoP144PdfFields(input);
+    pages.forEach((pageBytes, pageIndex) => {
       if (pageIndex > 0) pdf.addPage();
       pdf.addImage(pageBytes, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
       SUPPLYTIME_PDF_FIELDS.filter((field) => field.page === pageIndex + 1).forEach((field) => {
@@ -328,7 +372,7 @@ export async function generateProjectDocument(
   if (kind === 'bimco_supplytime') {
     const [{ PDFDocument }, partTwoBytes] = await Promise.all([
       import('pdf-lib'),
-      loadAssetBytes('/templates/supplytime-2017-part-ii.pdf'),
+      loadAssetBytes('/templates/bimco-p144-part-ii.pdf'),
     ]);
     const partOne = await PDFDocument.load(pdf.output('arraybuffer'));
     const partTwo = await PDFDocument.load(partTwoBytes);

@@ -640,7 +640,7 @@ export function PlanningCrewTimelineRow({
       .filter((day) => lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date))
       .map((day) => day.date)),
     vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || lane.vesselId || null,
-    functionLabel: lane.events[0]?.functionLabel || lane.functionLabel || 'Équipage',
+    functionLabel: lane.functionLabel || lane.events[0]?.functionLabel || 'Équipage',
   }), [days, lane.events, lane.functionLabel, lane.vesselId]);
   const laneAbsences = useMemo(
     () => absences.filter((absence) => absence.personId === lane.personId),
@@ -706,7 +706,10 @@ export function PlanningCrewTimelineRow({
   return (
     <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
-        <span><strong>{lane.label}</strong>{hierarchy ? null : <small>{lane.detail || 'Sans détail'}</small>}</span>
+        <span>
+          <strong>{lane.label}</strong>
+          <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
+        </span>
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
       {days.map((day, index) => {

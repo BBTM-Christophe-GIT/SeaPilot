@@ -37,13 +37,14 @@ Le commentaire reproduit la formule Power BI fournie :
 - traitement spécial uniquement pour `24/24 CREW CHANGE` et
   `CONTRACTUAL MAINTENANCE DAY` ;
 - heure affichée avec le décalage fixe UTC+2 ;
-- ligne d’accostage uniquement lorsque le statut est `NAVIRE AU PORT` ;
+- ligne d’accostage dès qu’une heure d’arrivée normalisée est enregistrée, même si l’ancien statut source du navire est vide ou incohérent ;
 - ordre des lignes : accostage, refueling, appareillage ;
 - pour les autres opérations, seul le refueling éventuel est affiché.
 
 ## Validation
 
 - tests unitaires de sélection des DPR, repli du loyer et formule de commentaire ;
+- régression `DPR-1102` : l’accostage enregistré dans `dpr_port_calls` reste affiché avec l’appareillage ;
 - build de production ;
 - rendu PDF réel puis conversion en image ;
 - comparaison visuelle avec le modèle P144 transmis.

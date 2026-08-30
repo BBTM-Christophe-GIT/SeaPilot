@@ -14,6 +14,8 @@ import {
   HeartPulse,
   IdCard,
   MapPin,
+  MoreHorizontal,
+  Pencil,
   Ruler,
   SlidersHorizontal,
   Trash2,
@@ -114,7 +116,7 @@ const EMPTY_FORM: PersonFormState = {
   registerLabel: '',
   sex: '',
   sailorNumber: '',
-  m365Account: '',
+  employeeNumber: '',
   phone: '',
   postalAddress: '',
   birthDate: '',
@@ -270,7 +272,7 @@ function personMatchesSearch(person: PersonRecord, query: string): boolean {
       person.roleLabel,
       person.registerLabel,
       person.sailorNumber,
-      person.m365Account,
+      person.employeeNumber,
       person.contractType,
       person.emergencyContactName,
       person.deckCertificateLabel,
@@ -396,6 +398,22 @@ function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
     default:
       return <FileText aria-hidden="true" size={18} />;
   }
+}
+
+function getProfileSectionLabel(tabKey: HrDetailsSectionKey): string {
+  const labels: Record<HrDetailsSectionKey, string> = {
+    identity: 'Identité & poste',
+    contract: 'Contrat & dates',
+    contact: 'Coordonnées',
+    emergency: 'Contact urgence',
+    administrative: 'Administratif',
+    health: 'Santé & habilitations',
+    clothing: 'Tenues',
+    signature: 'Signature',
+    documents: 'Documents',
+  };
+
+  return labels[tabKey];
 }
 
 interface MedicalFitnessNote {
@@ -655,7 +673,7 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
     registerLabel: person.registerLabel,
     sex: person.sex,
     sailorNumber: person.sailorNumber,
-    m365Account: person.m365Account,
+    employeeNumber: person.employeeNumber,
     phone: person.phone,
     postalAddress: person.postalAddress,
     birthDate: person.birthDate,
@@ -1978,28 +1996,8 @@ function PersonProfileCard({
 
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
-      <header className="hr-profile-header">
-        <span className="hr-profile-avatar">{getPersonInitials(person)}</span>
-        <div className="hr-profile-identity">
-          <small>Fiche RH</small>
-          <h2>{formatPersonName(person)}</h2>
-          <p>{normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}</p>
-          <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>{person.active ? 'Actif' : 'Inactif'}</span>
-        </div>
-        {canClose ? (
-          <button aria-label="Fermer la fiche RH" className="hr-profile-close" onClick={onClose} type="button">
-            <X aria-hidden="true" size={19} />
-          </button>
-        ) : null}
-      </header>
-
-      <div aria-label="Indicateurs du collaborateur" className="hr-profile-metrics">
-        <ProfileMetric label="Documents" value={documents.length} />
-        <ProfileMetric label="À renouveler" tone="warning" value={renewalCount} />
-        <ProfileMetric label="Urgent" tone="danger" value={urgentCount} />
-        <ProfileMetric label="Manquants" tone="danger" value={missingCount} />
-      </div>
       <PersonDetailsPanel
+        canClose={canClose}
         canDelete={canDelete}
         canEdit={canEdit}
         canManageSignature={canManageSignature}
@@ -2007,6 +2005,8 @@ function PersonProfileCard({
         documents={documents}
         isManager={isManager}
         isSaving={isSaving}
+        missingCount={missingCount}
+        onClose={onClose}
         onDocumentCreate={() => onDocumentCreate(person)}
         onDocumentOpen={onDocumentOpen}
         onDocumentRenew={onDocumentRenew}
@@ -2014,19 +2014,12 @@ function PersonProfileCard({
         onDelete={() => onDelete(person)}
         onSave={onSave}
         person={person}
+        renewalCount={renewalCount}
         selectedDocumentIds={selectedDocumentIds}
+        urgentCount={urgentCount}
         visibleSectionKeys={visibleSectionKeys}
       />
     </aside>
-  );
-}
-
-function ProfileMetric({ label, tone = 'neutral', value }: { label: string; tone?: 'neutral' | 'warning' | 'danger'; value: number }) {
-  return (
-    <span className={`hr-profile-metric hr-profile-metric-${tone}`}>
-      <strong>{value}</strong>
-      <small>{label}</small>
-    </span>
   );
 }
 
@@ -2438,7 +2431,7 @@ function CreatePersonDialog({
               <EditableField field="registerLabel" form={form} label="Registre" onUpdate={onUpdate} options={['RIF', 'ENIM']} />
               <EditableField field="sex" form={form} label="Sexe" onUpdate={onUpdate} options={['Femme', 'Homme', 'Autre']} />
               <EditableField field="sailorNumber" form={form} label="Numéro de marin" onUpdate={onUpdate} />
-              <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={onUpdate} />
+              <EditableField field="employeeNumber" form={form} label="Matricule" onUpdate={onUpdate} />
               <EditableField field="email" form={form} label="Email" onUpdate={onUpdate} type="email" />
             </DetailsGrid>
           </section>
@@ -2619,6 +2612,7 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  canClose,
   canDelete,
   canEdit,
   canManageSignature,
@@ -2626,6 +2620,8 @@ function PersonDetailsPanel({
   documents,
   isManager,
   isSaving,
+  missingCount,
+  onClose,
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
@@ -2633,9 +2629,12 @@ function PersonDetailsPanel({
   onDelete,
   onSave,
   person,
+  renewalCount,
   selectedDocumentIds,
+  urgentCount,
   visibleSectionKeys,
 }: {
+  canClose: boolean;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
@@ -2643,6 +2642,8 @@ function PersonDetailsPanel({
   documents: HrDocumentRecord[];
   isManager: boolean;
   isSaving: boolean;
+  missingCount: number;
+  onClose: () => void;
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
@@ -2654,10 +2655,13 @@ function PersonDetailsPanel({
     medicalUpdates: MedicalDocumentUpdate[],
   ) => Promise<void>;
   person: PersonRecord;
+  renewalCount: number;
   selectedDocumentIds: Set<number>;
+  urgentCount: number;
   visibleSectionKeys: Set<HrDetailsSectionKey>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [form, setForm] = useState<UpdatePersonDetailsInput>(() => buildPersonDetailsForm(person));
   const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
     buildMedicalDetailsForms(documents),
@@ -2674,6 +2678,7 @@ function PersonDetailsPanel({
     setForm(buildPersonDetailsForm(person));
     setActiveSectionKey(availableSections[0]?.key || 'identity');
     setIsEditing(false);
+    setIsActionsOpen(false);
   }, [person]);
 
   useEffect(() => {
@@ -2725,61 +2730,81 @@ function PersonDetailsPanel({
     switch (activeSectionKey) {
       case 'identity':
         return (
-          <section>
-            <h3>Identite et poste</h3>
-            <DetailsGrid isEditing={isEditing}>
-              {isEditing ? (
-                <>
-                  <EditableField field="firstName" form={form} label="Prenom" onUpdate={updateFormValue} />
-                  <EditableField field="lastName" form={form} label="Nom" onUpdate={updateFormValue} />
-                  <EditableField
-                    field="functionLabel"
-                    form={form}
-                    label="Fonction"
-                    onUpdate={updateFormValue}
-                    options={[...HR_PRIMARY_FUNCTIONS]}
-                  />
-                  <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={updateFormValue} />
-                  <EditableField
-                    field="roleLabel"
-                    form={form}
-                    label="Rôle"
-                    onUpdate={updateFormValue}
-                    options={['Navigant', 'Sédentaire', 'Stagiaire']}
-                  />
-                  <EditableField
-                    field="registerLabel"
-                    form={form}
-                    label="Registre"
-                    onUpdate={updateFormValue}
-                    options={['RIF', 'ENIM']}
-                  />
-                  <EditableField
-                    field="sex"
-                    form={form}
-                    label="Sexe"
-                    onUpdate={updateFormValue}
-                    options={['Femme', 'Homme', 'Autre']}
-                  />
-                  <EditableField field="sailorNumber" form={form} label="Numero de marin" onUpdate={updateFormValue} />
-                  <EditableField field="m365Account" form={form} label="Compte M365" onUpdate={updateFormValue} />
-                  <EditableField field="email" form={form} label="Email" onUpdate={updateFormValue} type="email" />
-                </>
-              ) : (
-                <>
-                  <FieldValue label="Prenom" value={person.firstName} />
-                  <FieldValue label="Nom" value={person.lastName} />
-                  <FieldValue label="Fonction" value={normalizeHrFunctionLabel(person.functionLabel)} />
-                  <FieldValue label="Grade" value={person.gradeLabel} />
-                  <FieldValue label="Role" value={person.roleLabel} />
-                  <FieldValue label="Registre" value={person.registerLabel} />
-                  <FieldValue label="Sexe" value={person.sex} />
-                  <FieldValue label="Numero de marin" value={person.sailorNumber} />
-                  <FieldValue label="Compte M365" value={person.m365Account} />
-                  <FieldValue label="Email" value={person.email} />
-                </>
-              )}
-            </DetailsGrid>
+          <section className="hr-profile-identity-section">
+            <div className="hr-profile-field-group is-card">
+              <h4>Identification interne</h4>
+              <DetailsGrid isEditing={isEditing}>
+                {isEditing ? (
+                  <>
+                    <EditableField field="employeeNumber" form={form} label="Matricule" onUpdate={updateFormValue} />
+                    <EditableField field="sailorNumber" form={form} label="Numéro de marin" onUpdate={updateFormValue} />
+                    <EditableField field="firstName" form={form} label="Prénom" onUpdate={updateFormValue} />
+                    <EditableField field="lastName" form={form} label="Nom" onUpdate={updateFormValue} />
+                  </>
+                ) : (
+                  <>
+                    <FieldValue label="Matricule" value={person.employeeNumber} />
+                    <FieldValue label="Numéro de marin" value={person.sailorNumber} />
+                    <FieldValue label="Prénom" value={person.firstName} />
+                    <FieldValue label="Nom" value={person.lastName} />
+                  </>
+                )}
+              </DetailsGrid>
+            </div>
+
+            <div className="hr-profile-field-group">
+              <h4>Poste & classification</h4>
+              <DetailsGrid isEditing={isEditing}>
+                {isEditing ? (
+                  <>
+                    <EditableField
+                      field="functionLabel"
+                      form={form}
+                      label="Fonction"
+                      onUpdate={updateFormValue}
+                      options={[...HR_PRIMARY_FUNCTIONS]}
+                    />
+                    <EditableField field="gradeLabel" form={form} label="Grade" onUpdate={updateFormValue} />
+                    <EditableField
+                      field="roleLabel"
+                      form={form}
+                      label="Rôle"
+                      onUpdate={updateFormValue}
+                      options={['Navigant', 'Sédentaire', 'Stagiaire']}
+                    />
+                    <EditableField
+                      field="registerLabel"
+                      form={form}
+                      label="Registre"
+                      onUpdate={updateFormValue}
+                      options={['RIF', 'ENIM']}
+                    />
+                    <EditableField
+                      field="sex"
+                      form={form}
+                      label="Sexe"
+                      onUpdate={updateFormValue}
+                      options={['Femme', 'Homme', 'Autre']}
+                    />
+                    <EditableField field="email" form={form} label="Email" onUpdate={updateFormValue} type="email" />
+                  </>
+                ) : (
+                  <>
+                    <FieldValue label="Fonction" value={normalizeHrFunctionLabel(person.functionLabel)} />
+                    <FieldValue label="Grade" value={person.gradeLabel} />
+                    <FieldValue label="Rôle" value={person.roleLabel} />
+                    <FieldValue label="Registre" value={person.registerLabel} />
+                    <FieldValue label="Sexe" value={person.sex} />
+                    <FieldValue label="Email" value={person.email} />
+                  </>
+                )}
+              </DetailsGrid>
+            </div>
+
+            <aside className="hr-profile-format-note">
+              <strong>Matricule au format texte</strong>
+              <p>La valeur est affichée et éditée sans conversion numérique afin de conserver tous les zéros initiaux.</p>
+            </aside>
           </section>
         );
       case 'contract':
@@ -3018,35 +3043,25 @@ function PersonDetailsPanel({
 
   return (
     <form className="hr-profile-editor" onSubmit={handleSubmit}>
-      <nav aria-label="Sections Fiche RH" className="hr-profile-tabs hr-profile-section-tabs">
-        {availableSections.map((section) => (
-          <button
-            aria-current={activeSectionKey === section.key ? 'page' : undefined}
-            aria-label={section.label}
-            className={activeSectionKey === section.key ? 'is-active' : ''}
-            key={section.key}
-            onClick={() => setActiveSectionKey(section.key)}
-            type="button"
-          >
-            <ProfileTabIcon tabKey={section.key} />
-            <span>{section.label}</span>
-          </button>
-        ))}
-      </nav>
-      <div className="hr-profile-editor-toolbar">
-        <span>{isEditing ? 'Modification en cours' : canEdit ? 'Informations à jour' : 'Lecture seule'}</span>
-        <div>
-          {canDelete && !isEditing ? (
-            <button className="hr-danger-button" disabled={isSaving} onClick={() => void onDelete()} type="button">
-              <Trash2 aria-hidden="true" size={16} />
-              Supprimer la personne
-            </button>
-          ) : null}
-          {canEdit && !isEditing ? (
-            <button className="hr-secondary-button" onClick={() => setIsEditing(true)} type="button">
-              Modifier la fiche RH
-            </button>
-          ) : null}
+      <header className="hr-profile-header">
+        <span className="hr-profile-avatar">{getPersonInitials(person)}</span>
+        <div className="hr-profile-identity">
+          <div className="hr-profile-name-row">
+            <h2>{formatPersonName(person)}</h2>
+            <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>
+              {person.active ? 'Actif' : 'Inactif'}
+            </span>
+          </div>
+          <p>
+            {normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}
+            {person.roleLabel ? ` · ${person.roleLabel}` : ''}
+          </p>
+          <div className="hr-profile-identity-meta">
+            <span><strong>Matricule</strong> {person.employeeNumber || '-'}</span>
+            <span><strong>N° marin</strong> {person.sailorNumber || '-'}</span>
+          </div>
+        </div>
+        <div className="hr-profile-header-actions">
           {isEditing ? (
             <>
               <button
@@ -3064,10 +3079,94 @@ function PersonDetailsPanel({
                 {isSaving ? 'Enregistrement...' : 'Enregistrer la fiche'}
               </button>
             </>
+          ) : (
+            <>
+              {canEdit ? (
+                <button
+                  aria-label="Modifier la fiche RH"
+                  className="hr-profile-edit-button"
+                  onClick={() => setIsEditing(true)}
+                  type="button"
+                >
+                  <Pencil aria-hidden="true" size={15} />
+                  Modifier
+                </button>
+              ) : null}
+              {canDelete ? (
+                <div className="hr-profile-actions-menu">
+                  <button
+                    aria-expanded={isActionsOpen}
+                    aria-label="Autres actions"
+                    className="hr-profile-icon-button"
+                    onClick={() => setIsActionsOpen((isOpen) => !isOpen)}
+                    type="button"
+                  >
+                    <MoreHorizontal aria-hidden="true" size={19} />
+                  </button>
+                  {isActionsOpen ? (
+                    <div className="hr-profile-actions-popover">
+                      <button
+                        disabled={isSaving}
+                        onClick={() => {
+                          setIsActionsOpen(false);
+                          void onDelete();
+                        }}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                        Supprimer la personne
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+          {canClose ? (
+            <button aria-label="Fermer la fiche RH" className="hr-profile-close" onClick={onClose} type="button">
+              <X aria-hidden="true" size={19} />
+            </button>
           ) : null}
         </div>
+      </header>
+
+      <div aria-label="Indicateurs du collaborateur" className="hr-profile-status-strip">
+        <span className="is-documents"><FileText aria-hidden="true" size={16} /><strong>{documents.length}</strong> documents</span>
+        <span className="is-warning"><i aria-hidden="true" /><strong>{renewalCount}</strong> à renouveler</span>
+        <span className="is-danger"><i aria-hidden="true" /><strong>{urgentCount}</strong> urgent</span>
+        <span className="is-missing">{missingCount} document{missingCount === 1 ? '' : 's'} manquant{missingCount === 1 ? '' : 's'}</span>
       </div>
-      <div className="hr-profile-editor-content">{renderActiveSection()}</div>
+
+      <div className="hr-profile-body">
+        <nav aria-label="Sections Fiche RH" className="hr-profile-section-nav">
+          <p>Dossier collaborateur</p>
+          {availableSections.map((section) => (
+            <button
+              aria-current={activeSectionKey === section.key ? 'page' : undefined}
+              aria-label={section.label}
+              className={activeSectionKey === section.key ? 'is-active' : ''}
+              key={section.key}
+              onClick={() => setActiveSectionKey(section.key)}
+              type="button"
+            >
+              <ProfileTabIcon tabKey={section.key} />
+              <span>{getProfileSectionLabel(section.key)}</span>
+              {section.key === 'health' && urgentCount > 0 ? <small className="is-danger">{urgentCount}</small> : null}
+              {section.key === 'documents' ? <small>{documents.length}</small> : null}
+            </button>
+          ))}
+        </nav>
+        <main className="hr-profile-main">
+          <div className="hr-profile-content-heading">
+            <div>
+              <p>{getProfileSectionLabel(activeSectionKey)}</p>
+              <h3>{activeSectionKey === 'identity' ? 'Informations principales' : getProfileSectionLabel(activeSectionKey)}</h3>
+            </div>
+            <span>{isEditing ? 'Modification en cours' : canEdit ? 'Informations à jour' : 'Lecture seule'}</span>
+          </div>
+          <div className="hr-profile-editor-content">{renderActiveSection()}</div>
+        </main>
+      </div>
     </form>
   );
 }

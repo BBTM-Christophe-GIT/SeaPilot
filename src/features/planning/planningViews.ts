@@ -227,7 +227,10 @@ export function buildPlanningCrewLanes(
       const linkedPerson = linkedPersonForEvent(first);
       const label = grouping === 'people' ? first.person : first.board || 'Sans équipe';
       const detailValues = grouping === 'people'
-        ? [...new Set(laneEvents.flatMap((event) => [event.functionLabel, event.vessel]).filter(Boolean))]
+        ? [
+            linkedPerson?.functionLabel || first.functionLabel,
+            ...new Set(laneEvents.map((event) => event.vessel).filter(Boolean)),
+          ].filter(Boolean)
         : [...new Set(laneEvents.map((event) => event.person).filter(Boolean))];
       return {
         key,
@@ -237,7 +240,7 @@ export function buildPlanningCrewLanes(
         vesselId: first.vesselId,
         vessel: first.vessel,
         watchGroup: first.board,
-        functionLabel: first.functionLabel,
+        functionLabel: linkedPerson?.functionLabel || first.functionLabel,
         events: laneEvents,
       };
     })

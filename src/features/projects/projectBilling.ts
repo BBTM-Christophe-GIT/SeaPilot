@@ -592,8 +592,7 @@ export function billingDprComment(
   const isSpecialOperation = operation === '24/24 CREW CHANGE'
     || operation === '24/24 WEATHER STAND-BY'
     || operation === 'CONTRACTUAL MAINTENANCE DAY';
-  const isPort = dpr.vesselStatus.trim().toUpperCase() === 'NAVIRE AU PORT';
-  const arrival = isPort && dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
+  const arrival = dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
   const departure = dpr.departureAt ? `Appareillage du quai à ${addUtcOffset(dpr.departureAt)}` : '';
   const refueling = dpr.fuelLiters && dpr.fuelLiters > 0
     ? `Refueling : ${formatWholeNumber(dpr.fuelLiters)} L`
@@ -864,6 +863,25 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     }
     return `${candidate.trimEnd()}…`;
   };
+  const fitTextLines = (value: string, maxWidth: number, maxLines = 2): string[] => {
+    const lines = pdf.splitTextToSize(value, maxWidth) as string[];
+    if (lines.length <= maxLines) return lines;
+    return [
+      ...lines.slice(0, maxLines - 1),
+      fitText(lines.slice(maxLines - 1).join(' '), maxWidth),
+    ];
+  };
+  const expenseTable = {
+    left: 1284,
+    right: 2619,
+    headerTop: 389,
+    headerBottom: 456,
+    supplier: { x: 1297, width: 390 },
+    specialty: { x: 1705, width: 280 },
+    invoiceDate: { x: 2100 },
+    invoiceNumber: { x: 2320, width: 185 },
+    amount: { x: 2605 },
+  } as const;
 
   try {
     const response = await fetch('/bbtm-logo.png');
@@ -958,12 +976,22 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
   drawSortArrow(82, 441, 'up');
   if (includeExpenses) {
-    pdf.text('Société', 1296, 423);
-    pdf.text('Spécialités', 1680, 423);
-    pdf.text('Date Facture', 2090, 423);
-    pdf.text('N° Facture', 2290, 423);
-    pdf.text('Montant HT', 2508, 423, { align: 'center' });
-    drawSortArrow(1296, 441, 'up');
+    pdf.setFillColor(246, 247, 249);
+    pdf.rect(
+      expenseTable.left,
+      expenseTable.headerTop,
+      expenseTable.right - expenseTable.left,
+      expenseTable.headerBottom - expenseTable.headerTop,
+      'F',
+    );
+    pdf.text('Société', expenseTable.supplier.x, 431);
+    pdf.text('Spécialités', expenseTable.specialty.x, 431);
+    pdf.text('Date Facture', expenseTable.invoiceDate.x, 431, { align: 'center' });
+    pdf.text('N° Facture', expenseTable.invoiceNumber.x, 431, { align: 'center' });
+    pdf.text('Montant HT', expenseTable.amount.x, 431, { align: 'right' });
+    pdf.setDrawColor(205, 208, 214);
+    pdf.line(expenseTable.left, expenseTable.headerBottom, expenseTable.right, expenseTable.headerBottom);
+    drawSortArrow(expenseTable.supplier.x, 441, 'up');
   }
 
   setFont(28);
@@ -984,13 +1012,40 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   });
 
   let expenseY = 486;
-  expenses.forEach((expense) => {
-    pdf.text(fitText(expense.supplier, 350), 1297, expenseY);
-    pdf.text(fitText(billingExpenseSpecialtyLabel(expense), 380), 1680, expenseY);
-    pdf.text(formatDate(expense.invoiceDate), 2090, expenseY);
-    pdf.text(fitText(expense.invoiceNumber || '—', 170), 2290, expenseY);
-    pdf.text(money(expense.amountHt), 2598, expenseY, { align: 'right' });
-    expenseY += 38.25;
+  expenses.forEach((expense, index) => {
+    const supplierLines = fitTextLines(expense.supplier, expenseTable.supplier.width);
+    const specialtyLines = fitTextLines(
+      billingExpenseSpecialtyLabel(expense),
+      expenseTable.specialty.width,
+    );
+    const lineCount = Math.max(supplierLines.length, specialtyLines.length);
+    const rowHeight = Math.max(42, lineCount * 30 + 8);
+    if (index % 2 === 1) {
+      pdf.setFillColor(249, 250, 251);
+      pdf.rect(
+        expenseTable.left,
+        expenseY - 29,
+        expenseTable.right - expenseTable.left,
+        rowHeight,
+        'F',
+      );
+    }
+    supplierLines.forEach((line, lineIndex) => {
+      pdf.text(line, expenseTable.supplier.x, expenseY + lineIndex * 30);
+    });
+    specialtyLines.forEach((line, lineIndex) => {
+      pdf.text(line, expenseTable.specialty.x, expenseY + lineIndex * 30);
+    });
+    const centeredY = expenseY + (lineCount - 1) * 15;
+    pdf.text(formatDate(expense.invoiceDate), expenseTable.invoiceDate.x, centeredY, { align: 'center' });
+    pdf.text(
+      fitText(expense.invoiceNumber || '—', expenseTable.invoiceNumber.width),
+      expenseTable.invoiceNumber.x,
+      centeredY,
+      { align: 'center' },
+    );
+    pdf.text(money(expense.amountHt), expenseTable.amount.x, centeredY, { align: 'right' });
+    expenseY += rowHeight;
   });
 
   if (includeBbtmService) {

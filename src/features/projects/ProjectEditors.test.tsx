@@ -79,7 +79,7 @@ describe('ProjectEditor contract hire periods', () => {
       <ProjectEditor
         client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
         clients={[]}
-        contractTypes={['Affrètement à temps', 'Offre commerciale']}
+        contractTypes={[]}
         onClose={vi.fn()}
         onSaved={vi.fn()}
         statuses={['Non validé']}
@@ -88,8 +88,7 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
-    fireEvent.change(screen.getByLabelText('Type de contrat'), { target: { value: 'Offre commerciale' } });
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
 
     expect(screen.queryByRole('region', { name: 'Barème des loyers d’affrètement' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Loyer en prolongation')).not.toBeInTheDocument();
@@ -112,12 +111,25 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
+    expect(screen.getAllByRole('option').filter((option) => (
+      ['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO'].includes(option.textContent || '')
+    )).map((option) => option.textContent)).toEqual(['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO']);
+    const contractType = screen.getByLabelText('Type de contrat');
+    await user.selectOptions(contractType, 'BIMCO');
+    expect(screen.getByText('1 / 29')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 29')).toBeInTheDocument();
+    await user.selectOptions(contractType, 'Offre Commerciale');
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByRole('button', { name: /BIMCO/ })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Documents/ }));
     expect(screen.getByRole('region', { name: 'Pièces jointes du projet' })).toBeInTheDocument();
-    expect(screen.getByText('Offre Commerciale')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Offre Commerciale' })).toBeInTheDocument();
     expect(screen.getByText('HSE')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Facturation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Toilette de Mer' })).toBeInTheDocument();
+    expect(screen.getByText('Attestation Expert/BV')).toBeInTheDocument();
 
     const fileInput = screen.getByLabelText('Ajouter des documents · Offre Commerciale · Contrat');
     await user.upload(fileInput, [
@@ -144,7 +156,7 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
     fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
 
@@ -153,7 +165,7 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByLabelText('Restitution *')).toHaveValue('2026-09-11T18:00');
     expect(screen.getByLabelText('Fin d’affrètement')).toHaveValue('2026-09-11T18:00');
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Fuel')).toHaveValue("A la charge de l'affréteur");
   });
 
@@ -175,12 +187,12 @@ describe('ProjectEditor contract hire periods', () => {
     );
 
     await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'renseignez le navire principal, la livraison, la restitution',
     );
-    expect(screen.getByRole('button', { name: /Planning/ })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /Opérations/ })).toHaveAttribute('aria-current', 'step');
     expect(mutationMocks.saveProject).not.toHaveBeenCalled();
     expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
   });
@@ -211,13 +223,13 @@ describe('ProjectEditor contract hire periods', () => {
 
     await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
     await user.type(screen.getByLabelText('Description'), 'Inspection en mer');
-    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
     fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
     await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
     await waitFor(() => {
       expect(mutationMocks.saveProjectPlanningOccurrence).toHaveBeenCalledWith(
@@ -266,7 +278,7 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Devise des frais')).toHaveValue('EUR');
     expect(screen.getByRole('option', { name: '€ — EUR' })).toBeInTheDocument();
     const ownerPreview = screen.getByLabelText('Aperçu de l’identité armateur');
@@ -274,7 +286,7 @@ describe('ProjectEditor contract hire periods', () => {
     expect(ownerPreview).toHaveTextContent('15, impasse du pou');
 
     const contractType = screen.getByLabelText('Type de contrat');
-    await user.type(contractType, 'Contrat de Remorquage - BBTM');
+    await user.selectOptions(contractType, 'Contrat de Remorquage');
     expect(screen.getByRole('region', { name: 'Remorqué' })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Nom du remorqué'), '8');
     expect(screen.getByLabelText('Type d’engin, de navire ou de colis')).toHaveValue('AUTOMOTEUR FLUVIAL');
@@ -295,6 +307,7 @@ describe('ProjectEditor contract hire periods', () => {
         onSaved={onSaved}
         project={{
           ...project,
+          contractType: 'BIMCO',
           id: 60,
           clientId: null,
           projectCode: 'P268',
@@ -351,6 +364,7 @@ describe('ProjectEditor contract hire periods', () => {
         onSaved={onSaved}
         project={{
           ...project,
+          contractType: 'BIMCO',
           clientId: null,
           projectCode: 'P144',
           status: 'Non validé',
@@ -361,7 +375,8 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /BIMCO/ }));
+    await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.click(screen.getByRole('button', { name: 'Ajouter une période' }));
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 

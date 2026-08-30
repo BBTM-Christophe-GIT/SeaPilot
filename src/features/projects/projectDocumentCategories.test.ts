@@ -14,11 +14,14 @@ describe('projectDocumentCategories', () => {
       'Offre Commerciale',
       'HSE',
       'Facturation',
+      'Toilette de Mer',
     ]);
     expect(categories.filter((category) => category.parentKey === 'commercial_offer').map((category) => category.label))
       .toEqual(['Contrat', 'Prestation annexe']);
     expect(categories.filter((category) => category.parentKey === 'hse').map((category) => category.label))
       .toEqual(['Procédure', 'Comptes Rendus', 'KPI', 'Audits']);
+    expect(categories.filter((category) => category.parentKey === 'toilette_de_mer').map((category) => category.label))
+      .toEqual(['Attestation Expert/BV']);
   });
 
   it('rejects blank, duplicated and orphaned editable categories', () => {

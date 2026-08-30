@@ -12,6 +12,7 @@ import {
   DPR_SITE_ID,
   DPR_SITE_URL,
   manifestSha256,
+  selectMissingDprManifest,
   sha256,
   stableJson,
   storageObjectPath,
@@ -21,7 +22,7 @@ import {
   type DprMigrationReport,
 } from './dprMigration.ts';
 
-type MigrationMode = 'inventory' | 'dry-run' | 'apply' | 'resume' | 'reconcile' | 'verify-idempotence' | 'historical-load';
+type MigrationMode = 'inventory' | 'dry-run' | 'apply' | 'resume' | 'reconcile' | 'verify-idempotence' | 'historical-load' | 'insert-missing';
 
 interface ParsedArgs {
   companyCode: string;
@@ -66,6 +67,13 @@ interface TargetPerson {
   id: number;
   name: string;
   sharePointItemId: string | null;
+}
+
+interface DprReportIdentity {
+  dpr_number: number | null;
+  sharepoint_item_id: string | null;
+  sharepoint_list_id: string | null;
+  source_label: string | null;
 }
 
 interface LoadedReport {
@@ -115,7 +123,7 @@ export function parseDprMigrationArgs(args: string[]): ParsedArgs {
     else if (flag === '--company' && value) parsed.companyCode = value;
     else if (flag === '--rules-version' && value) parsed.rulesVersion = value;
     else if (flag === '--source-files' && value) parsed.sourceFilesDirectory = value;
-    else if (flag === '--mode' && value && ['inventory', 'dry-run', 'apply', 'resume', 'reconcile', 'verify-idempotence', 'historical-load'].includes(value)) parsed.mode = value as MigrationMode;
+    else if (flag === '--mode' && value && ['inventory', 'dry-run', 'apply', 'resume', 'reconcile', 'verify-idempotence', 'historical-load', 'insert-missing'].includes(value)) parsed.mode = value as MigrationMode;
     else if (flag === '--expected-reports' && value) parsed.expectedReports = numberArg(value, flag);
     else if (flag === '--expected-pdfs' && value) parsed.expectedPdfs = numberArg(value, flag);
     else if (flag === '--expected-html' && value) parsed.expectedHtml = numberArg(value, flag);
@@ -197,6 +205,23 @@ async function getPeople(client: SupabaseClient, companyId: number): Promise<Tar
     name: `${String(row.first_name || '').trim()} ${String(row.last_name || '').trim()}`.trim(),
     sharePointItemId: row.sharepoint_item_id === null || row.sharepoint_item_id === undefined ? null : String(row.sharepoint_item_id),
   }));
+}
+
+async function getDprReportIdentities(client: SupabaseClient, companyId: number): Promise<DprReportIdentity[]> {
+  const rows: DprReportIdentity[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await client.from('dpr_reports')
+      .select('id,sharepoint_item_id,dpr_number,source_label,sharepoint_list_id')
+      .eq('company_id', companyId)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Cannot inspect existing DPR reports: ${error.message}`);
+    const page = (data || []) as Array<DprReportIdentity & { id: number }>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 function canonicalPerson(person: TargetPerson, people: TargetPerson[]): TargetPerson {
@@ -396,16 +421,30 @@ async function loadReports(
   batchId: number,
   counters: ApplyCounters,
   dependencies: DprMigrationCliDependencies,
+  insertMissingOnly = false,
 ): Promise<LoadedReport[]> {
   const projects = await getReferences(client, 'projects', companyId);
   const vessels = await getReferences(client, 'vessels', companyId);
   const people = await ensureHistoricalPeople(client, companyId, manifest.reports, await getPeople(client, companyId));
-  await consolidateTanguySimonet(client, companyId, people);
+  if (!insertMissingOnly) await consolidateTanguySimonet(client, companyId, people);
   const exerciseTypes = new Map<string, string>();
   manifest.reports.flatMap((report) => report.emergencyExercises).forEach((exercise) => exerciseTypes.set(exercise.key, exercise.label));
+  const existingExerciseTypeKeys = new Set<string>();
+  if (insertMissingOnly && exerciseTypes.size) {
+    const { data, error } = await client.from('emergency_exercise_types').select('key').in('key', [...exerciseTypes.keys()]);
+    if (error) throw new Error(`Cannot inspect emergency exercise types: ${error.message}`);
+    (data || []).forEach((row) => existingExerciseTypeKeys.add(String(row.key)));
+  }
   let historicalOrder = 100;
   for (const [key, label] of exerciseTypes) {
-    const { error } = await client.from('emergency_exercise_types').upsert({ key, label, display_order: historicalOrder, active: !key.startsWith('historical-') }, { onConflict: 'key' });
+    if (insertMissingOnly && existingExerciseTypeKeys.has(key)) {
+      historicalOrder += 10;
+      continue;
+    }
+    const request = client.from('emergency_exercise_types');
+    const { error } = insertMissingOnly
+      ? await request.insert({ key, label, display_order: historicalOrder, active: !key.startsWith('historical-') })
+      : await request.upsert({ key, label, display_order: historicalOrder, active: !key.startsWith('historical-') }, { onConflict: 'key' });
     if (error) throw new Error(`Cannot load emergency exercise type ${label}: ${error.message}`);
     historicalOrder += 10;
   }
@@ -470,7 +509,7 @@ async function loadReports(
         company_id: companyId, dpr_id: dprId, version_no: 1, event_type: 'imported', metadata: { source: 'sharepoint', source_item_id: report.sourceItemId, migration_batch_id: batchId },
       });
       if (auditError) throw new Error(`Cannot audit imported DPR ${report.sourceItemId}: ${auditError.message}`);
-    } else if (sameBusinessReport(existing as Record<string, unknown>, payload)) {
+    } else if (insertMissingOnly || sameBusinessReport(existing as Record<string, unknown>, payload)) {
       dprId = Number(existing.id);
       action = 'unchanged';
       counters.reportsUnchanged += 1;
@@ -481,7 +520,7 @@ async function loadReports(
       action = 'updated';
       counters.reportsUpdated += 1;
     }
-    const alreadyFullyLoaded = action === 'unchanged' && completedReportTargets.get(report.sourceItemId) === dprId;
+    const alreadyFullyLoaded = action === 'unchanged' && (insertMissingOnly || completedReportTargets.get(report.sourceItemId) === dprId);
     if (!alreadyFullyLoaded) {
       if (report.fuelConsumedLiters !== null || report.fuelOnBoardLiters !== null) {
         const { error } = await client.from('dpr_daily_metrics').upsert({
@@ -525,7 +564,7 @@ async function downloadSharePointFile(file: DprMigrationFile, targetPath: string
   if (result.exitCode !== 0) throw new Error(`SharePoint download failed for ${file.fileName}: ${result.stderr || result.stdout}`);
 }
 
-async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest, companyId: number, batchId: number, reports: LoadedReport[], counters: ApplyCounters, dependencies: DprMigrationCliDependencies) {
+async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest, companyId: number, batchId: number, reports: LoadedReport[], counters: ApplyCounters, dependencies: DprMigrationCliDependencies, insertMissingOnly = false) {
   const tempDirectory = await mkdtemp(resolve(tmpdir(), 'seapilot-dpr-'));
   const { data: completedRecords, error: completedRecordsError } = await client.from('migration_records')
     .select('source_item_id,target_id')
@@ -559,6 +598,16 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
         continue;
       }
       const linkedReport = resolveFileReport(file, reports);
+      const { data: existingMetadata, error: existingMetadataError } = await client.from('dpr_files').select('*')
+        .eq('company_id', companyId).eq('sharepoint_site_id', DPR_SITE_ID).eq('sharepoint_drive_id', DPR_DRIVE_ID)
+        .eq('sharepoint_item_id', file.sourceItemId).maybeSingle();
+      if (existingMetadataError) throw new Error(`Cannot inspect file metadata ${file.sourceItemId}: ${existingMetadataError.message}`);
+      if (insertMissingOnly && existingMetadata) {
+        counters.filesReused += 1;
+        counters.filesLinked += 1;
+        completedFiles += 1;
+        continue;
+      }
       const localSourcePath = resolve(activeSourceFilesDirectory, file.fileName);
       const tempPath = resolve(tempDirectory, `${file.sourceItemId}-${basename(file.fileName)}`);
       let bytes: Uint8Array;
@@ -578,10 +627,6 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
         .eq('company_id', companyId).eq('file_kind', file.kind).eq('sha256', checksum).eq('size_bytes', sizeBytes).eq('status', 'ready').limit(1).maybeSingle();
       if (duplicateError) throw new Error(`Cannot inspect attachment deduplication: ${duplicateError.message}`);
       if (duplicate?.object_path) objectPath = String(duplicate.object_path);
-      const { data: existingMetadata, error: existingMetadataError } = await client.from('dpr_files').select('*')
-        .eq('company_id', companyId).eq('sharepoint_site_id', DPR_SITE_ID).eq('sharepoint_drive_id', DPR_DRIVE_ID)
-        .eq('sharepoint_item_id', file.sourceItemId).maybeSingle();
-      if (existingMetadataError) throw new Error(`Cannot inspect file metadata ${file.sourceItemId}: ${existingMetadataError.message}`);
       if (!existingMetadata || existingMetadata.sha256 !== checksum || existingMetadata.status !== 'ready') {
         const { data: existingObject } = await client.storage.from(bucket).download(objectPath);
         if (existingObject) {
@@ -629,15 +674,39 @@ async function loadFiles(client: SupabaseClient, manifest: DprMigrationManifest,
   }
 }
 
-async function reconcile(client: SupabaseClient, companyId: number, manifest: DprMigrationManifest) {
-  const { count: reportCount, error: reportError } = await client.from('dpr_reports').select('*', { count: 'exact', head: true })
-    .eq('company_id', companyId).eq('source_label', 'sharepoint').eq('sharepoint_list_id', DPR_LIST_ID);
-  if (reportError) throw new Error(`Cannot count target DPR reports: ${reportError.message}`);
-  const { data: files, error: fileError } = await client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,size_bytes,sha256,status')
+interface ReconcileOptions {
+  allowTargetExtras?: boolean;
+  matchReportsByDprNumber?: boolean;
+  objectSourceItemIds?: ReadonlySet<string>;
+  requiredFileSourceItemIds?: ReadonlySet<string>;
+}
+
+async function reconcile(client: SupabaseClient, companyId: number, manifest: DprMigrationManifest, options: ReconcileOptions = {}) {
+  const targetReports = await getDprReportIdentities(client, companyId);
+  const { data: files, error: fileError } = await client.from('dpr_files').select('id,dpr_id,file_kind,bucket_name,object_path,size_bytes,sha256,status,sharepoint_item_id')
     .eq('company_id', companyId).eq('sharepoint_site_id', DPR_SITE_ID).eq('sharepoint_drive_id', DPR_DRIVE_ID);
   if (fileError) throw new Error(`Cannot inspect target DPR files: ${fileError.message}`);
+  const sourceReportIds = new Set(manifest.reports.map((report) => report.sourceItemId));
+  const sharePointTargetReports = targetReports.filter((report) => report.source_label === 'sharepoint' && report.sharepoint_list_id === DPR_LIST_ID);
+  const targetReportIds = new Set(sharePointTargetReports.map((report) => String(report.sharepoint_item_id)));
+  const targetDprNumbers = new Set(targetReports.map((report) => report.dpr_number === null ? null : Number(report.dpr_number)).filter((value): value is number => value !== null));
+  const reportIsCovered = (report: DprMigrationReport) => targetReportIds.has(report.sourceItemId)
+    || Boolean(options.matchReportsByDprNumber && report.dprNumber !== null && targetDprNumbers.has(report.dprNumber));
+  const missingReportSourceIds = manifest.reports.filter((report) => !reportIsCovered(report)).map((report) => report.sourceItemId);
+  const reportsMatchedByDprNumber = manifest.reports.filter((report) => !targetReportIds.has(report.sourceItemId)
+    && report.dprNumber !== null && targetDprNumbers.has(report.dprNumber)).length;
+  const preservedTargetReportSourceIds = [...targetReportIds].filter((sourceItemId) => !sourceReportIds.has(sourceItemId));
+  const eligibleFiles = manifest.files.filter((file) => file.kind !== 'excluded' && file.kind !== 'pdf'
+    && (!options.requiredFileSourceItemIds || options.requiredFileSourceItemIds.has(file.sourceItemId)));
+  const sourceFileIds = new Set(eligibleFiles.map((file) => file.sourceItemId));
+  const targetFileIds = new Set((files || []).map((file) => String(file.sharepoint_item_id)));
+  const missingFileSourceIds = [...sourceFileIds].filter((sourceItemId) => !targetFileIds.has(sourceItemId));
+  const preservedTargetFileSourceIds = [...targetFileIds].filter((sourceItemId) => !sourceFileIds.has(sourceItemId));
   const objectErrors: string[] = [];
-  for (const file of files || []) {
+  const filesToVerify = options.objectSourceItemIds
+    ? (files || []).filter((file) => options.objectSourceItemIds?.has(String(file.sharepoint_item_id)))
+    : (files || []);
+  for (const file of filesToVerify) {
     const { data, error } = await client.storage.from(String(file.bucket_name)).download(String(file.object_path));
     if (error || !data) {
       objectErrors.push(`Missing object for dpr_files.id=${file.id}: ${file.bucket_name}/${file.object_path}`);
@@ -646,16 +715,23 @@ async function reconcile(client: SupabaseClient, companyId: number, manifest: Dp
     const bytes = new Uint8Array(await data.arrayBuffer());
     if (bytes.byteLength !== Number(file.size_bytes) || sha256(bytes) !== file.sha256) objectErrors.push(`Checksum or size mismatch for dpr_files.id=${file.id}.`);
   }
-  const eligibleFiles = manifest.files.filter((file) => file.kind !== 'excluded' && file.kind !== 'pdf').length;
   const orphanMetadata = (files || []).filter((file) => !file.dpr_id).map((file) => file.id);
+  const reportCoverageOk = missingReportSourceIds.length === 0 && (options.allowTargetExtras || preservedTargetReportSourceIds.length === 0);
+  const fileCoverageOk = missingFileSourceIds.length === 0 && (options.allowTargetExtras || preservedTargetFileSourceIds.length === 0);
   return {
     sourceReports: manifest.reports.length,
-    targetReports: reportCount || 0,
-    sourceEligibleFiles: eligibleFiles,
+    targetReports: sharePointTargetReports.length,
+    reportsMatchedByDprNumber,
+    missingReportSourceIds,
+    preservedTargetReportSourceIds,
+    sourceEligibleFiles: eligibleFiles.length,
     targetFileMetadata: files?.length || 0,
+    missingFileSourceIds,
+    preservedTargetFileSourceIds,
+    verifiedObjectSourceIds: filesToVerify.map((file) => String(file.sharepoint_item_id)),
     objectErrors,
     orphanMetadata,
-    ok: reportCount === manifest.reports.length && files?.length === eligibleFiles && objectErrors.length === 0 && orphanMetadata.length === 0,
+    ok: reportCoverageOk && fileCoverageOk && objectErrors.length === 0 && orphanMetadata.length === 0,
   };
 }
 
@@ -664,8 +740,9 @@ async function getOrCreateBatch(client: SupabaseClient, companyId: number, args:
   const migrationKey = `dpr-sharepoint-${hash.slice(0, 16)}`;
   const payload = {
     company_id: companyId, migration_key: migrationKey, source_kind: 'sharepoint', source_site_url: DPR_SITE_URL,
-    mode: args.mode, status: 'running', manifest_sha256: hash, rules_version: args.rulesVersion,
-    started_at: new Date().toISOString(), completed_at: null, counters: manifest.counters,
+    mode: args.mode === 'insert-missing' ? 'historical-load' : args.mode,
+    status: 'running', manifest_sha256: hash, rules_version: args.rulesVersion,
+    started_at: new Date().toISOString(), completed_at: null, counters: { ...manifest.counters, requestedMode: args.mode },
   };
   const { data, error } = await client.from('migration_batches').upsert(payload, { onConflict: 'company_id,migration_key' }).select('id').single();
   if (error) throw new Error(`Cannot create migration batch: ${error.message}`);
@@ -707,18 +784,65 @@ export async function runDprMigrationCli(
       await writeJson(args.reportPath, { mode: args.mode, manifestSha256: manifestSha256(manifest), reconciliation: result }, dependencies);
       return result.ok ? 0 : 3;
     }
+    const insertMissingOnly = args.mode === 'insert-missing';
+    let applyManifest = manifest;
+    if (insertMissingOnly) {
+      const existingReports = await getDprReportIdentities(client, companyId);
+      const existingSourceIds = new Set(existingReports
+        .filter((report) => report.source_label === 'sharepoint' && report.sharepoint_list_id === DPR_LIST_ID)
+        .map((report) => String(report.sharepoint_item_id)));
+      const existingDprNumbers = new Set(existingReports
+        .map((report) => report.dpr_number === null ? null : Number(report.dpr_number))
+        .filter((value): value is number => value !== null));
+      applyManifest = selectMissingDprManifest(manifest, existingSourceIds, existingDprNumbers);
+      dependencies.writeLine(`DPR additive selection: ${applyManifest.reports.length} missing report(s), ${applyManifest.files.length} related file(s).`);
+      if (!applyManifest.reports.length) {
+        const { batchId, hash, migrationKey } = await getOrCreateBatch(client, companyId, args, manifest);
+        const reconciliation = await reconcile(client, companyId, manifest, {
+          allowTargetExtras: true,
+          matchReportsByDprNumber: true,
+          objectSourceItemIds: new Set(),
+          requiredFileSourceItemIds: new Set(),
+        });
+        const { data: batchRecords, error: batchRecordsError } = await client.from('migration_records').select('entity_type,action')
+          .eq('company_id', companyId).eq('batch_id', batchId);
+        if (batchRecordsError) throw new Error(`Cannot inspect migration batch records: ${batchRecordsError.message}`);
+        const counters: ApplyCounters = {
+          reportsInserted: (batchRecords || []).filter((record) => record.entity_type === 'dpr-report' && record.action === 'inserted').length,
+          reportsUpdated: 0,
+          reportsUnchanged: 0,
+          filesUploaded: 0,
+          filesReused: 0,
+          filesExcluded: 0,
+          filesLinked: (batchRecords || []).filter((record) => record.entity_type === 'dpr-file' && record.action === 'inserted').length,
+        };
+        const finalStatus = reconciliation.ok ? 'completed' : 'failed';
+        const { error: batchError } = await client.from('migration_batches').update({
+          status: finalStatus, completed_at: dependencies.now().toISOString(), counters: { ...manifest.counters, ...counters, reconciliation },
+        }).eq('id', batchId).eq('company_id', companyId);
+        if (batchError) throw new Error(`Cannot finalize migration batch: ${batchError.message}`);
+        await writeJson(args.reportPath, { mode: args.mode, migrationKey, batchId, manifestSha256: hash, counters, reconciliation }, dependencies);
+        return reconciliation.ok ? 0 : 3;
+      }
+    }
     const { batchId, hash, migrationKey } = await getOrCreateBatch(client, companyId, args, manifest);
     const counters: ApplyCounters = { reportsInserted: 0, reportsUpdated: 0, reportsUnchanged: 0, filesUploaded: 0, filesReused: 0, filesExcluded: 0, filesLinked: 0 };
-    const loadedReports = await loadReports(client, manifest, companyId, batchId, counters, dependencies);
-    await loadFiles(client, manifest, companyId, batchId, loadedReports, counters, dependencies);
-    const reconciliation = await reconcile(client, companyId, manifest);
+    const loadedReports = await loadReports(client, applyManifest, companyId, batchId, counters, dependencies, insertMissingOnly);
+    await loadFiles(client, applyManifest, companyId, batchId, loadedReports, counters, dependencies, insertMissingOnly);
+    const verifiedObjectSourceIds = new Set(applyManifest.files.filter((file) => file.kind !== 'excluded' && file.kind !== 'pdf').map((file) => file.sourceItemId));
+    const reconciliation = await reconcile(client, companyId, manifest, {
+      allowTargetExtras: insertMissingOnly,
+      matchReportsByDprNumber: insertMissingOnly,
+      objectSourceItemIds: insertMissingOnly ? verifiedObjectSourceIds : undefined,
+      requiredFileSourceItemIds: insertMissingOnly ? verifiedObjectSourceIds : undefined,
+    });
     const finalStatus = reconciliation.ok ? 'completed' : 'failed';
     const { error: batchError } = await client.from('migration_batches').update({
       status: finalStatus, completed_at: dependencies.now().toISOString(), counters: { ...manifest.counters, ...counters, reconciliation },
     }).eq('id', batchId).eq('company_id', companyId);
     if (batchError) throw new Error(`Cannot finalize migration batch: ${batchError.message}`);
     await writeJson(args.reportPath, { mode: args.mode, migrationKey, batchId, manifestSha256: hash, counters, reconciliation }, dependencies);
-    dependencies.writeLine(`DPR migration ${finalStatus}: batch=${batchId}, reports=${manifest.reports.length}, files=${counters.filesLinked}.`);
+    dependencies.writeLine(`DPR migration ${finalStatus}: batch=${batchId}, reports=${applyManifest.reports.length}, files=${counters.filesLinked}.`);
     return reconciliation.ok ? 0 : 3;
   } catch (error) {
     dependencies.writeLine(`DPR migration failed: ${error instanceof Error ? error.message : String(error)}`);

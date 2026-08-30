@@ -42,7 +42,7 @@ const personRow = {
   register_label: 'RIF',
   sex: 'Homme',
   sailor_number: '2009574',
-  m365_account: 'jean.martin@bbtm.fr',
+  employee_number: '00051',
   phone: '+33 1 02 03 04 05',
   postal_address: '1 quai des pilotes, 76000 Rouen',
   birth_date: '1985-04-12',
@@ -107,7 +107,7 @@ describe('mapPersonRows', () => {
         registerLabel: 'RIF',
         sex: 'Homme',
         sailorNumber: '2009574',
-        m365Account: 'jean.martin@bbtm.fr',
+        employeeNumber: '00051',
         phone: '+33 1 02 03 04 05',
         postalAddress: '1 quai des pilotes, 76000 Rouen',
         birthDate: '1985-04-12',
@@ -156,7 +156,7 @@ describe('mapPersonRows', () => {
           register_label: null,
           sex: null,
           sailor_number: null,
-          m365_account: null,
+          employee_number: null,
           phone: null,
           postal_address: null,
           birth_date: null,
@@ -202,7 +202,7 @@ describe('mapPersonRows', () => {
         registerLabel: '',
         sex: '',
         sailorNumber: '',
-        m365Account: '',
+        employeeNumber: '',
         phone: '',
         postalAddress: '',
         birthDate: '',
@@ -909,7 +909,7 @@ describe('fetchPeople', () => {
         registerLabel: 'RIF',
         sex: 'Homme',
         sailorNumber: '2009574',
-        m365Account: 'jean.martin@bbtm.fr',
+        employeeNumber: '00051',
         phone: '+33 1 02 03 04 05',
         postalAddress: '1 quai des pilotes, 76000 Rouen',
         birthDate: '1985-04-12',
@@ -943,7 +943,7 @@ describe('fetchPeople', () => {
     ]);
     expect(from).toHaveBeenCalledWith('people');
     expect(select).toHaveBeenCalledWith(
-      'id, user_id, first_name, last_name, email, function_label, enim_function_code, enim_category, grade_label, role_label, register_label, sex, sailor_number, m365_account, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
+      'id, user_id, first_name, last_name, email, function_label, enim_function_code, enim_category, grade_label, role_label, register_label, sex, sailor_number, employee_number, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
     );
     expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
     expect(orderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });
@@ -1122,7 +1122,7 @@ describe('updatePersonDetails', () => {
         registerLabel: ' RIF ',
         sex: ' Homme ',
         sailorNumber: ' 2009574 ',
-        m365Account: ' jean.martin@bbtm.fr ',
+        employeeNumber: ' 00051 ',
         phone: ' +33 6 11 22 33 44 ',
         postalAddress: ' 3 quai BBTM, 76600 Le Havre ',
         birthDate: '1985-04-12',
@@ -1163,7 +1163,7 @@ describe('updatePersonDetails', () => {
       register_label: 'RIF',
       sex: 'Homme',
       sailor_number: '2009574',
-      m365_account: 'jean.martin@bbtm.fr',
+      employee_number: '00051',
       phone: '+33 6 11 22 33 44',
       postal_address: '3 quai BBTM, 76600 Le Havre',
       birth_date: '1985-04-12',

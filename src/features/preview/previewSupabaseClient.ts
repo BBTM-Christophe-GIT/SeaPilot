@@ -217,6 +217,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       register_label: 'ENIM',
       sex: 'M',
       sailor_number: 'DEMO-001',
+      employee_number: '00051',
       m365_account: null,
       phone: '+33 0 00 00 00 00',
       postal_address: 'Adresse de demonstration',

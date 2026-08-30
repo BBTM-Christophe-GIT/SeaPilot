@@ -3,20 +3,29 @@ export const DEFAULT_PROJECT_OWNER_IDENTITY = 'BBTM\n15, impasse du pou\n50340 L
 export const DEFAULT_PROJECT_FUEL_TERMS = "A la charge de l'affréteur";
 
 export const PROJECT_CONTRACT_TYPES = [
-  'Affrètement à temps',
-  'Offre commerciale',
-  'Oil Spill Response',
-  'Contrat de Remorquage - BBTM',
+  'Offre Commerciale',
+  'Contrat de Remorquage',
+  'BIMCO',
 ] as const;
 
-export const TOWAGE_CONTRACT_TYPE = 'Contrat de Remorquage - BBTM';
-export const COMMERCIAL_OFFER_CONTRACT_TYPE = 'Offre commerciale';
+export type ProjectContractType = (typeof PROJECT_CONTRACT_TYPES)[number];
+
+export const COMMERCIAL_OFFER_CONTRACT_TYPE: ProjectContractType = 'Offre Commerciale';
+export const TOWAGE_CONTRACT_TYPE: ProjectContractType = 'Contrat de Remorquage';
+export const BIMCO_CONTRACT_TYPE: ProjectContractType = 'BIMCO';
 
 export function normalizeProjectContractType(value?: string | null): string {
   const normalizedValue = value?.trim() || '';
-  return normalizedValue.toLocaleLowerCase('fr') === 'autre'
-    ? COMMERCIAL_OFFER_CONTRACT_TYPE
-    : normalizedValue;
+  const lowered = normalizedValue.toLocaleLowerCase('fr-FR');
+
+  if (lowered.includes('remorquage')) return TOWAGE_CONTRACT_TYPE;
+  if (lowered.includes('bimco') || lowered.includes('supplytime') || lowered.includes('affrètement à temps')) {
+    return BIMCO_CONTRACT_TYPE;
+  }
+  if (lowered === 'autre' || lowered.includes('offre') || lowered.includes('oil spill')) {
+    return COMMERCIAL_OFFER_CONTRACT_TYPE;
+  }
+  return normalizedValue || COMMERCIAL_OFFER_CONTRACT_TYPE;
 }
 
 export const PROJECT_CURRENCIES = [

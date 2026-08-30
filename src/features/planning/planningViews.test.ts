@@ -54,6 +54,35 @@ describe('planning P0.2 views', () => {
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
   });
 
+  it('uses the linked HR function in the personnel view when an assignment keeps an older role', () => {
+    const adrienOverview: PlanningOverview = {
+      ...overview,
+      people: [{
+        ...overview.people[0],
+        id: 6,
+        firstName: 'Adrien',
+        lastName: 'BOIS',
+        functionLabel: 'Capitaine',
+      }],
+      periods: [],
+      assignments: [{
+        ...overview.assignments[0],
+        id: 156,
+        crewPersonId: 6,
+        crewName: 'Adrien BOIS',
+        assignmentRole: '2nd Capitaine',
+      }],
+    };
+
+    expect(buildPlanningCrewLanes(adrienOverview, range, emptyFilters, 'people')).toEqual([
+      expect.objectContaining({
+        label: 'Adrien BOIS',
+        functionLabel: 'Capitaine',
+        detail: 'Capitaine · COTENTIN',
+      }),
+    ]);
+  });
+
   it('sorts the personnel lanes by last name, then first name', () => {
     const personnelOverview: PlanningOverview = {
       ...overview,

@@ -480,10 +480,10 @@ describe('Power BI P144 comments formula', () => {
     })).toBe('Refueling : 7 200 L');
   });
 
-  it('does not show an arrival when the vessel is not at port', () => {
+  it('keeps a saved arrival when the legacy vessel status is stale', () => {
     expect(billingDprComment({
       ...base,
       vesselStatus: 'Navire en Opération - On hire',
-    })).toBe('Refueling : 7 200 L\nAppareillage du quai à 14h20');
+    })).toBe('Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20');
   });
 });

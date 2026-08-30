@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity,
-  AlertTriangle,
   Bell,
   CalendarOff,
   CalendarDays,
@@ -19,11 +18,9 @@ import {
   FileText,
   Gauge,
   GripVertical,
-  History,
   Minus,
   Pencil,
   Plus,
-  ReceiptText,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -57,7 +54,7 @@ import {
   formatPlanningPerson,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
-  getUnbilledPlanningProjects,
+  getBillablePlanningProjects,
   evaluatePlanningAssignment,
   hasBlockingPlanningControls,
   isPlanningPersonEmployedDuring,
@@ -66,6 +63,7 @@ import {
   planningReferenceMonthLabel,
   planningReferenceMonthRange,
   planningStatusDisplayLabel,
+  rangesOverlap,
   shiftPlanningAnchor,
   timelineRange,
   type PlanningCrewEvent,
@@ -153,7 +151,7 @@ import {
 import { PlanningPublicationPanel } from './PlanningPublicationPanel';
 import { PlanningP11Panel } from './PlanningP11Panel';
 import { PlanningVisitsPanel } from './PlanningVisitsPanel';
-import type { PlanningAbsenceRecord, PlanningDetectedConflict } from './planningP12';
+import { planningAbsenceTypeLabel, type PlanningAbsenceRecord, type PlanningDetectedConflict } from './planningP12';
 import { fetchPlanningAbsences, movePlanningApprovedAbsence } from './planningP12Queries';
 import {
   fetchPlanningServiceProviders,
@@ -250,6 +248,7 @@ interface PlanningGridConflictForm {
 }
 
 type SideTab = 'conflicts' | 'handovers' | 'history' | 'certificates' | 'unassigned' | 'billing' | 'alerts';
+type BillingQueueTab = 'billable' | 'pending';
 
 interface PlanningRibbonButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   count?: number;
@@ -514,8 +513,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<SideTab>('certificates');
-  const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<SideTab>('billing');
+  const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PlanningCrewEvent | null>(null);
   const [selectedProject, setSelectedProject] = useState<PlanningProjectRecord | null>(null);
   const [selectedProjectDocuments, setSelectedProjectDocuments] = useState<PlanningOperationDocumentRecord[]>([]);
@@ -746,7 +745,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   );
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
-  const pendingAbsenceCount = absences.filter((absence) => absence.status === 'requested').length;
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
@@ -756,9 +754,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => buildPlanningFleetLanes(overview, range, filters, allPlanningCrewEvents),
     [allPlanningCrewEvents, filters, overview, range],
   );
+  const visibleAbsencePersonIds = useMemo(
+    () => new Set(absences
+      .filter((absence) => rangesOverlap(absence.startsOn, absence.endsOn, range.start, range.end))
+      .map((absence) => absence.personId)),
+    [absences, range],
+  );
   const fleetRows = useMemo(
-    () => buildPlanningCrewRows(overview, timelineDays, filters, allPlanningCrewEvents),
-    [allPlanningCrewEvents, filters, overview, timelineDays],
+    () => buildPlanningCrewRows(overview, timelineDays, filters, allPlanningCrewEvents, {
+      employmentRange: referenceMonthRange,
+      visibleAbsencePersonIds,
+    }),
+    [allPlanningCrewEvents, filters, overview, referenceMonthRange, timelineDays, visibleAbsencePersonIds],
   );
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
@@ -799,9 +806,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => getUnassignedPlanningPeople(overview, range, filters, allPlanningCrewEvents),
     [allPlanningCrewEvents, filters, overview, range],
   );
-  const unbilledProjects = useMemo(
-    () => getUnbilledPlanningProjects(overview, Number(anchorDate.slice(0, 4))),
+  const billableProjects = useMemo(
+    () => getBillablePlanningProjects(overview, Number(anchorDate.slice(0, 4))),
     [anchorDate, overview],
+  );
+  const pendingAbsences = useMemo(
+    () => absences.filter((absence) => absence.status === 'requested'),
+    [absences],
   );
   const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
   const assignmentPeople = useMemo(() => {
@@ -922,7 +933,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     history: overview.history.length,
     certificates: certificateAlerts.filter((alert) => alert.tone === 'danger').length || certificateAlerts.length,
     unassigned: unassignedPeople.length,
-    billing: unbilledProjects.length,
+    billing: billableProjects.length,
     alerts: hrAlerts.length,
   };
 
@@ -2387,22 +2398,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             ) : <>
             <PlanningRibbonGroup label="ARMEMENT">
               {permissions.canViewDashboard || permissions.canViewWorkRest ? <PlanningRibbonButton icon={<Gauge aria-hidden="true" size={22} />} label="Cockpit métier P1.3" onClick={() => setIsP13Open(true)} /> : null}
-              <PlanningRibbonButton count={tabCounts.billing} icon={<ReceiptText aria-hidden="true" size={22} />} label="Facturation" onClick={() => openOperationalTab('billing')} />
               <PlanningRibbonButton icon={<CalendarDays aria-hidden="true" size={22} />} label="Rotations et modèles" onClick={() => setIsP11Open(true)} />
               {permissions.canManageHandovers ? <PlanningRibbonButton icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Créer une relève" onClick={() => openHandover()} /> : null}
-              {permissions.canManageVessels ? <PlanningRibbonButton icon={<Ship aria-hidden="true" size={22} />} label="Gérer les navires" onClick={() => setIsVesselsOpen(true)} /> : null}
               {canManageCommercialProjects ? <PlanningRibbonButton icon={<CalendarPlus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={createProjectFromPlanning} /> : null}
             </PlanningRibbonGroup>
 
             <PlanningRibbonGroup className="is-centered" label="Gestion des congés">
               {permissions.canRequestAbsences ? <PlanningRibbonButton icon={<CalendarOff aria-hidden="true" size={22} />} label="Demander des congés" onClick={() => openP12({ tab: 'absences', openAbsenceForm: true })} /> : null}
-              {permissions.canReviewAbsences ? <PlanningRibbonButton count={pendingAbsenceCount} icon={<ShieldAlert aria-hidden="true" size={22} />} label="Demandes en attente" onClick={() => openP12({ tab: 'absences', requestedOnly: true })} /> : null}
             </PlanningRibbonGroup>
 
             <PlanningRibbonGroup label="Aide à la décision">
-              <PlanningRibbonButton count={tabCounts.conflicts} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Conflits" onClick={() => openOperationalTab('conflicts')} />
-              {permissions.canViewHistory ? <PlanningRibbonButton count={tabCounts.history} icon={<History aria-hidden="true" size={22} />} label="Historique" onClick={() => openOperationalTab('history')} /> : null}
-              <PlanningRibbonButton icon={<ShieldAlert aria-hidden="true" size={22} />} label="Absences et conflits" onClick={() => openP12()} />
               <PlanningRibbonButton count={tabCounts.alerts} icon={<Bell aria-hidden="true" size={22} />} label="Alertes" onClick={() => openOperationalTab('alerts')} />
               <PlanningRibbonButton count={tabCounts.certificates} icon={<FilePenLine aria-hidden="true" size={22} />} label="Certificats" onClick={() => openOperationalTab('certificates')} />
               <PlanningRibbonButton count={tabCounts.handovers} icon={<ClipboardCheck aria-hidden="true" size={22} />} label="Relèves" onClick={() => openOperationalTab('handovers')} />
@@ -2645,7 +2650,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
-              <PlanningSideContent certificateAlerts={certificateAlerts} hrAlerts={hrAlerts} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} overview={overview} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} unbilledProjects={unbilledProjects} editable={canEditPlanning} />
+              <PlanningSideContent billableProjects={billableProjects} certificateAlerts={certificateAlerts} editable={canEditPlanning} hrAlerts={hrAlerts} onChangeProjectStatus={changeProjectStatus} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} onOpenPendingAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id, requestedOnly: true })} overview={overview} pendingAbsences={pendingAbsences} pendingMutationId={pendingMutationId} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} />
             </>
           ) : (
             <>
@@ -2771,6 +2776,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             projectId: planningOperationEditor.project.id,
             sharePointFolderPath: '',
             sharePointWebUrl: document.sharePointWebUrl,
+            storageBucket: '',
+            storagePath: '',
           }))}
           project={planningOperationEditor.project}
           vessels={projectEditorVessels}
@@ -2988,18 +2995,25 @@ function PlanningUnassignedPeopleList({ people, editable, pendingId, onPointerDo
   );
 }
 
-function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, unbilledProjects, editable, onOpenHandover, onOpenConflictCenter }: {
+function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, billableProjects, pendingAbsences, editable, pendingMutationId, onChangeProjectStatus, onOpenPendingAbsence, onOpenHandover, onOpenConflictCenter }: {
   sideTab: SideTab;
   certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
   hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
   overview: ReturnType<typeof usePlanningOverview>['overview'];
   planningControls: PlanningControlResult[];
   unassignedPeople: PlanningPerson[];
-  unbilledProjects: PlanningProjectRecord[];
+  billableProjects: PlanningProjectRecord[];
+  pendingAbsences: PlanningAbsenceRecord[];
   editable: boolean;
+  pendingMutationId: string | null;
+  onChangeProjectStatus: (project: PlanningProjectRecord, status: ProjectStatus) => Promise<void>;
+  onOpenPendingAbsence: (absence: PlanningAbsenceRecord) => void;
   onOpenHandover: (handover: PlanningHandoverRecord) => void;
   onOpenConflictCenter: () => void;
 }) {
+  const [billingTab, setBillingTab] = useState<BillingQueueTab>('billable');
+  const [expandedBillingProjectId, setExpandedBillingProjectId] = useState<number | null>(null);
+
   if (sideTab === 'conflicts') {
     return <div className="planning-side-list"><button className="planning-side-conflict-center" onClick={onOpenConflictCenter} type="button"><ShieldAlert aria-hidden="true" size={17} /><span><strong>Centre de conflits P1.2</strong><small>Absences, impacts, remplacements et traitement</small></span></button>{planningControls.length ? planningControls.map((control) => <article className="planning-side-item" key={control.id}><div><strong>{control.title}</strong><span className={`planning-side-badge is-${control.level === 'blocking' ? 'danger' : control.level === 'warning' ? 'warning' : 'muted'}`}>{control.level === 'blocking' ? 'Blocage' : control.level === 'warning' ? 'Avertissement' : 'Information'}</span></div><p>{control.detail}</p>{control.date ? <small>{formatPlanningDate(control.date)}</small> : null}</article>) : <PlanningEmptySide text="Aucun contrôle P0 en attente. Ouvrez le centre pour les contrôles P1.2." />}</div>;
   }
@@ -3007,7 +3021,50 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
     return <div className="planning-side-list">{unassignedPeople.length ? unassignedPeople.map((person) => <article className={`planning-side-item${editable ? ' is-draggable' : ''}`} draggable={editable} key={person.id} onDragStart={(event) => event.dataTransfer.setData('application/x-seapilot-planning', JSON.stringify({ type: 'person', id: person.id }))}><div><strong>{formatPlanningPerson(person)}</strong><span className="planning-side-badge is-muted">{person.functionLabel || person.gradeLabel || 'Marin'}</span></div><p>{[person.gradeLabel, person.contractType].filter(Boolean).join(' · ') || 'Contrat actif'}</p>{editable ? <small>Glisser sur un navire pour affecter</small> : null}</article>) : <PlanningEmptySide text="Tous les marins sont affectés." />}</div>;
   }
   if (sideTab === 'billing') {
-    return <div className="planning-side-list">{unbilledProjects.length ? unbilledProjects.map((project) => <article className="planning-side-item" key={project.id}><div><strong>{project.title}</strong><span className="planning-side-badge is-warning">{project.status || 'À planifier'}</span></div><p>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</p><p>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ')}</p></article>) : <PlanningEmptySide text="Aucun projet non facturé." />}</div>;
+    return (
+      <div className="planning-billing-queue">
+        <div aria-label="Files de facturation" className="planning-billing-tabs" role="tablist">
+          <button aria-label={`À facturer, ${billableProjects.length} projet${billableProjects.length > 1 ? 's' : ''}`} aria-selected={billingTab === 'billable'} className={billingTab === 'billable' ? 'is-active' : ''} onClick={() => { setBillingTab('billable'); setExpandedBillingProjectId(null); }} role="tab" type="button">À facturer <span>{billableProjects.length}</span></button>
+          <button aria-label={`Demandes en attente, ${pendingAbsences.length} demande${pendingAbsences.length > 1 ? 's' : ''}`} aria-selected={billingTab === 'pending'} className={billingTab === 'pending' ? 'is-active' : ''} onClick={() => { setBillingTab('pending'); setExpandedBillingProjectId(null); }} role="tab" type="button">Demandes en attente <span>{pendingAbsences.length}</span></button>
+        </div>
+        <div className="planning-side-list">
+          {billingTab === 'billable' ? (billableProjects.length ? billableProjects.map((project) => {
+            const isExpanded = expandedBillingProjectId === project.id;
+            const isPending = pendingMutationId === `project-${project.id}`;
+            return (
+              <article className={`planning-side-item planning-billing-item${isExpanded ? ' is-expanded' : ''}${isPending ? ' is-pending' : ''}`} key={project.id}>
+                <button aria-expanded={isExpanded} className="planning-billing-item-summary" onClick={() => setExpandedBillingProjectId(isExpanded ? null : project.id)} type="button">
+                  <span className="planning-billing-item-heading"><strong>{project.title}</strong><em className="planning-side-badge is-danger">À facturer</em></span>
+                  <span className="planning-billing-item-meta">
+                    <span><CalendarDays aria-hidden="true" size={15} /><span><small>Période</small><b>{project.startsOn ? `${formatPlanningDate(project.startsOn)} – ${formatPlanningDate(project.endsOn)}` : 'Dates à planifier'}</b></span></span>
+                    <span><Ship aria-hidden="true" size={15} /><span><small>Navire</small><b>{[project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' · ') || 'Navire à définir'}</b></span></span>
+                  </span>
+                  <span className="planning-billing-item-action">{isExpanded ? 'Masquer le statut' : 'Modifier le statut'}<ChevronDown aria-hidden="true" size={14} /></span>
+                </button>
+                {isExpanded ? (
+                  <label className="planning-billing-status-control">
+                    <span>Statut</span>
+                    <select aria-label={`Statut de ${project.title}`} disabled={!editable || isPending} onChange={(event) => void onChangeProjectStatus(project, event.target.value as ProjectStatus)} value={project.status}>
+                      {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+              </article>
+            );
+          }) : <PlanningEmptySide text="Aucun projet à facturer." />) : (pendingAbsences.length ? pendingAbsences.map((absence) => {
+            const person = overview.people.find((item) => item.id === absence.personId);
+            const personName = person ? formatPlanningPerson(person) : `Marin #${absence.personId}`;
+            return (
+              <button className="planning-side-item planning-side-button planning-pending-absence-item" key={absence.id} onClick={() => onOpenPendingAbsence(absence)} type="button">
+                <div><strong>{personName}</strong><span className="planning-side-badge is-danger">À valider</span></div>
+                <p>{planningAbsenceTypeLabel(absence.absenceType)} · {formatPlanningDate(absence.startsOn)} – {formatPlanningDate(absence.endsOn)}</p>
+                <small>{absence.reason || 'Aucun motif renseigné'}</small>
+              </button>
+            );
+          }) : <PlanningEmptySide text="Aucune demande d’absence en attente." />)}
+        </div>
+      </div>
+    );
   }
   if (sideTab === 'handovers') {
     return <div className="planning-side-list">{overview.handovers.length ? overview.handovers.map((handover) => {
