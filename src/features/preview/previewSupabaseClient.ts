@@ -879,9 +879,15 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   ],
   dpr_files: [],
   emergency_exercise_types: [
-    { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 10, active: true },
-    { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 20, active: true },
-    { key: 'sea-rescue', label: 'Sauvetage en mer', display_order: 30, active: true },
+    { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 100, active: true },
+    { key: 'sea-rescue', label: 'Sauvetage en mer', display_order: 110, active: true },
+    { key: 'loss-of-propulsion', label: 'Perte de propulsion – manœuvrabilité', display_order: 140, active: true },
+    { key: 'onboard-evacuation', label: 'Évacuation à bord', display_order: 160, active: true },
+    { key: 'flooding-control', label: "Lutte contre l'envahissement", display_order: 170, active: true },
+    { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 180, active: true },
+    { key: 'loss-of-power', label: "Perte d'énergie", display_order: 190, active: true },
+    { key: 'injured-person', label: "Évacuation et prise en charge d'un blessé", display_order: 220, active: true },
+    { key: 'anti-pollution', label: 'Exercice Antipollution', display_order: 230, active: true },
   ],
   port_call_reason_types: [
     { key: 'crew-change', label: 'Crew Change', display_order: 10, active: true },

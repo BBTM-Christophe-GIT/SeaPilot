@@ -14,6 +14,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ReceiptText,
   RotateCcw,
   Rows3,
   Share2,
@@ -146,6 +147,12 @@ function planningOperationUrl(occurrenceId: number): string {
   return `/modules/planning?${parameters.toString()}`;
 }
 
+function billingElementsUrl(): string {
+  return new URLSearchParams(window.location.search).get('preview') === '1'
+    ? '/modules/billingElements?preview=1'
+    : '/modules/billingElements';
+}
+
 function formatFileSize(value: number | null): string {
   if (value === null) {
     return '';
@@ -217,6 +224,15 @@ function ProjectRibbonButton({
       <span className="project-ribbon-command-icon">{icon}</span>
       <span className="project-ribbon-command-label">{label}</span>
     </button>
+  );
+}
+
+function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: string; to: string }) {
+  return (
+    <a className="project-ribbon-command" href={to}>
+      <span className="project-ribbon-command-icon">{icon}</span>
+      <span className="project-ribbon-command-label">{label}</span>
+    </a>
   );
 }
 
@@ -1160,6 +1176,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             )}
           />
           <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
+        </ProjectRibbonGroup>
+        <ProjectRibbonGroup label="Facturation">
+          <ProjectRibbonLink icon={<ReceiptText aria-hidden="true" size={20} />} label="Éléments de facturation" to={billingElementsUrl()} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Affichage">
           <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
