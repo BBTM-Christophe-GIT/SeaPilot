@@ -25,6 +25,7 @@ import type { RoleKey } from './features/permissions/roles';
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
+const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -79,6 +80,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <ProceduresPage />
                 ) : module.key === 'projects' ? (
                   <ProjectsPage />
+                ) : module.key === 'billingElements' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des éléments de facturation…</div>}><BillingElementsPage /></Suspense>
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
                 ) : module.key === 'serviceProviders' ? (
