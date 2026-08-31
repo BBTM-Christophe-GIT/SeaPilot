@@ -572,6 +572,10 @@ function formatWholeNumber(value: number): string {
   return Math.round(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 }).replace(/[\u00a0\u202f]/g, ' ');
 }
 
+function cubicMetersToLiters(value: number): number {
+  return Math.round(value * 1_000);
+}
+
 function singleLineBillingOperation(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -688,12 +692,10 @@ export async function fetchProjectBillingDprs(
       vesselStatus: firstText(source, ['P144_x002d_FAC_x002d_Entr_x00e9_', 'Statut du Navire']),
       arrivalAt,
       departureAt,
-      fuelLiters: sourceFuelLiters
-        ?? (sourceFuelM3 !== null
-          ? sourceFuelM3 * 1_000
-          : supplyFuelM3 !== null && supplyFuelM3 !== undefined
-            ? supplyFuelM3 * 1_000
-            : null),
+      fuelLiters: supplyFuelM3 !== null && supplyFuelM3 !== undefined
+        ? cubicMetersToLiters(supplyFuelM3)
+        : sourceFuelLiters
+          ?? (sourceFuelM3 !== null ? cubicMetersToLiters(sourceFuelM3) : null),
     }];
   });
 }
