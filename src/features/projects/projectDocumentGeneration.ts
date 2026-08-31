@@ -1,15 +1,23 @@
-import JSZip from 'jszip';
 import type {
   ClientRecord,
   ProjectContractRecord,
   ProjectPlanningOccurrenceRecord,
   ProjectRecord,
+  ProjectTowedAssetRecord,
+  VesselRecord,
 } from './projectQueries';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
-import { DEFAULT_PROJECT_FUEL_TERMS } from './projectContractOptions';
+import {
+  DEFAULT_PROJECT_FUEL_TERMS,
+  DEFAULT_TOWAGE_CONDITIONS,
+  DEFAULT_TOWAGE_OPTIONAL_COSTS,
+  DEFAULT_TOWAGE_PAYMENT_TERMS,
+  DEFAULT_TOWAGE_SPECIAL_CONDITIONS,
+} from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
+import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
@@ -33,6 +41,8 @@ export interface ProjectDocumentGenerationInput {
   emitter?: ProjectDocumentEmitter;
   occurrence?: ProjectPlanningOccurrenceRecord;
   project: ProjectRecord;
+  towedAsset?: ProjectTowedAssetRecord;
+  vessel?: VesselRecord;
 }
 
 export interface ProjectOfferRow {
@@ -274,7 +284,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
   const suffixes: Record<ProjectGeneratedDocumentKind, string> = {
     offer: 'Offre - R1.pdf',
     bimco_supplytime: 'BIMCO - R1.pdf',
-    towage_contract: 'Contrat de remorquage - R1.docx',
+    towage_contract: 'Contrat de remorquage - R1.pdf',
     bareboat_charter: 'Contrat affretement coque nue - R1.docx',
     intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
   };
@@ -559,78 +569,258 @@ function formatDateShort(value: string): string {
   return new Intl.DateTimeFormat('fr-FR').format(date);
 }
 
-function escapeWordXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\r?\n/g, '</w:t><w:br/><w:t xml:space="preserve">');
+function towageNumber(value: number | null | undefined): string {
+  return value == null ? '' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
+}
+
+function towageValueWithUnit(value: string | undefined, unit: string): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  return new RegExp(`\\b${unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(trimmed)
+    ? trimmed
+    : `${trimmed} ${unit}`;
+}
+
+function towageTowedAssetIdentity(asset?: ProjectTowedAssetRecord): string {
+  if (!asset) return '';
+  return [
+    `Nom : ${asset.name}`,
+    `Type d’engin, de navire ou de colis : ${asset.assetType}`,
+    `Longueur hors tout : ${towageNumber(asset.lengthOverallM)}${asset.lengthOverallM === null ? '' : ' m'}`,
+    `Largeur hors tout : ${towageNumber(asset.breadthOverallM)}${asset.breadthOverallM === null ? '' : ' m'}`,
+    `Tirant d’eau max : ${towageNumber(asset.maxDraftM)}${asset.maxDraftM === null ? '' : ' m'}`,
+    `Déplacement léger : ${towageNumber(asset.lightDisplacementT)}${asset.lightDisplacementT === null ? '' : ' T'}`,
+    `Pavillon : ${asset.flag}`,
+    `Société de classification : ${asset.classificationSociety}`,
+    `N° d’enregistrement : ${asset.registrationNumber}`,
+    `Propriétaire (si différent de l’affréteur) : ${asset.ownerName}`,
+    `Assureur corps et machine : ${asset.hullMachineryInsurer}`,
+    `Assureur RC : ${asset.liabilityInsurer}`,
+  ].join('\n');
+}
+
+function towageVesselIdentity(vessel?: VesselRecord): string {
+  if (!vessel) return '';
+  const mainEngine = vessel.mainEngine || '';
+  const power = mainEngine && vessel.mainEnginePowerKw
+    ? `${mainEngine} (total ${towageNumber(vessel.mainEnginePowerKw)} kW)`
+    : mainEngine || (vessel.mainEnginePowerKw ? `${towageNumber(vessel.mainEnginePowerKw)} kW` : '');
+  const normalizedFlag = (vessel.flagState || '').trim().toLocaleLowerCase('fr-FR');
+  const flag = ['fr', 'france', 'français', 'francais'].includes(normalizedFlag)
+    ? 'Pavillon français'
+    : `Pavillon : ${vessel.flagState || ''}`;
+  return [
+    `Nom : ${vessel.name}`,
+    `Longueur hors tout : ${towageValueWithUnit(vessel.lengthOverall, 'm')}`,
+    `Traction au point fixe : ${vessel.bollardPullTonnes == null ? '' : `${towageNumber(vessel.bollardPullTonnes)} t`}`,
+    `Équipement du navire pour le remorquage : ${vessel.deckEquipment || ''}`,
+    `Puissance propulsive : ${power}`,
+    `Société de classification : ${vessel.classificationLabel || ''}`,
+    flag,
+    `N° d’enregistrement : ${vessel.registrationNumber || ''}`,
+    `Assureur RC (P&I) : ${vessel.liabilityInsurer || ''}`,
+  ].join('\n');
 }
 
 export function buildTowageTemplateFields({
   client,
   contract,
-  occurrence,
+  emitter,
   project,
+  towedAsset,
+  vessel,
 }: ProjectDocumentGenerationInput): Record<string, string> {
   const supplytime = contract?.supplytimeData || {};
-  const startsOn = occurrence?.startsOn || project.deliveryAt || project.startsOn;
-  const endsOn = occurrence?.endsOn || project.redeliveryAt || project.endsOn;
-  const vesselName = occurrence?.primaryVesselName || project.primaryVesselName;
+  const today = new Date().toISOString();
   const owner = contract?.ownerIdentity || 'BBTM\n15, impasse du Pou\n50340 Le Rozel';
   return {
-    CONTRACT_DATE_LONG: formatDateLong(startsOn || new Date().toISOString()),
-    CONTRACT_DATE_SHORT: formatDateShort(startsOn || new Date().toISOString()),
+    CONTRACT_DATE_LONG: formatDateShort(today),
+    CONTRACT_DATE_SHORT: formatDateShort(today),
     DOCUMENT_CODE: '-',
     PROJECT_CODE: project.projectCode,
     CHARTERER: client ? [client.name, client.address, [client.city, client.country].filter(Boolean).join(' ')].filter(Boolean).join('\n') : project.clientName,
     OWNER: owner,
-    TOWED_VESSEL: supplytime.towed_vessel || project.description || project.title,
-    TUG: vesselName,
-    TOWED_CONDITIONS: supplytime.towed_conditions || project.description,
+    TOWED_VESSEL: towageTowedAssetIdentity(towedAsset),
+    TUG: towageVesselIdentity(vessel),
+    TOWED_CONDITIONS: supplytime.towed_conditions || DEFAULT_TOWAGE_CONDITIONS,
     PICKUP_PLACE: project.deliveryPort,
-    DEPARTURE_WINDOW: startsOn ? formatDateLong(startsOn) : '',
+    DEPARTURE_WINDOW: supplytime.departure_window || '',
     DESTINATION_PLACE: project.redeliveryPort,
-    ARRIVAL_WINDOW: endsOn ? formatDateLong(endsOn) : '',
+    ARRIVAL_WINDOW: supplytime.arrival_window || formatDateLong(project.redeliveryAt),
     CONNECTION_TIME: supplytime.connection_time || '',
     DISCONNECTION_TIME: supplytime.disconnection_time || '',
-    FIXED_PRICE: formatMoney(contract?.charterHire, contract?.hireCurrency || contract?.feeCurrency || 'EUR', contract?.hireUnit),
-    OPTIONAL_COSTS: supplytime.optional_costs || '',
-    PAYMENT_TERMS: supplytime.box23_payment || '',
+    FIXED_PRICE: formatMoney(contract?.charterHire, contract?.hireCurrency || contract?.feeCurrency || 'EUR'),
+    OPTIONAL_COSTS: supplytime.optional_costs || DEFAULT_TOWAGE_OPTIONAL_COSTS,
+    PAYMENT_TERMS: supplytime.box23_payment || DEFAULT_TOWAGE_PAYMENT_TERMS,
     ADDITIONAL_CHARGES: supplytime.additional_charges || '',
-    SPECIAL_CONDITIONS: supplytime.special_conditions || '',
-    CHARTERER_SIGNATORY: supplytime.charterer_signatory || '',
-    OWNER_SIGNATORY: supplytime.owner_signatory || 'Benjamin BON - Président',
-    SIGNATURE_DATE: '',
+    SPECIAL_CONDITIONS: supplytime.special_conditions || DEFAULT_TOWAGE_SPECIAL_CONDITIONS,
+    CHARTERER_SIGNATORY: client?.representedBy || supplytime.charterer_signatory || '',
+    OWNER_SIGNATORY: formatProjectDocumentEmitterName(emitter) || supplytime.owner_signatory || '',
+    SIGNATURE_DATE: `Le ${formatDateLong(today)}`,
   };
 }
 
-async function generateTowageContract(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
-  const templateBytes = await loadAssetBytes('/templates/contrat-remorquage-bbtm.docx');
-  const zip = await JSZip.loadAsync(templateBytes);
-  const values = buildTowageTemplateFields(input);
-  const xmlEntries = Object.keys(zip.files).filter((name) => name.startsWith('word/') && name.endsWith('.xml'));
+interface TowagePdfBox {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+}
 
-  await Promise.all(xmlEntries.map(async (entryName) => {
-    const entry = zip.file(entryName);
-    if (!entry) return;
-    let xml = await entry.async('string');
-    Object.entries(values).forEach(([key, value]) => {
-      xml = xml.replaceAll(`{{${key}}}`, escapeWordXml(value || ''));
+const TOWAGE_SOURCE_WIDTH = 993;
+const TOWAGE_SOURCE_HEIGHT = 1404;
+
+function towagePdfBox(page: PDFPage, box: TowagePdfBox) {
+  const { width, height } = page.getSize();
+  return {
+    height: ((box.bottom - box.top) / TOWAGE_SOURCE_HEIGHT) * height,
+    width: ((box.right - box.left) / TOWAGE_SOURCE_WIDTH) * width,
+    x: (box.left / TOWAGE_SOURCE_WIDTH) * width,
+    y: height - (box.bottom / TOWAGE_SOURCE_HEIGHT) * height,
+  };
+}
+
+function towagePdfText(value: string): string {
+  return value
+    .replace(/[\u00a0\u202f]/g, ' ')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
+    .trim();
+}
+
+function wrapTowagePdfText(font: PDFFont, value: string, size: number, maxWidth: number): string[] {
+  return towagePdfText(value).split('\n').flatMap((paragraph) => {
+    if (!paragraph.trim()) return [];
+    const lines: string[] = [];
+    let line = '';
+    paragraph.trim().split(/\s+/).forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (!line || font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+        line = candidate;
+      } else {
+        lines.push(line);
+        line = word;
+      }
     });
-    zip.file(entryName, xml);
-  }));
+    if (line) lines.push(line);
+    return lines;
+  });
+}
 
-  const unresolved = await Promise.all(xmlEntries.map(async (entryName) => (await zip.file(entryName)?.async('string')) || ''));
-  if (unresolved.some((xml) => /\{\{[A-Z0-9_]+\}\}/.test(xml))) {
-    throw new Error('Le modèle de remorquage contient une zone non renseignée par SeaPilot.');
+function drawTowagePdfText(
+  page: PDFPage,
+  font: PDFFont,
+  value: string,
+  box: TowagePdfBox,
+  requestedSize = 8,
+  align: 'left' | 'center' = 'left',
+) {
+  if (!value.trim()) return;
+  const bounds = towagePdfBox(page, box);
+  const padding = 4;
+  let size = requestedSize;
+  let lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
+  while (size > 5 && lines.length * size * 1.18 > bounds.height - padding * 2) {
+    size -= 0.25;
+    lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
+  }
+  const lineHeight = size * 1.18;
+  lines.slice(0, Math.max(1, Math.floor((bounds.height - padding * 2) / lineHeight))).forEach((line, index) => {
+    const lineWidth = font.widthOfTextAtSize(line, size);
+    page.drawText(line, {
+      x: align === 'center' ? bounds.x + (bounds.width - lineWidth) / 2 : bounds.x + padding,
+      y: bounds.y + bounds.height - padding - size - index * lineHeight,
+      size,
+      font,
+    });
+  });
+}
+
+function drawTowageSignature(
+  page: PDFPage,
+  font: PDFFont,
+  name: string,
+  date: string,
+  signature: PDFImage | null,
+  box: TowagePdfBox,
+) {
+  const bounds = towagePdfBox(page, box);
+  drawTowagePdfText(page, font, [name, date].filter(Boolean).join('\n'), box, 8.5);
+  if (!signature) return;
+  const natural = signature.scale(1);
+  const maximumWidth = bounds.width * 0.42;
+  const maximumHeight = bounds.height * 0.55;
+  const ratio = Math.min(maximumWidth / natural.width, maximumHeight / natural.height, 1);
+  page.drawImage(signature, {
+    x: bounds.x + 6,
+    y: bounds.y + 8,
+    width: natural.width * ratio,
+    height: natural.height * ratio,
+  });
+}
+
+async function generateTowageContract(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
+  const { PDFDocument, StandardFonts } = await import('pdf-lib');
+  const [templateBytes, signatureBytes] = await Promise.all([
+    loadAssetBytes('/templates/contrat-remorquage-bbtm.pdf'),
+    input.emitter?.signatureUrl
+      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const document = await PDFDocument.load(templateBytes);
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  let signature: PDFImage | null = null;
+  if (signatureBytes) {
+    try {
+      signature = input.emitter?.signatureMimeType === 'image/jpeg'
+        ? await document.embedJpg(signatureBytes)
+        : await document.embedPng(signatureBytes);
+    } catch {
+      signature = null;
+    }
+  }
+  const values = buildTowageTemplateFields(input);
+  const pages = document.getPages();
+  pages.forEach((page) => {
+    drawTowagePdfText(page, bold, values.DOCUMENT_CODE, { left: 236, top: 96, right: 346, bottom: 160 }, 8, 'center');
+    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 349, top: 96, right: 461, bottom: 160 }, 15, 'center');
+    drawTowagePdfText(page, bold, values.CONTRACT_DATE_SHORT, { left: 752, top: 60, right: 873, bottom: 93 }, 8.5, 'center');
+  });
+
+  const firstPage = pages[0];
+  drawTowagePdfText(firstPage, regular, values.CONTRACT_DATE_LONG, { left: 496, top: 207, right: 872, bottom: 228 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 120, top: 250, right: 494, bottom: 331 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 496, top: 250, right: 872, bottom: 331 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.TOWED_VESSEL, { left: 120, top: 353, right: 494, bottom: 638 }, 7.5);
+  drawTowagePdfText(firstPage, regular, values.TUG, { left: 496, top: 353, right: 872, bottom: 638 }, 7.5);
+  drawTowagePdfText(firstPage, regular, values.TOWED_CONDITIONS, { left: 120, top: 660, right: 872, bottom: 701 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.PICKUP_PLACE, { left: 120, top: 723, right: 494, bottom: 743 }, 8);
+  drawTowagePdfText(firstPage, regular, values.DEPARTURE_WINDOW, { left: 496, top: 723, right: 872, bottom: 743 }, 8);
+  drawTowagePdfText(firstPage, regular, values.DESTINATION_PLACE, { left: 120, top: 765, right: 494, bottom: 785 }, 8);
+  drawTowagePdfText(firstPage, regular, values.ARRIVAL_WINDOW, { left: 496, top: 765, right: 872, bottom: 785 }, 8);
+  drawTowagePdfText(firstPage, regular, values.CONNECTION_TIME, { left: 120, top: 828, right: 494, bottom: 848 }, 8);
+  drawTowagePdfText(firstPage, regular, values.DISCONNECTION_TIME, { left: 496, top: 828, right: 872, bottom: 848 }, 8);
+  drawTowagePdfText(firstPage, regular, values.FIXED_PRICE, { left: 120, top: 870, right: 494, bottom: 911 }, 8);
+  drawTowagePdfText(firstPage, regular, values.OPTIONAL_COSTS, { left: 496, top: 870, right: 872, bottom: 911 }, 7.5);
+  drawTowagePdfText(firstPage, regular, values.PAYMENT_TERMS, { left: 120, top: 933, right: 494, bottom: 994 }, 7.5);
+  drawTowagePdfText(firstPage, regular, values.ADDITIONAL_CHARGES, { left: 496, top: 933, right: 872, bottom: 994 }, 7.5);
+  drawTowagePdfText(firstPage, regular, values.SPECIAL_CONDITIONS, { left: 120, top: 1016, right: 872, bottom: 1073 }, 8);
+  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 120, top: 1095, right: 494, bottom: 1251 });
+  drawTowageSignature(firstPage, regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 496, top: 1095, right: 872, bottom: 1251 });
+
+  if (pages[5]) {
+    drawTowageSignature(pages[5], regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 120, top: 442, right: 494, bottom: 647 });
+    drawTowageSignature(pages[5], regular, values.CHARTERER_SIGNATORY, '', null, { left: 496, top: 442, right: 872, bottom: 647 });
   }
 
-  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  document.setTitle(buildGeneratedDocumentFileName('towage_contract', input.project));
+  document.setSubject(projectReference(input.project));
+  document.setCreator('SeaPilot');
+  const bytes = await document.save({ useObjectStreams: false });
   return {
-    blob,
+    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
     fileName: buildGeneratedDocumentFileName('towage_contract', input.project),
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    mimeType: 'application/pdf',
   };
 }
 

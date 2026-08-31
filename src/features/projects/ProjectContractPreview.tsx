@@ -21,6 +21,11 @@ import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
 import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
 import towagePage01Url from './assets/contract-previews/towage-contract-page-01.png';
+import towagePage02Url from './assets/contract-previews/towage-contract-page-02.png';
+import towagePage03Url from './assets/contract-previews/towage-contract-page-03.png';
+import towagePage04Url from './assets/contract-previews/towage-contract-page-04.png';
+import towagePage05Url from './assets/contract-previews/towage-contract-page-05.png';
+import towagePage06Url from './assets/contract-previews/towage-contract-page-06.png';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
@@ -34,7 +39,7 @@ interface ProjectContractPreviewProps {
   form: ProjectWriteInput;
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
-  vessel?: Pick<VesselRecord, 'acronym' | 'name'>;
+  vessel?: VesselRecord;
 }
 
 interface PositionedValue {
@@ -47,6 +52,14 @@ interface PositionedValue {
 }
 
 const BIMCO_PAGE_URLS = [bimcoPage01Url, bimcoPage02Url, bimcoPage03Url, bimcoPage04Url] as const;
+const TOWAGE_PAGE_URLS = [
+  towagePage01Url,
+  towagePage02Url,
+  towagePage03Url,
+  towagePage04Url,
+  towagePage05Url,
+  towagePage06Url,
+] as const;
 
 const BIMCO_POSITIONED_VALUES: PositionedValue[] = [
   { page: 1, key: 'p144_box01_place_date', left: 10.2, top: 17.3, width: 80, height: 5.3 },
@@ -101,6 +114,10 @@ function longDate(value: string): string {
   return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' }).format(date);
 }
 
+function todayLongDate(): string {
+  return `Le ${new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(new Date())}`;
+}
+
 function money(value: number | null, currency = 'EUR', unit = ''): string {
   if (value === null) return '';
   const amount = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
@@ -112,20 +129,57 @@ function clientIdentity(client?: ProjectContractPreviewProps['client']): string 
   return [client.name, client.address, [client.city, client.country].filter(Boolean).join(' ')].filter(Boolean).join('\n');
 }
 
+function frenchNumber(value: number | null | undefined): string {
+  return value == null ? '' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value);
+}
+
+function valueWithUnit(value: string | undefined, unit: string): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  return new RegExp(`\\b${unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(trimmed)
+    ? trimmed
+    : `${trimmed} ${unit}`;
+}
+
 function towedIdentity(asset: ProjectTowedAssetWriteInput | null): string {
   if (!asset) return '';
   return [
-    asset.name ? `Nom : ${asset.name}` : '',
-    asset.assetType ? `Type : ${asset.assetType}` : '',
-    asset.lengthOverallM !== null ? `Longueur hors tout : ${asset.lengthOverallM} m` : '',
-    asset.breadthOverallM !== null ? `Largeur hors tout : ${asset.breadthOverallM} m` : '',
-    asset.maxDraftM !== null ? `Tirant d’eau max : ${asset.maxDraftM} m` : '',
-    asset.lightDisplacementT !== null ? `Déplacement lège : ${asset.lightDisplacementT} T` : '',
-    asset.flag ? `Pavillon : ${asset.flag}` : '',
-    asset.classificationSociety ? `Classification : ${asset.classificationSociety}` : '',
-    asset.registrationNumber ? `N° d’enregistrement : ${asset.registrationNumber}` : '',
-    asset.ownerName ? `Propriétaire : ${asset.ownerName}` : '',
-  ].filter(Boolean).join('\n');
+    `Nom : ${asset.name}`,
+    `Type d’engin, de navire ou de colis : ${asset.assetType}`,
+    `Longueur hors tout : ${frenchNumber(asset.lengthOverallM)}${asset.lengthOverallM === null ? '' : ' m'}`,
+    `Largeur hors tout : ${frenchNumber(asset.breadthOverallM)}${asset.breadthOverallM === null ? '' : ' m'}`,
+    `Tirant d’eau max : ${frenchNumber(asset.maxDraftM)}${asset.maxDraftM === null ? '' : ' m'}`,
+    `Déplacement léger : ${frenchNumber(asset.lightDisplacementT)}${asset.lightDisplacementT === null ? '' : ' T'}`,
+    `Pavillon : ${asset.flag}`,
+    `Société de classification : ${asset.classificationSociety}`,
+    `N° d’enregistrement : ${asset.registrationNumber}`,
+    `Propriétaire (si différent de l’affréteur) : ${asset.ownerName}`,
+    `Assureur corps et machine : ${asset.hullMachineryInsurer}`,
+    `Assureur RC : ${asset.liabilityInsurer}`,
+  ].join('\n');
+}
+
+function vesselIdentity(vessel?: VesselRecord): string {
+  if (!vessel) return '';
+  const mainEngine = vessel.mainEngine || '';
+  const power = mainEngine && vessel.mainEnginePowerKw
+    ? `${mainEngine} (total ${frenchNumber(vessel.mainEnginePowerKw)} kW)`
+    : mainEngine || (vessel.mainEnginePowerKw ? `${frenchNumber(vessel.mainEnginePowerKw)} kW` : '');
+  const normalizedFlag = (vessel.flagState || '').trim().toLocaleLowerCase('fr-FR');
+  const flag = ['fr', 'france', 'français', 'francais'].includes(normalizedFlag)
+    ? 'Pavillon français'
+    : `Pavillon : ${vessel.flagState || ''}`;
+  return [
+    `Nom : ${vessel.name}`,
+    `Longueur hors tout : ${valueWithUnit(vessel.lengthOverall, 'm')}`,
+    `Traction au point fixe : ${vessel.bollardPullTonnes == null ? '' : `${frenchNumber(vessel.bollardPullTonnes)} t`}`,
+    `Équipement du navire pour le remorquage : ${vessel.deckEquipment || ''}`,
+    `Puissance propulsive : ${power}`,
+    `Société de classification : ${vessel.classificationLabel || ''}`,
+    flag,
+    `N° d’enregistrement : ${vessel.registrationNumber || ''}`,
+    `Assureur RC (P&I) : ${vessel.liabilityInsurer || ''}`,
+  ].join('\n');
 }
 
 function buildBimcoValues({ client, form, vessel }: ProjectContractPreviewProps): Record<string, string> {
@@ -167,18 +221,22 @@ function buildBimcoValues({ client, form, vessel }: ProjectContractPreviewProps)
   return Object.fromEntries(BIMCO_P144_FIELDS.map((field) => [field.key, canonical[field.key] || saved[field.key] || '']));
 }
 
-function buildTowageValues({ client, form, projectCode, towedAsset, vessel }: ProjectContractPreviewProps) {
+function buildTowageValues({ client, emitter, form, projectCode, towedAsset, vessel }: ProjectContractPreviewProps) {
   const saved = form.supplytimeData;
+  const today = new Date().toISOString();
   return {
+    documentCode: '-',
     projectCode,
-    contractDate: longDate(form.startsOn || form.deliveryAt),
+    headerDate: compactDate(today),
+    contractDate: compactDate(today),
+    signatureDate: todayLongDate(),
     charterer: clientIdentity(client),
     owner: form.ownerIdentity,
     towed: towedIdentity(towedAsset),
-    tug: vessel?.name || '',
-    conditions: saved.towed_conditions || form.description,
+    tug: vesselIdentity(vessel),
+    conditions: saved.towed_conditions || '',
     pickup: form.deliveryPort,
-    departure: saved.departure_window || longDate(form.deliveryAt),
+    departure: saved.departure_window || '',
     destination: form.redeliveryPort,
     arrival: saved.arrival_window || longDate(form.redeliveryAt),
     connection: saved.connection_time || '',
@@ -188,8 +246,9 @@ function buildTowageValues({ client, form, projectCode, towedAsset, vessel }: Pr
     payment: saved.box23_payment || '',
     additional: saved.additional_charges || '',
     special: saved.special_conditions || '',
-    chartererSignatory: saved.charterer_signatory || client?.representedBy || '',
-    ownerSignatory: saved.owner_signatory || '',
+    chartererSignatory: client?.representedBy || saved.charterer_signatory || '',
+    ownerSignatory: formatProjectDocumentEmitterName(emitter) || saved.owner_signatory || '',
+    ownerSignatureUrl: emitter?.signatureUrl || '',
   };
 }
 
@@ -238,31 +297,63 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
   );
 }
 
-function TowagePreview(props: ProjectContractPreviewProps) {
+function TowageSignature({
+  className,
+  date,
+  name,
+  signatureUrl,
+}: {
+  className: string;
+  date?: string;
+  name: string;
+  signatureUrl?: string;
+}) {
+  return (
+    <span className={`towage-overlay towage-signature ${className}`}>
+      <span>{name}</span>
+      {date ? <span>{date}</span> : null}
+      {signatureUrl ? <img alt={`Signature de ${name}`} src={signatureUrl} /> : null}
+    </span>
+  );
+}
+
+function TowagePreview({ page, ...props }: ProjectContractPreviewProps & { page: number }) {
   const values = buildTowageValues(props);
   return (
     <div className="project-contract-page project-towage-page">
-      <img alt="Aperçu du contrat de remorquage" src={towagePage01Url} />
+      <img alt={`Aperçu du contrat de remorquage, page ${page}`} src={TOWAGE_PAGE_URLS[page - 1]} />
+      <span className="towage-overlay document-code">{values.documentCode}</span>
       <span className="towage-overlay project-code">{values.projectCode}</span>
-      <span className="towage-overlay contract-date">{values.contractDate}</span>
-      <span className="towage-overlay charterer">{values.charterer}</span>
-      <span className="towage-overlay owner">{values.owner}</span>
-      <span className="towage-overlay towed">{values.towed}</span>
-      <span className="towage-overlay tug">{values.tug}</span>
-      <span className="towage-overlay conditions">{values.conditions}</span>
-      <span className="towage-overlay pickup">{values.pickup}</span>
-      <span className="towage-overlay departure">{values.departure}</span>
-      <span className="towage-overlay destination">{values.destination}</span>
-      <span className="towage-overlay arrival">{values.arrival}</span>
-      <span className="towage-overlay connection">{values.connection}</span>
-      <span className="towage-overlay disconnection">{values.disconnection}</span>
-      <span className="towage-overlay fixed-price">{values.fixedPrice}</span>
-      <span className="towage-overlay optional-costs">{values.optionalCosts}</span>
-      <span className="towage-overlay payment">{values.payment}</span>
-      <span className="towage-overlay additional">{values.additional}</span>
-      <span className="towage-overlay special">{values.special}</span>
-      <span className="towage-overlay charterer-signatory">{values.chartererSignatory}</span>
-      <span className="towage-overlay owner-signatory">{values.ownerSignatory}</span>
+      <span className="towage-overlay header-date">{values.headerDate}</span>
+      {page === 1 ? (
+        <>
+          <span className="towage-overlay contract-date">{values.contractDate}</span>
+          <span className="towage-overlay charterer">{values.charterer}</span>
+          <span className="towage-overlay owner">{values.owner}</span>
+          <span className="towage-overlay towed">{values.towed}</span>
+          <span className="towage-overlay tug">{values.tug}</span>
+          <span className="towage-overlay conditions">{values.conditions}</span>
+          <span className="towage-overlay pickup">{values.pickup}</span>
+          <span className="towage-overlay departure">{values.departure}</span>
+          <span className="towage-overlay destination">{values.destination}</span>
+          <span className="towage-overlay arrival">{values.arrival}</span>
+          <span className="towage-overlay connection">{values.connection}</span>
+          <span className="towage-overlay disconnection">{values.disconnection}</span>
+          <span className="towage-overlay fixed-price">{values.fixedPrice}</span>
+          <span className="towage-overlay optional-costs">{values.optionalCosts}</span>
+          <span className="towage-overlay payment">{values.payment}</span>
+          <span className="towage-overlay additional">{values.additional}</span>
+          <span className="towage-overlay special">{values.special}</span>
+          <TowageSignature className="charterer-signatory" name={values.chartererSignatory} />
+          <TowageSignature className="owner-signatory" date={values.signatureDate} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
+        </>
+      ) : null}
+      {page === 6 ? (
+        <>
+          <TowageSignature className="page-six-owner-signatory" date={values.signatureDate} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
+          <TowageSignature className="page-six-charterer-signatory" name={values.chartererSignatory} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -300,13 +391,14 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
   useEffect(() => setPage(1), [contractType]);
   const currentPage = Math.min(page, pageCount);
   const bimcoValues = useMemo(() => buildBimcoValues(props), [props]);
+  const towageValues = useMemo(() => buildTowageValues(props), [props]);
   const completedBimcoFields = BIMCO_P144_FIELDS.filter((field) => bimcoValues[field.key]?.trim()).length;
   const basicCompletion = [props.form.title, props.form.clientId, props.form.primaryVesselId, props.form.deliveryAt, props.form.redeliveryAt]
     .filter(Boolean).length;
   const completion = contractType === BIMCO_CONTRACT_TYPE
     ? Math.round((completedBimcoFields / 34) * 100)
     : contractType === TOWAGE_CONTRACT_TYPE
-      ? Math.round(((basicCompletion + Object.values(buildTowageValues(props)).filter((value) => String(value).trim()).length) / 24) * 100)
+      ? Math.round(((basicCompletion + Object.values(towageValues).filter((value) => String(value).trim()).length) / 27) * 100)
       : Math.round(((basicCompletion + [props.form.description, props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
   const checklist = contractType === BIMCO_CONTRACT_TYPE
@@ -318,10 +410,10 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
       ? [
           { label: 'Parties', complete: Boolean(props.form.clientId && props.form.ownerIdentity) },
           { label: 'Moyens nautiques', complete: Boolean(props.towedAsset?.name && props.form.primaryVesselId) },
-          { label: 'Voyage & créneaux', complete: Boolean(props.form.deliveryAt && props.form.redeliveryAt && props.form.deliveryPort && props.form.redeliveryPort) },
+          { label: 'Voyage & créneaux', complete: Boolean(props.form.deliveryPort && props.form.redeliveryPort && props.form.supplytimeData.departure_window && props.form.supplytimeData.connection_time && props.form.supplytimeData.disconnection_time) },
           { label: 'Prix & paiement', complete: Boolean(props.form.charterHire && props.form.supplytimeData.box23_payment) },
           { label: 'Conditions particulières', complete: Boolean(props.form.supplytimeData.special_conditions) },
-          { label: 'Signatures', complete: Boolean(props.form.supplytimeData.owner_signatory && props.form.supplytimeData.charterer_signatory) },
+          { label: 'Signatures', complete: Boolean(towageValues.ownerSignatory && towageValues.chartererSignatory) },
         ]
       : [
           { label: 'Identification', complete: Boolean(props.form.title && props.form.clientId) },
@@ -350,7 +442,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
         </header>
         <div className="project-document-preview-canvas">
           {contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
-          {contractType === TOWAGE_CONTRACT_TYPE ? <TowagePreview {...props} /> : null}
+          {contractType === TOWAGE_CONTRACT_TYPE ? <TowagePreview {...props} page={currentPage} /> : null}
           {contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
         </div>
       </section>

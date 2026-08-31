@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
@@ -8,6 +7,7 @@ import {
   buildGeneratedDocumentFileName,
   buildProjectOfferRows,
   buildProjectSupplytimePdfFields,
+  buildTowageTemplateFields,
   formatOfferGenerationDate,
   generateProjectDocument,
 } from './projectDocumentGeneration';
@@ -200,19 +200,34 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('fills every towage placeholder with project and mission data', async () => {
-    const template = await readFile(resolve('public/templates/contrat-remorquage-bbtm.docx'));
+  it('generates the six-page towage contract with the numbered business fields', async () => {
+    const template = await readFile(resolve('public/templates/contrat-remorquage-bbtm.pdf'));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(template, {
-        headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        headers: { 'content-type': 'application/pdf' },
         status: 200,
       }),
     );
 
     try {
-      const generated = await generateProjectDocument('towage_contract', {
+      const input = {
         client,
-        contract,
+        contract: {
+          ...contract,
+          charterHire: 34_000,
+          supplytimeData: {
+            departure_window: 'Du 03/08 au 07/08/2026',
+            connection_time: '2 heures',
+            disconnection_time: '1 heure',
+          },
+        },
+        emitter: {
+          firstName: 'Christophe',
+          functionLabel: 'Directeur commercial',
+          lastName: 'MINASSIAN',
+          signatureMimeType: '',
+          signatureUrl: '',
+        },
         occurrence: {
           id: 44,
           projectId: project.id,
@@ -229,14 +244,63 @@ describe('projectDocumentGeneration', () => {
           createdAt: '2026-07-21T12:00:00Z',
         },
         project,
-      });
-      const zip = await JSZip.loadAsync(await generated.blob.arrayBuffer());
-      const xml = await zip.file('word/document.xml')?.async('string');
+        towedAsset: {
+          id: 1,
+          projectId: project.id,
+          name: 'ELAN',
+          assetType: 'Vedette de surveillance désarmée',
+          lengthOverallM: 41,
+          breadthOverallM: 7.5,
+          maxDraftM: 2.6,
+          lightDisplacementT: 305,
+          flag: 'FR',
+          classificationSociety: '-',
+          registrationNumber: '-',
+          ownerName: 'MARINE NATIONALE',
+          hullMachineryInsurer: '',
+          liabilityInsurer: '',
+          photoUrl: '',
+          photoStoragePath: '',
+          active: true,
+        },
+        vessel: {
+          id: 12,
+          name: 'LE ROZEL',
+          acronym: 'LRZ',
+          active: true,
+          fleetExitOn: '',
+          sharePointItemId: '12',
+          lengthOverall: '19,20 m',
+          bollardPullTonnes: 12,
+          deckEquipment: 'Treuil de remorquage 16T + remorque 350m DN26',
+          mainEngine: '2 x 325 kW',
+          mainEnginePowerKw: 650,
+          classificationLabel: 'Bureau Veritas',
+          flagState: 'France',
+          registrationNumber: '937905',
+          liabilityInsurer: "Shipowner’s Club",
+        },
+      };
+      const fields = buildTowageTemplateFields(input);
+      const generated = await generateProjectDocument('towage_contract', input);
+      const bytes = new Uint8Array(await generated.blob.arrayBuffer());
+      const document = await PDFDocument.load(bytes);
 
-      expect(generated.fileName).toBe('P1107 - Contrat de remorquage - R1.docx');
-      expect(xml).toContain('LE ROZEL');
-      expect(xml).toContain('Ifremer');
-      expect(xml).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
+      expect(generated.fileName).toBe('P1107 - Contrat de remorquage - R1.pdf');
+      expect(generated.mimeType).toBe('application/pdf');
+      expect(new TextDecoder('latin1').decode(bytes.slice(0, 5))).toBe('%PDF-');
+      expect(document.getPageCount()).toBe(6);
+      expect(fields.CHARTERER).toContain('Ifremer');
+      expect(fields.TOWED_VESSEL).toContain('Nom : ELAN');
+      expect(fields.TUG).toContain('Nom : LE ROZEL');
+      expect(fields.TUG).toContain("Assureur RC (P&I) : Shipowner’s Club");
+      expect(fields.TOWED_CONDITIONS).toContain('Bonne condition de partance');
+      expect(fields.OPTIONAL_COSTS).toContain('3400€ HT / 24h');
+      expect(fields.PAYMENT_TERMS).toContain('A 30 jours réception de facture : 100%');
+      expect(fields.SPECIAL_CONDITIONS).toBe('TVA 20%');
+      expect(fields.CHARTERER_SIGNATORY).toBe('Claire MARTIN');
+      expect(fields.OWNER_SIGNATORY).toBe('Christophe MINASSIAN');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       fetchMock.mockRestore();
     }

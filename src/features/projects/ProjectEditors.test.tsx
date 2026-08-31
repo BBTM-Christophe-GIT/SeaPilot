@@ -119,6 +119,10 @@ describe('ProjectEditor contract hire periods', () => {
       ['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO'].includes(option.textContent || '')
     )).map((option) => option.textContent)).toEqual(['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO']);
     const contractType = screen.getByLabelText('Type de contrat');
+    await user.selectOptions(contractType, 'Contrat de Remorquage');
+    expect(screen.getByText('1 / 6')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 6')).toBeInTheDocument();
     await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByText('1 / 29')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
@@ -301,6 +305,19 @@ describe('ProjectEditor contract hire periods', () => {
 
     const contractType = screen.getByLabelText('Type de contrat');
     await user.selectOptions(contractType, 'Contrat de Remorquage');
+    expect(screen.getByLabelText('6. Conditions du remorqué')).toHaveValue(
+      'Bonne condition de partance assurée par l’affréteur.',
+    );
+    expect(screen.getByLabelText('8. Créneau de départ')).toBeInTheDocument();
+    expect(screen.getByLabelText('10. Temps prévu pour la connexion et autres opérations connexes')).toBeInTheDocument();
+    expect(screen.getByLabelText('11. Temps prévu pour la déconnexion et autres opérations connexes')).toBeInTheDocument();
+    expect(screen.getByLabelText('13. Coûts additionnels facultatifs')).toHaveValue(
+      'Remorqueur au port : 3400€ HT / 24h\n\nRemorqueur en mer : 4900€ HT / 24h (fuel inclus)',
+    );
+    expect(screen.getByLabelText('15. Conditions de paie')).toHaveValue(
+      '- A la signature du contrat : 0%\n- Avant le départ du convoi : 0%\n- A 30 jours réception de facture : 100%',
+    );
+    expect(screen.getByLabelText('17. Autres conditions particulières')).toHaveValue('TVA 20%');
     expect(screen.getByRole('region', { name: 'Remorqué' })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Nom du remorqué'), '8');
     expect(screen.getByLabelText('Type d’engin, de navire ou de colis')).toHaveValue('AUTOMOTEUR FLUVIAL');

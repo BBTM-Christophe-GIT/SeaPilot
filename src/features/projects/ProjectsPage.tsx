@@ -1053,7 +1053,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       const occurrence = planningOccurrenceId
         ? selectedPlanningOccurrences.find((item) => item.id === planningOccurrenceId)
         : undefined;
-      const emitter = kind === 'offer'
+      const emitter = kind === 'offer' || kind === 'towage_contract'
         ? await fetchProjectDocumentEmitter(effectiveClient).catch(() => undefined)
         : undefined;
       const generated = await generateProjectDocument(kind, {
@@ -1062,6 +1062,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         emitter,
         occurrence,
         project: selectedProject,
+        towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
+        vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
       });
       try {
         const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');
