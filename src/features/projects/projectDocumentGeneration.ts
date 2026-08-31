@@ -11,9 +11,9 @@ import { buildSupplytimePreview } from './projectReadModel';
 import {
   DEFAULT_PROJECT_FUEL_TERMS,
   DEFAULT_TOWAGE_CONDITIONS,
-  DEFAULT_TOWAGE_OPTIONAL_COSTS,
   DEFAULT_TOWAGE_PAYMENT_TERMS,
   DEFAULT_TOWAGE_SPECIAL_CONDITIONS,
+  towageOptionalCostsWithDefault,
 } from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
@@ -650,7 +650,7 @@ export function buildTowageTemplateFields({
     CONNECTION_TIME: supplytime.connection_time || '',
     DISCONNECTION_TIME: supplytime.disconnection_time || '',
     FIXED_PRICE: formatMoney(contract?.charterHire, contract?.hireCurrency || contract?.feeCurrency || 'EUR'),
-    OPTIONAL_COSTS: supplytime.optional_costs || DEFAULT_TOWAGE_OPTIONAL_COSTS,
+    OPTIONAL_COSTS: towageOptionalCostsWithDefault(supplytime.optional_costs),
     PAYMENT_TERMS: supplytime.box23_payment || DEFAULT_TOWAGE_PAYMENT_TERMS,
     ADDITIONAL_CHARGES: supplytime.additional_charges || '',
     SPECIAL_CONDITIONS: supplytime.special_conditions || DEFAULT_TOWAGE_SPECIAL_CONDITIONS,
