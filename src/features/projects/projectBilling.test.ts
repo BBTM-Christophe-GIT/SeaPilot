@@ -364,6 +364,67 @@ describe('billing operation export', () => {
     ]);
   });
 
+  it('uses the exact normalized fuel value before rounded legacy P144 fields', async () => {
+    const reportOrder = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 1058,
+          report_date: '2026-08-11',
+          vessel_id: null,
+          description: '',
+          source_payload: {
+            P144_x002d_FAC_x002d_Fuel_x0020_: '8000',
+            P144_x002d_FAC_x002d_Fuel_x0028_: '8',
+          },
+        },
+        {
+          id: 1059,
+          report_date: '2026-08-12',
+          vessel_id: null,
+          description: '',
+          source_payload: { P144_x002d_FAC_x002d_Fuel_x0020_: '8000' },
+        },
+      ],
+      error: null,
+    });
+    const reportSelect = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        gte: vi.fn().mockReturnValue({
+          lte: vi.fn().mockReturnValue({
+            is: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({ order: reportOrder }),
+            }),
+          }),
+        }),
+      }),
+    });
+    const callSelect = vi.fn().mockReturnValue({
+      in: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }),
+    });
+    const supplySelect = vi.fn().mockReturnValue({
+      in: vi.fn().mockResolvedValue({ data: [{ dpr_id: 1058, fuel_m3: '8.052' }], error: null }),
+    });
+    const from = vi.fn((table: string) => {
+      if (table === 'dpr_reports') return { select: reportSelect };
+      if (table === 'dpr_port_calls') return { select: callSelect };
+      if (table === 'dpr_supplies') return { select: supplySelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const [dpr, legacyDpr] = await fetchProjectBillingDprs(
+      { from } as unknown as SupabaseClient,
+      144,
+      '2026-08-11',
+      '2026-08-12',
+    );
+
+    expect(dpr.fuelLiters).toBe(8_052);
+    expect(billingDprComment(dpr)).toBe('Refueling : 8 052 L');
+    expect(legacyDpr.fuelLiters).toBe(8_000);
+  });
+
   it('keeps the explicit P144 operation before port-call-derived defaults', () => {
     expect(resolveBillingDprOperation('24/24 Weather Stand-by', ['crew-change']))
       .toBe('24/24 Weather Stand-by');
