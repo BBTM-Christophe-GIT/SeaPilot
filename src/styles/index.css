@@ -5756,26 +5756,56 @@ button:disabled {
   white-space: pre-wrap;
 }
 
-.towage-overlay.project-code { left: 72%; top: 13.2%; width: 18%; }
-.towage-overlay.contract-date { left: 20%; top: 18.6%; width: 62%; }
-.towage-overlay.charterer { left: 20%; top: 23.2%; width: 62%; }
-.towage-overlay.owner { left: 20%; top: 30%; width: 62%; }
-.towage-overlay.towed { left: 20%; top: 36.7%; width: 62%; }
-.towage-overlay.tug { left: 20%; top: 47.4%; width: 62%; }
-.towage-overlay.conditions { left: 20%; top: 51.7%; width: 62%; height: 5%; }
-.towage-overlay.pickup { left: 20%; top: 58%; width: 25%; }
-.towage-overlay.departure { left: 58%; top: 58%; width: 24%; }
-.towage-overlay.destination { left: 20%; top: 62.4%; width: 25%; }
-.towage-overlay.arrival { left: 58%; top: 62.4%; width: 24%; }
-.towage-overlay.connection { left: 20%; top: 66.7%; width: 25%; }
-.towage-overlay.disconnection { left: 58%; top: 66.7%; width: 24%; }
-.towage-overlay.fixed-price { left: 20%; top: 71%; width: 62%; }
-.towage-overlay.optional-costs { left: 20%; top: 75.4%; width: 62%; }
-.towage-overlay.payment { left: 20%; top: 79.8%; width: 62%; }
-.towage-overlay.additional { left: 20%; top: 83.5%; width: 62%; }
-.towage-overlay.special { left: 20%; top: 87%; width: 62%; height: 3%; }
-.towage-overlay.charterer-signatory { left: 18%; top: 93%; width: 26%; }
-.towage-overlay.owner-signatory { left: 58%; top: 93%; width: 26%; }
+.towage-overlay.document-code,
+.towage-overlay.project-code,
+.towage-overlay.header-date {
+  display: grid;
+  place-items: center;
+  color: #315b9b;
+  font-weight: 700;
+  text-align: center;
+}
+
+.towage-overlay.document-code { left: 23.8%; top: 7%; width: 11.1%; height: 4.4%; }
+.towage-overlay.project-code { left: 35.1%; top: 7%; width: 11.4%; height: 4.4%; font-size: clamp(6px, 0.8vw, 12px); }
+.towage-overlay.header-date { left: 75.8%; top: 4.25%; width: 12.2%; height: 2.4%; }
+.towage-overlay.contract-date { left: 50%; top: 14.75%; width: 38%; height: 1.55%; }
+.towage-overlay.charterer { left: 12.8%; top: 18%; width: 36.5%; height: 5.5%; }
+.towage-overlay.owner { left: 50.8%; top: 18%; width: 36.5%; height: 5.5%; }
+.towage-overlay.towed { left: 12.8%; top: 25.25%; width: 36.5%; height: 19.9%; font-size: clamp(4px, 0.45vw, 6.2px); }
+.towage-overlay.tug { left: 50.8%; top: 25.25%; width: 36.5%; height: 19.9%; font-size: clamp(4px, 0.45vw, 6.2px); }
+.towage-overlay.conditions { left: 12.8%; top: 47.2%; width: 74.5%; height: 2.6%; }
+.towage-overlay.pickup { left: 12.8%; top: 51.7%; width: 36.5%; height: 1.35%; }
+.towage-overlay.departure { left: 50.8%; top: 51.7%; width: 36.5%; height: 1.35%; }
+.towage-overlay.destination { left: 12.8%; top: 54.65%; width: 36.5%; height: 1.35%; }
+.towage-overlay.arrival { left: 50.8%; top: 54.65%; width: 36.5%; height: 1.35%; }
+.towage-overlay.connection { left: 12.8%; top: 59.05%; width: 36.5%; height: 1.35%; }
+.towage-overlay.disconnection { left: 50.8%; top: 59.05%; width: 36.5%; height: 1.35%; }
+.towage-overlay.fixed-price { left: 12.8%; top: 62%; width: 36.5%; height: 2.75%; }
+.towage-overlay.optional-costs { left: 50.8%; top: 62%; width: 36.5%; height: 2.75%; }
+.towage-overlay.payment { left: 12.8%; top: 66.5%; width: 36.5%; height: 4.2%; }
+.towage-overlay.additional { left: 50.8%; top: 66.5%; width: 36.5%; height: 4.2%; }
+.towage-overlay.special { left: 12.8%; top: 72.4%; width: 74.5%; height: 3.8%; }
+.towage-overlay.charterer-signatory { left: 12.8%; top: 78.05%; width: 36.5%; height: 10.9%; }
+.towage-overlay.owner-signatory { left: 50.8%; top: 78.05%; width: 36.5%; height: 10.9%; }
+.towage-overlay.page-six-owner-signatory { left: 12.8%; top: 31.55%; width: 36.5%; height: 14.4%; }
+.towage-overlay.page-six-charterer-signatory { left: 50.8%; top: 31.55%; width: 36.5%; height: 14.4%; }
+
+.towage-signature {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-style: italic;
+}
+
+.towage-signature img {
+  width: auto;
+  max-width: 42%;
+  height: auto;
+  max-height: 62%;
+  object-fit: contain;
+}
 
 .project-contract-pdf-continuation {
   display: grid;

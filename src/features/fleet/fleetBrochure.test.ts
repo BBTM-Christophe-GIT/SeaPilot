@@ -19,7 +19,7 @@ const vessel: FleetVessel = {
   safeManning: 4, mainEngine: 'CATERPILLAR C3512 B', mainEnginePowerKw: 750, bowThrusterPowerKw: 75,
   gensets: '2 × 230 KVA', maxSpeedKnots: 12, bollardPullTonnes: 12, fuelCapacityM3: 110,
   rangeDescription: '4 semaines', deckEquipment: 'Grue de pont', electronicsCommunications: 'SMDSM',
-  accommodation: '12 personnes',
+  accommodation: '12 personnes', liabilityInsurer: "Shipowner’s Club",
 };
 
 afterEach(() => vi.unstubAllGlobals());

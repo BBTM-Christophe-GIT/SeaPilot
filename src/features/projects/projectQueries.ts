@@ -51,7 +51,23 @@ const PROJECT_CONTRACT_HIRE_PERIOD_SELECT = [
   'hire_unit',
 ].join(', ');
 
-const VESSEL_SELECT = ['id', 'name', 'acronym', 'active', 'fleet_exit_on', 'sharepoint_item_id'].join(', ');
+const VESSEL_SELECT = [
+  'id',
+  'name',
+  'acronym',
+  'active',
+  'fleet_exit_on',
+  'sharepoint_item_id',
+  'length_overall',
+  'bollard_pull_tonnes',
+  'deck_equipment',
+  'main_engine',
+  'main_engine_power_kw',
+  'classification_label',
+  'flag_state',
+  'registration_number',
+  'liability_insurer',
+].join(', ');
 
 const PROJECT_DOCUMENT_SELECT = [
   'id',
@@ -198,6 +214,15 @@ interface VesselRow {
   active: boolean | null;
   fleet_exit_on: string | null;
   sharepoint_item_id: string | null;
+  length_overall: string | null;
+  bollard_pull_tonnes: number | string | null;
+  deck_equipment: string | null;
+  main_engine: string | null;
+  main_engine_power_kw: number | string | null;
+  classification_label: string | null;
+  flag_state: string | null;
+  registration_number: string | null;
+  liability_insurer: string | null;
 }
 
 interface ProjectDocumentRow {
@@ -465,6 +490,15 @@ export interface VesselRecord {
   active: boolean;
   fleetExitOn: string;
   sharePointItemId: string;
+  lengthOverall?: string;
+  bollardPullTonnes?: number | null;
+  deckEquipment?: string;
+  mainEngine?: string;
+  mainEnginePowerKw?: number | null;
+  classificationLabel?: string;
+  flagState?: string;
+  registrationNumber?: string;
+  liabilityInsurer?: string;
 }
 
 export interface ProjectPlanningOccurrenceRecord {
@@ -726,6 +760,15 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     active: row.active ?? true,
     fleetExitOn: nullableText(row.fleet_exit_on),
     sharePointItemId: nullableText(row.sharepoint_item_id),
+    lengthOverall: nullableText(row.length_overall),
+    bollardPullTonnes: nullableNumber(row.bollard_pull_tonnes),
+    deckEquipment: nullableText(row.deck_equipment),
+    mainEngine: nullableText(row.main_engine),
+    mainEnginePowerKw: nullableNumber(row.main_engine_power_kw),
+    classificationLabel: nullableText(row.classification_label),
+    flagState: nullableText(row.flag_state),
+    registrationNumber: nullableText(row.registration_number),
+    liabilityInsurer: nullableText(row.liability_insurer),
   }));
 }
 

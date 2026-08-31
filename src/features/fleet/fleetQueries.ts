@@ -13,7 +13,7 @@ const FLEET_VESSEL_SELECT = [
   'beam_overall_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'range_description', 'deck_equipment',
-  'electronics_communications', 'accommodation',
+  'electronics_communications', 'accommodation', 'liability_insurer',
 ].join(', ');
 
 interface FleetVesselRow {
@@ -68,6 +68,7 @@ interface FleetVesselRow {
   deck_equipment: string | null;
   electronics_communications: string | null;
   accommodation: string | null;
+  liability_insurer: string | null;
 }
 
 export interface FleetVessel {
@@ -122,6 +123,7 @@ export interface FleetVessel {
   deckEquipment: string;
   electronicsCommunications: string;
   accommodation: string;
+  liabilityInsurer: string;
 }
 
 export interface SaveFleetVesselInput {
@@ -163,6 +165,7 @@ export interface SaveFleetVesselInput {
   deckEquipment: string;
   electronicsCommunications: string;
   accommodation: string;
+  liabilityInsurer: string;
 }
 
 function optional(value: string): string | null {
@@ -195,7 +198,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     maxSpeedKnots: numberOrNull(row.max_speed_knots), bollardPullTonnes: numberOrNull(row.bollard_pull_tonnes),
     fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), rangeDescription: row.range_description || '',
     deckEquipment: row.deck_equipment || '', electronicsCommunications: row.electronics_communications || '',
-    accommodation: row.accommodation || '',
+    accommodation: row.accommodation || '', liabilityInsurer: row.liability_insurer || '',
   };
 }
 
@@ -226,6 +229,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     bollard_pull_tonnes: input.bollardPullTonnes, fuel_capacity_m3: input.fuelCapacityM3,
     range_description: optional(input.rangeDescription), deck_equipment: optional(input.deckEquipment),
     electronics_communications: optional(input.electronicsCommunications), accommodation: optional(input.accommodation),
+    liability_insurer: optional(input.liabilityInsurer),
     active: true, updated_at: new Date().toISOString(),
   };
   const query = input.id ? client.from('vessels').update(payload).eq('id', input.id) : client.from('vessels').insert(payload);
