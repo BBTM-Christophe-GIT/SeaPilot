@@ -10,6 +10,7 @@ export type ModuleKey =
   | 'dpr'
   | 'purchaseRequests'
   | 'serviceProviders'
+  | 'billingElements'
   | 'planning'
   | 'fleet'
   | 'humanResources'
@@ -25,6 +26,7 @@ export type ModuleFamily =
   | 'QHSE'
   | 'Opérations'
   | 'Achats'
+  | 'Facturation'
   | 'Planning'
   | 'Ressources Humaines'
   | 'Maintenance'
@@ -98,6 +100,13 @@ export const APP_MODULES: AppModule[] = [
     key: 'serviceProviders',
     label: 'Gestion des Sous-Traitants',
     family: 'Achats',
+    navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction'],
+  },
+  {
+    key: 'billingElements',
+    label: 'Éléments de facturation',
+    family: 'Facturation',
     navigationKind: 'submenu',
     allowedRoles: ['admin', 'direction'],
   },

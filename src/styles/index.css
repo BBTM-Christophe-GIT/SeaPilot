@@ -353,6 +353,11 @@ button:disabled {
   --navigation-accent-rgb: 249, 115, 22;
 }
 
+.navigation-family[data-family-theme='billing'] {
+  --navigation-accent: #0891b2;
+  --navigation-accent-rgb: 8, 145, 178;
+}
+
 .navigation-family[data-family-theme='human-resources'] {
   --navigation-accent: #7c3aed;
   --navigation-accent-rgb: 124, 58, 237;
@@ -21501,6 +21506,159 @@ button.planning-p12-conflict-card {
 .project-billing {
   display: grid;
   gap: 16px;
+}
+
+.billing-elements-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.billing-elements-selection {
+  position: sticky;
+  z-index: 5;
+  top: -20px;
+  display: grid;
+  gap: 16px;
+  margin: -20px -20px 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid #dbe5f0;
+  background: rgba(248, 251, 255, 0.97);
+  box-shadow: 0 10px 24px rgb(15 23 42 / 5%);
+  backdrop-filter: blur(12px);
+}
+
+.billing-elements-primary-filters {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px);
+  gap: 14px;
+}
+
+.billing-elements-primary-filters label {
+  display: grid;
+  gap: 7px;
+  color: #536580;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.billing-elements-primary-filters select,
+.billing-elements-primary-filters input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #bfd0e3;
+  border-radius: 10px;
+  padding: 8px 11px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+}
+
+.billing-elements-categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.billing-elements-categories legend {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: #263a52;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.billing-elements-categories > label {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #d4e0ed;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  color: #42536a;
+  cursor: pointer;
+}
+
+.billing-elements-categories > label.is-selected {
+  border-color: #4b9fbb;
+  background: #ecfbff;
+  box-shadow: 0 0 0 2px rgb(8 145 178 / 10%);
+}
+
+.billing-elements-categories input {
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  accent-color: #0891b2;
+}
+
+.billing-elements-categories span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.billing-elements-categories strong {
+  color: #17304b;
+  font-size: 0.88rem;
+}
+
+.billing-elements-categories small {
+  color: #68798e;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.billing-elements-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px dashed #bfd0e3;
+  border-radius: 14px;
+  background: #f8fbff;
+  color: #65768c;
+  text-align: center;
+}
+
+.billing-elements-empty svg,
+.billing-elements-empty strong { color: #173b62; }
+
+.billing-elements-footer {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.billing-elements-footer > span {
+  overflow: hidden;
+  color: #617086;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .billing-elements-selection {
+    top: -14px;
+    margin: -14px -15px 0;
+    padding: 14px 15px;
+  }
+
+  .billing-elements-categories { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .billing-elements-primary-filters { grid-template-columns: 1fr; }
+  .billing-elements-footer { align-items: stretch; flex-direction: column; }
 }
 
 .project-billing .project-section-heading {

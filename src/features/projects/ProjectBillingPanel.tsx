@@ -61,6 +61,18 @@ import {
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
 const BILLING_UNIT_OPTIONS = ['Unité', 'm²', 'm³', 'L'];
 
+export interface ProjectBillingSectionVisibility {
+  services: boolean;
+  bbtm: boolean;
+  billingElements: boolean;
+}
+
+const ALL_BILLING_SECTIONS: ProjectBillingSectionVisibility = {
+  services: true,
+  bbtm: true,
+  billingElements: true,
+};
+
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
@@ -124,19 +136,29 @@ function downloadBlob(blob: Blob, fileName: string) {
 export function ProjectBillingPanel({
   client,
   contract,
+  initialMonth,
   isManager,
   operations,
   project,
+  showMonthSelector = true,
+  visibleSections = ALL_BILLING_SECTIONS,
 }: {
   client: SupabaseClient;
   contract?: ProjectContractRecord;
+  initialMonth?: string;
   isManager: boolean;
   operations: ProjectPlanningOccurrenceRecord[];
   project: ProjectRecord;
+  showMonthSelector?: boolean;
+  visibleSections?: ProjectBillingSectionVisibility;
 }) {
+  const defaultMonth = initialMonth?.slice(0, 7) || currentMonth();
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
-  const [periodDraft, setPeriodDraft] = useState<BillingPeriodDraft>(() => billingDraft(project));
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+  const [periodDraft, setPeriodDraft] = useState<BillingPeriodDraft>(() => ({
+    ...billingDraft(project),
+    periodMonth: defaultMonth,
+  }));
   const [expenseEditor, setExpenseEditor] = useState<{
     id?: number;
     draft: BillingExpenseDraft;
@@ -170,15 +192,19 @@ export function ProjectBillingPanel({
   }
 
   useEffect(() => {
+    const month = initialMonth?.slice(0, 7) || currentMonth();
     setData(EMPTY_DATA);
-    setSelectedMonth(currentMonth());
-    setPeriodDraft(billingDraft(project));
+    setSelectedMonth(month);
+    setPeriodDraft({ ...billingDraft(project), periodMonth: month });
+    const range = monthRange(month);
+    setCustomStart(range.start);
+    setCustomEnd(range.end);
     setDprs([]);
     setCompleteMissingDays(false);
     setServiceQuantityEdited(false);
     void reload();
     void reloadServiceProviders();
-  }, [project.id]);
+  }, [initialMonth, project.id]);
 
   const selectedPeriod = data.periods.find((period) => period.periodMonth.startsWith(selectedMonth));
   const periodExpenses = selectedPeriod
@@ -563,16 +589,18 @@ export function ProjectBillingPanel({
           <strong>Facturation mensuelle</strong>
           <span>Une fiche indépendante par contrat et par mois. Le statut global du projet reste inchangé.</span>
         </div>
-        <label className="project-billing-month">
-          Mois
-          <input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} />
-        </label>
+        {showMonthSelector ? (
+          <label className="project-billing-month">
+            Mois
+            <input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} />
+          </label>
+        ) : null}
       </div>
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
       {error ? <p className="project-billing-error" role="alert">{error}</p> : null}
 
-      <article className="project-billing-card">
+      {visibleSections.services ? <article className="project-billing-card">
         <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} type="checkbox" /> Inclure les services refacturables dans le PDF</label></span></div>
           <div className="project-billing-card-actions">
@@ -637,9 +665,9 @@ export function ProjectBillingPanel({
             </tbody>
           </table>
         </div>
-      </article>
+      </article> : null}
 
-      <article className="project-billing-card">
+      {visibleSections.bbtm ? <article className="project-billing-card">
         <header className="project-billing-card-heading">
           <div>
             <PackageCheck aria-hidden="true" size={20} />
@@ -686,9 +714,9 @@ export function ProjectBillingPanel({
           </label>
           <label>Montant total HT<input disabled value={money(serviceDraft.unitAmountHt * serviceDraft.quantity)} /></label>
         </div>
-      </article>
+      </article> : null}
 
-      <article className="project-billing-card project-billing-export">
+      {visibleSections.billingElements ? <article className="project-billing-card project-billing-export">
         <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.</span><label className="project-billing-section-selection"><input checked={selectedPeriod?.includeOperationsInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} type="checkbox" /> Inclure les loyers dans le PDF</label></div></header>
         <div className="project-billing-export-controls">
           <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
@@ -728,7 +756,7 @@ export function ProjectBillingPanel({
           </div>
         </div>
         {previewUrl ? <iframe className="project-billing-preview" src={previewUrl} title={`Aperçu des éléments de facturation ${project.projectCode}`} /> : <p className="project-section-empty">Générez l’aperçu pour contrôler le document avant export.</p>}
-      </article>
+      </article> : null}
 
       {expenseEditor ? (
         <AppDialog

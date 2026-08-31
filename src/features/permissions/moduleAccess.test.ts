@@ -44,6 +44,7 @@ describe('module access', () => {
       ['Opérations', 'Navires', 'submenu'],
       ['Achats', "Demande d'Achat", 'submenu'],
       ['Achats', 'Gestion des Sous-Traitants', 'submenu'],
+      ['Facturation', 'Éléments de facturation', 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],

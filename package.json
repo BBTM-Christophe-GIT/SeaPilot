@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.24.3",
+  "version": "3.25.0",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
