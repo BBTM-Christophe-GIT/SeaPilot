@@ -4,13 +4,19 @@ export const DEFAULT_PROJECT_FUEL_TERMS = "A la charge de l'affréteur";
 
 export const DEFAULT_TOWAGE_CONDITIONS = 'Bonne condition de partance assurée par l’affréteur.';
 
-const LEGACY_DEFAULT_TOWAGE_OPTIONAL_COSTS = [
-  'Remorqueur au port : 3400€ HT / 24h',
-  '',
-  'Remorqueur en mer : 4900€ HT / 24h (fuel inclus)',
-].join('\n');
+const DEPRECATED_DEFAULT_TOWAGE_OPTIONAL_COSTS = new Set([
+  [
+    'Remorqueur au port : 3400€ HT / 24h',
+    '',
+    'Remorqueur en mer : 4900€ HT / 24h (fuel inclus)',
+  ].join('\n'),
+  'Remorqueur au port : 3400€ HT / 24h. Remorqueur en mer : 4900€ HT / 24h (fuel inclus)',
+]);
 
-export const DEFAULT_TOWAGE_OPTIONAL_COSTS = 'Remorqueur au port : 3400€ HT / 24h. Remorqueur en mer : 4900€ HT / 24h (fuel inclus)';
+export const DEFAULT_TOWAGE_OPTIONAL_COSTS = [
+  'Remorqueur au port : 3400€ HT / 24h.',
+  'Remorqueur en mer : 4900€ HT / 24h (fuel inclus).',
+].join('\n');
 
 export const DEFAULT_TOWAGE_PAYMENT_TERMS = [
   '- A la signature du contrat : 0%',
@@ -21,7 +27,7 @@ export const DEFAULT_TOWAGE_PAYMENT_TERMS = [
 export const DEFAULT_TOWAGE_SPECIAL_CONDITIONS = 'TVA 20%';
 
 export function towageOptionalCostsWithDefault(value?: string): string {
-  if (!value || value.replace(/\r\n/g, '\n') === LEGACY_DEFAULT_TOWAGE_OPTIONAL_COSTS) {
+  if (!value || DEPRECATED_DEFAULT_TOWAGE_OPTIONAL_COSTS.has(value.replace(/\r\n/g, '\n'))) {
     return DEFAULT_TOWAGE_OPTIONAL_COSTS;
   }
   return value;

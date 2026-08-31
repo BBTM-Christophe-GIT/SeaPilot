@@ -312,7 +312,7 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByLabelText('10. Temps prévu pour la connexion et autres opérations connexes')).toBeInTheDocument();
     expect(screen.getByLabelText('11. Temps prévu pour la déconnexion et autres opérations connexes')).toBeInTheDocument();
     expect(screen.getByLabelText('13. Coûts additionnels facultatifs')).toHaveValue(
-      'Remorqueur au port : 3400€ HT / 24h. Remorqueur en mer : 4900€ HT / 24h (fuel inclus)',
+      'Remorqueur au port : 3400€ HT / 24h.\nRemorqueur en mer : 4900€ HT / 24h (fuel inclus).',
     );
     expect(screen.getByLabelText('15. Conditions de paie')).toHaveValue(
       '- A la signature du contrat : 0%\n- Avant le départ du convoi : 0%\n- A 30 jours réception de facture : 100%',
