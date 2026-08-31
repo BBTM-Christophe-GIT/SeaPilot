@@ -19311,6 +19311,7 @@ button.planning-p12-conflict-card {
   background: transparent;
   border: 0;
   border-radius: 6px;
+  text-decoration: none;
   transition: background 160ms ease, color 160ms ease;
 }
 

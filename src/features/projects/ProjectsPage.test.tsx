@@ -348,6 +348,8 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
 
     await screen.findByRole('heading', { name: 'Projets' });
+    expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
+      .toHaveAttribute('href', '/modules/billingElements');
     expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Liste des clients' }));
