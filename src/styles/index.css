@@ -5666,7 +5666,9 @@ button:disabled {
 
 .project-towage-contract-fields {
   display: grid;
+  grid-column: 1 / -1;
   gap: 12px;
+  min-width: 0;
   padding: 16px;
   border: 1px solid #dce5ee;
   border-radius: 10px;
