@@ -56,6 +56,11 @@ import {
   workingTimeViolationWindowText,
 } from './workingTimeCompliance';
 import { WorkingTimeEntryBoard, type WorkingTimeRollingWindowMarker } from './WorkingTimeEntryBoard';
+import {
+  workingTimeEntryCutoffDate,
+  workingTimeEntryDateIsOpen,
+  workingTimeEntryIsInGracePeriod,
+} from './workingTimeEntryWindow';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
@@ -66,6 +71,7 @@ interface WorkingTimeWorkflowPanelProps {
   range: WorkingTimeRange;
   previewMode?: boolean;
   refreshToken?: number;
+  referenceDate?: string;
   onMonthChange?: (direction: -1 | 0 | 1) => void;
   onNavigateDate?: (date: string) => void;
   onRefresh?: () => Promise<void> | void;
@@ -258,6 +264,7 @@ export function WorkingTimeWorkflowPanel({
   range,
   previewMode = false,
   refreshToken = 0,
+  referenceDate,
   onMonthChange,
   onNavigateDate,
   onOpenImport,
@@ -290,7 +297,7 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const localToday = useMemo(() => todayPlanningDate(), []);
+  const localToday = useMemo(() => referenceDate || todayPlanningDate(), [referenceDate]);
   const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
@@ -390,6 +397,9 @@ export function WorkingTimeWorkflowPanel({
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
+  const entryWindowOpen = workingTimeEntryDateIsOpen(selectedDay, localToday);
+  const entryWindowCutoff = workingTimeEntryCutoffDate(selectedDay);
+  const entryWindowGracePeriod = workingTimeEntryIsInGracePeriod(selectedDay, localToday);
   const isAssignedCaptainForSelectedDay = Boolean(
     hasCaptainRole
       && !isOwnRegister
@@ -406,6 +416,7 @@ export function WorkingTimeWorkflowPanel({
       (selectedDayApproval?.status === 'submitted'
         && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole))
       || (!selectedDayApproval
+        && entryWindowOpen
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
 
@@ -821,6 +832,8 @@ export function WorkingTimeWorkflowPanel({
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
+                    {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}

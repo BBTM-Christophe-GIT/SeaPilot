@@ -949,6 +949,7 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_CAPTAIN_APPROVER_REQUIRED', 'Aucun autre capitaine actif de la bordée n’a été trouvé dans le Planning pour approuver cette journée.'],
   ['WORKING_TIME_PLANNING_ASSIGNMENT_REQUIRED', 'Aucune affectation Planning active ne couvre cette personne et cette journée.'],
   ['WORKING_TIME_EMPTY_DAY', 'Saisissez au moins une période de travail avant de soumettre la journée.'],
+  ['WORKING_TIME_ENTRY_WINDOW_CLOSED', 'La saisie de ce mois est clôturée depuis le 6 du mois suivant.'],
   ['WORKING_TIME_DAY_LOCKED', 'Cette journée a déjà été validée et est en lecture seule.'],
   ['WORKING_TIME_SUBMITTED_DAY_MOVE_FORBIDDEN', 'Une journée soumise ne peut pas être déplacée vers une autre date.'],
   ['WORKING_TIME_ALERT_COMMENT_REQUIRED', 'Le commentaire est obligatoire lorsqu’une alerte ou une non-conformité est détectée.'],
