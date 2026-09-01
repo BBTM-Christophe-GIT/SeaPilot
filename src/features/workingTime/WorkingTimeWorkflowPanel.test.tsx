@@ -125,6 +125,7 @@ function renderPanel(
   roles: Array<'capitaine' | 'marin' | 'armement' | 'admin' | 'direction'>,
   data: WorkingTimeWorkspace,
   person = currentPerson,
+  referenceDate = '2026-09-01',
 ) {
   vi.mocked(useWorkingTimeWorkspace).mockReturnValue({
     workspace: data,
@@ -138,6 +139,7 @@ function renderPanel(
       currentPerson={person}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
+      referenceDate={referenceDate}
       onOpenHse={onOpenHse}
       onOpenImport={onOpenImport}
       onOpenReport={onOpenReport}
@@ -281,6 +283,23 @@ describe('WorkingTimeWorkflowPanel', () => {
       phases: expect.any(Array),
     })));
     expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-09-01', '2026-09-05'])('keeps August entry open on %s', async (referenceDate) => {
+    renderPanel(['marin'], workspace('draft'), currentPerson, referenceDate);
+
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+    expect(screen.getByText(/reste ouvert à la saisie jusqu’au samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
+    expect(await screen.findByText(/Affectation Planning appliquée/)).toBeInTheDocument();
+  });
+
+  it('locks August entry on September 6 while explaining the cutoff', async () => {
+    renderPanel(['marin'], workspace('draft'), currentPerson, '2026-09-06');
+
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    expect(screen.getByText(/est clôturé pour la saisie.*samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-01' })).toHaveAttribute('aria-readonly', 'true');
   });
 
   it('keeps Direction read-only when the server exposes no editable person', () => {
