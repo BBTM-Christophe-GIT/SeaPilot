@@ -9,6 +9,7 @@ const documentGenerationMocks = vi.hoisted(() => ({
 }));
 
 const documentStorageMocks = vi.hoisted(() => ({
+  createProjectDocumentBundle: vi.fn(),
   storeGeneratedProjectDocument: vi.fn(),
   storeOperationDocuments: vi.fn(),
 }));
@@ -317,6 +318,11 @@ describe('ProjectsPage', () => {
       storageBucket: 'project-files',
       storagePath: 'projects/880/generated/bimco_supplytime/r1/P1086-BIMCO-R1.pdf',
       webUrl: '',
+    });
+    documentStorageMocks.createProjectDocumentBundle.mockResolvedValue({
+      blob: new Blob(['zip'], { type: 'application/zip' }),
+      fileName: 'P1086 - BIMCO - R1 - avec pièces jointes.zip',
+      mimeType: 'application/zip',
     });
     documentStorageMocks.storeOperationDocuments.mockResolvedValue({ failed: [], stored: [] });
   });
@@ -811,7 +817,7 @@ describe('ProjectsPage', () => {
     confirm.mockRestore();
   });
 
-  it('generates only the document selected by the contract type and stores it in SeaPilot', async () => {
+  it('offers the document-only download for the contract type and stores the issued file in SeaPilot', async () => {
     const user = userEvent.setup();
     const { client, from, rpc } = createClient();
     render(<ProjectsPage client={client as never} roles={['admin']} />);
@@ -820,14 +826,19 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     expect(screen.queryByText('Offre commerciale', { selector: 'strong' })).not.toBeInTheDocument();
     const bimcoCard = screen.getByText('BIMCO', { selector: 'strong' }).closest('article');
-    await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Générer et classer' }));
+    await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    expect(screen.getByRole('dialog', { name: 'Émettre bimco' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Document seul/ })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
       'bimco_supplytime',
       expect.objectContaining({ contract: expect.objectContaining({ projectId: 880 }) }),
     ));
     expect(documentStorageMocks.storeGeneratedProjectDocument).toHaveBeenCalledTimes(1);
-    expect(documentGenerationMocks.downloadGeneratedProjectDocument).not.toHaveBeenCalled();
+    expect(documentGenerationMocks.downloadGeneratedProjectDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: 'P1086 - Offre - R1.pdf' }),
+    );
     expect(from.mock.calls.map(([table]) => table)).not.toContain('storage');
     expect(rpc.mock.calls.map(([functionName]) => functionName)).toEqual(
       expect.not.arrayContaining(['projects_save_planning_occurrence', 'projects_delete_planning_occurrence']),
@@ -860,7 +871,8 @@ describe('ProjectsPage', () => {
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     const bareboatCard = screen.getByText("Contrat d'affrètement", { selector: 'strong' }).closest('article');
-    await user.click(within(bareboatCard as HTMLElement).getByRole('button', { name: 'Générer et classer' }));
+    await user.click(within(bareboatCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
       'bareboat_charter',
@@ -875,6 +887,51 @@ describe('ProjectsPage', () => {
     expect(documentStorageMocks.storeGeneratedProjectDocument).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ documentType: 'bareboat_charter', projectId: 880 }),
+    );
+  });
+
+  it('downloads the issued document with the saved project attachments when requested', async () => {
+    const user = userEvent.setup();
+    const attachmentRow = {
+      id: 73,
+      project_id: 880,
+      planning_occurrence_id: null,
+      document_type: 'project_attachment',
+      category_key: 'toilette_de_mer',
+      subcategory_key: 'toilette_de_mer_attestation_expert_bv',
+      expires_on: null,
+      file_name: 'Attestation Expert BV.pdf',
+      mime_type: 'application/pdf',
+      file_size_bytes: 512,
+      sharepoint_web_url: null,
+      sharepoint_folder_path: null,
+      storage_bucket: 'project-files',
+      storage_path: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
+      created_at: '2026-08-29T06:00:00Z',
+    };
+    const { client } = createClient({
+      project_generated_documents: { data: [attachmentRow], error: null },
+    });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    const bimcoCard = screen.getByText('BIMCO', { selector: 'strong' }).closest('article');
+    await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    await user.click(screen.getByRole('radio', { name: /Document \+ pièces jointes/ }));
+    await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
+
+    await waitFor(() => expect(documentStorageMocks.createProjectDocumentBundle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        attachments: [expect.objectContaining({
+          fileName: 'Attestation Expert BV.pdf',
+          storagePath: 'projects/880/attachments/toilette_de_mer/attestation.pdf',
+        })],
+      }),
+    ));
+    expect(documentGenerationMocks.downloadGeneratedProjectDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: 'application/zip' }),
     );
   });
 });

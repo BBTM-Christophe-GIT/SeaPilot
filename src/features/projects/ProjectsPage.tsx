@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileText,
+  Files,
   Download,
   ExternalLink,
   Filter,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -91,6 +93,13 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 const PROJECTS_PER_PAGE = 40;
 const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
+
+type ProjectDocumentDownloadMode = 'document' | 'bundle';
+
+interface ProjectDocumentEmissionRequest {
+  kind: ProjectGeneratedDocumentKind;
+  planningOccurrenceId: number | null;
+}
 
 function generatedDocumentKindForContract(contractType?: string | null): ProjectGeneratedDocumentKind {
   const normalized = normalizeProjectContractType(contractType);
@@ -476,6 +485,82 @@ function SupplytimePreview({ project, contract }: { project: ProjectRecord; cont
   );
 }
 
+function ProjectDocumentEmissionDialog({
+  attachmentCount,
+  definition,
+  isBusy,
+  mode,
+  onClose,
+  onConfirm,
+  onModeChange,
+}: {
+  attachmentCount: number;
+  definition: (typeof PROJECT_DOCUMENT_TYPES)[number];
+  isBusy: boolean;
+  mode: ProjectDocumentDownloadMode;
+  onClose: () => void;
+  onConfirm: () => void;
+  onModeChange: (mode: ProjectDocumentDownloadMode) => void;
+}) {
+  return (
+    <AppDialog
+      description={`Le ${definition.label.toLocaleLowerCase('fr-FR')} sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
+      eyebrow="Projet · Émission documentaire"
+      footer={(
+        <div className="app-dialog__actions">
+          <button className="is-secondary" disabled={isBusy} onClick={onClose} type="button">Annuler</button>
+          <button className="is-primary" disabled={isBusy} onClick={onConfirm} type="button">
+            <Download aria-hidden="true" size={16} />
+            {isBusy ? 'Émission en cours…' : 'Émettre et télécharger'}
+          </button>
+        </div>
+      )}
+      icon={<FileText aria-hidden="true" size={20} />}
+      isBusy={isBusy}
+      onClose={onClose}
+      size="sm"
+      title={`Émettre ${definition.label.toLocaleLowerCase('fr-FR')}`}
+    >
+      <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
+        <label className={mode === 'document' ? 'is-selected' : undefined}>
+          <input
+            checked={mode === 'document'}
+            disabled={isBusy}
+            name="project-document-download-mode"
+            onChange={() => onModeChange('document')}
+            type="radio"
+            value="document"
+          />
+          <FileText aria-hidden="true" size={22} />
+          <span>
+            <strong>Document seul</strong>
+            <small>Télécharger uniquement le document généré au format {definition.extension.toUpperCase()}.</small>
+          </span>
+        </label>
+        <label className={mode === 'bundle' ? 'is-selected' : undefined}>
+          <input
+            checked={mode === 'bundle'}
+            disabled={isBusy || attachmentCount === 0}
+            name="project-document-download-mode"
+            onChange={() => onModeChange('bundle')}
+            type="radio"
+            value="bundle"
+          />
+          <Files aria-hidden="true" size={22} />
+          <span>
+            <strong>Document + pièces jointes</strong>
+            <small>
+              {attachmentCount > 0
+                ? `Télécharger une archive ZIP avec ${attachmentCount} pièce${attachmentCount > 1 ? 's' : ''} jointe${attachmentCount > 1 ? 's' : ''}.`
+                : 'Aucune pièce jointe privée n’est classée sur ce projet.'}
+            </small>
+          </span>
+        </label>
+      </div>
+    </AppDialog>
+  );
+}
+
 function ProjectDetail({
   project,
   contract,
@@ -670,7 +755,7 @@ function ProjectDetail({
                   type="button"
                 >
                   <Download aria-hidden="true" size={15} />
-                  {generatingDocument === definition.kind ? 'Génération et classement…' : definition.available ? 'Générer et classer' : 'Modèle attendu'}
+                  {generatingDocument === definition.kind ? 'Émission et classement…' : definition.available ? 'Émettre le document' : 'Modèle attendu'}
                 </button>
               ) : null}
             </article>
@@ -844,6 +929,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
+  const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
+  const [documentDownloadMode, setDocumentDownloadMode] = useState<ProjectDocumentDownloadMode>('document');
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -967,7 +1054,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedOperationDocuments = selectedProject
     ? projectsData.operationDocuments.filter((document) => document.projectId === selectedProject.id)
     : [];
+  const selectedProjectAttachments = selectedOperationDocuments.filter((document) => (
+    document.documentType === 'project_attachment' && document.planningOccurrenceId === null
+  ));
   const selectedGeneratedDocumentKind = generatedDocumentKindForContract(selectedProject?.contractType);
+  const documentEmissionDefinition = documentEmissionRequest
+    ? PROJECT_DOCUMENT_TYPES.find((definition) => definition.kind === documentEmissionRequest.kind)
+    : undefined;
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -1004,6 +1097,12 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setMutationError('');
     setEditingOccurrence(occurrence);
     setPlanningEditorOpen(true);
+  }
+
+  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+    setMutationError('');
+    setDocumentDownloadMode('document');
+    setDocumentEmissionRequest({ kind, planningOccurrenceId });
   }
 
   async function archiveSelectedProject() {
@@ -1061,7 +1160,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     }
   }
 
-  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+  async function generateSelectedProjectDocument(
+    kind: ProjectGeneratedDocumentKind,
+    planningOccurrenceId: number | null,
+    downloadMode: ProjectDocumentDownloadMode,
+  ) {
     if (!selectedProject) return;
     setMutationError('');
     setMutationMessage('');
@@ -1090,27 +1193,56 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
         vesselCertificates,
       });
+      let storedDocument: StoredProjectDocument | null = null;
+      const warnings: string[] = [];
       try {
         const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');
-        const stored = await storeGeneratedProjectDocument(effectiveClient, {
+        storedDocument = await storeGeneratedProjectDocument(effectiveClient, {
           document: generated,
           documentType: kind,
           planningOccurrenceId,
           projectId: selectedProject.id,
           revision: 1,
         });
-        setLastStoredDocument(stored);
-        setMutationMessage(`${stored.fileName} généré et classé dans l’espace privé SeaPilot.`);
+        setLastStoredDocument(storedDocument);
         setLoadAttempt((attempt) => attempt + 1);
       } catch (storageError) {
-        downloadGeneratedProjectDocument(generated);
-        setMutationMessage(`${generated.fileName} généré et téléchargé localement.`);
-        setMutationError(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
+        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
       }
+
+      let bundled = false;
+      if (downloadMode === 'bundle') {
+        try {
+          const { createProjectDocumentBundle } = await import('./projectDocumentStorage');
+          const bundle = await createProjectDocumentBundle(effectiveClient, {
+            attachments: selectedProjectAttachments,
+            document: generated,
+          });
+          downloadGeneratedProjectDocument(bundle);
+          bundled = true;
+        } catch (bundleError) {
+          downloadGeneratedProjectDocument(generated);
+          warnings.push(
+            `${bundleError instanceof Error ? bundleError.message : 'La préparation des pièces jointes a échoué.'} Le document seul a été téléchargé.`,
+          );
+        }
+      } else {
+        downloadGeneratedProjectDocument(generated);
+      }
+
+      const storageLabel = storedDocument
+        ? 'généré et classé dans l’espace privé SeaPilot'
+        : 'généré';
+      const downloadLabel = bundled
+        ? `téléchargé avec ${selectedProjectAttachments.length} pièce${selectedProjectAttachments.length > 1 ? 's' : ''} jointe${selectedProjectAttachments.length > 1 ? 's' : ''}`
+        : 'téléchargé';
+      setMutationMessage(`${generated.fileName} ${storageLabel}, puis ${downloadLabel}.`);
+      setMutationError(warnings.join(' '));
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
     } finally {
       setGeneratingDocument(null);
+      setDocumentEmissionRequest(null);
     }
   }
 
@@ -1178,8 +1310,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <ProjectRibbonButton
             disabled={!isManager || !selectedProject || generatingDocument !== null}
             icon={<FileText aria-hidden="true" size={20} />}
-            label="Générer le document"
-            onClick={() => void generateSelectedProjectDocument(
+            label="Émettre le document"
+            onClick={() => openProjectDocumentEmission(
               selectedGeneratedDocumentKind,
               selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null,
             )}
@@ -1369,7 +1501,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               isManager={isManager}
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
-              onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
+              onGenerateDocument={openProjectDocumentEmission}
               onEditProject={() => openProjectEditor(selectedProject)}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
               operationDocuments={selectedOperationDocuments}
@@ -1380,6 +1512,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           ) : null}
         </div>
       )}
+
+      {documentEmissionRequest && documentEmissionDefinition ? (
+        <ProjectDocumentEmissionDialog
+          attachmentCount={selectedProjectAttachments.length}
+          definition={documentEmissionDefinition}
+          isBusy={generatingDocument !== null}
+          mode={documentDownloadMode}
+          onClose={() => setDocumentEmissionRequest(null)}
+          onConfirm={() => void generateSelectedProjectDocument(
+            documentEmissionRequest.kind,
+            documentEmissionRequest.planningOccurrenceId,
+            documentDownloadMode,
+          )}
+          onModeChange={setDocumentDownloadMode}
+        />
+      ) : null}
 
       {projectEditorOpen ? (
         <ProjectEditor

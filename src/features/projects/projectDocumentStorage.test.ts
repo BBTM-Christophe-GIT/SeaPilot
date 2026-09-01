@@ -1,5 +1,7 @@
+import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  createProjectDocumentBundle,
   createProjectDocumentAccessUrl,
   storeGeneratedProjectDocument,
   storeOperationDocument,
@@ -7,6 +9,46 @@ import {
 } from './projectDocumentStorage';
 
 describe('projectDocumentStorage', () => {
+  it('creates a ZIP containing the issued document and every private project attachment', async () => {
+    const download = vi.fn()
+      .mockResolvedValueOnce({ data: new Blob(['attestation']), error: null })
+      .mockResolvedValueOnce({ data: new Blob(['procedure']), error: null });
+    const client = { storage: { from: vi.fn(() => ({ download })) } };
+
+    const bundle = await createProjectDocumentBundle(client as never, {
+      attachments: [
+        {
+          fileName: 'Attestation Expert BV.pdf',
+          storageBucket: 'project-files',
+          storagePath: 'projects/144/attachments/attestation.pdf',
+        },
+        {
+          fileName: 'Procédure travaux.pdf',
+          storageBucket: 'project-files',
+          storagePath: 'projects/144/attachments/procedure.pdf',
+        },
+      ],
+      document: {
+        blob: new Blob(['offre'], { type: 'application/pdf' }),
+        fileName: 'P144 - Offre - R1.pdf',
+        mimeType: 'application/pdf',
+      },
+    });
+
+    const archive = await JSZip.loadAsync(await bundle.blob.arrayBuffer());
+    expect(Object.keys(archive.files)).toEqual(expect.arrayContaining([
+      'Document/P144 - Offre - R1.pdf',
+      'Pièces jointes/01 - Attestation Expert BV.pdf',
+      'Pièces jointes/02 - Procédure travaux.pdf',
+    ]));
+    expect(bundle).toMatchObject({
+      fileName: 'P144 - Offre - R1 - avec pièces jointes.zip',
+      mimeType: 'application/zip',
+    });
+    expect(download).toHaveBeenNthCalledWith(1, 'projects/144/attachments/attestation.pdf');
+    expect(download).toHaveBeenNthCalledWith(2, 'projects/144/attachments/procedure.pdf');
+  });
+
   it('stores generated documents in private Supabase Storage without invoking SharePoint', async () => {
     const upload = vi.fn().mockResolvedValue({ data: { path: 'stored' }, error: null });
     const remove = vi.fn().mockResolvedValue({ data: [], error: null });
