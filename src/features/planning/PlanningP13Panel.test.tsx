@@ -111,7 +111,7 @@ describe('Planning P1.3 cockpit', () => {
     expect(within(form).getByText(/suggestion d’import/i)).toBeInTheDocument();
     expect(within(form).getByLabelText('Portée')).toHaveValue('company');
     for (const label of [
-      'Travail max — 24 h glissantes', 'Repos min — 24 h glissantes',
+      'Travail max — cycle après repos de 6 h', 'Repos min — 24 h glissantes',
       'Travail max — 7 j glissants', 'Repos min — 7 j glissants',
       'Repos consécutif minimum', 'Périodes de repos max / 24 h',
       'Travail de nuit maximum',
@@ -120,7 +120,7 @@ describe('Planning P1.3 cockpit', () => {
     expect(within(form).getByLabelText('Fin de la fenêtre de nuit')).toHaveValue('');
     fireEvent.change(within(form).getByLabelText('Nom'), { target: { value: 'Politique direction' } });
     for (const [label, value] of [
-      ['Travail max — 24 h glissantes', '12'], ['Repos min — 24 h glissantes', '11'],
+      ['Travail max — cycle après repos de 6 h', '12'], ['Repos min — 24 h glissantes', '11'],
       ['Travail max — 7 j glissants', '72'], ['Repos min — 7 j glissants', '96'],
       ['Repos consécutif minimum', '6'], ['Périodes de repos max / 24 h', '2'],
       ['Travail de nuit maximum', '8'],
