@@ -76,15 +76,11 @@ interface FindingPayload {
   responsibleName?: string;
 }
 
-function findingSortLabel(title: string): string {
-  return title.replace(/^\s*\d+\s*[.)-]?\s*/, '').trim();
-}
-
 export function compareFleetFindingTitles(
   left: Pick<FleetCertificateFinding, 'title'>,
   right: Pick<FleetCertificateFinding, 'title'>,
 ): number {
-  return findingSortLabel(left.title).localeCompare(findingSortLabel(right.title), 'fr', {
+  return left.title.trim().localeCompare(right.title.trim(), 'fr', {
     numeric: true,
     sensitivity: 'base',
   });
