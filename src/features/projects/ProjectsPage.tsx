@@ -504,7 +504,7 @@ function ProjectDocumentEmissionDialog({
 }) {
   return (
     <AppDialog
-      description={`Le ${definition.label.toLocaleLowerCase('fr-FR')} sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
+      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
       eyebrow="Projet · Émission documentaire"
       footer={(
         <div className="app-dialog__actions">
@@ -519,7 +519,7 @@ function ProjectDocumentEmissionDialog({
       isBusy={isBusy}
       onClose={onClose}
       size="sm"
-      title={`Émettre ${definition.label.toLocaleLowerCase('fr-FR')}`}
+      title={`Émettre : ${definition.label}`}
     >
       <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
         <label className={mode === 'document' ? 'is-selected' : undefined}>

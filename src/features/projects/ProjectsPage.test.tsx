@@ -827,7 +827,7 @@ describe('ProjectsPage', () => {
     expect(screen.queryByText('Offre commerciale', { selector: 'strong' })).not.toBeInTheDocument();
     const bimcoCard = screen.getByText('BIMCO', { selector: 'strong' }).closest('article');
     await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
-    expect(screen.getByRole('dialog', { name: 'Émettre bimco' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Émettre : BIMCO' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Document seul/ })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
