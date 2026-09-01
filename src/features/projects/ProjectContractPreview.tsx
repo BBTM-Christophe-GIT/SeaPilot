@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ProjectTowedAssetWriteInput, ProjectWriteInput } from './projectMutations';
-import type { ClientRecord, VesselRecord } from './projectQueries';
+import type { ClientRecord, ProjectVesselCertificateRecord, VesselRecord } from './projectQueries';
 import {
+  BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
   COMMERCIAL_OFFER_CONTRACT_TYPE,
+  DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   normalizeProjectContractType,
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
@@ -26,20 +28,32 @@ import towagePage03Url from './assets/contract-previews/towage-contract-page-03.
 import towagePage04Url from './assets/contract-previews/towage-contract-page-04.png';
 import towagePage05Url from './assets/contract-previews/towage-contract-page-05.png';
 import towagePage06Url from './assets/contract-previews/towage-contract-page-06.png';
+import bareboatPage01Url from './assets/contract-previews/bareboat-charter-page-1.png';
+import bareboatPage02Url from './assets/contract-previews/bareboat-charter-page-2.png';
+import bareboatPage03Url from './assets/contract-previews/bareboat-charter-page-3.png';
+import bareboatPage04Url from './assets/contract-previews/bareboat-charter-page-4.png';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
+import {
+  buildBareboatDeliveryLabel,
+  buildBareboatRedeliveryLabel,
+  deriveBareboatCertificateFields,
+  formatBareboatDate,
+  localTodayIso,
+} from './projectBareboatContract';
 
 interface ProjectContractPreviewProps {
-  client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'representedBy'>;
+  client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'postalCode' | 'representedBy' | 'siret'>;
   emitter?: ProjectDocumentEmitter;
   form: ProjectWriteInput;
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
   vessel?: VesselRecord;
+  vesselCertificates?: ProjectVesselCertificateRecord[];
 }
 
 interface PositionedValue {
@@ -60,6 +74,7 @@ const TOWAGE_PAGE_URLS = [
   towagePage05Url,
   towagePage06Url,
 ] as const;
+const BAREBOAT_PAGE_URLS = [bareboatPage01Url, bareboatPage02Url, bareboatPage03Url, bareboatPage04Url] as const;
 
 const BIMCO_POSITIONED_VALUES: PositionedValue[] = [
   { page: 1, key: 'p144_box01_place_date', left: 10.2, top: 17.3, width: 80, height: 5.3 },
@@ -252,6 +267,92 @@ function buildTowageValues({ client, emitter, form, projectCode, towedAsset, ves
   };
 }
 
+function bareboatClientIdentity(client?: ProjectContractPreviewProps['client']): string {
+  if (!client) return '';
+  return [
+    client.name,
+    client.address,
+    [client.postalCode, client.city].filter(Boolean).join(' '),
+    client.country,
+    client.siret ? `Siret : ${client.siret}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function bareboatMinimumDuration(form: ProjectWriteInput): string {
+  const start = form.charterStartsAt || form.deliveryAt || form.startsOn;
+  const end = form.charterEndsAt || form.redeliveryAt || form.endsOn;
+  if (!start || !end) return '';
+  const startsAt = new Date(start);
+  const endsAt = new Date(end);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt < startsAt) return '';
+  return `${Math.max(1, Math.ceil((endsAt.getTime() - startsAt.getTime()) / 86_400_000))} jours`;
+}
+
+function buildBareboatValues({
+  client,
+  emitter,
+  form,
+  projectCode,
+  vessel,
+  vesselCertificates,
+}: ProjectContractPreviewProps) {
+  const saved = form.supplytimeData;
+  const contractDate = saved.bareboat_contract_date || localTodayIso();
+  const certificateFields = vesselCertificates
+    ? deriveBareboatCertificateFields(vesselCertificates)
+    : undefined;
+  const extension = form.extensionCount && form.extensionDuration
+    ? `${form.extensionCount} × ${form.extensionDuration} ${form.extensionUnit}`
+    : '';
+  const vesselIdentityValue = vessel ? [
+    `Nom : ${vessel.name}`,
+    `Immatriculation : ${vessel.registrationNumber || ''}`,
+    `Port d’immatriculation : ${vessel.registrationPort || ''}`,
+    `Pavillon : ${vessel.flagState || ''}`,
+    `Classe : ${vessel.classificationLabel || ''}`,
+  ].join('\n') : '';
+  const vesselDetails = [
+    vessel?.builtYear ? `Année de construction : ${vessel.builtYear}${saved.bareboat_refit_details ? ` - ${saved.bareboat_refit_details}` : ''}` : saved.bareboat_refit_details || '',
+    `Limites d’exploitation : ${saved.bareboat_operating_limits || vessel?.navigationCategory || ''}`,
+  ].filter(Boolean).join('\n');
+  return {
+    projectCode,
+    headerDate: compactDate(contractDate),
+    vesselName: vessel?.name || '',
+    contractDate: `${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${formatBareboatDate(contractDate)}`,
+    charterer: saved.bareboat_charterer_identity || bareboatClientIdentity(client),
+    owner: form.ownerIdentity,
+    vesselIdentity: vesselIdentityValue,
+    vesselDetails,
+    lastAdminVisit: certificateFields ? certificateFields.lastAdminVisitLabel : saved.bareboat_last_admin_visit || '',
+    navigationTitles: [
+      `Permis de navigation : ${certificateFields ? certificateFields.navigationPermitLabel : saved.bareboat_navigation_permit || ''}`,
+      `Permis d’armement : ${certificateFields ? certificateFields.manningPermitLabel : saved.bareboat_manning_permit || ''}`,
+    ].join('\n'),
+    delivery: buildBareboatDeliveryLabel(
+      form.deliveryAt,
+      form.deliveryPort,
+      saved.bareboat_delivery_by_truck === 'true',
+    ),
+    mobilisation: money(form.mobilisationFee, form.feeCurrency),
+    redelivery: buildBareboatRedeliveryLabel(form.redeliveryAt, form.redeliveryPort),
+    demobilisation: money(form.demobilisationFee, form.feeCurrency),
+    minimumDuration: saved.bareboat_minimum_duration || bareboatMinimumDuration(form),
+    extensions: saved.bareboat_extension_options || extension,
+    charterHire: form.charterHire == null ? '' : money(form.charterHire, form.hireCurrency || 'EUR'),
+    earlyTermination: saved.bareboat_early_termination_indemnity || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_early_termination_indemnity,
+    insuredValue: saved.bareboat_insured_value || '',
+    insurancePayer: saved.bareboat_insurance_payer || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_insurance_payer,
+    applicableLaw: saved.bareboat_applicable_law || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_applicable_law,
+    jurisdiction: saved.bareboat_jurisdiction || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_jurisdiction,
+    chartererSignatory: saved.bareboat_charterer_signatory || client?.representedBy || '',
+    ownerSignatory: saved.bareboat_owner_signatory || formatProjectDocumentEmitterName(emitter) || '',
+    ownerSignatoryFunction: saved.bareboat_owner_signatory_function || emitter?.functionLabel || '',
+    ownerSignatureUrl: emitter?.signatureUrl || '',
+    signatureStatement: `Fait à ${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${formatBareboatDate(contractDate)}`,
+  };
+}
+
 function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectContractPreviewProps) {
   const duration = form.startsOn && form.endsOn
     ? Math.max(1, Math.round((new Date(form.endsOn).getTime() - new Date(form.startsOn).getTime()) / 86_400_000) + 1)
@@ -358,6 +459,69 @@ function TowagePreview({ page, ...props }: ProjectContractPreviewProps & { page:
   );
 }
 
+function BareboatSignature({
+  className,
+  functionLabel,
+  name,
+  signatureUrl,
+}: {
+  className: string;
+  functionLabel?: string;
+  name: string;
+  signatureUrl?: string;
+}) {
+  return (
+    <span className={`bareboat-overlay bareboat-signature ${className}`}>
+      <span>{name}</span>
+      {functionLabel ? <span>{functionLabel}</span> : null}
+      {signatureUrl ? <img alt={`Signature de ${name}`} src={signatureUrl} /> : null}
+    </span>
+  );
+}
+
+function BareboatPreview({ page, values }: { page: number; values: ReturnType<typeof buildBareboatValues> }) {
+  return (
+    <div className="project-contract-page project-bareboat-page">
+      <img alt={`Aperçu du contrat d’affrètement, page ${page}`} src={BAREBOAT_PAGE_URLS[page - 1]} />
+      <span className="bareboat-overlay project-code">{values.projectCode}</span>
+      <span className="bareboat-overlay header-date">{values.headerDate}</span>
+      <span className="bareboat-overlay vessel-name">{values.vesselName}</span>
+      {page === 1 ? (
+        <>
+          <span className="bareboat-overlay contract-date">{values.contractDate}</span>
+          <span className="bareboat-overlay charterer">{values.charterer}</span>
+          <span className="bareboat-overlay owner">{values.owner}</span>
+          <span className="bareboat-overlay vessel-identity">{values.vesselIdentity}</span>
+          <span className="bareboat-overlay vessel-details">{values.vesselDetails}</span>
+          <span className="bareboat-overlay last-admin-visit">{values.lastAdminVisit}</span>
+          <span className="bareboat-overlay navigation-titles">{values.navigationTitles}</span>
+          <span className="bareboat-overlay delivery">{values.delivery}</span>
+          <span className="bareboat-overlay mobilisation">{values.mobilisation}</span>
+          <span className="bareboat-overlay redelivery">{values.redelivery}</span>
+          <span className="bareboat-overlay demobilisation">{values.demobilisation}</span>
+          <span className="bareboat-overlay minimum-duration">{values.minimumDuration}</span>
+          <span className="bareboat-overlay extensions">{values.extensions}</span>
+          <span className="bareboat-overlay charter-hire">{values.charterHire}</span>
+          <span className="bareboat-overlay early-termination">{values.earlyTermination}</span>
+          <span className="bareboat-overlay insured-value">{values.insuredValue}</span>
+          <span className="bareboat-overlay insurance-payer">{values.insurancePayer}</span>
+          <span className="bareboat-overlay applicable-law">{values.applicableLaw}</span>
+          <span className="bareboat-overlay jurisdiction">{values.jurisdiction}</span>
+          <BareboatSignature className="page-one-charterer-signatory" name={values.chartererSignatory} />
+          <BareboatSignature className="page-one-owner-signatory" functionLabel={values.ownerSignatoryFunction} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
+        </>
+      ) : null}
+      {page === 4 ? (
+        <>
+          <span className="bareboat-overlay signature-statement">{values.signatureStatement}</span>
+          <BareboatSignature className="page-four-charterer-signatory" name={values.chartererSignatory} />
+          <BareboatSignature className="page-four-owner-signatory" functionLabel={values.ownerSignatoryFunction} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function BimcoPreview({ page, values }: { page: number; values: Record<string, string> }) {
   if (page > 4) {
     return (
@@ -386,12 +550,19 @@ function BimcoPreview({ page, values }: { page: number; values: Record<string, s
 
 export function ProjectContractPreview(props: ProjectContractPreviewProps) {
   const contractType = normalizeProjectContractType(props.form.contractType);
-  const pageCount = contractType === BIMCO_CONTRACT_TYPE ? 29 : contractType === TOWAGE_CONTRACT_TYPE ? 6 : 1;
+  const pageCount = contractType === BIMCO_CONTRACT_TYPE
+    ? 29
+    : contractType === TOWAGE_CONTRACT_TYPE
+      ? 6
+      : contractType === BAREBOAT_CONTRACT_TYPE
+        ? 4
+        : 1;
   const [page, setPage] = useState(1);
   useEffect(() => setPage(1), [contractType]);
   const currentPage = Math.min(page, pageCount);
   const bimcoValues = useMemo(() => buildBimcoValues(props), [props]);
   const towageValues = useMemo(() => buildTowageValues(props), [props]);
+  const bareboatValues = useMemo(() => buildBareboatValues(props), [props]);
   const completedBimcoFields = BIMCO_P144_FIELDS.filter((field) => bimcoValues[field.key]?.trim()).length;
   const basicCompletion = [props.form.title, props.form.clientId, props.form.primaryVesselId, props.form.deliveryAt, props.form.redeliveryAt]
     .filter(Boolean).length;
@@ -399,6 +570,8 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
     ? Math.round((completedBimcoFields / 34) * 100)
     : contractType === TOWAGE_CONTRACT_TYPE
       ? Math.round(((basicCompletion + Object.values(towageValues).filter((value) => String(value).trim()).length) / 27) * 100)
+      : contractType === BAREBOAT_CONTRACT_TYPE
+        ? Math.round((Object.values(bareboatValues).filter((value) => String(value).trim()).length / Object.keys(bareboatValues).length) * 100)
       : Math.round(((basicCompletion + [props.form.description, props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
   const checklist = contractType === BIMCO_CONTRACT_TYPE
@@ -415,6 +588,15 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           { label: 'Conditions particulières', complete: Boolean(props.form.supplytimeData.special_conditions) },
           { label: 'Signatures', complete: Boolean(towageValues.ownerSignatory && towageValues.chartererSignatory) },
         ]
+      : contractType === BAREBOAT_CONTRACT_TYPE
+        ? [
+            { label: 'Parties', complete: Boolean(props.form.clientId && props.form.ownerIdentity) },
+            { label: 'Navire & titres', complete: Boolean(props.form.primaryVesselId && bareboatValues.lastAdminVisit && bareboatValues.navigationTitles) },
+            { label: 'Livraison & durée', complete: Boolean(props.form.deliveryAt && props.form.redeliveryAt && bareboatValues.minimumDuration) },
+            { label: 'Conditions financières', complete: Boolean(props.form.charterHire && bareboatValues.insuredValue) },
+            { label: 'Loi & juridiction', complete: Boolean(bareboatValues.applicableLaw && bareboatValues.jurisdiction) },
+            { label: 'Signatures', complete: Boolean(bareboatValues.ownerSignatory && bareboatValues.chartererSignatory) },
+          ]
       : [
           { label: 'Identification', complete: Boolean(props.form.title && props.form.clientId) },
           { label: 'Périmètre', complete: Boolean(props.form.description && props.form.operationArea) },
@@ -443,6 +625,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
         <div className="project-document-preview-canvas">
           {contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
           {contractType === TOWAGE_CONTRACT_TYPE ? <TowagePreview {...props} page={currentPage} /> : null}
+          {contractType === BAREBOAT_CONTRACT_TYPE ? <BareboatPreview page={currentPage} values={bareboatValues} /> : null}
           {contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
         </div>
       </section>

@@ -24,23 +24,23 @@ Les ports de livraison et de restitution utilisent le référentiel SharePoint `
 | Type | Format | État | Source des valeurs |
 |---|---:|---|---|
 | Offre commerciale | PDF | Actif | projet, client, mission, contrat |
-| BIMCO SUPPLYTIME 2017 | PDF, 22 pages | Actif | Part I du SPFx + Part II générique du modèle fourni |
-| Contrat de remorquage BBTM | DOCX, 6 pages | Actif | projet, client, mission, contrat et 19 clauses particulières |
-| Affrètement — Coque nue | DOCX | En attente du modèle | emplacement de données déjà prévu |
+| BIMCO SUPPLYTIME 2017 | PDF, 29 pages | Actif | projet, client, mission, contrat et cases particulières |
+| Contrat de remorquage BBTM | PDF, 6 pages | Actif | projet, client, mission, contrat et 19 clauses particulières |
+| Contrat d'Affrètement — Coque nue | PDF, 4 pages | Actif | projet, client, navire, contrat, cases particulières et signataires |
 | Prestation intellectuelle | DOCX | En attente du modèle | emplacement de données déjà prévu |
 
 Le BIMCO fourni était un contrat P144 exécuté. SeaPilot ne réutilise ni ses valeurs, ni ses signatures, ni ses annexes client, ni l'historique Adobe. La génération assemble les deux pages Part I vierges déjà utilisées par le SPFx et les vingt pages génériques Part II (pages 5 à 24 du fichier fourni).
 
-Le modèle de remorquage a été assaini : P220, dates et signatures ont été remplacés par des jetons. Les clauses générales BBTM et la mise en page sont conservées. Le script reproductible est `scripts/projects/build_contract_templates.py`.
+Les modèles de remorquage et d'affrètement coque nue ont été assainis : références projet, parties, navire, dates, valeurs commerciales et signatures du contrat exécuté ont été supprimées. Les clauses générales BBTM, les passages barrés, le logo et la mise en page sont conservés. Le script reproductible est `scripts/projects/build_contract_templates.py`.
 
 ## Données Supabase
 
 - `project_document_profiles` conserve, par projet et type de document, les champs complémentaires en JSON validé et un numéro de révision.
-- `project_generated_documents` conserve uniquement les métadonnées immuables du fichier SharePoint : type, révision, mission éventuelle, nom, type MIME, taille, empreinte SHA-256, identifiants Graph, dossier et URL.
-- Les fichiers binaires ne sont pas enregistrés dans Supabase.
+- `project_generated_documents` conserve les métadonnées immuables du fichier : type, révision, mission éventuelle, nom, type MIME, taille, empreinte SHA-256 et chemin privé.
+- Les fichiers binaires générés sont enregistrés dans le bucket Supabase privé `project-files` ; les anciennes références SharePoint restent consultables en lecture seule.
 - Les politiques RLS limitent la lecture à la société active et l'édition des profils aux rôles `admin` et `direction`.
 
-## Classement SharePoint
+## Classement documentaire
 
 Site : [QHSE](https://bbtm668.sharepoint.com/sites/QHSE/)
 
@@ -49,37 +49,17 @@ Bibliothèques auditées :
 - [Documents Projets](https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets) — destination des documents générés ;
 - [Documents Contractuels](https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels) — consultation des contrats historiques.
 
-Arborescence créée à la première génération :
+Arborescence privée créée à la première génération :
 
 ```text
-Documents Projets/
-└── SeaPilot/
-    └── P265 - Nom du projet/
-        ├── P265 - Offre - R1.pdf
-        ├── P265 - BIMCO SUPPLYTIME 2017 - R1.pdf
-        └── P265 - Contrat de remorquage - R1.docx
+project-files/
+└── projects/<project_id>/generated/
+    ├── offer/r1/<uuid>-P265-Offre-R1.pdf
+    ├── bimco_supplytime/r1/<uuid>-P265-BIMCO-R1.pdf
+    ├── towage_contract/r1/<uuid>-P265-Contrat-de-remorquage-R1.pdf
+    └── bareboat_charter/r1/<uuid>-P265-Contrat-d-affretement-R1.pdf
 ```
 
-L'Edge Function `project-document-upload` vérifie la session, le rôle, l'appartenance à la société et le rattachement de la mission avant tout envoi Microsoft Graph.
+La RPC `projects_register_generated_storage_document` vérifie la session, le rôle, l'appartenance à la société, le type documentaire et l'existence du fichier privé avant l'enregistrement des métadonnées.
 
-## Configuration Microsoft requise
-
-L'application SeaPilot utilise Supabase Auth et ne possède donc pas de jeton Microsoft délégué. Une inscription d'application Entra ID est nécessaire pour le classement automatique. Configurer les secrets Supabase suivants :
-
-```text
-MICROSOFT_TENANT_ID=<tenant Entra ID>
-MICROSOFT_CLIENT_ID=<application SeaPilot>
-MICROSOFT_CLIENT_SECRET=<secret applicatif>
-SHAREPOINT_PROJECTS_DRIVE_ID=b!j0eX05ggd0iS7a1x5WccnspY9pQFywFKhPc9dkTkf_Ou31l1uVoWRrtjl4GcYGNl
-```
-
-Permission recommandée : Microsoft Graph `Sites.Selected` (Application), avec un droit `write` accordé uniquement au site QHSE. `Sites.ReadWrite.All` fonctionne également mais donne un périmètre plus large.
-
-Déploiement :
-
-```powershell
-supabase secrets set MICROSOFT_TENANT_ID=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... SHAREPOINT_PROJECTS_DRIVE_ID=...
-supabase functions deploy project-document-upload --project-ref szlvyrrmvdvhzixilymh
-```
-
-Sans ces trois identifiants Entra ID, SeaPilot génère le fichier, le télécharge localement et signale que le classement SharePoint n'est pas configuré.
+Les utilisateurs appartenant à la société active reçoivent un lien Supabase signé à durée courte pour consulter un fichier. Les rôles `admin` et `direction` sont les seuls à pouvoir générer et enregistrer un nouveau document.

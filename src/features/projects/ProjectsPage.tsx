@@ -33,6 +33,7 @@ import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
 import {
+  BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
   normalizeProjectContractType,
   PROJECT_CONTRACT_TYPES,
@@ -44,6 +45,7 @@ import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './p
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
   buildProjectMetrics,
+  fetchProjectVesselCertificates,
   fetchProjectsData,
   type ClientRecord,
   type ProjectContractRecord,
@@ -94,6 +96,7 @@ function generatedDocumentKindForContract(contractType?: string | null): Project
   const normalized = normalizeProjectContractType(contractType);
   if (normalized === BIMCO_CONTRACT_TYPE) return 'bimco_supplytime';
   if (normalized === TOWAGE_CONTRACT_TYPE) return 'towage_contract';
+  if (normalized === BAREBOAT_CONTRACT_TYPE) return 'bareboat_charter';
   return 'offer';
 }
 
@@ -1069,8 +1072,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       const occurrence = planningOccurrenceId
         ? selectedPlanningOccurrences.find((item) => item.id === planningOccurrenceId)
         : undefined;
-      const emitter = kind === 'offer' || kind === 'towage_contract'
+      const emitter = kind === 'offer' || kind === 'towage_contract' || kind === 'bareboat_charter'
         ? await fetchProjectDocumentEmitter(effectiveClient).catch(() => undefined)
+        : undefined;
+      const vesselCertificates = kind === 'bareboat_charter'
+        ? selectedProject.primaryVesselId
+          ? await fetchProjectVesselCertificates(effectiveClient, selectedProject.primaryVesselId)
+          : []
         : undefined;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
@@ -1080,6 +1088,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         project: selectedProject,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
+        vesselCertificates,
       });
       try {
         const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');

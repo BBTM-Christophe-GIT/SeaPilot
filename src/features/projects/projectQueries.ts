@@ -66,7 +66,21 @@ const VESSEL_SELECT = [
   'classification_label',
   'flag_state',
   'registration_number',
+  'registration_port',
+  'built_year',
+  'navigation_category',
   'liability_insurer',
+].join(', ');
+
+const PROJECT_VESSEL_CERTIFICATE_SELECT = [
+  'id',
+  'vessel_id',
+  'document_title',
+  'title',
+  'status',
+  'issued_on',
+  'expires_on',
+  'updated_at',
 ].join(', ');
 
 const PROJECT_DOCUMENT_SELECT = [
@@ -108,6 +122,8 @@ const CLIENT_SELECT = [
   'name',
   'represented_by',
   'code',
+  'siret',
+  'vat_number',
   'email',
   'phone',
   'address',
@@ -222,6 +238,9 @@ interface VesselRow {
   classification_label: string | null;
   flag_state: string | null;
   registration_number: string | null;
+  registration_port?: string | null;
+  built_year?: number | string | null;
+  navigation_category?: string | null;
   liability_insurer: string | null;
 }
 
@@ -260,6 +279,8 @@ interface ClientRow {
   name: string;
   represented_by: string | null;
   code: string | null;
+  siret?: string | null;
+  vat_number?: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -295,6 +316,17 @@ interface ProjectPlanningOccurrenceRow {
   charter_hire_override: boolean | null;
   source_label: string | null;
   created_at: string;
+}
+
+interface ProjectVesselCertificateRow {
+  id: number;
+  vessel_id: number;
+  document_title: string | null;
+  title: string | null;
+  status: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  updated_at: string | null;
 }
 
 interface ProjectOperationDocumentRow {
@@ -465,6 +497,8 @@ export interface ClientRecord {
   name: string;
   representedBy: string;
   code: string;
+  siret?: string;
+  vatNumber?: string;
   email: string;
   phone: string;
   address: string;
@@ -498,6 +532,9 @@ export interface VesselRecord {
   classificationLabel?: string;
   flagState?: string;
   registrationNumber?: string;
+  registrationPort?: string;
+  builtYear?: number | null;
+  navigationCategory?: string;
   liabilityInsurer?: string;
 }
 
@@ -518,6 +555,17 @@ export interface ProjectPlanningOccurrenceRecord {
   charterHireOverride?: boolean;
   sourceLabel: string;
   createdAt: string;
+}
+
+export interface ProjectVesselCertificateRecord {
+  id: number;
+  vesselId: number;
+  documentTitle: string;
+  title: string;
+  status: string;
+  issuedOn: string;
+  expiresOn: string;
+  updatedAt: string;
 }
 
 export interface ProjectOperationDocumentRecord {
@@ -768,7 +816,25 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     classificationLabel: nullableText(row.classification_label),
     flagState: nullableText(row.flag_state),
     registrationNumber: nullableText(row.registration_number),
+    registrationPort: nullableText(row.registration_port),
+    builtYear: nullableNumber(row.built_year),
+    navigationCategory: nullableText(row.navigation_category),
     liabilityInsurer: nullableText(row.liability_insurer),
+  }));
+}
+
+export function mapProjectVesselCertificateRows(
+  rows: ProjectVesselCertificateRow[],
+): ProjectVesselCertificateRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    documentTitle: nullableText(row.document_title),
+    title: nullableText(row.title),
+    status: nullableText(row.status),
+    issuedOn: nullableText(row.issued_on),
+    expiresOn: nullableText(row.expires_on),
+    updatedAt: nullableText(row.updated_at),
   }));
 }
 
@@ -810,6 +876,8 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     name: row.name,
     representedBy: nullableText(row.represented_by),
     code: nullableText(row.code),
+    siret: nullableText(row.siret),
+    vatNumber: nullableText(row.vat_number),
     email: nullableText(row.email),
     phone: nullableText(row.phone),
     address: nullableText(row.address),
@@ -944,6 +1012,19 @@ export async function fetchClients(client: SupabaseClient): Promise<ClientRecord
 
 export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord[]> {
   return mapVesselRows((await fetchRowsById(client, 'vessels', VESSEL_SELECT)) as VesselRow[]);
+}
+
+export async function fetchProjectVesselCertificates(
+  client: SupabaseClient,
+  vesselId: number,
+): Promise<ProjectVesselCertificateRecord[]> {
+  const { data, error } = await client
+    .from('fleet_certificates')
+    .select(PROJECT_VESSEL_CERTIFICATE_SELECT)
+    .eq('vessel_id', vesselId)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message || 'Impossible de charger les titres administratifs du navire.');
+  return mapProjectVesselCertificateRows((data || []) as unknown as ProjectVesselCertificateRow[]);
 }
 
 export async function fetchProjectPlanningOccurrences(
