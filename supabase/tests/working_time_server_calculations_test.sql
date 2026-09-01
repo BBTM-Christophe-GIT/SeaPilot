@@ -197,8 +197,8 @@ select is(
 select is(
   (select array_to_string(violation_codes, ',') from public.working_time_calculation_windows
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
-  'rest_24h,work_7d,rest_7d',
-  'server results identify each breached rolling quota'
+  'work_7d,rest_7d',
+  'a completed consecutive rest removes only the rolling rest breach'
 );
 
 select is(
