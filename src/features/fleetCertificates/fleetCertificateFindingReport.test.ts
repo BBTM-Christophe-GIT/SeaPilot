@@ -71,6 +71,20 @@ describe('fleet certificate action plan report', () => {
     });
   });
 
+  it('sorts report findings by type before due year and object', () => {
+    const hierarchy = buildFleetFindingReportHierarchy([certificate], [
+      { ...finding, id: 83, reference: 'EC-2026-0014', findingType: 'prescription', treatmentDueOn: '2024-01-01', title: '1. Prescription' },
+      { ...finding, id: 82, reference: 'EC-2026-0013', findingType: 'observation', treatmentDueOn: '2025-01-01', title: '1. Observation' },
+      { ...finding, id: 84, reference: 'EC-2026-0015', findingType: 'remark', treatmentDueOn: '2026-01-01', title: '1. Remarque' },
+    ]);
+
+    expect(hierarchy[0].categories[0].documents[0].findings.map((item) => item.findingType)).toEqual([
+      'remark',
+      'observation',
+      'prescription',
+    ]);
+  });
+
   it('associates documents and findings with the corresponding vessel and category', () => {
     const secondCertificate = {
       ...certificate,
