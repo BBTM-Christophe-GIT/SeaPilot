@@ -1,6 +1,6 @@
 import { CheckCircle2, ChevronDown, FileText, Folder, Ship } from 'lucide-react';
 import { useMemo } from 'react';
-import type { FleetCertificateFinding } from './fleetCertificateFindings';
+import { compareFleetFindingTitles, type FleetCertificateFinding } from './fleetCertificateFindings';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 
 interface FindingDocumentGroup {
@@ -67,7 +67,7 @@ function groupFindings(
           certificate: certificateById.get(certificate.id) || certificate,
           findings: (findingsByCertificate.get(certificate.id) || [])
             .slice()
-            .sort((left, right) => collator.compare(left.title, right.title)),
+            .sort(compareFleetFindingTitles),
         })),
       })),
     }));

@@ -55,7 +55,7 @@ const visits = [{
   assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z', provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
 }];
 
-function createClient() {
+function createClient(findingRows = findings) {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
   const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
@@ -64,7 +64,7 @@ function createClient() {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificates, error: null }) }) }) };
-      if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findings, error: null }), insert: vi.fn(), update: findingUpdate };
+      if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
       if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
@@ -86,6 +86,23 @@ describe('FleetCertificatesPage', () => {
     ].sort(compareFleetFindingTitles);
 
     expect(sorted.map((finding) => finding.title)).toEqual([
+      '4. Ligne de mouillage',
+      '3. Registre des procès verbaux',
+      '2. Relevés périodiques',
+    ]);
+  });
+
+  it('keeps the alphabetical finding order in the grouped fleet view', async () => {
+    const { client } = createClient([
+      { ...findings[0], id: 82, reference: 'EC-2026-0022', title: '2. Relevés périodiques' },
+      { ...findings[0], id: 84, reference: 'EC-2026-0024', title: '4. Ligne de mouillage' },
+      { ...findings[0], id: 83, reference: 'EC-2026-0023', title: '3. Registre des procès verbaux' },
+    ]);
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+
+    const list = (await screen.findByRole('button', { name: /4\. Ligne de mouillage/ }))
+      .closest('.fcx-global-finding-list') as HTMLElement;
+    expect(within(list).getAllByRole('button').map((button) => button.querySelector('b')?.textContent)).toEqual([
       '4. Ligne de mouillage',
       '3. Registre des procès verbaux',
       '2. Relevés périodiques',
