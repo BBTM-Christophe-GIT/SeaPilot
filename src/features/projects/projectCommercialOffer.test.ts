@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCommercialReserves,
+  COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
+  COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
+  COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_AVAILABILITY_KEY,
   COMMERCIAL_RESERVE_OTHER_KEY,
   COMMERCIAL_RESERVE_WEATHER,
   COMMERCIAL_RESERVE_WEATHER_KEY,
   formatProjectDocumentEmitterName,
+  getCommercialIncludedServiceDescriptions,
   shouldDisplayCommercialOfferRoute,
 } from './projectCommercialOffer';
 
@@ -30,6 +34,18 @@ describe('projectCommercialOffer', () => {
       COMMERCIAL_RESERVE_WEATHER,
       'Sous réserve de l’accord du port.',
     ]);
+  });
+
+  it('trims included-service descriptions and keeps empty values absent', () => {
+    expect(getCommercialIncludedServiceDescriptions({
+      [COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]: '  Navire et équipage dédiés.  ',
+      [COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]: '   ',
+      [COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]: 'Transit vers le port de livraison.',
+    })).toEqual({
+      charterHire: 'Navire et équipage dédiés.',
+      demobilisation: '',
+      mobilisation: 'Transit vers le port de livraison.',
+    });
   });
 
   it('formats the emitter with a preserved first name and an uppercase RH last name', () => {

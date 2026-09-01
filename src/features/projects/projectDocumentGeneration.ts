@@ -1,3 +1,4 @@
+import autoTable from 'jspdf-autotable';
 import type {
   ClientRecord,
   ProjectContractRecord,
@@ -24,6 +25,7 @@ import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
+  getCommercialIncludedServiceDescriptions,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
@@ -203,6 +205,7 @@ export function buildProjectOfferRows({
   project,
 }: ProjectDocumentGenerationInput): ProjectOfferRow[] {
   const supplytime = contract?.supplytimeData || {};
+  const includedServices = getCommercialIncludedServiceDescriptions(supplytime);
   return [
     { label: 'Client', value: present(client?.name || project.clientName) },
     { label: 'Represented by', value: present(client?.representedBy) },
@@ -213,13 +216,16 @@ export function buildProjectOfferRows({
     { label: 'Port of Delivery', value: present(formatProjectOfferPort(project.deliveryPort)) },
     { label: 'Date of Delivery', value: formatDate(project.deliveryAt || project.startsOn) },
     { label: 'Mobilization costs HT', value: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') },
+    { label: 'Mobilization included services', value: includedServices.mobilisation },
     { label: 'Port of Redelivery', value: present(formatProjectOfferPort(project.redeliveryPort)) },
     { label: 'Date of Redelivery', value: formatDate(project.redeliveryAt || project.endsOn) },
     { label: 'Demobilization costs HT', value: formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '') },
+    { label: 'Demobilization included services', value: includedServices.demobilisation },
     { label: 'Dur\u00e9e ferme affr\u00e8tement', value: present(supplytime.box09_period) },
     { label: 'Dur\u00e9es optionnelles', value: extensionLabel(contract) },
     { label: 'Rythme', value: present(contract?.hireUnit) },
     { label: 'Day rate normal', value: contractHireScheduleLabel(contract) },
+    { label: 'Charter hire included services', value: includedServices.charterHire },
     { label: 'Day rate extension', value: formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit) },
     { label: 'Fuel', value: present(supplytime.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS) },
     { label: 'Port / zone', value: present(project.operationArea || project.deliveryPort) },
@@ -343,6 +349,12 @@ export async function generateProjectDocument(
     const contract = input.contract;
     const supplytime = contract?.supplytimeData || {};
     const reserves = buildCommercialReserves(supplytime);
+    const includedServices = getCommercialIncludedServiceDescriptions(supplytime);
+    const includedServiceRows = [
+      ['Loyer d’affrètement', includedServices.charterHire],
+      ['Frais de mobilisation', includedServices.mobilisation],
+      ['Frais de démobilisation', includedServices.demobilisation],
+    ].filter((row): row is [string, string] => Boolean(row[1]));
     const emitterName = formatProjectDocumentEmitterName(input.emitter);
     const duration = input.project.startsOn && input.project.endsOn
       ? Math.max(1, Math.round((new Date(input.project.endsOn).getTime() - new Date(input.project.startsOn).getTime()) / 86_400_000) + 1)
@@ -457,22 +469,67 @@ export async function generateProjectDocument(
     pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
     pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
 
-    let signatureY = 202;
+    const reserveLines = reserves.flatMap((reserve) => line(`- ${reserve}`, 169, 2)).slice(0, 6);
+    const reserveHeight = reserves.length > 0 ? 10 + reserveLines.length * 4 : 0;
+    let contentY = 194;
+
+    if (includedServiceRows.length > 0) {
+      const estimatedDescriptionHeight = 12 + includedServiceRows.reduce((height, [, value]) => (
+        height + Math.max(8, (pdf.splitTextToSize(value, 116) as string[]).length * 3.2 + 4)
+      ), 0);
+      if (contentY + estimatedDescriptionHeight + reserveHeight + 52 > 279) {
+        pdf.addPage();
+        contentY = 18;
+      }
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7);
+      pdf.setTextColor(18, 61, 104);
+      pdf.text('PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES', 14, contentY + 5);
+      autoTable(pdf, {
+        body: includedServiceRows,
+        columnStyles: {
+          0: { cellWidth: 48, fontStyle: 'bold', textColor: [35, 59, 87] },
+          1: { cellWidth: 134, textColor: [35, 59, 87] },
+        },
+        margin: { bottom: 18, left: 14, right: 14, top: 18 },
+        startY: contentY + 8,
+        styles: {
+          cellPadding: 2.4,
+          font: 'helvetica',
+          fontSize: 6.5,
+          lineColor: [216, 226, 237],
+          lineWidth: 0.15,
+          overflow: 'linebreak',
+          valign: 'top',
+        },
+        theme: 'grid',
+      });
+      contentY = ((pdf as typeof pdf & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || contentY) + 6;
+    }
+
     if (reserves.length > 0) {
-      const reserveLines = reserves.flatMap((reserve) => line(`- ${reserve}`, 169, 2)).slice(0, 6);
-      const reserveHeight = 10 + reserveLines.length * 4;
+      if (contentY + reserveHeight + 50 > 279) {
+        pdf.addPage();
+        contentY = 18;
+      }
       pdf.setDrawColor(236, 203, 140);
       pdf.setFillColor(255, 249, 235);
-      pdf.rect(14, 194, 182, reserveHeight, 'FD');
+      pdf.rect(14, contentY, 182, reserveHeight, 'FD');
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.5);
       pdf.setTextColor(139, 90, 8);
-      pdf.text('RÉSERVES COMMERCIALES', 18, 200);
+      pdf.text('RÉSERVES COMMERCIALES', 18, contentY + 6);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(6.5);
       pdf.setTextColor(107, 85, 43);
-      pdf.text(reserveLines, 18, 206);
-      signatureY = 198 + reserveHeight + 4;
+      pdf.text(reserveLines, 18, contentY + 12);
+      contentY += reserveHeight + 8;
+    }
+
+    let signatureY = includedServiceRows.length === 0 && reserves.length === 0 ? 202 : contentY;
+    if (signatureY + 42 > 279) {
+      pdf.addPage();
+      signatureY = 18;
     }
 
     const signatureHeight = Math.min(54, 279 - signatureY);

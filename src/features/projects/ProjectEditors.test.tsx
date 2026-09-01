@@ -263,6 +263,19 @@ describe('ProjectEditor contract hire periods', () => {
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
     fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
+      'Navire et équipage dédiés.',
+    );
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans les frais de mobilisation'),
+      'Préparation et transit aller.',
+    );
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans les frais de démobilisation'),
+      'Transit retour et remise en configuration.',
+    );
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
     await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
@@ -280,6 +293,18 @@ describe('ProjectEditor contract hire periods', () => {
         }),
       );
     });
+    expect(mutationMocks.saveProjectContractDetails).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        supplytimeData: expect.objectContaining({
+          commercial_charter_hire_service_description: 'Navire et équipage dédiés.',
+          commercial_demobilisation_service_description: 'Transit retour et remise en configuration.',
+          commercial_mobilisation_service_description: 'Préparation et transit aller.',
+        }),
+      }),
+      null,
+    );
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 501, projectCode: 'P501' }));
   });
 
@@ -322,8 +347,11 @@ describe('ProjectEditor contract hire periods', () => {
     const commercialFields = [
       screen.getByLabelText('Identité armateur'),
       screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ }),
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
       screen.getByLabelText('Frais de mobilisation'),
+      screen.getByLabelText('Description de la prestation incluse dans les frais de mobilisation'),
       screen.getByLabelText('Frais de démobilisation'),
+      screen.getByLabelText('Description de la prestation incluse dans les frais de démobilisation'),
       screen.getByLabelText('Devise des frais'),
       screen.getByLabelText('Fuel'),
     ];
@@ -383,6 +411,34 @@ describe('ProjectEditor contract hire periods', () => {
     expect(preview.queryByText('RÉSERVES COMMERCIALES')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Autre réserve'), 'Sous réserve de l’accord du port.');
     expect(preview.getByText('Sous réserve de l’accord du port.')).toBeInTheDocument();
+  });
+
+  it('shows included-service descriptions in the offer preview only after they are entered', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    const preview = within(screen.getByRole('region', { name: 'Aperçu du document généré' }));
+    expect(preview.queryByText('Prestation incluse')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
+      'Navire et équipage dédiés.',
+    );
+
+    expect(preview.getByText('Prestation incluse')).toBeInTheDocument();
+    expect(preview.getByText('Navire et équipage dédiés.')).toBeInTheDocument();
   });
 
   it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {

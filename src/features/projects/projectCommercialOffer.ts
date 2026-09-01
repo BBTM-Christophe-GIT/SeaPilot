@@ -7,6 +7,9 @@ import {
 export const COMMERCIAL_RESERVE_AVAILABILITY_KEY = 'commercial_reserve_availability';
 export const COMMERCIAL_RESERVE_WEATHER_KEY = 'commercial_reserve_weather';
 export const COMMERCIAL_RESERVE_OTHER_KEY = 'commercial_reserve_other';
+export const COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY = 'commercial_charter_hire_service_description';
+export const COMMERCIAL_MOBILISATION_DESCRIPTION_KEY = 'commercial_mobilisation_service_description';
+export const COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY = 'commercial_demobilisation_service_description';
 
 export const COMMERCIAL_RESERVE_AVAILABILITY =
   'Sous réserve de disponibilité du navire et de validation technique et contractuelle.';
@@ -19,6 +22,12 @@ export interface ProjectDocumentEmitter {
   lastName: string;
   signatureMimeType?: string;
   signatureUrl?: string;
+}
+
+export interface CommercialIncludedServiceDescriptions {
+  charterHire: string;
+  demobilisation: string;
+  mobilisation: string;
 }
 
 interface PersonRow {
@@ -51,6 +60,16 @@ export function buildCommercialReserves(supplytimeData: Record<string, string>):
     enabled(supplytimeData[COMMERCIAL_RESERVE_WEATHER_KEY]) ? COMMERCIAL_RESERVE_WEATHER : '',
     text(supplytimeData[COMMERCIAL_RESERVE_OTHER_KEY]),
   ].filter(Boolean);
+}
+
+export function getCommercialIncludedServiceDescriptions(
+  supplytimeData: Record<string, string>,
+): CommercialIncludedServiceDescriptions {
+  return {
+    charterHire: text(supplytimeData[COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]),
+    demobilisation: text(supplytimeData[COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]),
+    mobilisation: text(supplytimeData[COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]),
+  };
 }
 
 export function shouldDisplayCommercialOfferRoute(deliveryPort: string, redeliveryPort: string): boolean {

@@ -35,6 +35,7 @@ import bareboatPage04Url from './assets/contract-previews/bareboat-charter-page-
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
+  getCommercialIncludedServiceDescriptions,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
@@ -358,6 +359,7 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
     ? Math.max(1, Math.round((new Date(form.endsOn).getTime() - new Date(form.startsOn).getTime()) / 86_400_000) + 1)
     : null;
   const reserves = buildCommercialReserves(form.supplytimeData);
+  const includedServices = getCommercialIncludedServiceDescriptions(form.supplytimeData);
   const emitterName = formatProjectDocumentEmitterName(emitter);
   return (
     <div className="project-offer-document">
@@ -376,7 +378,7 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
       </section>
       <div className="project-offer-columns">
         <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>DURÉE FERME</dt><dd>{duration ? `${duration} jours calendaires` : '—'}</dd></div><div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>
-        <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div><div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div><div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
+        <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.mobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.mobilisation}</dd></div> : null}<div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.demobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.demobilisation}</dd></div> : null}<div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div>{includedServices.charterHire ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.charterHire}</dd></div> : null}<div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
       </div>
       {reserves.length > 0 ? <aside><strong>RÉSERVES COMMERCIALES</strong><span>{reserves.map((reserve) => <span key={reserve}>{reserve}</span>)}</span></aside> : null}
       <section className="project-offer-signatures">
