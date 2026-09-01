@@ -958,7 +958,7 @@ const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
   ['WORKING_TIME_ACTIVE_SIGNATURE_REQUIRED', 'Une signature de profil active est obligatoire.'],
   ['WORKING_TIME_REGISTER_LOCKED', 'Ce registre validé est verrouillé. Réouvrez-le avec un motif pour le corriger.'],
   ['WORKING_TIME_REGISTER_NOT_EDITABLE', 'Ce registre doit être rouvert avant toute correction.'],
-  ['WORKING_TIME_DRAFT_DISCARD_FORBIDDEN', 'Seul un brouillon non signé peut être supprimé.'],
+  ['WORKING_TIME_DRAFT_DISCARD_FORBIDDEN', 'Seul un registre entièrement vide peut être retiré. Les heures enregistrées sont protégées.'],
   ['WORKING_TIME_REOPEN_COMMENT_REQUIRED', 'Le motif de réouverture est obligatoire.'],
   ['WORKING_TIME_PERMISSION_DENIED', 'Cette action n’est pas autorisée pour votre profil ou votre bordée publiée.'],
   ['WORKING_TIME_POLICY_NOT_FOUND', 'Aucune politique de travail et repos datée ne couvre ce créneau.'],

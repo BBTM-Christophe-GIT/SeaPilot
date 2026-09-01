@@ -17,8 +17,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   TableProperties,
+  Trash2,
   Upload,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
@@ -338,6 +338,12 @@ export function WorkingTimeWorkflowPanel({
     () => new Map(monthlyRegisters.map((register) => [register.personId, register])),
     [monthlyRegisters],
   );
+  const registerIdsWithSavedContent = useMemo(() => new Set([
+    ...(workspace?.intervals.map((interval) => interval.registerId) || []),
+    ...(workspace?.dayComments.map((comment) => comment.registerId) || []),
+    ...(workspace?.dayApprovals.map((approval) => approval.registerId) || []),
+    ...(workspace?.validations.map((validation) => validation.registerId) || []),
+  ]), [workspace?.dayApprovals, workspace?.dayComments, workspace?.intervals, workspace?.validations]);
   const normalizedSearch = registerSearch.trim().toLocaleLowerCase('fr-FR');
   const catalogPeople = useMemo(() => visibleReadablePeople.filter((person) => (
     isVisibleForPersonnelFilter(person, personnelFilter, localToday)
@@ -767,14 +773,16 @@ export function WorkingTimeWorkflowPanel({
                   {expanded ? <div className="working-time-crew-rows">{group.people.map((person) => {
                     const register = monthlyRegisterByPerson.get(person.personId);
                     const personName = formatPerson(person.firstName, person.lastName);
+                    const canDiscardEmptyRegister = Boolean(register?.status === 'draft'
+                      && !registerIdsWithSavedContent.has(register.id));
                     return <div className={`working-time-register-card ${person.personId === selectedPersonId ? 'is-active' : ''}`} key={person.personId}>
                       <button className="working-time-register-select" onClick={() => {
                         setSelectedPersonId(person.personId);
                       }} type="button"><span>{personName}</span><small>{person.functionLabel || person.gradeLabel || 'Personnel maritime'}</small><i className={person.active !== false ? 'is-available' : ''} title={person.active !== false ? 'Disponible' : 'Indisponible'} /></button>
-                      {register?.status === 'draft' ? <button aria-label={`Supprimer le brouillon de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
-                        if (!window.confirm(`Retirer ce brouillon de ${personName} et abandonner ses modifications non enregistrées ?`)) return;
-                        void runAction(() => discardWorkingTimeDraft(client, register.id), 'Le brouillon a été retiré sans enregistrer ses modifications.');
-                      }} title="Supprimer ce brouillon" type="button"><X aria-hidden="true" size={16} /></button> : null}
+                      {canDiscardEmptyRegister && register ? <button aria-label={`Retirer le brouillon vide de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
+                        if (!window.confirm(`Masquer le brouillon vide de ${personName} ? Aucune heure enregistrée ne sera supprimée.`)) return;
+                        void runAction(() => discardWorkingTimeDraft(client, register.id), 'Le brouillon vide a été retiré.');
+                      }} title="Retirer ce brouillon vide" type="button"><Trash2 aria-hidden="true" size={15} /></button> : null}
                     </div>;
                   })}</div> : null}
                 </section>;
