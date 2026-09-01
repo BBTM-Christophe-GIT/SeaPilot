@@ -217,8 +217,5 @@ function formatWindowPart(value: Date, timezoneName: string): string {
 export function workingTimeViolationWindowText(detail: WorkingTimeViolationDetail): string {
   const windowEnd = new Date(detail.calculation.windowEnd);
   const windowStart = new Date(windowEnd.getTime() - RULES[detail.code].windowMilliseconds);
-  const windowText = `Fenêtre d’analyse du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
-  return detail.code === 'work_24h'
-    ? `Compteur remis à zéro après chaque repos continu d’au moins 6 h. ${windowText}`
-    : windowText;
+  return `Fenêtre d’analyse du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
 }

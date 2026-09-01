@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(10);
 
 insert into auth.users (id, email)
 values ('77900000-0000-0000-0000-000000000001', 'cycle-capitaine@example.invalid');
@@ -133,6 +133,17 @@ select is(
 );
 
 select is(
+  jsonb_array_length(public.working_time_interval_recommendation(
+    current_setting('test.cycle_person_id')::bigint,
+    ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
+    ((current_date - 1)::text || ' 22:00:00+00')::timestamptz,
+    'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
+  )->'violation_codes'),
+  0,
+  'six consecutive rest hours satisfy conformity even when total rolling rest is only eight hours'
+);
+
+select is(
   (public.working_time_phases_recommendation(
     current_setting('test.cycle_person_id')::bigint,
     jsonb_build_array(
@@ -151,12 +162,31 @@ select is(
   'multi-phase recommendations use the same reset counter'
 );
 
+select is(
+  jsonb_array_length(public.working_time_phases_recommendation(
+    current_setting('test.cycle_person_id')::bigint,
+    jsonb_build_array(
+      jsonb_build_object(
+        'starts_at', ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
+        'ends_at', ((current_date - 1)::text || ' 18:00:00+00')::timestamptz
+      ),
+      jsonb_build_object(
+        'starts_at', ((current_date - 1)::text || ' 18:00:00+00')::timestamptz,
+        'ends_at', ((current_date - 1)::text || ' 22:00:00+00')::timestamptz
+      )
+    ),
+    'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
+  )->'violation_codes'),
+  0,
+  'multi-phase recommendations accept the same six-hour consecutive rest rule'
+);
+
 select lives_ok(
   format(
     $$select public.save_working_time_interval(%s, %L::timestamptz, %L::timestamptz, 'UTC', %s, 'Bordée cycle', 'Nouveau cycle')$$,
     current_setting('test.cycle_register_id'),
     ((current_date - 1)::text || ' 14:00:00+00'),
-    ((current_date - 1)::text || ' 20:00:00+00'),
+    ((current_date - 1)::text || ' 22:00:00+00'),
     current_setting('test.cycle_vessel_id')
   ),
   'the Capitaine can persist work after the completed reset rest'
@@ -164,15 +194,18 @@ select lives_ok(
 
 select results_eq(
   format(
-    $$select work_24h_seconds, work_24h_compliant, calculation_version
+    $$select work_24h_seconds, rest_24h_seconds, longest_rest_24h_seconds,
+        work_24h_compliant, rest_24h_compliant, is_compliant, violation_codes,
+        calculation_version
       from public.working_time_calculation_windows
       where person_id = %s
         and window_end = %L::timestamptz$$,
     current_setting('test.cycle_person_id'),
-    ((current_date - 1)::text || ' 20:00:00+00')
+    ((current_date - 1)::text || ' 22:00:00+00')
   ),
-  $$values (21600::numeric, true, 2)$$,
-  'the authoritative stored calculation restarts at zero after six hours of rest'
+  $$values (28800::numeric, 28800::numeric, 21600::numeric,
+      true, true, true, '{}'::text[], 3)$$,
+  'the authoritative stored calculation accepts the new cycle despite only eight rolling rest hours'
 );
 
 select is(

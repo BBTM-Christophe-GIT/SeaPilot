@@ -412,7 +412,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const impactRow = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
     expect(alarmRow).toHaveClass('is-non-compliant');
     expect(alarmRow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
-    expect(alarmRow).toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
+    expect(alarmRow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
     expect(impactRow).not.toHaveClass('is-non-compliant');
     expect(impactRow).toHaveTextContent('Conforme');
     expect(impactRow).toHaveTextContent('15 h 00');
@@ -422,7 +422,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
     const rollingWindow = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
     expect(rollingWindow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
-    expect(rollingWindow).toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
+    expect(rollingWindow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
     expect(rollingWindow).toHaveTextContent('Fenêtre d’analyse du lun 17 août à 06:30 au mar 18 août à 06:30.');
     expect(rollingWindow).toHaveTextContent('Alarme rattachée au lun 17 août.');
     expect(screen.getByText('24 h glissantes')).toBeInTheDocument();
