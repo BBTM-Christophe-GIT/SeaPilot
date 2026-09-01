@@ -76,6 +76,20 @@ interface FindingPayload {
   responsibleName?: string;
 }
 
+function findingSortLabel(title: string): string {
+  return title.replace(/^\s*\d+\s*[.)-]?\s*/, '').trim();
+}
+
+export function compareFleetFindingTitles(
+  left: Pick<FleetCertificateFinding, 'title'>,
+  right: Pick<FleetCertificateFinding, 'title'>,
+): number {
+  return findingSortLabel(left.title).localeCompare(findingSortLabel(right.title), 'fr', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
 function mapAttachment(row: Record<string, unknown>): FleetFindingAttachment {
   return {
     id: Number(row.id), findingId: Number(row.finding_id), kind: row.attachment_kind as FleetFindingAttachmentKind,
@@ -123,7 +137,9 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
   if (eventsResult.error) throw eventsResult.error;
   const attachments = ((attachmentsResult.data || []) as Record<string, unknown>[]).map(mapAttachment);
   const events = ((eventsResult.data || []) as Record<string, unknown>[]).map(mapEvent);
-  return ((findingsResult.data || []) as Record<string, unknown>[]).map((row) => mapFinding(row, attachments, events));
+  return ((findingsResult.data || []) as Record<string, unknown>[])
+    .map((row) => mapFinding(row, attachments, events))
+    .sort(compareFleetFindingTitles);
 }
 
 export async function fetchFleetFindingResponsibles(client: SupabaseClient): Promise<FleetFindingResponsible[]> {
@@ -153,7 +169,16 @@ export async function createFleetCertificateFinding(client: SupabaseClient, comp
 export async function updateFleetCertificateFinding(
   client: SupabaseClient,
   findingId: number,
-  values: Partial<{ status: FleetFindingStatus; progress: number; responsiblePersonId: number | null; responsibleName: string; treatmentDueOn: string; description: string }>,
+  values: Partial<{
+    status: FleetFindingStatus;
+    progress: number;
+    responsiblePersonId: number | null;
+    responsibleName: string;
+    treatmentDueOn: string;
+    findingType: FleetFindingType;
+    title: string;
+    description: string;
+  }>,
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (values.status !== undefined) payload.status = values.status;
@@ -161,14 +186,23 @@ export async function updateFleetCertificateFinding(
   if (values.responsiblePersonId !== undefined) payload.responsible_person_id = values.responsiblePersonId;
   if (values.responsibleName !== undefined) payload.responsible_name = values.responsibleName;
   if (values.treatmentDueOn !== undefined) payload.treatment_due_on = values.treatmentDueOn || null;
+  if (values.findingType !== undefined) payload.finding_type = values.findingType;
+  if (values.title !== undefined) payload.title = values.title.trim();
   if (values.description !== undefined) payload.description = values.description.trim();
   const { error } = await client.from('fleet_certificate_findings').update(payload).eq('id', findingId);
   if (error) throw error;
 }
 
-export async function addFleetFindingComment(client: SupabaseClient, finding: FleetCertificateFinding, note: string): Promise<void> {
-  const { error } = await client.from('fleet_certificate_finding_events').insert({
-    company_id: finding.companyId, finding_id: finding.id, event_type: 'commented', note: note.trim(),
+export async function saveFleetFindingFollowup(
+  client: SupabaseClient,
+  findingId: number,
+  progress: number,
+  note: string,
+): Promise<void> {
+  const { error } = await client.rpc('save_fleet_certificate_finding_followup', {
+    p_finding_id: findingId,
+    p_progress: progress,
+    p_note: note.trim() || null,
   });
   if (error) throw error;
 }

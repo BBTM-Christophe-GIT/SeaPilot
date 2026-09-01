@@ -21,9 +21,9 @@ import {
 } from './fleetCertificateQueries';
 import { getFleetCertificateCategory, getFleetCertificateCategoryOptions } from './fleetCertificateCategories';
 import {
-  addFleetFindingComment, createFleetCertificateFinding, deleteFleetCertificateFinding,
+  createFleetCertificateFinding, deleteFleetCertificateFinding,
   fetchFleetCertificateFindings, fetchFleetFindingResponsibles, FLEET_FINDING_LABELS,
-  FLEET_FINDING_STATUS_LABELS, openFleetFindingAttachment, updateFleetCertificateFinding,
+  FLEET_FINDING_STATUS_LABELS, openFleetFindingAttachment, saveFleetFindingFollowup, updateFleetCertificateFinding,
   uploadFleetFindingAttachment, type FleetCertificateFinding, type FleetFindingAttachmentKind,
   type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
 } from './fleetCertificateFindings';
@@ -60,6 +60,14 @@ interface FleetCertificatesPageProps { client?: SupabaseClient; roles?: RoleKey[
 const TODAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
 const TYPES = Object.entries(FLEET_FINDING_LABELS) as Array<[FleetFindingType, string]>;
 
+interface FindingFormValues {
+  type: FleetFindingType;
+  title: string;
+  description: string;
+  due: string;
+  responsibleId: number | null;
+}
+
 function canManage(roles: RoleKey[]): boolean {
   return roles.some((role) => ['admin', 'direction', 'armement'].includes(role));
 }
@@ -94,22 +102,23 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   </div>;
 }
 
-function FindingForm({ certificate, responsibles, onClose, onSave }: {
+function FindingForm({ certificate, finding, responsibles, onClose, onSave }: {
   certificate: FleetCertificateRecord; responsibles: FleetFindingResponsible[]; onClose: () => void;
-  onSave: (values: { type: FleetFindingType; title: string; description: string; due: string; responsibleId: number | null }) => Promise<void>;
+  finding?: FleetCertificateFinding;
+  onSave: (values: FindingFormValues) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true);
     try { await onSave({ type: form.get('type') as FleetFindingType, title: String(form.get('title')), description: String(form.get('description')), due: String(form.get('due')), responsibleId: Number(form.get('responsible')) || null }); onClose(); } finally { setSaving(false); }
   }
-  return <Modal title="Déclarer un écart" onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+  return <Modal title={finding ? 'Modifier l’écart' : 'Déclarer un écart'} onClose={onClose}><form className="fcx-form" onSubmit={submit}>
     <p className="fcx-form-context"><Ship size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
-    <label>Type<select name="type">{TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-    <label>Objet<input name="title" placeholder="Ex. Corrosion du support bâbord" required /></label>
-    <label>Description<textarea name="description" placeholder="Décrivez le constat, son emplacement et l’action attendue…" rows={4} required /></label>
-    <div className="fcx-form-grid"><label>Échéance de traitement<input name="due" required type="date" /></label><label>Responsable<select defaultValue="" name="responsible"><option value="">À affecter</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name} — {person.functionLabel}</option>)}</select></label></div>
-    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><Flag size={16} /> {saving ? 'Création…' : 'Créer l’écart'}</button></footer>
+    <label>Type<select defaultValue={finding?.findingType || TYPES[0]?.[0]} name="type">{TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    <label>Objet<input defaultValue={finding?.title || ''} name="title" placeholder="Ex. Corrosion du support bâbord" required /></label>
+    <label>Description<textarea defaultValue={finding?.description || ''} name="description" placeholder="Décrivez le constat, son emplacement et l’action attendue…" rows={4} required /></label>
+    <div className="fcx-form-grid"><label>Échéance de traitement<input defaultValue={finding?.treatmentDueOn || ''} name="due" required type="date" /></label><label>Responsable<select defaultValue={finding?.responsiblePersonId ? String(finding.responsiblePersonId) : ''} name="responsible"><option value="">À affecter</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name} — {person.functionLabel}</option>)}</select></label></div>
+    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><Flag size={16} /> {saving ? 'Enregistrement…' : finding ? 'Enregistrer les modifications' : 'Créer l’écart'}</button></footer>
   </form></Modal>;
 }
 
@@ -348,9 +357,11 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'finding' | 'document' | 'metadata' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
+  const [modal, setModal] = useState<'finding' | 'finding-edit' | 'document' | 'metadata' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
   const [visitCertificateId, setVisitCertificateId] = useState<number | null>(null);
   const [comment, setComment] = useState('');
+  const [progressDraft, setProgressDraft] = useState(0);
+  const [isSavingFollowup, setIsSavingFollowup] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -374,6 +385,10 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const certificateFindings = findings.filter((item) => item.certificateId === selectedCertificateId);
   const selectedFinding = certificateFindings.find((item) => item.id === selectedFindingId) || certificateFindings[0] || null;
   useEffect(() => { if (selectedFinding && selectedFinding.id !== selectedFindingId) setSelectedFindingId(selectedFinding.id); }, [selectedFinding, selectedFindingId]);
+  useEffect(() => {
+    setProgressDraft(selectedFinding?.progress || 0);
+    setComment('');
+  }, [selectedFinding?.id, selectedFinding?.progress]);
   useEffect(() => {
     if (activeTab !== 'preview' || !selectedCertificate || !selectedCertificate.storageBucket || !selectedCertificate.storagePath) {
       setPreviewUrl('');
@@ -545,6 +560,26 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setMessage('Planning des visites BBTM généré.');
   }
 
+  async function submitFindingFollowup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedFinding) return;
+    const note = comment.trim();
+    if (progressDraft === selectedFinding.progress && !note) return;
+    setError('');
+    setMessage('');
+    setIsSavingFollowup(true);
+    try {
+      await saveFleetFindingFollowup(effectiveClient, selectedFinding.id, progressDraft, note);
+      setComment('');
+      setMessage('Suivi ajouté à l’historique.');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible d’ajouter ce suivi.');
+    } finally {
+      setIsSavingFollowup(false);
+    }
+  }
+
   if (isLoading) return <main className="fcx-page fcx-loading"><RefreshCw className="spin" /> Chargement du registre certificats…</main>;
 
   return <main className="fcx-page">
@@ -584,10 +619,10 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
             <header className="fcx-command-actions-head"><div><span>Pilotage du traitement</span><h2>{selectedCertificate ? selectedCertificate.documentTitle : 'Écarts & actions flotte'}</h2><p>{selectedCertificate ? `${selectedCertificate.vesselName} · ${selectedCertificate.categoryLabel}` : 'Constats, prescriptions et conditions à lever'}</p></div>{manager && selectedCertificate ? <button className="fcx-primary" onClick={() => setModal('finding')}><Plus size={16} /> Nouvel écart</button> : null}</header>
             <div className="fcx-finding-summary"><span><b>{workspaceFindings.filter((item) => item.status !== 'closed').length}</b> ouverts</span><span className="red"><b>{workspaceFindings.filter((item) => item.findingType === 'major_non_conformity' && item.status !== 'closed').length}</b> majeurs</span><span className="amber"><b>{workspaceFindings.filter(isOverdue).length}</b> en retard</span><span className="green"><b>{workspaceFindings.length ? Math.round(workspaceFindings.reduce((sum, item) => sum + item.progress, 0) / workspaceFindings.length) : 0}%</b> traités</span></div>
             {selectedCertificate ? <div className="fcx-finding-workspace"><div className="fcx-finding-list"><div className="fcx-finding-columns"><span>Écart</span><span>Échéance</span><span>Responsable</span><span>Avancement</span></div>{certificateFindings.map((finding) => <button className={selectedFinding?.id === finding.id ? 'selected' : ''} key={finding.id} onClick={() => setSelectedFindingId(finding.id)}><span className="fcx-finding-name"><i className={typeTone(finding.findingType)}>{finding.findingType === 'class_condition' ? 'CC' : finding.findingType === 'prescription' ? 'P' : finding.findingType === 'finding' ? 'F' : 'NC'}</i><span><b>{finding.title}</b><small>{finding.reference} · {FLEET_FINDING_LABELS[finding.findingType]}</small></span></span><em className={isOverdue(finding) ? 'late' : ''}>{formatDate(finding.treatmentDueOn)}</em><span className="fcx-person"><UserRound size={14} />{finding.responsibleName}</span><span className="fcx-progress"><i><u style={{ width: `${finding.progress}%` }} /></i><small>{finding.progress}%</small></span></button>)}{!certificateFindings.length && <div className="fcx-empty"><CheckCircle2 /> Aucun écart rattaché à ce certificat.</div>}</div>
-              <aside className="fcx-finding-detail">{selectedFinding ? <><header><div><span className={`fcx-badge ${typeTone(selectedFinding.findingType)}`}>{FLEET_FINDING_LABELS[selectedFinding.findingType]}</span><small>{selectedFinding.reference}</small><h2>{selectedFinding.title}</h2></div>{manager ? <button title="Supprimer l’écart" onClick={() => window.confirm('Supprimer cet écart et ses preuves ?') && run(() => deleteFleetCertificateFinding(effectiveClient, selectedFinding.id), 'Écart supprimé.')}><Trash2 size={17} /></button> : null}</header><p className="fcx-description">{selectedFinding.description}</p>
-                <div className="fcx-detail-grid"><label>État<select value={selectedFinding.status} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { status: event.target.value as FleetFindingStatus }), 'État mis à jour.')}><option value="declared">À affecter</option><option value="assigned">Assigné</option><option value="in_progress">En cours</option><option value="pending_validation">À valider</option><option value="closed">Clôturé</option></select></label><label>Responsable<select value={selectedFinding.responsiblePersonId || ''} onChange={(event) => { const id = Number(event.target.value) || null; const person = responsibles.find((item) => item.id === id); run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { responsiblePersonId: id, responsibleName: person?.name || 'Non assigné' }), 'Responsable mis à jour.'); }}><option value="">Non assigné</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label>Échéance<input type="date" value={selectedFinding.treatmentDueOn} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { treatmentDueOn: event.target.value }), 'Échéance mise à jour.')} /></label><label>Avancement <b>{selectedFinding.progress}%</b><input min="0" max="100" step="10" type="range" value={selectedFinding.progress} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { progress: Number(event.target.value) }), 'Avancement mis à jour.')} /></label></div>
+              <aside className="fcx-finding-detail">{selectedFinding ? <><header><div><span className={`fcx-badge ${typeTone(selectedFinding.findingType)}`}>{FLEET_FINDING_LABELS[selectedFinding.findingType]}</span><small>{selectedFinding.reference}</small><h2>{selectedFinding.title}</h2></div>{manager ? <div className="fcx-finding-actions"><button className="fcx-finding-edit" onClick={() => setModal('finding-edit')} type="button"><Pencil size={15} /> Modifier</button><button aria-label="Supprimer l’écart" title="Supprimer l’écart" onClick={() => window.confirm('Supprimer cet écart et ses preuves ?') && run(() => deleteFleetCertificateFinding(effectiveClient, selectedFinding.id), 'Écart supprimé.')} type="button"><Trash2 size={17} /></button></div> : null}</header><p className="fcx-description">{selectedFinding.description}</p>
+                <div className="fcx-detail-grid"><label>État<select value={selectedFinding.status} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { status: event.target.value as FleetFindingStatus }), 'État mis à jour.')}><option value="declared">À affecter</option><option value="assigned">Assigné</option><option value="in_progress">En cours</option><option value="pending_validation">À valider</option><option value="closed">Clôturé</option></select></label><label>Responsable<select value={selectedFinding.responsiblePersonId || ''} onChange={(event) => { const id = Number(event.target.value) || null; const person = responsibles.find((item) => item.id === id); run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { responsiblePersonId: id, responsibleName: person?.name || 'Non assigné' }), 'Responsable mis à jour.'); }}><option value="">Non assigné</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label>Échéance<input type="date" value={selectedFinding.treatmentDueOn} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { treatmentDueOn: event.target.value }), 'Échéance mise à jour.')} /></label><label>Avancement <b>{progressDraft}%</b><input aria-label="Avancement" min="0" max="100" step="10" type="range" value={progressDraft} onChange={(event) => setProgressDraft(Number(event.target.value))} /><small className={progressDraft !== selectedFinding.progress ? 'fcx-progress-draft is-pending' : 'fcx-progress-draft'}>{progressDraft !== selectedFinding.progress ? 'À enregistrer avec « Ajouter »' : 'Enregistré'}</small></label></div>
                 <section className="fcx-evidence"><header><div><h3>Constat & preuves</h3><p>Photos ou documents liés à l’écart</p></div></header><div className="fcx-evidence-grid">{(['finding', 'treatment'] as FleetFindingAttachmentKind[]).map((kind) => <div key={kind}><strong>{kind === 'finding' ? 'Constat initial' : 'Preuve du traitement'}</strong>{selectedFinding.attachments.filter((item) => item.kind === kind).map((attachment) => <button key={attachment.id} onClick={() => run(() => openFleetFindingAttachment(effectiveClient, attachment), 'Pièce ouverte.')}><span className="fcx-thumb">{attachment.mimeType.startsWith('image/') ? <Image size={22} /> : <FileText size={22} />}</span><span><b>{attachment.originalFileName}</b><small>{formatDate(attachment.createdAt)}</small></span><ExternalLink size={14} /></button>)}<button className="fcx-add-proof" onClick={() => { setUploadKind(kind); fileInput.current?.click(); }}><Plus size={15} /> Ajouter {kind === 'finding' ? 'une pièce' : 'une preuve'}</button></div>)}</div><input ref={fileInput} hidden accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) run(() => uploadFleetFindingAttachment(effectiveClient, selectedFinding, selectedCertificate.vesselAcronym, uploadKind, file), 'Pièce ajoutée.'); event.target.value = ''; }} /></section>
-                <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; run(() => addFleetFindingComment(effectiveClient, selectedFinding, comment), 'Note ajoutée.'); setComment(''); }}><input onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary"><Plus size={15} /> Ajouter</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small><strong>{event.authorName}</strong> · {new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
+                <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={submitFindingFollowup}><input aria-label="Note de suivi" onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary" disabled={isSavingFollowup || (progressDraft === selectedFinding.progress && !comment.trim())}><Plus size={15} /> {isSavingFollowup ? 'Ajout…' : 'Ajouter'}</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small><strong>{event.authorName}</strong> · {new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
               </> : <div className="fcx-empty"><Flag /> Sélectionnez un écart.</div>}</aside></div> : <FleetCertificateFindingsByScope certificates={scopedCertificates} findings={scopedOpenFindings} formatDate={formatDate} isOverdue={isOverdue} onSelectFinding={(certificateId, findingId) => { setSelectedCertificateId(certificateId); setSelectedFindingId(findingId); }} typeTone={typeTone} />}
           </div> : null}
 
@@ -600,6 +635,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       </section>
     </section>
     {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
+    {modal === 'finding-edit' && selectedCertificate && selectedFinding && <FindingForm certificate={selectedCertificate} finding={selectedFinding} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { findingType: values.type, title: values.title, description: values.description, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name || 'Non assigné' }); }, 'Écart modifié. L’historique est conservé.')} />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (form) => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = getFleetCertificateCategoryOptions(certificates).find((item) => item.key === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); const input = { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.label || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')) }; const selectedFile = form.get('file'); const attachment = typeof selectedFile !== 'string' && selectedFile?.size ? selectedFile : null; if (attachment) await createFleetCertificateDocument(effectiveClient, { ...input, file: attachment }); else await createFleetCertificateLine(effectiveClient, input); await load(); setMessage(attachment ? 'Document ajouté.' : 'Ligne de suivi ajoutée.'); }} />}
     {modal === 'metadata' && selectedCertificate && <DocumentMetadataForm certificate={selectedCertificate} certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (input) => { await updateFleetCertificateDocumentMetadata(effectiveClient, input); await load(); setMessage('Informations du document mises à jour.'); }} />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={async (form) => { await submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }); await load(); setMessage(selectedCertificate.storagePath ? 'Renouvellement enregistré.' : 'Document ajouté à la ligne.'); }} />}
