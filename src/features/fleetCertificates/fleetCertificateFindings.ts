@@ -143,10 +143,14 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
 }
 
 export async function fetchFleetFindingResponsibles(client: SupabaseClient): Promise<FleetFindingResponsible[]> {
-  const { data, error } = await client.from('people').select('id, first_name, last_name, function_label, active').eq('active', true);
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+  const { data, error } = await client.from('people').select('id, first_name, last_name, function_label, departed_on, active').eq('active', true);
   if (error) throw error;
   return ((data || []) as Record<string, unknown>[])
-    .filter((row) => row.active !== false)
+    .filter((row) => {
+      const departedOn = String(row.departed_on || '').slice(0, 10);
+      return row.active !== false && (!departedOn || departedOn >= today);
+    })
     .map((row) => ({
       id: Number(row.id), name: `${String(row.first_name || '')} ${String(row.last_name || '')}`.trim(),
       functionLabel: String(row.function_label || ''),
