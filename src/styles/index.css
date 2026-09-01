@@ -23862,3 +23862,50 @@ button.planning-p12-conflict-card {
   color: #174f9f;
   background: #edf5ff;
 }
+
+/* Fleet certificate finding workflow v3.27.4 */
+.fcx-finding-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.fcx-finding-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #dce3eb;
+  border-radius: 7px;
+  color: #4f6278;
+  background: #fff;
+  font-size: .65rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.fcx-finding-actions button:not(.fcx-finding-edit) {
+  width: 34px;
+  padding: 0;
+  color: #bd2d2d;
+}
+
+.fcx-finding-actions .fcx-finding-edit:hover {
+  color: #0875d2;
+  border-color: #9bc7e8;
+  background: #f1f8fe;
+}
+
+.fcx-progress-draft {
+  min-height: 14px;
+  color: #718095;
+  font-size: .57rem;
+  font-weight: 700;
+}
+
+.fcx-progress-draft.is-pending {
+  color: #a76300;
+}
