@@ -34,7 +34,7 @@ const DAYS_7 = 7 * HOURS_24;
 
 const RULES: Record<WorkingTimeViolationCode, ViolationRule> = {
   work_24h: {
-    label: 'Travail sur 24 h', thresholdKind: 'maximum', unit: 'hours',
+    label: 'Travail depuis le dernier repos de 6 h', thresholdKind: 'maximum', unit: 'hours',
     value: (calculation) => calculation.work24hSeconds / 3600,
     threshold: (policy) => policy.maxWork24h,
     windowMilliseconds: HOURS_24,
@@ -217,5 +217,8 @@ function formatWindowPart(value: Date, timezoneName: string): string {
 export function workingTimeViolationWindowText(detail: WorkingTimeViolationDetail): string {
   const windowEnd = new Date(detail.calculation.windowEnd);
   const windowStart = new Date(windowEnd.getTime() - RULES[detail.code].windowMilliseconds);
-  return `Fenêtre glissante du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
+  const windowText = `Fenêtre d’analyse du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
+  return detail.code === 'work_24h'
+    ? `Compteur remis à zéro après chaque repos continu d’au moins 6 h. ${windowText}`
+    : windowText;
 }

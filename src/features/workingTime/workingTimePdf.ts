@@ -273,7 +273,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   };
   headerText(['Repos total', 'sur 24 h'], restX, restWidth);
   headerText(['Commentaires'], commentX, commentWidth);
-  headerText(['Travail / repos', 'sur toute période', 'de 24 heures'], work24X, work24Width);
+  headerText(['Travail depuis repos 6 h', '/ repos total', 'sur 24 heures'], work24X, work24Width);
   headerText(['Travail / repos', 'sur toute période', 'de 7 jours'], work7X, work7Width);
 
   const majorColumns = [x, timelineX, restX, commentX, work24X, work7X, tableRight];
