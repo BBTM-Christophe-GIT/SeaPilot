@@ -5,6 +5,7 @@ import {
   getFleetCertificateCategoryParent,
 } from './fleetCertificateCategories';
 import {
+  compareFleetFindingsByTypeDueYearAndTitle,
   FLEET_FINDING_LABELS,
   FLEET_FINDING_STATUS_LABELS,
   type FleetCertificateFinding,
@@ -245,7 +246,7 @@ export function buildFleetFindingReportHierarchy(
     const category = vessel.get(meta.key) || { ...meta, documents: [] };
     category.documents.push({
       certificate,
-      findings: certificateFindings.slice().sort((left, right) => frenchSort.compare(left.reference, right.reference)),
+      findings: certificateFindings.slice().sort(compareFleetFindingsByTypeDueYearAndTitle),
     });
     vessel.set(meta.key, category);
     vessels.set(certificate.vesselName, vessel);
@@ -292,7 +293,7 @@ export function buildFleetCertificateActionReportHierarchy(
         validity: certificate.expiresOn && certificate.expiresOn < generatedDate ? 'Échu' : 'Valide',
       },
       findings: (findingsByCertificate.get(certificate.id) || []).slice()
-        .sort((left, right) => frenchSort.compare(left.reference, right.reference)),
+        .sort(compareFleetFindingsByTypeDueYearAndTitle),
     });
     vessel.set(meta.key, category);
     vessels.set(certificate.vesselName, vessel);

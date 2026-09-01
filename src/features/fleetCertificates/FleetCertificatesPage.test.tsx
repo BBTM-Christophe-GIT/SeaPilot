@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
-import { compareFleetFindingsByDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
+import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
 import {
   buildFleetCertificateFileName,
@@ -111,17 +111,17 @@ describe('FleetCertificatesPage', () => {
     ]);
   });
 
-  it('sorts KROKDUR findings by oldest due year and then by natural object order', () => {
+  it('keeps the oldest due year and natural object order inside the same finding type', () => {
     const sorted = [
-      { treatmentDueOn: '2026-09-30', title: '2. Pompe de cale mécanique' },
-      { treatmentDueOn: '2025-04-24', title: '4. Ligne de mouillage (X1) - Dotation PV VMS' },
-      { treatmentDueOn: '2025-04-24', title: '1. Document unique de prévention' },
-      { treatmentDueOn: '2026-09-30', title: '1. Pompe de cale à bras' },
-      { treatmentDueOn: '2025-05-16', title: '5. TOILETTE' },
-      { treatmentDueOn: '2025-04-24', title: '2. Relevés périodiques des isolements' },
-      { treatmentDueOn: '2025-04-24', title: '3. Registre des procès verbaux de visite' },
-      { treatmentDueOn: '', title: '0. Absence de date' },
-    ].sort(compareFleetFindingsByDueYearAndTitle);
+      { findingType: 'prescription' as const, treatmentDueOn: '2026-09-30', title: '2. Pompe de cale mécanique' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '4. Ligne de mouillage (X1) - Dotation PV VMS' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '1. Document unique de prévention' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2026-09-30', title: '1. Pompe de cale à bras' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-05-16', title: '5. TOILETTE' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '2. Relevés périodiques des isolements' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '3. Registre des procès verbaux de visite' },
+      { findingType: 'prescription' as const, treatmentDueOn: '', title: '0. Absence de date' },
+    ].sort(compareFleetFindingsByTypeDueYearAndTitle);
 
     expect(sorted.map((finding) => finding.title)).toEqual([
       '1. Document unique de prévention',
@@ -135,20 +135,38 @@ describe('FleetCertificatesPage', () => {
     ]);
   });
 
-  it('keeps the due-year and alphabetical finding order in the grouped fleet view', async () => {
+  it('sorts findings by type before due year and object', () => {
+    const sorted = [
+      { findingType: 'prescription' as const, treatmentDueOn: '2024-01-01', title: '1. Prescription' },
+      { findingType: 'observation' as const, treatmentDueOn: '2026-01-01', title: '2. Observation récente' },
+      { findingType: 'major_non_conformity' as const, treatmentDueOn: '2027-01-01', title: '1. Non-conformité majeure' },
+      { findingType: 'remark' as const, treatmentDueOn: '2028-01-01', title: '1. Remarque' },
+      { findingType: 'observation' as const, treatmentDueOn: '2025-01-01', title: '1. Observation ancienne' },
+    ].sort(compareFleetFindingsByTypeDueYearAndTitle);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      '1. Non-conformité majeure',
+      '1. Remarque',
+      '1. Observation ancienne',
+      '2. Observation récente',
+      '1. Prescription',
+    ]);
+  });
+
+  it('keeps the type order in the grouped fleet view', async () => {
     const { client } = createClient([
-      { ...findings[0], id: 82, reference: 'EC-2026-0022', title: '2. Relevés périodiques', treatment_due_on: '2026-09-30' },
-      { ...findings[0], id: 84, reference: 'EC-2026-0024', title: '4. Ligne de mouillage', treatment_due_on: '2025-08-06' },
-      { ...findings[0], id: 83, reference: 'EC-2026-0023', title: '3. Registre des procès verbaux', treatment_due_on: '2025-12-31' },
+      { ...findings[0], id: 82, reference: 'EC-2026-0022', finding_type: 'prescription', title: '2. Prescription', treatment_due_on: '2024-09-30' },
+      { ...findings[0], id: 84, reference: 'EC-2026-0024', finding_type: 'observation', title: '4. Observation', treatment_due_on: '2025-08-06' },
+      { ...findings[0], id: 83, reference: 'EC-2026-0023', finding_type: 'remark', title: '3. Remarque', treatment_due_on: '2026-12-31' },
     ]);
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
 
-    const list = (await screen.findByRole('button', { name: /4\. Ligne de mouillage/ }))
+    const list = (await screen.findByRole('button', { name: /4\. Observation/ }))
       .closest('.fcx-global-finding-list') as HTMLElement;
     expect(within(list).getAllByRole('button').map((button) => button.querySelector('b')?.textContent)).toEqual([
-      '3. Registre des procès verbaux',
-      '4. Ligne de mouillage',
-      '2. Relevés périodiques',
+      '3. Remarque',
+      '4. Observation',
+      '2. Prescription',
     ]);
   });
 
@@ -275,6 +293,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(reportDialog).getByRole('button', { name: 'Fermer' }));
     await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
     expect(screen.getByRole('option', { name: 'Findings' })).toHaveValue('finding');
+    expect(screen.getByRole('option', { name: 'Observation' })).toHaveValue('observation');
   });
 
   it('keeps progress as a draft and writes one follow-up only when Ajouter is clicked', async () => {

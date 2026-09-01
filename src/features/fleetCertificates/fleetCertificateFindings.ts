@@ -6,11 +6,22 @@ export type FleetFindingType =
   | 'minor_non_conformity'
   | 'class_condition'
   | 'remark'
+  | 'observation'
   | 'prescription'
   | 'finding';
 
 export type FleetFindingStatus = 'declared' | 'assigned' | 'in_progress' | 'pending_validation' | 'closed';
 export type FleetFindingAttachmentKind = 'finding' | 'treatment';
+
+export const FLEET_FINDING_TYPES: readonly FleetFindingType[] = [
+  'major_non_conformity',
+  'minor_non_conformity',
+  'class_condition',
+  'remark',
+  'observation',
+  'prescription',
+  'finding',
+];
 
 export interface FleetFindingAttachment {
   id: number;
@@ -91,10 +102,15 @@ function findingDueYear(treatmentDueOn: string): number {
   return Number.isInteger(year) && year > 0 ? year : Number.MAX_SAFE_INTEGER;
 }
 
-export function compareFleetFindingsByDueYearAndTitle(
-  left: Pick<FleetCertificateFinding, 'title' | 'treatmentDueOn'>,
-  right: Pick<FleetCertificateFinding, 'title' | 'treatmentDueOn'>,
+const FLEET_FINDING_TYPE_ORDER = new Map(FLEET_FINDING_TYPES.map((type, index) => [type, index]));
+
+export function compareFleetFindingsByTypeDueYearAndTitle(
+  left: Pick<FleetCertificateFinding, 'findingType' | 'title' | 'treatmentDueOn'>,
+  right: Pick<FleetCertificateFinding, 'findingType' | 'title' | 'treatmentDueOn'>,
 ): number {
+  const typeOrder = (FLEET_FINDING_TYPE_ORDER.get(left.findingType) ?? Number.MAX_SAFE_INTEGER)
+    - (FLEET_FINDING_TYPE_ORDER.get(right.findingType) ?? Number.MAX_SAFE_INTEGER);
+  if (typeOrder) return typeOrder;
   const yearOrder = findingDueYear(left.treatmentDueOn) - findingDueYear(right.treatmentDueOn);
   return yearOrder || compareFleetFindingTitles(left, right);
 }
@@ -148,7 +164,7 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
   const events = ((eventsResult.data || []) as Record<string, unknown>[]).map(mapEvent);
   return ((findingsResult.data || []) as Record<string, unknown>[])
     .map((row) => mapFinding(row, attachments, events))
-    .sort(compareFleetFindingsByDueYearAndTitle);
+    .sort(compareFleetFindingsByTypeDueYearAndTitle);
 }
 
 export async function fetchFleetFindingResponsibles(client: SupabaseClient): Promise<FleetFindingResponsible[]> {
@@ -263,7 +279,8 @@ export async function deleteFleetCertificateFinding(client: SupabaseClient, find
 
 export const FLEET_FINDING_LABELS: Record<FleetFindingType, string> = {
   major_non_conformity: 'Non-conformité majeure', minor_non_conformity: 'Non-conformité mineure',
-  class_condition: 'Condition de Classe', remark: 'Remarque', prescription: 'Prescription', finding: 'Findings',
+  class_condition: 'Condition de Classe', remark: 'Remarque', observation: 'Observation',
+  prescription: 'Prescription', finding: 'Findings',
 };
 
 export const FLEET_FINDING_STATUS_LABELS: Record<FleetFindingStatus, string> = {
