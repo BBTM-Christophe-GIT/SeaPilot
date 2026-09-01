@@ -83,7 +83,7 @@ function createClient(
 }
 
 describe('FleetCertificatesPage', () => {
-  it('sorts finding titles alphabetically while ignoring their numeric prefixes', () => {
+  it('sorts numbered finding titles in natural numeric order', () => {
     const sorted = [
       { title: '2. Relevés périodiques' },
       { title: '4. Ligne de mouillage' },
@@ -91,26 +91,46 @@ describe('FleetCertificatesPage', () => {
     ].sort(compareFleetFindingTitles);
 
     expect(sorted.map((finding) => finding.title)).toEqual([
-      '4. Ligne de mouillage',
-      '3. Registre des procès verbaux',
       '2. Relevés périodiques',
+      '3. Registre des procès verbaux',
+      '4. Ligne de mouillage',
     ]);
   });
 
-  it('sorts findings by oldest due year and then by title', () => {
+  it('sorts non-numbered finding titles alphabetically', () => {
     const sorted = [
-      { treatmentDueOn: '2026-08-19', title: "5. Dispositif de détection incendie" },
+      { title: 'Zinc à contrôler' },
+      { title: 'Ancre de secours' },
+      { title: 'Éclairage de pont' },
+    ].sort(compareFleetFindingTitles);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      'Ancre de secours',
+      'Éclairage de pont',
+      'Zinc à contrôler',
+    ]);
+  });
+
+  it('sorts KROKDUR findings by oldest due year and then by natural object order', () => {
+    const sorted = [
+      { treatmentDueOn: '2026-09-30', title: '2. Pompe de cale mécanique' },
+      { treatmentDueOn: '2025-04-24', title: '4. Ligne de mouillage (X1) - Dotation PV VMS' },
       { treatmentDueOn: '2025-04-24', title: '1. Document unique de prévention' },
-      { treatmentDueOn: '2026-09-30', title: '4. Éclairage des locaux machines' },
-      { treatmentDueOn: '2025-12-31', title: '9. Ancre de secours' },
+      { treatmentDueOn: '2026-09-30', title: '1. Pompe de cale à bras' },
+      { treatmentDueOn: '2025-05-16', title: '5. TOILETTE' },
+      { treatmentDueOn: '2025-04-24', title: '2. Relevés périodiques des isolements' },
+      { treatmentDueOn: '2025-04-24', title: '3. Registre des procès verbaux de visite' },
       { treatmentDueOn: '', title: '0. Absence de date' },
     ].sort(compareFleetFindingsByDueYearAndTitle);
 
     expect(sorted.map((finding) => finding.title)).toEqual([
-      '9. Ancre de secours',
       '1. Document unique de prévention',
-      "5. Dispositif de détection incendie",
-      '4. Éclairage des locaux machines',
+      '2. Relevés périodiques des isolements',
+      '3. Registre des procès verbaux de visite',
+      '4. Ligne de mouillage (X1) - Dotation PV VMS',
+      '5. TOILETTE',
+      '1. Pompe de cale à bras',
+      '2. Pompe de cale mécanique',
       '0. Absence de date',
     ]);
   });
@@ -126,8 +146,8 @@ describe('FleetCertificatesPage', () => {
     const list = (await screen.findByRole('button', { name: /4\. Ligne de mouillage/ }))
       .closest('.fcx-global-finding-list') as HTMLElement;
     expect(within(list).getAllByRole('button').map((button) => button.querySelector('b')?.textContent)).toEqual([
-      '4. Ligne de mouillage',
       '3. Registre des procès verbaux',
+      '4. Ligne de mouillage',
       '2. Relevés périodiques',
     ]);
   });
