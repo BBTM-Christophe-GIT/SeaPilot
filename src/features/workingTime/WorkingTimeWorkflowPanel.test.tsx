@@ -327,7 +327,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
     renderPanel(['admin'], data);
 
-    expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' }).textContent?.match(/Alex MARIN/g)).toHaveLength(1);
   });
@@ -451,16 +451,34 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toBeInTheDocument();
   });
 
-  it('discards an unsigned draft from its card without saving its changes', async () => {
+  it('discards an empty unsigned draft from its card', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderPanel(['admin'], workspace('draft', 20));
+    const data = workspace('draft', 20);
+    data.intervals = [];
+    renderPanel(['admin'], data);
 
-    await user.click(screen.getByRole('button', { name: /Supprimer le brouillon de Alex MARIN/ }));
+    await user.click(screen.getByRole('button', { name: /Retirer le brouillon vide de Alex MARIN/ }));
 
     expect(discardWorkingTimeDraft).toHaveBeenCalledWith(client, 100);
     expect(reload).toHaveBeenCalled();
-    expect(screen.getByText(/retiré sans enregistrer ses modifications/)).toBeInTheDocument();
+    expect(screen.getByText(/brouillon vide a été retiré/)).toBeInTheDocument();
+  });
+
+  it('never offers a Captain the destructive discard action after hours are recorded and submitted', () => {
+    const data = workspace('draft');
+    data.dayApprovals = [{
+      id: 501, companyId: 1, registerId: 100, personId: 10,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+
+    renderPanel(['capitaine'], data);
+
+    expect(screen.queryByRole('button', { name: /Retirer le brouillon/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Camille CAPITAINE')).toHaveLength(2);
   });
 
   it('shows the approval badge and lets the assigned captain validate one sailor day', async () => {

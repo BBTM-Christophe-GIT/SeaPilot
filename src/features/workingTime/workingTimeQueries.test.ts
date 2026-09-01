@@ -241,6 +241,8 @@ describe('working-time workflow queries', () => {
       .toBe('Chaque journée non conforme exige une cause, un contexte, une action immédiate, un repos compensateur et un commentaire capitaine.');
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_ENTRY_WINDOW_CLOSED.')))
       .toBe('La saisie de ce mois est clôturée depuis le 6 du mois suivant.');
+    expect(workingTimeErrorMessage(new Error('WORKING_TIME_DRAFT_DISCARD_FORBIDDEN.')))
+      .toBe('Seul un registre entièrement vide peut être retiré. Les heures enregistrées sont protégées.');
     expect(workingTimeErrorMessage(new Error('canceling statement due to statement timeout')))
       .toBe('La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.');
   });
