@@ -55,7 +55,12 @@ const visits = [{
   assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z', provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
 }];
 
-function createClient(findingRows = findings) {
+function createClient(
+  findingRows = findings,
+  peopleRows: Array<{ id: number; first_name: string; last_name: string; function_label: string; departed_on: string | null; active: boolean }> = [
+    { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', departed_on: null, active: true },
+  ],
+) {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
   const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
@@ -67,7 +72,7 @@ function createClient(findingRows = findings) {
       if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
-      if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
+      if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: peopleRows, error: null }) }) };
       if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
       if (table === 'fleet_certificate_visits') return { select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: visits, error: null }) }) }) };
       if (table === 'fleet_certificate_document_names') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ name: 'Permis de Navigation' }, { name: 'Certificat de Franc-Bord' }], error: null }) }) };
@@ -107,6 +112,33 @@ describe('FleetCertificatesPage', () => {
       '3. Registre des procès verbaux',
       '2. Relevés périodiques',
     ]);
+  });
+
+  it('excludes departed personnel from the responsible options', async () => {
+    const user = userEvent.setup();
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+    const { client } = createClient(findings, [
+      { id: 9301, first_name: 'Alice', last_name: 'ACTUELLE', function_label: 'Capitaine', departed_on: null, active: true },
+      { id: 9302, first_name: 'David', last_name: 'PARTI', function_label: 'Capitaine', departed_on: '2000-01-01', active: true },
+      { id: 9303, first_name: 'Fanny', last_name: 'FUTURE', function_label: 'Matelot', departed_on: '2999-12-31', active: true },
+      { id: 9304, first_name: 'Inès', last_name: 'INACTIVE', function_label: 'Matelot', departed_on: null, active: false },
+      { id: 9305, first_name: 'Théo', last_name: 'AUJOURDHUI', function_label: 'Matelot', departed_on: today, active: true },
+    ]);
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
+
+    const responsible = within(screen.getByRole('dialog', { name: 'Déclarer un écart' }))
+      .getByRole('combobox', { name: 'Responsable' });
+    expect(within(responsible).getByRole('option', { name: /Alice ACTUELLE/ })).toBeInTheDocument();
+    expect(within(responsible).getByRole('option', { name: /Fanny FUTURE/ })).toBeInTheDocument();
+    expect(within(responsible).getByRole('option', { name: /Théo AUJOURDHUI/ })).toBeInTheDocument();
+    expect(within(responsible).queryByRole('option', { name: /David PARTI/ })).not.toBeInTheDocument();
+    expect(within(responsible).queryByRole('option', { name: /Inès INACTIVE/ })).not.toBeInTheDocument();
   });
 
   it('groups the library, treatment, deadlines, visits and preview in one workspace', async () => {
