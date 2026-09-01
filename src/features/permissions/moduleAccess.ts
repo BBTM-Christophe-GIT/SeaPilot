@@ -107,7 +107,7 @@ export const APP_MODULES: AppModule[] = [
     key: 'billingElements',
     label: 'Éléments de facturation',
     family: 'Facturation',
-    navigationKind: 'submenu',
+    navigationKind: 'hidden',
     allowedRoles: ['admin', 'direction'],
   },
   { key: 'planning', label: 'Planning', family: 'Planning', navigationKind: 'direct', allowedRoles: ALL_ROLES },
