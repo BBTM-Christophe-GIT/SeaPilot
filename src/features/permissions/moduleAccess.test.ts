@@ -44,7 +44,6 @@ describe('module access', () => {
       ['Opérations', 'Navires', 'submenu'],
       ['Achats', "Demande d'Achat", 'submenu'],
       ['Achats', 'Gestion des Sous-Traitants', 'submenu'],
-      ['Facturation', 'Éléments de facturation', 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],
@@ -53,5 +52,7 @@ describe('module access', () => {
       ['Levage', 'Levage', 'direct'],
       ['Administration', 'Administration', 'direct'],
     ]);
+    expect(NAVIGATION_MODULES.map((module) => module.key)).not.toContain('billingElements');
+    expect(canAccessModule(['direction'], 'billingElements')).toBe(true);
   });
 });

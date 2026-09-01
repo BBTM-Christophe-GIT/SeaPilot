@@ -46,13 +46,8 @@ describe('AppShell', () => {
     expect(qhseButton.closest('section')).toHaveAttribute('data-family-theme', 'qhse');
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
-    const billingButton = screen.getByRole('button', { name: 'Facturation' });
-    expect(billingButton).toBeInTheDocument();
-    expect(billingButton.closest('section')).toHaveAttribute('data-family-theme', 'billing');
-    expect(screen.getByRole('link', { name: 'Éléments de facturation' })).toHaveAttribute(
-      'href',
-      '/modules/billingElements',
-    );
+    expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Éléments de facturation' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Navires' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Navires' }).closest('section')).toHaveAttribute(
       'data-family-theme',
