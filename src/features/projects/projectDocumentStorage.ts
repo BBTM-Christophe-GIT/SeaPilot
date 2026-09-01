@@ -29,6 +29,12 @@ export interface ProjectAttachmentUploadResult {
   stored: Array<StoredProjectDocument & { draftId: string }>;
 }
 
+export interface ProjectDocumentBundleAttachment {
+  fileName: string;
+  storageBucket: string;
+  storagePath: string;
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
@@ -43,6 +49,66 @@ function storageSafeSegment(value: string, fallback: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 100);
   return normalized || fallback;
+}
+
+function archiveSafeFileName(value: string, fallback: string): string {
+  const normalized = value
+    .split('')
+    .filter((character) => character.charCodeAt(0) >= 32)
+    .join('')
+    .replace(/[<>:"/\\|?*]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized || fallback;
+}
+
+function bundleFileName(documentFileName: string): string {
+  const baseName = documentFileName.replace(/\.[^.]+$/, '').trim() || 'Document contractuel';
+  return `${baseName} - avec pièces jointes.zip`;
+}
+
+export async function createProjectDocumentBundle(
+  client: SupabaseClient,
+  input: {
+    attachments: ProjectDocumentBundleAttachment[];
+    document: GeneratedProjectDocument;
+  },
+): Promise<GeneratedProjectDocument> {
+  const { default: JSZip } = await import('jszip');
+  const archive = new JSZip();
+  archive.file(
+    `Document/${archiveSafeFileName(input.document.fileName, 'document.pdf')}`,
+    input.document.blob,
+  );
+
+  const attachmentFolder = archive.folder('Pièces jointes');
+  const downloadedAttachments = await Promise.all(input.attachments.map(async (attachment) => {
+    if (!attachment.storageBucket || !attachment.storagePath) {
+      throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé SeaPilot.`);
+    }
+    const { data, error } = await client.storage
+      .from(attachment.storageBucket)
+      .download(attachment.storagePath);
+    if (error || !data) {
+      throw new Error(error?.message || `Impossible de télécharger la pièce jointe ${attachment.fileName}.`);
+    }
+    return { attachment, data };
+  }));
+  downloadedAttachments.forEach(({ attachment, data }, index) => {
+    const fileName = `${String(index + 1).padStart(2, '0')} - ${archiveSafeFileName(attachment.fileName, 'piece-jointe')}`;
+    attachmentFolder?.file(fileName, data);
+  });
+
+  const blob = await archive.generateAsync({
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+    type: 'blob',
+  });
+  return {
+    blob,
+    fileName: bundleFileName(input.document.fileName),
+    mimeType: 'application/zip',
+  };
 }
 
 export async function createProjectDocumentAccessUrl(

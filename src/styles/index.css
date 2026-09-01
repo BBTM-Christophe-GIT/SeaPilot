@@ -6116,6 +6116,65 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+.project-document-delivery-options {
+  display: grid;
+  gap: 10px;
+}
+
+.project-document-delivery-options > label {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #dce5f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #426077;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.project-document-delivery-options > label:hover,
+.project-document-delivery-options > label.is-selected {
+  border-color: #2e6de9;
+  background: #f1f6ff;
+  box-shadow: 0 0 0 2px rgb(46 109 233 / 10%);
+}
+
+.project-document-delivery-options > label:has(input:disabled) {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.project-document-delivery-options input {
+  width: 17px;
+  height: 17px;
+  margin: 3px 0 0;
+  accent-color: #2e6de9;
+}
+
+.project-document-delivery-options > label > svg {
+  margin-top: 1px;
+  color: #2e6de9;
+}
+
+.project-document-delivery-options span {
+  display: grid;
+  gap: 4px;
+}
+
+.project-document-delivery-options strong {
+  color: #172238;
+  font-size: 0.93rem;
+}
+
+.project-document-delivery-options small {
+  color: #607287;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 1100px) {
   .project-document-factory-grid {
     grid-template-columns: 1fr;
