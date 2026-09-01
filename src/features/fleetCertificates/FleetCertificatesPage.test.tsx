@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
-import { compareFleetFindingTitles } from './fleetCertificateFindings';
+import { compareFleetFindingsByDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
 import {
   buildFleetCertificateFileName,
@@ -97,11 +97,29 @@ describe('FleetCertificatesPage', () => {
     ]);
   });
 
-  it('keeps the alphabetical finding order in the grouped fleet view', async () => {
+  it('sorts findings by oldest due year and then by title', () => {
+    const sorted = [
+      { treatmentDueOn: '2026-08-19', title: "5. Dispositif de détection incendie" },
+      { treatmentDueOn: '2025-04-24', title: '1. Document unique de prévention' },
+      { treatmentDueOn: '2026-09-30', title: '4. Éclairage des locaux machines' },
+      { treatmentDueOn: '2025-12-31', title: '9. Ancre de secours' },
+      { treatmentDueOn: '', title: '0. Absence de date' },
+    ].sort(compareFleetFindingsByDueYearAndTitle);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      '9. Ancre de secours',
+      '1. Document unique de prévention',
+      "5. Dispositif de détection incendie",
+      '4. Éclairage des locaux machines',
+      '0. Absence de date',
+    ]);
+  });
+
+  it('keeps the due-year and alphabetical finding order in the grouped fleet view', async () => {
     const { client } = createClient([
-      { ...findings[0], id: 82, reference: 'EC-2026-0022', title: '2. Relevés périodiques' },
-      { ...findings[0], id: 84, reference: 'EC-2026-0024', title: '4. Ligne de mouillage' },
-      { ...findings[0], id: 83, reference: 'EC-2026-0023', title: '3. Registre des procès verbaux' },
+      { ...findings[0], id: 82, reference: 'EC-2026-0022', title: '2. Relevés périodiques', treatment_due_on: '2026-09-30' },
+      { ...findings[0], id: 84, reference: 'EC-2026-0024', title: '4. Ligne de mouillage', treatment_due_on: '2025-08-06' },
+      { ...findings[0], id: 83, reference: 'EC-2026-0023', title: '3. Registre des procès verbaux', treatment_due_on: '2025-12-31' },
     ]);
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
 
