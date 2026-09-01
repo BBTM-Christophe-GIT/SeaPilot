@@ -133,6 +133,27 @@ describe('projectDocumentGeneration', () => {
     expect(rows.every((row) => row.value && !row.value.startsWith('Non renseign'))).toBe(true);
   });
 
+  it('adds only non-empty included-service descriptions to the offer rows', () => {
+    const rows = buildProjectOfferRows({
+      client,
+      contract: {
+        ...contract,
+        supplytimeData: {
+          ...contract.supplytimeData,
+          commercial_charter_hire_service_description: 'Navire, équipage et matériel de pont.',
+          commercial_demobilisation_service_description: '   ',
+          commercial_mobilisation_service_description: 'Préparation et transit vers Brest.',
+        },
+      },
+      project,
+    });
+    const rowValues = Object.fromEntries(rows.map((row) => [row.label, row.value]));
+
+    expect(rowValues['Charter hire included services']).toBe('Navire, équipage et matériel de pont.');
+    expect(rowValues['Mobilization included services']).toBe('Préparation et transit vers Brest.');
+    expect(rowValues).not.toHaveProperty('Demobilization included services');
+  });
+
   it('uses canonical project and typed contract values in the SPFx SUPPLYTIME overlay', () => {
     const values = buildProjectSupplytimePdfFields(project, {
       ...contract,
@@ -181,7 +202,13 @@ describe('projectDocumentGeneration', () => {
     try {
       const generated = await generateProjectDocument('offer', {
         client,
-        contract,
+        contract: {
+          ...contract,
+          supplytimeData: {
+            ...contract.supplytimeData,
+            commercial_charter_hire_service_description: 'Navire, équipage et matériel de pont.',
+          },
+        },
         emitter: {
           firstName: 'Christophe',
           functionLabel: 'Directeur commercial',

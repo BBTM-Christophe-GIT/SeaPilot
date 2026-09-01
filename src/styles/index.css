@@ -5949,6 +5949,9 @@ button:disabled {
 .project-offer-summary dl div, .project-offer-columns dl div { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; font-size: 6.5px; }
 .project-offer-summary dt, .project-offer-columns dt { color: #718096; font-weight: 800; }
 .project-offer-summary dd, .project-offer-columns dd { margin: 0; color: #233b57; font-weight: 700; text-align: right; }
+.project-offer-columns dl div.project-offer-service-description { align-items: flex-start; padding: 0 0 5px 8px; border-bottom-style: dashed; }
+.project-offer-columns .project-offer-service-description dt { flex: 0 0 auto; font-size: 5.8px; font-style: italic; }
+.project-offer-columns .project-offer-service-description dd { max-width: 70%; font-size: 6px; font-weight: 500; line-height: 1.35; white-space: pre-wrap; }
 .project-offer-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 .project-offer-columns > section { padding: 13px; border: 1px solid #d8e2ed; }
 .project-offer-columns h3 { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; color: #123d68; font-size: 9px; }

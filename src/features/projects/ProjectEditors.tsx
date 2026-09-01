@@ -65,6 +65,9 @@ import {
 } from './projectContractOptions';
 import { BIMCO_P144_GROUPS } from './projectContractModels';
 import {
+  COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
+  COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
+  COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_AVAILABILITY_KEY,
   COMMERCIAL_RESERVE_OTHER_KEY,
@@ -1209,10 +1212,46 @@ export function ProjectEditor({
                   </span>
                 </Field>
               ) : null}
+              {isCommercialOffer ? (
+                <Field label="Description de la prestation incluse dans le loyer d’affrètement" wide>
+                  <textarea
+                    onChange={(event) => update('supplytimeData', {
+                      ...form.supplytimeData,
+                      [COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]: event.target.value,
+                    })}
+                    rows={3}
+                    value={form.supplytimeData[COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY] || ''}
+                  />
+                </Field>
+              ) : null}
               {!isTowage ? (
               <>
               <Field label={isBareboat ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
+              {isCommercialOffer ? (
+                <Field label="Description de la prestation incluse dans les frais de mobilisation" wide>
+                  <textarea
+                    onChange={(event) => update('supplytimeData', {
+                      ...form.supplytimeData,
+                      [COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]: event.target.value,
+                    })}
+                    rows={3}
+                    value={form.supplytimeData[COMMERCIAL_MOBILISATION_DESCRIPTION_KEY] || ''}
+                  />
+                </Field>
+              ) : null}
               <Field label={isBareboat ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
+              {isCommercialOffer ? (
+                <Field label="Description de la prestation incluse dans les frais de démobilisation" wide>
+                  <textarea
+                    onChange={(event) => update('supplytimeData', {
+                      ...form.supplytimeData,
+                      [COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]: event.target.value,
+                    })}
+                    rows={3}
+                    value={form.supplytimeData[COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY] || ''}
+                  />
+                </Field>
+              ) : null}
               <Field label="Devise des frais" wide={isCommercialOffer}>
                 <select onChange={(event) => update('feeCurrency', event.target.value)} value={form.feeCurrency || 'EUR'}>
                   {form.feeCurrency && !PROJECT_CURRENCIES.some((currency) => currency.code === form.feeCurrency)
