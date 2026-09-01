@@ -99,7 +99,6 @@ export interface PlanningDateRange {
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
-  visibleAbsencePersonIds?: ReadonlySet<number>;
 }
 
 export interface PlanningAlert {
@@ -613,8 +612,6 @@ export function buildPlanningCrewRows(
               const linkedPerson = eventPersonId === null ? peopleByName.get(person) : peopleById.get(eventPersonId);
               const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
               const personId = eventPersonId || linkedPerson?.id || null;
-              const hasVisibleAbsence = personId !== null && Boolean(options.visibleAbsencePersonIds?.has(personId));
-              if (!personEvents.length && !hasVisibleAbsence) return;
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (

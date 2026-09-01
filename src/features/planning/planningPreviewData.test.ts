@@ -17,7 +17,7 @@ describe('Planning preview data', () => {
     expect(rows.some((row) => row.type === 'vessel' && row.label === 'GOURY')).toBe(true);
     expect(rows.some((row) => row.type === 'board' && row.label === 'Bordée 1')).toBe(true);
     expect(rows.some((row) => row.type === 'person' && row.label === 'Pierre LEPRETRE')).toBe(true);
-    expect(rows.some((row) => row.type === 'person' && row.label === 'Alain ANCIEN')).toBe(false);
+    expect(rows.some((row) => row.type === 'person' && row.label === 'Alain ANCIEN')).toBe(true);
     expect(rows.some((row) => row.type === 'vessel' && row.label === 'NAVIRES SANS EQUIPAGE')).toBe(false);
     expect(overview.people.find((person) => person.firstName === 'Boris')).toMatchObject({
       contractType: 'CDD',

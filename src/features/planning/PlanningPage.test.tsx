@@ -290,6 +290,7 @@ function createClient(options: {
   operationDocuments?: unknown[];
   matrices?: unknown[];
   manningRequirements?: unknown[];
+  createdBoardRow?: unknown;
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
@@ -476,6 +477,7 @@ function createClient(options: {
       return Promise.resolve({ data: [301], error: null });
     }
     if (functionName === 'add_planning_board_row_for_month') {
+      if (options.createdBoardRow && options.boardRows) options.boardRows.push(options.createdBoardRow);
       return Promise.resolve({ data: 901, error: null });
     }
     if (functionName === 'delete_planning_board_row') {
@@ -695,7 +697,7 @@ describe('PlanningPage cockpit', () => {
     }
   });
 
-  it('hides former employees and empty sailor rows for the selected reference month', async () => {
+  it('hides former employees but keeps empty active sailor rows for the selected reference month', async () => {
     const departedBeforeAugust = { ...departedCrewRow, departed_on: '2026-07-31' };
     const departedAssignment = {
       ...assignmentOverviewRow,
@@ -723,7 +725,8 @@ describe('PlanningPage cockpit', () => {
 
     await waitFor(() => expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0));
     expect(screen.queryByText('Alain ANCIEN')).not.toBeInTheDocument();
-    expect(screen.queryByText('Luc MOREL')).not.toBeInTheDocument();
+    expect(screen.getByText('Luc MOREL')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer la ligne vide de Luc MOREL' })).toBeInTheDocument();
   });
 
   it('opens the searchable project catalog by double-clicking a vessel cell', async () => {
@@ -1284,8 +1287,15 @@ describe('PlanningPage cockpit', () => {
 
   it('lists only sailors whose employment overlaps the reference month and adds an eligible row', async () => {
     const user = userEvent.setup();
+    const boardRows: unknown[] = [];
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
+      boardRows,
+      createdBoardRow: {
+        ...emptyBoardRow,
+        id: 901,
+        person_id: futureDepartureCrewRow.id,
+      },
       people: [captainRow, crewRow, departedCrewRow, futureDepartureCrewRow, pastDepartureCrewRow, todayDepartureCrewRow],
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1313,6 +1323,7 @@ describe('PlanningPage cockpit', () => {
       p_reference_month: '2026-06-01',
     }));
     expect(await screen.findByText('Camille FUTURE a été ajouté comme ligne vide à Affectation.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer la ligne vide de Camille FUTURE' })).toBeInTheDocument();
   });
 
   it('orders function groups, hides missing functions and only shows dated contract details', async () => {
@@ -1487,7 +1498,7 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
-  it('does not render a sailor whose board row has no colored planning cell', async () => {
+  it('renders a sailor as soon as an empty board row is added', async () => {
     const { client, rpc } = createClient({
       assignments: [assignmentOverviewRow],
       boardRows: [emptyBoardRow],
@@ -1496,8 +1507,8 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
-    expect(screen.queryByRole('button', { name: 'Supprimer la ligne vide de Paul DURAND' })).not.toBeInTheDocument();
-    expect(screen.queryByText('Alain ANCIEN')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer la ligne vide de Alain ANCIEN' })).toBeInTheDocument();
+    expect(screen.getByText('Alain ANCIEN')).toBeInTheDocument();
     expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', { p_row_id: 900 });
   });
 

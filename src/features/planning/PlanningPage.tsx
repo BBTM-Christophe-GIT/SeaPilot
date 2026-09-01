@@ -63,7 +63,6 @@ import {
   planningReferenceMonthLabel,
   planningReferenceMonthRange,
   planningStatusDisplayLabel,
-  rangesOverlap,
   shiftPlanningAnchor,
   timelineRange,
   type PlanningCrewEvent,
@@ -754,18 +753,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => buildPlanningFleetLanes(overview, range, filters, allPlanningCrewEvents),
     [allPlanningCrewEvents, filters, overview, range],
   );
-  const visibleAbsencePersonIds = useMemo(
-    () => new Set(absences
-      .filter((absence) => rangesOverlap(absence.startsOn, absence.endsOn, range.start, range.end))
-      .map((absence) => absence.personId)),
-    [absences, range],
-  );
   const fleetRows = useMemo(
     () => buildPlanningCrewRows(overview, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
-      visibleAbsencePersonIds,
     }),
-    [allPlanningCrewEvents, filters, overview, referenceMonthRange, timelineDays, visibleAbsencePersonIds],
+    [allPlanningCrewEvents, filters, overview, referenceMonthRange, timelineDays],
   );
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
