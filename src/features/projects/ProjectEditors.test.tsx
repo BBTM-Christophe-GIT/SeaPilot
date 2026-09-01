@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { localTodayIso } from './projectBareboatContract';
 
 const mutationMocks = vi.hoisted(() => ({
   saveProject: vi.fn(),
@@ -130,10 +131,25 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByText('2 / 6')).toBeInTheDocument();
     await user.selectOptions(contractType, "Contrat d'Affrètement");
     expect(screen.getByText('1 / 4')).toBeInTheDocument();
-    expect(screen.getByLabelText('14. Indemnité de fin anticipée')).toHaveValue('50% de la durée ferme restante');
+    expect(screen.getByLabelText('1. Lieu de signature')).toHaveValue('Cherbourg-En-Cotentin');
+    expect(screen.getByLabelText('1. Date de signature')).toHaveValue(localTodayIso());
+    expect(screen.getByLabelText('14. Indemnité de fin de contrat anticipé')).toHaveValue('50% de la durée ferme restante');
+    expect(screen.getByLabelText('15. Valeur à assurer (Si applicable)')).toBeInTheDocument();
+    expect(screen.getByLabelText('16. Assurance à la charge de')).toHaveValue('Affréteur');
     expect(screen.getByLabelText('17. Loi applicable')).toHaveValue('Française');
     expect(screen.getByLabelText('18. Juridiction compétente')).toHaveValue('Tribunal maritime du Havre');
-    expect(screen.getByLabelText(/^13\. Loyer journalier coque nue/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^13\. Loyer journalier/)).toBeInTheDocument();
+    expect(screen.getByLabelText('12. Options de prolongation')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Statut')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    expect(screen.getByLabelText('Sur camion – Déchargement à la charge de l’affréteur')).not.toBeChecked();
+    expect(screen.getByLabelText('7. Date de livraison *')).toBeInTheDocument();
+    expect(screen.getByLabelText('9. Date de restitution *')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Début du projet')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fin du projet')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Début d’affrètement')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Contrat d'Affrètement/ }));
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
     expect(screen.getByText('2 / 4')).toBeInTheDocument();
     await user.selectOptions(contractType, 'BIMCO');

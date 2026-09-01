@@ -72,6 +72,17 @@ const VESSEL_SELECT = [
   'liability_insurer',
 ].join(', ');
 
+const PROJECT_VESSEL_CERTIFICATE_SELECT = [
+  'id',
+  'vessel_id',
+  'document_title',
+  'title',
+  'status',
+  'issued_on',
+  'expires_on',
+  'updated_at',
+].join(', ');
+
 const PROJECT_DOCUMENT_SELECT = [
   'id',
   'project_id',
@@ -307,6 +318,17 @@ interface ProjectPlanningOccurrenceRow {
   created_at: string;
 }
 
+interface ProjectVesselCertificateRow {
+  id: number;
+  vessel_id: number;
+  document_title: string | null;
+  title: string | null;
+  status: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  updated_at: string | null;
+}
+
 interface ProjectOperationDocumentRow {
   id: number;
   project_id: number;
@@ -533,6 +555,17 @@ export interface ProjectPlanningOccurrenceRecord {
   charterHireOverride?: boolean;
   sourceLabel: string;
   createdAt: string;
+}
+
+export interface ProjectVesselCertificateRecord {
+  id: number;
+  vesselId: number;
+  documentTitle: string;
+  title: string;
+  status: string;
+  issuedOn: string;
+  expiresOn: string;
+  updatedAt: string;
 }
 
 export interface ProjectOperationDocumentRecord {
@@ -790,6 +823,21 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
   }));
 }
 
+export function mapProjectVesselCertificateRows(
+  rows: ProjectVesselCertificateRow[],
+): ProjectVesselCertificateRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    documentTitle: nullableText(row.document_title),
+    title: nullableText(row.title),
+    status: nullableText(row.status),
+    issuedOn: nullableText(row.issued_on),
+    expiresOn: nullableText(row.expires_on),
+    updatedAt: nullableText(row.updated_at),
+  }));
+}
+
 export function mapProjectDocumentRows(rows: ProjectDocumentRow[]): ProjectDocumentRecord[] {
   return rows.map((row) => ({
     id: row.id,
@@ -964,6 +1012,19 @@ export async function fetchClients(client: SupabaseClient): Promise<ClientRecord
 
 export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord[]> {
   return mapVesselRows((await fetchRowsById(client, 'vessels', VESSEL_SELECT)) as VesselRow[]);
+}
+
+export async function fetchProjectVesselCertificates(
+  client: SupabaseClient,
+  vesselId: number,
+): Promise<ProjectVesselCertificateRecord[]> {
+  const { data, error } = await client
+    .from('fleet_certificates')
+    .select(PROJECT_VESSEL_CERTIFICATE_SELECT)
+    .eq('vessel_id', vesselId)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message || 'Impossible de charger les titres administratifs du navire.');
+  return mapProjectVesselCertificateRows((data || []) as unknown as ProjectVesselCertificateRow[]);
 }
 
 export async function fetchProjectPlanningOccurrences(

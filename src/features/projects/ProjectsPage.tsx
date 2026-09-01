@@ -45,6 +45,7 @@ import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './p
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
   buildProjectMetrics,
+  fetchProjectVesselCertificates,
   fetchProjectsData,
   type ClientRecord,
   type ProjectContractRecord,
@@ -1074,6 +1075,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       const emitter = kind === 'offer' || kind === 'towage_contract' || kind === 'bareboat_charter'
         ? await fetchProjectDocumentEmitter(effectiveClient).catch(() => undefined)
         : undefined;
+      const vesselCertificates = kind === 'bareboat_charter'
+        ? selectedProject.primaryVesselId
+          ? await fetchProjectVesselCertificates(effectiveClient, selectedProject.primaryVesselId)
+          : []
+        : undefined;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
         contract: selectedContract,
@@ -1082,6 +1088,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         project: selectedProject,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
+        vesselCertificates,
       });
       try {
         const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');

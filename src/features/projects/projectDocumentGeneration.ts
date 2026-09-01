@@ -4,6 +4,7 @@ import type {
   ProjectPlanningOccurrenceRecord,
   ProjectRecord,
   ProjectTowedAssetRecord,
+  ProjectVesselCertificateRecord,
   VesselRecord,
 } from './projectQueries';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
@@ -26,6 +27,13 @@ import {
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
+import {
+  buildBareboatDeliveryLabel,
+  buildBareboatRedeliveryLabel,
+  deriveBareboatCertificateFields,
+  formatBareboatDate,
+  localTodayIso,
+} from './projectBareboatContract';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -45,6 +53,7 @@ export interface ProjectDocumentGenerationInput {
   project: ProjectRecord;
   towedAsset?: ProjectTowedAssetRecord;
   vessel?: VesselRecord;
+  vesselCertificates?: ProjectVesselCertificateRecord[];
 }
 
 export interface ProjectOfferRow {
@@ -698,26 +707,19 @@ function bareboatMinimumDuration(project: ProjectRecord): string {
   return `${Math.max(1, Math.ceil((endsAt.getTime() - startsAt.getTime()) / 86_400_000))} jours`;
 }
 
-function bareboatDeliveryLabel(date: string, port: string): string {
-  return [formatBareboatDate(date), port].filter(Boolean).join(' à ');
-}
-
-function formatBareboatDate(value: string): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-}
-
 export function buildBareboatTemplateFields({
   client,
   contract,
   emitter,
   project,
   vessel,
+  vesselCertificates,
 }: ProjectDocumentGenerationInput): Record<string, string> {
   const saved = contract?.supplytimeData || {};
-  const today = new Date().toISOString();
+  const contractDate = saved.bareboat_contract_date || localTodayIso();
+  const certificateFields = vesselCertificates
+    ? deriveBareboatCertificateFields(vesselCertificates)
+    : undefined;
   const ownerSignatory = saved.bareboat_owner_signatory || formatProjectDocumentEmitterName(emitter) || '';
   const chartererSignatory = saved.bareboat_charterer_signatory || client?.representedBy || '';
   const vesselDetails = [
@@ -725,12 +727,12 @@ export function buildBareboatTemplateFields({
     `Limites d’exploitation : ${saved.bareboat_operating_limits || vessel?.navigationCategory || ''}`,
   ].filter(Boolean).join('\n');
   const titles = [
-    `Permis de navigation : ${saved.bareboat_navigation_permit || ''}`,
-    `Permis d’armement : ${saved.bareboat_manning_permit || ''}`,
+    `Permis de navigation : ${certificateFields ? certificateFields.navigationPermitLabel : saved.bareboat_navigation_permit || ''}`,
+    `Permis d’armement : ${certificateFields ? certificateFields.manningPermitLabel : saved.bareboat_manning_permit || ''}`,
   ].join('\n');
   return {
-    CONTRACT_DATE_SHORT: formatDateShort(today),
-    CONTRACT_DATE_LONG: formatBareboatDate(today),
+    CONTRACT_DATE_SHORT: formatDateShort(contractDate),
+    CONTRACT_DATE_LONG: formatBareboatDate(contractDate),
     CONTRACT_PLACE: saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place,
     PROJECT_CODE: project.projectCode,
     VESSEL_NAME: vessel?.name || project.primaryVesselName,
@@ -738,17 +740,19 @@ export function buildBareboatTemplateFields({
     OWNER: contract?.ownerIdentity || DEFAULT_BAREBOAT_OWNER_IDENTITY,
     VESSEL_IDENTITY: bareboatVesselIdentity(vessel, project),
     VESSEL_DETAILS: vesselDetails,
-    LAST_ADMIN_VISIT: saved.bareboat_last_admin_visit || '',
+    LAST_ADMIN_VISIT: certificateFields ? certificateFields.lastAdminVisitLabel : saved.bareboat_last_admin_visit || '',
     NAVIGATION_TITLES: titles,
-    DELIVERY: saved.bareboat_delivery_terms || bareboatDeliveryLabel(project.deliveryAt, project.deliveryPort),
+    DELIVERY: buildBareboatDeliveryLabel(
+      project.deliveryAt,
+      project.deliveryPort,
+      saved.bareboat_delivery_by_truck === 'true',
+    ),
     MOBILISATION: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || 'EUR'),
-    REDELIVERY: saved.bareboat_redelivery_terms || bareboatDeliveryLabel(project.redeliveryAt, project.redeliveryPort),
+    REDELIVERY: buildBareboatRedeliveryLabel(project.redeliveryAt, project.redeliveryPort),
     DEMOBILISATION: formatMoney(contract?.demobilisationFee, contract?.feeCurrency || 'EUR'),
     MINIMUM_DURATION: saved.bareboat_minimum_duration || bareboatMinimumDuration(project),
-    EXTENSIONS: extensionLabel(contract),
-    CHARTER_HIRE: contract?.charterHire == null
-      ? ''
-      : `Loyer journalier coque nue ${formatMoney(contract.charterHire, contract.hireCurrency || 'EUR')}`,
+    EXTENSIONS: saved.bareboat_extension_options || extensionLabel(contract),
+    CHARTER_HIRE: contract?.charterHire == null ? '' : formatMoney(contract.charterHire, contract.hireCurrency || 'EUR'),
     EARLY_TERMINATION: saved.bareboat_early_termination_indemnity
       || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_early_termination_indemnity,
     INSURED_VALUE: saved.bareboat_insured_value || '',

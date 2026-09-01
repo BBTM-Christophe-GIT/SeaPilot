@@ -841,6 +841,19 @@ describe('ProjectsPage', () => {
         data: [{ ...atlantiqueProjectRow, contract_type: "Contrat d'Affrètement" }],
         error: null,
       },
+      fleet_certificates: {
+        data: [{
+          id: 127,
+          vessel_id: 12,
+          document_title: 'Certificat de Classification',
+          title: 'Certificat de Classification',
+          status: 'valid',
+          issued_on: '2026-08-12',
+          expires_on: '2028-08-16',
+          updated_at: '2026-08-18T14:59:43Z',
+        }],
+        error: null,
+      },
     });
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
@@ -853,6 +866,10 @@ describe('ProjectsPage', () => {
       'bareboat_charter',
       expect.objectContaining({
         contract: expect.objectContaining({ projectId: 880 }),
+        vesselCertificates: [expect.objectContaining({
+          documentTitle: 'Certificat de Classification',
+          issuedOn: '2026-08-12',
+        })],
       }),
     ));
     expect(documentStorageMocks.storeGeneratedProjectDocument).toHaveBeenCalledWith(

@@ -341,6 +341,10 @@ describe('projectDocumentGeneration', () => {
         ...contract,
         ownerIdentity: '',
         supplytimeData: {
+          bareboat_contract_date: '2026-09-01',
+          bareboat_contract_place: 'Cherbourg-En-Cotentin',
+          bareboat_delivery_by_truck: 'true',
+          bareboat_extension_options: 'Deux prolongations de cinq jours',
           bareboat_last_admin_visit: '2026-06-12',
           bareboat_navigation_permit: '3e catégorie',
           bareboat_manning_permit: 'Minimum 2 personnes',
@@ -355,6 +359,38 @@ describe('projectDocumentGeneration', () => {
         signatureUrl: '',
       },
       project: { ...project, contractType: "Contrat d'Affrètement" },
+      vesselCertificates: [
+        {
+          id: 127,
+          vesselId: 12,
+          documentTitle: 'Certificat de Classification',
+          title: 'Certificat de Classification',
+          status: 'valid',
+          issuedOn: '2026-08-12',
+          expiresOn: '2028-08-16',
+          updatedAt: '2026-08-18T14:59:43Z',
+        },
+        {
+          id: 100,
+          vesselId: 12,
+          documentTitle: 'Permis de Navigation',
+          title: 'Permis de Navigation',
+          status: 'valid',
+          issuedOn: '2025-05-29',
+          expiresOn: '2027-05-29',
+          updatedAt: '2026-08-11T12:14:13Z',
+        },
+        {
+          id: 99,
+          vesselId: 12,
+          documentTitle: "Permis d'Armement",
+          title: "Permis d'Armement",
+          status: 'valid',
+          issuedOn: '2023-12-26',
+          expiresOn: '',
+          updatedAt: '2026-08-19T12:06:19Z',
+        },
+      ],
       vessel: {
         id: 12,
         name: 'LE ROZEL',
@@ -387,6 +423,16 @@ describe('projectDocumentGeneration', () => {
       expect(fields.VESSEL_IDENTITY).toContain("Port d’immatriculation : Cherbourg");
       expect(fields.VESSEL_DETAILS).toContain('Année de construction : 2018');
       expect(fields.MINIMUM_DURATION).toBe('15 jours');
+      expect(fields.CONTRACT_PLACE).toBe('Cherbourg-En-Cotentin');
+      expect(fields.CONTRACT_DATE_LONG).toBe('1 septembre 2026');
+      expect(fields.LAST_ADMIN_VISIT).toBe('12 août 2026');
+      expect(fields.NAVIGATION_TITLES).toContain('Permis de navigation : 29 mai 2027');
+      expect(fields.NAVIGATION_TITLES).toContain('Permis d’armement : Illimité');
+      expect(fields.DELIVERY).toContain('1 juillet 2026 à 08 h 00 · Brest');
+      expect(fields.DELIVERY).toContain('Sur camion – Déchargement à la charge de l’affréteur');
+      expect(fields.REDELIVERY).toBe('15 juillet 2026 à 18 h 00 · Nantes - Saint-Nazaire');
+      expect(fields.EXTENSIONS).toBe('Deux prolongations de cinq jours');
+      expect(fields.CHARTER_HIRE).not.toContain('Loyer journalier');
       expect(fields.APPLICABLE_LAW).toBe('Française');
       expect(fields.JURISDICTION).toBe('Tribunal maritime du Havre');
       expect(fields.OWNER_SIGNATORY).toBe('Christophe MINASSIAN');

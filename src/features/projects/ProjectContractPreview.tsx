@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ProjectTowedAssetWriteInput, ProjectWriteInput } from './projectMutations';
-import type { ClientRecord, VesselRecord } from './projectQueries';
+import type { ClientRecord, ProjectVesselCertificateRecord, VesselRecord } from './projectQueries';
 import {
   BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
@@ -38,6 +38,13 @@ import {
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
+import {
+  buildBareboatDeliveryLabel,
+  buildBareboatRedeliveryLabel,
+  deriveBareboatCertificateFields,
+  formatBareboatDate,
+  localTodayIso,
+} from './projectBareboatContract';
 
 interface ProjectContractPreviewProps {
   client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'postalCode' | 'representedBy' | 'siret'>;
@@ -46,6 +53,7 @@ interface ProjectContractPreviewProps {
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
   vessel?: VesselRecord;
+  vesselCertificates?: ProjectVesselCertificateRecord[];
 }
 
 interface PositionedValue {
@@ -259,13 +267,6 @@ function buildTowageValues({ client, emitter, form, projectCode, towedAsset, ves
   };
 }
 
-function bareboatDate(value: string): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-}
-
 function bareboatClientIdentity(client?: ProjectContractPreviewProps['client']): string {
   if (!client) return '';
   return [
@@ -287,9 +288,19 @@ function bareboatMinimumDuration(form: ProjectWriteInput): string {
   return `${Math.max(1, Math.ceil((endsAt.getTime() - startsAt.getTime()) / 86_400_000))} jours`;
 }
 
-function buildBareboatValues({ client, emitter, form, projectCode, vessel }: ProjectContractPreviewProps) {
+function buildBareboatValues({
+  client,
+  emitter,
+  form,
+  projectCode,
+  vessel,
+  vesselCertificates,
+}: ProjectContractPreviewProps) {
   const saved = form.supplytimeData;
-  const today = new Date().toISOString();
+  const contractDate = saved.bareboat_contract_date || localTodayIso();
+  const certificateFields = vesselCertificates
+    ? deriveBareboatCertificateFields(vesselCertificates)
+    : undefined;
   const extension = form.extensionCount && form.extensionDuration
     ? `${form.extensionCount} × ${form.extensionDuration} ${form.extensionUnit}`
     : '';
@@ -306,25 +317,29 @@ function buildBareboatValues({ client, emitter, form, projectCode, vessel }: Pro
   ].filter(Boolean).join('\n');
   return {
     projectCode,
-    headerDate: compactDate(today),
+    headerDate: compactDate(contractDate),
     vesselName: vessel?.name || '',
-    contractDate: `${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${bareboatDate(today)}`,
+    contractDate: `${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${formatBareboatDate(contractDate)}`,
     charterer: saved.bareboat_charterer_identity || bareboatClientIdentity(client),
     owner: form.ownerIdentity,
     vesselIdentity: vesselIdentityValue,
     vesselDetails,
-    lastAdminVisit: saved.bareboat_last_admin_visit || '',
+    lastAdminVisit: certificateFields ? certificateFields.lastAdminVisitLabel : saved.bareboat_last_admin_visit || '',
     navigationTitles: [
-      `Permis de navigation : ${saved.bareboat_navigation_permit || ''}`,
-      `Permis d’armement : ${saved.bareboat_manning_permit || ''}`,
+      `Permis de navigation : ${certificateFields ? certificateFields.navigationPermitLabel : saved.bareboat_navigation_permit || ''}`,
+      `Permis d’armement : ${certificateFields ? certificateFields.manningPermitLabel : saved.bareboat_manning_permit || ''}`,
     ].join('\n'),
-    delivery: saved.bareboat_delivery_terms || [bareboatDate(form.deliveryAt), form.deliveryPort].filter(Boolean).join(' à '),
+    delivery: buildBareboatDeliveryLabel(
+      form.deliveryAt,
+      form.deliveryPort,
+      saved.bareboat_delivery_by_truck === 'true',
+    ),
     mobilisation: money(form.mobilisationFee, form.feeCurrency),
-    redelivery: saved.bareboat_redelivery_terms || [bareboatDate(form.redeliveryAt), form.redeliveryPort].filter(Boolean).join(' à '),
+    redelivery: buildBareboatRedeliveryLabel(form.redeliveryAt, form.redeliveryPort),
     demobilisation: money(form.demobilisationFee, form.feeCurrency),
     minimumDuration: saved.bareboat_minimum_duration || bareboatMinimumDuration(form),
-    extensions: extension,
-    charterHire: form.charterHire == null ? '' : `Loyer journalier coque nue ${money(form.charterHire, form.hireCurrency || 'EUR')}`,
+    extensions: saved.bareboat_extension_options || extension,
+    charterHire: form.charterHire == null ? '' : money(form.charterHire, form.hireCurrency || 'EUR'),
     earlyTermination: saved.bareboat_early_termination_indemnity || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_early_termination_indemnity,
     insuredValue: saved.bareboat_insured_value || '',
     insurancePayer: saved.bareboat_insurance_payer || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_insurance_payer,
@@ -334,7 +349,7 @@ function buildBareboatValues({ client, emitter, form, projectCode, vessel }: Pro
     ownerSignatory: saved.bareboat_owner_signatory || formatProjectDocumentEmitterName(emitter) || '',
     ownerSignatoryFunction: saved.bareboat_owner_signatory_function || emitter?.functionLabel || '',
     ownerSignatureUrl: emitter?.signatureUrl || '',
-    signatureStatement: `Fait à ${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${bareboatDate(today)}`,
+    signatureStatement: `Fait à ${saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place}, le ${formatBareboatDate(contractDate)}`,
   };
 }
 

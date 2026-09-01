@@ -1,3 +1,5 @@
+import { localTodayIso } from './projectBareboatContract';
+
 export const DEFAULT_PROJECT_OWNER_IDENTITY = 'BBTM\n15, impasse du pou\n50340 Le Rozel';
 
 export const DEFAULT_BAREBOAT_OWNER_IDENTITY = [
@@ -52,7 +54,8 @@ export function withTowageContractDefaults(data: Record<string, string>): Record
 }
 
 export const DEFAULT_BAREBOAT_CONTRACT_FIELDS: Readonly<Record<string, string>> = {
-  bareboat_contract_place: 'LE HAVRE',
+  bareboat_contract_place: 'Cherbourg-En-Cotentin',
+  bareboat_delivery_by_truck: 'false',
   bareboat_early_termination_indemnity: '50% de la durée ferme restante',
   bareboat_insurance_payer: 'Affréteur',
   bareboat_applicable_law: 'Française',
@@ -60,8 +63,15 @@ export const DEFAULT_BAREBOAT_CONTRACT_FIELDS: Readonly<Record<string, string>> 
 };
 
 export function withBareboatContractDefaults(data: Record<string, string>): Record<string, string> {
+  const normalizedData = {
+    ...data,
+    bareboat_contract_date: data.bareboat_contract_date || localTodayIso(),
+    bareboat_contract_place: !data.bareboat_contract_place || data.bareboat_contract_place === 'LE HAVRE'
+      ? DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place
+      : data.bareboat_contract_place,
+  };
   return Object.fromEntries(
-    Object.entries({ ...DEFAULT_BAREBOAT_CONTRACT_FIELDS, ...data })
+    Object.entries({ ...DEFAULT_BAREBOAT_CONTRACT_FIELDS, ...normalizedData })
       .map(([key, value]) => [key, value || DEFAULT_BAREBOAT_CONTRACT_FIELDS[key] || '']),
   );
 }

@@ -8,6 +8,7 @@ import {
   withBareboatContractDefaults,
   withTowageContractDefaults,
 } from './projectContractOptions';
+import { localTodayIso } from './projectBareboatContract';
 
 describe('towage contract defaults', () => {
   it('keeps the optional costs on two consecutive lines', () => {
@@ -39,6 +40,13 @@ describe('bareboat charter contract defaults', () => {
 
   it('applies the legal defaults while preserving project-specific values', () => {
     expect(withBareboatContractDefaults({})).toMatchObject(DEFAULT_BAREBOAT_CONTRACT_FIELDS);
+    expect(withBareboatContractDefaults({})).toMatchObject({
+      bareboat_contract_date: localTodayIso(),
+      bareboat_contract_place: 'Cherbourg-En-Cotentin',
+      bareboat_delivery_by_truck: 'false',
+    });
+    expect(withBareboatContractDefaults({ bareboat_contract_place: 'LE HAVRE' }).bareboat_contract_place)
+      .toBe('Cherbourg-En-Cotentin');
     expect(withBareboatContractDefaults({ bareboat_jurisdiction: 'Tribunal de commerce de Cherbourg' }))
       .toMatchObject({
         bareboat_applicable_law: 'Française',
