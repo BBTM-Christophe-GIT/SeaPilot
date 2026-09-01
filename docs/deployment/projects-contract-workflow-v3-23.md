@@ -3,15 +3,16 @@
 ## Périmètre
 
 La fiche projet reprend la navigation verticale du module RH et conserve les sections Opérations et Facturation.
-La création d'un projet propose exactement trois types de contrat :
+La création d'un projet propose quatre types de contrat :
 
 - `Offre Commerciale` ;
 - `Contrat de Remorquage` ;
+- `Contrat d'Affrètement` ;
 - `BIMCO`.
 
 Le formulaire et l'aperçu PDF s'adaptent au type sélectionné. L'offre commerciale tient sur une page, le contrat de
-remorquage respecte le modèle fourni et le BIMCO reprend les quatre pages particulières du P144 suivies des vingt-cinq
-pages de clauses générales.
+remorquage respecte le modèle fourni, le contrat d'affrètement coque nue reprend le modèle BBTM de quatre pages et le
+BIMCO reprend les quatre pages particulières du P144 suivies des vingt-cinq pages de clauses générales.
 
 ## Données et documents
 

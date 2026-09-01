@@ -9,6 +9,8 @@ import type {
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
 import {
+  DEFAULT_BAREBOAT_CONTRACT_FIELDS,
+  DEFAULT_BAREBOAT_OWNER_IDENTITY,
   DEFAULT_PROJECT_FUEL_TERMS,
   DEFAULT_TOWAGE_CONDITIONS,
   DEFAULT_TOWAGE_PAYMENT_TERMS,
@@ -285,7 +287,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
     offer: 'Offre - R1.pdf',
     bimco_supplytime: 'BIMCO - R1.pdf',
     towage_contract: 'Contrat de remorquage - R1.pdf',
-    bareboat_charter: 'Contrat affretement coque nue - R1.docx',
+    bareboat_charter: "Contrat d'affretement - R1.pdf",
     intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
   };
   return `${reference} - ${suffixes[kind]}`;
@@ -301,12 +303,16 @@ export async function generateProjectDocument(
   kind: ProjectGeneratedDocumentKind,
   input: ProjectDocumentGenerationInput,
 ): Promise<GeneratedProjectDocument> {
-  if (kind === 'bareboat_charter' || kind === 'intellectual_service') {
+  if (kind === 'intellectual_service') {
     throw new Error('Le modèle de ce contrat doit encore être fourni avant sa génération.');
   }
 
   if (kind === 'towage_contract') {
     return generateTowageContract(input);
+  }
+
+  if (kind === 'bareboat_charter') {
+    return generateBareboatCharter(input);
   }
 
   const { jsPDF } = await import('jspdf');
@@ -660,6 +666,101 @@ export function buildTowageTemplateFields({
   };
 }
 
+function bareboatClientIdentity(client: ClientRecord | undefined, project: ProjectRecord): string {
+  if (!client) return project.clientName;
+  return [
+    client.name,
+    client.address,
+    [client.postalCode, client.city].filter(Boolean).join(' '),
+    client.country,
+    client.siret ? `Siret : ${client.siret}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function bareboatVesselIdentity(vessel: VesselRecord | undefined, project: ProjectRecord): string {
+  if (!vessel) return project.primaryVesselName ? `Nom : ${project.primaryVesselName}` : '';
+  return [
+    `Nom : ${vessel.name}`,
+    `Immatriculation : ${vessel.registrationNumber || ''}`,
+    `Port d’immatriculation : ${vessel.registrationPort || ''}`,
+    `Pavillon : ${vessel.flagState || ''}`,
+    `Classe : ${vessel.classificationLabel || ''}`,
+  ].join('\n');
+}
+
+function bareboatMinimumDuration(project: ProjectRecord): string {
+  const start = project.charterStartsAt || project.deliveryAt || project.startsOn;
+  const end = project.charterEndsAt || project.redeliveryAt || project.endsOn;
+  if (!start || !end) return '';
+  const startsAt = new Date(start);
+  const endsAt = new Date(end);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt < startsAt) return '';
+  return `${Math.max(1, Math.ceil((endsAt.getTime() - startsAt.getTime()) / 86_400_000))} jours`;
+}
+
+function bareboatDeliveryLabel(date: string, port: string): string {
+  return [formatBareboatDate(date), port].filter(Boolean).join(' à ');
+}
+
+function formatBareboatDate(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+}
+
+export function buildBareboatTemplateFields({
+  client,
+  contract,
+  emitter,
+  project,
+  vessel,
+}: ProjectDocumentGenerationInput): Record<string, string> {
+  const saved = contract?.supplytimeData || {};
+  const today = new Date().toISOString();
+  const ownerSignatory = saved.bareboat_owner_signatory || formatProjectDocumentEmitterName(emitter) || '';
+  const chartererSignatory = saved.bareboat_charterer_signatory || client?.representedBy || '';
+  const vesselDetails = [
+    vessel?.builtYear ? `Année de construction : ${vessel.builtYear}${saved.bareboat_refit_details ? ` - ${saved.bareboat_refit_details}` : ''}` : saved.bareboat_refit_details || '',
+    `Limites d’exploitation : ${saved.bareboat_operating_limits || vessel?.navigationCategory || ''}`,
+  ].filter(Boolean).join('\n');
+  const titles = [
+    `Permis de navigation : ${saved.bareboat_navigation_permit || ''}`,
+    `Permis d’armement : ${saved.bareboat_manning_permit || ''}`,
+  ].join('\n');
+  return {
+    CONTRACT_DATE_SHORT: formatDateShort(today),
+    CONTRACT_DATE_LONG: formatBareboatDate(today),
+    CONTRACT_PLACE: saved.bareboat_contract_place || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_contract_place,
+    PROJECT_CODE: project.projectCode,
+    VESSEL_NAME: vessel?.name || project.primaryVesselName,
+    CHARTERER: saved.bareboat_charterer_identity || bareboatClientIdentity(client, project),
+    OWNER: contract?.ownerIdentity || DEFAULT_BAREBOAT_OWNER_IDENTITY,
+    VESSEL_IDENTITY: bareboatVesselIdentity(vessel, project),
+    VESSEL_DETAILS: vesselDetails,
+    LAST_ADMIN_VISIT: saved.bareboat_last_admin_visit || '',
+    NAVIGATION_TITLES: titles,
+    DELIVERY: saved.bareboat_delivery_terms || bareboatDeliveryLabel(project.deliveryAt, project.deliveryPort),
+    MOBILISATION: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || 'EUR'),
+    REDELIVERY: saved.bareboat_redelivery_terms || bareboatDeliveryLabel(project.redeliveryAt, project.redeliveryPort),
+    DEMOBILISATION: formatMoney(contract?.demobilisationFee, contract?.feeCurrency || 'EUR'),
+    MINIMUM_DURATION: saved.bareboat_minimum_duration || bareboatMinimumDuration(project),
+    EXTENSIONS: extensionLabel(contract),
+    CHARTER_HIRE: contract?.charterHire == null
+      ? ''
+      : `Loyer journalier coque nue ${formatMoney(contract.charterHire, contract.hireCurrency || 'EUR')}`,
+    EARLY_TERMINATION: saved.bareboat_early_termination_indemnity
+      || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_early_termination_indemnity,
+    INSURED_VALUE: saved.bareboat_insured_value || '',
+    INSURANCE_PAYER: saved.bareboat_insurance_payer || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_insurance_payer,
+    APPLICABLE_LAW: saved.bareboat_applicable_law || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_applicable_law,
+    JURISDICTION: saved.bareboat_jurisdiction || DEFAULT_BAREBOAT_CONTRACT_FIELDS.bareboat_jurisdiction,
+    CHARTERER_SIGNATORY: chartererSignatory,
+    OWNER_SIGNATORY: ownerSignatory,
+    OWNER_SIGNATORY_FUNCTION: saved.bareboat_owner_signatory_function || emitter?.functionLabel || '',
+  };
+}
+
 interface TowagePdfBox {
   bottom: number;
   left: number;
@@ -820,6 +921,90 @@ async function generateTowageContract(input: ProjectDocumentGenerationInput): Pr
   return {
     blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
     fileName: buildGeneratedDocumentFileName('towage_contract', input.project),
+    mimeType: 'application/pdf',
+  };
+}
+
+async function generateBareboatCharter(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
+  const { PDFDocument, StandardFonts } = await import('pdf-lib');
+  const [templateBytes, signatureBytes] = await Promise.all([
+    loadAssetBytes('/templates/contrat-affretement-bbtm.pdf'),
+    input.emitter?.signatureUrl
+      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const templateDocument = await PDFDocument.load(templateBytes);
+  const document = await PDFDocument.create();
+  // Word leaves the fourth source page with a graphics state that clips later operators.
+  // Embedding every template page as an isolated form keeps the background vectorial and resets that state.
+  const templatePages = await document.embedPdf(templateDocument, templateDocument.getPageIndices());
+  templatePages.forEach((templatePage) => {
+    const page = document.addPage([templatePage.width, templatePage.height]);
+    page.drawPage(templatePage, {
+      height: templatePage.height,
+      width: templatePage.width,
+      x: 0,
+      y: 0,
+    });
+  });
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  let signature: PDFImage | null = null;
+  if (signatureBytes) {
+    try {
+      signature = input.emitter?.signatureMimeType === 'image/jpeg'
+        ? await document.embedJpg(signatureBytes)
+        : await document.embedPng(signatureBytes);
+    } catch {
+      signature = null;
+    }
+  }
+
+  const values = buildBareboatTemplateFields(input);
+  const pages = document.getPages();
+  pages.forEach((page) => {
+    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 287, top: 83, right: 416, bottom: 142 }, 11, 'center');
+    drawTowagePdfText(page, regular, values.CONTRACT_DATE_SHORT, { left: 547, top: 60, right: 675, bottom: 82 }, 8.5, 'center');
+    drawTowagePdfText(page, regular, values.VESSEL_NAME, { left: 417, top: 112, right: 934, bottom: 142 }, 9, 'center');
+  });
+
+  const firstPage = pages[0];
+  drawTowagePdfText(firstPage, regular, `${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 191, right: 934, bottom: 215 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 60, top: 238, right: 485, bottom: 376 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 486, top: 238, right: 934, bottom: 376 }, 8.5);
+  drawTowagePdfText(firstPage, regular, values.VESSEL_IDENTITY, { left: 60, top: 399, right: 485, bottom: 513 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.VESSEL_DETAILS, { left: 486, top: 399, right: 934, bottom: 513 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.LAST_ADMIN_VISIT, { left: 60, top: 536, right: 485, bottom: 583 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.NAVIGATION_TITLES, { left: 486, top: 536, right: 934, bottom: 583 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.DELIVERY, { left: 60, top: 606, right: 485, bottom: 675 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.MOBILISATION, { left: 486, top: 606, right: 934, bottom: 675 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.REDELIVERY, { left: 60, top: 698, right: 485, bottom: 722 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.DEMOBILISATION, { left: 486, top: 698, right: 934, bottom: 722 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.MINIMUM_DURATION, { left: 60, top: 745, right: 485, bottom: 768 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.EXTENSIONS, { left: 486, top: 745, right: 934, bottom: 768 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.CHARTER_HIRE, { left: 60, top: 791, right: 485, bottom: 814 }, 7.75);
+  drawTowagePdfText(firstPage, regular, values.EARLY_TERMINATION, { left: 486, top: 791, right: 934, bottom: 814 }, 7.75);
+  drawTowagePdfText(firstPage, regular, values.INSURED_VALUE, { left: 60, top: 838, right: 485, bottom: 861 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.INSURANCE_PAYER, { left: 486, top: 838, right: 934, bottom: 861 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.APPLICABLE_LAW, { left: 60, top: 884, right: 485, bottom: 907 }, 8.25);
+  drawTowagePdfText(firstPage, regular, values.JURISDICTION, { left: 486, top: 884, right: 934, bottom: 907 }, 8.25);
+  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 930, right: 485, bottom: 1083 });
+  drawTowageSignature(firstPage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 486, top: 930, right: 934, bottom: 1083 });
+
+  const signaturePage = pages[3];
+  if (signaturePage) {
+    drawTowagePdfText(signaturePage, bold, `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 165, right: 934, bottom: 198 }, 9);
+    drawTowageSignature(signaturePage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 263, right: 496, bottom: 435 });
+    drawTowageSignature(signaturePage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 497, top: 263, right: 934, bottom: 435 });
+  }
+
+  document.setTitle(buildGeneratedDocumentFileName('bareboat_charter', input.project));
+  document.setSubject(projectReference(input.project));
+  document.setCreator('SeaPilot');
+  const bytes = await document.save({ useObjectStreams: false });
+  return {
+    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
+    fileName: buildGeneratedDocumentFileName('bareboat_charter', input.project),
     mimeType: 'application/pdf',
   };
 }

@@ -116,13 +116,26 @@ describe('ProjectEditor contract hire periods', () => {
     );
 
     expect(screen.getAllByRole('option').filter((option) => (
-      ['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO'].includes(option.textContent || '')
-    )).map((option) => option.textContent)).toEqual(['Offre Commerciale', 'Contrat de Remorquage', 'BIMCO']);
+      ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement", 'BIMCO'].includes(option.textContent || '')
+    )).map((option) => option.textContent)).toEqual([
+      'Offre Commerciale',
+      'Contrat de Remorquage',
+      "Contrat d'Affrètement",
+      'BIMCO',
+    ]);
     const contractType = screen.getByLabelText('Type de contrat');
     await user.selectOptions(contractType, 'Contrat de Remorquage');
     expect(screen.getByText('1 / 6')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
     expect(screen.getByText('2 / 6')).toBeInTheDocument();
+    await user.selectOptions(contractType, "Contrat d'Affrètement");
+    expect(screen.getByText('1 / 4')).toBeInTheDocument();
+    expect(screen.getByLabelText('14. Indemnité de fin anticipée')).toHaveValue('50% de la durée ferme restante');
+    expect(screen.getByLabelText('17. Loi applicable')).toHaveValue('Française');
+    expect(screen.getByLabelText('18. Juridiction compétente')).toHaveValue('Tribunal maritime du Havre');
+    expect(screen.getByLabelText(/^13\. Loyer journalier coque nue/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 4')).toBeInTheDocument();
     await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByText('1 / 29')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));

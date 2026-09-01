@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BAREBOAT_CONTRACT_TYPE,
+  DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   DEFAULT_TOWAGE_OPTIONAL_COSTS,
+  normalizeProjectContractType,
   towageOptionalCostsWithDefault,
+  withBareboatContractDefaults,
   withTowageContractDefaults,
 } from './projectContractOptions';
 
@@ -23,5 +27,22 @@ describe('towage contract defaults', () => {
 
   it('applies the two-line default to a new towage contract', () => {
     expect(withTowageContractDefaults({}).optional_costs).toBe(DEFAULT_TOWAGE_OPTIONAL_COSTS);
+  });
+});
+
+describe('bareboat charter contract defaults', () => {
+  it('normalizes the attached bareboat wording without changing time charters', () => {
+    expect(normalizeProjectContractType("Contrat d'Affrètement")).toBe(BAREBOAT_CONTRACT_TYPE);
+    expect(normalizeProjectContractType('Contrat d’affrètement coque nue')).toBe(BAREBOAT_CONTRACT_TYPE);
+    expect(normalizeProjectContractType('Affrètement à temps')).toBe('BIMCO');
+  });
+
+  it('applies the legal defaults while preserving project-specific values', () => {
+    expect(withBareboatContractDefaults({})).toMatchObject(DEFAULT_BAREBOAT_CONTRACT_FIELDS);
+    expect(withBareboatContractDefaults({ bareboat_jurisdiction: 'Tribunal de commerce de Cherbourg' }))
+      .toMatchObject({
+        bareboat_applicable_law: 'Française',
+        bareboat_jurisdiction: 'Tribunal de commerce de Cherbourg',
+      });
   });
 });

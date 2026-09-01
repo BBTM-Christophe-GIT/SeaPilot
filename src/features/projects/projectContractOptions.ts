@@ -1,5 +1,13 @@
 export const DEFAULT_PROJECT_OWNER_IDENTITY = 'BBTM\n15, impasse du pou\n50340 Le Rozel';
 
+export const DEFAULT_BAREBOAT_OWNER_IDENTITY = [
+  'Benjamin Bon Travaux Maritimes sas (BBTM)',
+  '15 Impasse du Pou',
+  '50340 Le Rozel, France',
+  'benjamin@bbtm.fr',
+  'RCS Cherbourg : 884 601 170 00019',
+].join('\n');
+
 export const DEFAULT_PROJECT_FUEL_TERMS = "A la charge de l'affréteur";
 
 export const DEFAULT_TOWAGE_CONDITIONS = 'Bonne condition de partance assurée par l’affréteur.';
@@ -43,9 +51,25 @@ export function withTowageContractDefaults(data: Record<string, string>): Record
   };
 }
 
+export const DEFAULT_BAREBOAT_CONTRACT_FIELDS: Readonly<Record<string, string>> = {
+  bareboat_contract_place: 'LE HAVRE',
+  bareboat_early_termination_indemnity: '50% de la durée ferme restante',
+  bareboat_insurance_payer: 'Affréteur',
+  bareboat_applicable_law: 'Française',
+  bareboat_jurisdiction: 'Tribunal maritime du Havre',
+};
+
+export function withBareboatContractDefaults(data: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({ ...DEFAULT_BAREBOAT_CONTRACT_FIELDS, ...data })
+      .map(([key, value]) => [key, value || DEFAULT_BAREBOAT_CONTRACT_FIELDS[key] || '']),
+  );
+}
+
 export const PROJECT_CONTRACT_TYPES = [
   'Offre Commerciale',
   'Contrat de Remorquage',
+  "Contrat d'Affrètement",
   'BIMCO',
 ] as const;
 
@@ -53,6 +77,7 @@ export type ProjectContractType = (typeof PROJECT_CONTRACT_TYPES)[number];
 
 export const COMMERCIAL_OFFER_CONTRACT_TYPE: ProjectContractType = 'Offre Commerciale';
 export const TOWAGE_CONTRACT_TYPE: ProjectContractType = 'Contrat de Remorquage';
+export const BAREBOAT_CONTRACT_TYPE: ProjectContractType = "Contrat d'Affrètement";
 export const BIMCO_CONTRACT_TYPE: ProjectContractType = 'BIMCO';
 
 export function normalizeProjectContractType(value?: string | null): string {
@@ -60,6 +85,9 @@ export function normalizeProjectContractType(value?: string | null): string {
   const lowered = normalizedValue.toLocaleLowerCase('fr-FR');
 
   if (lowered.includes('remorquage')) return TOWAGE_CONTRACT_TYPE;
+  if (lowered.includes('coque nue') || lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
+    return BAREBOAT_CONTRACT_TYPE;
+  }
   if (lowered.includes('bimco') || lowered.includes('supplytime') || lowered.includes('affrètement à temps')) {
     return BIMCO_CONTRACT_TYPE;
   }

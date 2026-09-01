@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
 import {
   buildGeneratedDocumentFileName,
+  buildBareboatTemplateFields,
   buildProjectOfferRows,
   buildProjectSupplytimePdfFields,
   buildTowageTemplateFields,
@@ -161,6 +163,9 @@ describe('projectDocumentGeneration', () => {
     expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
       'Campagne - Atlantique - BIMCO - R1.pdf',
     );
+    expect(buildGeneratedDocumentFileName('bareboat_charter', project)).toBe(
+      "P1107 - Contrat d'affretement - R1.pdf",
+    );
   });
 
   it('formats the commercial offer generation date for the PDF footer', () => {
@@ -300,6 +305,95 @@ describe('projectDocumentGeneration', () => {
       expect(fields.SPECIAL_CONDITIONS).toBe('TVA 20%');
       expect(fields.CHARTERER_SIGNATORY).toBe('Claire MARTIN');
       expect(fields.OWNER_SIGNATORY).toBe('Christophe MINASSIAN');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('generates the four-page bareboat charter from the sanitized attached model', async () => {
+    const [template, editableTemplate] = await Promise.all([
+      readFile(resolve('public/templates/contrat-affretement-bbtm.pdf')),
+      readFile(resolve('public/templates/contrat-affretement-bbtm.docx')),
+    ]);
+    const archive = await JSZip.loadAsync(editableTemplate);
+    const templateXml = (await Promise.all(
+      Object.values(archive.files)
+        .filter((entry) => !entry.dir && entry.name.endsWith('.xml'))
+        .map((entry) => entry.async('string')),
+    )).join('\n');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(template, {
+        headers: { 'content-type': 'application/pdf' },
+        status: 200,
+      }),
+    );
+    const input = {
+      client: {
+        ...client,
+        address: '162 rue du Large',
+        postalCode: '29280',
+        city: 'Plouzané',
+        country: 'France',
+        siret: '123 456 789 00010',
+      },
+      contract: {
+        ...contract,
+        ownerIdentity: '',
+        supplytimeData: {
+          bareboat_last_admin_visit: '2026-06-12',
+          bareboat_navigation_permit: '3e catégorie',
+          bareboat_manning_permit: 'Minimum 2 personnes',
+          bareboat_insured_value: '400 000 €',
+        },
+      },
+      emitter: {
+        firstName: 'Christophe',
+        functionLabel: 'Directeur commercial',
+        lastName: 'MINASSIAN',
+        signatureMimeType: '',
+        signatureUrl: '',
+      },
+      project: { ...project, contractType: "Contrat d'Affrètement" },
+      vessel: {
+        id: 12,
+        name: 'LE ROZEL',
+        acronym: 'LRZ',
+        active: true,
+        fleetExitOn: '',
+        sharePointItemId: '12',
+        registrationNumber: '937905',
+        registrationPort: 'Cherbourg',
+        flagState: 'France',
+        classificationLabel: 'Bureau Veritas',
+        builtYear: 2018,
+        navigationCategory: '3e catégorie',
+      },
+    };
+
+    try {
+      const fields = buildBareboatTemplateFields(input);
+      const generated = await generateProjectDocument('bareboat_charter', input);
+      const bytes = new Uint8Array(await generated.blob.arrayBuffer());
+      const document = await PDFDocument.load(bytes);
+
+      expect(generated.fileName).toBe("P1107 - Contrat d'affretement - R1.pdf");
+      expect(generated.mimeType).toBe('application/pdf');
+      expect(document.getPageCount()).toBe(4);
+      const pageFourXObjects = document.getPage(3).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
+      expect(pageFourXObjects?.keys()).toHaveLength(1);
+      expect(fields.CHARTERER).toContain('Ifremer');
+      expect(fields.CHARTERER).toContain('Siret : 123 456 789 00010');
+      expect(fields.VESSEL_IDENTITY).toContain("Port d’immatriculation : Cherbourg");
+      expect(fields.VESSEL_DETAILS).toContain('Année de construction : 2018');
+      expect(fields.MINIMUM_DURATION).toBe('15 jours');
+      expect(fields.APPLICABLE_LAW).toBe('Française');
+      expect(fields.JURISDICTION).toBe('Tribunal maritime du Havre');
+      expect(fields.OWNER_SIGNATORY).toBe('Christophe MINASSIAN');
+      ['HOLENN EUSA', 'P242', 'ETMF', '22 janvier 2026', 'Marteen ENDEL'].forEach((executedValue) => {
+        expect(templateXml).not.toContain(executedValue);
+      });
+      expect(archive.file('word/media/image1.jpeg')).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       fetchMock.mockRestore();

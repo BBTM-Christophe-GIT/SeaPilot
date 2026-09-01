@@ -464,7 +464,7 @@ describe('ProjectsPage', () => {
           id: 501,
           company_id: 1,
           project_id: 880,
-          period_month: '2026-08-01',
+          period_month: '2026-09-01',
           amount_ht: 0,
           include_operations_in_pdf: true,
           include_expenses_in_pdf: true,
@@ -502,7 +502,9 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Facturation' }));
-    await user.click(await screen.findByRole('button', { name: 'Ajouter un frais' }));
+    const addExpenseButton = await screen.findByRole('button', { name: 'Ajouter un frais' });
+    await waitFor(() => expect(addExpenseButton).toBeEnabled());
+    await user.click(addExpenseButton);
 
     const expenseDialog = screen.getByRole('dialog', { name: 'Ajouter un frais imputable' });
     const supplier = within(expenseDialog).getByLabelText('Fournisseur');
@@ -829,6 +831,33 @@ describe('ProjectsPage', () => {
     expect(from.mock.calls.map(([table]) => table)).not.toContain('storage');
     expect(rpc.mock.calls.map(([functionName]) => functionName)).toEqual(
       expect.not.arrayContaining(['projects_save_planning_occurrence', 'projects_delete_planning_occurrence']),
+    );
+  });
+
+  it('maps a bareboat charter project to the dedicated generated document type', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      projects: {
+        data: [{ ...atlantiqueProjectRow, contract_type: "Contrat d'Affrètement" }],
+        error: null,
+      },
+    });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    const bareboatCard = screen.getByText("Contrat d'affrètement", { selector: 'strong' }).closest('article');
+    await user.click(within(bareboatCard as HTMLElement).getByRole('button', { name: 'Générer et classer' }));
+
+    await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
+      'bareboat_charter',
+      expect.objectContaining({
+        contract: expect.objectContaining({ projectId: 880 }),
+      }),
+    ));
+    expect(documentStorageMocks.storeGeneratedProjectDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ documentType: 'bareboat_charter', projectId: 880 }),
     );
   });
 });

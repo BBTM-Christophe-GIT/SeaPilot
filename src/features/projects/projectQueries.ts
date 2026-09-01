@@ -66,6 +66,9 @@ const VESSEL_SELECT = [
   'classification_label',
   'flag_state',
   'registration_number',
+  'registration_port',
+  'built_year',
+  'navigation_category',
   'liability_insurer',
 ].join(', ');
 
@@ -108,6 +111,8 @@ const CLIENT_SELECT = [
   'name',
   'represented_by',
   'code',
+  'siret',
+  'vat_number',
   'email',
   'phone',
   'address',
@@ -222,6 +227,9 @@ interface VesselRow {
   classification_label: string | null;
   flag_state: string | null;
   registration_number: string | null;
+  registration_port?: string | null;
+  built_year?: number | string | null;
+  navigation_category?: string | null;
   liability_insurer: string | null;
 }
 
@@ -260,6 +268,8 @@ interface ClientRow {
   name: string;
   represented_by: string | null;
   code: string | null;
+  siret?: string | null;
+  vat_number?: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -465,6 +475,8 @@ export interface ClientRecord {
   name: string;
   representedBy: string;
   code: string;
+  siret?: string;
+  vatNumber?: string;
   email: string;
   phone: string;
   address: string;
@@ -498,6 +510,9 @@ export interface VesselRecord {
   classificationLabel?: string;
   flagState?: string;
   registrationNumber?: string;
+  registrationPort?: string;
+  builtYear?: number | null;
+  navigationCategory?: string;
   liabilityInsurer?: string;
 }
 
@@ -768,6 +783,9 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     classificationLabel: nullableText(row.classification_label),
     flagState: nullableText(row.flag_state),
     registrationNumber: nullableText(row.registration_number),
+    registrationPort: nullableText(row.registration_port),
+    builtYear: nullableNumber(row.built_year),
+    navigationCategory: nullableText(row.navigation_category),
     liabilityInsurer: nullableText(row.liability_insurer),
   }));
 }
@@ -810,6 +828,8 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     name: row.name,
     representedBy: nullableText(row.represented_by),
     code: nullableText(row.code),
+    siret: nullableText(row.siret),
+    vatNumber: nullableText(row.vat_number),
     email: nullableText(row.email),
     phone: nullableText(row.phone),
     address: nullableText(row.address),
