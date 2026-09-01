@@ -380,7 +380,7 @@ describe('planning hierarchy and side panels', () => {
     expect(rows.filter((row) => row.type === 'vessel').map((row) => row.label)).toEqual(['Armement - Cherbourg']);
   });
 
-  it('hides departed sailors and board rows without a visible colored cell', () => {
+  it('hides departed sailors even when an empty board row exists', () => {
     const departedPerson = {
       id: 3,
       firstName: 'Alain',
