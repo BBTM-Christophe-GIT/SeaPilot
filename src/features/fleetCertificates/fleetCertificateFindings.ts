@@ -90,6 +90,19 @@ export function compareFleetFindingTitles(
   });
 }
 
+function findingDueYear(treatmentDueOn: string): number {
+  const year = Number(treatmentDueOn.slice(0, 4));
+  return Number.isInteger(year) && year > 0 ? year : Number.MAX_SAFE_INTEGER;
+}
+
+export function compareFleetFindingsByDueYearAndTitle(
+  left: Pick<FleetCertificateFinding, 'title' | 'treatmentDueOn'>,
+  right: Pick<FleetCertificateFinding, 'title' | 'treatmentDueOn'>,
+): number {
+  const yearOrder = findingDueYear(left.treatmentDueOn) - findingDueYear(right.treatmentDueOn);
+  return yearOrder || compareFleetFindingTitles(left, right);
+}
+
 function mapAttachment(row: Record<string, unknown>): FleetFindingAttachment {
   return {
     id: Number(row.id), findingId: Number(row.finding_id), kind: row.attachment_kind as FleetFindingAttachmentKind,
@@ -139,7 +152,7 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
   const events = ((eventsResult.data || []) as Record<string, unknown>[]).map(mapEvent);
   return ((findingsResult.data || []) as Record<string, unknown>[])
     .map((row) => mapFinding(row, attachments, events))
-    .sort(compareFleetFindingTitles);
+    .sort(compareFleetFindingsByDueYearAndTitle);
 }
 
 export async function fetchFleetFindingResponsibles(client: SupabaseClient): Promise<FleetFindingResponsible[]> {
