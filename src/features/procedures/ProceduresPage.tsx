@@ -92,8 +92,12 @@ function chapterKey(value: string): string {
   return match?.[1] || 'uncontrolled';
 }
 
+function projectNames(value: string): string[] {
+  return [...new Set(value.split(';').map((name) => name.trim()).filter(Boolean))];
+}
+
 function matchesFilters(record: ProcedureRecord, filters: ProcedureFilterState): boolean {
-  if (filters.project && record.projectName !== filters.project) return false;
+  if (filters.project && !projectNames(record.projectName).includes(filters.project)) return false;
   if (filters.vessel && record.vesselName !== filters.vessel) return false;
   if (!filters.search) return true;
   const searchable = normalizeSearch([
@@ -272,7 +276,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
 
   const activeRecords = view === 'sources' ? procedures : publications;
   const filteredRecords = useMemo(() => activeRecords.filter((record) => matchesFilters(record, filters)), [activeRecords, filters]);
-  const projects = useMemo(() => [...new Set(activeRecords.map((record) => record.projectName).filter(Boolean))].sort(), [activeRecords]);
+  const projects = useMemo(() => [...new Set(activeRecords.flatMap((record) => projectNames(record.projectName)))].sort(), [activeRecords]);
   const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(), [activeRecords]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
   const metrics = useMemo(() => buildProcedureMetrics({ procedures, publications }), [procedures, publications]);
@@ -392,6 +396,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                   const publication = 'procedureId' in record ? record as PublishedProcedureRecord : null;
                   const source = publication ? null : record as ProcedureRecord;
                   const linkedPublication = source ? publications.find((item) => item.procedureId === source.id) : null;
+                  const recordProjects = projectNames(record.projectName);
                   return (
                     <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public' : ''}`} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
@@ -400,10 +405,10 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                         <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button>
                         <div className="procedure-document-metadata">
                           <small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel].filter(Boolean).join(' · ') || record.fileName}</small>
-                          {record.vesselName || record.projectName ? (
+                          {record.vesselName || recordProjects.length > 0 ? (
                             <span className="procedure-document-scopes">
                               {record.vesselName ? <span><b>Navire :</b>{record.vesselName}</span> : null}
-                              {record.projectName ? <span><b>Projet :</b>{record.projectName}</span> : null}
+                              {recordProjects.map((projectName) => <span key={projectName}><b>Projet :</b>{projectName}</span>)}
                             </span>
                           ) : null}
                         </div>

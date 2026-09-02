@@ -24213,7 +24213,7 @@ button.planning-p12-conflict-card {
 .procedure-document-copy strong > span { margin-left: 5px; color: #4a5665; font-weight: 560; }
 .procedure-document-metadata { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .procedure-document-metadata > small { overflow: hidden; color: #8290a0; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
-.procedure-document-scopes { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.procedure-document-scopes { display: flex; min-width: 0; align-items: center; gap: 5px; flex-wrap: wrap; }
 .procedure-document-scopes > span {
   display: inline-flex;
   min-width: 0;

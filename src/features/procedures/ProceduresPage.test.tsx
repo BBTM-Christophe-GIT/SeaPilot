@@ -10,7 +10,7 @@ const baseMetadata = {
   regulatory_requirement: '',
   ism_chapter: '08',
   vessel_name: 'LE ROZEL',
-  project_name: 'P144',
+  project_name: 'P144 - GUARD VESSEL EMDT; P145 - OIL SPILL SAIPEM COU',
   document_number: 'QSMS-OPS-01',
   restrictions: '',
   annual_review: true,
@@ -49,7 +49,7 @@ const draftProcedureRow = {
   published_on: null,
   ism_chapter: '10',
   vessel_name: 'GOURY',
-  project_name: 'P231',
+  project_name: 'P258 - DCB PENLY',
 };
 
 const publishedProcedureRow = {
@@ -138,15 +138,21 @@ describe('ProceduresPage', () => {
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.getByText('Consigne machine provisoire')).toBeInTheDocument();
     expect(screen.getAllByText('LE ROZEL').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('P144').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P144 - GUARD VESSEL EMDT').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P145 - OIL SPILL SAIPEM COU').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
 
+    await user.selectOptions(screen.getByLabelText('Projet'), 'P145 - OIL SPILL SAIPEM COU');
+    expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
+    expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Projet'), '');
     await user.selectOptions(screen.getByLabelText('Navire'), 'LE ROZEL');
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Navire'), '');
-    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'P231' } });
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'P258' } });
     expect(screen.queryByText('Procédure embarquement ROZEL')).not.toBeInTheDocument();
     expect(screen.getByText('Consigne machine provisoire')).toBeInTheDocument();
 

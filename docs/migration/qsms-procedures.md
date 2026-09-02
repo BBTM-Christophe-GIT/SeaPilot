@@ -4,7 +4,7 @@
 
 Le module SharePoint `Portail-BBTM---Armement.aspx` expose 127 documents de travail et 64 PDF publiés, classés dans les chapitres ISM 01 à 12 et dans « Documents non contrôlés ». Ce décompte provient directement des deux listes SharePoint REST. La recherche Microsoft Graph n’en retournait que 125 et 45 : elle omettait notamment un modèle Word `.dotx`, un fichier `.html` et 19 PDF. L’interface comprend la recherche, les filtres Projet/Navire, la sélection, la création, la modification des métadonnées, le téléchargement, la suppression et la publication d’un PDF dans la bibliothèque `QSMS - PDF`.
 
-Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut d’approbation, thème, titre, type de document, veille passerelle et version.
+Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut d’approbation, thème, titre, type de document, veille passerelle et version. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
 
 Sources identifiées :
 
@@ -37,7 +37,8 @@ Le bucket accepte jusqu’à 100 Mio afin de préparer la migration des sources 
 
 - 125 sources sur 127 sont copiées dans Storage ; les deux seules absentes sont `Démarrage et arrêt de KROKDUR.docx` (74 754 491 octets, 71,3 Mio) et `Manuel de Sécurité et des Limites Opérationnelles - LE ROZEL.docx` (52 749 640 octets, 50,3 Mio) ;
 - 64 PDF sur 64 sont copiés, y compris le PDF publié `Démarrage et arrêt de KROKDUR.pdf` ;
-- les champs SharePoint structurés renseignent 34 navires et 18 projets parmi les sources, puis 19 navires et 8 projets parmi les PDF publiés ; après exclusion des deux sources trop volumineuses, SeaPilot contient 32 navires et les 18 projets sur ses 125 sources ; l’interface les affiche sous forme de libellés explicites et les inclut dans la recherche ainsi que dans les filtres dédiés ;
+- le lookup Navire renseigne 34 sources SharePoint et 19 PDF ; après exclusion des deux sources trop volumineuses, SeaPilot contient 32 sources associées à un navire ;
+- `Projet_LK` renseigne 18 sources avec 6 libellés de projet distincts et 7 PDF avec 4 libellés distincts. Un document peut référencer plusieurs projets : chaque libellé est alors affiché et filtrable séparément ;
 - les 125 sources et les 64 PDF ont une référence SharePoint renseignée ;
 - SharePoint classe explicitement 21 sources dans « Documents non contrôlés » ; SeaPilot y regroupe aussi les 3 sources sans chapitre, soit 24 documents affichés au lieu des 84 visibles avant la reprise des métadonnées exactes ;
 - le bucket contient exactement 125 objets sources et 64 objets publiés.
