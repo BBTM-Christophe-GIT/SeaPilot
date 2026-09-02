@@ -40,6 +40,46 @@ final result: passed
 
 ---
 
+# Design QA — icônes des chapitres QSMS v3.27.15 (2026-09-02)
+
+## Cible et preuves
+
+- Référence visuelle : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-85bb65f3-5992-471d-acbc-84d700d0facd.png` (1 224 × 886 px).
+- Rendu local : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-collapsed-v3-27-15.png` (1 227 × 690 px).
+- Comparaison plein écran : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-comparison-v3-27-15.png` (2 475 × 928 px).
+- Comparaison ciblée du chapitre 03 : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-focus-comparison-v3-27-15.png` (1 020 × 218 px).
+- Route : `http://127.0.0.1:5173/modules/procedures?preview=1`.
+- Viewport CSS demandé : 1 227 × 894 px, `deviceScaleFactor: 1`. Le navigateur intégré a produit une capture visible de 1 227 × 690 px ; la comparaison ciblée isole et normalise la même ligne de chapitre afin d'éviter de confondre ce rognage avec un écart de design.
+- État : profil Admin de prévisualisation, chapitres repliés, données QSMS de démonstration.
+
+## Comparaison visuelle
+
+- Typographie : SeaPilot conserve sa police, ses graisses et sa hiérarchie existantes ; les libellés restent lisibles, sans troncature dans le viewport de référence.
+- Espacement et rythme : les pictogrammes utilisent le carré arrondi existant de 26 × 26 px, restent centrés sur la ligne et ne modifient pas la densité de la bibliothèque.
+- Couleurs : les tons bleu, vert d'eau, orange et ambre reprennent la sémantique visible dans la référence sans introduire de nouveau token incompatible avec le module.
+- Qualité des actifs : tous les pictogrammes proviennent de Lucide, déjà utilisé par SeaPilot ; aucun SVG artisanal, dessin CSS, emoji ou actif raster approximatif n'a été ajouté.
+- Contenu : les groupes « Documents non contrôlés » et « ISM - Chapitre non renseigné » sont distincts. Le contrôle Supabase confirme respectivement 21 et 3 sources.
+- Icônes : la comparaison ciblée du chapitre 03 confirme le même bâtiment, le même trait et le même traitement bleu. Les 15 correspondances (01 à 13, non contrôlés et non renseigné) sont couvertes par le test de rendu.
+- Interactions : le repli/dépli des chapitres a été exercé dans le navigateur intégré. L'ouverture bureau est couverte par des tests de schémas Word, Excel et PowerPoint ; le protocole externe n'a pas été lancé pendant la QA pour ne pas ouvrir une application du poste.
+- Responsive : à 753 px de largeur utile, `clientWidth` et `scrollWidth` valent tous deux 753 px ; aucun débordement horizontal n'est introduit par les nouveaux pictogrammes.
+- Console : aucune erreur ni alerte navigateur relevée sur la prévisualisation.
+
+## Comparaison et constats
+
+- Premier passage : aucun écart P0, P1 ou P2 sur le composant ciblé. La différence de densité entre la capture SharePoint et l'écran SeaPilot complet est intentionnelle : l'implémentation conserve la coque, les filtres et les contrôles existants de SeaPilot.
+- Passage ciblé : la ligne du chapitre 03 a été isolée dans les deux captures ; le pictogramme, le ton, l'alignement et le rayon sont cohérents avec la référence.
+- Aucun correctif visuel supplémentaire n'a été nécessaire après comparaison.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 : aucun.
+
+final result: passed
+
+---
+
 # Design QA — fiche information QSMS v3.27.14 (2026-09-02)
 
 ## Cibles et état comparés

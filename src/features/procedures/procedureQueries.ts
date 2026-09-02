@@ -455,14 +455,30 @@ export async function deletePublishedProcedure(client: SupabaseClient, publicati
   if (publication.storagePath) await removeStorageObjects(client, [publication.storagePath]).catch(() => undefined);
 }
 
-function opensInOfficeViewer(record: ProcedureRecord | PublishedProcedureRecord): boolean {
+function officeDesktopScheme(record: ProcedureRecord | PublishedProcedureRecord): 'ms-word' | 'ms-excel' | 'ms-powerpoint' | null {
   const fileName = record.fileName.toLowerCase();
   const mimeType = record.mimeType.toLowerCase();
-  return /\.(doc|docx|xls|xlsx|ppt|pptx)$/.test(fileName)
-    || mimeType.includes('word')
-    || mimeType.includes('excel')
-    || mimeType.includes('powerpoint')
-    || mimeType.includes('officedocument');
+  if (/\.(doc|docm|docx|dot|dotm|dotx|odt)$/.test(fileName)
+    || mimeType.includes('msword')
+    || mimeType.includes('wordprocessingml')
+    || mimeType.includes('opendocument.text')) return 'ms-word';
+  if (/\.(xls|xlsb|xlsm|xlsx|xlt|xltm|xltx|ods)$/.test(fileName)
+    || mimeType.includes('ms-excel')
+    || mimeType.includes('spreadsheetml')
+    || mimeType.includes('opendocument.spreadsheet')) return 'ms-excel';
+  if (/\.(odp|pot|potm|potx|pps|ppsm|ppsx|ppt|pptm|pptx)$/.test(fileName)
+    || mimeType.includes('ms-powerpoint')
+    || mimeType.includes('presentationml')
+    || mimeType.includes('opendocument.presentation')) return 'ms-powerpoint';
+  return null;
+}
+
+export function buildProcedureDesktopUri(
+  record: ProcedureRecord | PublishedProcedureRecord,
+  fileUrl: string,
+): string {
+  const scheme = officeDesktopScheme(record);
+  return scheme ? `${scheme}:ofv|u|${fileUrl}` : fileUrl;
 }
 
 export async function getProcedureFileUrl(
@@ -471,14 +487,11 @@ export async function getProcedureFileUrl(
   action: ProcedureFileAction = 'download',
 ): Promise<string> {
   if (!record.storageBucket || !record.storagePath) {
-    if (record.fileUrl) return record.fileUrl;
+    if (record.fileUrl) return action === 'open' ? buildProcedureDesktopUri(record, record.fileUrl) : record.fileUrl;
     throw new Error('Aucun fichier disponible pour ce document.');
   }
   const options = action === 'download' ? { download: record.fileName || true } : undefined;
   const { data, error } = await client.storage.from(record.storageBucket).createSignedUrl(record.storagePath, 300, options);
   if (error) throw error;
-  if (action === 'open' && opensInOfficeViewer(record)) {
-    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(data.signedUrl)}`;
-  }
-  return data.signedUrl;
+  return action === 'open' ? buildProcedureDesktopUri(record, data.signedUrl) : data.signedUrl;
 }

@@ -33,6 +33,10 @@ Les sources et les PDF sont conservés dans le bucket privé Supabase Storage `p
 
 Les URLs signées ont une durée de cinq minutes. Les règles RLS protègent à la fois les tables et `storage.objects`. La publication crée un instantané des métadonnées afin qu’un PDF diffusé reste traçable indépendamment des modifications ultérieures de la source.
 
+Un clic sur le nom d'une source Word, Excel ou PowerPoint invoque désormais l'application Microsoft 365 installée sur le poste en mode lecture, au moyen du schéma URI bureau correspondant. Le bouton Télécharger reste disponible pour récupérer une copie locale. Les autres formats conservent leur ouverture directe par URL signée.
+
+Les en-têtes de chapitres reprennent les pictogrammes du portail QSMS d'origine. Les documents classés explicitement dans « Documents non contrôlés » et ceux dont le chapitre ISM n'est pas renseigné sont présentés dans deux groupes distincts.
+
 Le champ Projet de la fiche information est une liste avec recherche alimentée par les projets actifs du catalogue SeaPilot (`public.projects`). La valeur enregistrée reprend le code et le nom du projet, par exemple `P231 - NETTOYAGE CHENAL CNPEF`, afin de rester cohérente avec les filtres et les pastilles de la bibliothèque.
 
 Lorsque « Revue annuelle » est activé et qu’une date de diffusion est renseignée, l’échéance est calculée à `Date diffusion + 1 an`. À partir de J-90, la procédure est mise en évidence dans la bibliothèque et ajoutée aux « Priorités & échéances » de l’accueil Administration/Direction. Le calcul est dérivé des colonnes `annual_review` et `diffusion_on` existantes : aucune duplication ni migration de schéma n’est nécessaire.
@@ -46,7 +50,7 @@ Le bucket accepte jusqu’à 100 Mio afin de préparer la migration des sources 
 - le lookup Navire renseigne 34 sources SharePoint et 19 PDF ; après exclusion des deux sources trop volumineuses, SeaPilot contient 32 sources associées à un navire ;
 - `Projet_LK` renseigne 18 sources avec 6 libellés de projet distincts et 7 PDF avec 4 libellés distincts. Un document peut référencer plusieurs projets : chaque libellé est alors affiché et filtrable séparément ;
 - les 125 sources et les 64 PDF ont une référence SharePoint renseignée ;
-- SharePoint classe explicitement 21 sources dans « Documents non contrôlés » ; SeaPilot y regroupe aussi les 3 sources sans chapitre, soit 24 documents affichés au lieu des 84 visibles avant la reprise des métadonnées exactes ;
+- SharePoint classe explicitement 21 sources dans « Documents non contrôlés » ; les 3 sources sans chapitre apparaissent séparément dans « ISM - Chapitre non renseigné » ;
 - le bucket contient exactement 125 objets sources et 64 objets publiés.
 
 Les formats historiques `.dotx` et `.html` sont autorisés dans le bucket afin de conserver les deux sources que la recherche Graph ignorait. Ils ne changent pas la règle de diffusion : seuls les PDF publiés sont accessibles aux profils opérationnels.
@@ -80,6 +84,7 @@ Le script ne journalise aucun secret, refuse les publications dont le contenu n�
 - Administration et Direction voient l’onglet « Documents de travail », peuvent ajouter/remplacer une source et publier un PDF.
 - Armement, Capitaine et Marin ne déclenchent aucune requête vers `public.procedures` et ne voient que `public.published_procedures`.
 - Un téléchargement passe par une URL Storage signée ; aucun bucket n’est public.
+- Un clic sur une source Office lance Word, Excel ou PowerPoint bureau en lecture, sans passage par Office Online.
 - Les filtres par texte, projet, navire et chapitre ISM sont cohérents avec les métadonnées importées.
 - La fiche information propose une recherche dans les projets actifs et recalcule immédiatement la référence `Thème Numéro-Version`.
 - Une revue annuelle apparaît dans la bibliothèque et sur l’accueil dès J-90 ; le 29 février est reporté au 28 février l’année suivante si nécessaire.

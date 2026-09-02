@@ -24174,7 +24174,11 @@ button.planning-p12-conflict-card {
 
 .procedure-chapter-heading:hover { background: #f0f6fc; }
 .procedure-chapter-heading > svg { color: #8290a0; }
-.procedure-chapter-icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; color: #058768; background: #e9f8f3; }
+.procedure-chapter-icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; }
+.procedure-chapter-icon.is-blue { color: #1166d4; background: #eaf3ff; }
+.procedure-chapter-icon.is-teal { color: #008d83; background: #e6f8f6; }
+.procedure-chapter-icon.is-orange { color: #ef5b0c; background: #fff1e8; }
+.procedure-chapter-icon.is-amber { color: #a85d00; background: #fff6e8; }
 .procedure-chapter-heading strong { overflow: hidden; font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
 .procedure-chapter-heading em { color: #596677; font-size: .64rem; font-style: normal; font-weight: 850; }
 
