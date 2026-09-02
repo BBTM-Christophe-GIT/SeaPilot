@@ -33,6 +33,8 @@
     "import:bbtm:preview": "node --experimental-strip-types scripts/bbtm-planning-preview.ts",
     "refresh:sharepoint:project-documents": "node --experimental-strip-types scripts/refresh-sharepoint-project-documents.ts",
     "migrate:project-contract-documents": "node --experimental-strip-types scripts/migrate-project-contract-documents-to-storage.ts",
+    "migrate:qsms": "node --experimental-strip-types scripts/migrate-qsms-documents-to-storage.ts",
+    "migrate:qsms:apply": "node --experimental-strip-types scripts/migrate-qsms-documents-to-storage.ts --apply",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -1,30 +1,55 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
 
+const baseMetadata = {
+  category_label: 'Procédure d’urgence',
+  diffusion_on: '2026-03-20',
+  description: 'Consignes applicables à bord',
+  regulatory_requirement: '',
+  ism_chapter: '08',
+  vessel_name: 'LE ROZEL',
+  project_name: 'P144',
+  document_number: 'QSMS-OPS-01',
+  restrictions: '',
+  annual_review: true,
+  approval_status: 'Document approuve',
+  theme: 'URG',
+  document_type: 'PRO',
+  bridge_watch: true,
+  version_label: '4',
+};
+
 const approvedProcedureRow = {
   id: 12,
   procedure_code: 'QSMS-OPS-01',
-  title: 'Procedure embarquement ROZEL',
+  title: 'Procédure embarquement ROZEL',
   status: 'approved',
   revision_label: 'Rev. 4',
-  published_on: '2026-03-15',
-  source_label: 'SharePoint',
-  file_url: 'https://sharepoint.test/procedure.docx',
+  published_on: '2026-03-20',
+  source_label: 'seapilot',
+  file_url: null,
   notes: 'Document source QSMS',
+  ...baseMetadata,
+  source_storage_bucket: 'procedure-documents',
+  source_storage_path: 'sources/source.docx',
+  source_file_name: 'procedure.docx',
+  source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  source_size_bytes: 2048,
 };
 
 const draftProcedureRow = {
+  ...approvedProcedureRow,
   id: 13,
   procedure_code: 'QSMS-MAC-02',
+  document_number: 'QSMS-MAC-02',
   title: 'Consigne machine provisoire',
   status: 'draft',
-  revision_label: 'Rev. 1',
   published_on: null,
-  source_label: 'SharePoint',
-  file_url: null,
-  notes: 'A verifier',
+  ism_chapter: '10',
+  vessel_name: 'GOURY',
+  project_name: 'P231',
 };
 
 const publishedProcedureRow = {
@@ -32,153 +57,155 @@ const publishedProcedureRow = {
   procedure_id: 12,
   procedure_sharepoint_item_id: '12',
   procedure_code: 'QSMS-OPS-01',
-  title: 'Procedure embarquement ROZEL PDF',
+  title: 'Procédure embarquement ROZEL.pdf',
   status: 'approved',
   revision_label: 'Rev. 4',
   published_on: '2026-03-20',
-  source_label: 'SharePoint PDF',
-  file_url: 'https://sharepoint.test/procedure.pdf',
-  notes: 'Publication signee',
+  source_label: 'seapilot',
+  file_url: null,
+  notes: 'Publication signée',
+  ...baseMetadata,
+  storage_bucket: 'procedure-documents',
+  storage_path: 'published/12/procedure.pdf',
+  file_name: 'procedure.pdf',
+  mime_type: 'application/pdf',
+  size_bytes: 4096,
+  published_by: 'user-1',
 };
 
-function createClient(procedures: unknown[] = [approvedProcedureRow, draftProcedureRow], publications: unknown[] = [publishedProcedureRow]) {
-  const insert = vi.fn().mockReturnValue({
-    select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: approvedProcedureRow, error: null }),
-    }),
-  });
-  const client = {
-    from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: procedures, error: null }),
-            }),
-          }),
-          insert,
-        };
-      }
-
-      if (table === 'published_procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: publications, error: null }),
-            }),
-          }),
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
-    }),
+function orderedResult(data: unknown[]) {
+  const result = {
+    order: vi.fn(() => result),
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
   };
-
-  return { client, insert };
+  return result;
 }
 
-function createClientWithCreatedProcedure(createdProcedure: unknown) {
-  const insert = vi.fn().mockReturnValue({
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; created?: unknown; published?: unknown } = {}) {
+  const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
+  const publications = options.publications ?? [publishedProcedureRow];
+  const upload = vi.fn().mockResolvedValue({ error: null });
+  const remove = vi.fn().mockResolvedValue({ error: null });
+  const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.test/signed' }, error: null });
+  const procedureInsert = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: createdProcedure, error: null }),
+      single: vi.fn().mockResolvedValue({ data: options.created || approvedProcedureRow, error: null }),
     }),
   });
-  const client = {
-    from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
-            }),
-          }),
-          insert,
-        };
-      }
-
-      if (table === 'published_procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
-            }),
-          }),
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+  const publicationInsert = vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnValue({
+      single: vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null }),
     }),
+  });
+  const update = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  });
+  const removeRow = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+  const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'procedures') {
+      return {
+        select: vi.fn(() => orderedResult(procedures)),
+        insert: procedureInsert,
+        update,
+        delete: removeRow,
+      };
+    }
+    if (table === 'published_procedures') {
+      return {
+        select: vi.fn(() => orderedResult(publications)),
+        insert: publicationInsert,
+        update,
+        delete: removeRow,
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+  const client = {
+    from,
+    storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
   };
-
-  return { client, insert };
+  return { client, from, upload, procedureInsert, publicationInsert };
 }
 
 describe('ProceduresPage', () => {
-  it('filters QHSE procedures by status, search text and document type', async () => {
+  it('shows the private QSMS workbench to Administration and Direction', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
 
     render(<ProceduresPage client={client as never} roles={['direction']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Procedures QHSE' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Procédures QHSE' })).toBeInTheDocument();
+    expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.getByText('Consigne machine provisoire')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
 
-    await user.selectOptions(screen.getByLabelText('Filtre statut'), 'approved');
-    fireEvent.change(screen.getByLabelText('Recherche procedures'), { target: { value: 'ROZEL' } });
-
-    expect(screen.getByText('Procedure embarquement ROZEL')).toBeInTheDocument();
-    expect(screen.getByText('Procedure embarquement ROZEL PDF')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Projet'), 'P144');
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'ROZEL' } });
+    expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Procedures approuvees')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Publications PDF publiees')).toHaveTextContent('1');
 
-    await user.selectOptions(screen.getByLabelText('Type document'), 'publication');
-
-    expect(screen.queryByText('Procedure embarquement ROZEL')).not.toBeInTheDocument();
-    expect(screen.getByText('Procedure embarquement ROZEL PDF')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /PDF publiés/i }));
+    expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
   });
 
-  it('creates a QHSE procedure for office roles', async () => {
+  it.each([['armement'], ['capitaine'], ['marin']] as const)(
+    'shows only published PDFs to the %s profile',
+    async (role) => {
+      const { client, from } = createClient();
+      render(<ProceduresPage client={client as never} roles={[role]} />);
+
+      expect(await screen.findByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
+      expect(screen.queryByText('Procédure embarquement ROZEL')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Nouveau document/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/uniquement les versions PDF/i)).toBeInTheDocument();
+      expect(from).not.toHaveBeenCalledWith('procedures');
+    },
+  );
+
+  it('uploads a new editable source to the private Supabase bucket', async () => {
     const user = userEvent.setup();
-    const createdProcedure = {
-      ...approvedProcedureRow,
-      id: 44,
-      procedure_code: 'QSMS-PON-07',
-      title: 'Procedure controle pont',
-      status: 'review',
-      revision_label: 'Rev. A',
-      published_on: '2026-05-01',
-      source_label: 'seapilot',
-      file_url: 'https://sharepoint.test/pont.docx',
-      notes: 'Creation interne',
-    };
-    const { client, insert } = createClientWithCreatedProcedure(createdProcedure);
+    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG-08-A', document_number: 'URG-08-A' };
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
 
-    render(<ProceduresPage client={client as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: 'Procédures QHSE' });
+    await user.click(screen.getByRole('button', { name: /Nouveau document/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Nouveau document' });
+    fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Plan de préparation aux urgences' } });
+    fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: 'URG-08-A' } });
+    const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    await user.upload(within(dialog).getByLabelText(/Fichier source modifiable/i), sourceFile);
+    fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form') as HTMLFormElement);
 
-    await screen.findByRole('heading', { name: 'Procedures QHSE' });
-    fireEvent.change(screen.getByLabelText('Code procedure'), { target: { value: 'QSMS-PON-07' } });
-    fireEvent.change(screen.getByLabelText('Titre procedure'), { target: { value: 'Procedure controle pont' } });
-    await user.selectOptions(screen.getByLabelText('Statut procedure'), 'review');
-    fireEvent.change(screen.getByLabelText('Revision procedure'), { target: { value: 'Rev. A' } });
-    fireEvent.change(screen.getByLabelText('Publication procedure'), { target: { value: '2026-05-01' } });
-    fireEvent.change(screen.getByLabelText('URL fichier procedure'), {
-      target: { value: 'https://sharepoint.test/pont.docx' },
-    });
-    fireEvent.change(screen.getByLabelText('Notes procedure'), { target: { value: 'Creation interne' } });
-    await user.click(screen.getByRole('button', { name: 'Ajouter procedure' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), sourceFile, expect.objectContaining({ upsert: false }));
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Plan de préparation aux urgences',
+      document_number: 'URG-08-A',
+      source_storage_bucket: 'procedure-documents',
+      source_file_name: 'urgence.docx',
+    }));
+  });
 
-    expect(insert).toHaveBeenCalledWith({
-      procedure_code: 'QSMS-PON-07',
-      title: 'Procedure controle pont',
-      status: 'review',
-      revision_label: 'Rev. A',
-      published_on: '2026-05-01',
-      source_label: 'seapilot',
-      file_url: 'https://sharepoint.test/pont.docx',
-      notes: 'Creation interne',
-    });
-    expect(await screen.findByText('Procedure ajoutee.')).toBeInTheDocument();
-    expect(screen.getByText('Procedure controle pont')).toBeInTheDocument();
+  it('publishes a selected PDF as a separate distribution record', async () => {
+    const user = userEvent.setup();
+    const { client, publicationInsert, upload } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await screen.findByText('Procédure embarquement ROZEL');
+
+    await user.click(screen.getByLabelText('Publier Procédure embarquement ROZEL'));
+    const dialog = screen.getByRole('dialog', { name: 'Publier le PDF' });
+    const pdf = new File(['pdf'], 'procedure-approuvee.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByLabelText(/PDF à diffuser/i), pdf);
+    await user.click(within(dialog).getByRole('button', { name: 'Publier' }));
+
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^published\/12\//), pdf, expect.any(Object));
+    expect(publicationInsert).toHaveBeenCalledWith(expect.objectContaining({
+      procedure_id: 12,
+      storage_bucket: 'procedure-documents',
+      file_name: 'procedure-approuvee.pdf',
+      mime_type: 'application/pdf',
+    }));
+    expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
   });
 });

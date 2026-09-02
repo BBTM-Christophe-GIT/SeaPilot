@@ -243,21 +243,26 @@ describe('App', () => {
         return {
           select: vi.fn().mockReturnValue({
             order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    id: 12,
-                    procedure_code: 'QSMS-OPS-01',
-                    title: 'Procedure embarquement ROZEL',
-                    status: 'approved',
-                    revision_label: 'Rev. 4',
-                    published_on: '2026-03-15',
-                    source_label: 'SharePoint',
-                    file_url: 'https://sharepoint.test/procedure.docx',
-                    notes: 'Document source QSMS',
-                  },
-                ],
-                error: null,
+              order: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 12,
+                      procedure_code: 'QSMS-OPS-01',
+                      title: 'Procedure embarquement ROZEL',
+                      status: 'approved',
+                      revision_label: 'Rev. 4',
+                      published_on: '2026-03-15',
+                      source_label: 'SharePoint',
+                      file_url: 'https://sharepoint.test/procedure.docx',
+                      notes: 'Document source QSMS',
+                      ism_chapter: '08',
+                      project_name: 'P144',
+                      vessel_name: 'LE ROZEL',
+                    },
+                  ],
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -268,23 +273,28 @@ describe('App', () => {
         return {
           select: vi.fn().mockReturnValue({
             order: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    id: 32,
-                    procedure_id: 12,
-                    procedure_sharepoint_item_id: '12',
-                    procedure_code: 'QSMS-OPS-01',
-                    title: 'Procedure embarquement ROZEL PDF',
-                    status: 'approved',
-                    revision_label: 'Rev. 4',
-                    published_on: '2026-03-20',
-                    source_label: 'SharePoint PDF',
-                    file_url: 'https://sharepoint.test/procedure.pdf',
-                    notes: 'Publication signee',
-                  },
-                ],
-                error: null,
+              order: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 32,
+                      procedure_id: 12,
+                      procedure_sharepoint_item_id: '12',
+                      procedure_code: 'QSMS-OPS-01',
+                      title: 'Procedure embarquement ROZEL.pdf',
+                      status: 'approved',
+                      revision_label: 'Rev. 4',
+                      published_on: '2026-03-20',
+                      source_label: 'SharePoint PDF',
+                      file_url: 'https://sharepoint.test/procedure.pdf',
+                      notes: 'Publication signee',
+                      ism_chapter: '08',
+                      project_name: 'P144',
+                      vessel_name: 'LE ROZEL',
+                    },
+                  ],
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -303,15 +313,12 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Procedures QHSE' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Procedures approuvees')).toHaveTextContent('1');
+    expect(await screen.findByRole('heading', { name: 'Procédures QHSE' })).toBeInTheDocument();
     expect(screen.getByText('Procedure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.getAllByText('QSMS-OPS-01').length).toBeGreaterThan(0);
-    expect(screen.getByText('Procedure embarquement ROZEL PDF')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Ouvrir le fichier Procedure embarquement ROZEL PDF' })).toHaveAttribute(
-      'href',
-      'https://sharepoint.test/procedure.pdf',
-    );
+    fireEvent.click(screen.getByRole('button', { name: /PDF publiés/i }));
+    expect(screen.getByText('Procedure embarquement ROZEL.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Télécharger Procedure embarquement ROZEL.pdf' })).toBeInTheDocument();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
