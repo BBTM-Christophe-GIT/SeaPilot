@@ -1,6 +1,6 @@
 begin;
 
-select plan(19);
+select plan(21);
 
 select has_function(
   'public',
@@ -101,6 +101,8 @@ from public.companies company
 join public.people person on person.company_id = company.id and person.sailor_number = 'REC-784'
 where company.code = 'bbtm';
 
+select set_config('request.jwt.claim.sub', '78400000-0000-0000-0000-000000000001', true);
+
 insert into public.working_time_intervals (
   company_id, register_id, person_id, local_work_date, starts_at, ends_at,
   timezone_name, utc_offset_minutes, vessel_id, watch_group,
@@ -186,6 +188,7 @@ select throws_ok(
 );
 
 reset role;
+select set_config('request.jwt.claim.sub', '78400000-0000-0000-0000-000000000001', true);
 update public.working_time_intervals
 set starts_at = '2026-10-01 18:00:00+02',
     ends_at = '2026-10-02 08:00:00+02',
@@ -234,6 +237,16 @@ select is(
 select has_function('public', 'working_time_phases_recommendation', array['bigint','jsonb','text','bigint','text','bigint'], 'multi-phase recommendation RPC exists');
 select has_function('public', 'save_working_time_phases', array['bigint','jsonb','text','bigint','text','text'], 'atomic multi-phase save RPC exists');
 select ok(not has_function_privilege('anon', 'public.save_working_time_phases(bigint,jsonb,text,bigint,text,text)', 'EXECUTE'), 'anonymous batch writes are denied');
+select matches(
+  pg_get_functiondef('public.save_working_time_phases(bigint,jsonb,text,bigint,text,text)'::regprocedure),
+  '(?s)seapilot.defer_working_time_recalculation',
+  'multi-phase saves defer per-interval recalculation'
+);
+select matches(
+  pg_get_functiondef('public.save_working_time_phases(bigint,jsonb,text,bigint,text,text)'::regprocedure),
+  '(?s)perform private\.working_time_recalculate_person\(target\.person_id, first_start, last_end\)',
+  'multi-phase saves rebuild the affected rolling windows once'
+);
 select is(
   (public.working_time_phases_recommendation(
     current_setting('test.wtr_person_id')::bigint,

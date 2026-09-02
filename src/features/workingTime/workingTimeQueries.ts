@@ -552,26 +552,66 @@ export async function fetchWorkingTimeWorkspace(
   });
   assertResult(ensureResult.error, 'Impossible de préparer les registres mensuels.');
 
-  const [contextResult, registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
-    client.rpc('working_time_entry_context', { p_starts_on: range.start, p_ends_on: range.end }),
-    client.from('working_time_registers').select(REGISTER_SELECT)
-      .is('discarded_at', null)
-      .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false }),
-    client.from('working_time_intervals').select(INTERVAL_SELECT)
-      .gte('local_work_date', range.start).lte('local_work_date', range.end).is('voided_at', null).order('starts_at'),
-    client.from('working_time_calculation_windows').select(CALCULATION_SELECT)
-      .gte('local_window_end_date', range.start).lte('local_window_end_date', range.end).order('window_end'),
-    client.from('working_time_day_comments').select('id,register_id,person_id,local_work_date,cause_category,operational_context,immediate_action,compensatory_rest_plan,comment,authored_by,authored_by_person_id,updated_at')
-      .gte('local_work_date', range.start).lte('local_work_date', range.end).order('local_work_date'),
-    client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
-      .is('valid_to', null).order('version_number', { ascending: false }),
+  const contextResult = await client.rpc('working_time_entry_context', {
+    p_starts_on: range.start,
+    p_ends_on: range.end,
+  });
+  assertResult(contextResult.error, 'Impossible de déterminer le périmètre de saisie.');
+
+  const context = (contextResult.data || {}) as EntryContextRow;
+  const readablePersonIds = ((context.readable_people || context.editable_people || []) as EditablePersonRow[])
+    .map((person) => Number(person.person_id))
+    .filter((personId) => Number.isFinite(personId) && personId > 0);
+  const currentPersonId = Number(context.current_person_id || 0);
+  const emptyPersonScope = -1;
+
+  let registerQuery = client.from('working_time_registers').select(REGISTER_SELECT)
+    .is('discarded_at', null)
+    .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false });
+  let intervalQuery = client.from('working_time_intervals').select(INTERVAL_SELECT)
+    .gte('local_work_date', range.start).lte('local_work_date', range.end).is('voided_at', null).order('starts_at');
+  let calculationQuery = client.from('working_time_calculation_windows').select(CALCULATION_SELECT)
+    .gte('local_window_end_date', range.start).lte('local_window_end_date', range.end).order('window_end');
+  let commentQuery = client.from('working_time_day_comments').select('id,register_id,person_id,local_work_date,cause_category,operational_context,immediate_action,compensatory_rest_plan,comment,authored_by,authored_by_person_id,updated_at')
+    .gte('local_work_date', range.start).lte('local_work_date', range.end).order('local_work_date');
+  let signatureQuery = client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
+    .is('valid_to', null).order('version_number', { ascending: false });
+  let dayApprovalQuery = client.from('working_time_day_approvals').select(DAY_APPROVAL_SELECT)
+    .order('local_work_date', { ascending: false }).limit(2000);
+
+  if (readablePersonIds.length) {
+    registerQuery = registerQuery.in('person_id', readablePersonIds);
+    intervalQuery = intervalQuery.in('person_id', readablePersonIds);
+    calculationQuery = calculationQuery.in('person_id', readablePersonIds);
+    commentQuery = commentQuery.in('person_id', readablePersonIds);
+    signatureQuery = signatureQuery.in('person_id', readablePersonIds);
+    dayApprovalQuery = dayApprovalQuery.or([
+      `person_id.in.(${readablePersonIds.join(',')})`,
+      ...(currentPersonId > 0 ? [`approver_person_id.eq.${currentPersonId}`] : []),
+    ].join(','));
+  } else {
+    registerQuery = registerQuery.eq('person_id', emptyPersonScope);
+    intervalQuery = intervalQuery.eq('person_id', emptyPersonScope);
+    calculationQuery = calculationQuery.eq('person_id', emptyPersonScope);
+    commentQuery = commentQuery.eq('person_id', emptyPersonScope);
+    signatureQuery = signatureQuery.eq('person_id', emptyPersonScope);
+    dayApprovalQuery = currentPersonId > 0
+      ? dayApprovalQuery.eq('approver_person_id', currentPersonId)
+      : dayApprovalQuery.eq('person_id', emptyPersonScope);
+  }
+
+  const [registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
+    registerQuery,
+    intervalQuery,
+    calculationQuery,
+    commentQuery,
+    signatureQuery,
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
-    client.from('working_time_day_approvals').select(DAY_APPROVAL_SELECT).order('local_work_date', { ascending: false }).limit(2000),
+    dayApprovalQuery,
     client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
 
-  assertResult(contextResult.error, 'Impossible de déterminer le périmètre de saisie.');
   assertResult(registerResult.error, 'Impossible de charger les registres.');
   assertResult(intervalResult.error, 'Impossible de charger les heures.');
   assertResult(calculationResult.error, 'Impossible de charger les calculs serveur.');
@@ -582,7 +622,6 @@ export async function fetchWorkingTimeWorkspace(
   assertResult(vesselResult.error, 'Impossible de charger les navires.');
   assertResult(policyResult.error, 'Impossible de charger les seuils de conformité.');
 
-  const context = (contextResult.data || {}) as EntryContextRow;
   const mapPeople = (rows: unknown[]) => (rows as EditablePersonRow[]).map((person) => ({
     personId: Number(person.person_id),
     firstName: String(person.first_name || ''),
@@ -936,7 +975,7 @@ export async function approveOwnWorkingTimeRegister(
 }
 
 const WORKING_TIME_ERROR_MESSAGES: Array<[string, string]> = [
-  ['canceling statement due to statement timeout', 'La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.'],
+  ['canceling statement due to statement timeout', 'Le serveur a mis trop de temps à actualiser le suivi. Vérifiez l’état de la journée avant de relancer l’action.'],
   ['WORKING_TIME_IMPORT_PERMISSION_DENIED', 'Seuls l’administrateur et l’armement peuvent importer un registre XLSM.'],
   ['WORKING_TIME_IMPORT_XLSM_REQUIRED', 'Le fichier source doit être un classeur annuel XLSM.'],
   ['WORKING_TIME_IMPORT_MIME_INVALID', 'Le type du fichier XLSM n’est pas valide.'],
