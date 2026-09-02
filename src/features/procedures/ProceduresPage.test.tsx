@@ -124,7 +124,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     from,
     storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
   };
-  return { client, from, upload, procedureInsert, publicationInsert };
+  return { client, from, upload, createSignedUrl, procedureInsert, publicationInsert };
 }
 
 describe('ProceduresPage', () => {
@@ -207,5 +207,24 @@ describe('ProceduresPage', () => {
       mime_type: 'application/pdf',
     }));
     expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
+  });
+
+  it('opens a document when its name is clicked', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, createSignedUrl } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', {
+      name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL',
+    }));
+
+    expect(createSignedUrl).toHaveBeenCalledWith('sources/source.docx', 300, undefined);
+    expect(open).toHaveBeenCalledWith(
+      'https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fstorage.test%2Fsigned',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    open.mockRestore();
   });
 });

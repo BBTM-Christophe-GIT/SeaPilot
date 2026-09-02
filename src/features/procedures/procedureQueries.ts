@@ -110,6 +110,8 @@ export interface ProceduresData {
   publications: PublishedProcedureRecord[];
 }
 
+export type ProcedureFileAction = 'download' | 'open';
+
 export interface ProcedureMetrics {
   totalProcedures: number;
   approvedProcedures: number;
@@ -424,14 +426,30 @@ export async function deletePublishedProcedure(client: SupabaseClient, publicati
   if (publication.storagePath) await removeStorageObjects(client, [publication.storagePath]).catch(() => undefined);
 }
 
-export async function getProcedureFileUrl(client: SupabaseClient, record: ProcedureRecord | PublishedProcedureRecord): Promise<string> {
+function opensInOfficeViewer(record: ProcedureRecord | PublishedProcedureRecord): boolean {
+  const fileName = record.fileName.toLowerCase();
+  const mimeType = record.mimeType.toLowerCase();
+  return /\.(doc|docx|xls|xlsx|ppt|pptx)$/.test(fileName)
+    || mimeType.includes('word')
+    || mimeType.includes('excel')
+    || mimeType.includes('powerpoint')
+    || mimeType.includes('officedocument');
+}
+
+export async function getProcedureFileUrl(
+  client: SupabaseClient,
+  record: ProcedureRecord | PublishedProcedureRecord,
+  action: ProcedureFileAction = 'download',
+): Promise<string> {
   if (!record.storageBucket || !record.storagePath) {
     if (record.fileUrl) return record.fileUrl;
     throw new Error('Aucun fichier disponible pour ce document.');
   }
-  const { data, error } = await client.storage.from(record.storageBucket).createSignedUrl(record.storagePath, 300, {
-    download: record.fileName || true,
-  });
+  const options = action === 'download' ? { download: record.fileName || true } : undefined;
+  const { data, error } = await client.storage.from(record.storageBucket).createSignedUrl(record.storagePath, 300, options);
   if (error) throw error;
+  if (action === 'open' && opensInOfficeViewer(record)) {
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(data.signedUrl)}`;
+  }
   return data.signedUrl;
 }

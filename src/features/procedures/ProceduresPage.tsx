@@ -312,8 +312,13 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
     finally { setIsSaving(false); }
   }
 
+  async function handleOpen(record: ProcedureRecord | PublishedProcedureRecord) {
+    try { window.open(await getProcedureFileUrl(effectiveClient, record, 'open'), '_blank', 'noopener,noreferrer'); }
+    catch { fail("Le fichier n'est pas disponible."); }
+  }
+
   async function handleDownload(record: ProcedureRecord | PublishedProcedureRecord) {
-    try { window.open(await getProcedureFileUrl(effectiveClient, record), '_blank', 'noopener,noreferrer'); }
+    try { window.open(await getProcedureFileUrl(effectiveClient, record, 'download'), '_blank', 'noopener,noreferrer'); }
     catch { fail("Le fichier n'est pas disponible."); }
   }
 
@@ -390,7 +395,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                     <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public' : ''}`} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
-                      <div className="procedure-document-copy"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong><small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel, record.vesselName, record.projectName].filter(Boolean).join(' · ') || record.fileName}</small></div>
+                      <div className="procedure-document-copy"><button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button><small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel, record.vesselName, record.projectName].filter(Boolean).join(' · ') || record.fileName}</small></div>
                       <div className="procedure-document-status">{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
                         <button aria-label={`Télécharger ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>

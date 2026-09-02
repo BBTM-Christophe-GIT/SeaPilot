@@ -24196,6 +24196,19 @@ button.planning-p12-conflict-card {
 .procedure-document-list article > input { width: 15px; height: 15px; accent-color: #126ebe; }
 .procedure-document-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 6px; color: #176bc0; background: #eef6fd; }
 .procedure-document-copy { display: grid; min-width: 0; gap: 4px; }
+.procedure-document-name {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.procedure-document-name:hover strong,
+.procedure-document-name:focus-visible strong { color: #1771c7; text-decoration: underline; }
+.procedure-document-name:focus-visible { outline: 2px solid #1771c7; outline-offset: 3px; border-radius: 2px; }
 .procedure-document-copy strong { overflow: hidden; color: #2b394a; font-size: .69rem; text-overflow: ellipsis; white-space: nowrap; }
 .procedure-document-copy strong > span { margin-left: 5px; color: #4a5665; font-weight: 560; }
 .procedure-document-copy small { overflow: hidden; color: #8290a0; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
