@@ -30,6 +30,8 @@ La grille affiche les 48 demi-heures de la journée sans défilement horizontal 
 
 Chaque clic-glissé ajoute immédiatement une période à la sélection. Les périodes disjointes sont conservées et les périodes adjacentes ou qui se recouvrent sont fusionnées. Les anciennes lignes récapitulatives munies des boutons « Corriger » et « Retirer » sont supprimées : une plage déjà enregistrée se sélectionne directement dans la frise, qui affiche alors ses actions de correction et de retrait. Pour chaque profil autorisé à saisir, « Enregistrer le brouillon » persiste la sélection sans soumission ; « Valider » l’enregistre puis déclenche le workflow de signature et d’approbation. Il n’existe plus de saisie manuelle Début/Fin, Navire, Bordée ou approbateur.
 
+L’enregistrement de plusieurs périodes recalcule désormais les fenêtres de conformité une seule fois pour la journée. Le rechargement mensuel borne aussi les registres, heures, calculs, commentaires, signatures et approbations aux personnes déjà retournées par le périmètre serveur `working_time_entry_context` ; les politiques RLS restent appliquées comme contrôle d’autorisation final. Cette double limitation évite qu’une validation réussie soit suivie d’un délai serveur et d’un écran obsolète invitant à relancer l’action.
+
 ## Daily Progress Report
 
 Le contexte DPR est résolu à partir de la date et du navire sélectionnés, indépendamment de l’émetteur. Le projet actif du Planning est automatiquement renseigné. La section « Personnel embarqué » ne propose que les personnes affectées au navire avec un statut Planning effectif « En Mer » ou « A Terre » ; les autres statuts, notamment « Vacance », sont exclus.

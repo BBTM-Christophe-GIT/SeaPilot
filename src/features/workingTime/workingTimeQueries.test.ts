@@ -12,20 +12,24 @@ import {
   workingTimeErrorMessage,
 } from './workingTimeQueries';
 
-function queryResult(data: unknown) {
+function queryResult(data: unknown, onCall?: (method: string, args: unknown[]) => void) {
   const result = { data, error: null };
   const query = new Proxy({}, {
     get(_target, property) {
       if (property === 'then') {
         return (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
       }
-      return () => query;
+      return (...args: unknown[]) => {
+        onCall?.(String(property), args);
+        return query;
+      };
     },
   });
   return query;
 }
 
 function workspaceClient() {
+  const queryCalls: Array<{ table: string; method: string; args: unknown[] }> = [];
   const rows: Record<string, unknown[]> = {
     working_time_registers: [{
       id: 10, company_id: 1, person_id: 42, period_kind: 'weekly',
@@ -74,8 +78,10 @@ function workspaceClient() {
     }],
     vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
   };
-  return {
-    from: vi.fn((table: string) => queryResult(rows[table] || [])),
+  const client = {
+    from: vi.fn((table: string) => queryResult(rows[table] || [], (method, args) => {
+      queryCalls.push({ table, method, args });
+    })),
     rpc: vi.fn().mockResolvedValue({
       data: {
         current_person_id: 42,
@@ -85,11 +91,12 @@ function workspaceClient() {
       error: null,
     }),
   } as unknown as SupabaseClient;
+  return { client, queryCalls };
 }
 
 describe('working-time workflow queries', () => {
   it('loads and maps all read-only workflow sources in one workspace request', async () => {
-    const client = workspaceClient();
+    const { client, queryCalls } = workspaceClient();
     const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
 
     expect(client.rpc).toHaveBeenNthCalledWith(1, 'ensure_working_time_registers_for_period', {
@@ -111,6 +118,18 @@ describe('working-time workflow queries', () => {
     expect(workspace.dayComments[0].causeCategory).toBe('unexpected_operation');
     expect(workspace.signatures[0]).toMatchObject({ personId: 42, versionNumber: 2 });
     expect(workspace.validations[0].signatureSnapshot).toMatchObject({ signerName: 'Alex MARIN', versionNumber: 2 });
+    expect(queryCalls.filter(({ method }) => method === 'in')).toEqual(expect.arrayContaining([
+      { table: 'working_time_registers', method: 'in', args: ['person_id', [42]] },
+      { table: 'working_time_intervals', method: 'in', args: ['person_id', [42]] },
+      { table: 'working_time_calculation_windows', method: 'in', args: ['person_id', [42]] },
+      { table: 'working_time_day_comments', method: 'in', args: ['person_id', [42]] },
+      { table: 'working_time_profile_signatures', method: 'in', args: ['person_id', [42]] },
+    ]));
+    expect(queryCalls).toContainEqual({
+      table: 'working_time_day_approvals',
+      method: 'or',
+      args: ['person_id.in.(42),approver_person_id.eq.42'],
+    });
   });
 
   it('sends only raw timestamps and interval context to the authoritative RPC', async () => {
@@ -244,6 +263,6 @@ describe('working-time workflow queries', () => {
     expect(workingTimeErrorMessage(new Error('WORKING_TIME_DRAFT_DISCARD_FORBIDDEN.')))
       .toBe('Seul un registre entièrement vide peut être retiré. Les heures enregistrées sont protégées.');
     expect(workingTimeErrorMessage(new Error('canceling statement due to statement timeout')))
-      .toBe('La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.');
+      .toBe('Le serveur a mis trop de temps à actualiser le suivi. Vérifiez l’état de la journée avant de relancer l’action.');
   });
 });
