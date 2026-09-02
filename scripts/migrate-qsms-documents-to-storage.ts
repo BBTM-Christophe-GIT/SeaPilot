@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getSharePointSourceByKey } from '../src/features/sharepoint/sharePointInventory.ts';
 
 interface LegacyProcedureRow {
+  file_name?: string | null;
   file_url: string | null;
   id: number;
   procedure_id?: number | null;
@@ -15,6 +16,7 @@ interface LegacyProcedureRow {
 }
 
 const BUCKET = 'procedure-documents';
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -33,6 +35,8 @@ function mimeType(fileName: string, responseType: string | null): string {
   const types: Record<string, string> = {
     doc: 'application/msword',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+    html: 'text/html',
     ods: 'application/vnd.oasis.opendocument.spreadsheet',
     odt: 'application/vnd.oasis.opendocument.text',
     pdf: 'application/pdf',
@@ -80,7 +84,7 @@ const sourceDefinitions = [
 const report = {
   apply,
   migrated: [] as Array<{ id: number; kind: string; objectPath: string; sizeBytes: number }>,
-  skipped: [] as Array<{ id: number; kind: string; reason: string }>,
+  skipped: [] as Array<{ fileName?: string; id: number; kind: string; reason: string; sizeBytes?: number }>,
 };
 
 for (const definition of sourceDefinitions) {
@@ -89,7 +93,7 @@ for (const definition of sourceDefinitions) {
 
   const select = definition.kind === 'source'
     ? 'id,title,file_url,sharepoint_file_ref,source_file_name,source_storage_bucket,source_storage_path'
-    : 'id,procedure_id,title,file_url,sharepoint_file_ref,storage_bucket,storage_path';
+    : 'id,procedure_id,title,file_name,file_url,sharepoint_file_ref,storage_bucket,storage_path';
   const { data, error } = await client.from(definition.table).select(select).order('id', { ascending: true }).limit(1000);
   if (error) throw new Error(`Cannot load ${definition.table}: ${error.message}`);
 
@@ -105,7 +109,7 @@ for (const definition of sourceDefinitions) {
       continue;
     }
 
-    const fileName = row.source_file_name || row.title;
+    const fileName = row.source_file_name || row.file_name || row.title;
     if (definition.kind === 'published' && !fileName.toLowerCase().endsWith('.pdf')) {
       throw new Error(`Published procedure ${row.id} is not a PDF.`);
     }
@@ -118,6 +122,16 @@ for (const definition of sourceDefinitions) {
     }
 
     const downloaded = await downloadSharePointFile(accessToken, source.driveId, source.serverRelativeUrl, row.sharepoint_file_ref);
+    if (downloaded.bytes.byteLength > MAX_FILE_SIZE_BYTES) {
+      report.skipped.push({
+        fileName,
+        id: row.id,
+        kind: definition.kind,
+        reason: 'file-too-large',
+        sizeBytes: downloaded.bytes.byteLength,
+      });
+      continue;
+    }
     const resolvedMimeType = mimeType(fileName, downloaded.contentType);
     if (definition.kind === 'published' && resolvedMimeType !== 'application/pdf') {
       throw new Error(`Published procedure ${row.id} was returned as ${resolvedMimeType}, expected application/pdf.`);
