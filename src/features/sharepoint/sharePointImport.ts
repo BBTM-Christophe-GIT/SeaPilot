@@ -851,15 +851,31 @@ function mapFleetCertificatePayload(item: SharePointListItem, source: SharePoint
 
 function mapProcedurePayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   const itemId = sourceItemId(item);
-  const title = requiredText(item, ['FileLeafRef', 'Title'], `Procedure SharePoint ${itemId || ''}`.trim());
+  const title = requiredText(item, ['Titre', 'DocumentTitle', 'Title', 'FileLeafRef'], `Procedure SharePoint ${itemId || ''}`.trim());
   const procedureCode = text(item, ['Code', 'ProcedureCode', 'Reference', 'Ref']) || inferProcedureCode(title);
+  const versionLabel = text(item, ['Version', 'Revision', 'Indice']);
 
   return withReconciliation(item, source, {
     procedure_code: procedureCode,
     title,
     status: inferProcedureStatus(text(item, ['Status', 'Statut'])),
-    revision_label: text(item, ['Revision', 'Version', 'Indice']),
+    revision_label: versionLabel,
     published_on: dateOnly(item, ['DatePublication', 'PublishedOn', 'DateValidation']),
+    category_label: text(item, ['Catégorie', 'CatÃ©gorie', 'Categorie', 'Category']),
+    diffusion_on: dateOnly(item, ['Date diffusion', 'Date_x0020_diffusion', 'DateDiffusion']),
+    description: text(item, ['Description']),
+    regulatory_requirement: text(item, ['Exigence Réglementaire', 'Exigence Reglementaire', 'Exigence_x0020_R_x00e9_glementaire']),
+    ism_chapter: text(item, ['ISM Chapitre', 'ISM_x0020_Chapitre', 'ChapitreISM', 'Chapitre']),
+    vessel_name: text(item, ['Navire', 'NavireLookupValue', 'VesselName']),
+    project_name: text(item, ['Projet', 'ProjetLookupValue', 'ProjectName']),
+    document_number: text(item, ['Numéro', 'Num_x00e9_ro', 'Numero', 'DocumentNumber']) || procedureCode,
+    restrictions: text(item, ['Restrictions']),
+    annual_review: booleanValue(item, ['Revue annuelle', 'Revue_x0020_annuelle', 'AnnualReview'], false),
+    approval_status: text(item, ['Statut d’approbation', "Statut d'approbation", 'Statut_x0020_d_x2019_approbation', 'ApprovalStatus']),
+    theme: text(item, ['Thème', 'Th_x00e8_me', 'Theme']),
+    document_type: text(item, ['Type document', 'Type_x0020_document', 'DocumentType']),
+    bridge_watch: booleanValue(item, ['Veille Passerelle', 'Veille_x0020_Passerelle', 'BridgeWatch'], false),
+    version_label: versionLabel,
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl),
@@ -869,8 +885,9 @@ function mapProcedurePayload(item: SharePointListItem, source: SharePointMigrati
 
 function mapPublishedProcedurePayload(item: SharePointListItem, source: SharePointMigrationSource): SharePointImportRow {
   const itemId = sourceItemId(item);
-  const title = requiredText(item, ['FileLeafRef', 'Title'], `Procedure PDF SharePoint ${itemId || ''}`.trim());
+  const title = requiredText(item, ['Titre', 'DocumentTitle', 'Title', 'FileLeafRef'], `Procedure PDF SharePoint ${itemId || ''}`.trim());
   const procedureCode = text(item, ['Code', 'ProcedureCode', 'Reference', 'Ref']) || inferProcedureCode(title);
+  const versionLabel = text(item, ['Version', 'Revision', 'Indice']);
 
   return withReconciliation(item, source, {
     procedure_id: null,
@@ -878,8 +895,23 @@ function mapPublishedProcedurePayload(item: SharePointListItem, source: SharePoi
     procedure_code: procedureCode,
     title,
     status: inferProcedureStatus(text(item, ['Status', 'Statut'])),
-    revision_label: text(item, ['Revision', 'Version', 'Indice']),
+    revision_label: versionLabel,
     published_on: dateOnly(item, ['DatePublication', 'PublishedOn', 'DateValidation']),
+    category_label: text(item, ['Catégorie', 'CatÃ©gorie', 'Categorie', 'Category']),
+    diffusion_on: dateOnly(item, ['Date diffusion', 'Date_x0020_diffusion', 'DateDiffusion']),
+    description: text(item, ['Description']),
+    regulatory_requirement: text(item, ['Exigence Réglementaire', 'Exigence Reglementaire', 'Exigence_x0020_R_x00e9_glementaire']),
+    ism_chapter: text(item, ['ISM Chapitre', 'ISM_x0020_Chapitre', 'ChapitreISM', 'Chapitre']),
+    vessel_name: text(item, ['Navire', 'NavireLookupValue', 'VesselName']),
+    project_name: text(item, ['Projet', 'ProjetLookupValue', 'ProjectName']),
+    document_number: text(item, ['Numéro', 'Num_x00e9_ro', 'Numero', 'DocumentNumber']) || procedureCode,
+    restrictions: text(item, ['Restrictions']),
+    annual_review: booleanValue(item, ['Revue annuelle', 'Revue_x0020_annuelle', 'AnnualReview'], false),
+    approval_status: text(item, ['Statut d’approbation', "Statut d'approbation", 'Statut_x0020_d_x2019_approbation', 'ApprovalStatus']),
+    theme: text(item, ['Thème', 'Th_x00e8_me', 'Theme']),
+    document_type: text(item, ['Type document', 'Type_x0020_document', 'DocumentType']),
+    bridge_watch: booleanValue(item, ['Veille Passerelle', 'Veille_x0020_Passerelle', 'BridgeWatch'], false),
+    version_label: versionLabel,
     source_label: 'sharepoint',
     source_sharepoint_id: itemId,
     file_url: text(item, ['EncodedAbsUrl']) || stringifyValue(item.webUrl),
