@@ -24211,7 +24211,24 @@ button.planning-p12-conflict-card {
 .procedure-document-name:focus-visible { outline: 2px solid #1771c7; outline-offset: 3px; border-radius: 2px; }
 .procedure-document-copy strong { overflow: hidden; color: #2b394a; font-size: .69rem; text-overflow: ellipsis; white-space: nowrap; }
 .procedure-document-copy strong > span { margin-left: 5px; color: #4a5665; font-weight: 560; }
-.procedure-document-copy small { overflow: hidden; color: #8290a0; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
+.procedure-document-metadata { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.procedure-document-metadata > small { overflow: hidden; color: #8290a0; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
+.procedure-document-scopes { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.procedure-document-scopes > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid #d8e8f6;
+  border-radius: 999px;
+  color: #31516f;
+  background: #f3f8fd;
+  font-size: .56rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.procedure-document-scopes b { color: #1771c7; font-size: .5rem; letter-spacing: .025em; text-transform: uppercase; }
 .procedure-document-status { display: grid; justify-items: end; gap: 2px; text-align: right; }
 .procedure-document-status strong,
 .procedure-document-status > span { color: #6b7787; font-size: .59rem; font-weight: 820; }
@@ -24314,6 +24331,8 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
   .procedure-document-list { margin-left: 17px; }
   .procedure-document-list article { min-height: 82px; grid-template-columns: 20px 28px minmax(0, 1fr); padding: 9px 7px 35px 14px; }
   .procedure-document-list article.procedure-document-public { grid-template-columns: 28px minmax(0, 1fr); }
+  .procedure-document-metadata { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .procedure-document-scopes { max-width: 100%; flex-wrap: wrap; }
   .procedure-row-actions { position: absolute; right: 7px; bottom: 6px; }
   .procedure-dialog-backdrop { padding: 0; }
   .procedure-dialog { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }

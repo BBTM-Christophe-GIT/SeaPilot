@@ -283,6 +283,8 @@ function stringifyValue(value: SharePointFieldValue | undefined): string | null 
     const candidate =
       objectValue.LookupValue ??
       objectValue.lookupValue ??
+      objectValue.Title ??
+      objectValue.title ??
       objectValue.Email ??
       objectValue.email ??
       objectValue.Url ??

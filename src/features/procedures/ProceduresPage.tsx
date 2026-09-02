@@ -98,6 +98,7 @@ function matchesFilters(record: ProcedureRecord, filters: ProcedureFilterState):
   if (!filters.search) return true;
   const searchable = normalizeSearch([
     record.title, record.procedureCode, record.documentNumber, record.theme, record.ismChapter, record.description,
+    record.projectName, record.vesselName,
   ].join(' '));
   return searchable.includes(normalizeSearch(filters.search));
 }
@@ -355,7 +356,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
       <div aria-live="polite" className="admin-notices">{statusMessage ? <p className="admin-success">{statusMessage}</p> : null}{errorMessage ? <p className="form-error">{errorMessage}</p> : null}</div>
 
       <section aria-label="Filtres des procédures" className="procedure-filter-bar">
-        <label className="procedure-search"><span>Recherche de document</span><div><Search size={16} /><input aria-label="Recherche de document" placeholder="Nom, numéro, thème, chapitre…" value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} /></div></label>
+        <label className="procedure-search"><span>Recherche de document</span><div><Search size={16} /><input aria-label="Recherche de document" placeholder="Nom, numéro, thème, projet, navire…" value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} /></div></label>
         <label><span>Projet</span><select aria-label="Projet" value={filters.project} onChange={(event) => updateFilter('project', event.target.value)}><option value="">Tous les projets</option>{projects.map((project) => <option key={project}>{project}</option>)}</select></label>
         <label><span>Navire</span><select aria-label="Navire" value={filters.vessel} onChange={(event) => updateFilter('vessel', event.target.value)}><option value="">Tous les navires</option>{vessels.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
       </section>
@@ -395,7 +396,18 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                     <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public' : ''}`} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
-                      <div className="procedure-document-copy"><button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button><small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel, record.vesselName, record.projectName].filter(Boolean).join(' · ') || record.fileName}</small></div>
+                      <div className="procedure-document-copy">
+                        <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button>
+                        <div className="procedure-document-metadata">
+                          <small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel].filter(Boolean).join(' · ') || record.fileName}</small>
+                          {record.vesselName || record.projectName ? (
+                            <span className="procedure-document-scopes">
+                              {record.vesselName ? <span><b>Navire :</b>{record.vesselName}</span> : null}
+                              {record.projectName ? <span><b>Projet :</b>{record.projectName}</span> : null}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
                       <div className="procedure-document-status">{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
                         <button aria-label={`Télécharger ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
