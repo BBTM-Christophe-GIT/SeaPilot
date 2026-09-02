@@ -725,8 +725,141 @@ button:disabled {
 }
 
 .topbar-icon-button {
+  position: relative;
   width: 38px;
   padding: 0;
+}
+
+.topbar-notifications {
+  position: relative;
+}
+
+.topbar-notification-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid #111318;
+  border-radius: 99px;
+  color: #ffffff;
+  background: #e5483f;
+  font-size: 0.58rem;
+  font-weight: 850;
+  line-height: 1;
+  place-items: center;
+}
+
+.topbar-notification-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(390px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid #d8e2e7;
+  border-radius: 12px;
+  color: #173747;
+  background: #ffffff;
+  box-shadow: 0 22px 55px rgba(8, 36, 53, 0.25);
+}
+
+.topbar-notification-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #082f49, #0f6674);
+}
+
+.topbar-notification-popover > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.topbar-notification-popover > header strong {
+  font-size: 0.84rem;
+}
+
+.topbar-notification-popover > header span {
+  color: #b9d8df;
+  font-size: 0.68rem;
+}
+
+.topbar-notification-popover > div {
+  max-height: 330px;
+  overflow: auto;
+}
+
+.topbar-notification-popover > div > a {
+  display: grid;
+  gap: 5px;
+  padding: 12px 15px;
+  border-bottom: 1px solid #e7edf0;
+  text-decoration: none;
+}
+
+.topbar-notification-popover > div > a:hover {
+  background: #f0f8f7;
+}
+
+.topbar-notification-popover > div > a > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.topbar-notification-popover > div > a strong {
+  color: #0b7180;
+  font-size: 0.69rem;
+}
+
+.topbar-notification-popover > div > a small {
+  color: #80909a;
+  font-size: 0.62rem;
+}
+
+.topbar-notification-popover > div > a p {
+  margin: 0;
+  color: #183848;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.topbar-notification-popover > div > a em {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #0f7d81;
+  font-size: 0.67rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.topbar-notification-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding: 26px 15px;
+  color: #55707b;
+  font-size: 0.75rem;
+}
+
+.topbar-notification-footer {
+  display: block;
+  padding: 10px 15px;
+  color: #0f6f77;
+  background: #f5f9fa;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
 }
 
 .topbar-menu-button:hover,
