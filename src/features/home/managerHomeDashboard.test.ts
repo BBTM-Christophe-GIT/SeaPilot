@@ -6,6 +6,7 @@ const TODAY = new Date(2026, 7, 25, 12);
 function sources(overrides: Partial<ManagerHomeSourceRows> = {}): ManagerHomeSourceRows {
   return {
     purchases: [],
+    procedures: [],
     fleetCertificates: [],
     people: [],
     hrDocuments: [],
@@ -151,6 +152,44 @@ describe('managerHomeDashboard', () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ id: 'working-time-2', title: 'Dépassement du temps de travail', urgent: true });
     expect(items[0].visibleDates).toEqual(expect.arrayContaining(['2026-08-24', '2026-08-25']));
+  });
+
+  it('shows annual QHSE reviews from 90 days before their one-year deadline', () => {
+    const items = buildManagerHomeItems(sources({
+      procedures: [
+        {
+          id: 17,
+          procedure_code: 'OPE 01-A',
+          title: 'Courbe de Déviation Compas - KROKDUR',
+          diffusion_on: '2025-11-04',
+          annual_review: true,
+          vessel_name: 'KROKDUR',
+          project_name: null,
+          status: 'approved',
+        },
+        {
+          id: 18,
+          procedure_code: 'GEN 01-A',
+          title: 'Manuel QHSE',
+          diffusion_on: '2026-03-20',
+          annual_review: true,
+          vessel_name: null,
+          project_name: null,
+          status: 'approved',
+        },
+      ],
+    }), TODAY);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'procedure-review-17',
+      group: 'procedures',
+      title: 'OPE 01-A · Courbe de Déviation Compas - KROKDUR',
+      dueDate: '2026-11-04',
+      tone: 'warning',
+      to: '/modules/procedures',
+    });
+    expect(items[0].visibleDates).toEqual(expect.arrayContaining(['2026-08-25', '2026-11-04']));
   });
 
   it('excludes personnel alarms after departure and prefixes every HR document with the person name', () => {

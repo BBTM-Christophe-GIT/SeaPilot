@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  BookOpenCheck,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -43,6 +44,7 @@ interface QueueGroupDefinition {
 const QUEUE_GROUPS: QueueGroupDefinition[] = [
   { key: 'purchases', label: 'Achats', icon: ShoppingCart },
   { key: 'workingTime', label: 'Temps de travail', icon: Clock3 },
+  { key: 'procedures', label: 'Procédures QHSE', icon: BookOpenCheck },
   { key: 'fleetDocuments', label: 'Flotte & documents', icon: Ship },
   { key: 'humanResources', label: 'Ressources humaines', icon: Users },
 ];

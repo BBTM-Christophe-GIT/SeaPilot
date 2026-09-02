@@ -73,6 +73,12 @@ const publishedProcedureRow = {
   published_by: 'user-1',
 };
 
+const projectRows = [
+  { id: 2, project_code: 'P144', title: 'GUARD VESSEL EMDT', archived_at: null },
+  { id: 17, project_code: 'P254', title: 'NIVELAGE QUAI BOUGAINVILLE', archived_at: null },
+  { id: 19, project_code: 'P264', title: 'PROJET ARCHIVÉ', archived_at: '2026-06-01T00:00:00Z' },
+];
+
 function orderedResult(data: unknown[]) {
   const result = {
     order: vi.fn(() => result),
@@ -81,9 +87,10 @@ function orderedResult(data: unknown[]) {
   return result;
 }
 
-function createClient(options: { procedures?: unknown[]; publications?: unknown[]; created?: unknown; published?: unknown } = {}) {
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; created?: unknown; published?: unknown } = {}) {
   const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
   const publications = options.publications ?? [publishedProcedureRow];
+  const projects = options.projects ?? projectRows;
   const upload = vi.fn().mockResolvedValue({ error: null });
   const remove = vi.fn().mockResolvedValue({ error: null });
   const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.test/signed' }, error: null });
@@ -118,6 +125,11 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
         delete: removeRow,
       };
     }
+    if (table === 'projects') {
+      return {
+        select: vi.fn(() => orderedResult(projects)),
+      };
+    }
     throw new Error(`Unexpected table ${table}`);
   });
   const client = {
@@ -140,6 +152,7 @@ describe('ProceduresPage', () => {
     expect(screen.getAllByText('LE ROZEL').length).toBeGreaterThan(0);
     expect(screen.getAllByText('P144 - GUARD VESSEL EMDT').length).toBeGreaterThan(0);
     expect(screen.getAllByText('P145 - OIL SPILL SAIPEM COU').length).toBeGreaterThan(0);
+    expect(screen.queryByText('PRO · URG · 4')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
 
     await user.selectOptions(screen.getByLabelText('Projet'), 'P145 - OIL SPILL SAIPEM COU');
@@ -177,15 +190,31 @@ describe('ProceduresPage', () => {
 
   it('uploads a new editable source to the private Supabase bucket', async () => {
     const user = userEvent.setup();
-    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG-08-A', document_number: 'URG-08-A' };
+    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08' };
     const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Procédures QHSE' });
     await user.click(screen.getByRole('button', { name: /Nouveau document/i }));
-    const dialog = screen.getByRole('dialog', { name: 'Nouveau document' });
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByLabelText('Type document')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Catégorie')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Code procédure')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Restrictions')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Notes')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Veille Passerelle')).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Plan de préparation aux urgences' } });
-    fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: 'URG-08-A' } });
+    await user.selectOptions(within(dialog).getByLabelText('Thème'), 'URG');
+    fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
+    fireEvent.change(within(dialog).getByLabelText('Version'), { target: { value: 'a' } });
+    fireEvent.change(within(dialog).getByLabelText('Projet'), { target: { value: 'P144 - GUARD VESSEL EMDT' } });
+    fireEvent.change(within(dialog).getByLabelText('Date diffusion'), { target: { value: '2026-09-02' } });
+    await user.click(within(dialog).getByLabelText(/Revue annuelle/));
+    expect(within(dialog).getByRole('heading', { name: 'URG 08-A - Plan de préparation aux urgences' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Échéance le 02/09/2027')).toBeInTheDocument();
+    const projectValues = Array.from(dialog.querySelectorAll('datalist option')).map((option) => option.getAttribute('value'));
+    expect(projectValues).toContain('P254 - NIVELAGE QUAI BOUGAINVILLE');
+    expect(projectValues).not.toContain('P264 - PROJET ARCHIVÉ');
     const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     await user.upload(within(dialog).getByLabelText(/Fichier source modifiable/i), sourceFile);
     fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form') as HTMLFormElement);
@@ -194,7 +223,11 @@ describe('ProceduresPage', () => {
     expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), sourceFile, expect.objectContaining({ upsert: false }));
     expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Plan de préparation aux urgences',
-      document_number: 'URG-08-A',
+      procedure_code: 'URG 08-A',
+      document_number: '08',
+      version_label: 'A',
+      project_name: 'P144 - GUARD VESSEL EMDT',
+      annual_review: true,
       source_storage_bucket: 'procedure-documents',
       source_file_name: 'urgence.docx',
     }));

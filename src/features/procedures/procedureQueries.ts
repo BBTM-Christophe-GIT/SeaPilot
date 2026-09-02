@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildProcedureCode } from './procedureReview';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -108,6 +109,18 @@ export interface PublishedProcedureRecord extends ProcedureRecord {
 export interface ProceduresData {
   procedures: ProcedureRecord[];
   publications: PublishedProcedureRecord[];
+}
+
+interface ProcedureProjectRow {
+  id: number;
+  project_code: string | null;
+  title: string;
+  archived_at: string | null;
+}
+
+export interface ProcedureProjectOption {
+  id: number;
+  label: string;
 }
 
 export type ProcedureFileAction = 'download' | 'open';
@@ -254,11 +267,27 @@ export async function fetchProceduresData(client: SupabaseClient, includeSources
   return { procedures, publications };
 }
 
+export async function fetchProcedureProjects(client: SupabaseClient): Promise<ProcedureProjectOption[]> {
+  const { data, error } = await client.from('projects')
+    .select('id,project_code,title,archived_at')
+    .order('project_code', { ascending: true, nullsFirst: false })
+    .order('title', { ascending: true });
+  if (error) throw error;
+  return ((data || []) as unknown as ProcedureProjectRow[])
+    .filter((row) => !row.archived_at)
+    .map((row) => ({
+      id: row.id,
+      label: [nullableText(row.project_code).trim(), row.title.trim()].filter(Boolean).join(' - '),
+    }))
+    .filter((option) => option.label);
+}
+
 function procedurePayload(input: ProcedureInput) {
   const title = input.title.trim();
   if (!title) throw new Error('Le titre de la procédure est obligatoire.');
+  const procedureCode = buildProcedureCode(input.theme, input.documentNumber, input.versionLabel);
   return {
-    procedure_code: optionalText(input.procedureCode || input.documentNumber),
+    procedure_code: optionalText(procedureCode),
     title,
     status: input.status,
     revision_label: optionalText(input.revisionLabel || input.versionLabel),
@@ -271,7 +300,7 @@ function procedurePayload(input: ProcedureInput) {
     ism_chapter: optionalText(input.ismChapter),
     vessel_name: optionalText(input.vesselName),
     project_name: optionalText(input.projectName),
-    document_number: optionalText(input.documentNumber || input.procedureCode),
+    document_number: optionalText(input.documentNumber),
     restrictions: optionalText(input.restrictions),
     annual_review: input.annualReview,
     approval_status: optionalText(input.approvalStatus),
