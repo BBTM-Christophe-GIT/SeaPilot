@@ -37,6 +37,7 @@ Le bucket accepte jusqu’à 100 Mio afin de préparer la migration des sources 
 
 - 125 sources sur 127 sont copiées dans Storage ; les deux seules absentes sont `Démarrage et arrêt de KROKDUR.docx` (74 754 491 octets, 71,3 Mio) et `Manuel de Sécurité et des Limites Opérationnelles - LE ROZEL.docx` (52 749 640 octets, 50,3 Mio) ;
 - 64 PDF sur 64 sont copiés, y compris le PDF publié `Démarrage et arrêt de KROKDUR.pdf` ;
+- les champs SharePoint structurés renseignent 34 navires et 18 projets parmi les sources, puis 19 navires et 8 projets parmi les PDF publiés ; après exclusion des deux sources trop volumineuses, SeaPilot contient 32 navires et les 18 projets sur ses 125 sources ; l’interface les affiche sous forme de libellés explicites et les inclut dans la recherche ainsi que dans les filtres dédiés ;
 - les 125 sources et les 64 PDF ont une référence SharePoint renseignée ;
 - SharePoint classe explicitement 21 sources dans « Documents non contrôlés » ; SeaPilot y regroupe aussi les 3 sources sans chapitre, soit 24 documents affichés au lieu des 84 visibles avant la reprise des métadonnées exactes ;
 - le bucket contient exactement 125 objets sources et 64 objets publiés.

@@ -137,13 +137,20 @@ describe('ProceduresPage', () => {
     expect(await screen.findByRole('heading', { name: 'Procédures QHSE' })).toBeInTheDocument();
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.getByText('Consigne machine provisoire')).toBeInTheDocument();
+    expect(screen.getAllByText('LE ROZEL').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('P144').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
 
-    await user.selectOptions(screen.getByLabelText('Projet'), 'P144');
-    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'ROZEL' } });
+    await user.selectOptions(screen.getByLabelText('Navire'), 'LE ROZEL');
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
 
+    await user.selectOptions(screen.getByLabelText('Navire'), '');
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'P231' } });
+    expect(screen.queryByText('Procédure embarquement ROZEL')).not.toBeInTheDocument();
+    expect(screen.getByText('Consigne machine provisoire')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: '' } });
     await user.click(screen.getByRole('button', { name: /PDF publiés/i }));
     expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
   });
