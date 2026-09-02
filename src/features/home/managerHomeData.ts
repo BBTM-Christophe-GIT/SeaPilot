@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getAnnualReviewAlert } from '../procedures/procedureReview';
 
-export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'fleetDocuments' | 'humanResources';
+export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
 export type ManagerHomeTone = 'danger' | 'warning' | 'success';
 export type ManagerHomeFilter = 'all' | 'urgent' | 'week' | 'purchases' | 'documents' | 'fleet' | 'workingTime' | 'humanResources';
 
@@ -53,6 +54,17 @@ interface FleetCertificateRow {
   is_active_fleet: boolean | null;
 }
 
+interface ProcedureReviewRow {
+  id: number;
+  procedure_code: string | null;
+  title: string;
+  diffusion_on: string | null;
+  annual_review: boolean | null;
+  vessel_name: string | null;
+  project_name: string | null;
+  status: string | null;
+}
+
 interface PersonRow {
   id: number;
   first_name: string | null;
@@ -86,6 +98,7 @@ interface WorkingTimeCalculationRow {
 
 export interface ManagerHomeSourceRows {
   purchases: PurchaseRequestRow[];
+  procedures: ProcedureReviewRow[];
   fleetCertificates: FleetCertificateRow[];
   people: PersonRow[];
   hrDocuments: HrDocumentRow[];
@@ -342,6 +355,33 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
   });
 }
 
+function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerHomeItem[] {
+  const todayKey = toLocalIsoDate(today);
+  return rows.flatMap((row) => {
+    if (normalize(row.status).includes('archive')) return [];
+    const alert = getAnnualReviewAlert(Boolean(row.annual_review), row.diffusion_on || '', today);
+    if (!alert) return [];
+    const scope = row.vessel_name || row.project_name || 'Portée générale';
+    return [{
+      id: `procedure-review-${row.id}`,
+      group: 'procedures',
+      tags: ['documents'],
+      title: `${row.procedure_code ? `${row.procedure_code} · ` : ''}${row.title}`,
+      context: `Procédures QHSE · ${scope}`,
+      deadline: alert.daysUntilDue < 0
+        ? `Revue échue depuis ${Math.abs(alert.daysUntilDue)} j`
+        : `Revue le ${formatShortDate(alert.dueDate)} · J-${alert.daysUntilDue}`,
+      action: 'Ouvrir la fiche information',
+      to: '/modules/procedures',
+      dueDate: alert.dueDate,
+      visibleDates: [...new Set([todayKey, alert.dueDate])],
+      tone: alert.tone,
+      urgent: alert.tone === 'danger',
+      thisWeek: alert.daysUntilDue >= 0 && alert.daysUntilDue <= 7,
+    } satisfies ManagerHomeItem];
+  });
+}
+
 function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const peopleByUniqueAlias = buildPeopleByUniqueAlias(people);
@@ -456,13 +496,14 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
   });
 }
 
-const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'fleetDocuments', 'humanResources'];
+const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'procedures', 'fleetDocuments', 'humanResources'];
 const TONE_ORDER: ManagerHomeTone[] = ['danger', 'warning', 'success'];
 
 export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = new Date()): ManagerHomeItem[] {
   return [
     ...purchaseItems(sources.purchases, today),
     ...workingTimeItems(sources.workingTimeCalculations, sources.people, today),
+    ...procedureReviewItems(sources.procedures, today),
     ...fleetCertificateItems(sources.fleetCertificates, today),
     ...hrDocumentItems(sources.hrDocuments, sources.people, today),
     ...contractItems(sources.people, today),
@@ -489,10 +530,14 @@ export async function fetchManagerHomeDashboard(client: SupabaseClient, today = 
   const windowStart = toLocalIsoDate(addDays(today, -31));
   const windowEnd = toLocalIsoDate(addDays(today, UPCOMING_HORIZON_DAYS));
 
-  const [purchases, fleetCertificates, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+  const [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations] = await Promise.all([
     loadRows<PurchaseRequestRow>('les achats', async () => client.from('purchase_requests')
       .select('id,request_number,title,requested_on,requester_name,project_code,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
       .order('requested_on', { ascending: false })),
+    loadRows<ProcedureReviewRow>('les revues annuelles QHSE', async () => client.from('procedures')
+      .select('id,procedure_code,title,diffusion_on,annual_review,vessel_name,project_name,status')
+      .eq('annual_review', true)
+      .order('diffusion_on', { ascending: true, nullsFirst: false })),
     loadRows<FleetCertificateRow>('les documents flotte', async () => client.from('fleet_certificates')
       .select('id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
       .order('expires_on', { ascending: true, nullsFirst: false })),
@@ -511,9 +556,11 @@ export async function fetchManagerHomeDashboard(client: SupabaseClient, today = 
       .limit(500)),
   ]);
 
-  const results = [purchases, fleetCertificates, people, hrDocuments, workingTimeCalculations];
+
+  const results = [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
   const items = buildManagerHomeItems({
     purchases: purchases.rows,
+    procedures: procedures.rows,
     fleetCertificates: fleetCertificates.rows,
     people: people.rows,
     hrDocuments: hrDocuments.rows,

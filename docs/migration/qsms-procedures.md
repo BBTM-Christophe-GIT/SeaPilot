@@ -6,6 +6,8 @@ Le module SharePoint `Portail-BBTM---Armement.aspx` expose 127 documents de trav
 
 Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut d’approbation, thème, titre, type de document, veille passerelle et version. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
 
+La fiche information SeaPilot expose uniquement les métadonnées encore utiles à l’exploitation. Les colonnes historiques `type de document`, `catégorie`, `restrictions`, `notes` et `veille passerelle` restent conservées en base pour la traçabilité de la migration, mais ne sont plus éditables dans cette fenêtre. La référence affichée et enregistrée est calculée sous la forme `Thème Numéro-Version`, puis présentée avec le titre sous la forme `Code - Titre`.
+
 Sources identifiées :
 
 - QSMS : liste `958cf50b-779a-4002-811c-0ed8bb41f7b5`, vue IQY `056611E1-DC3F-4B98-A56C-027300FCF8B8` ;
@@ -30,6 +32,10 @@ Les sources et les PDF sont conservés dans le bucket privé Supabase Storage `p
 - `published/…` contient uniquement les PDF explicitement diffusés.
 
 Les URLs signées ont une durée de cinq minutes. Les règles RLS protègent à la fois les tables et `storage.objects`. La publication crée un instantané des métadonnées afin qu’un PDF diffusé reste traçable indépendamment des modifications ultérieures de la source.
+
+Le champ Projet de la fiche information est une liste avec recherche alimentée par les projets actifs du catalogue SeaPilot (`public.projects`). La valeur enregistrée reprend le code et le nom du projet, par exemple `P231 - NETTOYAGE CHENAL CNPEF`, afin de rester cohérente avec les filtres et les pastilles de la bibliothèque.
+
+Lorsque « Revue annuelle » est activé et qu’une date de diffusion est renseignée, l’échéance est calculée à `Date diffusion + 1 an`. À partir de J-90, la procédure est mise en évidence dans la bibliothèque et ajoutée aux « Priorités & échéances » de l’accueil Administration/Direction. Le calcul est dérivé des colonnes `annual_review` et `diffusion_on` existantes : aucune duplication ni migration de schéma n’est nécessaire.
 
 Le bucket accepte jusqu’à 100 Mio afin de préparer la migration des sources volumineuses. La limite globale du projet Supabase reste toutefois prioritaire : sur l’offre gratuite elle est de 50 Mio. Deux sources SharePoint (`Démarrage et arrêt de KROKDUR.docx`, environ 71,3 Mio, et `Manuel de Sécurité et des Limites Opérationnelles - LE ROZEL.docx`, environ 50,3 Mio) nécessitent donc le passage à une offre permettant une limite globale d’au moins 100 Mio avant leur copie sans altération.
 
@@ -75,6 +81,8 @@ Le script ne journalise aucun secret, refuse les publications dont le contenu n�
 - Armement, Capitaine et Marin ne déclenchent aucune requête vers `public.procedures` et ne voient que `public.published_procedures`.
 - Un téléchargement passe par une URL Storage signée ; aucun bucket n’est public.
 - Les filtres par texte, projet, navire et chapitre ISM sont cohérents avec les métadonnées importées.
+- La fiche information propose une recherche dans les projets actifs et recalcule immédiatement la référence `Thème Numéro-Version`.
+- Une revue annuelle apparaît dans la bibliothèque et sur l’accueil dès J-90 ; le 29 février est reporté au 28 février l’année suivante si nécessaire.
 - Un PDF retiré disparaît immédiatement de la vue opérationnelle.
 
 ## Retour arrière

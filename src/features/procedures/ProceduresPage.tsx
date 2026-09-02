@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  BellRing,
   BookOpenCheck,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   Download,
@@ -8,6 +10,7 @@ import {
   FileCheck2,
   FilePlus2,
   FileText,
+  FolderKanban,
   List,
   Search,
   Send,
@@ -16,7 +19,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -27,16 +30,19 @@ import {
   createProcedure,
   deleteProcedure,
   deletePublishedProcedure,
+  fetchProcedureProjects,
   fetchProceduresData,
   getProcedureFileUrl,
   getProcedureStatusLabel,
   publishProcedure,
   updateProcedure,
   type ProcedureInput,
+  type ProcedureProjectOption,
   type ProcedureRecord,
   type ProcedureStatus,
   type PublishedProcedureRecord,
 } from './procedureQueries';
+import { buildProcedureCode, getAnnualReviewAlert, getAnnualReviewDueDate } from './procedureReview';
 
 interface ProceduresPageProps {
   client?: SupabaseClient;
@@ -69,7 +75,6 @@ const CHAPTERS = [
 ] as const;
 
 const THEMES = ['ADM', 'AUT', 'DNC', 'DPA', 'GEN', 'OPE', 'POL', 'RAC', 'REP', 'SEC', 'SMS', 'TEC', 'URG', 'VPC'];
-const DOCUMENT_TYPES = ['FOR', 'GEN', 'MAN', 'PRO', 'REG'];
 
 const EMPTY_FILTERS: ProcedureFilterState = { search: '', project: '', vessel: '' };
 const EMPTY_FORM: ProcedureInput = {
@@ -152,14 +157,27 @@ function formFromProcedure(procedure: ProcedureRecord): ProcedureInput {
 
 interface ProcedureEditorProps {
   procedure: ProcedureRecord | null;
+  projectOptions: ProcedureProjectOption[];
   onClose: () => void;
   onSave: (input: ProcedureInput, file: File | null) => Promise<void>;
   saving: boolean;
 }
 
-function ProcedureEditor({ procedure, onClose, onSave, saving }: ProcedureEditorProps) {
+function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }: ProcedureEditorProps) {
   const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : EMPTY_FORM);
   const [file, setFile] = useState<File | null>(null);
+  const projectListId = useId();
+  const generatedProcedureCode = buildProcedureCode(form.theme, form.documentNumber, form.versionLabel);
+  const annualReviewDueOn = form.annualReview ? getAnnualReviewDueDate(form.diffusionOn) : '';
+  const identity = `${generatedProcedureCode || 'Référence à compléter'} - ${form.title.trim() || 'Titre du document'}`;
+  const availableProjectOptions = useMemo(() => {
+    const existingValues = projectNames(form.projectName);
+    const knownLabels = new Set(projectOptions.map((option) => option.label));
+    return [
+      ...projectOptions,
+      ...existingValues.filter((label) => !knownLabels.has(label)).map((label, index) => ({ id: -index - 1, label })),
+    ];
+  }, [form.projectName, projectOptions]);
 
   function setValue<K extends keyof ProcedureInput>(key: K, value: ProcedureInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -167,46 +185,73 @@ function ProcedureEditor({ procedure, onClose, onSave, saving }: ProcedureEditor
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSave(form, file);
+    const versionLabel = form.versionLabel.trim().toUpperCase();
+    await onSave({
+      ...form,
+      procedureCode: buildProcedureCode(form.theme, form.documentNumber, versionLabel),
+      revisionLabel: versionLabel,
+      versionLabel,
+    }, file);
   }
 
   return (
     <div className="procedure-dialog-backdrop" role="presentation">
       <section aria-labelledby="procedure-editor-title" aria-modal="true" className="procedure-dialog" role="dialog">
         <header>
-          <div>
-            <span>QSMS · Document de travail</span>
-            <h2 id="procedure-editor-title">{procedure ? 'Modifier les informations' : 'Nouveau document'}</h2>
+          <div className="procedure-dialog-identity">
+            <span>{procedure ? 'QSMS · Modifier la fiche information' : 'QSMS · Nouvelle fiche information'}</span>
+            <h2 id="procedure-editor-title">{identity}</h2>
+            <p>La référence est générée automatiquement à partir du thème, du numéro et de la version.</p>
           </div>
           <button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button>
         </header>
         <form onSubmit={handleSubmit}>
-          <div className="procedure-form-grid">
-            <label>Titre<input required value={form.title} onChange={(event) => setValue('title', event.target.value)} /></label>
-            <label>Numéro<input value={form.documentNumber} onChange={(event) => setValue('documentNumber', event.target.value)} /></label>
-            <label>Thème<select value={form.theme} onChange={(event) => setValue('theme', event.target.value)}><option value="">Non renseigné</option>{THEMES.map((theme) => <option key={theme}>{theme}</option>)}</select></label>
-            <label>Type document<select value={form.documentType} onChange={(event) => setValue('documentType', event.target.value)}><option value="">Non renseigné</option>{DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>
-            <label className="procedure-form-wide">ISM Chapitre<select value={form.ismChapter} onChange={(event) => setValue('ismChapter', event.target.value)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-            <label>Projet<input value={form.projectName} onChange={(event) => setValue('projectName', event.target.value)} /></label>
-            <label>Navire<input value={form.vesselName} onChange={(event) => setValue('vesselName', event.target.value)} /></label>
-            <label>Version<input value={form.versionLabel} onChange={(event) => setValue('versionLabel', event.target.value)} /></label>
-            <label>Statut<select value={form.status} onChange={(event) => setValue('status', event.target.value as ProcedureStatus)}><option value="draft">Brouillon</option><option value="review">En revue</option><option value="approved">Approuvée</option><option value="archived">Archivée</option></select></label>
-            <label>Date diffusion<input type="date" value={form.diffusionOn} onChange={(event) => setValue('diffusionOn', event.target.value)} /></label>
-            <label>Catégorie<input value={form.categoryLabel} onChange={(event) => setValue('categoryLabel', event.target.value)} /></label>
-            <label>Statut d'approbation<select value={form.approvalStatus} onChange={(event) => setValue('approvalStatus', event.target.value)}><option>En cours de creation</option><option>En cours de validation</option><option>Document approuve</option><option>Archive</option></select></label>
-            <label>Code procédure<input value={form.procedureCode} onChange={(event) => setValue('procedureCode', event.target.value)} /></label>
-            <label className="procedure-form-check"><input checked={form.annualReview} type="checkbox" onChange={(event) => setValue('annualReview', event.target.checked)} /> Revue annuelle</label>
-            <label className="procedure-form-check"><input checked={form.bridgeWatch} type="checkbox" onChange={(event) => setValue('bridgeWatch', event.target.checked)} /> Veille Passerelle</label>
-            <label className="procedure-form-wide">Description<textarea value={form.description} onChange={(event) => setValue('description', event.target.value)} /></label>
-            <label className="procedure-form-wide">Exigence réglementaire<textarea value={form.regulatoryRequirement} onChange={(event) => setValue('regulatoryRequirement', event.target.value)} /></label>
-            <label className="procedure-form-wide">Restrictions<textarea value={form.restrictions} onChange={(event) => setValue('restrictions', event.target.value)} /></label>
-            <label className="procedure-form-wide">Notes<textarea value={form.notes} onChange={(event) => setValue('notes', event.target.value)} /></label>
-            <label className="procedure-file-field procedure-form-wide">
-              <Upload size={18} />
-              <span>{procedure ? 'Remplacer le fichier source (facultatif)' : 'Fichier source modifiable'}</span>
-              <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-              <small>{file?.name || procedure?.fileName || 'Word, Excel, PowerPoint ou OpenDocument · 50 Mo max.'}</small>
-            </label>
+          <div className="procedure-form-body">
+            <section className="procedure-form-section" aria-labelledby="procedure-identification-title">
+              <header><FileText aria-hidden="true" size={18} /><div><h3 id="procedure-identification-title">Identification du document</h3><p>Les informations essentielles qui structurent la bibliothèque QSMS.</p></div></header>
+              <div className="procedure-form-grid">
+                <label className="procedure-form-wide">Titre<input required value={form.title} onChange={(event) => setValue('title', event.target.value)} /></label>
+                <label>Thème<select value={form.theme} onChange={(event) => setValue('theme', event.target.value)}><option value="">Non renseigné</option>{THEMES.map((theme) => <option key={theme}>{theme}</option>)}</select></label>
+                <label>Numéro<input placeholder="Ex. 04" value={form.documentNumber} onChange={(event) => setValue('documentNumber', event.target.value)} /></label>
+                <label>Version<input placeholder="Ex. D" value={form.versionLabel} onChange={(event) => setValue('versionLabel', event.target.value)} /></label>
+                <label>Navire<input value={form.vesselName} onChange={(event) => setValue('vesselName', event.target.value)} /></label>
+                <label className="procedure-form-wide">ISM Chapitre<select value={form.ismChapter} onChange={(event) => setValue('ismChapter', event.target.value)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+                <label className="procedure-form-wide">Projet
+                  <div className="procedure-project-combobox"><FolderKanban aria-hidden="true" size={16} /><input aria-label="Projet" autoComplete="off" list={projectListId} placeholder="Rechercher par numéro ou nom de projet…" value={form.projectName} onChange={(event) => setValue('projectName', event.target.value)} /></div>
+                  <datalist id={projectListId}>{availableProjectOptions.map((option) => <option key={option.id} value={option.label} />)}</datalist>
+                  <small>{availableProjectOptions.length} projet{availableProjectOptions.length > 1 ? 's' : ''} disponible{availableProjectOptions.length > 1 ? 's' : ''} · saisissez un mot-clé pour filtrer.</small>
+                </label>
+              </div>
+            </section>
+
+            <section className="procedure-form-section" aria-labelledby="procedure-lifecycle-title">
+              <header><CalendarClock aria-hidden="true" size={18} /><div><h3 id="procedure-lifecycle-title">Validation et cycle de vie</h3><p>Statut, diffusion et programmation de la prochaine revue.</p></div></header>
+              <div className="procedure-form-grid">
+                <label>Statut<select value={form.status} onChange={(event) => setValue('status', event.target.value as ProcedureStatus)}><option value="draft">Brouillon</option><option value="review">En revue</option><option value="approved">Approuvée</option><option value="archived">Archivée</option></select></label>
+                <label>Statut d'approbation<select value={form.approvalStatus} onChange={(event) => setValue('approvalStatus', event.target.value)}><option>En cours de creation</option><option>En cours de validation</option><option>Document approuve</option><option>Archive</option></select></label>
+                <label>Date diffusion<input type="date" value={form.diffusionOn} onChange={(event) => setValue('diffusionOn', event.target.value)} /></label>
+                <label className="procedure-review-toggle"><input checked={form.annualReview} type="checkbox" onChange={(event) => setValue('annualReview', event.target.checked)} /><span><strong>Revue annuelle</strong><small>Créer une échéance automatique à un an.</small></span></label>
+                {form.annualReview ? <div className={`procedure-review-schedule procedure-form-wide ${annualReviewDueOn ? 'is-ready' : 'is-missing'}`} role="status"><BellRing aria-hidden="true" size={19} /><div><strong>{annualReviewDueOn ? `Échéance le ${formatDate(annualReviewDueOn)}` : 'Date de diffusion requise'}</strong><span>{annualReviewDueOn ? 'L’alarme apparaîtra 90 jours avant cette date dans la bibliothèque et sur l’accueil.' : 'Renseignez la date de diffusion pour programmer la revue annuelle.'}</span></div></div> : null}
+              </div>
+            </section>
+
+            <section className="procedure-form-section" aria-labelledby="procedure-details-title">
+              <header><BookOpenCheck aria-hidden="true" size={18} /><div><h3 id="procedure-details-title">Informations complémentaires</h3><p>Contexte métier utile à la consultation et à la conformité.</p></div></header>
+              <div className="procedure-form-grid">
+                <label>Description<textarea value={form.description} onChange={(event) => setValue('description', event.target.value)} /></label>
+                <label>Exigence réglementaire<textarea value={form.regulatoryRequirement} onChange={(event) => setValue('regulatoryRequirement', event.target.value)} /></label>
+              </div>
+            </section>
+
+            <section className="procedure-form-section procedure-file-section" aria-labelledby="procedure-file-title">
+              <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Fichier de travail</h3><p>Le fichier source reste privé et accessible uniquement aux profils autorisés.</p></div></header>
+              <label className="procedure-file-field">
+                <Upload size={18} />
+                <span>{procedure ? 'Remplacer le fichier source (facultatif)' : 'Fichier source modifiable'}</span>
+                <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                <small>{file?.name || procedure?.fileName || 'Word, Excel, PowerPoint ou OpenDocument · 50 Mo max.'}</small>
+              </label>
+            </section>
           </div>
           <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
         </form>
@@ -246,6 +291,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const isManager = canManageProcedures(effectiveRoles);
   const [procedures, setProcedures] = useState<ProcedureRecord[]>([]);
   const [publications, setPublications] = useState<PublishedProcedureRecord[]>([]);
+  const [procedureProjects, setProcedureProjects] = useState<ProcedureProjectOption[]>([]);
   const [filters, setFilters] = useState<ProcedureFilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<LibraryView>(isManager ? 'sources' : 'published');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -271,6 +317,18 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
       .then((data) => { if (mounted) { setProcedures(sortRecords(data.procedures)); setPublications(sortRecords(data.publications)); } })
       .catch(() => { if (mounted) setErrorMessage('Impossible de charger la bibliothèque QSMS.'); })
       .finally(() => { if (mounted) setIsLoading(false); });
+    return () => { mounted = false; };
+  }, [effectiveClient, isManager]);
+
+  useEffect(() => {
+    if (!isManager) {
+      setProcedureProjects([]);
+      return undefined;
+    }
+    let mounted = true;
+    fetchProcedureProjects(effectiveClient)
+      .then((projects) => { if (mounted) setProcedureProjects(projects); })
+      .catch(() => { if (mounted) setProcedureProjects([]); });
     return () => { mounted = false; };
   }, [effectiveClient, isManager]);
 
@@ -397,23 +455,23 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                   const source = publication ? null : record as ProcedureRecord;
                   const linkedPublication = source ? publications.find((item) => item.procedureId === source.id) : null;
                   const recordProjects = projectNames(record.projectName);
+                  const reviewAlert = getAnnualReviewAlert(record.annualReview, record.diffusionOn);
                   return (
-                    <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public' : ''}`} key={`${view}-${record.id}`}>
+                    <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
                       <div className="procedure-document-copy">
                         <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button>
-                        <div className="procedure-document-metadata">
-                          <small>{[record.documentType, record.theme, record.versionLabel || record.revisionLabel].filter(Boolean).join(' · ') || record.fileName}</small>
-                          {record.vesselName || recordProjects.length > 0 ? (
+                        {record.vesselName || recordProjects.length > 0 ? (
+                          <div className="procedure-document-metadata">
                             <span className="procedure-document-scopes">
                               {record.vesselName ? <span><b>Navire :</b>{record.vesselName}</span> : null}
                               {recordProjects.map((projectName) => <span key={projectName}><b>Projet :</b>{projectName}</span>)}
                             </span>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="procedure-document-status">{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
+                      <div className="procedure-document-status">{reviewAlert ? <strong className={`procedure-review-badge is-${reviewAlert.tone}`}><BellRing aria-hidden="true" size={12} />{reviewAlert.label}</strong> : null}{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
                         <button aria-label={`Télécharger ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
                         {source && isManager ? <><button aria-label={`Modifier ${record.title}`} onClick={() => setEditorProcedure(source)} type="button"><Edit3 size={16} /></button><button aria-label={`Publier ${record.title}`} onClick={() => setPublishTarget(source)} type="button"><Send size={16} /></button><button aria-label={`Supprimer ${record.title}`} className="danger" onClick={() => void handleDeleteSource(source)} type="button"><Trash2 size={16} /></button></> : null}
@@ -429,7 +487,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
         </div>
       </section>
 
-      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} projectOptions={procedureProjects} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
       {publishTarget ? <PublishDialog procedure={publishTarget} onClose={() => setPublishTarget(null)} onPublish={handlePublish} saving={isSaving} /> : null}
     </section>
   );

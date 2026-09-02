@@ -40,6 +40,51 @@ final result: passed
 
 ---
 
+# Design QA — fiche information QSMS v3.27.14 (2026-09-02)
+
+## Cibles et état comparés
+
+- Source visuelle : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-a82bce02-19bd-4ed4-878c-ed0342a261f6.png` (854 × 877 px) et `C:/Users/chris/AppData/Local/Temp/codex-clipboard-d941091b-a573-463b-b857-2acfd0cc8991.png` (1 911 × 190 px).
+- Implémentation : capture navigateur intégrée émise pendant cette tâche, URL `http://127.0.0.1:5173/modules/procedures?preview=1`.
+- Viewport : 854 × 877 CSS px, densité 1 ; capture d’implémentation 854 × 877 px, sans normalisation.
+- État : fiche Administration ouverte sur un document existant, données rapprochées de la capture source (`VPC 06-A`, titre DUERP, navire LANDEMER).
+- La source originale et la capture rendue ont été ouvertes dans le même contexte visuel pour la comparaison.
+
+## Résultat visuel
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Typographie : hiérarchie plus nette, poids et tailles cohérents avec les autres modules SeaPilot ; le titre long revient proprement à la ligne.
+- Espacement et rythme : sections régulières, grille stable, pied d’actions persistant et aucun débordement horizontal visible.
+- Couleurs et tokens : palette SeaPilot respectée ; les états de revue prête/manquante et les alertes J-90 sont sémantiquement distincts.
+- Images et actifs : aucun actif raster n’était à reproduire ; les icônes utilisent la bibliothèque Lucide du produit.
+- Copie et contenu : la référence calculée, la recherche Projet et le fonctionnement de l’alarme J-90 sont explicités sans réintroduire les champs supprimés.
+- Accessibilité et interactions : dialogue et sections nommés, champs associés à leurs labels, fermeture et actions clavier accessibles ; aucune erreur console observée.
+
+La différence de densité avec l’ancienne fiche est intentionnelle : elle correspond au redesign demandé et à la suppression de Type document, Catégorie, Code procédure, Restrictions, Notes et Veille Passerelle. L’en-tête, le bloc Identification et le bloc Validation sont suffisamment lisibles dans la capture complète ; aucun recadrage ciblé supplémentaire n’était nécessaire. La ligne de bibliothèque ne contient plus `PRO · OPE · D` et conserve seulement les badges Navire et Projet.
+
+## Historique de comparaison
+
+1. Première passe à 854 × 877 : aucun défaut P0/P1/P2 ; le code calculé, le titre, les deux premières sections et le pied persistant sont visibles sans collision.
+2. Interactions vérifiées : modification Thème/Numéro/Version avec mise à jour immédiate de `VPC 06-A - Titre`, recherche Projet, activation/désactivation de la revue annuelle et absence d’erreur console.
+
+## Implementation checklist
+
+- [x] En-tête `Code - Titre`
+- [x] Projet recherchable
+- [x] Échéance annuelle et alerte J-90
+- [x] Pied d’actions persistant
+- [x] Métadonnée technique retirée de la ligne
+- [x] Erreurs console contrôlées
+
+## Follow-up polish
+
+Aucun raffinement P3 indispensable au déploiement.
+
+final result: passed
+
+---
+
 # Design QA — Tableau de bord manager (2026-08-25)
 
 ## Cibles et état comparés
