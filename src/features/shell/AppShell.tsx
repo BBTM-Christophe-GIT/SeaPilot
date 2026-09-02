@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpenCheck,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ import {
   Eye,
   LayoutDashboard,
   LogOut,
+  Mail,
   Menu,
   Settings,
   ShieldCheck,
@@ -32,7 +34,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { APP_BUILD_VERSION, APP_VERSION_LABEL } from '../../config/appVersion';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
@@ -40,6 +42,7 @@ import { APP_MODULES, type AppModule, type ModuleKey } from '../permissions/modu
 import { fetchVisibleModulesForRoles, getDefaultVisibleModules } from '../permissions/navigationPermissions';
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import { fetchCurrentPersonSummary, fetchCurrentUserRoles, type CurrentPersonSummary } from '../profiles/profileQueries';
+import { fetchUnsignedServiceNoteNotifications, formatServiceNoteDate, type ServiceNoteNotification } from '../serviceNotes/serviceNoteQueries';
 
 interface AppShellProps {
   rolesOverride?: RoleKey[];
@@ -101,6 +104,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   qhse: ShieldCheck,
   certificates: FileCheck2,
   procedures: FileText,
+  serviceNotes: Mail,
   actionPlan: ClipboardCheck,
   dpr: Gauge,
   purchaseRequests: ShoppingCart,
@@ -160,6 +164,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [adminProfileView, setAdminProfileView] = useState<AdminProfileView>('actual');
   const [adminProfileModules, setAdminProfileModules] = useState<AppModule[] | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
@@ -264,7 +270,38 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   useEffect(() => {
     setIsMobileNavigationOpen(false);
     setIsUserMenuOpen(false);
+    setIsNotificationsOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (previewMode) {
+      setServiceNoteNotifications([{
+        noteId: 9001,
+        chronologyCode: 'NS 08-26',
+        subject: 'Consignes de sécurité avant appareillage',
+        publishedAt: new Date().toISOString(),
+      }]);
+      return;
+    }
+    if (!sessionUserId) {
+      setServiceNoteNotifications([]);
+      return;
+    }
+    let mounted = true;
+    const refresh = () => {
+      void fetchUnsignedServiceNoteNotifications(client)
+        .then((items) => { if (mounted) setServiceNoteNotifications(items); })
+        .catch(() => { if (mounted) setServiceNoteNotifications([]); });
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('service-notes:changed', refresh);
+    return () => {
+      mounted = false;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('service-notes:changed', refresh);
+    };
+  }, [client, previewMode, sessionUserId]);
 
   const requestedModule = getRequestedModule(location.pathname);
   const roleVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
@@ -467,9 +504,17 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
 
           <div className="topbar-actions">
             {isActualAdmin ? <label className="admin-profile-view-selector"><span>Vue</span><select aria-label="Vue de profil" value={adminProfileView} onChange={(event) => setAdminProfileView(event.target.value as AdminProfileView)}><option value="actual">Réelle</option>{ROLE_KEYS.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label> : null}
-            <button aria-label="Notifications" className="topbar-icon-button" type="button">
-              <Bell aria-hidden="true" size={19} />
-            </button>
+            <div className="topbar-notifications">
+              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${serviceNoteNotifications.length ? `, ${serviceNoteNotifications.length} note(s) à signer` : ''}`} className="topbar-icon-button" onClick={() => { setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
+                <Bell aria-hidden="true" size={19} />
+                {serviceNoteNotifications.length ? <span className="topbar-notification-badge">{serviceNoteNotifications.length > 9 ? '9+' : serviceNoteNotifications.length}</span> : null}
+              </button>
+              {isNotificationsOpen ? <div className="topbar-notification-popover">
+                <header><div><strong>Notes à lire</strong><span>{serviceNoteNotifications.length} en attente de signature</span></div><Bell aria-hidden="true" size={18} /></header>
+                <div>{serviceNoteNotifications.length ? serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>) : <p className="topbar-notification-empty"><Check aria-hidden="true" size={18} /> Vous êtes à jour.</p>}</div>
+                <Link className="topbar-notification-footer" to="/modules/serviceNotes">Voir toutes les notes</Link>
+              </div> : null}
+            </div>
             <div className="user-menu">
               <button
                 aria-expanded={isUserMenuOpen}

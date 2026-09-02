@@ -6,6 +6,7 @@ export type ModuleKey =
   | 'qhse'
   | 'certificates'
   | 'procedures'
+  | 'serviceNotes'
   | 'actionPlan'
   | 'dpr'
   | 'purchaseRequests'
@@ -56,6 +57,13 @@ export const APP_MODULES: AppModule[] = [
   {
     key: 'procedures',
     label: 'Procédures QHSE',
+    family: 'QHSE',
+    navigationKind: 'submenu',
+    allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'serviceNotes',
+    label: 'Notes de Service',
     family: 'QHSE',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,

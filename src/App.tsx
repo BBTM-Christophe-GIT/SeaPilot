@@ -19,6 +19,7 @@ import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
 import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
 import { ServiceProvidersPage } from './features/serviceProviders/ServiceProvidersPage';
+import { ServiceNotesPage } from './features/serviceNotes/ServiceNotesPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
@@ -78,6 +79,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du suivi du temps de travail…</div>}><WorkingTimePage /></Suspense>
                 ) : module.key === 'procedures' ? (
                   <ProceduresPage />
+                ) : module.key === 'serviceNotes' ? (
+                  <ServiceNotesPage />
                 ) : module.key === 'projects' ? (
                   <ProjectsPage />
                 ) : module.key === 'billingElements' ? (
