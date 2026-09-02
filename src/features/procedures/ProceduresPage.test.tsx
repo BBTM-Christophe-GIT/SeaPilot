@@ -140,6 +140,48 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
 }
 
 describe('ProceduresPage', () => {
+  it('uses the QSMS icon for every chapter and separates unassigned documents', async () => {
+    const iconCases = [
+      ['01', '01 - Généralités', 'info', 'blue'],
+      ['02', "02 - Politique en Matière de Sécurité et de Protection de l'Environnement", 'shield-check', 'teal'],
+      ['03', '03 - Responsabilité et Autorité de la Compagnie', 'building-2', 'blue'],
+      ['04', '04 - Personne(s) désignée(s)', 'user-round-check', 'blue'],
+      ['05', '05 - Responsabilités et autorité du capitaine', 'ship-wheel', 'blue'],
+      ['06', '06 - Ressources et personnel', 'users-round', 'blue'],
+      ['07', '07 - Etablissement de plans pour les opérations à bord', 'clipboard-list', 'blue'],
+      ['08', "08 - Préparation aux Situations d'Urgence", 'triangle-alert', 'orange'],
+      ['09', '09 - Notification et analyse des irrégularités', 'file-exclamation-point', 'orange'],
+      ['10', '10 - Maintien en Etat du Navire et de son Armement', 'wrench', 'blue'],
+      ['11', '11 - Documents', 'file-text', 'blue'],
+      ['12', '12 - Vérification, examen et évaluation effectués par la compagnie', 'clipboard-check', 'teal'],
+      ['13', '13 - Certification, Vérification et Contrôle', 'badge-check', 'teal'],
+      ['uncontrolled', 'Documents non contrôlés', 'file-x', 'orange'],
+      ['unassigned', '', 'circle-question-mark', 'amber'],
+    ] as const;
+    const procedures = iconCases.map(([key, ismChapter], index) => ({
+      ...approvedProcedureRow,
+      id: 100 + index,
+      procedure_code: `DOC-${key}`,
+      document_number: `DOC-${key}`,
+      title: `Document ${key}`,
+      ism_chapter: ismChapter,
+      published_on: null,
+    }));
+    const { client } = createClient({ procedures, publications: [] });
+
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await screen.findByText('Document 01');
+
+    for (const [key, , iconName, tone] of iconCases) {
+      const icon = document.querySelector(`[data-chapter-icon="${key}"]`);
+      expect(icon, `missing icon for chapter ${key}`).not.toBeNull();
+      expect(icon).toHaveClass(`is-${tone}`);
+      expect(icon?.querySelector(`.lucide-${iconName}`), `wrong icon for chapter ${key}`).not.toBeNull();
+    }
+    expect(screen.getByRole('button', { name: /Documents non contrôlés/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ISM - Chapitre non renseigné/ })).toBeInTheDocument();
+  });
+
   it('shows the private QSMS workbench to Administration and Direction', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
@@ -267,9 +309,9 @@ describe('ProceduresPage', () => {
 
     expect(createSignedUrl).toHaveBeenCalledWith('sources/source.docx', 300, undefined);
     expect(open).toHaveBeenCalledWith(
-      'https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fstorage.test%2Fsigned',
-      '_blank',
-      'noopener,noreferrer',
+      'ms-word:ofv|u|https://storage.test/signed',
+      '_self',
+      undefined,
     );
     open.mockRestore();
   });

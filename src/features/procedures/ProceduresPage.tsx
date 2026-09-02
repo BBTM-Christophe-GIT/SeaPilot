@@ -1,24 +1,38 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  BadgeCheck,
   BellRing,
   BookOpenCheck,
+  Building2,
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
+  ClipboardCheck,
+  ClipboardList,
   Download,
   Edit3,
   FileCheck2,
   FilePlus2,
   FileText,
+  FileWarning,
+  FileX,
   FolderKanban,
+  Info,
   List,
   Search,
   Send,
+  ShipWheel,
   ShieldCheck,
+  TriangleAlert,
   Trash2,
   Upload,
+  UserRoundCheck,
+  UsersRound,
+  Wrench,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -72,7 +86,29 @@ const CHAPTERS = [
   ['12', '12 - Vérification, Examen et Évaluation de la Compagnie'],
   ['13', '13 - Certification, Vérification et Contrôle'],
   ['uncontrolled', 'Documents non contrôlés'],
+  ['unassigned', 'ISM - Chapitre non renseigné'],
 ] as const;
+
+type ProcedureChapterKey = typeof CHAPTERS[number][0];
+type ProcedureChapterTone = 'blue' | 'teal' | 'orange' | 'amber';
+
+const CHAPTER_VISUALS: Record<ProcedureChapterKey, { Icon: LucideIcon; tone: ProcedureChapterTone }> = {
+  '01': { Icon: Info, tone: 'blue' },
+  '02': { Icon: ShieldCheck, tone: 'teal' },
+  '03': { Icon: Building2, tone: 'blue' },
+  '04': { Icon: UserRoundCheck, tone: 'blue' },
+  '05': { Icon: ShipWheel, tone: 'blue' },
+  '06': { Icon: UsersRound, tone: 'blue' },
+  '07': { Icon: ClipboardList, tone: 'blue' },
+  '08': { Icon: TriangleAlert, tone: 'orange' },
+  '09': { Icon: FileWarning, tone: 'orange' },
+  '10': { Icon: Wrench, tone: 'blue' },
+  '11': { Icon: FileText, tone: 'blue' },
+  '12': { Icon: ClipboardCheck, tone: 'teal' },
+  '13': { Icon: BadgeCheck, tone: 'teal' },
+  uncontrolled: { Icon: FileX, tone: 'orange' },
+  unassigned: { Icon: CircleHelp, tone: 'amber' },
+};
 
 const THEMES = ['ADM', 'AUT', 'DNC', 'DPA', 'GEN', 'OPE', 'POL', 'RAC', 'REP', 'SEC', 'SMS', 'TEC', 'URG', 'VPC'];
 
@@ -92,9 +128,15 @@ function normalizeSearch(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function chapterKey(value: string): string {
+function chapterKey(value: string): ProcedureChapterKey {
   const match = value.match(/^\s*(0[1-9]|1[0-3])/);
-  return match?.[1] || 'uncontrolled';
+  if (match) return match[1] as ProcedureChapterKey;
+  return normalizeSearch(value).includes('non controle') ? 'uncontrolled' : 'unassigned';
+}
+
+function ProcedureChapterIcon({ chapter }: { chapter: ProcedureChapterKey }) {
+  const { Icon, tone } = CHAPTER_VISUALS[chapter];
+  return <span aria-hidden="true" className={`procedure-chapter-icon is-${tone}`} data-chapter-icon={chapter}><Icon size={16} /></span>;
 }
 
 function projectNames(value: string): string[] {
@@ -376,7 +418,11 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   }
 
   async function handleOpen(record: ProcedureRecord | PublishedProcedureRecord) {
-    try { window.open(await getProcedureFileUrl(effectiveClient, record, 'open'), '_blank', 'noopener,noreferrer'); }
+    try {
+      const fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');
+      const opensDesktopApp = /^ms-(word|excel|powerpoint):/.test(fileUrl);
+      window.open(fileUrl, opensDesktopApp ? '_self' : '_blank', opensDesktopApp ? undefined : 'noopener,noreferrer');
+    }
     catch { fail("Le fichier n'est pas disponible."); }
   }
 
@@ -449,7 +495,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
             const collapsed = collapsedChapters.has(key);
             return (
               <section className="procedure-chapter" key={key}>
-                <button aria-expanded={!collapsed} className="procedure-chapter-heading" onClick={() => toggleChapter(key)} type="button">{collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}<span className="procedure-chapter-icon">{key === 'uncontrolled' ? <FileText size={16} /> : <ShieldCheck size={16} />}</span><strong>{label}</strong><em>{records.length}</em></button>
+                <button aria-expanded={!collapsed} className="procedure-chapter-heading" onClick={() => toggleChapter(key)} type="button">{collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}<ProcedureChapterIcon chapter={key} /><strong>{label}</strong><em>{records.length}</em></button>
                 {!collapsed ? <div className="procedure-document-list">{records.map((record) => {
                   const publication = 'procedureId' in record ? record as PublishedProcedureRecord : null;
                   const source = publication ? null : record as ProcedureRecord;
