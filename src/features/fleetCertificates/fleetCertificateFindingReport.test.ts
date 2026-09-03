@@ -9,6 +9,7 @@ import {
   calculateContainSize,
   formatFleetCertificateDocumentExpiry,
   generateFleetFindingReport,
+  sanitizeFleetReportRichText,
   sanitizeFleetReportText,
 } from './fleetCertificateFindingReport';
 
@@ -28,6 +29,7 @@ const finding: FleetCertificateFinding = {
   findingType: 'major_non_conformity',
   title: 'Corrosion du support bâbord',
   description: 'Corrosion perforante à reprendre avant validation.',
+  correctiveAction: '<p><strong>Remplacer le support</strong> puis contrôler la soudure.</p><ul><li>Préparer la zone</li><li>Photographier le résultat</li></ul>',
   detectedOn: '2026-07-16',
   treatmentDelayDays: 21,
   treatmentDueOn: '2026-08-06',
@@ -165,6 +167,7 @@ describe('fleet certificate action plan report', () => {
 
   it('removes the report brand word regardless of casing', () => {
     expect(sanitizeFleetReportText('Système SeaPilot - SEAPILOT - seaPilot')).toBe('Système - -');
+    expect(sanitizeFleetReportRichText('<p><strong>Action SeaPilot</strong></p>')).toBe('<p><strong>Action </strong></p>');
   });
 
   it('generates the fleet certificate action plan PDF with the canonical filename', async () => {
@@ -180,7 +183,7 @@ describe('fleet certificate action plan report', () => {
     expect(report.blob.size).toBeGreaterThan(1_000);
   });
 
-  it('starts the report directly with one dedicated page per vessel', async () => {
+  it('starts every vessel with a summary and every available finding on its own page', async () => {
     const report = await generateFleetFindingReport({
       certificates: [
         certificate,
@@ -191,7 +194,7 @@ describe('fleet certificate action plan report', () => {
       includeDocuments: true,
       includeFindings: true,
     });
-    expect(pdfPageCount(report.arrayBuffer)).toBe(2);
+    expect(pdfPageCount(report.arrayBuffer)).toBe(3);
   });
 
   it('keeps an 18-document single-vessel list on one page', async () => {
@@ -230,8 +233,27 @@ describe('fleet certificate action plan report', () => {
       includeDocuments: false,
       includeFindings: true,
     });
-    expect(pdfPageCount(report.arrayBuffer)).toBe(1);
+    expect(pdfPageCount(report.arrayBuffer)).toBe(2);
     expect(report.blob.size).toBeGreaterThan(1_000);
+  });
+
+  it('keeps the finding list first, then starts each finding on a new page', async () => {
+    const report = await generateFleetFindingReport({
+      certificates: [certificate],
+      findings: [finding, {
+        ...finding,
+        id: 82,
+        reference: 'EC-2026-0013',
+        title: 'Deuxième écart',
+        status: 'in_progress',
+        progress: 50,
+      }],
+      generatedOn: new Date('2026-08-11T12:00:00Z'),
+      includeDocuments: false,
+      includeFindings: true,
+    });
+
+    expect(pdfPageCount(report.arrayBuffer)).toBe(3);
   });
 
   it('rejects a report with neither list selected', async () => {

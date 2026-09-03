@@ -55,6 +55,7 @@ export interface FleetCertificateFinding {
   findingType: FleetFindingType;
   title: string;
   description: string;
+  correctiveAction: string;
   detectedOn: string;
   treatmentDelayDays: number | null;
   treatmentDueOn: string;
@@ -80,6 +81,7 @@ interface FindingPayload {
   findingType: FleetFindingType;
   title: string;
   description: string;
+  correctiveAction?: string;
   detectedOn: string;
   treatmentDelayDays?: number | null;
   treatmentDueOn?: string;
@@ -141,6 +143,7 @@ function mapFinding(row: Record<string, unknown>, attachments: FleetFindingAttac
   return {
     id, companyId: Number(row.company_id), certificateId: Number(row.certificate_id), reference: String(row.reference || ''),
     findingType: row.finding_type as FleetFindingType, title: String(row.title || ''), description: String(row.description || ''),
+    correctiveAction: String(row.corrective_action || ''),
     detectedOn: String(row.detected_on || ''), treatmentDelayDays: row.treatment_delay_days == null ? null : Number(row.treatment_delay_days),
     treatmentDueOn: String(row.treatment_due_on || ''), status: row.status as FleetFindingStatus, progress: Number(row.progress || 0),
     responsiblePersonId: row.responsible_person_id == null ? null : Number(row.responsible_person_id),
@@ -187,6 +190,7 @@ export async function createFleetCertificateFinding(client: SupabaseClient, comp
   const { data, error } = await client.from('fleet_certificate_findings').insert({
     company_id: companyId, certificate_id: payload.certificateId, reference: '', finding_type: payload.findingType,
     title: payload.title.trim(), description: payload.description.trim(), detected_on: payload.detectedOn,
+    corrective_action: payload.correctiveAction?.trim() || '',
     treatment_delay_days: payload.treatmentDelayDays ?? null, treatment_due_on: payload.treatmentDueOn || null,
     responsible_person_id: payload.responsiblePersonId ?? null, responsible_name: payload.responsibleName || '',
     status: payload.responsiblePersonId ? 'assigned' : 'declared', progress: 0,
@@ -207,6 +211,7 @@ export async function updateFleetCertificateFinding(
     findingType: FleetFindingType;
     title: string;
     description: string;
+    correctiveAction: string;
   }>,
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
@@ -218,6 +223,7 @@ export async function updateFleetCertificateFinding(
   if (values.findingType !== undefined) payload.finding_type = values.findingType;
   if (values.title !== undefined) payload.title = values.title.trim();
   if (values.description !== undefined) payload.description = values.description.trim();
+  if (values.correctiveAction !== undefined) payload.corrective_action = values.correctiveAction.trim();
   const { error } = await client.from('fleet_certificate_findings').update(payload).eq('id', findingId);
   if (error) throw error;
 }
@@ -242,7 +248,7 @@ function safeFileName(value: string): string {
 
 export async function uploadFleetFindingAttachment(
   client: SupabaseClient,
-  finding: FleetCertificateFinding,
+  finding: Pick<FleetCertificateFinding, 'companyId' | 'id'>,
   vesselAcronym: string,
   kind: FleetFindingAttachmentKind,
   file: File,

@@ -10,6 +10,12 @@ import {
   FLEET_FINDING_STATUS_LABELS,
   type FleetCertificateFinding,
 } from './fleetCertificateFindings';
+import {
+  fleetFindingActionToRichTextBlocks,
+  sanitizeFleetFindingActionHtml,
+  type FleetFindingRichTextBlock,
+  type FleetFindingRichTextRun,
+} from './fleetFindingRichText';
 
 export interface FleetFindingReportInput {
   certificates: FleetCertificateRecord[];
@@ -109,6 +115,10 @@ function compareReportCategories(
 
 export function sanitizeFleetReportText(value: string | null | undefined): string {
   return (value || '').replace(/seapilot/gi, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export function sanitizeFleetReportRichText(value: string | null | undefined): string {
+  return sanitizeFleetFindingActionHtml((value || '').replace(/seapilot/gi, ''));
 }
 
 function reportIsoDate(value: Date): string {
@@ -347,6 +357,7 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
     reference: sanitizeFleetReportText(finding.reference),
     title: sanitizeFleetReportText(finding.title),
     description: sanitizeFleetReportText(finding.description),
+    correctiveAction: sanitizeFleetReportRichText(finding.correctiveAction),
     responsibleName: sanitizeFleetReportText(finding.responsibleName),
     events: finding.events.map((event) => ({
       ...event,
@@ -370,7 +381,6 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
   const blue: [number, number, number] = [12, 111, 202];
   const red: [number, number, number] = [205, 47, 47];
   const green: [number, number, number] = [19, 126, 83];
-  const amber: [number, number, number] = [202, 116, 26];
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -505,6 +515,135 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
     category.parentKey ? 54 : 45
   );
 
+  const startFindingPage = (
+    category: FleetCertificateActionReportCategoryGroup,
+  ): void => {
+    doc.addPage();
+    tableY = 37;
+    if (category.parentLabel) tableY += 8.5;
+    tableY += 8.5;
+  };
+
+  const drawFindingTableHeader = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    category: FleetCertificateActionReportCategoryGroup,
+  ): void => {
+    drawHeader();
+    renderVesselHeading(vessel, 25);
+    if (category.parentLabel) {
+      renderCategoryHeading(category.parentLabel, 37);
+      renderCategoryHeading(category.label, 45.5, false, true);
+    } else {
+      renderCategoryHeading(category.label, 37);
+    }
+  };
+
+  const startFindingContinuationPage = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    category: FleetCertificateActionReportCategoryGroup,
+    finding: FleetCertificateFinding,
+  ): void => {
+    startContinuationPage(vessel, category);
+    doc.setFillColor(239, 246, 253);
+    doc.rect(12, tableY, pageWidth - 24, 7, 'F');
+    doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.8);
+    doc.text(`${finding.reference} · SUITE`, 15, tableY + 4.7);
+    tableY += 10;
+  };
+
+  const richTextFontSize = (block: FleetFindingRichTextBlock): number => (
+    block.kind === 'heading' ? 9.3 : block.kind === 'subheading' ? 8.3 : 7.4
+  );
+  const setRichTextFont = (run: FleetFindingRichTextRun, block: FleetFindingRichTextBlock): void => {
+    const style = run.bold && run.italic ? 'bolditalic' : run.bold ? 'bold' : run.italic ? 'italic' : 'normal';
+    doc.setFont('helvetica', style);
+    doc.setFontSize(richTextFontSize(block));
+  };
+  const wrapRichTextBlock = (block: FleetFindingRichTextBlock, maxWidth: number) => {
+    const lines: Array<Array<{ run: FleetFindingRichTextRun; text: string; width: number }>> = [[]];
+    let lineWidth = 0;
+    block.runs.forEach((run) => {
+      const tokens = run.text.split(/(\n|\s+)/gu).filter(Boolean);
+      tokens.forEach((token) => {
+        if (token === '\n') {
+          lines.push([]);
+          lineWidth = 0;
+          return;
+        }
+        setRichTextFont(run, block);
+        const normalized = lineWidth === 0 ? token.replace(/^\s+/u, '') : token;
+        if (!normalized) return;
+        const width = doc.getTextWidth(normalized);
+        if (lineWidth > 0 && lineWidth + width > maxWidth && normalized.trim()) {
+          lines.push([]);
+          lineWidth = 0;
+        }
+        const text = lineWidth === 0 ? normalized.replace(/^\s+/u, '') : normalized;
+        const textWidth = doc.getTextWidth(text);
+        lines[lines.length - 1].push({ run, text, width: textWidth });
+        lineWidth += textWidth;
+      });
+    });
+    return lines.filter((line) => line.length);
+  };
+
+  const renderCorrectiveAction = (
+    vessel: FleetCertificateActionReportVesselGroup,
+    category: FleetCertificateActionReportCategoryGroup,
+    finding: FleetCertificateFinding,
+  ): void => {
+    const renderSectionHeading = (continued = false) => {
+      doc.setFillColor(...blue);
+      doc.rect(12, tableY, pageWidth - 24, 7, 'F');
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.8);
+      doc.text(`ACTION CORRECTIVE${continued ? ' · SUITE' : ''}`, 15, tableY + 4.7);
+      tableY += 10;
+    };
+    const blocks = fleetFindingActionToRichTextBlocks(finding.correctiveAction);
+    renderSectionHeading();
+    if (!blocks.length) {
+      doc.setTextColor(92, 103, 116); doc.setFont('helvetica', 'italic'); doc.setFontSize(7.4);
+      doc.text('Aucune action corrective renseignée.', 15, tableY);
+      tableY += 6;
+      return;
+    }
+    blocks.forEach((block) => {
+      const maxWidth = block.kind === 'quote' ? 176 : 180;
+      const lines = wrapRichTextBlock(block, maxWidth);
+      const lineHeight = block.kind === 'heading' ? 5 : block.kind === 'subheading' ? 4.5 : 4;
+      tableY += block.kind === 'heading' ? 1.5 : .6;
+      lines.forEach((line) => {
+        if (tableY + lineHeight > pageHeight - 14) {
+          startFindingContinuationPage(vessel, category, finding);
+          renderSectionHeading(true);
+        }
+        const totalWidth = line.reduce((sum, segment) => sum + segment.width, 0);
+        const left = block.kind === 'quote' ? 18 : 15;
+        let x = block.align === 'center' ? pageWidth / 2 - totalWidth / 2 : block.align === 'right' ? pageWidth - 15 - totalWidth : left;
+        if (block.kind === 'quote') {
+          doc.setDrawColor(...blue);
+          doc.setLineWidth(.55);
+          doc.line(14.5, tableY - 3.1, 14.5, tableY + .9);
+        }
+        line.forEach((segment) => {
+          setRichTextFont(segment.run, block);
+          doc.setTextColor(segment.run.href ? blue[0] : navy[0], segment.run.href ? blue[1] : navy[1], segment.run.href ? blue[2] : navy[2]);
+          doc.text(segment.text, x, tableY);
+          if (segment.run.underline || segment.run.href) {
+            doc.setDrawColor(segment.run.href ? blue[0] : navy[0], segment.run.href ? blue[1] : navy[1], segment.run.href ? blue[2] : navy[2]);
+            doc.setLineWidth(.16);
+            doc.line(x, tableY + .55, x + segment.width, tableY + .55);
+          }
+          if (segment.run.href) doc.link(x, tableY - lineHeight + 1, segment.width, lineHeight, { url: segment.run.href });
+          x += segment.width;
+        });
+        tableY += lineHeight;
+      });
+      tableY += block.kind === 'heading' ? 1.2 : .8;
+    });
+    tableY += 1.5;
+  };
+
   if (!reportHierarchy.length) {
     drawHeader();
     doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
@@ -586,203 +725,237 @@ export async function generateFleetFindingReport(input: FleetFindingReportInput)
     reportHierarchy.forEach((vessel, vesselIndex) => {
       startVesselPage(vessel, vesselIndex > 0);
       let activeParentKey = '';
+      const vesselFindings: Array<{
+        category: FleetCertificateActionReportCategoryGroup;
+        group: FleetCertificateActionReportDocumentGroup;
+        finding: FleetCertificateFinding;
+      }> = [];
 
       vessel.categories.forEach((category) => {
-      const shouldRenderParent = Boolean(category.parentKey && activeParentKey !== category.parentKey);
-      ensureVesselSpace(vessel, shouldRenderParent ? 46 : 38);
-      if (shouldRenderParent && category.parentLabel) {
-        renderCategoryHeading(category.parentLabel, tableY);
-        tableY += 8.5;
-      }
-      activeParentKey = category.parentKey || category.key;
-      renderCategoryHeading(category.label, tableY, false, Boolean(category.parentKey));
-      tableY += 8.5;
-
-      if (includeDocuments) {
-        autoTable(doc, {
-          startY: tableY,
-          head: [
-            [{
-              content: `SUIVI DOCUMENTAIRE · ${category.documents.length} document${category.documents.length > 1 ? 's' : ''}`,
-              colSpan: 3,
-              styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
-            }],
-            ['Document', 'Échéance', 'État'],
-          ],
-          body: category.documents.map((group) => [
-            group.reportRow.documentTitle,
-            formatFleetCertificateDocumentExpiry(group.reportRow.expiresOn),
-            {
-              content: group.reportRow.validity,
-              styles: {
-                fillColor: group.reportRow.validity === 'Échu' ? [255, 238, 238] : [234, 247, 240],
-                textColor: group.reportRow.validity === 'Échu' ? red : green,
-                fontStyle: 'bold',
-                halign: 'center',
-              },
-            },
-          ]),
-          theme: 'grid',
-          styles: { fontSize: 7.7, cellPadding: 2.35, valign: 'middle', lineColor: [220, 226, 234] },
-          headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [249, 251, 253] },
-          columnStyles: { 1: { cellWidth: 39 }, 2: { cellWidth: 22, halign: 'center' } },
-          margin: { left: 12, right: 12, top: categoryTableTop(category) },
-          willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
-        });
-        tableY = lastTableY() + 5;
-      }
-
-      if (includeFindings) {
         const categoryFindings = category.documents.flatMap((group) => (
-          group.findings.map((finding) => ({ group, finding }))
+          group.findings.map((finding) => ({ category, group, finding }))
         ));
+        vesselFindings.push(...categoryFindings);
+        const shouldRenderParent = Boolean(category.parentKey && activeParentKey !== category.parentKey);
+        ensureVesselSpace(vessel, shouldRenderParent ? 46 : 38);
+        if (shouldRenderParent && category.parentLabel) {
+          renderCategoryHeading(category.parentLabel, tableY);
+          tableY += 8.5;
+        }
+        activeParentKey = category.parentKey || category.key;
+        renderCategoryHeading(category.label, tableY, false, Boolean(category.parentKey));
+        tableY += 8.5;
 
-        if (!categoryFindings.length) {
-          ensureVesselSpace(vessel, 17, category);
-          doc.setFillColor(238, 248, 243);
-          doc.roundedRect(12, tableY, pageWidth - 24, 9, 1.3, 1.3, 'F');
-          doc.setTextColor(...green); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-          doc.text('Aucun écart enregistré pour cette catégorie.', 16, tableY + 5.8);
-          tableY += 13;
-        } else {
-          ensureVesselSpace(vessel, 34, category);
+        if (includeDocuments) {
           autoTable(doc, {
             startY: tableY,
             head: [
               [{
-                content: `ÉCARTS & ACTIONS · ${categoryFindings.length}`,
-                colSpan: 5,
-                styles: { fillColor: amber, textColor: 255, fontStyle: 'bold' },
+                content: `SUIVI DOCUMENTAIRE · ${category.documents.length} document${category.documents.length > 1 ? 's' : ''}`,
+                colSpan: 3,
+                styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
               }],
-              ['Document', 'Référence', 'Écart', 'Échéance', 'Suivi'],
+              ['Document', 'Échéance', 'État'],
             ],
-            body: categoryFindings.map(({ group, finding }) => {
-              const overdue = finding.status !== 'closed'
-                && Boolean(finding.treatmentDueOn)
-                && finding.treatmentDueOn < generatedDate;
-              return [
-                group.certificate.documentTitle,
-                finding.reference,
-                finding.title || 'Non renseigné',
-                formatDate(finding.treatmentDueOn),
-                {
-                  content: `${overdue ? 'En retard' : FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`,
-                  styles: {
-                    fillColor: overdue ? [255, 238, 238] : finding.status === 'closed' ? [234, 247, 240] : [239, 244, 250],
-                    textColor: overdue ? red : finding.status === 'closed' ? green : navy,
-                    fontStyle: 'bold',
-                    halign: 'center',
-                  },
+            body: category.documents.map((group) => [
+              group.reportRow.documentTitle,
+              formatFleetCertificateDocumentExpiry(group.reportRow.expiresOn),
+              {
+                content: group.reportRow.validity,
+                styles: {
+                  fillColor: group.reportRow.validity === 'Échu' ? [255, 238, 238] : [234, 247, 240],
+                  textColor: group.reportRow.validity === 'Échu' ? red : green,
+                  fontStyle: 'bold',
+                  halign: 'center',
                 },
-              ];
-            }),
+              },
+            ]),
             theme: 'grid',
-            styles: { fontSize: 6.8, cellPadding: 2.1, valign: 'middle', lineColor: [224, 227, 232] },
-            headStyles: { fillColor: [61, 72, 89], textColor: 255, fontStyle: 'bold' },
-            alternateRowStyles: { fillColor: [253, 250, 246] },
-            columnStyles: {
-              0: { cellWidth: 37 },
-              1: { cellWidth: 23 },
-              3: { cellWidth: 24 },
-              4: { cellWidth: 30, halign: 'center' },
-            },
+            styles: { fontSize: 7.7, cellPadding: 2.35, valign: 'middle', lineColor: [220, 226, 234] },
+            headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [249, 251, 253] },
+            columnStyles: { 1: { cellWidth: 39 }, 2: { cellWidth: 22, halign: 'center' } },
             margin: { left: 12, right: 12, top: categoryTableTop(category) },
             willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
           });
-          tableY = lastTableY() + 7;
+          tableY = lastTableY() + 5;
+        }
 
-          categoryFindings.forEach(({ group, finding }) => {
-            ensureVesselSpace(vessel, 48, category);
-            autoTable(doc, {
-              startY: tableY,
-              head: [[{
-                content: `${finding.reference} · ${finding.title || 'Écart sans objet'}`,
-                colSpan: 4,
-                styles: { fillColor: amber, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-              }]],
-              body: [
-                [{
-                  content: group.certificate.documentTitle,
-                  colSpan: 4,
-                  styles: { fillColor: [253, 247, 239], textColor: navy, fontStyle: 'bold' },
-                }],
-                ['Type d’écart', FLEET_FINDING_LABELS[finding.findingType] || 'Non renseigné', 'Échéance', formatDate(finding.treatmentDueOn)],
-                ['Responsable', finding.responsibleName || 'Non renseigné', 'État', `${FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`],
-                ['Date du constat', formatDate(finding.detectedOn), 'Date de clôture', finding.closedAt ? formatDate(finding.closedAt) : 'Non clôturé'],
-                [{
-                  content: `Description\n${finding.description || 'Aucune description.'}`,
-                  colSpan: 4,
-                  styles: { cellPadding: 3, textColor: [55, 62, 72] },
-                }],
-              ],
-              theme: 'grid',
-              styles: { fontSize: 7.3, cellPadding: 2.3, valign: 'middle', lineColor: [224, 227, 232] },
-              columnStyles: {
-                0: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
-                1: { cellWidth: 62 },
-                2: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
-                3: { cellWidth: 62 },
-              },
-              margin: { left: 12, right: 12, top: categoryTableTop(category) },
-              willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
-            });
-            tableY = lastTableY() + 3;
-
-            ensureVesselSpace(vessel, 28, category);
+        if (includeFindings) {
+          if (!categoryFindings.length) {
+            ensureVesselSpace(vessel, 17, category);
+            doc.setFillColor(238, 248, 243);
+            doc.roundedRect(12, tableY, pageWidth - 24, 9, 1.3, 1.3, 'F');
+            doc.setTextColor(...green); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+            doc.text('Aucun écart enregistré pour cette catégorie.', 16, tableY + 5.8);
+            tableY += 13;
+          } else {
+            ensureVesselSpace(vessel, 34, category);
             autoTable(doc, {
               startY: tableY,
               head: [
                 [{
-                  content: 'SUIVI DU TRAITEMENT',
-                  colSpan: 3,
-                  styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+                  content: `1 - LISTE DES ÉCARTS ET ÉTAT DU TRAITEMENT · ${categoryFindings.length}`,
+                  colSpan: 5,
+                  styles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
                 }],
-                ['Date', 'Émetteur', 'Action / commentaire'],
+                ['Document', 'Référence', 'Écart', 'Échéance', 'État du traitement'],
               ],
-              body: finding.events.length
-                ? finding.events.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).map((event) => [
-                  formatDateTime(event.createdAt),
-                  event.authorName || 'Système',
-                  event.note || event.eventType,
-                ])
-                : [['-', '-', 'Aucun suivi enregistré']],
+              body: categoryFindings.map(({ group, finding }) => {
+                const overdue = finding.status !== 'closed'
+                  && Boolean(finding.treatmentDueOn)
+                  && finding.treatmentDueOn < generatedDate;
+                return [
+                  group.certificate.documentTitle,
+                  finding.reference,
+                  finding.title || 'Non renseigné',
+                  formatDate(finding.treatmentDueOn),
+                  {
+                    content: `${overdue ? 'En retard' : FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`,
+                    styles: {
+                      fillColor: overdue ? [255, 238, 238] : finding.status === 'closed' ? [234, 247, 240] : [239, 244, 250],
+                      textColor: overdue ? red : finding.status === 'closed' ? green : navy,
+                      fontStyle: 'bold',
+                      halign: 'center',
+                    },
+                  },
+                ];
+              }),
               theme: 'grid',
-              styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
-              headStyles: { fillColor: [45, 63, 87], textColor: 255 },
-              columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 39 } },
+              styles: { fontSize: 6.8, cellPadding: 2.1, valign: 'middle', lineColor: [224, 227, 232] },
+              headStyles: { fillColor: [45, 63, 87], textColor: 255, fontStyle: 'bold' },
+              alternateRowStyles: { fillColor: [244, 249, 254] },
+              columnStyles: {
+                0: { cellWidth: 37 },
+                1: { cellWidth: 23 },
+                3: { cellWidth: 24 },
+                4: { cellWidth: 30, halign: 'center' },
+              },
               margin: { left: 12, right: 12, top: categoryTableTop(category) },
               willDrawPage: (data) => drawCategoryTableHeader(data, vessel, category),
             });
-            tableY = lastTableY() + 7;
-
-            const photos = finding.attachments.filter((attachment) => (
-              attachment.mimeType.startsWith('image/') && input.attachmentImages?.[attachment.id]
-            ));
-            photos.forEach((attachment) => {
-              const dataUrl = input.attachmentImages?.[attachment.id];
-              if (!dataUrl) return;
-              try {
-                const properties = doc.getImageProperties(dataUrl);
-                const size = calculateContainSize(properties.width, properties.height, 184, 145);
-                const requiredHeight = size.height + 18;
-                if (tableY + requiredHeight > pageHeight - 14) startContinuationPage(vessel, category);
-                doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.7);
-                doc.text(`${finding.reference} · ${attachment.kind === 'finding' ? 'Photo du constat' : 'Preuve du traitement'}`, 12, tableY);
-                doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
-                doc.text(attachment.caption || attachment.originalFileName || 'Pièce jointe', 12, tableY + 5, { maxWidth: 184 });
-                doc.addImage(dataUrl, imageFormat(dataUrl), 12 + ((184 - size.width) / 2), tableY + 9, size.width, size.height);
-                tableY += requiredHeight;
-              } catch {
-                // Une image illisible ne doit pas empêcher la génération du rapport complet.
-              }
-            });
-          });
+            tableY = lastTableY() + 5;
+          }
         }
-      }
-
-      tableY += 4;
+        tableY += 4;
       });
+
+      if (includeFindings) {
+        vesselFindings.forEach(({ category, group, finding }) => {
+          startFindingPage(category);
+          autoTable(doc, {
+            startY: tableY,
+            head: [[{
+              content: `${finding.reference} · ${finding.title || 'Écart sans objet'}`,
+              colSpan: 4,
+              styles: { fillColor: blue, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+            }]],
+            body: [
+              [{
+                content: group.certificate.documentTitle,
+                colSpan: 4,
+                styles: { fillColor: [239, 246, 253], textColor: navy, fontStyle: 'bold' },
+              }],
+              ['Type d’écart', FLEET_FINDING_LABELS[finding.findingType] || 'Non renseigné', 'Échéance', formatDate(finding.treatmentDueOn)],
+              ['Responsable', finding.responsibleName || 'Non renseigné', 'État', `${FLEET_FINDING_STATUS_LABELS[finding.status]} · ${finding.progress} %`],
+              ['Date du constat', formatDate(finding.detectedOn), 'Date de clôture', finding.closedAt ? formatDate(finding.closedAt) : 'Non clôturé'],
+              [{
+                content: `Description\n${finding.description || 'Aucune description.'}`,
+                colSpan: 4,
+                styles: { cellPadding: 3, textColor: [55, 62, 72] },
+              }],
+            ],
+            theme: 'grid',
+            styles: { fontSize: 7.3, cellPadding: 2.3, valign: 'middle', lineColor: [224, 227, 232] },
+            columnStyles: {
+              0: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
+              1: { cellWidth: 62 },
+              2: { fontStyle: 'bold', fillColor: [245, 247, 250], cellWidth: 31 },
+              3: { cellWidth: 62 },
+            },
+            margin: { left: 12, right: 12, top: categoryTableTop(category) },
+            willDrawPage: () => drawFindingTableHeader(vessel, category),
+          });
+          tableY = lastTableY() + 4;
+
+          renderCorrectiveAction(vessel, category, finding);
+
+          if (finding.attachments.length) {
+            if (tableY > pageHeight - 34) startFindingContinuationPage(vessel, category, finding);
+            autoTable(doc, {
+              startY: tableY,
+              head: [
+                [{
+                  content: `PIÈCES JOINTES · ${finding.attachments.length}`,
+                  colSpan: 2,
+                  styles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
+                }],
+                ['Nature', 'Fichier'],
+              ],
+              body: finding.attachments.map((attachment) => [
+                attachment.kind === 'finding' ? 'Constat initial' : 'Action corrective',
+                attachment.caption || attachment.originalFileName || 'Pièce jointe',
+              ]),
+              theme: 'grid',
+              styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
+              headStyles: { fillColor: [45, 63, 87], textColor: 255 },
+              columnStyles: { 0: { cellWidth: 42, fontStyle: 'bold' } },
+              margin: { left: 12, right: 12, top: categoryTableTop(category) },
+              willDrawPage: () => drawFindingTableHeader(vessel, category),
+            });
+            tableY = lastTableY() + 5;
+          }
+
+          if (tableY > pageHeight - 34) startFindingContinuationPage(vessel, category, finding);
+          autoTable(doc, {
+            startY: tableY,
+            head: [
+              [{
+                content: 'SUIVI DU TRAITEMENT',
+                colSpan: 3,
+                styles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+              }],
+              ['Date', 'Émetteur', 'Action / commentaire'],
+            ],
+            body: finding.events.length
+              ? finding.events.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).map((event) => [
+                formatDateTime(event.createdAt),
+                event.authorName || 'Système',
+                event.note || event.eventType,
+              ])
+              : [['-', '-', 'Aucun suivi enregistré']],
+            theme: 'grid',
+            styles: { fontSize: 7.1, cellPadding: 2.2, valign: 'top', lineColor: [224, 227, 232] },
+            headStyles: { fillColor: [45, 63, 87], textColor: 255 },
+            columnStyles: { 0: { cellWidth: 31 }, 1: { cellWidth: 39 } },
+            margin: { left: 12, right: 12, top: categoryTableTop(category) },
+            willDrawPage: () => drawFindingTableHeader(vessel, category),
+          });
+          tableY = lastTableY() + 7;
+
+          const photos = finding.attachments.filter((attachment) => (
+            attachment.mimeType.startsWith('image/') && input.attachmentImages?.[attachment.id]
+          ));
+          photos.forEach((attachment) => {
+            const dataUrl = input.attachmentImages?.[attachment.id];
+            if (!dataUrl) return;
+            try {
+              const properties = doc.getImageProperties(dataUrl);
+              const size = calculateContainSize(properties.width, properties.height, 184, 145);
+              const requiredHeight = size.height + 18;
+              if (tableY + requiredHeight > pageHeight - 14) startFindingContinuationPage(vessel, category, finding);
+              doc.setTextColor(...navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.7);
+              doc.text(`${finding.reference} · ${attachment.kind === 'finding' ? 'Photo du constat' : 'Pièce de l’action corrective'}`, 12, tableY);
+              doc.setTextColor(85); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
+              doc.text(attachment.caption || attachment.originalFileName || 'Pièce jointe', 12, tableY + 5, { maxWidth: 184 });
+              doc.addImage(dataUrl, imageFormat(dataUrl), 12 + ((184 - size.width) / 2), tableY + 9, size.width, size.height);
+              tableY += requiredHeight;
+            } catch {
+              // Une image illisible ne doit pas empêcher la génération du rapport complet.
+            }
+          });
+        });
+      }
     });
   }
 

@@ -23,11 +23,20 @@ Lorsqu'aucune date d'échéance n'est renseignée, la colonne Échéance affiche
 
 ## Écarts et actions
 
-Lorsque la liste des écarts est incluse, chaque catégorie enchaîne immédiatement après son tableau documentaire :
+Lorsque la liste des écarts est incluse, chaque navire présente d’abord, par catégorie :
 
-- une synthèse **Écarts & actions** liée aux documents de cette catégorie ;
-- le détail de chaque écart ;
-- son suivi de traitement et ses éventuelles preuves photographiques.
+- une synthèse **1 - Liste des écarts et état du traitement** liée aux documents de cette catégorie ;
+- le statut et le pourcentage d’avancement de chaque écart.
+
+Les fiches détaillées viennent ensuite. Chaque écart commence obligatoirement sur une nouvelle page et regroupe :
+
+- le constat et ses métadonnées ;
+- l’**Action corrective** avec sa mise en forme enrichie ;
+- l’inventaire de toutes les pièces jointes, y compris les PDF, fichiers Word et Excel ;
+- les images intégrées au fil des pages lorsqu’elles sont disponibles ;
+- l’historique du traitement.
+
+Un écart long peut continuer sur plusieurs pages, mais l’écart suivant démarre toujours sur une nouvelle page. Les bandeaux de synthèse, de détail, d’action corrective et de pièces jointes utilisent le bleu BBTM ; l’ancien accent orange n’est plus utilisé.
 
 La liste globale des écarts séparée des navires et catégories n'est plus utilisée. En mode **Liste des écarts uniquement**, la même organisation par navire et catégorie est conservée sans afficher le tableau documentaire.
 
@@ -36,3 +45,11 @@ La liste globale des écarts séparée des navires et catégories n'est plus uti
 Le titre visible et les métadonnées PDF utilisent **Certificats Flotte - Plan d'Action**. Le générateur retire sans distinction de casse le mot `Seapilot` de tous les textes injectés dans le rapport, y compris les titres documentaires, les constats, les suivis et les légendes de pièces jointes.
 
 Le nom de fichier suit le format `BBTM-Certificats-Flotte-Plan-d-Action-AAAA-MM-JJ.pdf`.
+
+## Saisie de l’action corrective
+
+Le dialogue **Déclarer un écart** / **Modifier l’écart** contient un éditeur enrichi **Action corrective**. Il prend en charge les titres, le gras, l’italique, le soulignement, les listes, l’alignement et les liens HTTP(S) ou `mailto:`. Le HTML est assaini avant affichage et avant intégration au PDF.
+
+Le même dialogue permet d’ajouter plusieurs pièces à l’action corrective (PDF, PNG, JPEG, DOCX et XLSX, 50 Mo maximum par fichier). Les pièces sont stockées dans le bucket privé `fleet-certificates` sous le type historique `treatment`, afin de conserver les règles RLS et le nettoyage automatique existants.
+
+La migration `20260903123000_fleet_finding_corrective_action.sql` ajoute la colonne `fleet_certificate_findings.corrective_action`. Elle doit être appliquée avant le déploiement du client.
