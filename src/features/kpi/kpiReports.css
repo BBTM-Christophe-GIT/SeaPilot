@@ -1,0 +1,81 @@
+.qhse-report-library {
+  margin-top: 22px;
+  border: 1px solid var(--ap-line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 35px rgb(22 54 88 / 7%);
+  overflow: hidden;
+}
+
+.qhse-report-library > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 28px;
+  border-bottom: 1px solid var(--ap-line);
+  background: linear-gradient(135deg, #f8fbff 0%, #eef6fb 100%);
+}
+
+.qhse-report-library > header h2 { margin: 5px 0 4px; font-size: 1.35rem; }
+.qhse-report-library > header p { margin: 0; color: var(--ap-muted); font-size: .8rem; }
+.qhse-report-controls { display: flex; align-items: flex-end; gap: 10px; }
+.qhse-report-multiselect { position: relative; min-width: 190px; }
+.qhse-report-multiselect > summary { display: grid; min-height: 40px; align-content: center; gap: 2px; border: 1px solid var(--ap-line); border-radius: 9px; padding: 5px 32px 5px 11px; list-style: none; color: var(--ap-muted); background: #fff; cursor: pointer; font-size: .62rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.qhse-report-multiselect > summary::-webkit-details-marker { display: none; }
+.qhse-report-multiselect > summary::after { position: absolute; top: 13px; right: 12px; content: '⌄'; color: #65758a; font-size: .8rem; }
+.qhse-report-multiselect > summary strong { overflow: hidden; color: var(--ap-ink); font-size: .72rem; font-weight: 750; letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+.qhse-report-multiselect > fieldset { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; width: max-content; min-width: 100%; max-height: 250px; overflow: auto; gap: 3px; margin: 0; padding: 8px; border: 1px solid #cbd8e5; border-radius: 11px; background: #fff; box-shadow: 0 15px 34px rgb(22 54 88 / 18%); }
+.qhse-report-multiselect > fieldset label { display: flex; min-width: 170px; min-height: 32px; align-items: center; gap: 8px; padding: 0 8px; border-radius: 7px; color: #31465d; cursor: pointer; font-size: .72rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.qhse-report-multiselect > fieldset label:hover { background: #f0f6fb; }
+.qhse-report-multiselect input { width: 15px !important; min-width: 15px; height: 15px !important; min-height: 0 !important; margin: 0; accent-color: #1769aa; }
+.qhse-report-controls label { display: grid; gap: 6px; min-width: 190px; color: var(--ap-muted); font-size: .68rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.qhse-report-controls select { min-height: 40px; border: 1px solid var(--ap-line); border-radius: 9px; padding: 0 34px 0 11px; background: white; color: var(--ap-ink); font: inherit; font-size: .76rem; }
+.qhse-report-library button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #bfd0e1; border-radius: 9px; padding: 0 13px; color: #16558e; background: #f6faff; font: inherit; font-size: .72rem; font-weight: 850; cursor: pointer; }
+.qhse-report-library button:hover:not(:disabled) { border-color: #5c93c4; background: #eaf4fd; }
+.qhse-report-library button:disabled { cursor: wait; opacity: .58; }
+.qhse-report-library button.qhse-report-all { min-width: 220px; border-color: #1769aa; color: white; background: #1769aa; }
+.qhse-report-library button.qhse-report-all:hover:not(:disabled) { background: #10578f; }
+
+.qhse-report-assurance { display: flex; align-items: flex-start; gap: 11px; margin: 20px 28px 0; padding: 14px 16px; border: 1px solid #c8e4d6; border-radius: 12px; color: #1f654a; background: #eff9f4; }
+.qhse-report-assurance svg { flex: 0 0 auto; margin-top: 1px; }
+.qhse-report-assurance strong { font-size: .76rem; }
+.qhse-report-assurance p { margin: 3px 0 0; color: #517166; font-size: .7rem; line-height: 1.45; }
+.qhse-report-status { margin: 14px 28px 0; padding: 10px 13px; border-radius: 9px; color: #1f654a; background: #eff9f4; font-size: .74rem; font-weight: 750; }
+.qhse-report-status.is-progress { color: #16558e; background: #edf6fd; }
+
+.qhse-report-family { padding: 22px 28px 4px; }
+.qhse-report-family:last-child { padding-bottom: 28px; }
+.qhse-report-family > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.qhse-report-family > header h3 { margin: 0; color: #243a52; font-size: .86rem; }
+.qhse-report-family > header span { color: var(--ap-muted); font-size: .66rem; font-weight: 750; }
+.qhse-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.qhse-report-card { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 106px; padding: 13px; border: 1px solid #e0e7ef; border-radius: 12px; background: #fff; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.qhse-report-card:hover { transform: translateY(-1px); border-color: #b8cee2; box-shadow: 0 8px 20px rgb(22 54 88 / 8%); }
+.qhse-report-card-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; color: #1769aa; background: #eaf4fd; }
+.qhse-report-card-body { min-width: 0; }
+.qhse-report-card-body > span { color: #708094; font-size: .61rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.qhse-report-card-body h4 { margin: 4px 0 3px; color: #22364d; font-size: .78rem; }
+.qhse-report-card-body p { margin: 0; color: #617186; font-size: .67rem; line-height: 1.42; }
+.qhse-report-card-body small { display: block; width: max-content; max-width: 100%; margin-top: 7px; padding: 3px 7px; border-radius: 999px; color: #1d714f; background: #eaf8f1; font-size: .58rem; font-weight: 800; }
+.qhse-report-card-body small.is-partial { color: #995c09; background: #fff3df; }
+.qhse-report-card > button { min-width: 72px; }
+
+@media (max-width: 1180px) {
+  .qhse-report-library > header { align-items: stretch; flex-direction: column; }
+  .qhse-report-controls { align-items: stretch; }
+  .qhse-report-controls label { flex: 1; }
+  .qhse-report-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .qhse-report-library > header,
+  .qhse-report-family { padding-inline: 18px; }
+  .qhse-report-assurance,
+  .qhse-report-status { margin-inline: 18px; }
+  .qhse-report-controls { flex-direction: column; }
+  .qhse-report-controls label,
+  .qhse-report-controls button.qhse-report-all { width: 100%; min-width: 0; }
+  .qhse-report-card { grid-template-columns: 34px minmax(0, 1fr); }
+  .qhse-report-card > button { grid-column: 1 / -1; width: 100%; }
+}

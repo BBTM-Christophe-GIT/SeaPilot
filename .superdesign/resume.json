@@ -241,6 +241,52 @@
         }
       },
       "updatedAt": "2026-08-25T10:03:28Z"
+    },
+    "/modules/kpi:report-page-25": {
+      "targetKind": "existing-ui",
+      "projectId": "f9960330-f385-426d-9e3c-dedc8ae59b48",
+      "baselineDraftId": "86d7e1f3-ba66-4007-8747-635e6989abea",
+      "activeDraftId": "86d7e1f3-ba66-4007-8747-635e6989abea",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "9088dfaf-81c1-4bfa-988f-c1f40919b42e",
+        "d449c883-47b8-4e44-8469-7f379148b193",
+        "public-bbtm-report-logo.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-report-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/f9960330-f385-426d-9e3c-dedc8ae59b48/brand-assets/public-bbtm-report-logo.png/bbtm-report-logo.png",
+          "sourcePath": "public/bbtm-report-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/kpi/KpiPage.tsx",
+        "src/features/kpi/kpiReports.css",
+        "src/features/kpi/qhseReportCatalog.ts",
+        "src/features/kpi/qhseReportData.ts:1025:1083",
+        "src/features/kpi/qhseReportPdf.ts",
+        "src/styles/index.css:1:260"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/features/kpi/KpiPage.tsx": "0a2396b0d8e3617633d3d3ec5632cf22c9f98f1865c6917d6e5559c372e94d54",
+        "src/features/kpi/kpiReports.css": "9d68ca8e9cb1fce306dfd4439b2717010d2e1e04d35529a0da0dd0a87529903e",
+        "src/features/kpi/qhseReportCatalog.ts": "6870cdc0247b216ba5366efb1fca89ea297821c149c778d162fc6c587ce139f6",
+        "src/features/kpi/qhseReportData.ts": "e025d24963189c8039c15a239254b367dee43f8d4342348bf13b18b1d23bb6ed",
+        "src/features/kpi/qhseReportPdf.ts": "09e4db59c9fc0c5ae5592715fd684c14548d4854b30d1dbd23a7073aa6b15fe0",
+        "src/styles/index.css": "ff0c517d457487c171cf4b313d6c96d79bf875b9e1ff1b5891009ff7c90fa775"
+      },
+      "components": [],
+      "drafts": {
+        "86d7e1f3-ba66-4007-8747-635e6989abea": {
+          "title": "RSE — consommations par projet",
+          "visualDirection": "reproduction A4 de référence issue du PDF existant; évolution fonctionnelle appliquée dans le générateur selon la capture Power BI",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-03T22:48:00Z"
     }
   }
 }

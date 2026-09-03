@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertTriangle, BookOpen, CheckCircle2, Clock3, History, RefreshCw, X,
+  AlertTriangle, Archive, BookOpen, CheckCircle2, Clock3, Download, FileText, History, RefreshCw, X,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -14,6 +14,14 @@ import {
 } from '../actionPlan/actionPlanQueries';
 import '../actionPlan/actionPlan.css';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import {
+  QHSE_REPORT_CATALOG, QHSE_REPORT_FAMILIES, qhseReportFileName, type QhseReportDefinition,
+} from './qhseReportCatalog';
+import { fetchQhseReportSnapshot, type QhseReportSnapshot } from './qhseReportData';
+import {
+  buildQhseReportArchive, buildQhseReportPdf, downloadQhseBlob, qhseReportArchiveFileName,
+} from './qhseReportPdf';
+import './kpiReports.css';
 
 interface KpiPageProps { client?: SupabaseClient }
 
@@ -113,6 +121,12 @@ export function KpiPage({ client }: KpiPageProps) {
   const [hseLoading, setHseLoading] = useState(false);
   const [definitionsOpen, setDefinitionsOpen] = useState(false);
   const [error, setError] = useState('');
+  const [reportYears, setReportYears] = useState<number[]>([currentYear]);
+  const [reportVesselIds, setReportVesselIds] = useState<number[]>([]);
+  const [reportBusy, setReportBusy] = useState('');
+  const [reportProgress, setReportProgress] = useState('');
+  const [reportMessage, setReportMessage] = useState('');
+  const reportSnapshots = useRef(new Map<string, QhseReportSnapshot>());
 
   async function load() {
     setLoading(true); setError('');
@@ -124,6 +138,7 @@ export function KpiPage({ client }: KpiPageProps) {
         nextData.exposureHours = dashboard?.totals.exposureHours || 0;
       }
       setData(nextData);
+      reportSnapshots.current.clear();
     } catch {
       setError('Impossible de charger les indicateurs HSE.');
     } finally { setLoading(false); }
@@ -134,6 +149,7 @@ export function KpiPage({ client }: KpiPageProps) {
     try {
       const dashboard = await fetchActionPlanHseDashboard(effectiveClient, year);
       setData((current) => ({ ...current, hseDashboard: dashboard, exposureHours: dashboard?.totals.exposureHours || 0 }));
+      reportSnapshots.current.clear();
     } catch {
       setError(`Impossible de calculer les indicateurs HSE ${year}.`);
     } finally { setHseLoading(false); }
@@ -150,6 +166,56 @@ export function KpiPage({ client }: KpiPageProps) {
     ...Array.from({ length: 6 }, (_, index) => currentYear - index),
     ...data.actions.map((action) => Number(action.openedOn.slice(0, 4))).filter((year) => Number.isInteger(year) && year > 2000),
   ])).sort((a, b) => b - a), [currentYear, data.actions]);
+  const selectedVessels = data.vessels.filter((vessel) => reportVesselIds.includes(vessel.id));
+  const selectedVesselNames = selectedVessels.map((vessel) => vessel.name);
+  const reportPeriod = [...reportYears].sort((left, right) => left - right);
+
+  async function getReportSnapshot(): Promise<QhseReportSnapshot> {
+    const key = `${reportPeriod.join(',')}:${reportVesselIds.slice().sort((left, right) => left - right).join(',') || 'all'}`;
+    const cached = reportSnapshots.current.get(key);
+    if (cached) return cached;
+    const snapshot = await fetchQhseReportSnapshot(effectiveClient, {
+      year: reportPeriod.at(-1) || currentYear,
+      years: reportPeriod,
+      vesselId: reportVesselIds.length === 1 ? reportVesselIds[0] : null,
+      vesselIds: reportVesselIds,
+      vesselName: selectedVesselNames.length === 1 ? selectedVesselNames[0] : '',
+      vesselNames: selectedVesselNames,
+    }, {
+      actions: data.actions,
+      actionTypes: data.actionTypes,
+      hseDashboard: data.hseDashboard,
+    });
+    reportSnapshots.current.set(key, snapshot);
+    return snapshot;
+  }
+
+  async function generateReport(report: QhseReportDefinition) {
+    setReportBusy(report.id); setReportMessage(''); setReportProgress('Préparation des données SeaPilot…');
+    try {
+      const snapshot = await getReportSnapshot();
+      setReportProgress('Mise en page du PDF…');
+      const blob = await buildQhseReportPdf(report, snapshot);
+      downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-')));
+      setReportMessage(`${report.title} a été généré.`);
+    } catch {
+      setReportMessage(`Impossible de générer « ${report.title} ».`);
+    } finally { setReportBusy(''); setReportProgress(''); }
+  }
+
+  async function generateAllReports() {
+    setReportBusy('all'); setReportMessage(''); setReportProgress('Préparation des données SeaPilot…');
+    try {
+      const snapshot = await getReportSnapshot();
+      const archive = await buildQhseReportArchive(QHSE_REPORT_CATALOG, snapshot, (completed, total) => {
+        setReportProgress(`Génération des PDF : ${completed} / ${total}`);
+      });
+      downloadQhseBlob(archive, qhseReportArchiveFileName(snapshot));
+      setReportMessage(`Les ${QHSE_REPORT_CATALOG.length} rapports PDF ont été regroupés dans une archive ZIP.`);
+    } catch {
+      setReportMessage('Impossible de générer l’archive des rapports QHSE.');
+    } finally { setReportBusy(''); setReportProgress(''); }
+  }
 
   if (loading) return <div className="admin-state" role="status">Chargement des indicateurs HSE…</div>;
 
@@ -206,6 +272,27 @@ export function KpiPage({ client }: KpiPageProps) {
         <div className="action-plan-rate-note"><Clock3 size={20} /><div><strong>Dénominateur commun et traçable</strong><p>Chaque journée du planning reprend les heures du registre lorsqu’elles existent, sinon 11 heures. Les courbes sont cumulées mois par mois pour l’année {hseYear}.</p></div></div>
       </>}
       {!hseLoading && !data.hseDashboard && <div className="action-plan-empty">Aucune méthodologie HSE disponible pour cette année.</div>}
+    </section>
+
+    <section className="qhse-report-library" aria-labelledby="qhse-report-library-title">
+      <header><div><span className="action-plan-eyebrow">Rapport Général QHSE</span><h2 id="qhse-report-library-title">Rapports PDF</h2><p>Les {QHSE_REPORT_CATALOG.length} rapports retenus, recalculés exclusivement avec les données SeaPilot.</p></div>
+        <div className="qhse-report-controls">
+          <details className="qhse-report-multiselect"><summary>Années <strong>{reportPeriod.join(', ')}</strong></summary><fieldset aria-label="Années des rapports QHSE">{hseYears.map((year) => <label key={year}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportYears.includes(year)} onChange={(event) => setReportYears((current) => event.target.checked ? [...current, year] : current.length > 1 ? current.filter((item) => item !== year) : current)}/>{year}</label>)}</fieldset></details>
+          <details className="qhse-report-multiselect"><summary>Navires <strong>{selectedVesselNames.length ? `${selectedVesselNames.length} sélectionné(s)` : 'Tous'}</strong></summary><fieldset aria-label="Navires des rapports QHSE"><label><input type="checkbox" disabled={Boolean(reportBusy)} checked={!reportVesselIds.length} onChange={() => setReportVesselIds([])}/>Tous les navires</label>{data.vessels.map((vessel) => <label key={vessel.id}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportVesselIds.includes(vessel.id)} onChange={(event) => setReportVesselIds((current) => event.target.checked ? [...current, vessel.id] : current.filter((item) => item !== vessel.id))}/>{vessel.name}</label>)}</fieldset></details>
+          <button className="qhse-report-all" disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateAllReports()}><Archive size={17} />{reportBusy === 'all' ? 'Génération…' : `Télécharger les ${QHSE_REPORT_CATALOG.length} PDF`}</button>
+        </div>
+      </header>
+      <div className="qhse-report-assurance"><CheckCircle2 size={18} /><div><strong>Calculs SeaPilot traçables</strong><p>Les rapports utilisent les DPR soumis ou validés, le registre d’exposition HSE versionné et les référentiels métier visibles par votre profil. Les données absentes sont signalées dans le PDF.</p></div></div>
+      {(reportProgress || reportMessage) && <p className={`qhse-report-status ${reportProgress ? 'is-progress' : ''}`} role="status">{reportProgress || reportMessage}</p>}
+      {QHSE_REPORT_FAMILIES.map((family) => {
+        const reports = QHSE_REPORT_CATALOG.filter((report) => report.family === family);
+        return <section className="qhse-report-family" key={family}><header><h3>{family}</h3><span>{reports.length} rapport(s)</span></header><div className="qhse-report-grid">
+          {reports.map((report) => <article className="qhse-report-card" key={report.id}>
+            <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Page {report.sourcePage} · {report.orientation === 'portrait' ? 'A4 portrait' : 'A4 paysage'}</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Couverture SeaPilot complète' : 'Couverture partielle documentée'}</small></div>
+            <button aria-label={`Générer ${report.title}`} disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateReport(report)}><Download size={16} />{reportBusy === report.id ? 'Génération…' : 'PDF'}</button>
+          </article>)}
+        </div></section>;
+      })}
     </section>
 
     <HseDefinitionsDialog onClose={() => setDefinitionsOpen(false)} open={definitionsOpen} />

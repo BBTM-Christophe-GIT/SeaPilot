@@ -50,7 +50,11 @@ const dashboard: DprDashboardData = {
       { key: 'fire-protection', label: "Protection contre l'incendie" },
       { key: 'anti-pollution', label: 'Exercice Antipollution' },
     ],
-    portReasons: [{ key: 'crew-change', label: 'Crew Change' }],
+    portReasons: [
+      { key: 'crew-change', label: 'Crew Change' },
+      { key: 'port-call-14h', label: '14h Port Call' },
+      { key: 'port-call-24h', label: '24h Port Call' },
+    ],
   },
 };
 
@@ -256,6 +260,24 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     await user.click(port);
     expect(screen.getByRole('group', { name: 'Finistère' })).toHaveTextContent('Brest');
+  });
+
+  it('shows mutually exclusive 14h/24h choices for a P144 GOURY Crew Change', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+    await user.click(screen.getByRole('button', { name: /^4Escale/ }));
+
+    expect(screen.queryByRole('checkbox', { name: '14h Port Call' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Crew Change' }));
+    const fourteen = screen.getByRole('checkbox', { name: '14h Port Call' });
+    const twentyFour = screen.getByRole('checkbox', { name: '24h Port Call' });
+    await user.click(fourteen);
+    expect(fourteen).toBeChecked();
+    await user.click(twentyFour);
+    expect(twentyFour).toBeChecked();
+    expect(fourteen).not.toBeChecked();
   });
 
   it('removes submission and validates a complete DPR directly for a Marin', async () => {

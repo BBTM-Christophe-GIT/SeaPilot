@@ -499,6 +499,19 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   hr_visibility_rules: [],
   projects: [
     {
+      id: 144,
+      title: 'EMDT - GOURY',
+      project_code: 'P144',
+      client_id: 9101,
+      client_name: 'EMDT',
+      primary_vessel_id: 1,
+      primary_vessel_name: 'GOURY',
+      starts_on: '2026-01-01',
+      ends_on: '2026-08-31',
+      status: 'Contrat signé',
+      archived_at: null,
+    },
+    {
       id: 9001,
       title: 'Campagne Atlantique — démonstration',
       project_code: 'P901',
@@ -990,6 +1003,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { key: 'anti-pollution', label: 'Exercice Antipollution', display_order: 230, active: true },
   ],
   port_call_reason_types: [
+    { key: 'port-call-14h', label: '14h Port Call', display_order: 15, active: true },
+    { key: 'port-call-24h', label: '24h Port Call', display_order: 16, active: true },
     { key: 'crew-change', label: 'Crew Change', display_order: 10, active: true },
     { key: 'weather-standby', label: 'Stand-by météo', display_order: 20, active: true },
     { key: 'breakdown', label: 'Avarie', display_order: 30, active: true },
@@ -1166,7 +1181,22 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     fac_rate_multiplier: 1000000, mtc_rate_multiplier: 1000000, rwc_rate_multiplier: 1000000,
     sofr_multiplier: 200000, french_frequency_multiplier: 1000000, french_severity_multiplier: 1000,
   }],
-  hse_exposure_hours: [],
+  hse_exposure_hours: [
+    { exposure_date: '2026-01-12', exposure_hours: 11, person_id: 9301, population: 'offshore', vessel_id: 1 },
+    { exposure_date: '2026-01-12', exposure_hours: 11, person_id: 9302, population: 'offshore', vessel_id: 1 },
+  ],
+  qhse_annual_reference_metrics: [
+    { report_year: 2023, vessel_id: null, worked_hours: 11454, person_days: 1091, source_label: 'Historique officiel validé par la Direction' },
+    { report_year: 2024, vessel_id: null, worked_hours: 25883, person_days: 2394, source_label: 'Historique officiel validé par la Direction' },
+    { report_year: 2025, vessel_id: null, worked_hours: 36230, person_days: 3448, source_label: 'Historique officiel validé par la Direction' },
+  ],
+  qhse_environment_parameters: [{
+    fuel_density_tonnes_per_m3: 0.85, emission_factor_tco2_per_tonne: 3.206, xbee_reduction_rate: 0.15,
+    effective_from: '1900-01-01', effective_to: null,
+  }],
+  qhse_contract_targets: [{
+    project_id: 144, vessel_id: 1, report_year: 2026, maintenance_days_limit: 5, port_call_24h_limit: 8, valid_until: '2026-08-31',
+  }],
   hse_safety_events: [],
   action_type_catalog: [
     { type_key: 'action_progress', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, sort_order: 10, active: true },
@@ -2075,6 +2105,8 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
+    const requestedVesselId = args.target_vessel_id === null || args.target_vessel_id === undefined ? 9201 : Number(args.target_vessel_id);
+    const isGoury = requestedVesselId === 1;
     const people = previewRows('people')
       .filter((person) => person.active && (!person.hired_on || String(person.hired_on) <= reportDate) && (!person.departed_on || String(person.departed_on) >= reportDate))
       .map((person) => ({
@@ -2089,9 +2121,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       data: {
         issuerPersonId: 9301,
         issuerName: 'Arthur DEMO',
-        vesselId: 9201,
-        projectId: 9001,
-        project: { id: 9001, code: 'P-DEMO', title: 'Projet de démonstration' },
+        vesselId: requestedVesselId,
+        projectId: isGoury ? 144 : 9001,
+        project: isGoury ? { id: 144, code: 'P144', title: 'EMDT - GOURY' } : { id: 9001, code: 'P901', title: 'Campagne Atlantique — démonstration' },
         watchGroup: 'Bordée 1',
         people,
         crewPersonIds: [9301, 9303, 9304],
