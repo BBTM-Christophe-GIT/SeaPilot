@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertCircle, CalendarPlus, CheckCircle2, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
-  Pencil, Plus, RefreshCw, Save, Search, Ship, Trash2, UploadCloud, UserRound, X,
+  Paperclip, Pencil, Plus, RefreshCw, Save, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -24,7 +24,7 @@ import {
   createFleetCertificateFinding, deleteFleetCertificateFinding,
   fetchFleetCertificateFindings, fetchFleetFindingResponsibles, FLEET_FINDING_LABELS,
   FLEET_FINDING_STATUS_LABELS, FLEET_FINDING_TYPES, openFleetFindingAttachment, saveFleetFindingFollowup, updateFleetCertificateFinding,
-  uploadFleetFindingAttachment, type FleetCertificateFinding, type FleetFindingAttachmentKind,
+  uploadFleetFindingAttachment, type FleetCertificateFinding, type FleetFindingAttachment, type FleetFindingAttachmentKind,
   type FleetFindingResponsible, type FleetFindingStatus, type FleetFindingType,
 } from './fleetCertificateFindings';
 import {
@@ -50,6 +50,8 @@ import {
 import { FleetCertificateDeadlinesByScope, FleetCertificateFindingsByScope } from './FleetCertificateScopeViews';
 import { FleetCertificateVisitCalendar } from './FleetCertificateVisitCalendar';
 import { FleetCertificateVisitForm } from './FleetCertificateVisitForm';
+import { FleetFindingRichTextEditor } from './FleetFindingRichTextEditor';
+import { sanitizeFleetFindingActionHtml } from './fleetFindingRichText';
 import {
   fetchFleetCertificateVisits, fetchFleetServiceProviders, saveFleetCertificateVisit,
   type FleetCertificateVisit, type FleetServiceProvider, type SaveFleetCertificateVisitInput,
@@ -64,6 +66,8 @@ interface FindingFormValues {
   type: FleetFindingType;
   title: string;
   description: string;
+  correctiveAction: string;
+  correctiveActionFiles: File[];
   due: string;
   responsibleId: number | null;
 }
@@ -111,22 +115,71 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   </div>;
 }
 
-function FindingForm({ certificate, finding, responsibles, onClose, onSave }: {
+function FindingForm({ certificate, finding, responsibles, onClose, onOpenAttachment, onSave }: {
   certificate: FleetCertificateRecord; responsibles: FleetFindingResponsible[]; onClose: () => void;
   finding?: FleetCertificateFinding;
+  onOpenAttachment: (attachment: FleetFindingAttachment) => Promise<void>;
   onSave: (values: FindingFormValues) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true);
-    try { await onSave({ type: form.get('type') as FleetFindingType, title: String(form.get('title')), description: String(form.get('description')), due: String(form.get('due')), responsibleId: Number(form.get('responsible')) || null }); onClose(); } finally { setSaving(false); }
+  const [formError, setFormError] = useState('');
+  const [correctiveAction, setCorrectiveAction] = useState(finding?.correctiveAction || '');
+  const [correctiveActionFiles, setCorrectiveActionFiles] = useState<File[]>([]);
+  const existingCorrectiveAttachments = finding?.attachments.filter((attachment) => attachment.kind === 'treatment') || [];
+
+  function selectCorrectiveActionFiles(files: FileList | null) {
+    const selected = Array.from(files || []);
+    const oversized = selected.find((file) => file.size > 50 * 1024 * 1024);
+    if (oversized) {
+      setFormError(`La pièce « ${oversized.name} » dépasse la limite de 50 Mo.`);
+      return;
+    }
+    setFormError('');
+    setCorrectiveActionFiles((current) => {
+      const unique = new Map(current.map((file) => [`${file.name}-${file.size}-${file.lastModified}`, file]));
+      selected.forEach((file) => unique.set(`${file.name}-${file.size}-${file.lastModified}`, file));
+      return Array.from(unique.values());
+    });
   }
-  return <Modal title={finding ? 'Modifier l’écart' : 'Déclarer un écart'} onClose={onClose}><form className="fcx-form" onSubmit={submit}>
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setFormError('');
+    setSaving(true);
+    try {
+      await onSave({
+        type: form.get('type') as FleetFindingType,
+        title: String(form.get('title')),
+        description: String(form.get('description')),
+        correctiveAction,
+        correctiveActionFiles,
+        due: String(form.get('due')),
+        responsibleId: Number(form.get('responsible')) || null,
+      });
+      onClose();
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer cet écart.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <Modal title={finding ? 'Modifier l’écart' : 'Déclarer un écart'} onClose={onClose}><form className="fcx-form fcx-finding-form" onSubmit={submit}>
     <p className="fcx-form-context"><Ship size={16} /> {certificate.vesselName} · {certificate.documentTitle}</p>
     <label>Type<select defaultValue={finding?.findingType || TYPES[0]?.[0]} name="type">{TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     <label>Objet<input defaultValue={finding?.title || ''} name="title" placeholder="Ex. Corrosion du support bâbord" required /></label>
     <label>Description<textarea defaultValue={finding?.description || ''} name="description" placeholder="Décrivez le constat, son emplacement et l’action attendue…" rows={4} required /></label>
+    <div className="fcx-corrective-field"><span>Action corrective</span><FleetFindingRichTextEditor onChange={setCorrectiveAction} value={correctiveAction} /><small>La mise en forme sera reprise dans le rapport PDF.</small></div>
+    <div className="fcx-corrective-files">
+      <span>Pièces jointes de l’action corrective</span>
+      <label className="fcx-corrective-drop"><UploadCloud size={18} /><span>Ajouter des pièces · PDF, image, Word ou Excel · 50 Mo maximum</span><input accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" aria-label="Pièces jointes de l’action corrective" multiple onChange={(event) => { selectCorrectiveActionFiles(event.target.files); event.target.value = ''; }} type="file" /></label>
+      {existingCorrectiveAttachments.length || correctiveActionFiles.length ? <ul>
+        {existingCorrectiveAttachments.map((attachment) => <li key={`existing-${attachment.id}`}><Paperclip size={14} /><button className="fcx-corrective-existing" onClick={() => void onOpenAttachment(attachment).catch((caught) => setFormError(caught instanceof Error ? caught.message : 'Impossible d’ouvrir cette pièce.'))} type="button">{attachment.originalFileName}</button><small>Déjà jointe</small></li>)}
+        {correctiveActionFiles.map((file) => <li key={`${file.name}-${file.size}-${file.lastModified}`}><Paperclip size={14} /><span>{file.name}</span><small>{Math.max(1, Math.round(file.size / 1024))} Ko</small><button aria-label={`Retirer ${file.name}`} className="fcx-corrective-remove" onClick={() => setCorrectiveActionFiles((current) => current.filter((item) => item !== file))} type="button"><X size={14} /></button></li>)}
+      </ul> : null}
+    </div>
     <div className="fcx-form-grid"><label>Échéance de traitement<input defaultValue={finding?.treatmentDueOn || ''} name="due" required type="date" /></label><label>Responsable<select defaultValue={finding?.responsiblePersonId ? String(finding.responsiblePersonId) : ''} name="responsible"><option value="">À affecter</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name} — {person.functionLabel}</option>)}</select></label></div>
+    {formError ? <p className="fcx-form-error" role="alert">{formError}</p> : null}
     <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" disabled={saving} type="submit"><Flag size={16} /> {saving ? 'Enregistrement…' : finding ? 'Enregistrer les modifications' : 'Créer l’écart'}</button></footer>
   </form></Modal>;
 }
@@ -628,7 +681,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
             <header className="fcx-command-actions-head"><div><span>Pilotage du traitement</span><h2>{selectedCertificate ? selectedCertificate.documentTitle : 'Écarts & actions flotte'}</h2><p>{selectedCertificate ? `${selectedCertificate.vesselName} · ${selectedCertificate.categoryLabel}` : 'Constats, prescriptions et conditions à lever'}</p></div>{manager && selectedCertificate ? <button className="fcx-primary" onClick={() => setModal('finding')}><Plus size={16} /> Nouvel écart</button> : null}</header>
             <div className="fcx-finding-summary"><span><b>{workspaceFindings.filter((item) => item.status !== 'closed').length}</b> ouverts</span><span className="red"><b>{workspaceFindings.filter((item) => item.findingType === 'major_non_conformity' && item.status !== 'closed').length}</b> majeurs</span><span className="amber"><b>{workspaceFindings.filter(isOverdue).length}</b> en retard</span><span className="green"><b>{workspaceFindings.length ? Math.round(workspaceFindings.reduce((sum, item) => sum + item.progress, 0) / workspaceFindings.length) : 0}%</b> traités</span></div>
             {selectedCertificate ? <div className="fcx-finding-workspace"><div className="fcx-finding-list"><div className="fcx-finding-columns"><span>Écart</span><span>Échéance</span><span>Responsable</span><span>Avancement</span></div>{certificateFindings.map((finding) => <button className={selectedFinding?.id === finding.id ? 'selected' : ''} key={finding.id} onClick={() => setSelectedFindingId(finding.id)}><span className="fcx-finding-name"><i className={typeTone(finding.findingType)}>{typeShortLabel(finding.findingType)}</i><span><b>{finding.title}</b><small>{finding.reference} · {FLEET_FINDING_LABELS[finding.findingType]}</small></span></span><em className={isOverdue(finding) ? 'late' : ''}>{formatDate(finding.treatmentDueOn)}</em><span className="fcx-person"><UserRound size={14} />{finding.responsibleName}</span><span className="fcx-progress"><i><u style={{ width: `${finding.progress}%` }} /></i><small>{finding.progress}%</small></span></button>)}{!certificateFindings.length && <div className="fcx-empty"><CheckCircle2 /> Aucun écart rattaché à ce certificat.</div>}</div>
-              <aside className="fcx-finding-detail">{selectedFinding ? <><header><div><span className={`fcx-badge ${typeTone(selectedFinding.findingType)}`}>{FLEET_FINDING_LABELS[selectedFinding.findingType]}</span><small>{selectedFinding.reference}</small><h2>{selectedFinding.title}</h2></div>{manager ? <div className="fcx-finding-actions"><button className="fcx-finding-edit" onClick={() => setModal('finding-edit')} type="button"><Pencil size={15} /> Modifier</button><button aria-label="Supprimer l’écart" title="Supprimer l’écart" onClick={() => window.confirm('Supprimer cet écart et ses preuves ?') && run(() => deleteFleetCertificateFinding(effectiveClient, selectedFinding.id), 'Écart supprimé.')} type="button"><Trash2 size={17} /></button></div> : null}</header><p className="fcx-description">{selectedFinding.description}</p>
+              <aside className="fcx-finding-detail">{selectedFinding ? <><header><div><span className={`fcx-badge ${typeTone(selectedFinding.findingType)}`}>{FLEET_FINDING_LABELS[selectedFinding.findingType]}</span><small>{selectedFinding.reference}</small><h2>{selectedFinding.title}</h2></div>{manager ? <div className="fcx-finding-actions"><button className="fcx-finding-edit" onClick={() => setModal('finding-edit')} type="button"><Pencil size={15} /> Modifier</button><button aria-label="Supprimer l’écart" title="Supprimer l’écart" onClick={() => window.confirm('Supprimer cet écart et ses preuves ?') && run(() => deleteFleetCertificateFinding(effectiveClient, selectedFinding.id), 'Écart supprimé.')} type="button"><Trash2 size={17} /></button></div> : null}</header><p className="fcx-description">{selectedFinding.description}</p>{selectedFinding.correctiveAction ? <section className="fcx-corrective-preview"><h3>Action corrective</h3><div dangerouslySetInnerHTML={{ __html: sanitizeFleetFindingActionHtml(selectedFinding.correctiveAction) }} /></section> : null}
                 <div className="fcx-detail-grid"><label>État<select value={selectedFinding.status} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { status: event.target.value as FleetFindingStatus }), 'État mis à jour.')}><option value="declared">À affecter</option><option value="assigned">Assigné</option><option value="in_progress">En cours</option><option value="pending_validation">À valider</option><option value="closed">Clôturé</option></select></label><label>Responsable<select value={selectedFinding.responsiblePersonId || ''} onChange={(event) => { const id = Number(event.target.value) || null; const person = responsibles.find((item) => item.id === id); run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { responsiblePersonId: id, responsibleName: person?.name || 'Non assigné' }), 'Responsable mis à jour.'); }}><option value="">Non assigné</option>{responsibles.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label>Échéance<input type="date" value={selectedFinding.treatmentDueOn} onChange={(event) => run(() => updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { treatmentDueOn: event.target.value }), 'Échéance mise à jour.')} /></label><label>Avancement <b>{progressDraft}%</b><input aria-label="Avancement" min="0" max="100" step="10" type="range" value={progressDraft} onChange={(event) => setProgressDraft(Number(event.target.value))} /><small className={progressDraft !== selectedFinding.progress ? 'fcx-progress-draft is-pending' : 'fcx-progress-draft'}>{progressDraft !== selectedFinding.progress ? 'À enregistrer avec « Ajouter »' : 'Enregistré'}</small></label></div>
                 <section className="fcx-evidence"><header><div><h3>Constat & preuves</h3><p>Photos ou documents liés à l’écart</p></div></header><div className="fcx-evidence-grid">{(['finding', 'treatment'] as FleetFindingAttachmentKind[]).map((kind) => <div key={kind}><strong>{kind === 'finding' ? 'Constat initial' : 'Preuve du traitement'}</strong>{selectedFinding.attachments.filter((item) => item.kind === kind).map((attachment) => <button key={attachment.id} onClick={() => run(() => openFleetFindingAttachment(effectiveClient, attachment), 'Pièce ouverte.')}><span className="fcx-thumb">{attachment.mimeType.startsWith('image/') ? <Image size={22} /> : <FileText size={22} />}</span><span><b>{attachment.originalFileName}</b><small>{formatDate(attachment.createdAt)}</small></span><ExternalLink size={14} /></button>)}<button className="fcx-add-proof" onClick={() => { setUploadKind(kind); fileInput.current?.click(); }}><Plus size={15} /> Ajouter {kind === 'finding' ? 'une pièce' : 'une preuve'}</button></div>)}</div><input ref={fileInput} hidden accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) run(() => uploadFleetFindingAttachment(effectiveClient, selectedFinding, selectedCertificate.vesselAcronym, uploadKind, file), 'Pièce ajoutée.'); event.target.value = ''; }} /></section>
                 <section className="fcx-followup"><h3>Suivi du traitement</h3><form onSubmit={submitFindingFollowup}><input aria-label="Note de suivi" onChange={(event) => setComment(event.target.value)} placeholder="Ajouter une note de suivi…" value={comment} /><button className="fcx-primary" disabled={isSavingFollowup || (progressDraft === selectedFinding.progress && !comment.trim())}><Plus size={15} /> {isSavingFollowup ? 'Ajout…' : 'Ajouter'}</button></form><div>{selectedFinding.events.slice(0, 5).map((event) => <p key={event.id}><i /><span><b>{event.note || FLEET_FINDING_STATUS_LABELS[selectedFinding.status]}</b><small><strong>{event.authorName}</strong> · {new Date(event.createdAt).toLocaleString('fr-FR')}</small></span></p>)}</div></section>
@@ -643,8 +696,62 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
         </div>
       </section>
     </section>
-    {modal === 'finding' && selectedCertificate && <FindingForm certificate={selectedCertificate} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, { certificateId: selectedCertificate.id, findingType: values.type, title: values.title, description: values.description, detectedOn: TODAY, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name }); }, 'Écart créé.')} />}
-    {modal === 'finding-edit' && selectedCertificate && selectedFinding && <FindingForm certificate={selectedCertificate} finding={selectedFinding} responsibles={responsibles} onClose={() => setModal(null)} onSave={(values) => run(async () => { const person = responsibles.find((item) => item.id === values.responsibleId); await updateFleetCertificateFinding(effectiveClient, selectedFinding.id, { findingType: values.type, title: values.title, description: values.description, treatmentDueOn: values.due, responsiblePersonId: values.responsibleId, responsibleName: person?.name || 'Non assigné' }); }, 'Écart modifié. L’historique est conservé.')} />}
+    {modal === 'finding' && selectedCertificate && <FindingForm
+      certificate={selectedCertificate}
+      onClose={() => setModal(null)}
+      onOpenAttachment={(attachment) => openFleetFindingAttachment(effectiveClient, attachment)}
+      onSave={async (values) => {
+        setError(''); setMessage('');
+        const person = responsibles.find((item) => item.id === values.responsibleId);
+        const findingId = await createFleetCertificateFinding(effectiveClient, selectedCertificate.companyId, {
+          certificateId: selectedCertificate.id,
+          findingType: values.type,
+          title: values.title,
+          description: values.description,
+          correctiveAction: values.correctiveAction,
+          detectedOn: TODAY,
+          treatmentDueOn: values.due,
+          responsiblePersonId: values.responsibleId,
+          responsibleName: person?.name,
+        });
+        try {
+          for (const file of values.correctiveActionFiles) {
+            await uploadFleetFindingAttachment(effectiveClient, { companyId: selectedCertificate.companyId, id: findingId }, selectedCertificate.vesselAcronym, 'treatment', file);
+          }
+        } catch (caught) {
+          await deleteFleetCertificateFinding(effectiveClient, findingId).catch(() => undefined);
+          throw caught;
+        }
+        await load();
+        setMessage('Écart créé.');
+      }}
+      responsibles={responsibles}
+    />}
+    {modal === 'finding-edit' && selectedCertificate && selectedFinding && <FindingForm
+      certificate={selectedCertificate}
+      finding={selectedFinding}
+      onClose={() => setModal(null)}
+      onOpenAttachment={(attachment) => openFleetFindingAttachment(effectiveClient, attachment)}
+      onSave={async (values) => {
+        setError(''); setMessage('');
+        const person = responsibles.find((item) => item.id === values.responsibleId);
+        await updateFleetCertificateFinding(effectiveClient, selectedFinding.id, {
+          findingType: values.type,
+          title: values.title,
+          description: values.description,
+          correctiveAction: values.correctiveAction,
+          treatmentDueOn: values.due,
+          responsiblePersonId: values.responsibleId,
+          responsibleName: person?.name || 'Non assigné',
+        });
+        for (const file of values.correctiveActionFiles) {
+          await uploadFleetFindingAttachment(effectiveClient, selectedFinding, selectedCertificate.vesselAcronym, 'treatment', file);
+        }
+        await load();
+        setMessage('Écart modifié. L’historique est conservé.');
+      }}
+      responsibles={responsibles}
+    />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (form) => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = getFleetCertificateCategoryOptions(certificates).find((item) => item.key === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); const input = { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.label || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')) }; const selectedFile = form.get('file'); const attachment = typeof selectedFile !== 'string' && selectedFile?.size ? selectedFile : null; if (attachment) await createFleetCertificateDocument(effectiveClient, { ...input, file: attachment }); else await createFleetCertificateLine(effectiveClient, input); await load(); setMessage(attachment ? 'Document ajouté.' : 'Ligne de suivi ajoutée.'); }} />}
     {modal === 'metadata' && selectedCertificate && <DocumentMetadataForm certificate={selectedCertificate} certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (input) => { await updateFleetCertificateDocumentMetadata(effectiveClient, input); await load(); setMessage('Informations du document mises à jour.'); }} />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={async (form) => { await submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }); await load(); setMessage(selectedCertificate.storagePath ? 'Renouvellement enregistré.' : 'Document ajouté à la ligne.'); }} />}

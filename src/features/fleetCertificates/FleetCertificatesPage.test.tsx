@@ -38,6 +38,7 @@ const certificates = [
 const findings = [{
   id: 81, company_id: 1, certificate_id: 42, reference: 'EC-2026-0012', finding_type: 'major_non_conformity',
   title: 'Corrosion du support bâbord', description: 'Corrosion perforante à reprendre avant validation.', detected_on: '2026-07-16',
+  corrective_action: '<p><strong>Remplacer la tôle dégradée</strong> puis contrôler la réparation.</p>',
   treatment_delay_days: 21, treatment_due_on: '2026-08-06', status: 'in_progress', progress: 60,
   responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z',
 }];
@@ -64,13 +65,14 @@ function createClient(
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
   const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
+  const attachmentInsert = vi.fn().mockResolvedValue({ error: null });
   const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn().mockResolvedValue({ data: new Blob(['document']), error: null }), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
   const client = {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificates, error: null }) }) }) };
       if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
-      if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
+      if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: attachmentInsert };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
       if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: peopleRows, error: null }) }) };
       if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
@@ -79,7 +81,7 @@ function createClient(
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, findingUpdate, findingUpdateEq, rpc, storageApi };
+  return { attachmentInsert, client, findingUpdate, findingUpdateEq, rpc, storageApi };
 }
 
 describe('FleetCertificatesPage', () => {
@@ -326,7 +328,7 @@ describe('FleetCertificatesPage', () => {
   });
 
   it('edits an existing finding in place and preserves its history', async () => {
-    const user = userEvent.setup(); const { client, findingUpdate, findingUpdateEq } = createClient();
+    const user = userEvent.setup(); const { attachmentInsert, client, findingUpdate, findingUpdateEq, storageApi } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
     const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
     await user.click(within(library).getByRole('button', { name: /GOURY/ }));
@@ -343,23 +345,43 @@ describe('FleetCertificatesPage', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Type' })).toHaveValue('major_non_conformity');
     expect(within(dialog).getByRole('textbox', { name: 'Objet' })).toHaveValue('Corrosion du support bâbord');
     expect(within(dialog).getByRole('textbox', { name: 'Description' })).toHaveValue('Corrosion perforante à reprendre avant validation.');
+    const correctiveAction = within(dialog).getByRole('textbox', { name: 'Action corrective' });
+    expect(correctiveAction).toHaveTextContent('Remplacer la tôle dégradée puis contrôler la réparation.');
+    expect(within(dialog).getByRole('toolbar', { name: 'Mise en forme de l’action corrective' })).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Échéance de traitement')).toHaveValue('2026-08-06');
     expect(within(dialog).getByRole('combobox', { name: 'Responsable' })).toHaveValue('9303');
 
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Type' }), 'prescription');
     await user.clear(within(dialog).getByRole('textbox', { name: 'Objet' }));
     await user.type(within(dialog).getByRole('textbox', { name: 'Objet' }), 'Ancre de secours à embarquer');
+    correctiveAction.innerHTML = '<p><strong>Commander l’ancre</strong> et contrôler son arrimage.</p>';
+    fireEvent.input(correctiveAction);
+    const correctiveFile = new File(['preuve'], 'preuve-action.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByLabelText('Pièces jointes de l’action corrective'), correctiveFile);
+    expect(within(dialog).getByText('preuve-action.pdf')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer les modifications' }));
 
     expect(findingUpdate).toHaveBeenCalledWith(expect.objectContaining({
       finding_type: 'prescription',
       title: 'Ancre de secours à embarquer',
       description: 'Corrosion perforante à reprendre avant validation.',
+      corrective_action: '<p><strong>Commander l’ancre</strong> et contrôler son arrimage.</p>',
       treatment_due_on: '2026-08-06',
       responsible_person_id: 9303,
       responsible_name: 'Luc MARTIN',
     }));
     expect(findingUpdateEq).toHaveBeenCalledWith('id', 81);
+    expect(storageApi.upload).toHaveBeenCalledWith(
+      expect.stringMatching(/^1\/GRY\/findings\/81\/treatment\/.+-preuve-action\.pdf$/),
+      correctiveFile,
+      { contentType: 'application/pdf', upsert: false },
+    );
+    expect(attachmentInsert).toHaveBeenCalledWith(expect.objectContaining({
+      company_id: 1,
+      finding_id: 81,
+      attachment_kind: 'treatment',
+      original_file_name: 'preuve-action.pdf',
+    }));
     expect(await screen.findByText('Écart modifié. L’historique est conservé.')).toBeInTheDocument();
     expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
   });
