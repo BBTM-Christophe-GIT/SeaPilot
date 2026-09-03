@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { localTodayIso } from './projectBareboatContract';
 
 const mutationMocks = vi.hoisted(() => ({
   saveProject: vi.fn(),
@@ -28,6 +29,10 @@ mutationMocks.saveClient.mockResolvedValue(52);
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const project = {
@@ -79,7 +84,7 @@ describe('ProjectEditor contract hire periods', () => {
       <ProjectEditor
         client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
         clients={[]}
-        contractTypes={['Affrètement à temps', 'Offre commerciale']}
+        contractTypes={[]}
         onClose={vi.fn()}
         onSaved={vi.fn()}
         statuses={['Non validé']}
@@ -88,8 +93,7 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
-    fireEvent.change(screen.getByLabelText('Type de contrat'), { target: { value: 'Offre commerciale' } });
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
 
     expect(screen.queryByRole('region', { name: 'Barème des loyers d’affrètement' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Loyer en prolongation')).not.toBeInTheDocument();
@@ -112,12 +116,57 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
+    expect(screen.getAllByRole('option').filter((option) => (
+      ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement", 'BIMCO'].includes(option.textContent || '')
+    )).map((option) => option.textContent)).toEqual([
+      'Offre Commerciale',
+      'Contrat de Remorquage',
+      "Contrat d'Affrètement",
+      'BIMCO',
+    ]);
+    const contractType = screen.getByLabelText('Type de contrat');
+    await user.selectOptions(contractType, 'Contrat de Remorquage');
+    expect(screen.getByText('1 / 6')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 6')).toBeInTheDocument();
+    await user.selectOptions(contractType, "Contrat d'Affrètement");
+    expect(screen.getByText('1 / 4')).toBeInTheDocument();
+    expect(screen.getByLabelText('1. Lieu de signature')).toHaveValue('Cherbourg-En-Cotentin');
+    expect(screen.getByLabelText('1. Date de signature')).toHaveValue(localTodayIso());
+    expect(screen.getByLabelText('14. Indemnité de fin de contrat anticipé')).toHaveValue('50% de la durée ferme restante');
+    expect(screen.getByLabelText('15. Valeur à assurer (Si applicable)')).toBeInTheDocument();
+    expect(screen.getByLabelText('16. Assurance à la charge de')).toHaveValue('Affréteur');
+    expect(screen.getByLabelText('17. Loi applicable')).toHaveValue('Française');
+    expect(screen.getByLabelText('18. Juridiction compétente')).toHaveValue('Tribunal maritime du Havre');
+    expect(screen.getByLabelText(/^13\. Loyer journalier/)).toBeInTheDocument();
+    expect(screen.getByLabelText('12. Options de prolongation')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Statut')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    expect(screen.getByLabelText('Sur camion – Déchargement à la charge de l’affréteur')).not.toBeChecked();
+    expect(screen.getByLabelText('7. Date de livraison *')).toBeInTheDocument();
+    expect(screen.getByLabelText('9. Date de restitution *')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Début du projet')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fin du projet')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Début d’affrètement')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Contrat d'Affrètement/ }));
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 4')).toBeInTheDocument();
+    await user.selectOptions(contractType, 'BIMCO');
+    expect(screen.getByText('1 / 29')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Page suivante' }));
+    expect(screen.getByText('2 / 29')).toBeInTheDocument();
+    await user.selectOptions(contractType, 'Offre Commerciale');
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByRole('button', { name: /BIMCO/ })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Documents/ }));
     expect(screen.getByRole('region', { name: 'Pièces jointes du projet' })).toBeInTheDocument();
-    expect(screen.getByText('Offre Commerciale')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Offre Commerciale' })).toBeInTheDocument();
     expect(screen.getByText('HSE')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Facturation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Toilette de Mer' })).toBeInTheDocument();
+    expect(screen.getByText('Attestation Expert/BV')).toBeInTheDocument();
 
     const fileInput = screen.getByLabelText('Ajouter des documents · Offre Commerciale · Contrat');
     await user.upload(fileInput, [
@@ -144,7 +193,7 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
     fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
 
@@ -153,7 +202,7 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByLabelText('Restitution *')).toHaveValue('2026-09-11T18:00');
     expect(screen.getByLabelText('Fin d’affrètement')).toHaveValue('2026-09-11T18:00');
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Fuel')).toHaveValue("A la charge de l'affréteur");
   });
 
@@ -175,12 +224,12 @@ describe('ProjectEditor contract hire periods', () => {
     );
 
     await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'renseignez le navire principal, la livraison, la restitution',
     );
-    expect(screen.getByRole('button', { name: /Planning/ })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /Opérations/ })).toHaveAttribute('aria-current', 'step');
     expect(mutationMocks.saveProject).not.toHaveBeenCalled();
     expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
   });
@@ -211,13 +260,26 @@ describe('ProjectEditor contract hire periods', () => {
 
     await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
     await user.type(screen.getByLabelText('Description'), 'Inspection en mer');
-    await user.click(screen.getByRole('button', { name: /Planning/ }));
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
     fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
+      'Navire et équipage dédiés.',
+    );
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans les frais de mobilisation'),
+      'Préparation et transit aller.',
+    );
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans les frais de démobilisation'),
+      'Transit retour et remise en configuration.',
+    );
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
     await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
     await waitFor(() => {
       expect(mutationMocks.saveProjectPlanningOccurrence).toHaveBeenCalledWith(
@@ -231,6 +293,18 @@ describe('ProjectEditor contract hire periods', () => {
         }),
       );
     });
+    expect(mutationMocks.saveProjectContractDetails).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        supplytimeData: expect.objectContaining({
+          commercial_charter_hire_service_description: 'Navire et équipage dédiés.',
+          commercial_demobilisation_service_description: 'Transit retour et remise en configuration.',
+          commercial_mobilisation_service_description: 'Préparation et transit aller.',
+        }),
+      }),
+      null,
+    );
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 501, projectCode: 'P501' }));
   });
 
@@ -257,26 +331,114 @@ describe('ProjectEditor contract hire periods', () => {
           registrationNumber: '',
           ownerName: '',
           hullMachineryInsurer: '',
-          liabilityInsurer: '',
+        liabilityInsurer: '',
+        photoUrl: '',
+        photoStoragePath: '',
           active: true,
         }]}
         vessels={vessels}
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Devise des frais')).toHaveValue('EUR');
     expect(screen.getByRole('option', { name: '€ — EUR' })).toBeInTheDocument();
-    const ownerPreview = screen.getByLabelText('Aperçu de l’identité armateur');
-    expect(ownerPreview.querySelector('strong')).toHaveTextContent('BBTM');
-    expect(ownerPreview).toHaveTextContent('15, impasse du pou');
+    expect(screen.queryByLabelText('Aperçu de l’identité armateur')).not.toBeInTheDocument();
+    const commercialFields = [
+      screen.getByLabelText('Identité armateur'),
+      screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ }),
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
+      screen.getByLabelText('Frais de mobilisation'),
+      screen.getByLabelText('Description de la prestation incluse dans les frais de mobilisation'),
+      screen.getByLabelText('Frais de démobilisation'),
+      screen.getByLabelText('Description de la prestation incluse dans les frais de démobilisation'),
+      screen.getByLabelText('Devise des frais'),
+      screen.getByLabelText('Fuel'),
+    ];
+    commercialFields.forEach((field) => expect(field.closest('label')).toHaveClass('is-wide'));
+    commercialFields.slice(1).forEach((field, index) => {
+      expect(commercialFields[index].compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
 
     const contractType = screen.getByLabelText('Type de contrat');
-    await user.type(contractType, 'Contrat de Remorquage - BBTM');
+    await user.selectOptions(contractType, 'Contrat de Remorquage');
+    expect(screen.getByLabelText('6. Conditions du remorqué')).toHaveValue(
+      'Bonne condition de partance assurée par l’affréteur.',
+    );
+    expect(screen.getByLabelText('8. Créneau de départ')).toBeInTheDocument();
+    expect(screen.getByLabelText('10. Temps prévu pour la connexion et autres opérations connexes')).toBeInTheDocument();
+    expect(screen.getByLabelText('11. Temps prévu pour la déconnexion et autres opérations connexes')).toBeInTheDocument();
+    expect(screen.getByLabelText('13. Coûts additionnels facultatifs')).toHaveValue(
+      'Remorqueur au port : 3400€ HT / 24h.\nRemorqueur en mer : 4900€ HT / 24h (fuel inclus).',
+    );
+    expect(screen.getByLabelText('15. Conditions de paie')).toHaveValue(
+      '- A la signature du contrat : 0%\n- Avant le départ du convoi : 0%\n- A 30 jours réception de facture : 100%',
+    );
+    expect(screen.getByLabelText('17. Autres conditions particulières')).toHaveValue('TVA 20%');
     expect(screen.getByRole('region', { name: 'Remorqué' })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Nom du remorqué'), '8');
     expect(screen.getByLabelText('Type d’engin, de navire ou de colis')).toHaveValue('AUTOMOTEUR FLUVIAL');
     expect(screen.getByLabelText('Longueur hors tout (m)')).toHaveValue(82);
+  });
+
+  it('shows commercial reserves in the offer only when Operations contains a selection or free text', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    const preview = within(screen.getByRole('region', { name: 'Aperçu du document généré' }));
+    expect(preview.queryByText('RÉSERVES COMMERCIALES')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    const availability = screen.getByRole('checkbox', {
+      name: 'Sous réserve de disponibilité du navire et de validation technique et contractuelle.',
+    });
+    await user.click(availability);
+    expect(preview.getByText('RÉSERVES COMMERCIALES')).toBeInTheDocument();
+    expect(preview.getByText('Sous réserve de disponibilité du navire et de validation technique et contractuelle.')).toBeInTheDocument();
+
+    await user.click(availability);
+    expect(preview.queryByText('RÉSERVES COMMERCIALES')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Autre réserve'), 'Sous réserve de l’accord du port.');
+    expect(preview.getByText('Sous réserve de l’accord du port.')).toBeInTheDocument();
+  });
+
+  it('shows included-service descriptions in the offer preview only after they are entered', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    const preview = within(screen.getByRole('region', { name: 'Aperçu du document généré' }));
+    expect(preview.queryByText('Prestation incluse')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.type(
+      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
+      'Navire et équipage dédiés.',
+    );
+
+    expect(preview.getByText('Prestation incluse')).toBeInTheDocument();
+    expect(preview.getByText('Navire et équipage dédiés.')).toBeInTheDocument();
   });
 
   it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {
@@ -293,6 +455,7 @@ describe('ProjectEditor contract hire periods', () => {
         onSaved={onSaved}
         project={{
           ...project,
+          contractType: 'BIMCO',
           id: 60,
           clientId: null,
           projectCode: 'P268',
@@ -349,6 +512,7 @@ describe('ProjectEditor contract hire periods', () => {
         onSaved={onSaved}
         project={{
           ...project,
+          contractType: 'BIMCO',
           clientId: null,
           projectCode: 'P144',
           status: 'Non validé',
@@ -359,7 +523,8 @@ describe('ProjectEditor contract hire periods', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /Offre commerciale/ }));
+    await user.click(screen.getByRole('button', { name: /BIMCO/ }));
+    await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.click(screen.getByRole('button', { name: 'Ajouter une période' }));
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
 
@@ -412,5 +577,44 @@ describe('ClientEditor representative', () => {
         expect.objectContaining({ representedBy: 'Jean-Pierre DUPRÉ MARTIN' }),
       );
     });
+  });
+
+  it('proposes cities from the postal code and saves the country without displaying its field', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('geo.api.gouv.fr/communes')) {
+        return { ok: true, json: async () => [
+          { nom: 'Les Pieux', population: 3290 },
+          { nom: 'Le Rozel', population: 249 },
+        ] } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({ features: [{ properties: { city: 'Les Pieux', postcode: '50340', score: 0.92 } }] }),
+      } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <ClientEditor
+        client={{ rpc: vi.fn() } as never}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Pays')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Nom du client *'), 'Armement du Cotentin');
+    await user.type(screen.getByLabelText('Code postal'), '50340');
+
+    await waitFor(() => expect(screen.getByLabelText('Ville')).toHaveValue('Les Pieux'));
+    expect(screen.getByRole('option', { name: 'Le Rozel' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Ville'), 'Le Rozel');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+
+    await waitFor(() => expect(mutationMocks.saveClient).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ city: 'Le Rozel', country: 'France', postalCode: '50340' }),
+    ));
   });
 });

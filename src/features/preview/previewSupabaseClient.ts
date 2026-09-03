@@ -11,6 +11,18 @@ function previewSignaturePng(): Blob {
   return new Blob([bytes], { type: 'image/png' });
 }
 
+function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
+  if (bucket === 'procedure-documents') return '/templates/attestation-embarquement.pdf';
+  if (bucket === 'fleet-certificates') {
+    return path.toLocaleLowerCase('fr').endsWith('.pdf')
+      ? '/templates/attestation-embarquement.pdf'
+      : '/demo/action-plan-closure-proof.webp';
+  }
+  if (bucket === 'project-catalog-media') return path.startsWith('clients/') ? '/bbtm-logo.png' : '/vessels/goury.jpg';
+  return '';
+}
+
 type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
@@ -176,11 +188,11 @@ function createPreviewFleetCertificates(): unknown[] {
 
 function createPreviewFleetCertificateFindings(): unknown[] {
   return [
-    { id: 8601, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0012', finding_type: 'major_non_conformity', title: 'Corrosion du support bâbord', description: 'Corrosion perforante constatée sur le support bâbord. Décaper, contrôler l’épaisseur résiduelle puis remplacer la partie dégradée avant validation.', detected_on: '2026-07-16', treatment_delay_days: 21, treatment_due_on: '2026-08-06', status: 'in_progress', progress: 60, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z' },
-    { id: 8602, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0013', finding_type: 'minor_non_conformity', title: 'Marquage de sécurité incomplet', description: 'Compléter le marquage réglementaire sur la zone de travail arrière.', detected_on: '2026-07-16', treatment_delay_days: 45, treatment_due_on: '2026-08-30', status: 'assigned', progress: 20, responsible_person_id: 9304, responsible_name: 'Hugo BERNARD', created_at: '2026-07-16T09:40:00Z', updated_at: '2026-08-09T10:00:00Z' },
-    { id: 8603, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0014', finding_type: 'class_condition', title: 'Essai de charge à fournir', description: 'Transmettre le procès-verbal de l’essai de charge de l’apparau concerné.', detected_on: '2026-07-17', treatment_delay_days: 60, treatment_due_on: '2026-09-15', status: 'assigned', progress: 35, responsible_person_id: 9301, responsible_name: 'Arthur DEMO', created_at: '2026-07-17T08:20:00Z', updated_at: '2026-08-08T14:10:00Z' },
-    { id: 8604, company_id: 1, certificate_id: 5000, reference: 'EC-2026-0015', finding_type: 'prescription', title: 'Actualiser l’acte de francisation', description: 'Intégrer la dernière modification administrative et déposer le document signé.', detected_on: '2026-07-20', treatment_delay_days: 30, treatment_due_on: '2026-08-19', status: 'in_progress', progress: 70, responsible_person_id: 9302, responsible_name: 'Camille DURAND', created_at: '2026-07-20T08:20:00Z', updated_at: '2026-08-10T09:10:00Z' },
-    { id: 8605, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0016', finding_type: 'remark', title: 'Plan de maintenance à compléter', description: 'Préciser la périodicité du contrôle visuel dans le plan de maintenance.', detected_on: '2026-07-21', treatment_delay_days: 90, treatment_due_on: '2026-10-19', status: 'closed', progress: 100, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', closed_at: '2026-08-07T11:30:00Z', created_at: '2026-07-21T08:20:00Z', updated_at: '2026-08-07T11:30:00Z' },
+    { id: 8601, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0012', finding_type: 'major_non_conformity', title: 'Corrosion du support bâbord', description: 'Corrosion perforante constatée sur le support bâbord. Décaper, contrôler l’épaisseur résiduelle puis remplacer la partie dégradée avant validation.', corrective_action: '<p><strong>Remplacer la partie dégradée</strong> puis appliquer le système anticorrosion.</p><ul><li>Contrôle d’épaisseur avant travaux</li><li>Contrôle visuel après peinture</li></ul>', detected_on: '2026-07-16', treatment_delay_days: 21, treatment_due_on: '2026-08-06', status: 'in_progress', progress: 60, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z' },
+    { id: 8602, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0013', finding_type: 'minor_non_conformity', title: 'Marquage de sécurité incomplet', description: 'Compléter le marquage réglementaire sur la zone de travail arrière.', corrective_action: '<p>Commander puis poser les pictogrammes réglementaires manquants.</p>', detected_on: '2026-07-16', treatment_delay_days: 45, treatment_due_on: '2026-08-30', status: 'assigned', progress: 20, responsible_person_id: 9304, responsible_name: 'Hugo BERNARD', created_at: '2026-07-16T09:40:00Z', updated_at: '2026-08-09T10:00:00Z' },
+    { id: 8603, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0014', finding_type: 'class_condition', title: 'Essai de charge à fournir', description: 'Transmettre le procès-verbal de l’essai de charge de l’apparau concerné.', corrective_action: '', detected_on: '2026-07-17', treatment_delay_days: 60, treatment_due_on: '2026-09-15', status: 'assigned', progress: 35, responsible_person_id: 9301, responsible_name: 'Arthur DEMO', created_at: '2026-07-17T08:20:00Z', updated_at: '2026-08-08T14:10:00Z' },
+    { id: 8604, company_id: 1, certificate_id: 5000, reference: 'EC-2026-0015', finding_type: 'prescription', title: 'Actualiser l’acte de francisation', description: 'Intégrer la dernière modification administrative et déposer le document signé.', corrective_action: '<p>Faire signer la version actualisée et l’archiver avec le certificat.</p>', detected_on: '2026-07-20', treatment_delay_days: 30, treatment_due_on: '2026-08-19', status: 'in_progress', progress: 70, responsible_person_id: 9302, responsible_name: 'Camille DURAND', created_at: '2026-07-20T08:20:00Z', updated_at: '2026-08-10T09:10:00Z' },
+    { id: 8605, company_id: 1, certificate_id: 5002, reference: 'EC-2026-0016', finding_type: 'remark', title: 'Plan de maintenance à compléter', description: 'Préciser la périodicité du contrôle visuel dans le plan de maintenance.', corrective_action: '<p>Périodicité ajoutée au plan de maintenance et diffusée à l’équipage.</p>', detected_on: '2026-07-21', treatment_delay_days: 90, treatment_due_on: '2026-10-19', status: 'closed', progress: 100, responsible_person_id: 9303, responsible_name: 'Luc MARTIN', closed_at: '2026-08-07T11:30:00Z', created_at: '2026-07-21T08:20:00Z', updated_at: '2026-08-07T11:30:00Z' },
   ];
 }
 
@@ -202,6 +214,93 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  procedures: [
+    {
+      id: 8101, procedure_code: 'GEN 01-A', title: 'Manuel Qualité Santé Sécurité Environnement', status: 'approved',
+      revision_label: 'A', published_on: '2026-08-20', source_label: 'seapilot', file_url: null,
+      notes: 'Document de démonstration', category_label: 'Manuel', diffusion_on: '2026-08-20',
+      description: 'Référentiel général du système de management QHSE.', regulatory_requirement: 'Code ISM',
+      ism_chapter: '01', vessel_name: '', project_name: 'BBTM', document_number: '01', restrictions: '',
+      annual_review: true, approval_status: 'Document approuve', theme: 'GEN', document_type: 'MAN',
+      bridge_watch: false, version_label: 'A', source_storage_bucket: 'procedure-documents',
+      source_storage_path: 'sources/demo/gen-01-a.docx', source_file_name: 'GEN 01-A Manuel QHSE.docx',
+      source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', source_size_bytes: 845000,
+    },
+    {
+      id: 8102, procedure_code: 'POL 01-B', title: 'Politique Santé Sécurité Environnement', status: 'approved',
+      revision_label: 'B', published_on: '2026-08-22', source_label: 'seapilot', file_url: null,
+      notes: '', category_label: 'Politique', diffusion_on: '2026-08-22', description: '', regulatory_requirement: 'Code ISM',
+      ism_chapter: '02', vessel_name: '', project_name: 'BBTM', document_number: '01', restrictions: '', annual_review: true,
+      approval_status: 'Document approuve', theme: 'POL', document_type: 'GEN', bridge_watch: false, version_label: 'B',
+      source_storage_bucket: 'procedure-documents', source_storage_path: 'sources/demo/pol-01-b.docx',
+      source_file_name: 'POL 01-B Politique SSE.docx', source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', source_size_bytes: 312000,
+    },
+    {
+      id: 8103, procedure_code: 'RAC 01-A', title: 'Fiche de Poste - Président', status: 'review',
+      revision_label: 'A', published_on: null, source_label: 'seapilot', file_url: null, notes: '', category_label: 'Responsabilités',
+      diffusion_on: '', description: '', regulatory_requirement: '', ism_chapter: '03', vessel_name: '', project_name: 'BBTM',
+      document_number: '01', restrictions: '', annual_review: false, approval_status: 'En cours de validation', theme: 'RAC',
+      document_type: 'FOR', bridge_watch: false, version_label: 'A', source_storage_bucket: 'procedure-documents',
+      source_storage_path: 'sources/demo/rac-01-a.docx', source_file_name: 'RAC 01-A Fiche de Poste Président.docx',
+      source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', source_size_bytes: 126000,
+    },
+    {
+      id: 8104, procedure_code: 'RAC 03-A', title: 'Fiche de Poste - Directeur QHSE - RSE - DPA', status: 'approved',
+      revision_label: 'A', published_on: '2026-08-25', source_label: 'seapilot', file_url: null, notes: '', category_label: 'Responsabilités',
+      diffusion_on: '2026-08-25', description: '', regulatory_requirement: '', ism_chapter: '03', vessel_name: '', project_name: 'BBTM',
+      document_number: '03', restrictions: '', annual_review: false, approval_status: 'Document approuve', theme: 'RAC',
+      document_type: 'FOR', bridge_watch: false, version_label: 'A', source_storage_bucket: 'procedure-documents',
+      source_storage_path: 'sources/demo/rac-03-a.docx', source_file_name: 'RAC 03-A Fiche Directeur QHSE.docx',
+      source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', source_size_bytes: 139000,
+    },
+    {
+      id: 8105, procedure_code: 'URG 02-C', title: 'Réponse à une pollution accidentelle', status: 'approved',
+      revision_label: 'C', published_on: '2026-08-28', source_label: 'seapilot', file_url: null, notes: '', category_label: "Procédure d'urgence",
+      diffusion_on: '2026-08-28', description: '', regulatory_requirement: 'MARPOL', ism_chapter: '08', vessel_name: 'GOURY', project_name: 'P144',
+      document_number: '02', restrictions: '', annual_review: true, approval_status: 'Document approuve', theme: 'URG',
+      document_type: 'PRO', bridge_watch: true, version_label: 'C', source_storage_bucket: 'procedure-documents',
+      source_storage_path: 'sources/demo/urg-02-c.docx', source_file_name: 'URG 02-C Pollution accidentelle.docx',
+      source_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', source_size_bytes: 460000,
+    },
+  ],
+  published_procedures: [
+    {
+      id: 8201, procedure_id: 8101, procedure_sharepoint_item_id: null, procedure_code: 'GEN 01-A',
+      title: 'GEN 01-A Manuel Qualité Santé Sécurité Environnement.pdf', status: 'approved', revision_label: 'A',
+      published_on: '2026-08-20', source_label: 'seapilot', file_url: null, notes: '', category_label: 'Manuel',
+      diffusion_on: '2026-08-20', description: '', regulatory_requirement: 'Code ISM', ism_chapter: '01', vessel_name: '',
+      project_name: 'BBTM', document_number: 'GEN 01-A', restrictions: '', annual_review: true, approval_status: 'Document approuve',
+      theme: 'GEN', document_type: 'MAN', bridge_watch: false, version_label: 'A', storage_bucket: 'procedure-documents',
+      storage_path: 'published/8101/gen-01-a.pdf', file_name: 'GEN 01-A Manuel QHSE.pdf', mime_type: 'application/pdf', size_bytes: 612000, published_by: 'preview-user',
+    },
+    {
+      id: 8202, procedure_id: 8102, procedure_sharepoint_item_id: null, procedure_code: 'POL 01-B',
+      title: 'POL 01-B Politique Santé Sécurité Environnement.pdf', status: 'approved', revision_label: 'B',
+      published_on: '2026-08-22', source_label: 'seapilot', file_url: null, notes: '', category_label: 'Politique',
+      diffusion_on: '2026-08-22', description: '', regulatory_requirement: 'Code ISM', ism_chapter: '02', vessel_name: '',
+      project_name: 'BBTM', document_number: 'POL 01-B', restrictions: '', annual_review: true, approval_status: 'Document approuve',
+      theme: 'POL', document_type: 'GEN', bridge_watch: false, version_label: 'B', storage_bucket: 'procedure-documents',
+      storage_path: 'published/8102/pol-01-b.pdf', file_name: 'POL 01-B Politique SSE.pdf', mime_type: 'application/pdf', size_bytes: 244000, published_by: 'preview-user',
+    },
+    {
+      id: 8204, procedure_id: 8104, procedure_sharepoint_item_id: null, procedure_code: 'RAC 03-A',
+      title: 'RAC 03-A Fiche de Poste - Directeur QHSE - RSE - DPA.pdf', status: 'approved', revision_label: 'A',
+      published_on: '2026-08-25', source_label: 'seapilot', file_url: null, notes: '', category_label: 'Responsabilités',
+      diffusion_on: '2026-08-25', description: '', regulatory_requirement: '', ism_chapter: '03', vessel_name: '',
+      project_name: 'BBTM', document_number: 'RAC 03-A', restrictions: '', annual_review: false, approval_status: 'Document approuve',
+      theme: 'RAC', document_type: 'FOR', bridge_watch: false, version_label: 'A', storage_bucket: 'procedure-documents',
+      storage_path: 'published/8104/rac-03-a.pdf', file_name: 'RAC 03-A Directeur QHSE.pdf', mime_type: 'application/pdf', size_bytes: 108000, published_by: 'preview-user',
+    },
+    {
+      id: 8205, procedure_id: 8105, procedure_sharepoint_item_id: null, procedure_code: 'URG 02-C',
+      title: 'URG 02-C Réponse à une pollution accidentelle.pdf', status: 'approved', revision_label: 'C',
+      published_on: '2026-08-28', source_label: 'seapilot', file_url: null, notes: '', category_label: "Procédure d'urgence",
+      diffusion_on: '2026-08-28', description: '', regulatory_requirement: 'MARPOL', ism_chapter: '08', vessel_name: 'GOURY',
+      project_name: 'P144', document_number: 'URG 02-C', restrictions: '', annual_review: true, approval_status: 'Document approuve',
+      theme: 'URG', document_type: 'PRO', bridge_watch: true, version_label: 'C', storage_bucket: 'procedure-documents',
+      storage_path: 'published/8105/urg-02-c.pdf', file_name: 'URG 02-C Pollution accidentelle.pdf', mime_type: 'application/pdf', size_bytes: 382000, published_by: 'preview-user',
+    },
+  ],
   profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration' }],
   people: [
     {
@@ -218,6 +317,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       register_label: 'ENIM',
       sex: 'M',
       sailor_number: 'DEMO-001',
+      employee_number: '00051',
       m365_account: null,
       phone: '+33 0 00 00 00 00',
       postal_address: 'Adresse de demonstration',
@@ -583,6 +683,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       owner_name: null,
       hull_machinery_insurer: null,
       liability_insurer: null,
+      photo_url: '/vessels/goury.jpg',
+      photo_storage_path: null,
       active: true,
     },
   ],
@@ -644,12 +746,17 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9101,
       name: 'Affréteur Démonstration',
+      represented_by: 'Camille MARTIN',
       code: 'DEMO-SP',
       email: '',
       phone: '',
       address: '',
+      postal_code: '29200',
       city: 'Brest',
       country: 'France',
+      website: 'https://example.com/',
+      logo_url: 'https://example.com/favicon.ico',
+      logo_storage_path: null,
       active: true,
       source_label: 'sharepoint',
       sharepoint_list_title: 'BBTM - Clients',
@@ -661,12 +768,17 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     {
       id: 9102,
       name: 'Client SeaPilot Démonstration',
+      represented_by: 'Alex MOREAU',
       code: 'DEMO-SPT',
       email: '',
       phone: '',
       address: '',
+      postal_code: '50100',
       city: 'Cherbourg',
       country: 'France',
+      website: '',
+      logo_url: null,
+      logo_storage_path: null,
       active: true,
       source_label: 'seapilot',
       sharepoint_list_title: null,
@@ -867,9 +979,15 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   ],
   dpr_files: [],
   emergency_exercise_types: [
-    { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 10, active: true },
-    { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 20, active: true },
-    { key: 'sea-rescue', label: 'Sauvetage en mer', display_order: 30, active: true },
+    { key: 'fire-protection', label: "Protection contre l'incendie", display_order: 100, active: true },
+    { key: 'sea-rescue', label: 'Sauvetage en mer', display_order: 110, active: true },
+    { key: 'loss-of-propulsion', label: 'Perte de propulsion – manœuvrabilité', display_order: 140, active: true },
+    { key: 'onboard-evacuation', label: 'Évacuation à bord', display_order: 160, active: true },
+    { key: 'flooding-control', label: "Lutte contre l'envahissement", display_order: 170, active: true },
+    { key: 'abandon-ship', label: 'Évacuation et abandon du navire', display_order: 180, active: true },
+    { key: 'loss-of-power', label: "Perte d'énergie", display_order: 190, active: true },
+    { key: 'injured-person', label: "Évacuation et prise en charge d'un blessé", display_order: 220, active: true },
+    { key: 'anti-pollution', label: 'Exercice Antipollution', display_order: 230, active: true },
   ],
   port_call_reason_types: [
     { key: 'crew-change', label: 'Crew Change', display_order: 10, active: true },
@@ -1365,6 +1483,62 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       contact: { id: 9822, full_name: 'Xavier LECOINTRE' },
     }],
   }],
+  qhse_service_notes: [{
+    id: 9001, company_id: 1, chronology_code: 'NS 08-26', subject: 'Consignes de sécurité avant appareillage',
+    body: 'Bonjour,\n\nAvant chaque appareillage, le capitaine confirme la tenue du briefing sécurité, la fermeture des accès et la disponibilité des équipements d’urgence.\n\nMerci de lire les références jointes avant de signer cette note.\n\nBien cordialement,',
+    scope: 'all_accounts', vessel_id: 1, vessel: { name: 'GOURY', acronym: 'GRY' }, status: 'published',
+    author_person_id: 9301, author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' },
+    author_signature_snapshot: { signature_id: 9831, signer_person_id: 9301, signer_user_id: 'preview-user', signer_name: 'Arthur DEMO', signed_at: '2026-09-01T09:15:00Z', version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', sha256: 'a'.repeat(64) },
+    authored_on: '2026-09-01', published_at: '2026-09-01T09:15:00Z', published_by: 'preview-user',
+    source_kind: 'seapilot', source_file_name: null, source_web_url: null, source_modified_at: null,
+    created_by: 'preview-user', created_at: '2026-09-01T08:30:00Z', updated_at: '2026-09-01T09:15:00Z',
+  }, {
+    id: 9002, company_id: 1, chronology_code: '', subject: 'Mise à jour du DUP de KROKDUR',
+    body: 'Note de service historique importée depuis SharePoint.', scope: 'all_accounts', vessel_id: null, vessel: null,
+    status: 'draft', author_person_id: null, author_identity_snapshot: { display_name: 'Import SharePoint' }, author_signature_snapshot: {},
+    authored_on: '2026-09-01', published_at: null, published_by: null,
+    source_kind: 'sharepoint', source_file_name: 'NS 07-26 - Mise à jour du DUP.docx',
+    source_web_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Notes%20de%20Service/NS%2007-26%20-%20Mise%20%C3%A0%20jour%20du%20DUP.docx?web=1',
+    source_modified_at: '2026-09-01T14:35:28Z', created_by: 'preview-user', created_at: '2026-09-01T14:35:28Z', updated_at: '2026-09-01T14:35:28Z',
+  }, {
+    id: 9003, company_id: 1, chronology_code: '', subject: 'Organisation des exercices trimestriels',
+    body: 'Bonjour,\n\nPrécisez ici les consignes de la prochaine note de service.\n\nBien cordialement,', scope: 'all_accounts',
+    vessel_id: null, vessel: null, status: 'draft', author_person_id: 9301,
+    author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' }, author_signature_snapshot: {},
+    authored_on: '2026-09-02', published_at: null, published_by: null, source_kind: 'seapilot', source_file_name: null,
+    source_web_url: null, source_modified_at: null, created_by: 'preview-user', created_at: '2026-09-02T08:30:00Z', updated_at: '2026-09-02T10:05:00Z',
+  }, {
+    id: 9004, company_id: 1, chronology_code: '', subject: 'Politique d’accès aux zones techniques',
+    body: 'Cette note a été rappelée. Elle reste consultable par Administration et Direction avant une éventuelle nouvelle diffusion.',
+    scope: 'all_accounts', vessel_id: 1, vessel: { name: 'GOURY', acronym: 'GRY' }, status: 'recalled',
+    author_person_id: 9301, author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' },
+    author_signature_snapshot: { signature_id: 9831, signer_person_id: 9301, signer_user_id: 'preview-user', signer_name: 'Arthur DEMO', signed_at: '2026-08-30T09:15:00Z', version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', sha256: 'c'.repeat(64) },
+    authored_on: '2026-08-30', published_at: '2026-08-30T09:15:00Z', published_by: 'preview-user',
+    last_recalled_at: '2026-09-02T13:30:00Z', last_recalled_by: 'preview-user', last_recalled_chronology_code: 'NS 07-26',
+    source_kind: 'seapilot', source_file_name: null, source_web_url: null, source_modified_at: null,
+    created_by: 'preview-user', created_at: '2026-08-30T08:30:00Z', updated_at: '2026-09-02T13:30:00Z',
+  }],
+  qhse_service_note_attachments: [{
+    id: 9051, company_id: 1, note_id: 9001, attachment_kind: 'procedure',
+    display_name: 'GEN 01-A - Manuel Qualité Santé Sécurité Environnement', storage_bucket: null, storage_path: null,
+    external_url: '/modules/procedures?document=8201', linked_record_id: 8201, mime_type: null, file_size_bytes: null, sort_order: 0,
+  }, {
+    id: 9052, company_id: 1, note_id: 9001, attachment_kind: 'fleet_certificate',
+    display_name: 'Permis de Navigation', storage_bucket: null, storage_path: null,
+    external_url: '/modules/certificates?certificate=5001', linked_record_id: 5001, mime_type: null, file_size_bytes: null, sort_order: 1,
+  }],
+  qhse_service_note_recipients: [
+    { id: 9062, company_id: 1, note_id: 9001, user_id: 'preview-direction', person_id: 9302, first_name_snapshot: 'Camille', last_name_snapshot: 'DURAND', function_snapshot: 'Direction' },
+    { id: 9063, company_id: 1, note_id: 9001, user_id: 'preview-marin', person_id: 9303, first_name_snapshot: 'Luc', last_name_snapshot: 'MARTIN', function_snapshot: 'Marin' },
+  ],
+  qhse_service_note_target_vessels: [],
+  qhse_service_note_target_people: [],
+  qhse_service_note_signatures: [{
+    id: 9071, company_id: 1, note_id: 9001, recipient_id: 9062, user_id: 'preview-direction', person_id: 9302,
+    identity_snapshot: { first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction' }, signature_version_id: 9831,
+    signature_snapshot: { signature_id: 9831, signer_person_id: 9302, signer_user_id: 'preview-direction', signer_name: 'Camille DURAND', signed_at: '2026-09-01T10:02:00Z', version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9302/preview.png', mime_type: 'image/png', sha256: 'b'.repeat(64) },
+    signed_at: '2026-09-01T10:02:00Z', read_confirmed: true, signature_kind: 'captured',
+  }],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
@@ -1455,6 +1629,89 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'service_note_targeting_options') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    if (!note) return createPreviewQuery({ data: null, error: { message: 'Brouillon de démonstration introuvable.' } });
+    return createPreviewQuery({
+      data: {
+        date: String(args.p_on_date || note.authored_on || ''),
+        people: [
+          { id: 9302, first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction', hired_on: '2020-01-01', departed_on: null, vessel_ids: [2], has_account: true, is_author: false },
+          { id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', hired_on: '2024-03-01', departed_on: null, vessel_ids: [1], has_account: true, is_author: false },
+          { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', hired_on: '2022-05-01', departed_on: null, vessel_ids: [1], has_account: true, is_author: false },
+          { id: 9307, first_name: 'Sophie', last_name: 'HAMEL', function_label: 'Directrice Administrative et Financière', hired_on: '2019-01-01', departed_on: null, vessel_ids: [], has_account: true, is_author: false },
+        ],
+        vessels: previewRows('vessels').filter((row) => row.active).map((row) => ({
+          id: row.id,
+          name: row.name,
+          recipient_count: Number(row.id) === 1 ? 2 : Number(row.id) === 2 ? 1 : 0,
+        })),
+      },
+      error: null,
+    });
+  }
+  if (functionName === 'save_service_note_draft') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id) && row.status === 'draft');
+    if (!note) return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_DRAFT_FORBIDDEN.' } });
+    note.subject = String(args.p_subject || '');
+    note.body = String(args.p_body || '');
+    note.authored_on = String(args.p_authored_on || note.authored_on || '');
+    note.scope = String(args.p_scope || 'all_accounts');
+    note.chronology_code = '';
+    note.updated_at = new Date().toISOString();
+    const vessels = previewRows('qhse_service_note_target_vessels');
+    const people = previewRows('qhse_service_note_target_people');
+    for (let index = vessels.length - 1; index >= 0; index -= 1) if (Number(vessels[index].note_id) === Number(note.id)) vessels.splice(index, 1);
+    for (let index = people.length - 1; index >= 0; index -= 1) if (Number(people[index].note_id) === Number(note.id)) people.splice(index, 1);
+    if (note.scope === 'vessels') (Array.isArray(args.p_vessel_ids) ? args.p_vessel_ids : []).forEach((id) => vessels.push({ note_id: note.id, vessel_id: Number(id), vessel: previewVessel(Number(id)) }));
+    if (note.scope === 'vessels' || note.scope === 'people') (Array.isArray(args.p_person_ids) ? args.p_person_ids : []).forEach((id) => people.push({ note_id: note.id, person_id: Number(id) }));
+    return createPreviewQuery({ data: note.id, error: null });
+  }
+  if (functionName === 'recall_service_note') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    const latest = previewRows('qhse_service_notes')
+      .filter((row) => row.status === 'published')
+      .sort((left, right) => new Date(String(right.published_at)).getTime() - new Date(String(left.published_at)).getTime())[0];
+    if (!note || note.status !== 'published' || note.id !== latest?.id) {
+      return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_RECALL_LATEST_ONLY.' } });
+    }
+    note.last_recalled_chronology_code = note.chronology_code;
+    note.chronology_code = '';
+    note.status = 'recalled';
+    note.last_recalled_at = new Date().toISOString();
+    note.last_recalled_by = 'preview-user';
+    note.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: note.id, error: null });
+  }
+  if (functionName === 'publish_service_note') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    if (!note || !['draft', 'recalled'].includes(String(note.status))) {
+      return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_PUBLISH_FORBIDDEN.' } });
+    }
+    const year = new Date().getFullYear().toString().slice(-2);
+    const sequence = Math.max(0, ...previewRows('qhse_service_notes').filter((row) => row.id !== note.id).map((row) => {
+      const match = String(row.chronology_code || '').match(new RegExp(`^NS (\\d+)-${year}`));
+      return match ? Number(match[1]) : 0;
+    })) + 1;
+    note.chronology_code = `NS ${String(sequence).padStart(2, '0')}-${year}`;
+    note.status = 'published';
+    note.published_at = new Date().toISOString();
+    note.published_by = 'preview-user';
+    note.source_kind = 'seapilot';
+    note.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: note.id, error: null });
+  }
+  if (functionName === 'delete_service_note_draft') {
+    const notes = previewRows('qhse_service_notes');
+    const noteIndex = notes.findIndex((row) => Number(row.id) === Number(args.p_note_id) && row.status === 'draft');
+    if (noteIndex < 0) return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_DELETE_DRAFT_FORBIDDEN.' } });
+    const [deleted] = notes.splice(noteIndex, 1);
+    const attachments = previewRows('qhse_service_note_attachments');
+    for (let index = attachments.length - 1; index >= 0; index -= 1) {
+      if (Number(attachments[index].note_id) === Number(deleted.id)) attachments.splice(index, 1);
+    }
+    return createPreviewQuery({ data: deleted.id, error: null });
+  }
   if (functionName === 'action_item_create') {
     const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));
     const type = previewRows('action_type_catalog').find((row) => row.type_key === args.p_action_type_key);
@@ -1881,6 +2138,38 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'projects_towed_assets') {
     return createPreviewQuery({ data: previewRows('project_towed_assets'), error: null });
   }
+  if (functionName === 'projects_save_towed_asset') {
+    const requestedId = Number(args.target_towed_asset_id || 0);
+    let asset = previewRows('project_towed_assets').find((row) => Number(row.id) === requestedId);
+    if (!asset) {
+      asset = { id: nextPreviewId('project_towed_assets', 9351), active: true };
+      PREVIEW_ROWS.project_towed_assets.push(asset);
+    }
+    Object.assign(asset, {
+      name: String(args.target_name || ''),
+      asset_type: args.target_asset_type || null,
+      length_overall_m: args.target_length_overall_m ?? null,
+      breadth_overall_m: args.target_breadth_overall_m ?? null,
+      max_draft_m: args.target_max_draft_m ?? null,
+      light_displacement_t: args.target_light_displacement_t ?? null,
+      flag: args.target_flag || null,
+      classification_society: args.target_classification_society || null,
+      registration_number: args.target_registration_number || null,
+      owner_name: args.target_owner_name || null,
+      hull_machinery_insurer: args.target_hull_machinery_insurer || null,
+      liability_insurer: args.target_liability_insurer || null,
+      photo_url: args.target_photo_url || null,
+      photo_storage_path: args.target_photo_storage_path || null,
+    });
+    return createPreviewQuery({ data: asset.id, error: null });
+  }
+  if (functionName === 'projects_archive_towed_asset') {
+    const asset = previewRows('project_towed_assets').find(
+      (row) => Number(row.id) === Number(args.target_towed_asset_id),
+    );
+    if (asset) asset.active = false;
+    return createPreviewQuery({ data: null, error: null });
+  }
   if (functionName === 'projects_planning_occurrences') {
     return createPreviewQuery({
       data: previewRows('planning_projects').map((occurrence) => ({
@@ -1896,6 +2185,46 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       data: previewRows('clients').map((client) => ({ id: client.id, name: client.name, active: client.active })),
       error: null,
     });
+  }
+  if (functionName === 'clients_save') {
+    const requestedId = Number(args.target_client_id || 0);
+    let client = previewRows('clients').find((row) => Number(row.id) === requestedId);
+    if (!client) {
+      client = {
+        id: nextPreviewId('clients', 9102),
+        archived_at: null,
+        sharepoint_item_id: null,
+        sharepoint_list_title: null,
+        source_label: 'seapilot-preview',
+        source_modified_at: null,
+      };
+      PREVIEW_ROWS.clients.push(client);
+    }
+    Object.assign(client, {
+      name: String(args.target_name || ''),
+      represented_by: args.target_represented_by || null,
+      code: args.target_code || null,
+      email: args.target_email || null,
+      phone: args.target_phone || null,
+      address: args.target_address || null,
+      postal_code: args.target_postal_code || null,
+      city: args.target_city || null,
+      country: args.target_country || null,
+      website: args.target_website || null,
+      logo_url: args.target_logo_url || null,
+      logo_storage_path: args.target_logo_storage_path || null,
+      active: args.target_active !== false,
+      updated_at: new Date().toISOString(),
+    });
+    return createPreviewQuery({ data: client, error: null });
+  }
+  if (functionName === 'clients_archive') {
+    const client = previewRows('clients').find((row) => Number(row.id) === Number(args.target_client_id));
+    if (client) {
+      client.active = false;
+      client.archived_at = new Date().toISOString();
+    }
+    return createPreviewQuery({ data: null, error: null });
   }
   if (functionName === 'planning_schedule_catalog_project') {
     return createPreviewQuery(schedulePreviewProject(args));
@@ -1979,15 +2308,32 @@ export const previewSupabaseClient = {
   },
   storage: {
     from: (bucket: string) => ({
-      createSignedUrl: () => Promise.resolve({ data: { signedUrl: bucket === 'fleet-certificates' ? '/demo/action-plan-closure-proof.webp' : '' }, error: null }),
+      createSignedUrl: (path: string) => Promise.resolve({
+        data: {
+          signedUrl: previewStorageAssetUrl(bucket, path),
+        },
+        error: null,
+      }),
       createSignedUrls: (paths: string[]) => Promise.resolve({
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
-      download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
-      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12'
+      download: async (path: string) => {
+        const assetUrl = previewStorageAssetUrl(bucket, path);
+        if (!assetUrl) return { data: previewSignaturePng(), error: null };
+        const response = await fetch(assetUrl);
+        return response.ok
+          ? { data: await response.blob(), error: null }
+          : { data: null, error: PREVIEW_WRITE_ERROR };
+      },
+      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
+        bucket === 'project-catalog-media'
+        || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')
+      )
         ? Promise.resolve({ data: { path: _path }, error: null })
         : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
-      remove: () => Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+      remove: () => bucket === 'project-catalog-media' || bucket === 'service-note-files'
+        ? Promise.resolve({ data: [], error: null })
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
     }),
   },
 } as unknown as SupabaseClient;

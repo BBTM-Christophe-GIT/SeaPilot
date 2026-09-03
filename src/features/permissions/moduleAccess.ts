@@ -6,10 +6,12 @@ export type ModuleKey =
   | 'qhse'
   | 'certificates'
   | 'procedures'
+  | 'serviceNotes'
   | 'actionPlan'
   | 'dpr'
   | 'purchaseRequests'
   | 'serviceProviders'
+  | 'billingElements'
   | 'planning'
   | 'fleet'
   | 'humanResources'
@@ -25,6 +27,7 @@ export type ModuleFamily =
   | 'QHSE'
   | 'Opérations'
   | 'Achats'
+  | 'Facturation'
   | 'Planning'
   | 'Ressources Humaines'
   | 'Maintenance'
@@ -54,6 +57,13 @@ export const APP_MODULES: AppModule[] = [
   {
     key: 'procedures',
     label: 'Procédures QHSE',
+    family: 'QHSE',
+    navigationKind: 'submenu',
+    allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'serviceNotes',
+    label: 'Notes de Service',
     family: 'QHSE',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
@@ -99,6 +109,13 @@ export const APP_MODULES: AppModule[] = [
     label: 'Gestion des Sous-Traitants',
     family: 'Achats',
     navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction'],
+  },
+  {
+    key: 'billingElements',
+    label: 'Éléments de facturation',
+    family: 'Facturation',
+    navigationKind: 'hidden',
     allowedRoles: ['admin', 'direction'],
   },
   { key: 'planning', label: 'Planning', family: 'Planning', navigationKind: 'direct', allowedRoles: ALL_ROLES },

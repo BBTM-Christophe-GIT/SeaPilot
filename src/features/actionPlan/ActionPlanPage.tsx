@@ -431,7 +431,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const isManager = canManage(effectiveRoles);
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [expandedActionId, setExpandedActionId] = useState<number | null>(null);
+  const [expandedActionId, setExpandedActionId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get('action')) || null);
   const [createOpen, setCreateOpen] = useState(false);
   const [approvalAction, setApprovalAction] = useState<ActionItemRecord | null>(null);
   const [treatmentAction, setTreatmentAction] = useState<ActionItemRecord | null>(null);

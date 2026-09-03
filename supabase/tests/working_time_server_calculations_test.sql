@@ -2,12 +2,17 @@ begin;
 
 select plan(30);
 
+-- This suite exercises the calculation engine directly. Entry-window and
+-- profile permissions are covered by the dedicated workflow suites.
+alter table public.working_time_intervals
+  disable trigger working_time_intervals_05_register_lock;
+
 select has_table(
   'public',
   'working_time_calculation_windows',
   'server-side rolling calculation windows are stored'
 );
-select has_column('public', 'working_time_calculation_windows', 'work_24h_seconds', '24-hour work is stored');
+select has_column('public', 'working_time_calculation_windows', 'work_24h_seconds', 'the current work-cycle counter is stored');
 select has_column('public', 'working_time_calculation_windows', 'rest_24h_seconds', '24-hour rest is stored');
 select has_column('public', 'working_time_calculation_windows', 'longest_rest_24h_seconds', 'consecutive rest is stored');
 select has_column('public', 'working_time_calculation_windows', 'rest_period_count_24h', 'rest periods are stored');
@@ -134,8 +139,8 @@ select is(
 select is(
   (select work_24h_seconds from public.working_time_calculation_windows
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
-  43200::numeric,
-  'overlapping intervals are merged to twelve worked hours in the rolling 24-hour window'
+  0::numeric,
+  'a completed trailing six-hour rest resets the twelve-hour work counter to zero'
 );
 select is(
   (select rest_24h_seconds from public.working_time_calculation_windows
@@ -180,8 +185,8 @@ select results_eq(
     from public.working_time_calculation_windows
     where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'
   $$,
-  $$values (50400::numeric, 36000::numeric, 50400::numeric, 554400::numeric)$$,
-  'changing an interval automatically recalculates every affected rolling window'
+  $$values (0::numeric, 36000::numeric, 50400::numeric, 554400::numeric)$$,
+  'changing an interval automatically recalculates every affected cycle and rolling window'
 );
 select is(
   (select is_compliant from public.working_time_calculation_windows
@@ -192,8 +197,8 @@ select is(
 select is(
   (select array_to_string(violation_codes, ',') from public.working_time_calculation_windows
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
-  'work_24h,rest_24h,work_7d,rest_7d',
-  'server results identify each breached rolling quota'
+  'work_7d,rest_7d',
+  'a completed consecutive rest removes only the rolling rest breach'
 );
 
 select is(

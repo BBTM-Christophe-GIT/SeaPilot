@@ -36,7 +36,7 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
     previewPerson(106, 'David', 'FIDELIN', 'Capitaine'),
     previewPerson(107, 'Mathieu', 'RIDARD', 'Chef Mécanicien'),
     previewPerson(108, 'Nicolas', 'BOUVILLE', 'Matelot polyvalent'),
-    previewPerson(109, 'Adrien', 'BOIS', '2nd Capitaine'),
+    previewPerson(109, 'Adrien', 'BOIS', 'Capitaine'),
     previewPerson(110, 'Matthieu', 'DURAND', "Maître d'Equipage"),
     previewPerson(111, 'Sophie', 'HAMEL', 'Directrice Administrative et Financière'),
     previewPerson(112, 'Christophe', 'MINASSIAN', 'Directeur QHSE / Chef de Projet'),
@@ -101,7 +101,9 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
         endsOn: secondWatchEnd,
         startsAt: `${secondWatchStart}T08:00:00Z`,
         endsAt: `${secondWatchEnd}T18:00:00Z`,
-        assignmentRole: people.find((person) => person.id === personId)?.functionLabel || 'Équipage',
+        assignmentRole: personId === 109
+          ? '2nd Capitaine'
+          : people.find((person) => person.id === personId)?.functionLabel || 'Équipage',
         statusLabel: 'En Mer',
         confirmationStatus: 'confirmed' as const,
         watchGroup: 'Bordée 2',

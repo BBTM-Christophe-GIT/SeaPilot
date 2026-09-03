@@ -51,7 +51,37 @@ const PROJECT_CONTRACT_HIRE_PERIOD_SELECT = [
   'hire_unit',
 ].join(', ');
 
-const VESSEL_SELECT = ['id', 'name', 'acronym', 'active', 'fleet_exit_on', 'sharepoint_item_id'].join(', ');
+const VESSEL_SELECT = [
+  'id',
+  'name',
+  'acronym',
+  'active',
+  'fleet_exit_on',
+  'sharepoint_item_id',
+  'length_overall',
+  'bollard_pull_tonnes',
+  'deck_equipment',
+  'main_engine',
+  'main_engine_power_kw',
+  'classification_label',
+  'flag_state',
+  'registration_number',
+  'registration_port',
+  'built_year',
+  'navigation_category',
+  'liability_insurer',
+].join(', ');
+
+const PROJECT_VESSEL_CERTIFICATE_SELECT = [
+  'id',
+  'vessel_id',
+  'document_title',
+  'title',
+  'status',
+  'issued_on',
+  'expires_on',
+  'updated_at',
+].join(', ');
 
 const PROJECT_DOCUMENT_SELECT = [
   'id',
@@ -79,16 +109,30 @@ const PROJECT_DOCUMENT_SELECT = [
   'is_folder',
 ].join(', ');
 
+const CONTRACT_DOCUMENT_SELECT = [
+  PROJECT_DOCUMENT_SELECT,
+  'storage_bucket',
+  'storage_path',
+  'storage_sha256',
+  'storage_migrated_at',
+].join(', ');
+
 const CLIENT_SELECT = [
   'id',
   'name',
   'represented_by',
   'code',
+  'siret',
+  'vat_number',
   'email',
   'phone',
   'address',
+  'postal_code',
   'city',
   'country',
+  'website',
+  'logo_url',
+  'logo_storage_path',
   'active',
   'source_label',
   'sharepoint_list_title',
@@ -111,6 +155,8 @@ const PROJECT_OPERATION_DOCUMENT_SELECT = [
   'file_size_bytes',
   'sharepoint_web_url',
   'sharepoint_folder_path',
+  'storage_bucket',
+  'storage_path',
   'created_at',
 ].join(', ');
 
@@ -184,6 +230,18 @@ interface VesselRow {
   active: boolean | null;
   fleet_exit_on: string | null;
   sharepoint_item_id: string | null;
+  length_overall: string | null;
+  bollard_pull_tonnes: number | string | null;
+  deck_equipment: string | null;
+  main_engine: string | null;
+  main_engine_power_kw: number | string | null;
+  classification_label: string | null;
+  flag_state: string | null;
+  registration_number: string | null;
+  registration_port?: string | null;
+  built_year?: number | string | null;
+  navigation_category?: string | null;
+  liability_insurer: string | null;
 }
 
 interface ProjectDocumentRow {
@@ -210,6 +268,10 @@ interface ProjectDocumentRow {
   file_size_bytes: number | string | null;
   source_modified_at: string | null;
   is_folder: boolean | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  storage_sha256?: string | null;
+  storage_migrated_at?: string | null;
 }
 
 interface ClientRow {
@@ -217,11 +279,17 @@ interface ClientRow {
   name: string;
   represented_by: string | null;
   code: string | null;
+  siret?: string | null;
+  vat_number?: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;
+  postal_code: string | null;
   city: string | null;
   country: string | null;
+  website: string | null;
+  logo_url: string | null;
+  logo_storage_path: string | null;
   active: boolean | null;
   source_label: string | null;
   sharepoint_list_title: string | null;
@@ -250,6 +318,17 @@ interface ProjectPlanningOccurrenceRow {
   created_at: string;
 }
 
+interface ProjectVesselCertificateRow {
+  id: number;
+  vessel_id: number;
+  document_title: string | null;
+  title: string | null;
+  status: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  updated_at: string | null;
+}
+
 interface ProjectOperationDocumentRow {
   id: number;
   project_id: number;
@@ -261,8 +340,10 @@ interface ProjectOperationDocumentRow {
   file_name: string;
   mime_type: string;
   file_size_bytes: number | string;
-  sharepoint_web_url: string;
-  sharepoint_folder_path: string;
+  sharepoint_web_url: string | null;
+  sharepoint_folder_path: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
   created_at: string;
 }
 
@@ -344,6 +425,8 @@ interface ProjectTowedAssetRow {
   owner_name: string | null;
   hull_machinery_insurer: string | null;
   liability_insurer: string | null;
+  photo_url: string | null;
+  photo_storage_path: string | null;
   active: boolean | null;
 }
 
@@ -361,6 +444,8 @@ export interface ProjectTowedAssetRecord {
   ownerName: string;
   hullMachineryInsurer: string;
   liabilityInsurer: string;
+  photoUrl: string;
+  photoStoragePath: string;
   active: boolean;
 }
 
@@ -401,6 +486,10 @@ export interface ProjectDocumentRecord {
   fileSizeBytes: number | null;
   sourceModifiedAt: string;
   isFolder: boolean;
+  storageBucket: string;
+  storagePath: string;
+  storageSha256: string;
+  storageMigratedAt: string;
 }
 
 export interface ClientRecord {
@@ -408,11 +497,17 @@ export interface ClientRecord {
   name: string;
   representedBy: string;
   code: string;
+  siret?: string;
+  vatNumber?: string;
   email: string;
   phone: string;
   address: string;
+  postalCode: string;
   city: string;
   country: string;
+  website: string;
+  logoUrl: string;
+  logoStoragePath: string;
   active: boolean;
   sourceLabel: string;
   sharePointListTitle: string;
@@ -429,6 +524,18 @@ export interface VesselRecord {
   active: boolean;
   fleetExitOn: string;
   sharePointItemId: string;
+  lengthOverall?: string;
+  bollardPullTonnes?: number | null;
+  deckEquipment?: string;
+  mainEngine?: string;
+  mainEnginePowerKw?: number | null;
+  classificationLabel?: string;
+  flagState?: string;
+  registrationNumber?: string;
+  registrationPort?: string;
+  builtYear?: number | null;
+  navigationCategory?: string;
+  liabilityInsurer?: string;
 }
 
 export interface ProjectPlanningOccurrenceRecord {
@@ -450,6 +557,17 @@ export interface ProjectPlanningOccurrenceRecord {
   createdAt: string;
 }
 
+export interface ProjectVesselCertificateRecord {
+  id: number;
+  vesselId: number;
+  documentTitle: string;
+  title: string;
+  status: string;
+  issuedOn: string;
+  expiresOn: string;
+  updatedAt: string;
+}
+
 export interface ProjectOperationDocumentRecord {
   id: number;
   projectId: number;
@@ -463,6 +581,8 @@ export interface ProjectOperationDocumentRecord {
   fileSizeBytes: number;
   sharePointWebUrl: string;
   sharePointFolderPath: string;
+  storageBucket: string;
+  storagePath: string;
   createdAt: string;
 }
 
@@ -653,6 +773,8 @@ export function mapProjectTowedAssetRows(rows: ProjectTowedAssetRow[]): ProjectT
     ownerName: nullableText(row.owner_name),
     hullMachineryInsurer: nullableText(row.hull_machinery_insurer),
     liabilityInsurer: nullableText(row.liability_insurer),
+    photoUrl: nullableText(row.photo_url),
+    photoStoragePath: nullableText(row.photo_storage_path),
     active: row.active ?? true,
   }));
 }
@@ -686,6 +808,33 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     active: row.active ?? true,
     fleetExitOn: nullableText(row.fleet_exit_on),
     sharePointItemId: nullableText(row.sharepoint_item_id),
+    lengthOverall: nullableText(row.length_overall),
+    bollardPullTonnes: nullableNumber(row.bollard_pull_tonnes),
+    deckEquipment: nullableText(row.deck_equipment),
+    mainEngine: nullableText(row.main_engine),
+    mainEnginePowerKw: nullableNumber(row.main_engine_power_kw),
+    classificationLabel: nullableText(row.classification_label),
+    flagState: nullableText(row.flag_state),
+    registrationNumber: nullableText(row.registration_number),
+    registrationPort: nullableText(row.registration_port),
+    builtYear: nullableNumber(row.built_year),
+    navigationCategory: nullableText(row.navigation_category),
+    liabilityInsurer: nullableText(row.liability_insurer),
+  }));
+}
+
+export function mapProjectVesselCertificateRows(
+  rows: ProjectVesselCertificateRow[],
+): ProjectVesselCertificateRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    documentTitle: nullableText(row.document_title),
+    title: nullableText(row.title),
+    status: nullableText(row.status),
+    issuedOn: nullableText(row.issued_on),
+    expiresOn: nullableText(row.expires_on),
+    updatedAt: nullableText(row.updated_at),
   }));
 }
 
@@ -714,6 +863,10 @@ export function mapProjectDocumentRows(rows: ProjectDocumentRow[]): ProjectDocum
     fileSizeBytes: nullableNumber(row.file_size_bytes),
     sourceModifiedAt: nullableText(row.source_modified_at),
     isFolder: row.is_folder ?? false,
+    storageBucket: nullableText(row.storage_bucket),
+    storagePath: nullableText(row.storage_path),
+    storageSha256: nullableText(row.storage_sha256),
+    storageMigratedAt: nullableText(row.storage_migrated_at),
   }));
 }
 
@@ -723,11 +876,17 @@ export function mapClientRows(rows: ClientRow[]): ClientRecord[] {
     name: row.name,
     representedBy: nullableText(row.represented_by),
     code: nullableText(row.code),
+    siret: nullableText(row.siret),
+    vatNumber: nullableText(row.vat_number),
     email: nullableText(row.email),
     phone: nullableText(row.phone),
     address: nullableText(row.address),
+    postalCode: nullableText(row.postal_code),
     city: nullableText(row.city),
     country: nullableText(row.country),
+    website: nullableText(row.website),
+    logoUrl: nullableText(row.logo_url),
+    logoStoragePath: nullableText(row.logo_storage_path),
     active: row.active ?? true,
     sourceLabel: nullableText(row.source_label),
     sharePointListTitle: nullableText(row.sharepoint_list_title),
@@ -788,8 +947,10 @@ export function mapProjectOperationDocumentRows(
       fileName: row.file_name,
       mimeType: row.mime_type,
       fileSizeBytes: Number(row.file_size_bytes) || 0,
-      sharePointWebUrl: row.sharepoint_web_url,
-      sharePointFolderPath: row.sharepoint_folder_path,
+      sharePointWebUrl: nullableText(row.sharepoint_web_url),
+      sharePointFolderPath: nullableText(row.sharepoint_folder_path),
+      storageBucket: nullableText(row.storage_bucket),
+      storagePath: nullableText(row.storage_path),
       createdAt: row.created_at,
     }];
   });
@@ -841,7 +1002,7 @@ export async function fetchProjectDocuments(client: SupabaseClient): Promise<Pro
 
 export async function fetchContractDocuments(client: SupabaseClient): Promise<ProjectDocumentRecord[]> {
   return mapProjectDocumentRows(
-    (await fetchRowsById(client, 'contract_documents', PROJECT_DOCUMENT_SELECT)) as ProjectDocumentRow[],
+    (await fetchRowsById(client, 'contract_documents', CONTRACT_DOCUMENT_SELECT)) as ProjectDocumentRow[],
   ).filter((document) => !document.isFolder);
 }
 
@@ -851,6 +1012,19 @@ export async function fetchClients(client: SupabaseClient): Promise<ClientRecord
 
 export async function fetchVessels(client: SupabaseClient): Promise<VesselRecord[]> {
   return mapVesselRows((await fetchRowsById(client, 'vessels', VESSEL_SELECT)) as VesselRow[]);
+}
+
+export async function fetchProjectVesselCertificates(
+  client: SupabaseClient,
+  vesselId: number,
+): Promise<ProjectVesselCertificateRecord[]> {
+  const { data, error } = await client
+    .from('fleet_certificates')
+    .select(PROJECT_VESSEL_CERTIFICATE_SELECT)
+    .eq('vessel_id', vesselId)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message || 'Impossible de charger les titres administratifs du navire.');
+  return mapProjectVesselCertificateRows((data || []) as unknown as ProjectVesselCertificateRow[]);
 }
 
 export async function fetchProjectPlanningOccurrences(

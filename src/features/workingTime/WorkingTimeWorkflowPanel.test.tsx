@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
@@ -7,6 +7,7 @@ import {
   discardWorkingTimeDraft,
   fetchWorkingTimeDayContext,
   getOrCreateWorkingTimeRegister,
+  saveWorkingTimePhases,
   submitWorkingTimeDay,
   validateWorkingTimeDay,
   validateWorkingTimeDayWithComment,
@@ -33,6 +34,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
     validateWorkingTimeDayWithComment: vi.fn().mockResolvedValue(1),
     discardWorkingTimeDraft: vi.fn().mockResolvedValue(100),
     saveWorkingTimeInterval: vi.fn(),
+    saveWorkingTimePhases: vi.fn().mockResolvedValue([301]),
     voidWorkingTimeInterval: vi.fn(),
     saveWorkingTimeDayComment: vi.fn().mockResolvedValue(1),
   };
@@ -119,7 +121,12 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
   };
 }
 
-function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>, data: WorkingTimeWorkspace) {
+function renderPanel(
+  roles: Array<'capitaine' | 'marin' | 'armement' | 'admin' | 'direction'>,
+  data: WorkingTimeWorkspace,
+  person = currentPerson,
+  referenceDate = '2026-09-01',
+) {
   vi.mocked(useWorkingTimeWorkspace).mockReturnValue({
     workspace: data,
     isLoading: false,
@@ -129,9 +136,10 @@ function renderPanel(roles: Array<'capitaine' | 'marin' | 'armement' | 'admin'>,
   return render(
     <WorkingTimeWorkflowPanel
       client={client}
-      currentPerson={currentPerson}
+      currentPerson={person}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
+      referenceDate={referenceDate}
       onOpenHse={onOpenHse}
       onOpenImport={onOpenImport}
       onOpenReport={onOpenReport}
@@ -191,6 +199,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     renderPanel(['marin'], workspace('draft'));
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
     const submitButton = screen.getByRole('button', { name: 'Valider' });
     expect(submitButton).toBeEnabled();
     await user.click(submitButton);
@@ -207,6 +216,36 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
     expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
+  });
+
+  it('lets a Marin save their own periods as a draft without validating the day', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    data.readablePeople[0].functionLabel = 'Matelot';
+    data.editablePeople[0].functionLabel = 'Matelot';
+    data.registers[0].functionLabel = 'Matelot';
+    renderPanel(['marin'], data, {
+      id: 10,
+      firstName: 'Camille',
+      lastName: 'MARIN',
+      functionLabel: 'Matelot',
+      gradeLabel: '',
+    });
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]);
+    fireEvent.pointerUp(cells[32]);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      phases: expect.any(Array),
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(await screen.findByText('Le brouillon a été enregistré sans validation.')).toBeInTheDocument();
   });
 
   it('selects today when the current month opens and the first day for a historical month', () => {
@@ -226,10 +265,55 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(getOrCreateWorkingTimeRegister).not.toHaveBeenCalled();
   });
 
-  it('lets management prepare a draft when the server exposes the HR person', () => {
-    renderPanel(['admin'], workspace('draft', 20));
+  it.each(['admin', 'armement'] as const)('lets %s save an editable day as a draft', async (role) => {
+    const user = userEvent.setup();
+    renderPanel([role], workspace('draft', 20));
 
     expect(screen.getByText('Saisie assistée')).toBeInTheDocument();
+    await user.click(await screen.findByRole('tab', { name: /lun 03 août/ }));
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]);
+    fireEvent.pointerUp(cells[32]);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100,
+      vesselId: 7,
+      watchGroup: 'Bordée 1',
+      phases: expect.any(Array),
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-09-01', '2026-09-05'])('keeps August entry open on %s', async (referenceDate) => {
+    renderPanel(['marin'], workspace('draft'), currentPerson, referenceDate);
+
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+    expect(screen.getByText(/reste ouvert à la saisie jusqu’au samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
+    expect(await screen.findByText(/Affectation Planning appliquée/)).toBeInTheDocument();
+  });
+
+  it('locks August entry on September 6 while explaining the cutoff', async () => {
+    renderPanel(['marin'], workspace('draft'), currentPerson, '2026-09-06');
+
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    expect(screen.getByText(/est clôturé pour la saisie.*samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-01' })).toHaveAttribute('aria-readonly', 'true');
+  });
+
+  it('keeps Direction read-only when the server exposes no editable person', () => {
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    renderPanel(['direction'], data, {
+      id: 10,
+      firstName: 'Diane',
+      lastName: 'DIRECTION',
+      functionLabel: 'Direction',
+      gradeLabel: '',
+    });
+
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
   });
 
   it('shows one catalogue card per sailor even when legacy weekly and monthly registers overlap', () => {
@@ -243,7 +327,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
     renderPanel(['admin'], data);
 
-    expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Alex MARIN/ })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' })).toHaveTextContent('Alex MARIN');
     expect(screen.getByRole('navigation', { name: 'Registres accessibles' }).textContent?.match(/Alex MARIN/g)).toHaveLength(1);
   });
@@ -327,7 +411,8 @@ describe('WorkingTimeWorkflowPanel', () => {
     const alarmRow = screen.getByRole('button', { name: /lun 17 août/ }).closest('tr');
     const impactRow = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
     expect(alarmRow).toHaveClass('is-non-compliant');
-    expect(alarmRow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
+    expect(alarmRow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
+    expect(alarmRow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
     expect(impactRow).not.toHaveClass('is-non-compliant');
     expect(impactRow).toHaveTextContent('Conforme');
     expect(impactRow).toHaveTextContent('15 h 00');
@@ -336,8 +421,9 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
     const rollingWindow = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
-    expect(rollingWindow).toHaveTextContent('Travail sur 24 h : 13 h / maximum 12 h');
-    expect(rollingWindow).toHaveTextContent('Fenêtre glissante du lun 17 août à 06:30 au mar 18 août à 06:30.');
+    expect(rollingWindow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
+    expect(rollingWindow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
+    expect(rollingWindow).toHaveTextContent('Fenêtre d’analyse du lun 17 août à 06:30 au mar 18 août à 06:30.');
     expect(rollingWindow).toHaveTextContent('Alarme rattachée au lun 17 août.');
     expect(screen.getByText('24 h glissantes')).toBeInTheDocument();
     expect(screen.getByText('J−1 06:30')).toBeInTheDocument();
@@ -367,16 +453,34 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toBeInTheDocument();
   });
 
-  it('discards an unsigned draft from its card without saving its changes', async () => {
+  it('discards an empty unsigned draft from its card', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderPanel(['admin'], workspace('draft', 20));
+    const data = workspace('draft', 20);
+    data.intervals = [];
+    renderPanel(['admin'], data);
 
-    await user.click(screen.getByRole('button', { name: /Supprimer le brouillon de Alex MARIN/ }));
+    await user.click(screen.getByRole('button', { name: /Retirer le brouillon vide de Alex MARIN/ }));
 
     expect(discardWorkingTimeDraft).toHaveBeenCalledWith(client, 100);
     expect(reload).toHaveBeenCalled();
-    expect(screen.getByText(/retiré sans enregistrer ses modifications/)).toBeInTheDocument();
+    expect(screen.getByText(/brouillon vide a été retiré/)).toBeInTheDocument();
+  });
+
+  it('never offers a Captain the destructive discard action after hours are recorded and submitted', () => {
+    const data = workspace('draft');
+    data.dayApprovals = [{
+      id: 501, companyId: 1, registerId: 100, personId: 10,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+
+    renderPanel(['capitaine'], data);
+
+    expect(screen.queryByRole('button', { name: /Retirer le brouillon/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Camille CAPITAINE')).toHaveLength(2);
   });
 
   it('shows the approval badge and lets the assigned captain validate one sailor day', async () => {

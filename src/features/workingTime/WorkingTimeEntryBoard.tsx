@@ -44,6 +44,7 @@ interface WorkingTimeEntryBoardProps {
   selectedDay?: string;
   approverName?: string | null;
   hasRecordedPeriods?: boolean;
+  showSaveDraft?: boolean;
   showSubmitToCaptain?: boolean;
   submitDisabled?: boolean;
   showValidate?: boolean;
@@ -54,7 +55,7 @@ interface WorkingTimeEntryBoardProps {
   onCommentChange: (value: string) => void;
   onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
   onSelectedDayChange?: (day: string) => void;
-  onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'submit-day' | 'validate-day') => void;
+  onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   onCancelEdit: () => void;
   onEditInterval?: (interval: WorkingTimeInterval) => void;
   onRequestVoid?: (interval: WorkingTimeInterval) => void;
@@ -142,6 +143,7 @@ export function WorkingTimeEntryBoard({
   selectedDay: controlledSelectedDay,
   approverName = null,
   hasRecordedPeriods = false,
+  showSaveDraft = false,
   showSubmitToCaptain = false,
   submitDisabled = false,
   showValidate = false,
@@ -443,7 +445,7 @@ export function WorkingTimeEntryBoard({
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
           event.preventDefault();
           const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-          onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'submit-day' | 'validate-day');
+          onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day');
         }}>
           <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
           {planningContextLoading
@@ -453,6 +455,7 @@ export function WorkingTimeEntryBoard({
               : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
           <div className="working-time-form-actions">
             {editingIntervalId ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save-correction"><Save aria-hidden="true" size={16} />Enregistrer la correction</button> : null}
+            {!editingIntervalId && showSaveDraft ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked || !planningVesselId} type="submit" value="save-draft"><Save aria-hidden="true" size={16} />Enregistrer le brouillon</button> : null}
             {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}
             {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate-day"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button> : null}
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}

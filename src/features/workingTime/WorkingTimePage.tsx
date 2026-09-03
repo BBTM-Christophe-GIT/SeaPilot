@@ -200,7 +200,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           overview={overview}
           presentation="page"
           range={range}
-          subtitle="Seuils administrés, contrôles sur 24 heures et 7 jours, repos consécutif, fractionnement et travail de nuit."
+          subtitle="Seuils administrés, cycle de travail réinitialisé après 6 heures de repos, contrôles sur 24 heures et 7 jours."
           title="Contrôles travail et repos"
           visibleTabs={canReceiveManagementAlerts ? WORK_REST_NOTIFICATION_TABS : WORK_REST_TAB}
           />

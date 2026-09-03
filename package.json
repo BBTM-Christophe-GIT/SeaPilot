@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.22.21",
+  "version": "3.28.8",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
@@ -22,6 +22,7 @@
     "migrate:dpr": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts",
     "migrate:dpr:dry-run": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode dry-run",
     "migrate:dpr:apply": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode historical-load",
+    "migrate:dpr:insert-missing": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode insert-missing",
     "migrate:dpr:reconcile": "node --experimental-strip-types scripts/migrate-dpr-sharepoint.ts --mode reconcile",
     "verify:dpr:source-files": "node --experimental-strip-types scripts/verify-dpr-source-files.ts",
     "validate:dpr:phase6": "node --experimental-strip-types scripts/validate-dpr-phase6.ts",
@@ -31,6 +32,9 @@
     "import:sharepoint:fleet-certificates": "node --experimental-strip-types scripts/import-fleet-certificates.ts",
     "import:bbtm:preview": "node --experimental-strip-types scripts/bbtm-planning-preview.ts",
     "refresh:sharepoint:project-documents": "node --experimental-strip-types scripts/refresh-sharepoint-project-documents.ts",
+    "migrate:project-contract-documents": "node --experimental-strip-types scripts/migrate-project-contract-documents-to-storage.ts",
+    "migrate:qsms": "node --experimental-strip-types scripts/migrate-qsms-documents-to-storage.ts",
+    "migrate:qsms:apply": "node --experimental-strip-types scripts/migrate-qsms-documents-to-storage.ts --apply",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -38,6 +42,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "clsx": "^2.1.1",
+    "dompurify": "3.4.13",
     "fast-xml-parser": "^5.10.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

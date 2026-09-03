@@ -17,8 +17,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   TableProperties,
+  Trash2,
   Upload,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
@@ -56,6 +56,11 @@ import {
   workingTimeViolationWindowText,
 } from './workingTimeCompliance';
 import { WorkingTimeEntryBoard, type WorkingTimeRollingWindowMarker } from './WorkingTimeEntryBoard';
+import {
+  workingTimeEntryCutoffDate,
+  workingTimeEntryDateIsOpen,
+  workingTimeEntryIsInGracePeriod,
+} from './workingTimeEntryWindow';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 
@@ -66,6 +71,7 @@ interface WorkingTimeWorkflowPanelProps {
   range: WorkingTimeRange;
   previewMode?: boolean;
   refreshToken?: number;
+  referenceDate?: string;
   onMonthChange?: (direction: -1 | 0 | 1) => void;
   onNavigateDate?: (date: string) => void;
   onRefresh?: () => Promise<void> | void;
@@ -258,6 +264,7 @@ export function WorkingTimeWorkflowPanel({
   range,
   previewMode = false,
   refreshToken = 0,
+  referenceDate,
   onMonthChange,
   onNavigateDate,
   onOpenImport,
@@ -290,7 +297,7 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const localToday = useMemo(() => todayPlanningDate(), []);
+  const localToday = useMemo(() => referenceDate || todayPlanningDate(), [referenceDate]);
   const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
@@ -331,6 +338,12 @@ export function WorkingTimeWorkflowPanel({
     () => new Map(monthlyRegisters.map((register) => [register.personId, register])),
     [monthlyRegisters],
   );
+  const registerIdsWithSavedContent = useMemo(() => new Set([
+    ...(workspace?.intervals.map((interval) => interval.registerId) || []),
+    ...(workspace?.dayComments.map((comment) => comment.registerId) || []),
+    ...(workspace?.dayApprovals.map((approval) => approval.registerId) || []),
+    ...(workspace?.validations.map((validation) => validation.registerId) || []),
+  ]), [workspace?.dayApprovals, workspace?.dayComments, workspace?.intervals, workspace?.validations]);
   const normalizedSearch = registerSearch.trim().toLocaleLowerCase('fr-FR');
   const catalogPeople = useMemo(() => visibleReadablePeople.filter((person) => (
     isVisibleForPersonnelFilter(person, personnelFilter, localToday)
@@ -390,6 +403,9 @@ export function WorkingTimeWorkflowPanel({
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
+  const entryWindowOpen = workingTimeEntryDateIsOpen(selectedDay, localToday);
+  const entryWindowCutoff = workingTimeEntryCutoffDate(selectedDay);
+  const entryWindowGracePeriod = workingTimeEntryIsInGracePeriod(selectedDay, localToday);
   const isAssignedCaptainForSelectedDay = Boolean(
     hasCaptainRole
       && !isOwnRegister
@@ -406,6 +422,7 @@ export function WorkingTimeWorkflowPanel({
       (selectedDayApproval?.status === 'submitted'
         && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole))
       || (!selectedDayApproval
+        && entryWindowOpen
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
 
@@ -667,10 +684,12 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment(interval.comment || '');
   }
 
-  function handleEntryAction(intent: 'save-correction' | 'submit-day' | 'validate-day') {
+  function handleEntryAction(intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
     if (!selectedRegister) return;
     const successMessage = intent === 'save-correction'
       ? 'La correction a été enregistrée.'
+      : intent === 'save-draft'
+        ? 'Le brouillon a été enregistré sans validation.'
       : intent === 'submit-day'
         ? isExactHrCaptain
           ? 'La journée est signée : elle est validée si elle est conforme, sinon sa justification reste à compléter.'
@@ -754,14 +773,16 @@ export function WorkingTimeWorkflowPanel({
                   {expanded ? <div className="working-time-crew-rows">{group.people.map((person) => {
                     const register = monthlyRegisterByPerson.get(person.personId);
                     const personName = formatPerson(person.firstName, person.lastName);
+                    const canDiscardEmptyRegister = Boolean(register?.status === 'draft'
+                      && !registerIdsWithSavedContent.has(register.id));
                     return <div className={`working-time-register-card ${person.personId === selectedPersonId ? 'is-active' : ''}`} key={person.personId}>
                       <button className="working-time-register-select" onClick={() => {
                         setSelectedPersonId(person.personId);
                       }} type="button"><span>{personName}</span><small>{person.functionLabel || person.gradeLabel || 'Personnel maritime'}</small><i className={person.active !== false ? 'is-available' : ''} title={person.active !== false ? 'Disponible' : 'Indisponible'} /></button>
-                      {register?.status === 'draft' ? <button aria-label={`Supprimer le brouillon de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
-                        if (!window.confirm(`Retirer ce brouillon de ${personName} et abandonner ses modifications non enregistrées ?`)) return;
-                        void runAction(() => discardWorkingTimeDraft(client, register.id), 'Le brouillon a été retiré sans enregistrer ses modifications.');
-                      }} title="Supprimer ce brouillon" type="button"><X aria-hidden="true" size={16} /></button> : null}
+                      {canDiscardEmptyRegister && register ? <button aria-label={`Retirer le brouillon vide de ${personName} du ${register.periodStart} au ${register.periodEnd}`} className="working-time-register-discard" disabled={isSaving} onClick={() => {
+                        if (!window.confirm(`Masquer le brouillon vide de ${personName} ? Aucune heure enregistrée ne sera supprimée.`)) return;
+                        void runAction(() => discardWorkingTimeDraft(client, register.id), 'Le brouillon vide a été retiré.');
+                      }} title="Retirer ce brouillon vide" type="button"><Trash2 aria-hidden="true" size={15} /></button> : null}
                     </div>;
                   })}</div> : null}
                 </section>;
@@ -819,6 +840,8 @@ export function WorkingTimeWorkflowPanel({
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
+                    {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
@@ -849,6 +872,7 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
+                    showSaveDraft={canEdit && !selectedDayApproval}
                     showSubmitToCaptain={canEdit
                       && !selectedDayApproval
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}

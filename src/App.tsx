@@ -19,12 +19,14 @@ import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
 import { QhseDocumentsPage } from './features/qhseDocuments/QhseDocumentsPage';
 import { ServiceProvidersPage } from './features/serviceProviders/ServiceProvidersPage';
+import { ServiceNotesPage } from './features/serviceNotes/ServiceNotesPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
+const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -77,8 +79,12 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du suivi du temps de travail…</div>}><WorkingTimePage /></Suspense>
                 ) : module.key === 'procedures' ? (
                   <ProceduresPage />
+                ) : module.key === 'serviceNotes' ? (
+                  <ServiceNotesPage />
                 ) : module.key === 'projects' ? (
                   <ProjectsPage />
+                ) : module.key === 'billingElements' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des éléments de facturation…</div>}><BillingElementsPage /></Suspense>
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
                 ) : module.key === 'serviceProviders' ? (

@@ -1,6 +1,6 @@
 begin;
 
-select plan(10);
+select plan(12);
 
 insert into auth.users (id, email)
 values
@@ -199,6 +199,32 @@ select ok(
         (select id from public.people where sailor_number = 'ROLE-CAPTAIN')
   ),
   'the audit identifies the Captain as both apposition actor and validator'
+);
+
+select throws_ok(
+  format(
+    $sql$select public.discard_working_time_draft(%s)$sql$,
+    (select id from public.working_time_registers
+      where person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+        and period_start = '2026-08-01')
+  ),
+  '55000',
+  'WORKING_TIME_DRAFT_DISCARD_FORBIDDEN.',
+  'the Captain cannot discard a monthly draft once a day has entered the approval workflow'
+);
+
+select is(
+  (select count(*)::integer
+   from public.working_time_intervals work_interval
+   where work_interval.register_id = (
+     select id from public.working_time_registers
+     where person_id = (select id from public.people where sailor_number = 'ROLE-SAILOR')
+       and period_start = '2026-08-01'
+   )
+     and work_interval.local_work_date = '2026-08-26'
+     and work_interval.voided_at is null),
+  1,
+  'the protected Captain workflow keeps every recorded interval intact'
 );
 
 select * from finish();

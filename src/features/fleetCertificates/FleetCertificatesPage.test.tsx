@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
+import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
 import {
   buildFleetCertificateFileName,
@@ -37,6 +38,7 @@ const certificates = [
 const findings = [{
   id: 81, company_id: 1, certificate_id: 42, reference: 'EC-2026-0012', finding_type: 'major_non_conformity',
   title: 'Corrosion du support bâbord', description: 'Corrosion perforante à reprendre avant validation.', detected_on: '2026-07-16',
+  corrective_action: '<p><strong>Remplacer la tôle dégradée</strong> puis contrôler la réparation.</p>',
   treatment_delay_days: 21, treatment_due_on: '2026-08-06', status: 'in_progress', progress: 60,
   responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z',
 }];
@@ -54,27 +56,149 @@ const visits = [{
   assignments: [{ provider_id: 8, specialty_id: 801, contact_id: 811, scheduled_start: '2026-09-01T07:00:00Z', scheduled_end: '2026-09-01T09:00:00Z', provider: { id: 8, name: 'SERVAUX' }, specialty: { id: 801, name: 'Visite Radeaux' }, contact: { id: 811, full_name: 'Yann DUVAL' } }],
 }];
 
-function createClient() {
+function createClient(
+  findingRows = findings,
+  peopleRows: Array<{ id: number; first_name: string; last_name: string; function_label: string; departed_on: string | null; active: boolean }> = [
+    { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', departed_on: null, active: true },
+  ],
+) {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
+  const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
+  const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
+  const attachmentInsert = vi.fn().mockResolvedValue({ error: null });
   const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn().mockResolvedValue({ data: new Blob(['document']), error: null }), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
   const client = {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificates, error: null }) }) }) };
-      if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findings, error: null }), insert: vi.fn() };
-      if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: vi.fn() };
-      if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn() };
-      if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', active: true }], error: null }) }) };
+      if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
+      if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: attachmentInsert };
+      if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
+      if (table === 'people') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: peopleRows, error: null }) }) };
       if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
       if (table === 'fleet_certificate_visits') return { select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: visits, error: null }) }) }) };
       if (table === 'fleet_certificate_document_names') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ name: 'Permis de Navigation' }, { name: 'Certificat de Franc-Bord' }], error: null }) }) };
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, rpc, storageApi };
+  return { attachmentInsert, client, findingUpdate, findingUpdateEq, rpc, storageApi };
 }
 
 describe('FleetCertificatesPage', () => {
+  it('sorts numbered finding titles in natural numeric order', () => {
+    const sorted = [
+      { title: '2. Relevés périodiques' },
+      { title: '4. Ligne de mouillage' },
+      { title: '3. Registre des procès verbaux' },
+    ].sort(compareFleetFindingTitles);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      '2. Relevés périodiques',
+      '3. Registre des procès verbaux',
+      '4. Ligne de mouillage',
+    ]);
+  });
+
+  it('sorts non-numbered finding titles alphabetically', () => {
+    const sorted = [
+      { title: 'Zinc à contrôler' },
+      { title: 'Ancre de secours' },
+      { title: 'Éclairage de pont' },
+    ].sort(compareFleetFindingTitles);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      'Ancre de secours',
+      'Éclairage de pont',
+      'Zinc à contrôler',
+    ]);
+  });
+
+  it('keeps the oldest due year and natural object order inside the same finding type', () => {
+    const sorted = [
+      { findingType: 'prescription' as const, treatmentDueOn: '2026-09-30', title: '2. Pompe de cale mécanique' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '4. Ligne de mouillage (X1) - Dotation PV VMS' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '1. Document unique de prévention' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2026-09-30', title: '1. Pompe de cale à bras' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-05-16', title: '5. TOILETTE' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '2. Relevés périodiques des isolements' },
+      { findingType: 'prescription' as const, treatmentDueOn: '2025-04-24', title: '3. Registre des procès verbaux de visite' },
+      { findingType: 'prescription' as const, treatmentDueOn: '', title: '0. Absence de date' },
+    ].sort(compareFleetFindingsByTypeDueYearAndTitle);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      '1. Document unique de prévention',
+      '2. Relevés périodiques des isolements',
+      '3. Registre des procès verbaux de visite',
+      '4. Ligne de mouillage (X1) - Dotation PV VMS',
+      '5. TOILETTE',
+      '1. Pompe de cale à bras',
+      '2. Pompe de cale mécanique',
+      '0. Absence de date',
+    ]);
+  });
+
+  it('sorts findings by type before due year and object', () => {
+    const sorted = [
+      { findingType: 'prescription' as const, treatmentDueOn: '2024-01-01', title: '1. Prescription' },
+      { findingType: 'observation' as const, treatmentDueOn: '2026-01-01', title: '2. Observation récente' },
+      { findingType: 'major_non_conformity' as const, treatmentDueOn: '2027-01-01', title: '1. Non-conformité majeure' },
+      { findingType: 'remark' as const, treatmentDueOn: '2028-01-01', title: '1. Remarque' },
+      { findingType: 'observation' as const, treatmentDueOn: '2025-01-01', title: '1. Observation ancienne' },
+    ].sort(compareFleetFindingsByTypeDueYearAndTitle);
+
+    expect(sorted.map((finding) => finding.title)).toEqual([
+      '1. Non-conformité majeure',
+      '1. Remarque',
+      '1. Observation ancienne',
+      '2. Observation récente',
+      '1. Prescription',
+    ]);
+  });
+
+  it('keeps the type order in the grouped fleet view', async () => {
+    const { client } = createClient([
+      { ...findings[0], id: 82, reference: 'EC-2026-0022', finding_type: 'prescription', title: '2. Prescription', treatment_due_on: '2024-09-30' },
+      { ...findings[0], id: 84, reference: 'EC-2026-0024', finding_type: 'observation', title: '4. Observation', treatment_due_on: '2025-08-06' },
+      { ...findings[0], id: 83, reference: 'EC-2026-0023', finding_type: 'remark', title: '3. Remarque', treatment_due_on: '2026-12-31' },
+    ]);
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+
+    const list = (await screen.findByRole('button', { name: /4\. Observation/ }))
+      .closest('.fcx-global-finding-list') as HTMLElement;
+    expect(within(list).getAllByRole('button').map((button) => button.querySelector('b')?.textContent)).toEqual([
+      '3. Remarque',
+      '4. Observation',
+      '2. Prescription',
+    ]);
+  });
+
+  it('excludes departed personnel from the responsible options', async () => {
+    const user = userEvent.setup();
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+    const { client } = createClient(findings, [
+      { id: 9301, first_name: 'Alice', last_name: 'ACTUELLE', function_label: 'Capitaine', departed_on: null, active: true },
+      { id: 9302, first_name: 'David', last_name: 'PARTI', function_label: 'Capitaine', departed_on: '2000-01-01', active: true },
+      { id: 9303, first_name: 'Fanny', last_name: 'FUTURE', function_label: 'Matelot', departed_on: '2999-12-31', active: true },
+      { id: 9304, first_name: 'Inès', last_name: 'INACTIVE', function_label: 'Matelot', departed_on: null, active: false },
+      { id: 9305, first_name: 'Théo', last_name: 'AUJOURDHUI', function_label: 'Matelot', departed_on: today, active: true },
+    ]);
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
+
+    const responsible = within(screen.getByRole('dialog', { name: 'Déclarer un écart' }))
+      .getByRole('combobox', { name: 'Responsable' });
+    expect(within(responsible).getByRole('option', { name: /Alice ACTUELLE/ })).toBeInTheDocument();
+    expect(within(responsible).getByRole('option', { name: /Fanny FUTURE/ })).toBeInTheDocument();
+    expect(within(responsible).getByRole('option', { name: /Théo AUJOURDHUI/ })).toBeInTheDocument();
+    expect(within(responsible).queryByRole('option', { name: /David PARTI/ })).not.toBeInTheDocument();
+    expect(within(responsible).queryByRole('option', { name: /Inès INACTIVE/ })).not.toBeInTheDocument();
+  });
+
   it('groups the library, treatment, deadlines, visits and preview in one workspace', async () => {
     const user = userEvent.setup(); const { client } = createClient();
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
@@ -171,6 +295,95 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(reportDialog).getByRole('button', { name: 'Fermer' }));
     await user.click(screen.getByRole('button', { name: 'Nouvel écart' }));
     expect(screen.getByRole('option', { name: 'Findings' })).toHaveValue('finding');
+    expect(screen.getByRole('option', { name: 'Observation' })).toHaveValue('observation');
+  });
+
+  it('keeps progress as a draft and writes one follow-up only when Ajouter is clicked', async () => {
+    const user = userEvent.setup(); const { client, rpc } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+
+    const slider = screen.getByRole('slider', { name: 'Avancement' });
+    expect(slider).toHaveValue('60');
+    fireEvent.change(slider, { target: { value: '80' } });
+
+    expect(slider).toHaveValue('80');
+    expect(screen.getByText('À enregistrer avec « Ajouter »')).toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('save_fleet_certificate_finding_followup', expect.anything());
+
+    await user.type(screen.getByRole('textbox', { name: 'Note de suivi' }), 'Traitement réalisé à bord');
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('save_fleet_certificate_finding_followup', {
+      p_finding_id: 81,
+      p_progress: 80,
+      p_note: 'Traitement réalisé à bord',
+    });
+    expect(await screen.findByText('Suivi ajouté à l’historique.')).toBeInTheDocument();
+  });
+
+  it('edits an existing finding in place and preserves its history', async () => {
+    const user = userEvent.setup(); const { attachmentInsert, client, findingUpdate, findingUpdateEq, storageApi } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+
+    const detail = screen.getByRole('heading', { name: 'Corrosion du support bâbord' }).closest('aside')!;
+    expect(within(detail).getByRole('button', { name: 'Modifier' })).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Supprimer l’écart' })).toBeInTheDocument();
+    await user.click(within(detail).getByRole('button', { name: 'Modifier' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Modifier l’écart' });
+    expect(within(dialog).getByRole('combobox', { name: 'Type' })).toHaveValue('major_non_conformity');
+    expect(within(dialog).getByRole('textbox', { name: 'Objet' })).toHaveValue('Corrosion du support bâbord');
+    expect(within(dialog).getByRole('textbox', { name: 'Description' })).toHaveValue('Corrosion perforante à reprendre avant validation.');
+    const correctiveAction = within(dialog).getByRole('textbox', { name: 'Action corrective' });
+    expect(correctiveAction).toHaveTextContent('Remplacer la tôle dégradée puis contrôler la réparation.');
+    expect(within(dialog).getByRole('toolbar', { name: 'Mise en forme de l’action corrective' })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Échéance de traitement')).toHaveValue('2026-08-06');
+    expect(within(dialog).getByRole('combobox', { name: 'Responsable' })).toHaveValue('9303');
+
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Type' }), 'prescription');
+    await user.clear(within(dialog).getByRole('textbox', { name: 'Objet' }));
+    await user.type(within(dialog).getByRole('textbox', { name: 'Objet' }), 'Ancre de secours à embarquer');
+    correctiveAction.innerHTML = '<p><strong>Commander l’ancre</strong> et contrôler son arrimage.</p>';
+    fireEvent.input(correctiveAction);
+    const correctiveFile = new File(['preuve'], 'preuve-action.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByLabelText('Pièces jointes de l’action corrective'), correctiveFile);
+    expect(within(dialog).getByText('preuve-action.pdf')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer les modifications' }));
+
+    expect(findingUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      finding_type: 'prescription',
+      title: 'Ancre de secours à embarquer',
+      description: 'Corrosion perforante à reprendre avant validation.',
+      corrective_action: '<p><strong>Commander l’ancre</strong> et contrôler son arrimage.</p>',
+      treatment_due_on: '2026-08-06',
+      responsible_person_id: 9303,
+      responsible_name: 'Luc MARTIN',
+    }));
+    expect(findingUpdateEq).toHaveBeenCalledWith('id', 81);
+    expect(storageApi.upload).toHaveBeenCalledWith(
+      expect.stringMatching(/^1\/GRY\/findings\/81\/treatment\/.+-preuve-action\.pdf$/),
+      correctiveFile,
+      { contentType: 'application/pdf', upsert: false },
+    );
+    expect(attachmentInsert).toHaveBeenCalledWith(expect.objectContaining({
+      company_id: 1,
+      finding_id: 81,
+      attachment_kind: 'treatment',
+      original_file_name: 'preuve-action.pdf',
+    }));
+    expect(await screen.findByText('Écart modifié. L’historique est conservé.')).toBeInTheDocument();
+    expect(screen.getByText('Arthur DEMO')).toBeInTheDocument();
   });
 
   it('lets fleet managers edit the selected document information', async () => {

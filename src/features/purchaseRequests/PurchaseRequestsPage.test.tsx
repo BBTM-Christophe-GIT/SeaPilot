@@ -124,15 +124,7 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.queryByRole('group', { name: 'Décision' })).not.toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Logistique et suivi' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Actions de la demande' }));
-    expect(screen.getByRole('menuitem', { name: 'Approuver' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Refuser' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Demander un complément' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Pièces jointes \(0\)/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Historique \(1\)/i })).toBeInTheDocument();
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('menuitem', { name: 'Approuver' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Actions de la demande' })).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Actions de la demande' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'ampoule' } });
     expect(screen.getByRole('heading', { name: /#86.*Ampoule feu de navigation/i })).toBeInTheDocument();
@@ -193,22 +185,58 @@ describe('PurchaseRequestsPage', () => {
     }));
   });
 
-  it('keeps validation oversight and intervention actions available to administrators', async () => {
-    const user = userEvent.setup();
-    const { client, rpc } = createClient([baseRequest]);
+  it('keeps the contextual workflow action for administrators without an Actions menu', async () => {
+    const { client } = createClient([baseRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
     expect(screen.getAllByText('En attente')).not.toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Actions de la demande' })).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Actions de la demande' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Approuver' }));
+  it('lets a Marin run each contextual order-processing transition without granting request creation', async () => {
+    const user = userEvent.setup();
+    const orderedRequest = {
+      ...baseRequest,
+      id: 101,
+      request_number: '101',
+      status: 'Commande en cours',
+      ordered_on: '2026-08-01',
+    };
+    const receivingRequest = {
+      ...baseRequest,
+      id: 102,
+      request_number: '102',
+      status: 'En attente de réception',
+      ordered_on: '2026-08-02',
+      expected_delivery_on: '2026-08-30',
+    };
+    const { client, rpc } = createClient([baseRequest, orderedRequest, receivingRequest]);
 
+    render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
+
+    expect(await screen.findByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actions de la demande' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Prendre en charge' }));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
       p_request_id: 95,
-      p_action: 'approve',
+      p_action: 'take_charge',
+      p_comment: null,
+      p_effective_date: null,
+    }));
+
+    await user.click(screen.getByRole('button', { name: 'En commande (1)' }));
+    expect(await screen.findByRole('button', { name: 'Planifier la livraison' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'À réception (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'Reçu à bord' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
+      p_request_id: 102,
+      p_action: 'mark_received',
       p_comment: null,
       p_effective_date: null,
     }));

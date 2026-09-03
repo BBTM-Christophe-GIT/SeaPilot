@@ -15,7 +15,7 @@ const PEOPLE_SELECT = [
   'register_label',
   'sex',
   'sailor_number',
-  'm365_account',
+  'employee_number',
   'phone',
   'postal_address',
   'birth_date',
@@ -141,7 +141,7 @@ interface PersonRow {
   register_label: string | null;
   sex: string | null;
   sailor_number: string | null;
-  m365_account: string | null;
+  employee_number: string | null;
   phone: string | null;
   postal_address: string | null;
   birth_date: string | null;
@@ -218,7 +218,7 @@ export interface PersonRecord {
   registerLabel: string;
   sex: string;
   sailorNumber: string;
-  m365Account: string;
+  employeeNumber: string;
   phone: string;
   postalAddress: string;
   birthDate: string;
@@ -389,7 +389,7 @@ export interface UpdatePersonDetailsInput {
   registerLabel: string;
   sex: string;
   sailorNumber: string;
-  m365Account: string;
+  employeeNumber: string;
   phone: string;
   postalAddress: string;
   birthDate: string;
@@ -811,7 +811,7 @@ export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
     registerLabel: nullableText(row.register_label),
     sex: nullableText(row.sex),
     sailorNumber: nullableText(row.sailor_number),
-    m365Account: nullableText(row.m365_account),
+    employeeNumber: nullableText(row.employee_number),
     phone: nullableText(row.phone),
     postalAddress: nullableText(row.postal_address),
     birthDate: nullableText(row.birth_date),
@@ -1613,7 +1613,7 @@ function buildPersonDetailsPayload(input: CreatePersonInput | UpdatePersonDetail
     register_label: optionalText(input.registerLabel),
     sex: optionalText(input.sex),
     sailor_number: optionalText(input.sailorNumber),
-    m365_account: optionalText(input.m365Account),
+    employee_number: optionalText(input.employeeNumber),
     phone: optionalText(input.phone),
     postal_address: optionalText(input.postalAddress),
     birth_date: optionalText(input.birthDate),

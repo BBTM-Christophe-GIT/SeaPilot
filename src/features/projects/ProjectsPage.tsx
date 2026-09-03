@@ -7,34 +7,47 @@ import {
   ChevronRight,
   ClipboardList,
   FileText,
+  Files,
   Download,
   ExternalLink,
-  FileOutput,
   Filter,
   Info,
   Pencil,
   Plus,
   RefreshCw,
+  ReceiptText,
   RotateCcw,
   Rows3,
   Share2,
+  Ship,
   Trash2,
-  UserPlus,
   Users,
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
+import type { StoredProjectDocument } from './projectDocumentStorage';
+import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
-import { normalizeProjectContractType, PROJECT_CONTRACT_TYPES } from './projectContractOptions';
+import {
+  BAREBOAT_CONTRACT_TYPE,
+  BIMCO_CONTRACT_TYPE,
+  normalizeProjectContractType,
+  PROJECT_CONTRACT_TYPES,
+  TOWAGE_CONTRACT_TYPE,
+} from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
+import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
   buildProjectMetrics,
+  fetchProjectVesselCertificates,
   fetchProjectsData,
   type ClientRecord,
   type ProjectContractRecord,
@@ -80,6 +93,21 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 const PROJECTS_PER_PAGE = 40;
 const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
+
+type ProjectDocumentDownloadMode = 'document' | 'bundle';
+
+interface ProjectDocumentEmissionRequest {
+  kind: ProjectGeneratedDocumentKind;
+  planningOccurrenceId: number | null;
+}
+
+function generatedDocumentKindForContract(contractType?: string | null): ProjectGeneratedDocumentKind {
+  const normalized = normalizeProjectContractType(contractType);
+  if (normalized === BIMCO_CONTRACT_TYPE) return 'bimco_supplytime';
+  if (normalized === TOWAGE_CONTRACT_TYPE) return 'towage_contract';
+  if (normalized === BAREBOAT_CONTRACT_TYPE) return 'bareboat_charter';
+  return 'offer';
+}
 
 function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
@@ -129,6 +157,12 @@ function planningOperationUrl(occurrenceId: number): string {
     parameters.set('preview', '1');
   }
   return `/modules/planning?${parameters.toString()}`;
+}
+
+function billingElementsUrl(): string {
+  return new URLSearchParams(window.location.search).get('preview') === '1'
+    ? '/modules/billingElements?preview=1'
+    : '/modules/billingElements';
 }
 
 function formatFileSize(value: number | null): string {
@@ -205,13 +239,22 @@ function ProjectRibbonButton({
   );
 }
 
+function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: string; to: string }) {
+  return (
+    <a className="project-ribbon-command" href={to}>
+      <span className="project-ribbon-command-icon">{icon}</span>
+      <span className="project-ribbon-command-label">{label}</span>
+    </a>
+  );
+}
+
 const PROJECT_DETAIL_TABS = [
+  { id: 'identification', label: 'Identité & contrat' },
   { id: 'operations', label: 'Opérations' },
   { id: 'billing', label: 'Facturation' },
-  { id: 'contract', label: 'Contrat / SUPPLYTIME' },
-  { id: 'commercial', label: 'Offre commerciale' },
-  { id: 'documents', label: 'Documents contractuels' },
-  { id: 'identification', label: 'Identification' },
+  { id: 'commercial', label: 'Conditions commerciales' },
+  { id: 'contract', label: 'Document contractuel' },
+  { id: 'documents', label: 'Documents' },
 ] as const;
 
 type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]['id'];
@@ -275,9 +318,11 @@ function DetailField({ label, value, wide = false }: { label: string; value: Rea
 }
 
 function ProjectDocuments({
+  client,
   documents,
   emptyLabel,
 }: {
+  client: SupabaseClient;
   documents: ProjectDocumentRecord[];
   emptyLabel: string;
 }) {
@@ -288,9 +333,8 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        SeaPilot ouvre l’URL SharePoint d’origine sans télécharger le fichier. Si Microsoft 365 demande une connexion,
-        authentifiez-vous avec votre compte autorisé. Un fichier signalé introuvable peut avoir été déplacé ou supprimé et
-        nécessite un rafraîchissement des métadonnées.
+        SeaPilot ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
+        d’origine et peuvent demander une authentification Microsoft 365.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
@@ -300,6 +344,7 @@ function ProjectDocuments({
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
+            document.storageBucket && document.storagePath ? 'Stockage Supabase' : 'Source SharePoint',
           ].filter(Boolean);
 
           return (
@@ -313,7 +358,17 @@ function ProjectDocuments({
                   <small className="project-document-warning">Rattachement au projet Supabase non résolu</small>
                 ) : null}
               </div>
-              {linkState.status === 'available' ? (
+              {document.storageBucket && document.storagePath ? (
+                <ProjectStoredDocumentLink
+                  client={client}
+                  document={{
+                    fileName: document.fileName || document.title,
+                    sharePointWebUrl: document.fileUrl,
+                    storageBucket: document.storageBucket,
+                    storagePath: document.storagePath,
+                  }}
+                />
+              ) : linkState.status === 'available' ? (
                 <a href={linkState.href} rel="noreferrer" target="_blank">
                   Ouvrir dans SharePoint
                   <span className="sr-only"> : {document.fileName || document.title}</span>
@@ -331,6 +386,67 @@ function ProjectDocuments({
   );
 }
 
+const PROJECT_ATTACHMENT_CATEGORY_LABELS: Record<string, string> = {
+  billing: 'Facturation',
+  commercial_appendix: 'Prestation annexe',
+  commercial_contract: 'Contrat',
+  commercial_offer: 'Offre Commerciale',
+  hse: 'HSE',
+  hse_audits: 'Audits',
+  hse_kpi: 'KPI',
+  hse_minutes: 'Comptes Rendus',
+  hse_procedure: 'Procédure',
+  toilette_de_mer: 'Toilette de Mer',
+  toilette_de_mer_attestation_expert_bv: 'Attestation Expert/BV',
+};
+
+function ProjectStoredAttachments({
+  client,
+  documents,
+}: {
+  client: SupabaseClient;
+  documents: ProjectOperationDocumentRecord[];
+}) {
+  if (documents.length === 0) {
+    return <p className="project-section-empty">Aucune pièce jointe classée depuis la fiche projet.</p>;
+  }
+
+  return (
+    <>
+      <p className="project-document-help">
+        Ces pièces jointes sont conservées dans l’espace privé Supabase du projet. Le lien sécurisé est temporaire et
+        réservé aux utilisateurs autorisés de la société.
+      </p>
+      <ul className="project-document-list">
+        {documents.map((document) => {
+          const category = document.categoryKey ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.categoryKey] : '';
+          const subcategory = document.subcategoryKey
+            ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.subcategoryKey]
+            : '';
+          const metadata = [
+            category,
+            subcategory,
+            document.mimeType,
+            formatFileSize(document.fileSizeBytes),
+            document.createdAt ? `ajouté le ${formatDate(document.createdAt)}` : '',
+          ].filter(Boolean);
+          return (
+            <li key={document.id}>
+              <FileText aria-hidden="true" size={18} />
+              <div>
+                <strong>{document.fileName}</strong>
+                {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
+                {document.expiresOn ? <small>Échéance : {formatDate(document.expiresOn)}</small> : null}
+              </div>
+              <ProjectStoredDocumentLink client={client} document={document} />
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 function SupplytimePreview({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
   const groups = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
   const populatedCount = groups.flatMap((group) => group.fields).filter((field) => field.value).length;
@@ -339,7 +455,7 @@ function SupplytimePreview({ project, contract }: { project: ProjectRecord; cont
     <div className="project-supplytime">
       <div className="project-supplytime-heading">
         <div>
-          <h4>Aperçu SUPPLYTIME 2017</h4>
+          <h4>Aperçu BIMCO</h4>
           <p>{`${populatedCount} zone(s) renseignée(s) sur 36. Les champs métier canoniques priment sur leur copie historique.`}</p>
         </div>
         <span>{contract?.supplytimeSchemaVersion || 'supplytime-2017-v1'}</span>
@@ -369,6 +485,82 @@ function SupplytimePreview({ project, contract }: { project: ProjectRecord; cont
   );
 }
 
+function ProjectDocumentEmissionDialog({
+  attachmentCount,
+  definition,
+  isBusy,
+  mode,
+  onClose,
+  onConfirm,
+  onModeChange,
+}: {
+  attachmentCount: number;
+  definition: (typeof PROJECT_DOCUMENT_TYPES)[number];
+  isBusy: boolean;
+  mode: ProjectDocumentDownloadMode;
+  onClose: () => void;
+  onConfirm: () => void;
+  onModeChange: (mode: ProjectDocumentDownloadMode) => void;
+}) {
+  return (
+    <AppDialog
+      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
+      eyebrow="Projet · Émission documentaire"
+      footer={(
+        <div className="app-dialog__actions">
+          <button className="is-secondary" disabled={isBusy} onClick={onClose} type="button">Annuler</button>
+          <button className="is-primary" disabled={isBusy} onClick={onConfirm} type="button">
+            <Download aria-hidden="true" size={16} />
+            {isBusy ? 'Émission en cours…' : 'Émettre et télécharger'}
+          </button>
+        </div>
+      )}
+      icon={<FileText aria-hidden="true" size={20} />}
+      isBusy={isBusy}
+      onClose={onClose}
+      size="sm"
+      title={`Émettre : ${definition.label}`}
+    >
+      <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
+        <label className={mode === 'document' ? 'is-selected' : undefined}>
+          <input
+            checked={mode === 'document'}
+            disabled={isBusy}
+            name="project-document-download-mode"
+            onChange={() => onModeChange('document')}
+            type="radio"
+            value="document"
+          />
+          <FileText aria-hidden="true" size={22} />
+          <span>
+            <strong>Document seul</strong>
+            <small>Télécharger uniquement le document généré au format {definition.extension.toUpperCase()}.</small>
+          </span>
+        </label>
+        <label className={mode === 'bundle' ? 'is-selected' : undefined}>
+          <input
+            checked={mode === 'bundle'}
+            disabled={isBusy || attachmentCount === 0}
+            name="project-document-download-mode"
+            onChange={() => onModeChange('bundle')}
+            type="radio"
+            value="bundle"
+          />
+          <Files aria-hidden="true" size={22} />
+          <span>
+            <strong>Document + pièces jointes</strong>
+            <small>
+              {attachmentCount > 0
+                ? `Télécharger une archive ZIP avec ${attachmentCount} pièce${attachmentCount > 1 ? 's' : ''} jointe${attachmentCount > 1 ? 's' : ''}.`
+                : 'Aucune pièce jointe privée n’est classée sur ce projet.'}
+            </small>
+          </span>
+        </label>
+      </div>
+    </AppDialog>
+  );
+}
+
 function ProjectDetail({
   project,
   contract,
@@ -384,6 +576,7 @@ function ProjectDetail({
   onDeleteOccurrence,
   onEditOccurrence,
   onGenerateDocument,
+  onEditProject,
   onOpenPlanning,
   operationDocuments,
   planningOccurrences,
@@ -402,17 +595,25 @@ function ProjectDetail({
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
+  onEditProject: () => void;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
 }) {
-  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('operations');
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('identification');
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
+  const projectAttachments = useMemo(
+    () => operationDocuments.filter((document) => (
+      document.documentType === 'project_attachment' && document.planningOccurrenceId === null
+    )),
+    [operationDocuments],
+  );
   useEffect(() => {
     setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
   }, [planningOccurrences, project.id]);
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
+  const generatedDocumentKind = generatedDocumentKindForContract(project.contractType);
   return (
     <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
       <header className="project-contract-header">
@@ -434,14 +635,17 @@ function ProjectDetail({
             </dl>
           </div>
         </div>
-        <div className="project-contract-counts" aria-label="Indicateurs du contrat">
-          <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
-          <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
+        <div className="project-contract-header-actions">
+          {isManager && !project.archivedAt ? <button onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={15} /> Modifier</button> : null}
+          <div className="project-contract-counts" aria-label="Indicateurs du contrat">
+            <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
+            <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
+          </div>
         </div>
       </header>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
-          Les informations contractuelles et SUPPLYTIME sont temporairement indisponibles. Les autres sections restent consultables.
+          Les informations contractuelles et BIMCO sont temporairement indisponibles. Les autres sections restent consultables.
         </p>
       ) : !contract ? (
         <p className="project-partial-state" role="status">
@@ -505,19 +709,21 @@ function ProjectDetail({
         <div className="project-section-heading">
           <div>
             <strong>Documents contractuels et modèles</strong>
-            <span>Consultez les contrats existants ou générez un document classé dans SharePoint.</span>
+            <span>Consultez les pièces jointes privées du projet et les documents historiques SharePoint.</span>
           </div>
           <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
-        <h4>Documents Projets</h4>
-        <ProjectDocuments documents={projectDocuments} emptyLabel="Aucun document projet associé." />
+        <h4>Pièces jointes classées depuis la fiche projet</h4>
+        <ProjectStoredAttachments client={supabaseClient} documents={projectAttachments} />
+        <h4>Documents Projets historiques</h4>
+        <ProjectDocuments client={supabaseClient} documents={projectDocuments} emptyLabel="Aucun document projet associé." />
         <h4>Documents contractuels</h4>
         {contractDocumentsUnavailable ? (
           <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
         ) : (
-          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <label className="project-document-occurrence-select">
           Mission / occurrence à reprendre dans le document
@@ -534,7 +740,7 @@ function ProjectDetail({
           </select>
         </label>
         <div className="project-document-factory-grid">
-          {PROJECT_DOCUMENT_TYPES.map((definition) => (
+          {PROJECT_DOCUMENT_TYPES.filter((definition) => definition.kind === generatedDocumentKind).map((definition) => (
             <article className={definition.available ? '' : 'is-pending'} key={definition.kind}>
               <FileText aria-hidden="true" size={22} />
               <div>
@@ -549,7 +755,7 @@ function ProjectDetail({
                   type="button"
                 >
                   <Download aria-hidden="true" size={15} />
-                  {generatingDocument === definition.kind ? 'Génération et classement…' : definition.available ? 'Générer et classer' : 'Modèle attendu'}
+                  {generatingDocument === definition.kind ? 'Émission et classement…' : definition.available ? 'Émettre le document' : 'Modèle attendu'}
                 </button>
               ) : null}
             </article>
@@ -608,10 +814,7 @@ function ProjectDetail({
                         {documents.length > 0 ? (
                           <div className="project-operation-document-links">
                             {documents.map((document) => (
-                              <a href={document.sharePointWebUrl} key={document.id} rel="noreferrer" target="_blank">
-                                <FileText aria-hidden="true" size={14} />
-                                {document.fileName}
-                              </a>
+                              <ProjectStoredDocumentLink client={supabaseClient} document={document} includeIcon key={document.id} />
                             ))}
                           </div>
                         ) : <span className="project-operation-no-document">0 fichier</span>}
@@ -674,10 +877,11 @@ function ProjectDetail({
         {contractDocumentsUnavailable ? (
           <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
         ) : (
-          <ProjectDocuments documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
+          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
         <p className="project-document-help">
-          Le BIMCO utilise les deux fonds SUPPLYTIME 2017 du module SPFx et les clauses générales assainies du modèle fourni. Les fichiers générés sont classés dans SharePoint ; Supabase ne conserve que leurs métadonnées.
+          Le BIMCO reprend les quatre pages particulières du P144 et les clauses générales du document de référence fourni.
+          Les documents contractuels migrés sont conservés dans l’espace privé Supabase ; leur provenance SharePoint reste tracée.
         </p>
       </section>
       ) : null}
@@ -712,19 +916,21 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
-  const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [clientCatalogOpen, setClientCatalogOpen] = useState(false);
+  const [towedAssetCatalogOpen, setTowedAssetCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [compactDensity, setCompactDensity] = useState(true);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
-  const [editingClient, setEditingClient] = useState<ClientRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
-  const [lastStoredDocument, setLastStoredDocument] = useState<{ fileName: string; webUrl: string } | null>(null);
+  const [lastStoredDocument, setLastStoredDocument] = useState<StoredProjectDocument | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
+  const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
+  const [documentDownloadMode, setDocumentDownloadMode] = useState<ProjectDocumentDownloadMode>('document');
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -848,6 +1054,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedOperationDocuments = selectedProject
     ? projectsData.operationDocuments.filter((document) => document.projectId === selectedProject.id)
     : [];
+  const selectedProjectAttachments = selectedOperationDocuments.filter((document) => (
+    document.documentType === 'project_attachment' && document.planningOccurrenceId === null
+  ));
+  const selectedGeneratedDocumentKind = generatedDocumentKindForContract(selectedProject?.contractType);
+  const documentEmissionDefinition = documentEmissionRequest
+    ? PROJECT_DOCUMENT_TYPES.find((definition) => definition.kind === documentEmissionRequest.kind)
+    : undefined;
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -880,16 +1093,16 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setProjectEditorOpen(true);
   }
 
-  function openClientEditor(clientRecord?: ClientRecord) {
-    setMutationError('');
-    setEditingClient(clientRecord);
-    setClientEditorOpen(true);
-  }
-
   function openPlanningEditor(occurrence?: ProjectPlanningOccurrenceRecord) {
     setMutationError('');
     setEditingOccurrence(occurrence);
     setPlanningEditorOpen(true);
+  }
+
+  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+    setMutationError('');
+    setDocumentDownloadMode('document');
+    setDocumentEmissionRequest({ kind, planningOccurrenceId });
   }
 
   async function archiveSelectedProject() {
@@ -914,7 +1127,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
     const confirmed = window.confirm(
       `Supprimer définitivement l’opération « ${operationLabel} » du Planning ?\n\n`
-      + 'Les documents déjà classés resteront conservés dans SharePoint « Documents Projets » au niveau du contrat.',
+      + 'Les documents déjà classés resteront conservés dans SeaPilot au niveau du projet.',
     );
     if (!confirmed) return;
 
@@ -938,7 +1151,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setEditingOccurrence(undefined);
       }
       setMutationMessage(
-        'Opération supprimée du Planning. Ses documents restent conservés dans SharePoint « Documents Projets ».',
+        'Opération supprimée du Planning. Ses documents restent conservés dans SeaPilot.',
       );
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Impossible de supprimer l’opération.");
@@ -947,7 +1160,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     }
   }
 
-  async function generateSelectedProjectDocument(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+  async function generateSelectedProjectDocument(
+    kind: ProjectGeneratedDocumentKind,
+    planningOccurrenceId: number | null,
+    downloadMode: ProjectDocumentDownloadMode,
+  ) {
     if (!selectedProject) return;
     setMutationError('');
     setMutationMessage('');
@@ -958,33 +1175,74 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       const occurrence = planningOccurrenceId
         ? selectedPlanningOccurrences.find((item) => item.id === planningOccurrenceId)
         : undefined;
+      const emitter = kind === 'offer' || kind === 'towage_contract' || kind === 'bareboat_charter'
+        ? await fetchProjectDocumentEmitter(effectiveClient).catch(() => undefined)
+        : undefined;
+      const vesselCertificates = kind === 'bareboat_charter'
+        ? selectedProject.primaryVesselId
+          ? await fetchProjectVesselCertificates(effectiveClient, selectedProject.primaryVesselId)
+          : []
+        : undefined;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
         contract: selectedContract,
+        emitter,
         occurrence,
         project: selectedProject,
+        towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
+        vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
+        vesselCertificates,
       });
+      let storedDocument: StoredProjectDocument | null = null;
+      const warnings: string[] = [];
       try {
         const { storeGeneratedProjectDocument } = await import('./projectDocumentStorage');
-        const stored = await storeGeneratedProjectDocument(effectiveClient, {
+        storedDocument = await storeGeneratedProjectDocument(effectiveClient, {
           document: generated,
           documentType: kind,
           planningOccurrenceId,
           projectId: selectedProject.id,
           revision: 1,
         });
-        setLastStoredDocument({ fileName: stored.fileName, webUrl: stored.webUrl });
-        setMutationMessage(`${stored.fileName} généré et classé automatiquement dans SharePoint.`);
+        setLastStoredDocument(storedDocument);
         setLoadAttempt((attempt) => attempt + 1);
       } catch (storageError) {
-        downloadGeneratedProjectDocument(generated);
-        setMutationMessage(`${generated.fileName} généré et téléchargé localement.`);
-        setMutationError(storageError instanceof Error ? storageError.message : 'Le classement SharePoint a échoué.');
+        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
       }
+
+      let bundled = false;
+      if (downloadMode === 'bundle') {
+        try {
+          const { createProjectDocumentBundle } = await import('./projectDocumentStorage');
+          const bundle = await createProjectDocumentBundle(effectiveClient, {
+            attachments: selectedProjectAttachments,
+            document: generated,
+          });
+          downloadGeneratedProjectDocument(bundle);
+          bundled = true;
+        } catch (bundleError) {
+          downloadGeneratedProjectDocument(generated);
+          warnings.push(
+            `${bundleError instanceof Error ? bundleError.message : 'La préparation des pièces jointes a échoué.'} Le document seul a été téléchargé.`,
+          );
+        }
+      } else {
+        downloadGeneratedProjectDocument(generated);
+      }
+
+      const storageLabel = storedDocument
+        ? 'généré et classé dans l’espace privé SeaPilot'
+        : 'généré';
+      const downloadLabel = bundled
+        ? `téléchargé avec ${selectedProjectAttachments.length} pièce${selectedProjectAttachments.length > 1 ? 's' : ''} jointe${selectedProjectAttachments.length > 1 ? 's' : ''}`
+        : 'téléchargé';
+      setMutationMessage(`${generated.fileName} ${storageLabel}, puis ${downloadLabel}.`);
+      setMutationError(warnings.join(' '));
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Impossible de générer le document.');
     } finally {
       setGeneratingDocument(null);
+      setDocumentEmissionRequest(null);
     }
   }
 
@@ -1043,16 +1301,25 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive aria-hidden="true" size={20} />} label="Archiver" onClick={archiveSelectedProject} />
           <ProjectRibbonButton icon={<RefreshCw aria-hidden="true" size={20} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
         </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Clients & opérations">
-          <ProjectRibbonButton disabled={!isManager} icon={<UserPlus aria-hidden="true" size={20} />} label="Nouveau client" onClick={() => openClientEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedClient} icon={<Users aria-hidden="true" size={20} />} label="Modifier le client" onClick={() => selectedClient && openClientEditor(selectedClient)} />
+        <ProjectRibbonGroup label="Référentiels & opérations">
+          <ProjectRibbonButton disabled={!isManager} icon={<Users aria-hidden="true" size={20} />} label="Liste des clients" onClick={() => setClientCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager} icon={<Ship aria-hidden="true" size={20} />} label="Liste des remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Documents">
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText aria-hidden="true" size={20} />} label="Générer offre" onClick={() => void generateSelectedProjectDocument('offer', null)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<ClipboardList aria-hidden="true" size={20} />} label="Générer contrat" onClick={() => void generateSelectedProjectDocument('bimco_supplytime', selectedPlanningOccurrences[0]?.id ?? null)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileOutput aria-hidden="true" size={20} />} label="Générer OT / CR" onClick={() => void generateSelectedProjectDocument('towage_contract', selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton
+            disabled={!isManager || !selectedProject || generatingDocument !== null}
+            icon={<FileText aria-hidden="true" size={20} />}
+            label="Émettre le document"
+            onClick={() => openProjectDocumentEmission(
+              selectedGeneratedDocumentKind,
+              selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null,
+            )}
+          />
           <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
+        </ProjectRibbonGroup>
+        <ProjectRibbonGroup label="Facturation">
+          <ProjectRibbonLink icon={<ReceiptText aria-hidden="true" size={20} />} label="Éléments de facturation" to={billingElementsUrl()} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Affichage">
           <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
@@ -1141,9 +1408,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
       {lastStoredDocument ? (
-        <a className="project-stored-document-link" href={lastStoredDocument.webUrl} rel="noreferrer" target="_blank">
-          <ExternalLink aria-hidden="true" size={15} /> Ouvrir {lastStoredDocument.fileName} dans SharePoint
-        </a>
+        <span className="project-stored-document-link">
+          <ProjectStoredDocumentLink client={effectiveClient} document={{
+            fileName: lastStoredDocument.fileName,
+            storageBucket: lastStoredDocument.storageBucket,
+            storagePath: lastStoredDocument.storagePath,
+          }} includeIcon />
+        </span>
       ) : null}
       {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
@@ -1163,8 +1434,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
-                <h2 id="projects-list-title">Contrats</h2>
-                <span>{filteredProjects.length} contrat(s)</span>
+                <h2 id="projects-list-title">Portefeuille projet</h2>
+                <span>{filteredProjects.length} projet(s)</span>
               </div>
               <label>
                 <span className="sr-only">Rechercher un contrat</span>
@@ -1230,7 +1501,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               isManager={isManager}
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
-              onGenerateDocument={(kind, planningOccurrenceId) => void generateSelectedProjectDocument(kind, planningOccurrenceId)}
+              onGenerateDocument={openProjectDocumentEmission}
+              onEditProject={() => openProjectEditor(selectedProject)}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
               operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
@@ -1240,6 +1512,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           ) : null}
         </div>
       )}
+
+      {documentEmissionRequest && documentEmissionDefinition ? (
+        <ProjectDocumentEmissionDialog
+          attachmentCount={selectedProjectAttachments.length}
+          definition={documentEmissionDefinition}
+          isBusy={generatingDocument !== null}
+          mode={documentDownloadMode}
+          onClose={() => setDocumentEmissionRequest(null)}
+          onConfirm={() => void generateSelectedProjectDocument(
+            documentEmissionRequest.kind,
+            documentEmissionRequest.planningOccurrenceId,
+            documentDownloadMode,
+          )}
+          onModeChange={setDocumentDownloadMode}
+        />
+      ) : null}
 
       {projectEditorOpen ? (
         <ProjectEditor
@@ -1264,16 +1552,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           vessels={projectsData.vessels}
         />
       ) : null}
-      {clientEditorOpen ? (
-        <ClientEditor
+      {clientCatalogOpen ? (
+        <ClientCatalogDialog
+          canManage={isManager}
           client={effectiveClient}
-          clientRecord={editingClient}
-          onClose={() => setClientEditorOpen(false)}
-          onSaved={() => {
-            setClientEditorOpen(false);
-            setMutationMessage('Client enregistré dans Supabase.');
-            setLoadAttempt((attempt) => attempt + 1);
-          }}
+          clients={projectsData.clients}
+          onChanged={() => setLoadAttempt((attempt) => attempt + 1)}
+          onClose={() => setClientCatalogOpen(false)}
+        />
+      ) : null}
+      {towedAssetCatalogOpen ? (
+        <TowedAssetCatalogDialog
+          canManage={isManager}
+          client={effectiveClient}
+          onChanged={() => setLoadAttempt((attempt) => attempt + 1)}
+          onClose={() => setTowedAssetCatalogOpen(false)}
+          towedAssets={projectsData.towedAssets}
         />
       ) : null}
       {planningEditorOpen && selectedProject ? (
@@ -1295,10 +1589,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 : 'Opération ajoutée au Planning.',
             );
             if (uploads.stored.length > 0) {
-              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SharePoint.`);
+              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SeaPilot.`);
             }
             if (uploads.failed.length > 0) {
-              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SharePoint.`);
+              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SeaPilot.`);
             }
             setLoadAttempt((attempt) => attempt + 1);
           }}

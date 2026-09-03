@@ -211,7 +211,7 @@ export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePl
     p_vessel_id: input.scope === 'vessel' ? input.vesselId : null,
     p_effective_from: input.effectiveFrom,
     p_effective_to: input.effectiveTo || null,
-    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail sur 24 h'),
+    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail du cycle après repos de 6 h'),
     p_min_rest_24h: bounded(input.minRest24h, 0, 24, 'Le minimum de repos sur 24 h'),
     p_max_work_7d: bounded(input.maxWork7d, 0, 168, 'Le maximum de travail sur 7 jours'),
     p_min_rest_7d: bounded(input.minRest7d, 0, 168, 'Le minimum de repos sur 7 jours'),

@@ -1,3 +1,130 @@
+# Design QA — Création client assistée v3.23.2 (2026-08-30)
+
+## Cibles et état comparés
+
+- Source visuelle : `C:/CODEX/SeaPilot/docs/design/client-postal-location-reference.png` (1 072 × 1 042 px, capture à densité estimée 1,5).
+- Source normalisée : `C:/CODEX/SeaPilot/docs/design/client-postal-location-reference-normalized.png` (710 × 690 px).
+- Implémentation navigateur : `C:/CODEX/SeaPilot/docs/design/client-postal-location-implementation-final.jpg` (viewport 1 265 × 712 CSS px, densité 1).
+- Région d’implémentation normalisée : `C:/CODEX/SeaPilot/docs/design/client-postal-location-implementation-crop.png` (710 × 676 px).
+- Comparaison côte à côte ouverte et inspectée : `C:/CODEX/SeaPilot/docs/design/client-postal-location-comparison.png`.
+- État : préversion Admin, `Nouveau projet` ouvert, puis `Créer un client`, nom et adresse renseignés, code postal `50340`, liste de 14 communes chargée et `Les Pieux` présélectionnée.
+
+## Findings
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Typographie : la famille, les graisses, tailles, interlignages et hiérarchie du dialogue de référence sont conservés.
+- Espacement et rythme : la grille à deux colonnes, le champ Adresse pleine largeur, les hauteurs de contrôles, le bloc représentant et le pied de dialogue restent alignés sur la référence.
+- Couleurs et tokens : fonds, bordures, texte, focus et case active utilisent exclusivement les tokens SeaPilot existants.
+- Images et actifs : aucun nouvel actif raster, pictogramme approximatif ou dessin CSS n’est introduit ; la croix existante est conservée.
+- Copie et contenu : `Pays` disparaît du formulaire ; `Code postal` occupe sa place et `Ville` devient une liste déroulante. Le pays détecté reste invisible.
+- Responsive : aucun débordement horizontal au viewport contrôlé. Le léger ascenseur interne visible à 712 px de hauteur provient du conteneur de dialogue global ; tous les champs et actions restent visibles et accessibles (P3 accepté).
+
+## Comparaison et historique
+
+La comparaison complète normalisée est suffisamment lisible pour vérifier les libellés, contrôles, espacements et actions ; aucun recadrage ciblé supplémentaire n’était nécessaire.
+
+1. Première passe : le message d’aide postal ajoutait une ligne visible et repoussait `Client actif` sous le pli (P2).
+2. Correctif : le message dynamique est conservé pour les lecteurs d’écran mais retiré du flux visuel.
+3. Preuve après correctif : `client-postal-location-implementation-final.jpg` montre `Client actif`, le code postal, la liste de villes et les deux actions dans la même vue.
+
+## Interactions et exécution
+
+- Ouverture depuis `Nouveau projet > Ajouter un client ou affréteur`.
+- Saisie de `50340`, chargement réel de 14 communes depuis le référentiel officiel et présélection de `Les Pieux`.
+- Sélection de `Le Rozel`, enregistrement dans le jeu de préversion puis présélection automatique du nouveau client dans le projet.
+- Option `Autre ville…` présente pour la saisie libre et les adresses étrangères.
+- Aucun `vite-error-overlay`, aucun débordement horizontal et aucune interaction rejetée pendant la recette.
+
+final result: passed
+
+---
+
+# Design QA — icônes des chapitres QSMS v3.27.15 (2026-09-02)
+
+## Cible et preuves
+
+- Référence visuelle : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-85bb65f3-5992-471d-acbc-84d700d0facd.png` (1 224 × 886 px).
+- Rendu local : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-collapsed-v3-27-15.png` (1 227 × 690 px).
+- Comparaison plein écran : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-comparison-v3-27-15.png` (2 475 × 928 px).
+- Comparaison ciblée du chapitre 03 : `C:/CODEX/SeaPilot/docs/design/qsms-chapter-icons-focus-comparison-v3-27-15.png` (1 020 × 218 px).
+- Route : `http://127.0.0.1:5173/modules/procedures?preview=1`.
+- Viewport CSS demandé : 1 227 × 894 px, `deviceScaleFactor: 1`. Le navigateur intégré a produit une capture visible de 1 227 × 690 px ; la comparaison ciblée isole et normalise la même ligne de chapitre afin d'éviter de confondre ce rognage avec un écart de design.
+- État : profil Admin de prévisualisation, chapitres repliés, données QSMS de démonstration.
+
+## Comparaison visuelle
+
+- Typographie : SeaPilot conserve sa police, ses graisses et sa hiérarchie existantes ; les libellés restent lisibles, sans troncature dans le viewport de référence.
+- Espacement et rythme : les pictogrammes utilisent le carré arrondi existant de 26 × 26 px, restent centrés sur la ligne et ne modifient pas la densité de la bibliothèque.
+- Couleurs : les tons bleu, vert d'eau, orange et ambre reprennent la sémantique visible dans la référence sans introduire de nouveau token incompatible avec le module.
+- Qualité des actifs : tous les pictogrammes proviennent de Lucide, déjà utilisé par SeaPilot ; aucun SVG artisanal, dessin CSS, emoji ou actif raster approximatif n'a été ajouté.
+- Contenu : les groupes « Documents non contrôlés » et « ISM - Chapitre non renseigné » sont distincts. Le contrôle Supabase confirme respectivement 21 et 3 sources.
+- Icônes : la comparaison ciblée du chapitre 03 confirme le même bâtiment, le même trait et le même traitement bleu. Les 15 correspondances (01 à 13, non contrôlés et non renseigné) sont couvertes par le test de rendu.
+- Interactions : le repli/dépli des chapitres a été exercé dans le navigateur intégré. L'ouverture bureau est couverte par des tests de schémas Word, Excel et PowerPoint ; le protocole externe n'a pas été lancé pendant la QA pour ne pas ouvrir une application du poste.
+- Responsive : à 753 px de largeur utile, `clientWidth` et `scrollWidth` valent tous deux 753 px ; aucun débordement horizontal n'est introduit par les nouveaux pictogrammes.
+- Console : aucune erreur ni alerte navigateur relevée sur la prévisualisation.
+
+## Comparaison et constats
+
+- Premier passage : aucun écart P0, P1 ou P2 sur le composant ciblé. La différence de densité entre la capture SharePoint et l'écran SeaPilot complet est intentionnelle : l'implémentation conserve la coque, les filtres et les contrôles existants de SeaPilot.
+- Passage ciblé : la ligne du chapitre 03 a été isolée dans les deux captures ; le pictogramme, le ton, l'alignement et le rayon sont cohérents avec la référence.
+- Aucun correctif visuel supplémentaire n'a été nécessaire après comparaison.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 : aucun.
+
+final result: passed
+
+---
+
+# Design QA — fiche information QSMS v3.27.14 (2026-09-02)
+
+## Cibles et état comparés
+
+- Source visuelle : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-a82bce02-19bd-4ed4-878c-ed0342a261f6.png` (854 × 877 px) et `C:/Users/chris/AppData/Local/Temp/codex-clipboard-d941091b-a573-463b-b857-2acfd0cc8991.png` (1 911 × 190 px).
+- Implémentation : capture navigateur intégrée émise pendant cette tâche, URL `http://127.0.0.1:5173/modules/procedures?preview=1`.
+- Viewport : 854 × 877 CSS px, densité 1 ; capture d’implémentation 854 × 877 px, sans normalisation.
+- État : fiche Administration ouverte sur un document existant, données rapprochées de la capture source (`VPC 06-A`, titre DUERP, navire LANDEMER).
+- La source originale et la capture rendue ont été ouvertes dans le même contexte visuel pour la comparaison.
+
+## Résultat visuel
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Typographie : hiérarchie plus nette, poids et tailles cohérents avec les autres modules SeaPilot ; le titre long revient proprement à la ligne.
+- Espacement et rythme : sections régulières, grille stable, pied d’actions persistant et aucun débordement horizontal visible.
+- Couleurs et tokens : palette SeaPilot respectée ; les états de revue prête/manquante et les alertes J-90 sont sémantiquement distincts.
+- Images et actifs : aucun actif raster n’était à reproduire ; les icônes utilisent la bibliothèque Lucide du produit.
+- Copie et contenu : la référence calculée, la recherche Projet et le fonctionnement de l’alarme J-90 sont explicités sans réintroduire les champs supprimés.
+- Accessibilité et interactions : dialogue et sections nommés, champs associés à leurs labels, fermeture et actions clavier accessibles ; aucune erreur console observée.
+
+La différence de densité avec l’ancienne fiche est intentionnelle : elle correspond au redesign demandé et à la suppression de Type document, Catégorie, Code procédure, Restrictions, Notes et Veille Passerelle. L’en-tête, le bloc Identification et le bloc Validation sont suffisamment lisibles dans la capture complète ; aucun recadrage ciblé supplémentaire n’était nécessaire. La ligne de bibliothèque ne contient plus `PRO · OPE · D` et conserve seulement les badges Navire et Projet.
+
+## Historique de comparaison
+
+1. Première passe à 854 × 877 : aucun défaut P0/P1/P2 ; le code calculé, le titre, les deux premières sections et le pied persistant sont visibles sans collision.
+2. Interactions vérifiées : modification Thème/Numéro/Version avec mise à jour immédiate de `VPC 06-A - Titre`, recherche Projet, activation/désactivation de la revue annuelle et absence d’erreur console.
+
+## Implementation checklist
+
+- [x] En-tête `Code - Titre`
+- [x] Projet recherchable
+- [x] Échéance annuelle et alerte J-90
+- [x] Pied d’actions persistant
+- [x] Métadonnée technique retirée de la ligne
+- [x] Erreurs console contrôlées
+
+## Follow-up polish
+
+Aucun raffinement P3 indispensable au déploiement.
+
+final result: passed
+
+---
+
 # Design QA — Tableau de bord manager (2026-08-25)
 
 ## Cibles et état comparés
@@ -40,6 +167,37 @@ Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
 - Aucun débordement horizontal n’est présent aux viewports 1920 × 889, 1440 × 900 et 390 × 844.
 - `Accès rapides` et `Ouvrir le planning` sont absents du DOM final.
 - Erreurs et avertissements console : aucun.
+
+final result: passed
+
+---
+
+# Planning — lisibilité des bordées et fonctions du personnel (2026-08-28)
+
+## Cible
+
+- Référence validée : `C:/Users/chris/.codex/generated_images/01a04724-460b-79b0-afc3-5a1c9b499384/exec-9c8eb63a-ef8c-4d25-92b7-8b0b15410b3d.png`
+- Implémentation locale : `http://127.0.0.1:5173/modules/planning?preview=1`
+- Capture d’implémentation : `C:/Users/chris/AppData/Local/Temp/seapilot-planning-qa-centered.png`
+- Comparaison côte à côte : `C:/Users/chris/AppData/Local/Temp/seapilot-planning-design-qa-comparison.png`
+- Viewport vérifié : 1 936 × 1 048 px, vue Flotte en plein écran, mois d’août 2026.
+
+## Vérifications réalisées
+
+- Chaque ligne de personnel affiche le Prénom NOM puis la fonction métier sur une deuxième ligne.
+- La bordée utilise le fond vert d’eau retenu, une ligne verticale et un marqueur circulaire par marin pour rendre la hiérarchie immédiatement lisible.
+- Les lignes alternent entre blanc et bleu très pâle sans modifier la couleur des affectations dans le calendrier.
+- Les rôles abrégés `MECA`, `PONT` et `CDT` ne sont pas ajoutés à droite des lignes.
+- La densité reste compatible avec le planning existant : cinq marins sont lisibles dans une bordée sans créer de colonne supplémentaire.
+- Le repli de « Bordée 1 » retire ses cinq lignes, puis le dépli les restaure avec leurs fonctions ; 11 lignes passent à 6 puis reviennent à 11 dans les données de démonstration.
+- Le DOM contient les fonctions attendues, notamment « Capitaine » et « Chef Mécanicien ».
+- Aucun avertissement ni erreur applicative n’est présent dans la console du navigateur.
+
+## Écarts P0/P1/P2
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 : les noms et fonctions diffèrent entre la référence et les données de démonstration, ce qui est attendu ; la structure et la hiérarchie visuelle correspondent.
 
 final result: passed
 

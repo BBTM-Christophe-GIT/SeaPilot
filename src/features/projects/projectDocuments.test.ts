@@ -26,6 +26,10 @@ function document(overrides: Partial<ProjectDocumentRecord> = {}): ProjectDocume
     sourceModifiedAt: '2026-07-15T08:00:00Z',
     sourceSharePointId: '1',
     sourceLabel: 'SharePoint',
+    storageBucket: '',
+    storageMigratedAt: '',
+    storagePath: '',
+    storageSha256: '',
     title: 'rapport.pdf',
     ...overrides,
   };

@@ -38,6 +38,7 @@ describe('module access', () => {
       ['QHSE', 'KPI', 'submenu'],
       ['QHSE', 'Certificats flotte', 'submenu'],
       ['QHSE', 'Procédures QHSE', 'submenu'],
+      ['QHSE', 'Notes de Service', 'submenu'],
       ['QHSE', "Plan d'Action", 'submenu'],
       ['Opérations', 'Daily Progress Report', 'submenu'],
       ['Opérations', 'Projets', 'submenu'],
@@ -52,5 +53,12 @@ describe('module access', () => {
       ['Levage', 'Levage', 'direct'],
       ['Administration', 'Administration', 'direct'],
     ]);
+    expect(NAVIGATION_MODULES.map((module) => module.key)).not.toContain('billingElements');
+    expect(canAccessModule(['direction'], 'billingElements')).toBe(true);
   });
+
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
+    'allows the %s profile to open published QHSE service notes',
+    (role) => expect(canAccessModule([role], 'serviceNotes')).toBe(true),
+  );
 });

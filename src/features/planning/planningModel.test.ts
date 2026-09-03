@@ -10,7 +10,7 @@ import {
   hasBlockingPlanningControls,
   getAllPlanningCrewEvents,
   getUnassignedPlanningPeople,
-  getUnbilledPlanningProjects,
+  getBillablePlanningProjects,
   isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningStatus,
@@ -284,6 +284,41 @@ describe('planning hierarchy and side panels', () => {
     expect(rows[0].projects).toHaveLength(2);
   });
 
+  it('uses the current HR function for a crew row without rewriting the historical assignment role', () => {
+    const adrienOverview: PlanningOverview = {
+      ...overview,
+      people: [{
+        ...overview.people[0],
+        id: 6,
+        firstName: 'Adrien',
+        lastName: 'BOIS',
+        functionLabel: 'Capitaine',
+      }],
+      periods: [{
+        ...overview.periods[0],
+        id: 156,
+        personId: 6,
+        crewName: 'Adrien BOIS',
+        watchGroup: 'Bordée 2',
+        functionLabel: '2nd Capitaine',
+      }],
+    };
+
+    const events = getAllPlanningCrewEvents(adrienOverview);
+    const rows = buildPlanningCrewRows(
+      adrienOverview,
+      buildPlanningTimeline('2026-07-12', 'month'),
+      { vesselName: '', personName: '' },
+      events,
+    );
+
+    expect(events[0].functionLabel).toBe('2nd Capitaine');
+    expect(rows.find((row) => row.type === 'person')).toMatchObject({
+      label: 'Adrien BOIS',
+      functionLabel: 'Capitaine',
+    });
+  });
+
   it('orders every board hierarchy by the HR function sequence', () => {
     const functions = [
       'Président',
@@ -345,7 +380,7 @@ describe('planning hierarchy and side panels', () => {
     expect(rows.filter((row) => row.type === 'vessel').map((row) => row.label)).toEqual(['Armement - Cherbourg']);
   });
 
-  it('keeps a departed sailor visible as an empty deletable board row', () => {
+  it('hides departed sailors even when an empty board row exists', () => {
     const departedPerson = {
       id: 3,
       firstName: 'Alain',
@@ -371,22 +406,47 @@ describe('planning hierarchy and side panels', () => {
       }],
     }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
 
-    expect(rows.find((row) => row.label === 'Alain ANCIEN')).toMatchObject({
-      type: 'person',
-      board: 'Bordée 2',
-      boardRowId: 90,
-      hasAnyRecords: false,
-      events: [],
-    });
+    expect(rows.find((row) => row.label === 'Alain ANCIEN')).toBeUndefined();
   });
 
   it('finds active unassigned marins for the visible range', () => {
-    expect(getUnassignedPlanningPeople(overview, { start: '2026-07-01', end: '2026-07-31' }, { vesselName: '', personName: '' }).map((person) => person.id)).toEqual([2]);
+    const overviewWithDepartedDuplicate = {
+      ...overview,
+      people: [
+        ...overview.people,
+        {
+          ...overview.people[1],
+          id: 55,
+          firstName: 'Nicolas',
+          lastName: 'BODINIER',
+          hiredOn: '2025-05-05',
+          departedOn: '2025-07-31',
+          active: false,
+        },
+      ],
+    };
+
+    expect(
+      getUnassignedPlanningPeople(
+        overviewWithDepartedDuplicate,
+        { start: '2026-07-01', end: '2026-07-31' },
+        { vesselName: '', personName: '' },
+      ).map((person) => person.id),
+    ).toEqual([2]);
   });
 
-  it('builds the 90-day certificate/RH alarms and excludes billed projects', () => {
+  it('builds the 90-day certificate/RH alarms and keeps only validated projects to bill', () => {
+    const overviewWithEveryBillingStatus: PlanningOverview = {
+      ...overview,
+      projects: [
+        ...overview.projects,
+        { ...overview.projects[0], id: 22, title: 'Mission non validée', status: 'Non validé' },
+        { ...overview.projects[0], id: 23, title: 'Mission météo', status: 'Stand-by météo' },
+      ],
+    };
+
     expect(buildPlanningCertificateAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Franc-bord', tone: 'danger' });
     expect(buildPlanningHrAlerts(overview, '2026-07-12')[0]).toMatchObject({ title: 'Anne CAPITAINE', tone: 'warning' });
-    expect(getUnbilledPlanningProjects(overview, 2026).map((project) => project.title)).toEqual(['Mission A']);
+    expect(getBillablePlanningProjects(overviewWithEveryBillingStatus, 2026).map((project) => project.title)).toEqual(['Mission A']);
   });
 });

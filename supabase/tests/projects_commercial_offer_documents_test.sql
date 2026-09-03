@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(20);
 
 select has_table(
   'public',
@@ -25,11 +25,29 @@ select has_column(
   'expires_on',
   'project attachments may have a validity end date'
 );
+select has_column(
+  'public',
+  'project_generated_documents',
+  'storage_bucket',
+  'project attachments record their private Storage bucket'
+);
+select has_column(
+  'public',
+  'project_generated_documents',
+  'storage_path',
+  'project attachments record their private Storage path'
+);
 select has_function(
   'public',
   'projects_save_document_categories',
   array['jsonb'],
   'document categories are changed through one guarded RPC'
+);
+select has_function(
+  'public',
+  'projects_register_storage_attachment',
+  array['bigint', 'text', 'text', 'text', 'text', 'bigint', 'text', 'text', 'text', 'date'],
+  'private project attachments are registered through one guarded RPC'
 );
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.project_document_categories'::regclass),
@@ -47,6 +65,26 @@ select ok(
   not has_table_privilege('anon', 'public.project_document_categories', 'SELECT'),
   'anonymous users cannot read document categories'
 );
+select ok(
+  not has_table_privilege('authenticated', 'public.project_generated_documents', 'INSERT'),
+  'authenticated users cannot bypass the attachment registration RPC'
+);
+select is(
+  (select public from storage.buckets where id = 'project-files'),
+  false,
+  'the shared project-files bucket remains private'
+);
+select matches(
+  (
+    select qual
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'project_files_storage_read'
+  ),
+  'project_generated_documents',
+  'private Storage reads include registered project attachments'
+);
 select is(
   (
     select count(*)
@@ -56,8 +94,8 @@ select is(
       and category.parent_key is null
       and category.active
   ),
-  3::bigint,
-  'the three requested root categories are seeded'
+  4::bigint,
+  'the four requested root categories are seeded'
 );
 select is(
   (
@@ -68,8 +106,22 @@ select is(
       and category.parent_key is not null
       and category.active
   ),
-  6::bigint,
+  7::bigint,
   'the requested document subcategories are seeded'
+);
+select is(
+  (
+    select count(*)
+    from public.project_document_categories category
+    join public.companies company on company.id = category.company_id
+    where company.code = 'bbtm'
+      and category.category_key = 'toilette_de_mer_attestation_expert_bv'
+      and category.parent_key = 'toilette_de_mer'
+      and category.label = 'Attestation Expert/BV'
+      and category.active
+  ),
+  1::bigint,
+  'Attestation Expert/BV is active below Toilette de Mer'
 );
 select matches(
   pg_get_constraintdef(
@@ -82,6 +134,18 @@ select matches(
   ),
   'project_attachment',
   'project attachments are accepted by the document registry'
+);
+select matches(
+  pg_get_constraintdef(
+    (
+      select oid
+      from pg_constraint
+      where conname = 'project_generated_documents_storage_provider_check'
+        and conrelid = 'public.project_generated_documents'::regclass
+    )
+  ),
+  'storage_bucket',
+  'each registry row identifies either Supabase Storage or SharePoint'
 );
 
 select * from finish();

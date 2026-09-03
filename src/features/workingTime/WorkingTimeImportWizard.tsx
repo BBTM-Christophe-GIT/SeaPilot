@@ -35,6 +35,14 @@ interface EditableRow extends WorkingTimeImportEditableRow {
 
 const TOTAL_MISMATCH_WARNING = 'Le total du classeur diffère des demi-heures détectées. Corrigez les phases ou excluez cette journée après le contrôle.';
 
+function workingTimeImportErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (message.includes('canceling statement due to statement timeout')) {
+    return 'La validation de l’import a dépassé le délai serveur. Aucune journée n’a été importée : relancez la validation.';
+  }
+  return workingTimeErrorMessage(error);
+}
+
 const STATUS_LABELS: Record<WorkingTimeImportRowStatus, string> = {
   ready: 'Prête', corrected: 'Corrigée', excluded: 'Exclue', duplicate: 'Doublon',
   inconsistent: 'Incohérente', blocked_workflow: 'Workflow verrouillé',
@@ -89,7 +97,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   useEffect(() => {
     if (!canImport) return;
     let active = true;
-    void fetchWorkingTimeImportPeople(client).then((items) => { if (active) setPeople(items); }).catch((caught) => { if (active) setError(workingTimeErrorMessage(caught)); });
+    void fetchWorkingTimeImportPeople(client).then((items) => { if (active) setPeople(items); }).catch((caught) => { if (active) setError(workingTimeImportErrorMessage(caught)); });
     return () => { active = false; };
   }, [canImport, client]);
 
@@ -152,7 +160,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         localWarning: totalMismatchWarning(row.reportedWorkSeconds, row.detectedPhases),
       })));
     } catch (caught) {
-      setError(workingTimeErrorMessage(caught));
+      setError(workingTimeImportErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -165,7 +173,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         const phases = parseWorkingTimeImportPhaseText(value);
         return { ...row, phaseText: value, phases, localError: '', localWarning: totalMismatchWarning(row.reportedWorkSeconds, phases) };
       } catch (caught) {
-        return { ...row, phaseText: value, localError: workingTimeErrorMessage(caught) };
+        return { ...row, phaseText: value, localError: workingTimeImportErrorMessage(caught) };
       }
     }));
     markChanged();
@@ -195,7 +203,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
       setPreviewStale(false);
       setSuccess('Contrôle serveur terminé. Vérifiez les statuts avant de valider l’import.');
     } catch (caught) {
-      setError(workingTimeErrorMessage(caught));
+      setError(workingTimeImportErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -212,7 +220,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
       setPreview((current) => current ? { ...current, status: 'imported' } : current);
       await onImported?.();
     } catch (caught) {
-      setError(workingTimeErrorMessage(caught));
+      setError(workingTimeImportErrorMessage(caught));
     } finally {
       setBusy(false);
     }

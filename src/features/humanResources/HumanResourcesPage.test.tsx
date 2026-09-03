@@ -26,7 +26,7 @@ const activePerson = {
   register_label: 'RIF',
   sex: 'Homme',
   sailor_number: '2009574',
-  m365_account: 'jean.martin@bbtm.fr',
+  employee_number: '00051',
   phone: '+33 1 02 03 04 05',
   postal_address: '1 quai des pilotes, 76000 Rouen',
   birth_date: '1985-04-12',
@@ -212,8 +212,10 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
 
 describe('HumanResourcesPage', () => {
   it('shows the person deletion action only to Administrators', async () => {
+    const user = userEvent.setup();
     const adminView = render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
-    expect(await screen.findByRole('button', { name: 'Supprimer la personne' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Autres actions' }));
+    expect(screen.getByRole('button', { name: 'Supprimer la personne' })).toBeInTheDocument();
     adminView.unmount();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['armement']} />);
@@ -243,8 +245,8 @@ describe('HumanResourcesPage', () => {
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     expect(within(profile).getByRole('button', { name: 'Identité et poste' })).toHaveAttribute('aria-current', 'page');
     expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
-    expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
-    expect(within(profile).getByText('2009574')).toBeInTheDocument();
+    expect(within(profile).getByText('Numéro de marin')).toBeInTheDocument();
+    expect(within(profile).getAllByText('2009574').length).toBeGreaterThan(0);
   });
 
   it('uses the selected workforce year in the training plan PDF indicators', async () => {
@@ -440,10 +442,11 @@ describe('HumanResourcesPage', () => {
     const clothingSection = within(profile).getByRole('button', { name: 'Tenues et mensurations' });
 
     expect(identitySection).toHaveAttribute('aria-current', 'page');
-    expect(within(profile).getByText('Numero de marin')).toBeInTheDocument();
-    expect(within(profile).getByText('2009574')).toBeInTheDocument();
-    expect(within(profile).getByText('Compte M365')).toBeInTheDocument();
-    expect(within(profile).getByText('jean.martin@bbtm.fr')).toBeInTheDocument();
+    expect(within(profile).getByText('Numéro de marin')).toBeInTheDocument();
+    expect(within(profile).getAllByText('2009574').length).toBeGreaterThan(0);
+    expect(within(profile).getAllByText('Matricule').length).toBeGreaterThan(0);
+    expect(within(profile).getAllByText('00051').length).toBeGreaterThan(0);
+    expect(within(profile).queryByText('Compte M365')).not.toBeInTheDocument();
     expect(within(profile).queryByText('Date naissance')).not.toBeInTheDocument();
 
     await user.click(contractSection);
@@ -897,7 +900,7 @@ describe('HumanResourcesPage', () => {
       register_label: null,
       sex: null,
       sailor_number: null,
-      m365_account: null,
+      employee_number: null,
     };
     const single = vi.fn().mockResolvedValue({ data: createdPerson, error: null });
     const insertSelect = vi.fn().mockReturnValue({ single });

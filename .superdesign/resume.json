@@ -147,6 +147,50 @@
       },
       "updatedAt": "2026-08-20T07:50:00Z"
     },
+    "/modules/humanResources:person-profile": {
+      "targetKind": "existing-ui",
+      "projectId": "5eb1e543-65f5-4da0-9386-4c13ef77e8eb",
+      "baselineDraftId": "0bc94024-b562-43ec-bc12-debce445f854",
+      "activeDraftId": "a4ac1a24-c2c7-47ec-ade6-177187e53e9d",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/humanResources/HumanResourcesPage.tsx:200:231",
+        "src/features/humanResources/HumanResourcesPage.tsx:575:647",
+        "src/features/humanResources/HumanResourcesPage.tsx:1920:2023",
+        "src/features/humanResources/HumanResourcesPage.tsx:2621:3074",
+        "src/styles/index.css:1:260",
+        "src/styles/index.css:10724:11329"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/features/humanResources/HumanResourcesPage.tsx": "1c64bf4edc0d133eae183341c47a277cc8339544a0507e6b6fffba0de1a74c1c",
+        "src/styles/index.css": "98c25d4d19e2703f81d657b370779ee94c72d108e8a8e92fa25aa2621c7903b0"
+      },
+      "components": [
+        {
+          "name": "AppShell",
+          "id": "a03bded5-63db-4ff2-9cf9-773ce9f9f1a4",
+          "sourcePath": "src/features/shell/AppShell.tsx",
+          "logoAssetKey": "public-bbtm-logo.png"
+        }
+      ],
+      "drafts": {
+        "0bc94024-b562-43ec-bc12-debce445f854": {
+          "title": "Fiche RH actuelle — référence locale",
+          "visualDirection": "reproduction isolée de la fiche RH actuelle",
+          "currentVersion": 1
+        },
+        "a4ac1a24-c2c7-47ec-ade6-177187e53e9d": {
+          "title": "Fiche RH — dossier collaborateur proposé",
+          "visualDirection": "dossier collaborateur avec navigation verticale et informations regroupées",
+          "parentDraftId": "0bc94024-b562-43ec-bc12-debce445f854",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-08-28T07:35:31Z"
+    },
     "/modules/serviceProviders": {
       "targetKind": "new-ui",
       "projectId": "e1b66d2a-3e99-40e7-9cdd-8e97a8fe69d1",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDprMigrationManifest, manifestSha256, storageObjectPath, validateDprManifest } from './dprMigration.ts';
+import { buildDprMigrationManifest, manifestSha256, selectDprManifestReports, selectMissingDprManifest, storageObjectPath, validateDprManifest } from './dprMigration.ts';
 
 describe('DPR migration manifest', () => {
   const bundle = {
@@ -84,5 +84,40 @@ describe('DPR migration manifest', () => {
   it('builds a tenant-owned path from trusted target identifiers', () => {
     expect(storageObjectPath(1, 99, { sourceItemId: '400', fileName: 'DPR épreuve 1056.pdf' }))
       .toBe('company/1/dpr/99/400-DPR-epreuve-1056.pdf');
+  });
+
+  it('selects only missing DPRs and their directly related files', () => {
+    const manifest = buildDprMigrationManifest(bundle);
+    const selected = selectDprManifestReports(manifest, new Set(['1056']));
+
+    expect(selected.reports.map((report) => report.sourceItemId)).toEqual(['1056']);
+    expect(selected.files.map((file) => file.sourceItemId)).toEqual(['400']);
+    expect(selected.counters).toEqual(expect.objectContaining({ reports: 1, filesDiscovered: 1, pdfs: 1, excludedHtml: 0 }));
+  });
+
+  it('returns an empty additive manifest when every DPR already exists', () => {
+    const manifest = buildDprMigrationManifest(bundle);
+    const selected = selectDprManifestReports(manifest, new Set());
+
+    expect(selected.reports).toEqual([]);
+    expect(selected.files).toEqual([]);
+    expect(selected.counters).toEqual(expect.objectContaining({ reports: 0, filesDiscovered: 0, reportsWithoutPdf: 0 }));
+  });
+
+  it('treats an existing DPR number as present even without a SharePoint id', () => {
+    const manifest = buildDprMigrationManifest(bundle);
+    const selected = selectMissingDprManifest(manifest, new Set(), new Set([1056]));
+
+    expect(selected.reports).toEqual([]);
+    expect(selected.files).toEqual([]);
+  });
+
+  it('does not migrate historical PDFs in additive mode', () => {
+    const manifest = buildDprMigrationManifest(bundle);
+    const selected = selectMissingDprManifest(manifest, new Set(), new Set());
+
+    expect(selected.reports.map((report) => report.sourceItemId)).toEqual(['1056']);
+    expect(selected.files).toEqual([]);
+    expect(selected.counters.pdfs).toBe(0);
   });
 });

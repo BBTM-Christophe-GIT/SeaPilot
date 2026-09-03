@@ -46,7 +46,10 @@ const dashboard: DprDashboardData = {
     vessels: [{ id: 3, name: 'GOURY' }],
     people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false, isDprValidator: true }],
     planningCrewPersonIds: [12],
-    exerciseTypes: [{ key: 'fire-protection', label: "Protection contre l'incendie" }],
+    exerciseTypes: [
+      { key: 'fire-protection', label: "Protection contre l'incendie" },
+      { key: 'anti-pollution', label: 'Exercice Antipollution' },
+    ],
     portReasons: [{ key: 'crew-change', label: 'Crew Change' }],
   },
 };
@@ -167,6 +170,20 @@ describe('DprPage Phase 7', () => {
 
     await user.click(within(freshRow!).getByRole('button', { name: 'Modifier' }));
     expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+  });
+
+  it('offers the anti-pollution emergency exercise in DPR entry', async () => {
+    const user = userEvent.setup();
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+
+    await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
+    await user.click(screen.getByRole('button', { name: /Indicateurs QHSE/ }));
+
+    const antiPollutionExercise = screen.getByRole('checkbox', { name: 'Exercice Antipollution' });
+    expect(antiPollutionExercise).not.toBeChecked();
+    await user.click(antiPollutionExercise);
+    expect(antiPollutionExercise).toBeChecked();
   });
 
   it('defaults to Navire à quai when Planning has a vessel without an active project', async () => {

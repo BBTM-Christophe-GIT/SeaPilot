@@ -6,11 +6,22 @@ export type FleetFindingType =
   | 'minor_non_conformity'
   | 'class_condition'
   | 'remark'
+  | 'observation'
   | 'prescription'
   | 'finding';
 
 export type FleetFindingStatus = 'declared' | 'assigned' | 'in_progress' | 'pending_validation' | 'closed';
 export type FleetFindingAttachmentKind = 'finding' | 'treatment';
+
+export const FLEET_FINDING_TYPES: readonly FleetFindingType[] = [
+  'major_non_conformity',
+  'minor_non_conformity',
+  'class_condition',
+  'remark',
+  'observation',
+  'prescription',
+  'finding',
+];
 
 export interface FleetFindingAttachment {
   id: number;
@@ -44,6 +55,7 @@ export interface FleetCertificateFinding {
   findingType: FleetFindingType;
   title: string;
   description: string;
+  correctiveAction: string;
   detectedOn: string;
   treatmentDelayDays: number | null;
   treatmentDueOn: string;
@@ -69,11 +81,40 @@ interface FindingPayload {
   findingType: FleetFindingType;
   title: string;
   description: string;
+  correctiveAction?: string;
   detectedOn: string;
   treatmentDelayDays?: number | null;
   treatmentDueOn?: string;
   responsiblePersonId?: number | null;
   responsibleName?: string;
+}
+
+export function compareFleetFindingTitles(
+  left: Pick<FleetCertificateFinding, 'title'>,
+  right: Pick<FleetCertificateFinding, 'title'>,
+): number {
+  return left.title.trim().localeCompare(right.title.trim(), 'fr', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function findingDueYear(treatmentDueOn: string): number {
+  const year = Number(treatmentDueOn.slice(0, 4));
+  return Number.isInteger(year) && year > 0 ? year : Number.MAX_SAFE_INTEGER;
+}
+
+const FLEET_FINDING_TYPE_ORDER = new Map(FLEET_FINDING_TYPES.map((type, index) => [type, index]));
+
+export function compareFleetFindingsByTypeDueYearAndTitle(
+  left: Pick<FleetCertificateFinding, 'findingType' | 'title' | 'treatmentDueOn'>,
+  right: Pick<FleetCertificateFinding, 'findingType' | 'title' | 'treatmentDueOn'>,
+): number {
+  const typeOrder = (FLEET_FINDING_TYPE_ORDER.get(left.findingType) ?? Number.MAX_SAFE_INTEGER)
+    - (FLEET_FINDING_TYPE_ORDER.get(right.findingType) ?? Number.MAX_SAFE_INTEGER);
+  if (typeOrder) return typeOrder;
+  const yearOrder = findingDueYear(left.treatmentDueOn) - findingDueYear(right.treatmentDueOn);
+  return yearOrder || compareFleetFindingTitles(left, right);
 }
 
 function mapAttachment(row: Record<string, unknown>): FleetFindingAttachment {
@@ -102,6 +143,7 @@ function mapFinding(row: Record<string, unknown>, attachments: FleetFindingAttac
   return {
     id, companyId: Number(row.company_id), certificateId: Number(row.certificate_id), reference: String(row.reference || ''),
     findingType: row.finding_type as FleetFindingType, title: String(row.title || ''), description: String(row.description || ''),
+    correctiveAction: String(row.corrective_action || ''),
     detectedOn: String(row.detected_on || ''), treatmentDelayDays: row.treatment_delay_days == null ? null : Number(row.treatment_delay_days),
     treatmentDueOn: String(row.treatment_due_on || ''), status: row.status as FleetFindingStatus, progress: Number(row.progress || 0),
     responsiblePersonId: row.responsible_person_id == null ? null : Number(row.responsible_person_id),
@@ -123,14 +165,20 @@ export async function fetchFleetCertificateFindings(client: SupabaseClient): Pro
   if (eventsResult.error) throw eventsResult.error;
   const attachments = ((attachmentsResult.data || []) as Record<string, unknown>[]).map(mapAttachment);
   const events = ((eventsResult.data || []) as Record<string, unknown>[]).map(mapEvent);
-  return ((findingsResult.data || []) as Record<string, unknown>[]).map((row) => mapFinding(row, attachments, events));
+  return ((findingsResult.data || []) as Record<string, unknown>[])
+    .map((row) => mapFinding(row, attachments, events))
+    .sort(compareFleetFindingsByTypeDueYearAndTitle);
 }
 
 export async function fetchFleetFindingResponsibles(client: SupabaseClient): Promise<FleetFindingResponsible[]> {
-  const { data, error } = await client.from('people').select('id, first_name, last_name, function_label, active').eq('active', true);
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+  const { data, error } = await client.from('people').select('id, first_name, last_name, function_label, departed_on, active').eq('active', true);
   if (error) throw error;
   return ((data || []) as Record<string, unknown>[])
-    .filter((row) => row.active !== false)
+    .filter((row) => {
+      const departedOn = String(row.departed_on || '').slice(0, 10);
+      return row.active !== false && (!departedOn || departedOn >= today);
+    })
     .map((row) => ({
       id: Number(row.id), name: `${String(row.first_name || '')} ${String(row.last_name || '')}`.trim(),
       functionLabel: String(row.function_label || ''),
@@ -142,6 +190,7 @@ export async function createFleetCertificateFinding(client: SupabaseClient, comp
   const { data, error } = await client.from('fleet_certificate_findings').insert({
     company_id: companyId, certificate_id: payload.certificateId, reference: '', finding_type: payload.findingType,
     title: payload.title.trim(), description: payload.description.trim(), detected_on: payload.detectedOn,
+    corrective_action: payload.correctiveAction?.trim() || '',
     treatment_delay_days: payload.treatmentDelayDays ?? null, treatment_due_on: payload.treatmentDueOn || null,
     responsible_person_id: payload.responsiblePersonId ?? null, responsible_name: payload.responsibleName || '',
     status: payload.responsiblePersonId ? 'assigned' : 'declared', progress: 0,
@@ -153,7 +202,17 @@ export async function createFleetCertificateFinding(client: SupabaseClient, comp
 export async function updateFleetCertificateFinding(
   client: SupabaseClient,
   findingId: number,
-  values: Partial<{ status: FleetFindingStatus; progress: number; responsiblePersonId: number | null; responsibleName: string; treatmentDueOn: string; description: string }>,
+  values: Partial<{
+    status: FleetFindingStatus;
+    progress: number;
+    responsiblePersonId: number | null;
+    responsibleName: string;
+    treatmentDueOn: string;
+    findingType: FleetFindingType;
+    title: string;
+    description: string;
+    correctiveAction: string;
+  }>,
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (values.status !== undefined) payload.status = values.status;
@@ -161,14 +220,24 @@ export async function updateFleetCertificateFinding(
   if (values.responsiblePersonId !== undefined) payload.responsible_person_id = values.responsiblePersonId;
   if (values.responsibleName !== undefined) payload.responsible_name = values.responsibleName;
   if (values.treatmentDueOn !== undefined) payload.treatment_due_on = values.treatmentDueOn || null;
+  if (values.findingType !== undefined) payload.finding_type = values.findingType;
+  if (values.title !== undefined) payload.title = values.title.trim();
   if (values.description !== undefined) payload.description = values.description.trim();
+  if (values.correctiveAction !== undefined) payload.corrective_action = values.correctiveAction.trim();
   const { error } = await client.from('fleet_certificate_findings').update(payload).eq('id', findingId);
   if (error) throw error;
 }
 
-export async function addFleetFindingComment(client: SupabaseClient, finding: FleetCertificateFinding, note: string): Promise<void> {
-  const { error } = await client.from('fleet_certificate_finding_events').insert({
-    company_id: finding.companyId, finding_id: finding.id, event_type: 'commented', note: note.trim(),
+export async function saveFleetFindingFollowup(
+  client: SupabaseClient,
+  findingId: number,
+  progress: number,
+  note: string,
+): Promise<void> {
+  const { error } = await client.rpc('save_fleet_certificate_finding_followup', {
+    p_finding_id: findingId,
+    p_progress: progress,
+    p_note: note.trim() || null,
   });
   if (error) throw error;
 }
@@ -179,7 +248,7 @@ function safeFileName(value: string): string {
 
 export async function uploadFleetFindingAttachment(
   client: SupabaseClient,
-  finding: FleetCertificateFinding,
+  finding: Pick<FleetCertificateFinding, 'companyId' | 'id'>,
   vesselAcronym: string,
   kind: FleetFindingAttachmentKind,
   file: File,
@@ -216,7 +285,8 @@ export async function deleteFleetCertificateFinding(client: SupabaseClient, find
 
 export const FLEET_FINDING_LABELS: Record<FleetFindingType, string> = {
   major_non_conformity: 'Non-conformité majeure', minor_non_conformity: 'Non-conformité mineure',
-  class_condition: 'Condition de Classe', remark: 'Remarque', prescription: 'Prescription', finding: 'Findings',
+  class_condition: 'Condition de Classe', remark: 'Remarque', observation: 'Observation',
+  prescription: 'Prescription', finding: 'Findings',
 };
 
 export const FLEET_FINDING_STATUS_LABELS: Record<FleetFindingStatus, string> = {

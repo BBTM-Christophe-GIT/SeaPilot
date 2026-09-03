@@ -11,18 +11,14 @@ import {
   FileCheck2,
   FileText,
   Filter,
-  History,
   Image as ImageIcon,
   Inbox,
-  MessageSquareMore,
-  MoreHorizontal,
   PackageCheck,
   Paperclip,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
-  ShieldX,
   Ship,
   ShoppingCart,
   Truck,
@@ -106,17 +102,20 @@ const EMPTY_FORM: CreatePurchaseRequestInput = {
 };
 
 const WIZARD_STEPS = ['Demandeur', 'Besoin', 'Prix', 'Livraison', 'Notes', 'Pièces jointes'];
+const PURCHASE_REQUEST_MANAGER_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine'];
+const PURCHASE_REQUEST_PROCESSOR_ROLES: RoleKey[] = [...PURCHASE_REQUEST_MANAGER_ROLES, 'marin'];
 
 function normalize(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function canProcess(roles: RoleKey[]): boolean {
-  return roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));
+  return roles.some((role) => PURCHASE_REQUEST_PROCESSOR_ROLES.includes(role));
 }
 
 function canCreate(roles: RoleKey[], functionLabel: string): boolean {
-  return canProcess(roles) || normalize(functionLabel).includes('chef mecanicien');
+  return roles.some((role) => PURCHASE_REQUEST_MANAGER_ROLES.includes(role))
+    || normalize(functionLabel).includes('chef mecanicien');
 }
 
 function formatDate(value: string, includeTime = false): string {
@@ -199,11 +198,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [requestForm, setRequestForm] = useState<CreatePurchaseRequestInput>(EMPTY_FORM);
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
-  const [requestActionsOpen, setRequestActionsOpen] = useState(false);
   const initialStageResolved = useRef(false);
-  const attachmentsRef = useRef<HTMLDetailsElement>(null);
-  const activityRef = useRef<HTMLDivElement>(null);
-  const requestActionsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const loadData = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true);
@@ -269,8 +264,6 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setSelectedId(first?.id || null);
   }, [activeStage, baseRequests]);
 
-  useEffect(() => { setRequestActionsOpen(false); }, [selectedId]);
-
   function updateForm<K extends keyof CreatePurchaseRequestInput>(key: K, value: CreatePurchaseRequestInput[K]) {
     setRequestForm((current) => ({ ...current, [key]: value }));
   }
@@ -314,16 +307,6 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     } finally {
       setIsSaving(false);
     }
-  }
-
-  function scrollDetailIntoView(target: 'attachments' | 'activity') {
-    const node = target === 'attachments' ? attachmentsRef.current : activityRef.current;
-    if (target === 'attachments' && attachmentsRef.current) attachmentsRef.current.open = true;
-    node?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function closeRequestActions() {
-    setRequestActionsOpen(false);
   }
 
   if (isLoading) return <div className="admin-state">Chargement des demandes d'achat…</div>;
@@ -408,13 +391,6 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
                     {processingAllowed && selectedRequest.stage === 'to_process' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={15} />Prendre en charge</button> : null}
                     {processingAllowed && selectedRequest.stage === 'ordered' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={15} />Planifier la livraison</button> : null}
                     {processingAllowed && selectedRequest.stage === 'receiving' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={15} />Reçu à bord</button> : null}
-                    <div className={`purchase-context-menu${requestActionsOpen ? ' is-open' : ''}`} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeRequestActions(); }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeRequestActions(); requestActionsTriggerRef.current?.focus(); } }}>
-                      <button aria-controls="purchase-request-actions-menu" aria-expanded={requestActionsOpen} aria-haspopup="menu" aria-label="Actions de la demande" className="purchase-context-menu-trigger" onClick={() => setRequestActionsOpen((current) => !current)} ref={requestActionsTriggerRef} type="button"><MoreHorizontal aria-hidden="true" size={17} /><span>Actions</span></button>
-                      {requestActionsOpen ? <div className="purchase-context-menu-panel" id="purchase-request-actions-menu" role="menu">
-                        {processingAllowed && selectedRequest.stage === 'to_process' ? <div className="purchase-context-menu-section"><span>Décision</span><button onClick={() => { closeRequestActions(); void runAction('approve'); }} role="menuitem" type="button"><ShieldCheck size={16} />Approuver</button><button className="is-danger" onClick={() => { closeRequestActions(); setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' }); }} role="menuitem" type="button"><ShieldX size={16} />Refuser</button><button onClick={() => { closeRequestActions(); setActionDialog({ action: 'request_information', comment: '', effectiveDate: '', title: 'Demander un complément' }); }} role="menuitem" type="button"><MessageSquareMore size={16} />Demander un complément</button></div> : null}
-                        <div className="purchase-context-menu-section"><span>Suivi</span><button aria-label={`Pièces jointes (${selectedRequest.attachments.length})`} onClick={() => { closeRequestActions(); scrollDetailIntoView('attachments'); }} role="menuitem" type="button"><Paperclip size={16} />Pièces jointes<em>{selectedRequest.attachments.length}</em></button><button aria-label={`Historique (${selectedRequest.events.length + 1})`} onClick={() => { closeRequestActions(); scrollDetailIntoView('activity'); }} role="menuitem" type="button"><History size={16} />Historique<em>{selectedRequest.events.length + 1}</em></button></div>
-                      </div> : null}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -432,8 +408,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
             <div className="purchase-detail-section"><h3>Besoin</h3><p>{htmlToText(selectedRequest.description) || selectedRequest.urgencyReason || 'Aucune description complémentaire.'}</p>{selectedRequest.reference ? <dl><div><dt>Référence</dt><dd>{selectedRequest.reference}</dd></div><div><dt>Quantité</dt><dd>{selectedRequest.quantity || '—'} {selectedRequest.unitLabel}</dd></div><div><dt>Fournisseur</dt><dd>{selectedRequest.supplierName || 'À définir'}</dd></div><div><dt>Montant HT</dt><dd>{selectedRequest.amountHt.toLocaleString('fr-FR', { style: 'currency', currency: selectedRequest.currency || 'EUR' })}</dd></div></dl> : null}</div>
             <div className="purchase-detail-section"><h3>Livraison à bord</h3><dl><div><dt>Navire</dt><dd>{selectedRequest.vesselName || '—'}</dd></div><div><dt>Lieu de livraison</dt><dd>{selectedRequest.deliveryLocation || '—'}</dd></div><div><dt>Date souhaitée</dt><dd>{formatDate(selectedRequest.expectedDeliveryOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedRequest.ownerName || 'Non attribué'}</dd></div><div><dt>Précision</dt><dd>{selectedRequest.deliveryDetails || '—'}</dd></div><div><dt>Traitement</dt><dd>{selectedRequest.processingComment || '—'}</dd></div></dl></div>
-            <details className="purchase-attachments" open ref={attachmentsRef}><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'SeaPilot'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
-            <div className="purchase-activity" ref={activityRef}><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
+            <details className="purchase-attachments" open><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'SeaPilot'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
+            <div className="purchase-activity"><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
           </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>Sélectionnez une demande pour afficher son suivi.</p></div>}
         </section>
       </div>

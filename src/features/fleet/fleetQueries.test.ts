@@ -10,7 +10,7 @@ const EMPTY_INPUT: SaveFleetVesselInput = {
   beamOverallM: null, lightshipTonnes: null, deadweightTonnes: null, safeManning: null, mainEngine: '',
   mainEnginePowerKw: null, bowThrusterPowerKw: null, gensets: '', maxSpeedKnots: null,
   bollardPullTonnes: null, fuelCapacityM3: null, rangeDescription: '', deckEquipment: '',
-  electronicsCommunications: '', accommodation: '',
+  electronicsCommunications: '', accommodation: '', liabilityInsurer: '',
 };
 
 describe('fleetQueries', () => {

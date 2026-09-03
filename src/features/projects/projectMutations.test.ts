@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
+  archiveClient,
   archiveProject,
+  archiveProjectTowedAsset,
   deleteProjectPlanningOccurrence,
   saveProjectPlanningOccurrence,
   fetchProjectCatalogOptions,
@@ -97,10 +99,10 @@ describe('projectMutations', () => {
   });
 
   it('uses controlled client and archive RPCs', async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({ data: { id: 52 }, error: null })
-      .mockResolvedValueOnce({ data: { id: 901 }, error: null });
+    const rpc = vi.fn(async (functionName: string) => ({
+      data: functionName === 'clients_save' ? { id: 52 } : null,
+      error: null,
+    }));
     await expect(saveClient({ rpc } as never, {
       active: true,
       address: '',
@@ -112,10 +114,26 @@ describe('projectMutations', () => {
       expectedUpdatedAt: '',
       name: 'Nouveau client',
       phone: '',
+      postalCode: '29200',
       representedBy: 'Jean DUPONT',
+      website: 'https://client.example/',
+      logoUrl: 'https://client.example/favicon.ico',
+      logoStoragePath: '',
     })).resolves.toBe(52);
+    await expect(archiveClient({ rpc } as never, 52)).resolves.toBeUndefined();
+    await expect(archiveProjectTowedAsset({ rpc } as never, 8)).resolves.toBeUndefined();
     await expect(archiveProject({ rpc } as never, 901)).resolves.toBeUndefined();
-    expect(rpc.mock.calls.map(([name]) => name)).toEqual(['clients_save', 'projects_archive']);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'clients_save',
+      'clients_archive',
+      'projects_archive_towed_asset',
+      'projects_archive',
+    ]);
+    expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
+      target_logo_url: 'https://client.example/favicon.ico',
+      target_postal_code: '29200',
+      target_website: 'https://client.example/',
+    }));
   });
 
   it('preserves PostgreSQL microseconds in client concurrency tokens', async () => {
@@ -133,7 +151,11 @@ describe('projectMutations', () => {
       expectedUpdatedAt,
       name: 'ETPO',
       phone: '',
+      postalCode: '',
       representedBy: 'Marie MARTIN',
+      website: '',
+      logoUrl: '',
+      logoStoragePath: '',
     });
 
     expect(rpc).toHaveBeenCalledWith('clients_save', expect.objectContaining({
@@ -238,6 +260,8 @@ describe('projectMutations', () => {
       ownerName: '',
       hullMachineryInsurer: '',
       liabilityInsurer: '',
+      photoUrl: '',
+      photoStoragePath: '',
     })).resolves.toBe(8);
 
     expect(rpc).toHaveBeenCalledWith('projects_save_towed_asset', expect.objectContaining({
@@ -245,6 +269,7 @@ describe('projectMutations', () => {
       target_asset_type: 'AUTOMOTEUR FLUVIAL',
       target_length_overall_m: 82,
       target_flag: 'FR',
+      target_photo_storage_path: null,
     }));
   });
 
