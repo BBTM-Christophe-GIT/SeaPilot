@@ -1482,8 +1482,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }, {
     id: 9002, company_id: 1, chronology_code: 'NS 07-26-KROKDUR', subject: 'Mise à jour du DUP de KROKDUR',
     body: 'Note de service historique importée depuis SharePoint.', scope: 'all_accounts', vessel_id: null, vessel: null,
-    status: 'published', author_person_id: null, author_identity_snapshot: { display_name: 'Import SharePoint' }, author_signature_snapshot: {},
-    authored_on: '2026-09-01', published_at: '2026-09-01T14:35:28Z', published_by: null,
+    status: 'draft', author_person_id: null, author_identity_snapshot: { display_name: 'Import SharePoint' }, author_signature_snapshot: {},
+    authored_on: '2026-09-01', published_at: null, published_by: null,
     source_kind: 'sharepoint', source_file_name: 'NS 07-26 - Mise à jour du DUP.docx',
     source_web_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Notes%20de%20Service/NS%2007-26%20-%20Mise%20%C3%A0%20jour%20du%20DUP.docx?web=1',
     source_modified_at: '2026-09-01T14:35:28Z', created_by: 'preview-user', created_at: '2026-09-01T14:35:28Z', updated_at: '2026-09-01T14:35:28Z',

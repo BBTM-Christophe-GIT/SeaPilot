@@ -1,7 +1,7 @@
 import {
   ArrowLeft, BellRing, Check, ChevronRight, CircleAlert, Download, ExternalLink, FileCheck2,
   FileClock, FilePlus2, Filter, Link2, LoaderCircle, MailCheck, Paperclip, PenLine, Plus,
-  Search, Send, ShieldCheck, Ship, Trash2, Upload, Users, X,
+  Save, Search, Send, ShieldCheck, Ship, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
@@ -21,7 +21,7 @@ type LibraryFilter = 'published' | 'draft' | 'all';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const EMPTY_DRAFT: ServiceNoteDraftInput = {
-  chronologyCode: '', subject: '', body: '', vesselId: null, authoredOn: new Date().toISOString().slice(0, 10),
+  subject: '', body: '', vesselId: null, authoredOn: new Date().toISOString().slice(0, 10),
 };
 
 interface VesselOption { id: number; name: string }
@@ -44,11 +44,68 @@ function attachmentKindLabel(kind: ServiceNoteAttachment['kind']): string {
   return { file: 'Fichier', procedure: 'Procédure QHSE', action_item: 'Plan d’action', fleet_certificate: 'Certificat flotte' }[kind];
 }
 
+interface ServiceNoteLinkGroup {
+  key: string;
+  label: string;
+  children: ServiceNoteLinkGroup[];
+  options: ServiceNoteLinkOption[];
+}
+
+function serviceNoteLinkGroupCount(group: ServiceNoteLinkGroup): number {
+  return group.options.length + group.children.reduce((total, child) => total + serviceNoteLinkGroupCount(child), 0);
+}
+
+export function buildServiceNoteLinkGroups(options: ServiceNoteLinkOption[]): ServiceNoteLinkGroup[] {
+  const roots: ServiceNoteLinkGroup[] = [];
+  options.forEach((option) => {
+    let level = roots;
+    option.groupPath.forEach((label, index) => {
+      const key = option.groupPath.slice(0, index + 1).join(' › ');
+      let group = level.find((candidate) => candidate.key === key);
+      if (!group) {
+        group = { key, label, children: [], options: [] };
+        level.push(group);
+      }
+      if (index === option.groupPath.length - 1) group.options.push(option);
+      level = group.children;
+    });
+  });
+  const sortGroups = (groups: ServiceNoteLinkGroup[]): ServiceNoteLinkGroup[] => groups
+    .sort((left, right) => left.label.localeCompare(right.label, 'fr', { numeric: true }))
+    .map((group) => ({
+      ...group,
+      children: sortGroups(group.children),
+      options: group.options.sort((left, right) => left.label.localeCompare(right.label, 'fr', { numeric: true })),
+    }));
+  return sortGroups(roots);
+}
+
+function ServiceNoteLinkGroupList({ groups, onSelect, searchActive, depth = 0 }: {
+  groups: ServiceNoteLinkGroup[];
+  onSelect: (option: ServiceNoteLinkOption) => void;
+  searchActive: boolean;
+  depth?: number;
+}) {
+  return groups.map((group) => (
+    <details className={`service-note-link-group is-depth-${depth}`} key={`${searchActive}-${group.key}`} open={searchActive || depth === 0 ? true : undefined}>
+      <summary><ChevronRight size={15} /><strong>{group.label}</strong><span>{serviceNoteLinkGroupCount(group)}</span></summary>
+      <div>
+        {group.children.length ? <ServiceNoteLinkGroupList depth={depth + 1} groups={group.children} onSelect={onSelect} searchActive={searchActive} /> : null}
+        {group.options.map((option) => <article className="service-note-link-result" key={`${option.kind}-${option.id}`}>
+          <a href={option.href} rel="noreferrer" target="_blank"><span><strong>{option.label}</strong><small>{option.description}</small></span><ExternalLink size={15} /></a>
+          <button aria-label={`Ajouter ${option.label}`} onClick={() => onSelect(option)} title="Ajouter à la note" type="button"><Plus size={17} /></button>
+        </article>)}
+      </div>
+    </details>
+  ));
+}
+
 function ServiceNoteLinkPicker({ options, onClose, onSelect }: { options: ServiceNoteLinkOption[]; onClose: () => void; onSelect: (option: ServiceNoteLinkOption) => void }) {
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<'all' | ServiceNoteLinkOption['kind']>('all');
+  const [kind, setKind] = useState<'all' | ServiceNoteLinkOption['kind']>('procedure');
   const filtered = options.filter((option) => (kind === 'all' || option.kind === kind)
-    && `${option.label} ${option.description}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')));
+    && `${option.label} ${option.description} ${option.groupPath.join(' ')}`.toLocaleLowerCase('fr').includes(query.trim().toLocaleLowerCase('fr')));
+  const groups = buildServiceNoteLinkGroups(filtered);
   return (
     <div className="service-note-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section aria-label="Lier un élément SeaPilot" aria-modal="true" className="service-note-link-picker" onMouseDown={(event) => event.stopPropagation()} role="dialog">
@@ -60,7 +117,7 @@ function ServiceNoteLinkPicker({ options, onClose, onSelect }: { options: Servic
           </select>
         </div>
         <div className="service-note-link-results">
-          {filtered.map((option) => <button key={`${option.kind}-${option.id}`} onClick={() => onSelect(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><Plus size={17} /></button>)}
+          <ServiceNoteLinkGroupList groups={groups} onSelect={onSelect} searchActive={Boolean(query.trim())} />
           {!filtered.length ? <p>Aucun élément ne correspond à cette recherche.</p> : null}
         </div>
       </section>
@@ -79,19 +136,19 @@ interface EditorProps {
 
 function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, onChanged }: EditorProps) {
   const [draft, setDraft] = useState<ServiceNoteDraftInput>({
-    chronologyCode: note.chronologyCode, subject: note.subject, body: note.body,
-    vesselId: note.vesselId, authoredOn: note.authoredOn || EMPTY_DRAFT.authoredOn,
+    subject: note.subject, body: note.body, vesselId: note.vesselId, authoredOn: note.authoredOn || EMPTY_DRAFT.authoredOn,
   });
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [message, setMessage] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [linkOptions, setLinkOptions] = useState<ServiceNoteLinkOption[] | null>(null);
   const [isLinkPickerOpen, setIsLinkPickerOpen] = useState(false);
   const saveSequence = useRef(0);
 
   const previewNote = useMemo(() => ({ ...note, ...{
-    chronologyCode: draft.chronologyCode, subject: draft.subject, body: draft.body, vesselId: draft.vesselId,
+    chronologyCode: '', subject: draft.subject, body: draft.body, vesselId: draft.vesselId,
     vesselName: vessels.find((vessel) => vessel.id === draft.vesselId)?.name || '', authoredOn: draft.authoredOn,
   } }), [draft, note, vessels]);
 
@@ -156,11 +213,21 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
     finally { setIsPublishing(false); }
   }
 
+  async function handleSaveDraft() {
+    setMessage(''); setIsSavingDraft(true);
+    try {
+      await persistDraft();
+      await onChanged(note.id);
+      onBack();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Enregistrement impossible.'); }
+    finally { setIsSavingDraft(false); }
+  }
+
   return (
     <section className="service-note-editor">
       <header className="service-note-editor-header">
         <button className="service-note-back-button" onClick={onBack} type="button"><ArrowLeft size={18} /> Bibliothèque</button>
-        <div><span>QHSE · BROUILLON PRIVÉ</span><h1>{draft.chronologyCode} <em>·</em> {draft.subject || 'Nouvelle note de service'}</h1></div>
+        <div><span>QHSE · BROUILLON PRIVÉ</span><h1>{draft.subject || 'Nouvelle note de service'}</h1></div>
         <div className={`service-note-save-state is-${saveState}`} aria-live="polite">
           {saveState === 'saving' ? <LoaderCircle className="is-spinning" size={15} /> : saveState === 'error' ? <CircleAlert size={15} /> : <Check size={15} />}
           {saveState === 'saving' ? 'Enregistrement…' : saveState === 'error' ? 'Non enregistré' : 'Brouillon enregistré'}
@@ -173,7 +240,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           <section className="service-note-form-section">
             <header><span>01</span><div><h2>Informations</h2><p>Le numéro chrono est attribué automatiquement.</p></div></header>
             <div className="service-note-form-grid">
-              <label><span>Numéro chrono</span><input readOnly value={draft.chronologyCode} /></label>
+              <div className="service-note-automatic-code"><span>Numéro chrono</span><strong>Attribué lors de la diffusion</strong></div>
               <label><span>Date</span><input onChange={(event) => { setSaveState('saving'); setDraft({ ...draft, authoredOn: event.target.value }); }} type="date" value={draft.authoredOn} /></label>
               <label className="is-wide"><span>Objet</span><input maxLength={500} onChange={(event) => { setSaveState('saving'); setDraft({ ...draft, subject: event.target.value }); }} placeholder="Objet clair et synthétique" value={draft.subject} /></label>
               <label className="is-wide"><span>Navire concerné <small>facultatif</small></span><select onChange={(event) => { setSaveState('saving'); setDraft({ ...draft, vesselId: event.target.value ? Number(event.target.value) : null }); }} value={draft.vesselId || ''}><option value="">Toute la flotte</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
@@ -196,7 +263,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           </section>
           {message ? <div className="service-note-inline-error" role="alert"><CircleAlert size={17} />{message}</div> : null}
           {!hasActiveSignature ? <div className="service-note-inline-warning"><CircleAlert size={17} /><span>Ajoutez une signature active dans votre profil RH avant de diffuser cette note.</span><Link to="/modules/humanResources">Ouvrir mon profil</Link></div> : null}
-          <div className="service-note-editor-footer"><button onClick={onBack} type="button">Fermer</button><button className="is-primary" disabled={isPublishing || !draft.subject.trim() || !draft.body.trim() || !hasActiveSignature} onClick={() => void handlePublish()} type="button"><Send size={17} />{isPublishing ? 'Diffusion…' : 'Diffuser à tous les comptes'}</button></div>
+          <div className="service-note-editor-footer"><button className="is-secondary" onClick={onBack} type="button">Fermer</button><button className="is-draft" disabled={isSavingDraft || isPublishing} onClick={() => void handleSaveDraft()} type="button"><Save size={17} />{isSavingDraft ? 'Enregistrement…' : 'Enregistrer le brouillon'}</button><button className="is-primary" disabled={isPublishing || isSavingDraft || !draft.subject.trim() || !draft.body.trim() || !hasActiveSignature} onClick={() => void handlePublish()} type="button"><Send size={17} />{isPublishing ? 'Diffusion…' : 'Diffuser à tous les comptes'}</button></div>
         </div>
         <aside className="service-note-preview-panel"><header><div><span>APERÇU EN DIRECT</span><strong>Document commun</strong></div><span>2 pages</span></header><div className="service-note-preview-scroll"><ServiceNoteDocument note={previewNote} /></div></aside>
       </div>
@@ -243,7 +310,7 @@ export function ServiceNotesPage() {
     ]).then(([loadedNotes, vesselResult, userResult, signatures]) => {
       if (!mounted) return;
       setNotes(loadedNotes);
-      setVessels(((vesselResult.data || []) as Array<Record<string, unknown>>).map((row) => ({ id: Number(row.id), name: String(row.acronym || row.name || '') })).filter((item) => item.name));
+      setVessels(((vesselResult.data || []) as Array<Record<string, unknown>>).map((row) => ({ id: Number(row.id), name: String(row.name || row.acronym || '') })).filter((item) => item.name));
       setCurrentUserId(userResult.data.user?.id || '');
       setHasActiveSignature(signatures.some((signature) => !signature.validTo));
       const requested = Number(searchParams.get('note')) || null;
@@ -347,8 +414,8 @@ export function ServiceNotesPage() {
               const notePendingForMe = note.recipients.some((recipient) => recipient.userId === currentUserId) && !note.signatures.some((signature) => signature.userId === currentUserId);
               return <button className={`${selectedId === note.id ? 'is-selected' : ''}${notePendingForMe ? ' is-pending' : ''}`} key={note.id} onClick={() => selectNote(note.id)} role="listitem" type="button">
                 <span className={`service-note-file-icon is-${note.status}`}>{note.status === 'draft' ? <FileClock size={20} /> : <FileCheck2 size={20} />}</span>
-                <span className="service-note-list-copy"><span><strong>{note.chronologyCode}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small>{note.vesselName ? <><Ship size={12} /> {note.vesselName}</> : 'Toute la flotte'} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
-                <span className="service-note-list-progress"><strong>{recipients ? `${percent(signed, recipients)}%` : note.sourceKind === 'sharepoint' ? 'Archive' : '—'}</strong><small>{recipients ? `${signed}/${recipients} signatures` : note.sourceKind === 'sharepoint' ? 'SharePoint' : 'Non diffusée'}</small>{recipients ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
+                <span className="service-note-list-copy"><span><strong>{note.chronologyCode || 'Numéro à la diffusion'}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small>{note.vesselName ? <><Ship size={12} /> {note.vesselName}</> : 'Toute la flotte'} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
+                <span className="service-note-list-progress"><strong>{recipients ? `${percent(signed, recipients)}%` : note.status !== 'draft' && note.sourceKind === 'sharepoint' ? 'Archive' : '—'}</strong><small>{recipients ? `${signed}/${recipients} signatures` : note.status !== 'draft' && note.sourceKind === 'sharepoint' ? 'SharePoint' : 'Non diffusée'}</small>{recipients ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
                 <ChevronRight size={18} />
               </button>;
             })}
@@ -358,7 +425,7 @@ export function ServiceNotesPage() {
 
         <aside className="service-note-detail">
           {selectedNote ? <>
-            <header><div><span>{selectedNote.sourceKind === 'sharepoint' ? 'ARCHIVE SHAREPOINT' : serviceNoteStatusLabel(selectedNote.status).toUpperCase()}</span><h2>{selectedNote.chronologyCode}</h2><p>{selectedNote.subject}</p></div><button aria-label="Fermer le détail" onClick={() => { setSelectedId(null); setSearchParams({}); }} type="button"><X size={18} /></button></header>
+            <header><div><span>{selectedNote.status === 'draft' ? 'BROUILLON PRIVÉ' : selectedNote.sourceKind === 'sharepoint' ? 'ARCHIVE SHAREPOINT' : serviceNoteStatusLabel(selectedNote.status).toUpperCase()}</span><h2>{selectedNote.chronologyCode || 'Numéro à la diffusion'}</h2><p>{selectedNote.subject}</p></div><button aria-label="Fermer le détail" onClick={() => { setSelectedId(null); setSearchParams({}); }} type="button"><X size={18} /></button></header>
             <div className="service-note-detail-actions">
               {selectedNote.status === 'draft' && isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
               {selectedNote.sourceWebUrl ? <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><ExternalLink size={16} /> Ouvrir dans Word</a> : <button disabled={isBusy} onClick={() => void handleDownload()} type="button"><Download size={16} /> Télécharger le PDF</button>}

@@ -354,7 +354,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [providers, setProviders] = useState<FleetServiceProvider[]>([]);
   const [visits, setVisits] = useState<FleetCertificateVisit[]>([]);
   const [documentNames, setDocumentNames] = useState<string[]>([]);
-  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get('certificate')) || null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
   const [scopeVesselName, setScopeVesselName] = useState('');
