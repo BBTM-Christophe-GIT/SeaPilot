@@ -109,6 +109,8 @@ export interface ServiceNoteTargetPersonOption {
   hiredOn: string;
   departedOn: string;
   vesselIds: number[];
+  hasAccount: boolean;
+  isAuthor: boolean;
 }
 
 export interface ServiceNoteTargetVesselOption extends ServiceNoteTargetVessel {
@@ -414,6 +416,7 @@ export async function fetchServiceNoteTargetingOptions(
       id: Number(person.id), firstName: text(person.first_name), lastName: text(person.last_name),
       functionLabel: text(person.function_label), hiredOn: text(person.hired_on), departedOn: text(person.departed_on),
       vesselIds: Array.isArray(person.vessel_ids) ? person.vessel_ids.map(Number) : [],
+      hasAccount: Boolean(person.has_account), isAuthor: Boolean(person.is_author),
     })),
     vessels: vessels.map((vessel) => ({
       id: Number(vessel.id), name: text(vessel.name), recipientCount: Number(vessel.recipient_count || 0),

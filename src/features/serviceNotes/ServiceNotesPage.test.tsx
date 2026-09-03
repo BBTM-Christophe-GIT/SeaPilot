@@ -62,6 +62,10 @@ describe('ServiceNotesPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
     expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
     expect(screen.getAllByText('Attribué lors de la diffusion')).toHaveLength(2);
+    expect(screen.getByRole('toolbar', { name: 'Mise en forme du message' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Police' })).toHaveValue('Aptos');
+    expect(screen.getByRole('button', { name: 'Gras' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Liste à puces' })).toBeInTheDocument();
     expect(await screen.findByRole('radio', { name: /Un ou plusieurs navires/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: /Un ou plusieurs navires/ }));
     expect(await screen.findByText('Armement - Cherbourg')).toBeInTheDocument();
@@ -75,11 +79,27 @@ describe('ServiceNotesPage', () => {
 
   it('unites vessel planning recipients with explicitly selected people', () => {
     const people = [
-      { id: 1, firstName: 'Luc', lastName: 'MARTIN', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10] },
-      { id: 2, firstName: 'Hugo', lastName: 'BERNARD', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10] },
-      { id: 3, firstName: 'Camille', lastName: 'DURAND', functionLabel: 'Direction', hiredOn: '2020-01-01', departedOn: '', vesselIds: [20] },
+      { id: 1, firstName: 'Luc', lastName: 'MARTIN', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10], hasAccount: true, isAuthor: false },
+      { id: 2, firstName: 'Hugo', lastName: 'BERNARD', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10], hasAccount: true, isAuthor: false },
+      { id: 3, firstName: 'Camille', lastName: 'DURAND', functionLabel: 'Direction', hiredOn: '2020-01-01', departedOn: '', vesselIds: [20], hasAccount: true, isAuthor: false },
+      { id: 4, firstName: 'Clément', lastName: 'DEROBERT', functionLabel: 'Marin', hiredOn: '2024-01-01', departedOn: '', vesselIds: [10], hasAccount: false, isAuthor: false },
+      { id: 5, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', hiredOn: '2020-01-01', departedOn: '', vesselIds: [10], hasAccount: true, isAuthor: true },
     ];
     expect(resolveServiceNoteAudiencePeople('vessels', people, [10], [1, 3]).map((person) => person.id)).toEqual([1, 2, 3]);
+  });
+
+  it('shows only active account holders in the nominative selector', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+    fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
+    fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
+    expect(await screen.findByText('4 comptes éligibles')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Liste de personnes/ }));
+    expect(screen.getByText('Camille DURAND')).toBeInTheDocument();
+    expect(screen.getByText('Sophie HAMEL')).toBeInTheDocument();
+    expect(screen.queryByText('Clément DEROBERT')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Arthur DEMO/ })).not.toBeInTheDocument();
   });
 
   it('shows manager-only recall, re-publication and draft deletion actions', async () => {

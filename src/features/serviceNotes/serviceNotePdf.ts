@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ServiceNote, ServiceNoteSignatureSnapshot } from './serviceNoteQueries';
 import { formatServiceNoteDate, formatServiceNoteSignatureDate } from './serviceNoteQueries';
+import { serviceNoteBodyToRichTextBlocks, type ServiceNoteRichTextBlock, type ServiceNoteRichTextRun } from './serviceNoteRichText';
 
 interface SignatureAsset {
   snapshot: ServiceNoteSignatureSnapshot;
@@ -83,6 +84,40 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
     document.line(18, 29, 192, 29);
   };
 
+  const richTextFontSize = (block: ServiceNoteRichTextBlock): number => block.kind === 'heading' ? 13 : block.kind === 'subheading' ? 11 : 9.2;
+  const setRichTextFont = (run: ServiceNoteRichTextRun, block: ServiceNoteRichTextBlock) => {
+    const style = run.bold && run.italic ? 'bolditalic' : run.bold ? 'bold' : run.italic ? 'italic' : 'normal';
+    document.setFont(run.fontFamily === 'serif' ? 'times' : 'helvetica', style);
+    document.setFontSize(richTextFontSize(block));
+  };
+  const wrapRichTextBlock = (block: ServiceNoteRichTextBlock, maxWidth: number) => {
+    const lines: Array<Array<{ run: ServiceNoteRichTextRun; text: string; width: number }>> = [[]];
+    let lineWidth = 0;
+    block.runs.forEach((run) => {
+      const tokens = run.text.split(/(\n|\s+)/gu).filter(Boolean);
+      tokens.forEach((token) => {
+        if (token === '\n') {
+          lines.push([]);
+          lineWidth = 0;
+          return;
+        }
+        setRichTextFont(run, block);
+        const normalized = lineWidth === 0 ? token.replace(/^\s+/u, '') : token;
+        if (!normalized) return;
+        const width = document.getTextWidth(normalized);
+        if (lineWidth > 0 && lineWidth + width > maxWidth && normalized.trim()) {
+          lines.push([]);
+          lineWidth = 0;
+        }
+        const text = lineWidth === 0 ? normalized.replace(/^\s+/u, '') : normalized;
+        const textWidth = document.getTextWidth(text);
+        lines[lines.length - 1].push({ run, text, width: textWidth });
+        lineWidth += textWidth;
+      });
+    });
+    return lines.filter((line) => line.length);
+  };
+
   drawPageHeader();
   autoTable(document, {
     startY: 36,
@@ -124,27 +159,51 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
   document.setFont('helvetica', 'bold');
   document.text('Message', 18, cursorY);
   cursorY += 6;
-  document.setFont('helvetica', 'normal');
-  document.setFontSize(9.2);
-  const bodyLines = document.splitTextToSize(note.body || 'Aucun contenu.', 174) as string[];
-  const pageOneLines = bodyLines.slice(0, 42);
-  document.text(pageOneLines, 18, cursorY, { lineHeightFactor: 1.35 });
-  if (bodyLines.length > pageOneLines.length) {
-    document.setTextColor(...teal);
-    document.setFontSize(7.5);
-    document.text('Le message se poursuit sur la page suivante.', 18, 279);
-  }
-  document.addPage();
-  drawPageHeader();
-  if (bodyLines.length > pageOneLines.length) {
+  const richTextBlocks = serviceNoteBodyToRichTextBlocks(note.body || 'Aucun contenu.');
+  const startContinuationPage = () => {
+    document.addPage();
+    drawPageHeader();
     document.setFont('helvetica', 'bold');
     document.setFontSize(9);
+    document.setTextColor(...navy);
     document.text('Suite du message', 18, 37);
-    document.setFont('helvetica', 'normal');
-    document.setFontSize(8.7);
-    document.text(bodyLines.slice(pageOneLines.length), 18, 43, { lineHeightFactor: 1.3, maxWidth: 174 });
-  }
-  const signatureStartY = bodyLines.length > pageOneLines.length ? 92 : 38;
+    cursorY = 44;
+  };
+  richTextBlocks.forEach((block) => {
+    const maxWidth = block.kind === 'quote' ? 166 : 174;
+    const lines = wrapRichTextBlock(block, maxWidth);
+    const lineHeight = block.kind === 'heading' ? 6.4 : block.kind === 'subheading' ? 5.7 : 4.8;
+    cursorY += block.kind === 'heading' ? 3 : block.kind === 'subheading' ? 2 : 1.2;
+    lines.forEach((line) => {
+      if (cursorY + lineHeight > 279) startContinuationPage();
+      const totalWidth = line.reduce((sum, segment) => sum + segment.width, 0);
+      const left = block.kind === 'quote' ? 22 : 18;
+      let x = block.align === 'center' ? 105 - totalWidth / 2 : block.align === 'right' ? 192 - totalWidth : left;
+      if (block.kind === 'quote') {
+        document.setDrawColor(...teal);
+        document.setLineWidth(.6);
+        document.line(18.5, cursorY - 3.5, 18.5, cursorY + 1.2);
+      }
+      line.forEach((segment) => {
+        setRichTextFont(segment.run, block);
+        document.setTextColor(segment.run.href ? 6 : navy[0], segment.run.href ? 107 : navy[1], segment.run.href ? 162 : navy[2]);
+        document.text(segment.text, x, cursorY);
+        if (segment.run.underline || segment.run.href) {
+          document.setDrawColor(segment.run.href ? 6 : navy[0], segment.run.href ? 107 : navy[1], segment.run.href ? 162 : navy[2]);
+          document.setLineWidth(.18);
+          document.line(x, cursorY + .65, x + segment.width, cursorY + .65);
+        }
+        if (segment.run.href) document.link(x, cursorY - lineHeight + 1.2, segment.width, lineHeight, { url: segment.run.href });
+        x += segment.width;
+      });
+      cursorY += lineHeight;
+    });
+    cursorY += block.kind === 'heading' ? 2.2 : 1.4;
+  });
+
+  document.addPage();
+  drawPageHeader();
+  const signatureStartY = 38;
   document.setFont('helvetica', 'bold');
   document.setTextColor(...navy);
   document.setFontSize(11);

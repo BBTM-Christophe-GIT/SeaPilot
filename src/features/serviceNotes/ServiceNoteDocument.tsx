@@ -1,6 +1,7 @@
 import { Clock3, ExternalLink, File, Link2, Paperclip, Ship } from 'lucide-react';
 import type { ServiceNote, ServiceNoteAttachment } from './serviceNoteQueries';
 import { formatServiceNoteDate, formatServiceNoteSignatureDate } from './serviceNoteQueries';
+import { serviceNoteBodyToHtml } from './serviceNoteRichText';
 
 interface ServiceNoteDocumentProps {
   note: ServiceNote;
@@ -65,7 +66,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
 
         <section className="service-note-message">
           <h3>Message</h3>
-          <p>{note.body || 'Le contenu de la note apparaîtra ici.'}</p>
+          <div className="service-note-message-content" dangerouslySetInnerHTML={{ __html: serviceNoteBodyToHtml(note.body || 'Le contenu de la note apparaîtra ici.') }} />
         </section>
       </article>
 

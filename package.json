@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.28.6",
+  "version": "3.28.7",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
@@ -42,6 +42,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "clsx": "^2.1.1",
+    "dompurify": "3.4.13",
     "fast-xml-parser": "^5.10.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

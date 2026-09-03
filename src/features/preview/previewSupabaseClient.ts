@@ -1623,9 +1623,10 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       data: {
         date: String(args.p_on_date || note.authored_on || ''),
         people: [
-          { id: 9302, first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction', hired_on: '2020-01-01', departed_on: null, vessel_ids: [2] },
-          { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', hired_on: '2022-05-01', departed_on: null, vessel_ids: [1] },
-          { id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', hired_on: '2024-03-01', departed_on: null, vessel_ids: [1] },
+          { id: 9302, first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction', hired_on: '2020-01-01', departed_on: null, vessel_ids: [2], has_account: true, is_author: false },
+          { id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', hired_on: '2024-03-01', departed_on: null, vessel_ids: [1], has_account: true, is_author: false },
+          { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', hired_on: '2022-05-01', departed_on: null, vessel_ids: [1], has_account: true, is_author: false },
+          { id: 9307, first_name: 'Sophie', last_name: 'HAMEL', function_label: 'Directrice Administrative et Financière', hired_on: '2019-01-01', departed_on: null, vessel_ids: [], has_account: true, is_author: false },
         ],
         vessels: previewRows('vessels').filter((row) => row.active).map((row) => ({
           id: row.id,
