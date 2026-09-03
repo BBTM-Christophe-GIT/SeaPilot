@@ -73,7 +73,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
     theme: 'grid',
     body: [
       ['Objet', note.subject],
-      ['Numéro chrono', note.chronologyCode],
+      ['Numéro chrono', note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique')],
       ['Prénom NOM', authorName],
       ['Date', formatServiceNoteDate(note.authoredOn)],
       ['Navire', note.vesselName || 'Toute la flotte'],

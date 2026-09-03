@@ -43,6 +43,7 @@
 .service-note-status-tabs button { min-height: 31px; padding: 0 10px; border: 0; border-radius: 7px; color: #5b6f7c; background: transparent; font-size: .75rem; font-weight: 750; }
 .service-note-status-tabs button.is-active { color: var(--sn-navy); background: white; box-shadow: 0 1px 5px rgba(8, 47, 73, .12); }
 .service-note-status-tabs em { min-width: 18px; margin-left: 4px; padding: 2px 5px; border-radius: 999px; color: #9a5c05; background: #ffedc7; font-size: .66rem; font-style: normal; }
+.service-note-status-tabs em.is-recalled-count { color: #9f1239; background: #ffe4e9; }
 .service-note-filters { display: grid; grid-template-columns: 1fr 180px; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e8eef1; background: #fbfcfd; }
 .service-note-filters label,
 .service-note-link-filters label { display: flex; align-items: center; min-width: 0; min-height: 38px; gap: 8px; padding: 0 11px; border: 1px solid #d6e1e6; border-radius: 8px; color: #71838d; background: white; }
@@ -56,6 +57,7 @@
 .service-note-list > button.is-pending { box-shadow: inset 3px 0 #ea8a18; }
 .service-note-file-icon { display: grid; width: 38px; height: 38px; border-radius: 10px; color: #1774a5; background: #eaf5fb; place-items: center; }
 .service-note-file-icon.is-draft { color: #a76405; background: #fff2dc; }
+.service-note-file-icon.is-recalled { color: #a11742; background: #fff0f3; }
 .service-note-list-copy { display: grid; min-width: 0; gap: 4px; }
 .service-note-list-copy > span { display: flex; align-items: center; gap: 7px; }
 .service-note-list-copy > span strong { color: var(--sn-blue); font-size: .76rem; }
@@ -63,6 +65,7 @@
 .service-note-list-copy em.is-published { color: #08754f; background: #e3f7ed; }
 .service-note-list-copy em.is-draft { color: #9a5c05; background: #ffedc7; }
 .service-note-list-copy em.is-archived { color: #5c6670; background: #eef1f3; }
+.service-note-list-copy em.is-recalled { color: #9f1239; background: #ffe4e9; }
 .service-note-list-copy b { overflow: hidden; color: #153445; font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
 .service-note-list-copy small { display: flex; align-items: center; gap: 4px; overflow: hidden; color: #71838e; font-size: .71rem; text-overflow: ellipsis; white-space: nowrap; }
 .service-note-list-progress { display: grid; justify-items: end; gap: 3px; }
@@ -87,9 +90,13 @@
 .service-note-detail > header h2 { margin: 3px 0 2px; color: var(--sn-navy); font-size: 1.14rem; }
 .service-note-detail > header p { max-width: 570px; margin: 0; color: #5f717c; font-size: .78rem; }
 .service-note-detail > header button { display: grid; width: 32px; height: 32px; flex: 0 0 auto; border: 1px solid var(--sn-border); border-radius: 8px; color: #607580; background: white; place-items: center; }
-.service-note-detail-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 9px 18px; border-top: 1px solid #ebeff2; border-bottom: 1px solid var(--sn-border); background: white; }
+.service-note-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 9px 18px; border-top: 1px solid #ebeff2; border-bottom: 1px solid var(--sn-border); background: white; }
 .service-note-detail-actions button,
 .service-note-detail-actions a { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #cbd9df; border-radius: 8px; color: #174c68; background: white; font-size: .75rem; font-weight: 750; text-decoration: none; }
+.service-note-detail-actions button.is-danger,
+.service-note-detail-actions button.is-recall { border-color: #efb5b1; color: #b42318; background: #fff7f6; }
+.service-note-detail-actions button.is-republish { border-color: #87bfc0; color: #076b70; background: #eef9f8; }
+.service-note-detail-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .service-note-detail-preview { height: 570px; overflow: auto; padding: 20px; }
 .service-note-sign-panel { display: flex; gap: 12px; margin: 0 18px 18px; padding: 15px; border: 1px solid #abd5d3; border-radius: 12px; color: #0b686b; background: #edfaf8; }
 .service-note-sign-panel > svg { flex: 0 0 auto; margin-top: 2px; }

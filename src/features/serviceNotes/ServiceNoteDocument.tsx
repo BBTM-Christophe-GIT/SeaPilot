@@ -16,20 +16,22 @@ function attachmentIcon(kind: ServiceNoteAttachment['kind']) {
 export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUrls = new Map(), onOpenAttachment }: ServiceNoteDocumentProps) {
   const authorName = String(note.authorIdentitySnapshot.display_name || note.authorIdentitySnapshot.signer_name || 'Non renseigné');
   const signatures = new Map(note.signatures.map((signature) => [signature.recipientId, signature]));
+  const headerCode = note.chronologyCode || (note.status === 'recalled' ? 'Note rappelée' : 'Nouveau brouillon');
+  const metadataCode = note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique');
 
   return (
-    <div className="service-note-document" aria-label={`${note.chronologyCode} - ${note.subject}`}>
+    <div className="service-note-document" aria-label={`${headerCode} - ${note.subject}`}>
       <article className="service-note-paper service-note-paper-main">
         <div className="service-note-paper-accent" />
         <header className="service-note-paper-header">
           <img alt="BBTM" src="/bbtm-logo.png" />
           <div><span>QHSE · COMMUNICATION INTERNE</span><h2>Note de Service</h2></div>
-          <strong>{note.chronologyCode || 'Nouveau brouillon'}</strong>
+          <strong>{headerCode}</strong>
         </header>
 
         <section className="service-note-metadata">
           <div className="is-wide"><span>Objet</span><strong>{note.subject || 'Objet de la note'}</strong></div>
-          <div><span>Numéro chrono</span><strong>{note.chronologyCode || 'Automatique'}</strong></div>
+          <div><span>Numéro chrono</span><strong>{metadataCode}</strong></div>
           <div><span>Émetteur</span><strong>{authorName}</strong></div>
           <div><span>Date</span><strong>{formatServiceNoteDate(note.authoredOn)}</strong></div>
           <div><span>Périmètre</span><strong>{note.vesselName ? <><Ship aria-hidden="true" size={13} /> {note.vesselName}</> : 'Tous les comptes'}</strong></div>
@@ -70,7 +72,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
         <div className="service-note-paper-accent" />
         <header className="service-note-paper-header">
           <img alt="BBTM" src="/bbtm-logo.png" />
-          <div><span>{note.chronologyCode}</span><h2>Registre de signatures</h2></div>
+          <div><span>{headerCode}</span><h2>Registre de signatures</h2></div>
           <strong>{note.signatures.length}/{note.recipients.length || '—'}</strong>
         </header>
         {note.recipients.length ? (

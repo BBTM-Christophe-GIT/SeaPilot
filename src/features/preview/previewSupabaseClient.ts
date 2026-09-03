@@ -1494,6 +1494,16 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' }, author_signature_snapshot: {},
     authored_on: '2026-09-02', published_at: null, published_by: null, source_kind: 'seapilot', source_file_name: null,
     source_web_url: null, source_modified_at: null, created_by: 'preview-user', created_at: '2026-09-02T08:30:00Z', updated_at: '2026-09-02T10:05:00Z',
+  }, {
+    id: 9004, company_id: 1, chronology_code: '', subject: 'Politique d’accès aux zones techniques',
+    body: 'Cette note a été rappelée. Elle reste consultable par Administration et Direction avant une éventuelle nouvelle diffusion.',
+    scope: 'all_accounts', vessel_id: 1, vessel: { name: 'GOURY', acronym: 'GRY' }, status: 'recalled',
+    author_person_id: 9301, author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' },
+    author_signature_snapshot: { signature_id: 9831, signer_person_id: 9301, signer_user_id: 'preview-user', signer_name: 'Arthur DEMO', signed_at: '2026-08-30T09:15:00Z', version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', sha256: 'c'.repeat(64) },
+    authored_on: '2026-08-30', published_at: '2026-08-30T09:15:00Z', published_by: 'preview-user',
+    last_recalled_at: '2026-09-02T13:30:00Z', last_recalled_by: 'preview-user', last_recalled_chronology_code: 'NS 07-26',
+    source_kind: 'seapilot', source_file_name: null, source_web_url: null, source_modified_at: null,
+    created_by: 'preview-user', created_at: '2026-08-30T08:30:00Z', updated_at: '2026-09-02T13:30:00Z',
   }],
   qhse_service_note_attachments: [{
     id: 9051, company_id: 1, note_id: 9001, attachment_kind: 'procedure',
@@ -1605,6 +1615,51 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'recall_service_note') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    const latest = previewRows('qhse_service_notes')
+      .filter((row) => row.status === 'published')
+      .sort((left, right) => new Date(String(right.published_at)).getTime() - new Date(String(left.published_at)).getTime())[0];
+    if (!note || note.status !== 'published' || note.id !== latest?.id) {
+      return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_RECALL_LATEST_ONLY.' } });
+    }
+    note.last_recalled_chronology_code = note.chronology_code;
+    note.chronology_code = '';
+    note.status = 'recalled';
+    note.last_recalled_at = new Date().toISOString();
+    note.last_recalled_by = 'preview-user';
+    note.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: note.id, error: null });
+  }
+  if (functionName === 'publish_service_note') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    if (!note || !['draft', 'recalled'].includes(String(note.status))) {
+      return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_PUBLISH_FORBIDDEN.' } });
+    }
+    const year = new Date().getFullYear().toString().slice(-2);
+    const sequence = Math.max(0, ...previewRows('qhse_service_notes').filter((row) => row.id !== note.id).map((row) => {
+      const match = String(row.chronology_code || '').match(new RegExp(`^NS (\\d+)-${year}`));
+      return match ? Number(match[1]) : 0;
+    })) + 1;
+    note.chronology_code = `NS ${String(sequence).padStart(2, '0')}-${year}`;
+    note.status = 'published';
+    note.published_at = new Date().toISOString();
+    note.published_by = 'preview-user';
+    note.source_kind = 'seapilot';
+    note.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: note.id, error: null });
+  }
+  if (functionName === 'delete_service_note_draft') {
+    const notes = previewRows('qhse_service_notes');
+    const noteIndex = notes.findIndex((row) => Number(row.id) === Number(args.p_note_id) && row.status === 'draft');
+    if (noteIndex < 0) return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_DELETE_DRAFT_FORBIDDEN.' } });
+    const [deleted] = notes.splice(noteIndex, 1);
+    const attachments = previewRows('qhse_service_note_attachments');
+    for (let index = attachments.length - 1; index >= 0; index -= 1) {
+      if (Number(attachments[index].note_id) === Number(deleted.id)) attachments.splice(index, 1);
+    }
+    return createPreviewQuery({ data: deleted.id, error: null });
+  }
   if (functionName === 'action_item_create') {
     const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));
     const type = previewRows('action_type_catalog').find((row) => row.type_key === args.p_action_type_key);
@@ -2223,7 +2278,7 @@ export const previewSupabaseClient = {
       )
         ? Promise.resolve({ data: { path: _path }, error: null })
         : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
-      remove: () => bucket === 'project-catalog-media'
+      remove: () => bucket === 'project-catalog-media' || bucket === 'service-note-files'
         ? Promise.resolve({ data: [], error: null })
         : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
     }),

@@ -8,6 +8,10 @@ La création enregistre immédiatement un brouillon privé dans `qhse_service_no
 
 La signature appelle `sign_service_note`. Cette opération ajoute une ligne immuable dans `qhse_service_note_signatures` avec l'identité du destinataire, la version active de sa signature de profil et l'heure du serveur. Le registre est commun à tous les destinataires : aucune copie individuelle du document n'est créée.
 
+Les profils `Administrateur` et `Direction` peuvent rappeler uniquement la note actuellement diffusée la plus récente. `recall_service_note` retire son numéro chrono actif, la place au statut `Rappelée` et la rend immédiatement invisible aux autres profils, y compris dans la cloche. Le dernier numéro est conservé séparément pour l'audit de gestion. Une note rappelée peut être diffusée de nouveau : un nouveau numéro chrono est alors attribué et le registre des destinataires/signatures repart à zéro.
+
+Un brouillon privé peut être supprimé après confirmation. Les fichiers stockés sont retirés du bucket avant l'appel protégé à `delete_service_note_draft`; les autres enregistrements associés disparaissent par cascade.
+
 ## Pièces jointes et références
 
 Les fichiers sont déposés dans le bucket privé `service-note-files` avec une limite de 50 Mo. Les politiques RLS autorisent le dépôt uniquement sur un brouillon géré par un profil `Administrateur` ou `Direction`. Les lecteurs d'une note diffusée peuvent télécharger ses pièces jointes.
@@ -23,7 +27,7 @@ L'inventaire vérifié contient 16 fichiers. La migration importe leurs métadon
 ## Sécurité et limites
 
 - Les tables `qhse_service_notes`, `qhse_service_note_attachments`, `qhse_service_note_recipients` et `qhse_service_note_signatures` ont RLS activé.
-- Les fonctions de diffusion et signature sont `SECURITY DEFINER`, sans accès `anon`, avec `search_path` vide et contrôles de société/rôle explicites.
+- Les fonctions de diffusion, rappel, suppression de brouillon et signature sont `SECURITY DEFINER`, sans accès `anon`, avec `search_path` vide et contrôles de société/rôle explicites.
 - Les nouvelles tables reçoivent explicitement les droits Data API pour le rôle `authenticated`.
 - Un compte sans fiche `people` liée ou sans signature de profil active peut lire la note, mais ne peut pas signer; l'interface l'oriente vers son profil RH.
 - Le PDF est généré à partir du même enregistrement de note et du registre partagé au moment du téléchargement.
