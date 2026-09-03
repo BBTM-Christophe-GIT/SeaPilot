@@ -130,6 +130,19 @@ export interface ServiceNoteLinkOption {
   description: string;
   href: string;
   groupPath: string[];
+  storageBucket?: string;
+  storagePath?: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSizeBytes?: number | null;
+}
+
+export interface ServiceNoteAttachmentAsset {
+  filename: string;
+  mimeType: string;
+  storageBucket: string;
+  storagePath: string;
+  externalUrl: string;
 }
 
 export interface ServiceNoteNotification {
@@ -458,7 +471,9 @@ export async function uploadServiceNoteAttachment(client: SupabaseClient, note: 
 export async function linkServiceNoteRecord(client: SupabaseClient, note: ServiceNote, option: ServiceNoteLinkOption): Promise<void> {
   const { error } = await client.from('qhse_service_note_attachments').insert({
     company_id: note.companyId, note_id: note.id, attachment_kind: option.kind, display_name: option.label,
-    external_url: option.href, linked_record_id: option.id, sort_order: note.attachments.length,
+    storage_bucket: option.storageBucket || null, storage_path: option.storagePath || null,
+    external_url: option.href, linked_record_id: option.id, mime_type: option.mimeType || null,
+    file_size_bytes: option.fileSizeBytes ?? null, sort_order: note.attachments.length,
   });
   assertResult(error, 'Impossible de lier cet élément.');
 }
@@ -474,9 +489,9 @@ export async function deleteServiceNoteAttachment(client: SupabaseClient, attach
 
 export async function fetchServiceNoteLinkOptions(client: SupabaseClient): Promise<ServiceNoteLinkOption[]> {
   const [procedures, actions, certificates] = await Promise.all([
-    client.from('published_procedures').select('id,procedure_code,title,ism_chapter').order('ism_chapter').order('procedure_code'),
+    client.from('published_procedures').select('id,procedure_code,title,ism_chapter,storage_bucket,storage_path,file_name,mime_type,size_bytes').order('ism_chapter').order('procedure_code'),
     client.from('action_items').select('id,title,vessel_name,deviation_type,action_type,audit_type,category_key').order('vessel_name').order('deviation_type').order('title'),
-    client.from('fleet_certificates').select('id,document_title,title,vessel_name,category_key,category_label').eq('is_active_fleet', true).order('vessel_name').order('category_label').order('document_title'),
+    client.from('fleet_certificates').select('id,document_title,title,vessel_name,category_key,category_label,storage_bucket,storage_path,original_file_name,file_name,mime_type,file_size_bytes').eq('is_active_fleet', true).order('vessel_name').order('category_label').order('document_title'),
   ]);
   assertResult(procedures.error, 'Impossible de charger les procédures QHSE.');
   assertResult(actions.error, 'Impossible de charger le plan d’action.');
@@ -486,6 +501,8 @@ export async function fetchServiceNoteLinkOptions(client: SupabaseClient): Promi
       id: Number(row.id), kind: 'procedure' as const, label: procedureLinkLabel(row.procedure_code, row.title),
       description: 'Procédure QHSE', href: `/modules/procedures?document=${row.id}`,
       groupPath: [ismChapterLabel(row.ism_chapter)],
+      storageBucket: text(row.storage_bucket), storagePath: text(row.storage_path), fileName: text(row.file_name),
+      mimeType: text(row.mime_type), fileSizeBytes: numberOrNull(row.size_bytes),
     })),
     ...((actions.data || []) as Array<Record<string, unknown>>).map((row) => ({
       id: Number(row.id), kind: 'action_item' as const, label: text(row.title),
@@ -499,6 +516,9 @@ export async function fetchServiceNoteLinkOptions(client: SupabaseClient): Promi
         id: Number(row.id), kind: 'fleet_certificate' as const, label: removeFileExtension(text(row.document_title || row.title)),
         description: 'Certificat flotte', href: `/modules/certificates?certificate=${row.id}`,
         groupPath: [text(row.vessel_name) || 'Sans navire', ...(parent ? [parent.label, category.label] : [category.label || 'Sans catégorie'])],
+        storageBucket: text(row.storage_bucket), storagePath: text(row.storage_path),
+        fileName: text(row.original_file_name || row.file_name), mimeType: text(row.mime_type),
+        fileSizeBytes: numberOrNull(row.file_size_bytes),
       };
     }),
   ];
@@ -539,12 +559,102 @@ export async function signServiceNote(client: SupabaseClient, noteId: number): P
   window.dispatchEvent(new Event('service-notes:changed'));
 }
 
-export async function createServiceNoteAttachmentUrl(client: SupabaseClient, attachment: ServiceNoteAttachment): Promise<string> {
-  if (attachment.externalUrl) return attachment.externalUrl;
-  if (!attachment.storageBucket || !attachment.storagePath) return '';
-  const { data, error } = await client.storage.from(attachment.storageBucket).createSignedUrl(attachment.storagePath, 900);
+function extensionFromPath(path: string): string {
+  const withoutQuery = path.split(/[?#]/u, 1)[0];
+  const filename = withoutQuery.split('/').pop() || '';
+  const match = filename.match(/(\.[a-z0-9]{1,10})$/iu);
+  return match?.[1].toLocaleLowerCase('fr') || '';
+}
+
+function attachmentFilename(attachment: ServiceNoteAttachment, sourceFilename = '', sourcePath = ''): string {
+  if (sourceFilename.trim()) return sourceFilename.trim();
+  const extension = extensionFromPath(sourcePath || attachment.storagePath || attachment.externalUrl);
+  return `${attachment.displayName || 'piece-jointe'}${extension}`;
+}
+
+async function resolveLinkedServiceNoteAttachment(
+  client: SupabaseClient,
+  attachment: ServiceNoteAttachment,
+): Promise<Partial<ServiceNoteAttachmentAsset>> {
+  if (!attachment.linkedRecordId) return {};
+  if (attachment.kind === 'procedure') {
+    const { data, error } = await client.from('published_procedures')
+      .select('storage_bucket,storage_path,file_name,file_url,mime_type')
+      .eq('id', attachment.linkedRecordId).limit(1);
+    assertResult(error, 'Impossible de retrouver le document publié de cette procédure.');
+    const row = ((data || []) as Array<Record<string, unknown>>)[0];
+    if (!row) return {};
+    return {
+      storageBucket: text(row.storage_bucket), storagePath: text(row.storage_path),
+      externalUrl: text(row.file_url), filename: text(row.file_name), mimeType: text(row.mime_type),
+    };
+  }
+  if (attachment.kind === 'fleet_certificate') {
+    const { data, error } = await client.from('fleet_certificates')
+      .select('storage_bucket,storage_path,original_file_name,file_name,file_url,mime_type')
+      .eq('id', attachment.linkedRecordId).limit(1);
+    assertResult(error, 'Impossible de retrouver le document de ce certificat.');
+    const row = ((data || []) as Array<Record<string, unknown>>)[0];
+    if (!row) return {};
+    return {
+      storageBucket: text(row.storage_bucket), storagePath: text(row.storage_path),
+      externalUrl: text(row.file_url), filename: text(row.original_file_name || row.file_name), mimeType: text(row.mime_type),
+    };
+  }
+  return {};
+}
+
+export async function resolveServiceNoteAttachmentAsset(
+  client: SupabaseClient,
+  attachment: ServiceNoteAttachment,
+): Promise<ServiceNoteAttachmentAsset> {
+  const linked = (!attachment.storageBucket || !attachment.storagePath)
+    ? await resolveLinkedServiceNoteAttachment(client, attachment)
+    : {};
+  const storageBucket = attachment.storageBucket || linked.storageBucket || '';
+  const storagePath = attachment.storagePath || linked.storagePath || '';
+  const externalUrl = linked.externalUrl || attachment.externalUrl || '';
+  return {
+    filename: attachmentFilename(attachment, linked.filename, storagePath),
+    mimeType: attachment.mimeType || linked.mimeType || 'application/octet-stream',
+    storageBucket,
+    storagePath,
+    externalUrl,
+  };
+}
+
+export async function createServiceNoteAttachmentUrl(
+  client: SupabaseClient,
+  attachment: ServiceNoteAttachment,
+  download = false,
+): Promise<string> {
+  const asset = await resolveServiceNoteAttachmentAsset(client, attachment);
+  if (!asset.storageBucket || !asset.storagePath) return asset.externalUrl;
+  const options = download ? { download: asset.filename } : undefined;
+  const { data, error } = await client.storage.from(asset.storageBucket).createSignedUrl(asset.storagePath, 900, options);
   assertResult(error, 'Impossible d’ouvrir la pièce jointe.');
   return data?.signedUrl || '';
+}
+
+export async function fetchServiceNoteAttachmentBlob(
+  client: SupabaseClient,
+  attachment: ServiceNoteAttachment,
+): Promise<{ blob: Blob; filename: string }> {
+  const asset = await resolveServiceNoteAttachmentAsset(client, attachment);
+  if (asset.storageBucket && asset.storagePath) {
+    const { data, error } = await client.storage.from(asset.storageBucket).download(asset.storagePath);
+    assertResult(error, `Impossible de télécharger « ${attachment.displayName} ».`);
+    if (!data) throw new Error(`Le fichier « ${attachment.displayName} » est introuvable.`);
+    return { blob: data, filename: asset.filename };
+  }
+  if (asset.externalUrl) {
+    const absoluteUrl = typeof window === 'undefined' ? asset.externalUrl : new URL(asset.externalUrl, window.location.origin).toString();
+    return {
+      blob: new Blob([`[InternetShortcut]\r\nURL=${absoluteUrl}\r\n`], { type: 'application/internet-shortcut' }),
+      filename: `${removeFileExtension(asset.filename || attachment.displayName)}.url`,
+    };
+  }
+  throw new Error(`Aucun fichier n’est disponible pour « ${attachment.displayName} ».`);
 }
 
 export async function createServiceNoteSignatureUrl(client: SupabaseClient, snapshot: ServiceNoteSignatureSnapshot | null): Promise<string> {

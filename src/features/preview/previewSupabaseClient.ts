@@ -11,6 +11,18 @@ function previewSignaturePng(): Blob {
   return new Blob([bytes], { type: 'image/png' });
 }
 
+function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
+  if (bucket === 'procedure-documents') return '/templates/attestation-embarquement.pdf';
+  if (bucket === 'fleet-certificates') {
+    return path.toLocaleLowerCase('fr').endsWith('.pdf')
+      ? '/templates/attestation-embarquement.pdf'
+      : '/demo/action-plan-closure-proof.webp';
+  }
+  if (bucket === 'project-catalog-media') return path.startsWith('clients/') ? '/bbtm-logo.png' : '/vessels/goury.jpg';
+  return '';
+}
+
 type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
@@ -2297,20 +2309,21 @@ export const previewSupabaseClient = {
     from: (bucket: string) => ({
       createSignedUrl: (path: string) => Promise.resolve({
         data: {
-          signedUrl: bucket === 'fleet-certificates'
-            ? '/demo/action-plan-closure-proof.webp'
-            : bucket === 'working-time-signatures'
-              ? `data:image/png;base64,${PREVIEW_SIGNATURE_PNG_BASE64}`
-            : bucket === 'project-catalog-media'
-              ? path.startsWith('clients/') ? '/bbtm-logo.png' : '/vessels/goury.jpg'
-              : '',
+          signedUrl: previewStorageAssetUrl(bucket, path),
         },
         error: null,
       }),
       createSignedUrls: (paths: string[]) => Promise.resolve({
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
-      download: () => Promise.resolve({ data: previewSignaturePng(), error: null }),
+      download: async (path: string) => {
+        const assetUrl = previewStorageAssetUrl(bucket, path);
+        if (!assetUrl) return { data: previewSignaturePng(), error: null };
+        const response = await fetch(assetUrl);
+        return response.ok
+          ? { data: await response.blob(), error: null }
+          : { data: null, error: PREVIEW_WRITE_ERROR };
+      },
       upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
         bucket === 'project-catalog-media'
         || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')

@@ -107,6 +107,17 @@
 .service-note-detail-actions button.is-republish,
 .service-note-detail-actions button.is-publish { border-color: #4aa9aa; color: white; background: var(--sn-teal); }
 .service-note-detail-actions button:disabled { cursor: not-allowed; opacity: .55; }
+.service-note-download-menu { position: relative; }
+.service-note-download-menu > button svg:last-child { margin-left: 1px; transition: transform .16s ease; }
+.service-note-download-menu.is-open > button svg:last-child { transform: rotate(180deg); }
+.service-note-download-menu > div { position: absolute; z-index: 12; top: calc(100% + 6px); right: 0; display: grid; width: min(300px, calc(100vw - 30px)); overflow: hidden; border: 1px solid #cbd9df; border-radius: 10px; background: white; box-shadow: 0 14px 32px rgb(20 54 70 / 16%); }
+.service-note-download-menu > div button { min-height: 54px; justify-content: flex-start; border: 0; border-radius: 0; border-bottom: 1px solid #edf1f3; padding: 9px 12px; text-align: left; }
+.service-note-download-menu > div button:last-child { border-bottom: 0; }
+.service-note-download-menu > div button:hover:not(:disabled) { background: #f1f8f8; }
+.service-note-download-menu > div button > svg { flex: 0 0 auto; color: var(--sn-teal); }
+.service-note-download-menu > div button > span { display: grid; gap: 2px; }
+.service-note-download-menu > div button strong { color: var(--sn-navy); font-size: .72rem; }
+.service-note-download-menu > div button small { color: #71838c; font-size: .64rem; font-weight: 600; }
 .service-note-missing-summary { display: flex; align-items: flex-start; gap: 10px; margin: 12px 18px 0; padding: 11px 13px; border: 1px solid #b9dccb; border-radius: 10px; color: #08754f; background: #edf9f3; }
 .service-note-missing-summary.is-missing { border-color: #efc379; color: #9a5c05; background: #fff7e8; }
 .service-note-missing-summary > span { display: grid; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 8px; background: rgba(255, 255, 255, .7); place-items: center; }
