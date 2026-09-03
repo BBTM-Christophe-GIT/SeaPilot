@@ -8,6 +8,7 @@ interface SignatureAsset {
 }
 export interface ServiceNotePdfInput {
   note: ServiceNote;
+  logoBytes: Uint8Array;
   authorSignature: SignatureAsset | null;
   recipientSignatures: Map<number, SignatureAsset>;
 }
@@ -32,8 +33,15 @@ async function downloadSignature(client: SupabaseClient, snapshot: ServiceNoteSi
   return { snapshot, bytes: new Uint8Array(await data.arrayBuffer()) };
 }
 
+async function downloadServiceNoteLogo(): Promise<Uint8Array> {
+  const response = await fetch('/bbtm-service-note-logo.png');
+  if (!response.ok) throw new Error('Impossible de charger le logo BBTM de la note de service.');
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export async function prepareServiceNotePdf(client: SupabaseClient, note: ServiceNote): Promise<ServiceNotePdfInput> {
-  const [authorSignature, ...signatures] = await Promise.all([
+  const [logoBytes, authorSignature, ...signatures] = await Promise.all([
+    downloadServiceNoteLogo(),
     downloadSignature(client, note.authorSignatureSnapshot),
     ...note.signatures.map((signature) => downloadSignature(client, signature.signatureSnapshot)),
   ]);
@@ -42,7 +50,7 @@ export async function prepareServiceNotePdf(client: SupabaseClient, note: Servic
     const asset = signatures[index];
     if (asset) recipientSignatures.set(signature.recipientId, asset);
   });
-  return { note, authorSignature, recipientSignatures };
+  return { note, logoBytes, authorSignature, recipientSignatures };
 }
 
 export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<ServiceNoteGeneratedPdf> {
@@ -62,6 +70,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
   const drawPageHeader = () => {
     document.setFillColor(...navy);
     document.rect(0, 0, 210, 9, 'F');
+    document.addImage(input.logoBytes, 'PNG', 18, 13, 14, 14, undefined, 'FAST');
     document.setFont('helvetica', 'bold');
     document.setTextColor(...navy);
     document.setFontSize(19);
@@ -78,7 +87,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
     theme: 'grid',
     body: [
       ['Objet', note.subject],
-      ['Numéro chrono', note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique')],
+      ['Numéro chrono', note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Attribué lors de la diffusion')],
       ['Prénom NOM', authorName],
       ['Date', formatServiceNoteDate(note.authoredOn)],
       ['Périmètre', audienceLabel],
@@ -93,16 +102,6 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
     document.text('Signature de l’émetteur', 145, metadataEnd + 6);
     document.addImage(input.authorSignature.bytes, snapshotFormat(input.authorSignature.snapshot), 144, metadataEnd + 8, 42, 16, undefined, 'FAST');
   }
-
-  document.setFillColor(...pale);
-  document.roundedRect(18, metadataEnd + 7, 116, 18, 2, 2, 'F');
-  document.setFont('helvetica', 'bold');
-  document.setFontSize(8.5);
-  document.setTextColor(...navy);
-  document.text(`Diffusion · ${audienceLabel}`, 22, metadataEnd + 13, { maxWidth: 106 });
-  document.setFont('helvetica', 'normal');
-  document.setFontSize(7.6);
-  document.text('À lire et signer individuellement. Une seule note rassemble toutes les signatures.', 22, metadataEnd + 18, { maxWidth: 106 });
 
   let cursorY = metadataEnd + 33;
   document.setFont('helvetica', 'bold');
@@ -132,12 +131,6 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
     document.setFontSize(7.5);
     document.text('Le message se poursuit sur la page suivante.', 18, 279);
   }
-  document.setDrawColor(177, 194, 202);
-  document.line(18, 287, 192, 287);
-  document.setFontSize(6.5);
-  document.setTextColor(105, 119, 126);
-  document.text('Document généré par SeaPilot · registre de signatures partagé', 18, 292);
-
   document.addPage();
   drawPageHeader();
   if (bodyLines.length > pageOneLines.length) {

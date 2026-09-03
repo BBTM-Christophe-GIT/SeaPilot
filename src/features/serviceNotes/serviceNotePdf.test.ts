@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import type { ServiceNote } from './serviceNoteQueries';
 import { buildServiceNotePdf } from './serviceNotePdf';
@@ -17,9 +20,11 @@ const note: ServiceNote = {
 
 describe('service note PDF', () => {
   it('generates one multi-page PDF containing the common signature register', async () => {
-    const result = await buildServiceNotePdf({ note, authorSignature: null, recipientSignatures: new Map() });
+    const logoBytes = new Uint8Array(await readFile(resolve('public/bbtm-service-note-logo.png')));
+    const result = await buildServiceNotePdf({ note, logoBytes, authorSignature: null, recipientSignatures: new Map() });
     expect(result.filename).toBe('NS-08-26-Consignes-avant-appareillage.pdf');
     expect(result.blob.type).toBe('application/pdf');
     expect(result.blob.size).toBeGreaterThan(1_000);
+    expect((await PDFDocument.load(await result.blob.arrayBuffer())).getPageCount()).toBe(2);
   });
 });

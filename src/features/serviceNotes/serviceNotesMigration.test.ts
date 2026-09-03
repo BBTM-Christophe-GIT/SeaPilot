@@ -136,5 +136,16 @@ describe('QHSE service notes database contract', () => {
     expect(recipientScopes).toContain('alter table public.qhse_service_note_target_people enable row level security');
     expect(recipientScopes).toContain('recipient.user_id = (select auth.uid())');
     expect(recipientScopes).toContain("public.has_company_role(note.company_id, array['admin', 'direction'])");
+    expect(recipientScopes).toContain("note.status in ('published', 'archived')");
+  });
+
+  it('keeps creation, management and publication restricted while signatures remain recipient-owned', () => {
+    expect(migration).toContain('create policy qhse_service_notes_insert');
+    expect(migration).toContain('create policy qhse_service_notes_update');
+    expect(migration).toContain('create policy qhse_service_notes_delete');
+    expect(migration).toContain("public.has_company_role(company_id, array['admin', 'direction'])");
+    expect(publicationChronology).toContain("array['admin', 'direction']");
+    expect(migration).toContain("target_note.status <> 'published'");
+    expect(migration).toContain('recipient.user_id = (select auth.uid())');
   });
 });
