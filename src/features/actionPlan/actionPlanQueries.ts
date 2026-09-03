@@ -462,7 +462,11 @@ function endOfMonth(year: number, month: number): string {
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 }
 
-export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: number): Promise<ActionPlanHseDashboard | null> {
+export async function fetchActionPlanHseDashboard(
+  client: SupabaseClient,
+  year: number,
+  filters: { vesselId?: number | null } = {},
+): Promise<ActionPlanHseDashboard | null> {
   const { data: methods, error } = await client.from('hse_exposure_methodologies').select('id')
     .order('effective_from', { ascending: false }).limit(1);
   if (error || !methods?.[0]) return null;
@@ -491,6 +495,7 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
     const monthEnd = isCurrentYear && month === lastMonth ? endsOn : endOfMonth(year, month);
     const { data, error: rpcError } = await client.rpc('hse_kpi_summary', {
       p_starts_on: startsOn, p_ends_on: monthEnd, p_methodology_id: methodologyId,
+      ...(filters.vesselId ? { p_vessel_id: filters.vesselId } : {}),
     });
     if (rpcError || !data || typeof data !== 'object') throw rpcError || new Error('HSE_KPI_EMPTY');
     const raw = data as Record<string, unknown>;
@@ -498,6 +503,7 @@ export async function fetchActionPlanHseDashboard(client: SupabaseClient, year: 
     })),
     client.rpc('hse_kpi_summary', {
       p_starts_on: '1900-01-01', p_ends_on: now.toISOString().slice(0, 10), p_methodology_id: methodologyId,
+      ...(filters.vesselId ? { p_vessel_id: filters.vesselId } : {}),
     }),
   ]);
 
