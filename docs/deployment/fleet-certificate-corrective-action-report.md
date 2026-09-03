@@ -11,7 +11,7 @@
 
 ## Base de données
 
-Appliquer `supabase/migrations/20260903123000_fleet_finding_corrective_action.sql` avant le déploiement du client. La migration est additive et initialise les écarts existants avec une action corrective vide.
+Appliquer `supabase/migrations/20260903154601_fleet_finding_corrective_action.sql` avant le déploiement du client. La migration est additive et initialise les écarts existants avec une action corrective vide.
 
 ## Vérification
 

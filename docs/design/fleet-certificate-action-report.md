@@ -52,4 +52,4 @@ Le dialogue **Déclarer un écart** / **Modifier l’écart** contient un édite
 
 Le même dialogue permet d’ajouter plusieurs pièces à l’action corrective (PDF, PNG, JPEG, DOCX et XLSX, 50 Mo maximum par fichier). Les pièces sont stockées dans le bucket privé `fleet-certificates` sous le type historique `treatment`, afin de conserver les règles RLS et le nettoyage automatique existants.
 
-La migration `20260903123000_fleet_finding_corrective_action.sql` ajoute la colonne `fleet_certificate_findings.corrective_action`. Elle doit être appliquée avant le déploiement du client.
+La migration `20260903154601_fleet_finding_corrective_action.sql` ajoute la colonne `fleet_certificate_findings.corrective_action`. Elle doit être appliquée avant le déploiement du client.
