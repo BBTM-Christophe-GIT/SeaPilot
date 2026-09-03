@@ -44,4 +44,13 @@ describe('validateDprPayload', () => {
     payload.unlistedProjectName = 'Projet libre';
     expect(validateDprPayload(payload)).toContain('Choisissez un projet référencé ou saisissez un projet hors liste, pas les deux.');
   });
+
+  it('requires one mutually exclusive Port Call category behind Crew Change', () => {
+    const payload = validPayload();
+    payload.portCalls[0].reasons = ['port-call-14h'];
+    expect(validateDprPayload(payload)).toContain('La qualification 14h/24h Port Call nécessite le motif Crew Change.');
+
+    payload.portCalls[0].reasons = ['crew-change', 'port-call-14h', 'port-call-24h'];
+    expect(validateDprPayload(payload)).toContain("Une escale Crew Change ne peut être qualifiée qu'en 14h Port Call ou 24h Port Call.");
+  });
 });

@@ -70,8 +70,10 @@ export const QHSE_REPORT_FAMILIES: readonly QhseReportFamily[] = [
   'Sommaire', 'QHSE & RSE', 'Technique & opérations', 'Plans d’action', 'Flotte', 'RH & QSMS',
 ];
 
-export function qhseReportFileName(report: QhseReportDefinition, year: number, vesselName = ''): string {
+export function qhseReportFileName(report: QhseReportDefinition, year: number | number[], vesselName = ''): string {
   const slug = report.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
   const vessel = vesselName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
-  return `${String(report.sourcePage).padStart(2, '0')}-${slug}-${year}${vessel ? `-${vessel}` : ''}.pdf`;
+  const years = Array.isArray(year) ? [...year].sort((left, right) => left - right) : [year];
+  const period = years.length === 1 ? String(years[0]) : `${years[0]}-${years.at(-1)}`;
+  return `${String(report.sourcePage).padStart(2, '0')}-${slug}-${period}${vessel ? `-${vessel}` : ''}.pdf`;
 }

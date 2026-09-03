@@ -3,6 +3,12 @@ export type IncidentCategory = 'person' | 'equipment' | 'environment';
 export type IncidentLevel = 'T0' | 'T1' | 'T2';
 export type CrewFunction = 'captain' | 'chief-engineer' | 'second-captain' | 'execution';
 export type DprFileKind = 'photo' | 'attachment';
+export type DprPortCallCategory = 'port-call-14h' | 'port-call-24h';
+
+export const DPR_PORT_CALL_CATEGORIES: Array<{ key: DprPortCallCategory; label: string }> = [
+  { key: 'port-call-14h', label: '14h Port Call' },
+  { key: 'port-call-24h', label: '24h Port Call' },
+];
 
 export interface DprCrewMemberInput {
   personId: number;
@@ -119,6 +125,12 @@ export function validateDprPayload(payload: DprFormPayload, forValidation = fals
   }
   if (payload.portCalls.some((call) => call.arrivalAt && call.departureAt && call.departureAt < call.arrivalAt)) {
     errors.push("L'appareillage ne peut pas précéder l'accostage.");
+  }
+  if (payload.portCalls.some((call) => DPR_PORT_CALL_CATEGORIES.filter(({ key }) => call.reasons.includes(key)).length > 1)) {
+    errors.push("Une escale Crew Change ne peut être qualifiée qu'en 14h Port Call ou 24h Port Call.");
+  }
+  if (payload.portCalls.some((call) => DPR_PORT_CALL_CATEGORIES.some(({ key }) => call.reasons.includes(key)) && !call.reasons.includes('crew-change'))) {
+    errors.push("La qualification 14h/24h Port Call nécessite le motif Crew Change.");
   }
   const numericValues = [
     payload.metrics.fuelConsumedLiters,

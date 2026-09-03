@@ -15,6 +15,42 @@ export interface QhseReportScope {
   year: number;
   vesselId: number | null;
   vesselName: string;
+  years?: number[];
+  vesselIds?: number[];
+  vesselNames?: string[];
+}
+
+export interface QhseAnnualReferenceMetric {
+  year: number;
+  vesselId: number | null;
+  workedHours: number;
+  personDays: number;
+  sourceLabel: string;
+}
+
+export interface QhseExposureRecord {
+  date: string;
+  hours: number;
+  personId: number | null;
+  population: string;
+  vesselId: number | null;
+}
+
+export interface QhseEnvironmentParameter {
+  density: number;
+  emissionFactor: number;
+  xbeeReductionRate: number;
+  effectiveFrom: string;
+  effectiveTo: string;
+}
+
+export interface QhseContractTarget {
+  projectId: number;
+  vesselId: number;
+  year: number;
+  maintenanceDaysLimit: number;
+  portCall24hLimit: number;
+  validUntil: string;
 }
 
 export interface QhseReportMetric {
@@ -95,6 +131,10 @@ export interface QhseReportSnapshot {
   visits: PlanningVesselVisit[];
   people: PersonRecord[];
   procedures: ProceduresData;
+  annualReferences?: QhseAnnualReferenceMetric[];
+  exposureRecords?: QhseExposureRecord[];
+  environmentParameters?: QhseEnvironmentParameter[];
+  contractTargets?: QhseContractTarget[];
   warnings: string[];
 }
 
@@ -144,6 +184,16 @@ function monthOf(date: string): number {
 }
 function daysInYear(year: number): number { return new Date(year, 1, 29).getMonth() === 1 ? 366 : 365; }
 function inYear(value: string, year: number): boolean { return value.slice(0, 4) === String(year); }
+function scopeYears(scope: QhseReportScope): number[] {
+  return [...new Set((scope.years?.length ? scope.years : [scope.year]).filter((year) => Number.isInteger(year)))].sort((left, right) => left - right);
+}
+function scopeVesselIds(scope: QhseReportScope): number[] {
+  return [...new Set((scope.vesselIds?.length ? scope.vesselIds : scope.vesselId ? [scope.vesselId] : []).filter((id) => Number.isInteger(id)))];
+}
+function inScope(value: string, scope: QhseReportScope): boolean { return scopeYears(scope).includes(Number(value.slice(0, 4))); }
+function scopeStart(scope: QhseReportScope): string { return `${scopeYears(scope)[0]}-01-01`; }
+function scopeEnd(scope: QhseReportScope): string { return `${scopeYears(scope).at(-1)}-12-31`; }
+function scopeCalendarDays(scope: QhseReportScope): number { return scopeYears(scope).reduce((sum, year) => sum + daysInYear(year), 0); }
 function metric(label: string, value: string | number, detail = '', tone: QhseReportMetric['tone'] = 'blue'): QhseReportMetric {
   return { label, value: typeof value === 'number' ? formatNumber(value) : value, detail, tone };
 }
@@ -159,8 +209,9 @@ async function safeLoad<T>(label: string, fallback: T, warnings: string[], work:
 }
 
 async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warnings: string[]) {
-  const startsOn = `${scope.year}-01-01`;
-  const endsOn = `${scope.year}-12-31`;
+  const years = scopeYears(scope);
+  const startsOn = `${years[0]}-01-01`;
+  const endsOn = `${years.at(-1)}-12-31`;
   return safeLoad('DPR', {
     reports: [] as DprReportRow[], metrics: [] as DprMetricRow[], hseActions: [] as DprHseRow[],
     exercises: [] as DprExerciseRow[], portCalls: [] as DprPortCallRow[], supplies: [] as DprSupplyRow[],
@@ -179,7 +230,8 @@ async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warn
       .select('id,report_date,project_id,unlisted_project_name,vessel_id,status')
       .gte('report_date', startsOn).lte('report_date', endsOn)
       .is('deleted_at', null).in('status', ['submitted', 'validated']);
-    if (scope.vesselId) reportQuery = reportQuery.eq('vessel_id', scope.vesselId);
+    const vesselIds = scopeVesselIds(scope);
+    if (vesselIds.length) reportQuery = reportQuery.in('vessel_id', vesselIds);
     const reportResult = await reportQuery.order('report_date', { ascending: true }).limit(1000);
     if (reportResult.error) throw reportResult.error;
     const reports: DprReportRow[] = (reportResult.data || []).map((row) => ({
@@ -223,25 +275,55 @@ export async function fetchQhseReportSnapshot(
   seed: QhseReportSeed,
 ): Promise<QhseReportSnapshot> {
   const warnings: string[] = [];
-  const [dpr, certificates, visits, people, procedures, hseDashboard] = await Promise.all([
+  const years = scopeYears(scope);
+  const vesselIds = scopeVesselIds(scope);
+  const startsOn = `${years[0]}-01-01`;
+  const endsOn = `${years.at(-1)}-12-31`;
+  const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets] = await Promise.all([
     fetchDprData(client, scope, warnings),
     safeLoad('Certificats flotte', [] as FleetCertificateRecord[], warnings, () => fetchFleetCertificates(client)),
     safeLoad('Planning des visites', [] as PlanningVesselVisit[], warnings, () => fetchPlanningVesselVisits(client)),
     safeLoad('Ressources humaines', [] as PersonRecord[], warnings, () => fetchPeople(client)),
     safeLoad('Procédures QSMS', { procedures: [], publications: [] } as ProceduresData, warnings, () => fetchProceduresData(client)),
-    scope.vesselId
+    years.length === 1 && scope.vesselId
       ? safeLoad('Indicateurs HSE', null as ActionPlanHseDashboard | null, warnings, () => fetchActionPlanHseDashboard(client, scope.year, { vesselId: scope.vesselId }))
-      : Promise.resolve(seed.hseDashboard?.year === scope.year ? seed.hseDashboard : null),
+      : Promise.resolve(years.length === 1 && seed.hseDashboard?.year === scope.year ? seed.hseDashboard : null),
+    safeLoad('Historiques annuels officiels', [] as QhseAnnualReferenceMetric[], warnings, async () => {
+      const result = await client.from('qhse_annual_reference_metrics').select('report_year,vessel_id,worked_hours,person_days,source_label').in('report_year', years).order('report_year');
+      if (result.error) throw result.error;
+      return (result.data || []).map((row) => ({ year: Number(row.report_year), vesselId: nullableNumber(row.vessel_id), workedHours: numeric(row.worked_hours), personDays: numeric(row.person_days), sourceLabel: text(row.source_label) }));
+    }),
+    safeLoad('Registre d’exposition HSE', [] as QhseExposureRecord[], warnings, async () => {
+      let query = client.from('hse_exposure_hours').select('exposure_date,exposure_hours,person_id,population,vessel_id').gte('exposure_date', startsOn).lte('exposure_date', endsOn);
+      if (vesselIds.length) query = query.in('vessel_id', vesselIds);
+      const result = await query.order('exposure_date');
+      if (result.error) throw result.error;
+      return (result.data || []).map((row) => ({ date: text(row.exposure_date), hours: numeric(row.exposure_hours), personId: nullableNumber(row.person_id), population: text(row.population), vesselId: nullableNumber(row.vessel_id) }));
+    }),
+    safeLoad('Paramètres environnementaux', [] as QhseEnvironmentParameter[], warnings, async () => {
+      const result = await client.from('qhse_environment_parameters').select('fuel_density_tonnes_per_m3,emission_factor_tco2_per_tonne,xbee_reduction_rate,effective_from,effective_to').order('effective_from');
+      if (result.error) throw result.error;
+      return (result.data || []).map((row) => ({ density: numeric(row.fuel_density_tonnes_per_m3), emissionFactor: numeric(row.emission_factor_tco2_per_tonne), xbeeReductionRate: numeric(row.xbee_reduction_rate), effectiveFrom: text(row.effective_from), effectiveTo: text(row.effective_to) }));
+    }),
+    safeLoad('Objectifs contractuels', [] as QhseContractTarget[], warnings, async () => {
+      const result = await client.from('qhse_contract_targets').select('project_id,vessel_id,report_year,maintenance_days_limit,port_call_24h_limit,valid_until').in('report_year', years).order('report_year');
+      if (result.error) throw result.error;
+      return (result.data || []).map((row) => ({ projectId: Number(row.project_id), vesselId: Number(row.vessel_id), year: Number(row.report_year), maintenanceDaysLimit: numeric(row.maintenance_days_limit), portCall24hLimit: numeric(row.port_call_24h_limit), validUntil: text(row.valid_until) }));
+    }),
   ]);
   return {
     scope,
-    actions: seed.actions.filter((action) => (!scope.vesselId || action.vesselId === scope.vesselId)),
+    actions: seed.actions.filter((action) => !vesselIds.length || (action.vesselId !== null && vesselIds.includes(action.vesselId))),
     actionTypes: seed.actionTypes,
     hseDashboard,
-    certificates: certificates.filter((item) => !scope.vesselId || item.vesselId === scope.vesselId),
-    visits: visits.filter((item) => !scope.vesselId || item.vesselId === scope.vesselId),
+    certificates: certificates.filter((item) => !vesselIds.length || (item.vesselId !== null && vesselIds.includes(item.vesselId))),
+    visits: visits.filter((item) => !vesselIds.length || vesselIds.includes(item.vesselId)),
     people,
     procedures,
+    annualReferences,
+    exposureRecords,
+    environmentParameters,
+    contractTargets,
     warnings,
     ...dpr,
   };
@@ -251,7 +333,7 @@ function reportMap(snapshot: QhseReportSnapshot): Map<number, DprReportRow> {
   return new Map(snapshot.reports.map((report) => [report.id, report]));
 }
 function yearActions(snapshot: QhseReportSnapshot): ActionItemRecord[] {
-  return snapshot.actions.filter((action) => inYear(action.occurredAt || action.openedOn, snapshot.scope.year));
+  return snapshot.actions.filter((action) => inScope(action.occurredAt || action.openedOn, snapshot.scope));
 }
 function closedAction(action: ActionItemRecord): boolean {
   return Boolean(action.closedOn) || ['closed', 'solde', 'soldé', 'cloture', 'clôturé'].includes(normalize(action.status));
@@ -286,6 +368,71 @@ function monthlyValues<T>(items: T[], date: (item: T) => string, value: (item: T
   items.forEach((item) => { const month = monthOf(date(item)); if (month >= 0) totals[month] += value(item); });
   return totals;
 }
+function periodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => string, value: (item: T) => number) {
+  const years = scopeYears(scope);
+  const labels = years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`));
+  const values = labels.map(() => 0);
+  items.forEach((item) => {
+    const raw = date(item);
+    const yearIndex = years.indexOf(Number(raw.slice(0, 4)));
+    const month = monthOf(raw);
+    if (yearIndex >= 0 && month >= 0) values[(yearIndex * 12) + month] += value(item);
+  });
+  return { labels, values };
+}
+
+function eventClassification(action: ActionItemRecord, snapshot: QhseReportSnapshot): string {
+  const key = normalize(`${action.actionTypeKey} ${action.actionType}`);
+  if (key.includes('commuting')) return 'COMMUTING';
+  return actionClassification(action, snapshot);
+}
+
+interface AnnualSafetySummary {
+  year: number;
+  dataAvailable: boolean;
+  workedHours: number | null;
+  personDays: number | null;
+  sedentary: number | null;
+  mariners: number | null;
+  employees: number | null;
+  FAT: number;
+  LWDC: number;
+  LTI: number;
+  RWC: number;
+  MTC: number;
+  FAC: number;
+  nearMiss: number;
+  commuting: number;
+  lostDays: number;
+  frequencyRate: number | null;
+  severityRate: number | null;
+}
+
+function annualSafety(snapshot: QhseReportSnapshot): AnnualSafetySummary[] {
+  const vesselScoped = scopeVesselIds(snapshot.scope).length > 0;
+  return scopeYears(snapshot.scope).map((year) => {
+    const actions = snapshot.actions.filter((action) => inYear(action.occurredAt || action.openedOn, year));
+    const classified = actions.map((action) => ({ action, classification: eventClassification(action, snapshot) })).filter((item) => Boolean(item.classification));
+    const count = (classification: string) => classified.filter((item) => item.classification === classification).length;
+    const reference = !vesselScoped ? snapshot.annualReferences?.find((item) => item.year === year && item.vesselId === null) : undefined;
+    const exposure = (snapshot.exposureRecords || []).filter((item) => inYear(item.date, year));
+    const workedHours = reference?.workedHours || exposure.reduce((sum, item) => sum + item.hours, 0) || null;
+    const personDays = reference?.personDays || new Set(exposure.filter((item) => item.personId !== null).map((item) => `${item.personId}:${item.date}`)).size || null;
+    const people = vesselScoped ? [] : snapshot.people.filter((person) => Boolean(person.hiredOn) && employedAt(person, `${year}-12-31`));
+    const sedentary = vesselScoped ? null : people.filter((person) => normalize(person.gradeLabel).includes('sedentaire')).length;
+    const mariners = vesselScoped ? null : people.length - (sedentary || 0);
+    const FAT = count('FAT');
+    const LWDC = count('LWDC');
+    const LTI = FAT + LWDC;
+    const lostDays = classified.reduce((sum, item) => sum + (['FAT', 'LWDC'].includes(item.classification) ? item.action.lostDays : 0), 0);
+    return {
+      year, dataAvailable: classified.length > 0, workedHours, personDays, sedentary, mariners, employees: vesselScoped ? null : people.length,
+      FAT, LWDC, LTI, RWC: count('RWC'), MTC: count('MTC'), FAC: count('FAC'), nearMiss: count('NEAR_MISS'), commuting: count('COMMUTING'), lostDays,
+      frequencyRate: workedHours ? (LTI * 1_000_000) / workedHours : null,
+      severityRate: workedHours ? (lostDays * 1_000) / workedHours : null,
+    };
+  });
+}
 function safetyTotals(snapshot: QhseReportSnapshot) {
   const totals = snapshot.hseDashboard?.totals;
   return {
@@ -306,7 +453,10 @@ function hseNotes(snapshot: QhseReportSnapshot): QhseReportNote[] {
   return notes;
 }
 function reportPeriodLabel(snapshot: QhseReportSnapshot): string {
-  return `${snapshot.scope.year}${snapshot.scope.vesselName ? ` · ${snapshot.scope.vesselName}` : ' · flotte complète'}`;
+  const years = scopeYears(snapshot.scope);
+  const period = years.length === 1 ? String(years[0]) : `${years[0]}–${years.at(-1)}`;
+  const vessels = snapshot.scope.vesselNames?.length ? snapshot.scope.vesselNames.join(', ') : snapshot.scope.vesselName;
+  return `${period}${vessels ? ` · ${vessels}` : ' · flotte complète'}`;
 }
 
 function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
@@ -314,7 +464,7 @@ function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
     summary: `Catalogue des 25 pages du rapport QHSE, reconstruites à partir des seules données SeaPilot — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Rapports disponibles', QHSE_REPORT_CATALOG.length, 'Un PDF distinct par page', 'blue'),
-      metric('Période', String(snapshot.scope.year), snapshot.scope.vesselName || 'Tous les navires', 'green'),
+      metric('Période', scopeYears(snapshot.scope).join(', '), snapshot.scope.vesselNames?.join(', ') || snapshot.scope.vesselName || 'Tous les navires', 'green'),
       metric('Couverture complète', QHSE_REPORT_CATALOG.filter((report) => report.coverage === 'complete').length, 'Rapports alimentés sans source manquante', 'green'),
       metric('Couverture partielle', QHSE_REPORT_CATALOG.filter((report) => report.coverage === 'partial').length, 'Lacunes identifiées dans le PDF', 'orange'),
     ],
@@ -334,6 +484,37 @@ function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
 
 function buildPortCallContent(snapshot: QhseReportSnapshot, detailed: boolean): QhseReportContent {
   const calls = snapshot.portCalls.map((call) => ({ ...call, duration: hoursBetween(call.arrivalAt, call.departureAt), report: reportMap(snapshot).get(call.dprId) }));
+  if (detailed) {
+    const target = (snapshot.contractTargets || []).find((item) => scopeYears(snapshot.scope).includes(item.year)
+      && (!scopeVesselIds(snapshot.scope).length || scopeVesselIds(snapshot.scope).includes(item.vesselId)));
+    const p144Calls = calls.filter((call) => normalize(call.report?.projectLabel || '').includes('p144') && (!target || call.report?.vesselId === target.vesselId));
+    const categoryCalls = (key: string) => p144Calls.filter((call) => call.reasons.includes(key));
+    const sortedDates = [...new Set(p144Calls.map((call) => call.arrivalAt.slice(0, 10)).filter(Boolean))].sort();
+    const durationSeries = (key: string) => sortedDates.map((date) => categoryCalls(key).filter((call) => call.arrivalAt.startsWith(date)).reduce((sum, call) => sum + call.duration, 0) || null);
+    const maintenanceDays = new Set(categoryCalls('breakdown').map((call) => call.arrivalAt.slice(0, 10)).filter(Boolean)).size;
+    const portCall24h = categoryCalls('port-call-24h').length;
+    const unqualifiedCrewChanges = categoryCalls('crew-change').filter((call) => !call.reasons.some((reason) => ['port-call-14h', 'port-call-24h'].includes(reason))).length;
+    return {
+      summary: `KPI opérations P144 / GOURY — durée réelle entre accostage et appareillage, sans ajout de 1 h 30 — ${reportPeriodLabel(snapshot)}.`,
+      metrics: [
+        metric('Moyenne 14h Port Call', `${formatNumber(average(categoryCalls('port-call-14h').map((call) => call.duration)), 1)} h`, `${categoryCalls('port-call-14h').length} escale(s) qualifiée(s)`, 'blue'),
+        metric('Moyenne 24h Port Call', `${formatNumber(average(categoryCalls('port-call-24h').map((call) => call.duration)), 1)} h`, `${portCall24h} / ${target?.portCall24hLimit ?? '—'} en ${target?.year ?? snapshot.scope.year}`, 'blue'),
+        metric('Moyenne Weather Stand-by', `${formatNumber(average(categoryCalls('weather-standby').map((call) => call.duration)), 1)} h`, `${categoryCalls('weather-standby').length} période(s)`, 'orange'),
+        metric('Jours de maintenance', target ? `${maintenanceDays} / ${target.maintenanceDaysLimit}` : '—', target ? `Échéance ${formatDate(target.validUntil)}` : 'Objectif Supabase absent', 'green'),
+      ],
+      charts: [
+        { title: '1.1 14h Port Call', kind: 'line', labels: sortedDates.map(formatDate), series: [{ label: 'Durée réelle', values: durationSeries('port-call-14h'), color: BLUE }], unit: 'h' },
+        { title: '1.2 24h Port Call', kind: 'line', labels: sortedDates.map(formatDate), series: [{ label: 'Durée réelle', values: durationSeries('port-call-24h'), color: BLUE }], unit: 'h' },
+        { title: '1.3 Weather Stand-by', kind: 'line', labels: sortedDates.map(formatDate), series: [{ label: 'Durée réelle', values: durationSeries('weather-standby'), color: BLUE }], unit: 'h' },
+      ],
+      tables: [{ title: '2. Suivi des escales', columns: ['Date', 'Navire', 'Projet', 'Qualification', 'Durée'], rows: p144Calls.map((call) => [formatDate(call.arrivalAt), call.report?.vesselName || '—', call.report?.projectLabel || '—', call.reasons.includes('port-call-24h') ? '24h Port Call' : call.reasons.includes('port-call-14h') ? '14h Port Call' : call.reasons.includes('weather-standby') ? 'Weather Stand-by' : 'Non qualifiée', call.duration ? `${formatNumber(call.duration, 1)} h` : 'Incomplète']) }],
+      notes: [
+        ...(unqualifiedCrewChanges ? [unavailable('Historique à qualifier', `${unqualifiedCrewChanges} Crew Change historique(s) ne possède(nt) pas encore la qualification 14h/24h dans Supabase ; aucune répartition n’a été déduite.`)] : []),
+        ...(target ? [{ title: 'Objectifs contractuels', text: `${target.maintenanceDaysLimit} jours de maintenance Avarie et ${target.portCall24hLimit} escales 24h Port Call pour ${target.year}, échéance ${formatDate(target.validUntil)}.` } as QhseReportNote] : [unavailable('Objectifs contractuels absents', 'Aucun objectif P144 / GOURY n’est disponible dans Supabase pour la période sélectionnée.')]),
+      ],
+      sources: ['DPR soumis/validés · escales et motifs', 'Supabase · objectifs contractuels P144 / GOURY', sourceNote()],
+    };
+  }
   const total = calls.reduce((sum, call) => sum + call.duration, 0);
   const completed = calls.filter((call) => call.duration > 0);
   const monthly = monthlyValues(completed, (call) => call.arrivalAt, (call) => call.duration);
@@ -358,6 +539,8 @@ function buildPortCallContent(snapshot: QhseReportSnapshot, detailed: boolean): 
     sources: ['DPR soumis/validés · escales et motifs', sourceNote()],
   };
 }
+
+function average(values: number[]): number { return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0; }
 
 function buildTfTgContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const totals = safetyTotals(snapshot);
@@ -387,10 +570,51 @@ function buildTfTgContent(snapshot: QhseReportSnapshot): QhseReportContent {
 }
 
 function buildSocialSafetyContent(snapshot: QhseReportSnapshot, variant: 1 | 2): QhseReportContent {
+  if (variant === 1) {
+    const annual = annualSafety(snapshot);
+    const missingYears = annual.filter((row) => !row.dataAvailable).map((row) => row.year);
+    const cumulativeLabels = scopeYears(snapshot.scope).flatMap((year) => MONTHS.map((month) => `${month} ${year}`));
+    const classifications = ['LWDC', 'RWC', 'MTC', 'FAC', 'COMMUTING', 'NEAR_MISS'] as const;
+    const series = classifications.map((classification, index) => {
+      let running = 0;
+      return {
+        label: classification === 'COMMUTING' ? 'Commuting' : classification === 'NEAR_MISS' ? 'Near Miss' : classification,
+        values: cumulativeLabels.map((label) => {
+          const [monthLabel, yearLabel] = label.split(' ');
+          const month = MONTHS.indexOf(monthLabel);
+          running += snapshot.actions.filter((action) => Number((action.occurredAt || action.openedOn).slice(0, 4)) === Number(yearLabel)
+            && monthOf(action.occurredAt || action.openedOn) === month && eventClassification(action, snapshot) === classification).length;
+          return running;
+        }),
+        color: [RED, PURPLE, ORANGE, [222, 184, 19] as [number, number, number], [224, 126, 156] as [number, number, number], [15, 174, 80] as [number, number, number]][index],
+      };
+    });
+    return {
+      summary: `Effectifs et accidentologie annuels — ${reportPeriodLabel(snapshot)}.`,
+      metrics: annual.slice(-1).flatMap((row) => [
+        metric('Heures travaillées', row.workedHours === null ? '—' : `${formatNumber(row.workedHours)} h`, `Année ${row.year}`, 'blue'),
+        metric('Hommes-jours', row.personDays === null ? '—' : formatNumber(row.personDays), `Année ${row.year}`, 'blue'),
+        metric('Taux de fréquence', row.frequencyRate === null ? '—' : formatNumber(row.frequencyRate, 2), 'LTI × 1 000 000 / h', 'orange'),
+        metric('Taux de gravité', row.severityRate === null ? '—' : formatNumber(row.severityRate, 2), 'Jours perdus × 1 000 / h', 'red'),
+      ]),
+      charts: [
+        { title: 'Taux de fréquence annuel', kind: 'line', labels: annual.map((row) => String(row.year)), series: [{ label: 'TF', values: annual.map((row) => row.dataAvailable ? row.frequencyRate : null), color: BLUE }] },
+        { title: 'Taux de gravité annuel', kind: 'line', labels: annual.map((row) => String(row.year)), series: [{ label: 'TG', values: annual.map((row) => row.dataAvailable ? row.severityRate : null), color: BLUE }] },
+        { title: "Nombre d'accidents / incidents cumulés", kind: 'bar', labels: cumulativeLabels, series },
+      ],
+      tables: [
+        { title: '1. Effectifs', columns: ['Année', "Nb d'heures travaillées", "Nb d'hommes/jour", 'Nb sédentaires', 'Nb marins', 'Nb salariés'], rows: annual.map((row) => [String(row.year), row.workedHours === null ? '—' : formatNumber(row.workedHours), row.personDays === null ? '—' : formatNumber(row.personDays), row.sedentary === null ? '—' : String(row.sedentary), row.mariners === null ? '—' : String(row.mariners), row.employees === null ? '—' : String(row.employees)]) },
+        { title: '2. Indicateurs accidents', columns: ['Année', 'Nb LTI', "Nb jours d'arrêt", 'Nb RWC', 'Nb MTC', 'Nb FAC', 'Nb Near Miss', 'Nb Commuting', 'TF', 'TG'], rows: annual.map((row) => {
+          if (!row.dataAvailable) return [String(row.year), ...Array.from({ length: 9 }, () => '—')];
+          return [String(row.year), String(row.LTI), String(row.lostDays), String(row.RWC), String(row.MTC), String(row.FAC), String(row.nearMiss), String(row.commuting), row.frequencyRate === null ? '—' : formatNumber(row.frequencyRate, 2), row.severityRate === null ? '—' : formatNumber(row.severityRate, 2)];
+        }) },
+      ],
+      notes: missingYears.length ? [unavailable('Historique accidentologique incomplet', `Aucune donnée d’événement structurée n’est disponible dans Supabase pour ${missingYears.join(', ')} ; les valeurs sont volontairement affichées « — » et non zéro.`)] : [],
+      sources: ['Supabase · historiques annuels officiels', 'Supabase · Fiche RH / Grade', 'Supabase · événements HSE', sourceNote()],
+    };
+  }
   const totals = safetyTotals(snapshot);
   const actions = yearActions(snapshot).filter((action) => Boolean(actionClassification(action, snapshot)));
-  const detailKey = variant === 1 ? 'injuryLocation' : 'victimActivity';
-  const details = countBy(actions, (action) => text(action.safetyEventDetails[detailKey]));
   const pyramid: Array<[string, number]> = [
     ['Décès / accidents graves', totals.FAT + totals.LTI],
     ['Soins et travail restreint', totals.RWC + totals.MTC],
@@ -399,18 +623,14 @@ function buildSocialSafetyContent(snapshot: QhseReportSnapshot, variant: 1 | 2):
     ['Observations sécurité', totals.safetyObservation],
   ];
   return {
-    summary: variant === 1
-      ? `Typologie des événements de santé et sécurité — ${reportPeriodLabel(snapshot)}.`
-      : `Lecture préventive selon la pyramide de Bird — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Lecture préventive selon la pyramide de Bird — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Événements classifiés', actions.length, 'Enregistrements SeaPilot de la période', 'blue'),
       metric('Accidents enregistrables', totals.FAT + totals.LTI + totals.RWC + totals.MTC, 'FAT + LTI + RWC + MTC', 'red'),
       metric('Premiers soins', totals.FAC, 'FAC', 'orange'),
       metric('Précurseurs', totals.nearMiss + totals.safetyObservation, 'Near miss + observations', 'green'),
     ],
-    charts: variant === 1
-      ? [categoricalChart('Événements par classification', countBy(actions, (action) => actionClassification(action, snapshot)), BLUE), categoricalChart('Localisation / activité renseignée', details, PURPLE)]
-      : [categoricalChart('Pyramide de Bird — niveaux déclarés', pyramid, ORANGE), categoricalChart('Conséquences renseignées', countBy(actions, (action) => text(action.safetyEventDetails.consequences)), RED)],
+    charts: [categoricalChart('Pyramide de Bird — niveaux déclarés', pyramid, ORANGE), categoricalChart('Conséquences renseignées', countBy(actions, (action) => text(action.safetyEventDetails.consequences)), RED)],
     tables: [{
       title: 'Événements de la période', columns: ['Date', 'Classification', 'Navire / lieu', 'Événement', 'Jours perdus'],
       rows: rowsLimited(actions.map((action) => [formatDate(action.occurredAt || action.openedOn), actionClassification(action, snapshot) || '—', action.vesselName || action.locationDetail || '—', action.title, String(action.lostDays)]), 34),
@@ -421,9 +641,15 @@ function buildSocialSafetyContent(snapshot: QhseReportSnapshot, variant: 1 | 2):
 }
 
 function buildVesselSafetyContent(snapshot: QhseReportSnapshot): QhseReportContent {
+  const annual = annualSafety(snapshot);
   const totals = safetyTotals(snapshot);
   const exercises = countBy(snapshot.exercises, (item) => item.type);
   const hse = snapshot.hseActions;
+  const reportById = reportMap(snapshot);
+  const exercisePeriod = periodValues(snapshot.scope, snapshot.exercises, (item) => reportById.get(item.dprId)?.reportDate || '', () => 1);
+  const classifiedActions = yearActions(snapshot).filter((action) => Boolean(eventClassification(action, snapshot)));
+  const eventPeriod = periodValues(snapshot.scope, classifiedActions, (action) => action.occurredAt || action.openedOn, () => 1);
+  let eventRunning = 0;
   return {
     summary: `Sécurité navire, exercices et prévention déclarés dans les DPR — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
@@ -432,19 +658,20 @@ function buildVesselSafetyContent(snapshot: QhseReportSnapshot): QhseReportConte
       metric('Visites / audits HSE', hse.filter((item) => item.hseVisitPerformed).length + hse.filter((item) => item.hseAuditPerformed).length, 'DPR de la période', 'orange'),
       metric('Événements HSE', totals.LTI + totals.RWC + totals.MTC + totals.FAC + totals.nearMiss, 'Événements classifiés', 'red'),
     ],
-    charts: [categoricalChart('Exercices par type', exercises, TEAL), categoricalChart('Actions de prévention', [
-      ['TBT', hse.filter((item) => item.tbtPerformed).length], ['Visites HSE', hse.filter((item) => item.hseVisitPerformed).length],
-      ['Audits HSE', hse.filter((item) => item.hseAuditPerformed).length], ['Bonnes pratiques', hse.reduce((sum, item) => sum + item.goodPractices, 0)],
-      ['Situations dangereuses', hse.reduce((sum, item) => sum + item.dangerousSituations, 0)], ['Stop work', hse.reduce((sum, item) => sum + item.stopWork, 0)],
-    ], BLUE)],
-    tables: [{ title: 'Exercices recensés', columns: ['Type', 'Nombre'], rows: exercises.map(([label, value]) => [label, String(value)]) }],
-    notes: [],
+    charts: [
+      { title: "Nombre d'accidents / incidents cumulés", kind: 'line', labels: eventPeriod.labels, series: [{ label: 'Événements', values: eventPeriod.values.map((value) => { eventRunning += value; return eventRunning; }), color: PURPLE }] },
+      { title: "Exercices d'urgence", kind: 'bar', labels: exercisePeriod.labels, series: [{ label: 'Nombre', values: exercisePeriod.values, color: BLUE }] },
+    ],
+    tables: [{ title: '1. Accidentologie', columns: ['Année', 'LTI', "Jours d'arrêt", 'RWC', 'MTC', 'FAC', 'Near Miss', 'Commuting'], rows: annual.map((row) => row.dataAvailable
+      ? [String(row.year), String(row.LTI), String(row.lostDays), String(row.RWC), String(row.MTC), String(row.FAC), String(row.nearMiss), String(row.commuting)]
+      : [String(row.year), ...Array.from({ length: 7 }, () => '—')]) }],
+    notes: annual.some((row) => !row.dataAvailable) ? [unavailable('Historique accidentologique incomplet', `Données absentes pour ${annual.filter((row) => !row.dataAvailable).map((row) => row.year).join(', ')}.`)] : [],
     sources: ['DPR soumis/validés · actions HSE et exercices d’urgence', 'Événements HSE SeaPilot', sourceNote()],
   };
 }
 
-export function calculateFuelGhgTonnes(fuelM3: number): number {
-  return fuelM3 * 0.85 * 3.206;
+export function calculateFuelGhgTonnes(fuelM3: number, density = 0.85, emissionFactor = 3.206): number {
+  return fuelM3 * density * emissionFactor;
 }
 
 function buildEnvironmentContent(snapshot: QhseReportSnapshot): QhseReportContent {
@@ -454,27 +681,37 @@ function buildEnvironmentContent(snapshot: QhseReportSnapshot): QhseReportConten
   const waterM3 = snapshot.supplies.reduce((sum, item) => sum + item.waterM3, 0);
   const wasteKg = snapshot.waste.filter((item) => item.unit === 'kg').reduce((sum, item) => sum + item.quantity, 0);
   const wasteLiters = snapshot.waste.filter((item) => item.unit === 'l').reduce((sum, item) => sum + item.quantity, 0);
-  const ghg = calculateFuelGhgTonnes(fuelLiters / 1000);
+  const parameter = snapshot.environmentParameters?.at(-1);
+  const density = parameter?.density || 0;
+  const emissionFactor = parameter?.emissionFactor || 0;
+  const reduction = parameter?.xbeeReductionRate || 0;
+  const ghgWithoutXbee = density && emissionFactor ? calculateFuelGhgTonnes(fuelLiters / 1000, density, emissionFactor) : 0;
+  const ghgWithXbee = ghgWithoutXbee * (1 - reduction);
+  const fuelPeriod = periodValues(snapshot.scope, snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000);
+  const waterPeriod = periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3);
   return {
     summary: `Consommations et impacts environnementaux déclarés dans les DPR — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Carburant consommé', `${formatNumber(fuelLiters / 1000, 1)} m³`, 'Somme DPR', 'orange'),
       metric('Carburant avitaillé', `${formatNumber(fuelSupplyM3, 1)} m³`, 'Avitaillements DPR', 'blue'),
       metric('Eau avitaillée', `${formatNumber(waterM3, 1)} m³`, 'Avitaillements DPR', 'blue'),
-      metric('GES estimés', `${formatNumber(ghg, 1)} tCO₂e`, '0,85 t/m³ × 3,206 tCO₂e/t', 'red'),
+      metric('GES avec xBee', parameter ? `${formatNumber(ghgWithXbee, 2)} tCO₂e` : '—', parameter ? `Réduction ${formatNumber(reduction * 100)} %` : 'Paramètre Supabase absent', 'green'),
     ],
-    charts: [{
-      title: 'Carburant consommé par mois', kind: 'bar', labels: MONTHS,
-      series: [{ label: 'm³', values: monthlyValues(snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000), color: ORANGE }], unit: 'm³',
-    }, categoricalChart('Déchets par type', countBy(snapshot.waste, (item) => `${item.type} (${item.unit})`).map(([label]) => [label, snapshot.waste.filter((item) => `${item.type} (${item.unit})` === label).reduce((sum, item) => sum + item.quantity, 0)]), TEAL)],
+    charts: [
+      { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³' },
+      { title: 'Consommation de fuel mensuelle', kind: 'line', labels: fuelPeriod.labels, series: [{ label: 'Fuel consommé', values: fuelPeriod.values, color: BLUE }], unit: 'm³' },
+      { title: 'Émissions de GES', kind: 'line', labels: ['Sans xBee', 'Avec xBee'], series: [{ label: 'tCO₂e', values: [parameter ? ghgWithoutXbee : null, parameter ? ghgWithXbee : null], color: TEAL }] },
+    ],
     tables: [{
       title: 'Bilan environnemental', columns: ['Indicateur', 'Valeur', 'Méthode'], rows: [
         ['Déchets solides', `${formatNumber(wasteKg, 1)} kg`, 'Somme des enregistrements DPR en kg'],
         ['Déchets liquides', `${formatNumber(wasteLiters, 1)} l`, 'Somme des enregistrements DPR en litres'],
-        ['Scénario -15 % GES', `${formatNumber(ghg * 0.85, 1)} tCO₂e`, 'Scénario comparatif, pas une émission réelle'],
+        ['GES sans xBee', parameter ? `${formatNumber(ghgWithoutXbee, 2)} tCO₂e` : '—', parameter ? `${density} t/m³ × ${emissionFactor} tCO₂e/t` : 'Paramètres absents'],
+        ['GES avec xBee', parameter ? `${formatNumber(ghgWithXbee, 2)} tCO₂e` : '—', parameter ? `Tous navires · réduction ${formatNumber(reduction * 100)} %` : 'Paramètres absents'],
+        ['GES évités', parameter ? `${formatNumber(ghgWithoutXbee - ghgWithXbee, 2)} tCO₂e` : '—', 'Écart sans xBee / avec xBee'],
       ],
     }],
-    notes: [{ title: 'Facteur d’émission', text: 'La formule reprend le modèle du rapport de référence : volume carburant × densité 0,85 × facteur 3,206. Elle constitue une estimation et non un bilan carbone certifié.' }],
+    notes: parameter ? [{ title: 'Méthode environnementale', text: `Tous les navires utilisent xBee sur toute la période. Calcul Supabase : volume consommé × densité ${density} × facteur ${emissionFactor}, puis réduction de ${formatNumber(reduction * 100)} %.` }] : [unavailable('Paramètres environnementaux absents', 'La densité, le facteur d’émission et le taux xBee doivent être configurés dans Supabase ; aucune valeur n’est inventée.')],
     sources: ['DPR soumis/validés · métriques, avitaillements et déchets', sourceNote()],
   };
 }
@@ -483,7 +720,7 @@ function employedAt(person: PersonRecord, date: string): boolean {
   return (!person.hiredOn || person.hiredOn <= date) && (!person.departedOn || person.departedOn > date);
 }
 function buildGovernanceContent(snapshot: QhseReportSnapshot): QhseReportContent {
-  const people = snapshot.people.filter((person) => employedAt(person, `${snapshot.scope.year}-12-31`));
+  const people = snapshot.people.filter((person) => employedAt(person, scopeEnd(snapshot.scope)));
   const improvementActions = yearActions(snapshot).filter((action) => normalize(`${action.deviationType} ${action.categoryKey} ${action.title}`).includes('amelior'));
   return {
     summary: `Indicateurs sociaux et démarches d’amélioration disponibles — ${reportPeriodLabel(snapshot)}.`,
@@ -505,28 +742,28 @@ function buildGovernanceContent(snapshot: QhseReportSnapshot): QhseReportContent
 
 function visitsInYear(snapshot: QhseReportSnapshot, predicate: (visit: PlanningVesselVisit) => boolean = () => true) {
   return snapshot.visits.filter(predicate).flatMap((visit) => visit.occurrences
-    .filter((occurrence) => inYear(occurrence.scheduledOn, snapshot.scope.year))
+    .filter((occurrence) => inScope(occurrence.scheduledOn, snapshot.scope))
     .map((occurrence) => ({ visit, occurrence })));
 }
 function technicalStops(snapshot: QhseReportSnapshot) { return visitsInYear(snapshot, (visit) => visit.visitType === 'technical_stop'); }
 function downtimeHours(snapshot: QhseReportSnapshot): number {
   const breakdown = snapshot.portCalls.filter((call) => call.reasons.includes('breakdown')).reduce((sum, call) => sum + hoursBetween(call.arrivalAt, call.departureAt), 0);
   const stopGroups = snapshot.visits.filter((visit) => visit.visitType === 'technical_stop').map((visit) => visit.occurrences
-    .filter((item) => inYear(item.scheduledOn, snapshot.scope.year)).sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt)));
+    .filter((item) => inScope(item.scheduledOn, snapshot.scope)).sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt)));
   const planned = stopGroups.reduce((sum, occurrences) => occurrences.length > 1 ? sum + hoursBetween(occurrences[0].scheduledAt, occurrences.at(-1)!.scheduledAt) : sum + (occurrences.length ? 24 : 0), 0);
   return breakdown + planned;
 }
 function vesselFactor(snapshot: QhseReportSnapshot): number {
-  if (snapshot.scope.vesselId) return 1;
+  if (scopeVesselIds(snapshot.scope).length) return scopeVesselIds(snapshot.scope).length;
   return Math.max(1, new Set(snapshot.reports.map((report) => report.vesselId).filter(Boolean)).size);
 }
 function availability(snapshot: QhseReportSnapshot): number {
-  const possible = daysInYear(snapshot.scope.year) * 24 * vesselFactor(snapshot);
+  const possible = scopeCalendarDays(snapshot.scope) * 24 * vesselFactor(snapshot);
   return possible ? Math.max(0, Math.min(100, (1 - (downtimeHours(snapshot) / possible)) * 100)) : 0;
 }
 function coverage(snapshot: QhseReportSnapshot): number {
   const unique = new Set(snapshot.reports.map((report) => `${report.vesselId || 'none'}:${report.reportDate}`)).size;
-  const possible = daysInYear(snapshot.scope.year) * vesselFactor(snapshot);
+  const possible = scopeCalendarDays(snapshot.scope) * vesselFactor(snapshot);
   return possible ? Math.min(100, (unique / possible) * 100) : 0;
 }
 function buildMaintenanceContent(snapshot: QhseReportSnapshot): QhseReportContent {
@@ -562,7 +799,7 @@ function buildAvailabilityContent(snapshot: QhseReportSnapshot, operations: bool
     ],
     charts: [categoricalChart('Motifs des escales', reasons, operations ? BLUE : ORANGE), categoricalChart('Incidents DPR par niveau', countBy(snapshot.incidents, (item) => item.level), RED)],
     tables: [{ title: 'Composantes du calcul', columns: ['Composante', 'Valeur', 'Règle'], rows: [
-      ['Temps calendaire', `${formatNumber(daysInYear(snapshot.scope.year) * 24 * vesselFactor(snapshot))} h`, `${vesselFactor(snapshot)} navire(s) documenté(s)`],
+      ['Temps calendaire', `${formatNumber(scopeCalendarDays(snapshot.scope) * 24 * vesselFactor(snapshot))} h`, `${vesselFactor(snapshot)} navire(s) documenté(s)`],
       ['Avaries en escale', `${formatNumber(snapshot.portCalls.filter((call) => call.reasons.includes('breakdown')).reduce((sum, call) => sum + hoursBetween(call.arrivalAt, call.departureAt), 0), 1)} h`, 'Escales avec motif breakdown'],
       ['Arrêts techniques', String(technicalStops(snapshot).length), 'Occurrences du planning'],
     ] }],
@@ -574,7 +811,7 @@ function buildAvailabilityContent(snapshot: QhseReportSnapshot, operations: bool
 function buildActionPlanContent(snapshot: QhseReportSnapshot, policyOnly: boolean): QhseReportContent {
   const all = yearActions(snapshot);
   const actions = policyOnly ? all.filter((action) => normalize(`${action.categoryKey} ${action.actionType} ${action.title}`).match(/politique|objectif|amelior|rse/)) : all;
-  const overdue = actions.filter((action) => !closedAction(action) && action.dueOn && action.dueOn < `${snapshot.scope.year}-12-31`);
+  const overdue = actions.filter((action) => !closedAction(action) && action.dueOn && action.dueOn < scopeEnd(snapshot.scope));
   const byDeviation = countBy(actions, (action) => action.deviationType || action.actionType);
   return {
     summary: `${policyOnly ? 'Suivi des politiques et améliorations QHSE' : 'Pilotage global du plan d’action'} — ${reportPeriodLabel(snapshot)}.`,
@@ -623,13 +860,13 @@ function certificateStatusAt(certificate: FleetCertificateRecord, year: number):
 function buildCertificateContent(snapshot: QhseReportSnapshot, validity: boolean): QhseReportContent {
   const items = snapshot.certificates.filter((item) => item.isActiveFleet);
   const statusEntries = countBy(items, (item) => validity ? certificateStatusAt(item, snapshot.scope.year) : item.categoryLabel);
-  const expiring = items.filter((item) => item.expiresOn && item.expiresOn >= `${snapshot.scope.year}-01-01` && item.expiresOn <= `${snapshot.scope.year}-12-31`);
+  const expiring = items.filter((item) => item.expiresOn && item.expiresOn >= scopeStart(snapshot.scope) && item.expiresOn <= scopeEnd(snapshot.scope));
   const missing = items.filter((item) => item.status === 'missing');
   return {
     summary: `${validity ? 'Validité et renouvellement des certificats' : 'Référentiel documentaire de la flotte'} — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Certificats', items.length, `${new Set(items.map((item) => item.vesselName)).size} navire(s)`, 'blue'),
-      metric('Échéances dans l’année', expiring.length, String(snapshot.scope.year), 'orange'),
+      metric('Échéances sur la période', expiring.length, scopeYears(snapshot.scope).join(', '), 'orange'),
       metric('Manquants', missing.length, 'Statut SeaPilot', missing.length ? 'red' : 'green'),
       metric('Renouvellements planifiés', items.filter((item) => Boolean(item.plannedOn)).length, 'Date planifiée renseignée', 'green'),
     ],
@@ -662,7 +899,7 @@ function genderKey(value: string): 'Femmes' | 'Hommes' | 'Non renseigné' {
   return 'Non renseigné';
 }
 function buildAgeContent(snapshot: QhseReportSnapshot): QhseReportContent {
-  const at = `${snapshot.scope.year}-12-31`;
+  const at = scopeEnd(snapshot.scope);
   const people = snapshot.people.filter((person) => employedAt(person, at));
   const withAge = people.map((person) => ({ person, age: ageAt(person.birthDate, at), gender: genderKey(person.sex) }));
   const known = withAge.filter((item): item is typeof item & { age: number } => item.age !== null);
@@ -672,7 +909,7 @@ function buildAgeContent(snapshot: QhseReportSnapshot): QhseReportContent {
   ];
   const average = known.length ? known.reduce((sum, item) => sum + item.age, 0) / known.length : 0;
   return {
-    summary: `Structure d’âge de l’effectif présent au 31 décembre ${snapshot.scope.year}.`,
+    summary: `Structure d’âge de l’effectif présent au ${formatDate(scopeEnd(snapshot.scope))}.`,
     metrics: [
       metric('Effectif', people.length, 'Présents en fin de période', 'blue'),
       metric('Âge renseigné', known.length, percent(people.length ? (known.length / people.length) * 100 : 0), 'green'),
@@ -696,16 +933,16 @@ function buildAgeContent(snapshot: QhseReportSnapshot): QhseReportContent {
 }
 
 function buildManagementContent(snapshot: QhseReportSnapshot): QhseReportContent {
-  const at = `${snapshot.scope.year}-12-31`;
+  const at = scopeEnd(snapshot.scope);
   const people = snapshot.people.filter((person) => employedAt(person, at));
-  const hires = people.filter((person) => inYear(person.hiredOn, snapshot.scope.year));
-  const departures = snapshot.people.filter((person) => inYear(person.departedOn, snapshot.scope.year));
+  const hires = people.filter((person) => inScope(person.hiredOn, snapshot.scope));
+  const departures = snapshot.people.filter((person) => inScope(person.departedOn, snapshot.scope));
   return {
-    summary: `Vue management de l’effectif au 31 décembre ${snapshot.scope.year}.`,
+    summary: `Vue management de l’effectif au ${formatDate(scopeEnd(snapshot.scope))}.`,
     metrics: [
       metric('Effectif', people.length, 'Collaborateurs présents', 'blue'),
-      metric('Entrées', hires.length, `En ${snapshot.scope.year}`, 'green'),
-      metric('Sorties', departures.length, `En ${snapshot.scope.year}`, 'orange'),
+      metric('Entrées', hires.length, `Période ${scopeYears(snapshot.scope).join(', ')}`, 'green'),
+      metric('Sorties', departures.length, `Période ${scopeYears(snapshot.scope).join(', ')}`, 'orange'),
       metric('Fonctions', new Set(people.map((person) => person.functionLabel).filter(Boolean)).size, 'Fonctions distinctes', 'blue'),
     ],
     charts: [categoricalChart('Effectif par fonction', countBy(people, (person) => person.functionLabel), BLUE), categoricalChart('Effectif par contrat', countBy(people, (person) => person.contractType), TEAL)],
@@ -751,7 +988,7 @@ function buildHseKpiContent(snapshot: QhseReportSnapshot): QhseReportContent {
 
 function buildAuditDeviationsContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const actions = yearActions(snapshot).filter((action) => normalize(`${action.actionTypeKey} ${action.actionType} ${action.auditType}`).includes('audit'));
-  const overdue = actions.filter((action) => !closedAction(action) && action.dueOn && action.dueOn < `${snapshot.scope.year}-12-31`);
+  const overdue = actions.filter((action) => !closedAction(action) && action.dueOn && action.dueOn < scopeEnd(snapshot.scope));
   return {
     summary: `Suivi des écarts issus des audits — ${reportPeriodLabel(snapshot)}.`,
     metrics: [

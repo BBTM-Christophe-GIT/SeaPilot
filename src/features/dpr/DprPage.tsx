@@ -12,7 +12,7 @@ import type { RoleKey } from '../permissions/roles';
 import { ProjectPortCombobox } from '../projects/ProjectPortCombobox';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
-  EMPTY_DPR_PAYLOAD, INCIDENT_CATEGORIES, validateDprPayload,
+  DPR_PORT_CALL_CATEGORIES, EMPTY_DPR_PAYLOAD, INCIDENT_CATEGORIES, validateDprPayload,
   type CrewFunction, type DprFormPayload,
 } from './dprFormModel.ts';
 import { generateDprArchive, type GeneratedDprDocument } from './dprExport.ts';
@@ -582,7 +582,14 @@ export function DprPage({ client, roles }: DprPageProps) {
             <div className="dpr-step__title"><b>{step + 1}.</b><h3>{STEPS[step][0]}</h3><span>— {STEPS[step][1]}</span></div>
             {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)} onVesselChange={async (vesselId) => {
               setBusy(true); setError('');
-              try { setPayload(await applyPlanningDefaults(payload.reportDate, payload, vesselId)); }
+              try {
+                const next = await applyPlanningDefaults(payload.reportDate, payload, vesselId);
+                const vessel = dashboard.references.vessels.find((item) => item.id === vesselId);
+                if (vessel?.name.trim().toUpperCase() !== 'GOURY') {
+                  next.portCalls[0].reasons = next.portCalls[0].reasons.filter((reason) => !DPR_PORT_CALL_CATEGORIES.some((item) => item.key === reason));
+                }
+                setPayload(next);
+              }
               catch (reason) { setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`); }
               finally { setBusy(false); }
             }} />}
@@ -664,6 +671,10 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
           current.projectId = event.target.value ? Number(event.target.value) : null;
           current.unlistedProjectName = '';
         }
+        const project = references.projects.find((item) => item.id === current.projectId);
+        if (project?.code.trim().toUpperCase() !== 'P144') {
+          current.portCalls[0].reasons = current.portCalls[0].reasons.filter((reason) => !DPR_PORT_CALL_CATEGORIES.some((item) => item.key === reason));
+        }
       })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => void onVesselChange(event.target.value ? Number(event.target.value) : null)}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
@@ -691,7 +702,18 @@ function StepQhse({ payload, references, editable, update }: StepProps & { refer
 
 function StepPort({ payload, references, editable, update }: StepProps & { references: DprReferenceData }) {
   const call = payload.portCalls[0];
-  return <div className="dpr-cards"><section className="dpr-card"><h4>Date et heure de l'Escale</h4><div className="dpr-form-grid"><Field label="PORT"><ProjectPortCombobox disabled={!editable} onChange={(value) => update((current) => { current.portCalls[0].portName = value; })} value={call.portName} /></Field><Field label="HEURE - NAVIRE ACCOSTÉ AU PORT"><input type="datetime-local" disabled={!editable} value={call.arrivalAt} onChange={(event) => update((current) => { current.portCalls[0].arrivalAt = event.target.value; })}/></Field><Field label="HEURE - APPAREILLAGE DU PORT"><input type="datetime-local" disabled={!editable} value={call.departureAt} onChange={(event) => update((current) => { current.portCalls[0].departureAt = event.target.value; })}/></Field></div><div className="dpr-choice-grid">{references.portReasons.map((reason) => <label key={reason.key}><input type="checkbox" disabled={!editable} checked={call.reasons.includes(reason.key)} onChange={(event) => update((current) => { const reasons = current.portCalls[0].reasons; current.portCalls[0].reasons = event.target.checked ? [...reasons, reason.key] : reasons.filter((key) => key !== reason.key); })}/>{reason.label}</label>)}</div></section>
+  const project = references.projects.find((item) => item.id === payload.projectId);
+  const vessel = references.vessels.find((item) => item.id === payload.vesselId);
+  const isP144Goury = project?.code.trim().toUpperCase() === 'P144' && vessel?.name.trim().toUpperCase() === 'GOURY';
+  const portCallCategoryKeys = new Set<string>(DPR_PORT_CALL_CATEGORIES.map((item) => item.key));
+  const portReasons = references.portReasons.filter((reason) => !portCallCategoryKeys.has(reason.key));
+  return <div className="dpr-cards"><section className="dpr-card"><h4>Date et heure de l'Escale</h4><div className="dpr-form-grid"><Field label="PORT"><ProjectPortCombobox disabled={!editable} onChange={(value) => update((current) => { current.portCalls[0].portName = value; })} value={call.portName} /></Field><Field label="HEURE - NAVIRE ACCOSTÉ AU PORT"><input type="datetime-local" disabled={!editable} value={call.arrivalAt} onChange={(event) => update((current) => { current.portCalls[0].arrivalAt = event.target.value; })}/></Field><Field label="HEURE - APPAREILLAGE DU PORT"><input type="datetime-local" disabled={!editable} value={call.departureAt} onChange={(event) => update((current) => { current.portCalls[0].departureAt = event.target.value; })}/></Field></div><div className="dpr-choice-grid">{portReasons.map((reason) => <label key={reason.key}><input type="checkbox" disabled={!editable} checked={call.reasons.includes(reason.key)} onChange={(event) => update((current) => {
+      const reasons = current.portCalls[0].reasons;
+      current.portCalls[0].reasons = event.target.checked ? [...reasons, reason.key] : reasons.filter((key) => key !== reason.key && (reason.key !== 'crew-change' || !portCallCategoryKeys.has(key)));
+    })}/>{reason.label}</label>)}</div>{isP144Goury && call.reasons.includes('crew-change') ? <fieldset className="dpr-port-call-category"><legend>Type de Crew Change · un seul choix</legend>{DPR_PORT_CALL_CATEGORIES.map((category) => <label key={category.key}><input type="checkbox" disabled={!editable} checked={call.reasons.includes(category.key)} onChange={(event) => update((current) => {
+      const reasons = current.portCalls[0].reasons.filter((reason) => !portCallCategoryKeys.has(reason));
+      current.portCalls[0].reasons = event.target.checked ? [...reasons, category.key] : reasons;
+    })}/>{category.label}</label>)}</fieldset> : null}</section>
     <section className="dpr-card"><h4>Approvisionnements</h4><div className="dpr-form-grid">{([['fuelM3', 'FUEL (EN M3)'], ['oilLiters', 'APPROVISIONNEMENT HUILE (EN L)'], ['waterM3', 'APPROVISIONNEMENT EN EAU (M3)']] as const).map(([key, label]) => <Field key={key} label={label}><input type="number" min="0" step={key === 'fuelM3' ? '0.001' : 'any'} disabled={!editable} value={payload.supplies[key]} onChange={(event) => update((current) => { current.supplies[key] = event.target.value; })}/></Field>)}</div></section>
     <section className="dpr-card"><h4>Collecte et déchets</h4><div className="dpr-form-grid">{payload.wasteRecords.map((record, index) => <Field key={record.key} label={`${record.key.toUpperCase()} (EN ${record.unit.toUpperCase()})`}><input type="number" min="0" disabled={!editable} value={record.quantity} onChange={(event) => update((current) => { current.wasteRecords[index].quantity = event.target.value; })}/></Field>)}</div></section></div>;
 }

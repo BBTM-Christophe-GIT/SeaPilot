@@ -40,6 +40,46 @@ final result: passed
 
 ---
 
+# Design QA — Rapports PDF QHSE et qualification d'escale v3.29.0 (2026-09-03)
+
+## Cibles et états comparés
+
+- Référence principale : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-c716be6b-c6fd-474e-8051-58d7e1ac4d34.png` (3 840 × 2 088 px), page Power BI « Indicateur RSE - Environnement ».
+- Implémentation PDF : `C:/CODEX/SeaPilot/tmp/qhse-final-qa/environment-2023-2025-final.png` (1 158 × 1 638 px, rasterisation à 140 dpi d'une page A4 portrait).
+- Comparaison normalisée côte à côte : `C:/CODEX/SeaPilot/tmp/qhse-final-qa/environment-comparison.png` (2 347 × 1 708 px), ouverte et inspectée comme une seule image après le dernier correctif.
+- État de données : la référence affiche GOURY/2026 ; l'implémentation vérifiée affiche la flotte/2023–2025. Cette différence de valeurs est intentionnelle et permet de contrôler le rendu multi-années sans substituer des données Power BI aux données Supabase.
+- Interfaces contrôlées dans le navigateur intégré : DPR P144/GOURY avec qualification Crew Change, et page KPI avec filtres multi-années et multi-navires. Les surfaces capturées étaient respectivement d'environ 1 266 × 708 px et 997 × 978 px.
+
+## Résultat visuel
+
+Aucun écart P0, P1 ou P2 ne subsiste sur le périmètre demandé.
+
+- Le PDF reprend la hiérarchie de la référence : logo, titre bleu, sections numérotées, carte fixe de stress hydrique, séries mensuelles eau/fuel, totaux annuels et comparaison CO2 avec/sans xBee.
+- Le rendu est limité à une page A4 portrait, sans contenu rogné ni seconde page. La typographie est volontairement plus compacte que la capture Power BI afin de conserver la lisibilité à l'impression ; cet écart P3 est accepté.
+- L'eau est nommée « eau avitaillée » et la comparaison carbone applique le paramètre Supabase de réduction xBee à 15 %.
+- Les rapports prioritaires utilisent la même grammaire blanche, bleu pétrole, tableaux gris et graphiques sobres que les pages Power BI fournies.
+- L'image de stress hydrique est l'actif original extrait du rapport fourni ; aucun pictogramme approximatif, SVG artisanal ou dessin CSS n'a été introduit.
+- Après une première passe, les totaux Eau et Fuel ont été replacés à droite de leurs courbes afin de mieux correspondre à la composition Power BI.
+
+## Interactions et exécution
+
+- Le filtre Années accepte une ou plusieurs valeurs et interdit un état sans année ; le filtre Navires accepte une ou plusieurs valeurs, l'absence de sélection représentant toute la flotte.
+- Pour P144/GOURY, cocher Crew Change révèle « 14h Port Call » et « 24h Port Call ». Les deux choix sont mutuellement exclusifs : le contrôle a confirmé que sélectionner 24h désélectionne 14h.
+- Décocher Crew Change, changer de projet ou changer de navire retire la qualification devenue invalide.
+- Aucun message d'erreur navigateur n'a été observé sur les parcours KPI et DPR.
+
+## Historique de comparaison
+
+1. Première passe KPI : cases à cocher surdimensionnées et en-tête trop serré au viewport intermédiaire (P2).
+2. Correctif : taille explicite de 15 px et breakpoint de recomposition porté à 1 180 px ; la capture de contrôle ne montre plus de collision.
+3. Première passe PDF : le rapport Environnement débordait sur une seconde page (P1).
+4. Correctif : densité des métriques et tableaux adaptée, puis réorganisation des totaux ; `pdfinfo` confirme une seule page A4 portrait.
+5. Comparaison finale : source et rendu assemblés dans `environment-comparison.png`, sans défaut de typographie, espacement, couleur, actif, contenu ou responsive de niveau P0/P1/P2.
+
+final result: passed
+
+---
+
 # Design QA — icônes des chapitres QSMS v3.27.15 (2026-09-02)
 
 ## Cible et preuves

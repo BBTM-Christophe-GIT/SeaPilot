@@ -121,7 +121,8 @@ export function KpiPage({ client }: KpiPageProps) {
   const [hseLoading, setHseLoading] = useState(false);
   const [definitionsOpen, setDefinitionsOpen] = useState(false);
   const [error, setError] = useState('');
-  const [reportVesselId, setReportVesselId] = useState<number | null>(null);
+  const [reportYears, setReportYears] = useState<number[]>([currentYear]);
+  const [reportVesselIds, setReportVesselIds] = useState<number[]>([]);
   const [reportBusy, setReportBusy] = useState('');
   const [reportProgress, setReportProgress] = useState('');
   const [reportMessage, setReportMessage] = useState('');
@@ -165,16 +166,21 @@ export function KpiPage({ client }: KpiPageProps) {
     ...Array.from({ length: 6 }, (_, index) => currentYear - index),
     ...data.actions.map((action) => Number(action.openedOn.slice(0, 4))).filter((year) => Number.isInteger(year) && year > 2000),
   ])).sort((a, b) => b - a), [currentYear, data.actions]);
-  const selectedVessel = data.vessels.find((vessel) => vessel.id === reportVesselId) || null;
+  const selectedVessels = data.vessels.filter((vessel) => reportVesselIds.includes(vessel.id));
+  const selectedVesselNames = selectedVessels.map((vessel) => vessel.name);
+  const reportPeriod = [...reportYears].sort((left, right) => left - right);
 
   async function getReportSnapshot(): Promise<QhseReportSnapshot> {
-    const key = `${hseYear}:${reportVesselId || 'all'}`;
+    const key = `${reportPeriod.join(',')}:${reportVesselIds.slice().sort((left, right) => left - right).join(',') || 'all'}`;
     const cached = reportSnapshots.current.get(key);
     if (cached) return cached;
     const snapshot = await fetchQhseReportSnapshot(effectiveClient, {
-      year: hseYear,
-      vesselId: reportVesselId,
-      vesselName: selectedVessel?.name || '',
+      year: reportPeriod.at(-1) || currentYear,
+      years: reportPeriod,
+      vesselId: reportVesselIds.length === 1 ? reportVesselIds[0] : null,
+      vesselIds: reportVesselIds,
+      vesselName: selectedVesselNames.length === 1 ? selectedVesselNames[0] : '',
+      vesselNames: selectedVesselNames,
     }, {
       actions: data.actions,
       actionTypes: data.actionTypes,
@@ -190,7 +196,7 @@ export function KpiPage({ client }: KpiPageProps) {
       const snapshot = await getReportSnapshot();
       setReportProgress('Mise en page du PDF…');
       const blob = await buildQhseReportPdf(report, snapshot);
-      downloadQhseBlob(blob, qhseReportFileName(report, hseYear, selectedVessel?.name));
+      downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-')));
       setReportMessage(`${report.title} a été généré.`);
     } catch {
       setReportMessage(`Impossible de générer « ${report.title} ».`);
@@ -271,9 +277,8 @@ export function KpiPage({ client }: KpiPageProps) {
     <section className="qhse-report-library" aria-labelledby="qhse-report-library-title">
       <header><div><span className="action-plan-eyebrow">Rapport Général QHSE</span><h2 id="qhse-report-library-title">Rapports PDF</h2><p>Les 25 pages du rapport de référence, recalculées exclusivement avec les données SeaPilot.</p></div>
         <div className="qhse-report-controls">
-          <label>Navire<select aria-label="Navire des rapports QHSE" disabled={Boolean(reportBusy)} value={reportVesselId || ''} onChange={(event) => setReportVesselId(event.target.value ? Number(event.target.value) : null)}>
-            <option value="">Tous les navires</option>{data.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}
-          </select></label>
+          <details className="qhse-report-multiselect"><summary>Années <strong>{reportPeriod.join(', ')}</strong></summary><fieldset aria-label="Années des rapports QHSE">{hseYears.map((year) => <label key={year}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportYears.includes(year)} onChange={(event) => setReportYears((current) => event.target.checked ? [...current, year] : current.length > 1 ? current.filter((item) => item !== year) : current)}/>{year}</label>)}</fieldset></details>
+          <details className="qhse-report-multiselect"><summary>Navires <strong>{selectedVesselNames.length ? `${selectedVesselNames.length} sélectionné(s)` : 'Tous'}</strong></summary><fieldset aria-label="Navires des rapports QHSE"><label><input type="checkbox" disabled={Boolean(reportBusy)} checked={!reportVesselIds.length} onChange={() => setReportVesselIds([])}/>Tous les navires</label>{data.vessels.map((vessel) => <label key={vessel.id}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportVesselIds.includes(vessel.id)} onChange={(event) => setReportVesselIds((current) => event.target.checked ? [...current, vessel.id] : current.filter((item) => item !== vessel.id))}/>{vessel.name}</label>)}</fieldset></details>
           <button className="qhse-report-all" disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateAllReports()}><Archive size={17} />{reportBusy === 'all' ? 'Génération…' : `Télécharger les ${QHSE_REPORT_CATALOG.length} PDF`}</button>
         </div>
       </header>

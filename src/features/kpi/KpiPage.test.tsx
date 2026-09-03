@@ -50,6 +50,8 @@ describe('KpiPage', () => {
     expect(screen.getByText('Prévention, soins et travail adapté')).toBeInTheDocument();
     expect(screen.getByText('Premiers soins').closest('article')).toHaveTextContent('3');
     expect(screen.getByRole('heading', { name: 'Rapports PDF' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Années des rapports QHSE' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Navires des rapports QHSE' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(25);
     expect(screen.getByRole('button', { name: 'Télécharger les 25 PDF' })).toBeInTheDocument();
 
