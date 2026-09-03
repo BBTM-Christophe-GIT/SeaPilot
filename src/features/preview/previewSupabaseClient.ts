@@ -1480,7 +1480,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     source_kind: 'seapilot', source_file_name: null, source_web_url: null, source_modified_at: null,
     created_by: 'preview-user', created_at: '2026-09-01T08:30:00Z', updated_at: '2026-09-01T09:15:00Z',
   }, {
-    id: 9002, company_id: 1, chronology_code: 'NS 07-26-KROKDUR', subject: 'Mise à jour du DUP de KROKDUR',
+    id: 9002, company_id: 1, chronology_code: '', subject: 'Mise à jour du DUP de KROKDUR',
     body: 'Note de service historique importée depuis SharePoint.', scope: 'all_accounts', vessel_id: null, vessel: null,
     status: 'draft', author_person_id: null, author_identity_snapshot: { display_name: 'Import SharePoint' }, author_signature_snapshot: {},
     authored_on: '2026-09-01', published_at: null, published_by: null,
@@ -1488,7 +1488,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     source_web_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Notes%20de%20Service/NS%2007-26%20-%20Mise%20%C3%A0%20jour%20du%20DUP.docx?web=1',
     source_modified_at: '2026-09-01T14:35:28Z', created_by: 'preview-user', created_at: '2026-09-01T14:35:28Z', updated_at: '2026-09-01T14:35:28Z',
   }, {
-    id: 9003, company_id: 1, chronology_code: 'NS 09-26', subject: 'Organisation des exercices trimestriels',
+    id: 9003, company_id: 1, chronology_code: '', subject: 'Organisation des exercices trimestriels',
     body: 'Bonjour,\n\nPrécisez ici les consignes de la prochaine note de service.\n\nBien cordialement,', scope: 'all_accounts',
     vessel_id: null, vessel: null, status: 'draft', author_person_id: 9301,
     author_identity_snapshot: { display_name: 'Arthur DEMO', first_name: 'Arthur', last_name: 'DEMO' }, author_signature_snapshot: {},
@@ -1515,15 +1515,16 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     external_url: '/modules/certificates?certificate=5001', linked_record_id: 5001, mime_type: null, file_size_bytes: null, sort_order: 1,
   }],
   qhse_service_note_recipients: [
-    { id: 9061, company_id: 1, note_id: 9001, user_id: 'preview-user', person_id: 9301, first_name_snapshot: 'Arthur', last_name_snapshot: 'DEMO', function_snapshot: 'Capitaine' },
     { id: 9062, company_id: 1, note_id: 9001, user_id: 'preview-direction', person_id: 9302, first_name_snapshot: 'Camille', last_name_snapshot: 'DURAND', function_snapshot: 'Direction' },
     { id: 9063, company_id: 1, note_id: 9001, user_id: 'preview-marin', person_id: 9303, first_name_snapshot: 'Luc', last_name_snapshot: 'MARTIN', function_snapshot: 'Marin' },
   ],
+  qhse_service_note_target_vessels: [],
+  qhse_service_note_target_people: [],
   qhse_service_note_signatures: [{
     id: 9071, company_id: 1, note_id: 9001, recipient_id: 9062, user_id: 'preview-direction', person_id: 9302,
     identity_snapshot: { first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction' }, signature_version_id: 9831,
     signature_snapshot: { signature_id: 9831, signer_person_id: 9302, signer_user_id: 'preview-direction', signer_name: 'Camille DURAND', signed_at: '2026-09-01T10:02:00Z', version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9302/preview.png', mime_type: 'image/png', sha256: 'b'.repeat(64) },
-    signed_at: '2026-09-01T10:02:00Z', read_confirmed: true,
+    signed_at: '2026-09-01T10:02:00Z', read_confirmed: true, signature_kind: 'captured',
   }],
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
@@ -1615,6 +1616,43 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'service_note_targeting_options') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    if (!note) return createPreviewQuery({ data: null, error: { message: 'Brouillon de démonstration introuvable.' } });
+    return createPreviewQuery({
+      data: {
+        date: String(args.p_on_date || note.authored_on || ''),
+        people: [
+          { id: 9302, first_name: 'Camille', last_name: 'DURAND', function_label: 'Direction', hired_on: '2020-01-01', departed_on: null, vessel_ids: [2] },
+          { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', hired_on: '2022-05-01', departed_on: null, vessel_ids: [1] },
+          { id: 9304, first_name: 'Hugo', last_name: 'BERNARD', function_label: 'Matelot', hired_on: '2024-03-01', departed_on: null, vessel_ids: [1] },
+        ],
+        vessels: previewRows('vessels').filter((row) => row.active).map((row) => ({
+          id: row.id,
+          name: row.name,
+          recipient_count: Number(row.id) === 1 ? 2 : Number(row.id) === 2 ? 1 : 0,
+        })),
+      },
+      error: null,
+    });
+  }
+  if (functionName === 'save_service_note_draft') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id) && row.status === 'draft');
+    if (!note) return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_DRAFT_FORBIDDEN.' } });
+    note.subject = String(args.p_subject || '');
+    note.body = String(args.p_body || '');
+    note.authored_on = String(args.p_authored_on || note.authored_on || '');
+    note.scope = String(args.p_scope || 'all_accounts');
+    note.chronology_code = '';
+    note.updated_at = new Date().toISOString();
+    const vessels = previewRows('qhse_service_note_target_vessels');
+    const people = previewRows('qhse_service_note_target_people');
+    for (let index = vessels.length - 1; index >= 0; index -= 1) if (Number(vessels[index].note_id) === Number(note.id)) vessels.splice(index, 1);
+    for (let index = people.length - 1; index >= 0; index -= 1) if (Number(people[index].note_id) === Number(note.id)) people.splice(index, 1);
+    if (note.scope === 'vessels') (Array.isArray(args.p_vessel_ids) ? args.p_vessel_ids : []).forEach((id) => vessels.push({ note_id: note.id, vessel_id: Number(id), vessel: previewVessel(Number(id)) }));
+    if (note.scope === 'people') (Array.isArray(args.p_person_ids) ? args.p_person_ids : []).forEach((id) => people.push({ note_id: note.id, person_id: Number(id) }));
+    return createPreviewQuery({ data: note.id, error: null });
+  }
   if (functionName === 'recall_service_note') {
     const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
     const latest = previewRows('qhse_service_notes')

@@ -6,6 +6,7 @@ export const SERVICE_NOTE_MAX_FILE_BYTES = 52_428_800;
 
 export type ServiceNoteStatus = 'draft' | 'published' | 'archived' | 'recalled';
 export type ServiceNoteAttachmentKind = 'file' | 'procedure' | 'action_item' | 'fleet_certificate';
+export type ServiceNoteTargetScope = 'all_accounts' | 'vessels' | 'people';
 
 export interface ServiceNoteSignatureSnapshot {
   signatureId: number;
@@ -51,8 +52,14 @@ export interface ServiceNoteSignature {
   userId: string;
   personId: number;
   identitySnapshot: Record<string, unknown>;
-  signatureSnapshot: ServiceNoteSignatureSnapshot;
+  signatureSnapshot: ServiceNoteSignatureSnapshot | null;
   signedAt: string;
+  signatureKind: 'captured' | 'historical_assumed';
+}
+
+export interface ServiceNoteTargetVessel {
+  id: number;
+  name: string;
 }
 
 export interface ServiceNote {
@@ -63,6 +70,9 @@ export interface ServiceNote {
   body: string;
   vesselId: number | null;
   vesselName: string;
+  scope: ServiceNoteTargetScope;
+  targetVessels: ServiceNoteTargetVessel[];
+  targetPersonIds: number[];
   status: ServiceNoteStatus;
   authorPersonId: number | null;
   authorIdentitySnapshot: Record<string, unknown>;
@@ -76,6 +86,7 @@ export interface ServiceNote {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  lastRecalledChronologyCode: string;
   attachments: ServiceNoteAttachment[];
   recipients: ServiceNoteRecipient[];
   signatures: ServiceNoteSignature[];
@@ -84,8 +95,30 @@ export interface ServiceNote {
 export interface ServiceNoteDraftInput {
   subject: string;
   body: string;
-  vesselId: number | null;
   authoredOn: string;
+  scope: ServiceNoteTargetScope;
+  targetVesselIds: number[];
+  targetPersonIds: number[];
+}
+
+export interface ServiceNoteTargetPersonOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  functionLabel: string;
+  hiredOn: string;
+  departedOn: string;
+  vesselIds: number[];
+}
+
+export interface ServiceNoteTargetVesselOption extends ServiceNoteTargetVessel {
+  recipientCount: number;
+}
+
+export interface ServiceNoteTargetingOptions {
+  date: string;
+  people: ServiceNoteTargetPersonOption[];
+  vessels: ServiceNoteTargetVesselOption[];
 }
 
 export interface ServiceNoteLinkOption {
@@ -110,6 +143,7 @@ interface NoteRow {
   chronology_code: string | null;
   subject: string | null;
   body: string | null;
+  scope: ServiceNoteTargetScope;
   vessel_id: number | string | null;
   status: string;
   author_person_id: number | string | null;
@@ -124,6 +158,7 @@ interface NoteRow {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  last_recalled_chronology_code: string | null;
   vessel: { name?: string | null; acronym?: string | null } | Array<{ name?: string | null; acronym?: string | null }> | null;
 }
 
@@ -159,7 +194,19 @@ interface SignatureRow {
   person_id: number | string;
   identity_snapshot: Record<string, unknown> | null;
   signature_snapshot: Record<string, unknown> | null;
-  signed_at: string;
+  signed_at: string | null;
+  signature_kind: 'captured' | 'historical_assumed';
+}
+
+interface TargetVesselRow {
+  note_id: number | string;
+  vessel_id: number | string;
+  vessel: NoteRow['vessel'];
+}
+
+interface TargetPersonRow {
+  note_id: number | string;
+  person_id: number | string;
 }
 
 function assertResult(error: { message?: string } | null, fallback: string): void {
@@ -171,6 +218,9 @@ const SERVICE_NOTE_RPC_MESSAGES: Record<string, string> = {
   'SERVICE_NOTE_RECALL_PUBLISHED_ONLY.': 'Seule une note actuellement diffusée peut être rappelée.',
   'SERVICE_NOTE_RECALL_LATEST_ONLY.': 'Seule la dernière note de service diffusée peut être rappelée.',
   'SERVICE_NOTE_DELETE_DRAFT_FORBIDDEN.': 'Seul un brouillon privé peut être supprimé par Administration ou Direction.',
+  'SERVICE_NOTE_VESSEL_TARGET_REQUIRED.': 'Sélectionnez au moins un navire avant la diffusion.',
+  'SERVICE_NOTE_PEOPLE_TARGET_REQUIRED.': 'Sélectionnez au moins une personne avant la diffusion.',
+  'SERVICE_NOTE_RECIPIENTS_REQUIRED.': 'Aucun compte éligible ne correspond à ce périmètre dans le planning.',
 };
 
 function assertServiceNoteRpcResult(error: { message?: string } | null, fallback: string): void {
@@ -258,7 +308,7 @@ export function buildOfficeDesktopUrl(url: string): string {
 export async function fetchServiceNotes(client: SupabaseClient): Promise<ServiceNote[]> {
   const { data: noteData, error: noteError } = await client
     .from('qhse_service_notes')
-    .select('id,company_id,chronology_code,subject,body,vessel_id,status,author_person_id,author_identity_snapshot,author_signature_snapshot,authored_on,published_at,source_kind,source_file_name,source_web_url,source_modified_at,created_by,created_at,updated_at,vessel:vessels!qhse_service_notes_vessel_id_fkey(name,acronym)')
+    .select('id,company_id,chronology_code,subject,body,scope,vessel_id,status,author_person_id,author_identity_snapshot,author_signature_snapshot,authored_on,published_at,source_kind,source_file_name,source_web_url,source_modified_at,created_by,created_at,updated_at,last_recalled_chronology_code,vessel:vessels!qhse_service_notes_vessel_id_fkey(name,acronym)')
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('updated_at', { ascending: false });
   assertResult(noteError, 'Impossible de charger les notes de service.');
@@ -266,14 +316,18 @@ export async function fetchServiceNotes(client: SupabaseClient): Promise<Service
   if (!noteRows.length) return [];
 
   const noteIds = noteRows.map((row) => Number(row.id));
-  const [attachmentResult, recipientResult, signatureResult] = await Promise.all([
+  const [attachmentResult, recipientResult, signatureResult, targetVesselResult, targetPersonResult] = await Promise.all([
     client.from('qhse_service_note_attachments').select('id,note_id,attachment_kind,display_name,storage_bucket,storage_path,external_url,linked_record_id,mime_type,file_size_bytes,sort_order').in('note_id', noteIds).order('sort_order'),
     client.from('qhse_service_note_recipients').select('id,note_id,user_id,person_id,first_name_snapshot,last_name_snapshot,function_snapshot').in('note_id', noteIds).order('last_name_snapshot'),
-    client.from('qhse_service_note_signatures').select('id,note_id,recipient_id,user_id,person_id,identity_snapshot,signature_snapshot,signed_at').in('note_id', noteIds).order('signed_at'),
+    client.from('qhse_service_note_signatures').select('id,note_id,recipient_id,user_id,person_id,identity_snapshot,signature_snapshot,signed_at,signature_kind').in('note_id', noteIds).order('signed_at'),
+    client.from('qhse_service_note_target_vessels').select('note_id,vessel_id,vessel:vessels!qhse_service_note_target_vessels_vessel_id_fkey(name,acronym)').in('note_id', noteIds),
+    client.from('qhse_service_note_target_people').select('note_id,person_id').in('note_id', noteIds),
   ]);
   assertResult(attachmentResult.error, 'Impossible de charger les pièces jointes.');
   assertResult(recipientResult.error, 'Impossible de charger les destinataires.');
   assertResult(signatureResult.error, 'Impossible de charger les signatures.');
+  assertResult(targetVesselResult.error, 'Impossible de charger les navires destinataires.');
+  assertResult(targetPersonResult.error, 'Impossible de charger les personnes destinataires.');
 
   const attachments = ((attachmentResult.data || []) as AttachmentRow[]).map<ServiceNoteAttachment>((row) => ({
     id: Number(row.id), noteId: Number(row.note_id), kind: row.attachment_kind,
@@ -288,17 +342,28 @@ export async function fetchServiceNotes(client: SupabaseClient): Promise<Service
   const signatures = ((signatureResult.data || []) as SignatureRow[]).map<ServiceNoteSignature>((row) => ({
     id: Number(row.id), noteId: Number(row.note_id), recipientId: Number(row.recipient_id), userId: row.user_id,
     personId: Number(row.person_id), identitySnapshot: row.identity_snapshot || {},
-    signatureSnapshot: mapSignatureSnapshot(row.signature_snapshot) as ServiceNoteSignatureSnapshot, signedAt: row.signed_at,
+    signatureSnapshot: mapSignatureSnapshot(row.signature_snapshot), signedAt: text(row.signed_at),
+    signatureKind: row.signature_kind || 'captured',
+  }));
+  const targetVessels = ((targetVesselResult.data || []) as unknown as TargetVesselRow[]).map((row) => ({
+    noteId: Number(row.note_id), id: Number(row.vessel_id), name: relationVessel(row.vessel),
+  }));
+  const targetPeople = ((targetPersonResult.data || []) as TargetPersonRow[]).map((row) => ({
+    noteId: Number(row.note_id), personId: Number(row.person_id),
   }));
 
   return noteRows.map<ServiceNote>((row) => ({
     id: Number(row.id), companyId: Number(row.company_id), chronologyCode: text(row.chronology_code),
     subject: text(row.subject), body: text(row.body), vesselId: numberOrNull(row.vessel_id), vesselName: relationVessel(row.vessel),
+    scope: row.scope || 'all_accounts',
+    targetVessels: targetVessels.filter((item) => item.noteId === Number(row.id)).map(({ id, name }) => ({ id, name })),
+    targetPersonIds: targetPeople.filter((item) => item.noteId === Number(row.id)).map((item) => item.personId),
     status: row.status as ServiceNoteStatus, authorPersonId: numberOrNull(row.author_person_id),
     authorIdentitySnapshot: row.author_identity_snapshot || {}, authorSignatureSnapshot: mapSignatureSnapshot(row.author_signature_snapshot),
     authoredOn: row.authored_on, publishedAt: text(row.published_at), sourceKind: row.source_kind,
     sourceFileName: text(row.source_file_name), sourceWebUrl: text(row.source_web_url), sourceModifiedAt: text(row.source_modified_at),
     createdBy: text(row.created_by), createdAt: row.created_at, updatedAt: row.updated_at,
+    lastRecalledChronologyCode: text(row.last_recalled_chronology_code),
     attachments: attachments.filter((item) => item.noteId === Number(row.id)),
     recipients: recipients.filter((item) => item.noteId === Number(row.id)),
     signatures: signatures.filter((item) => item.noteId === Number(row.id)),
@@ -312,12 +377,43 @@ export async function createServiceNoteDraft(client: SupabaseClient): Promise<nu
 }
 
 export async function saveServiceNoteDraft(client: SupabaseClient, noteId: number, input: ServiceNoteDraftInput): Promise<void> {
-  const { error } = await client.from('qhse_service_notes').update({
-    subject: input.subject.trim(), body: input.body,
-    vessel_id: input.vesselId, authored_on: input.authoredOn, updated_at: new Date().toISOString(),
-  }).eq('id', noteId).eq('status', 'draft');
+  const { error } = await client.rpc('save_service_note_draft', {
+    p_note_id: noteId,
+    p_subject: input.subject.trim(),
+    p_body: input.body,
+    p_authored_on: input.authoredOn,
+    p_scope: input.scope,
+    p_vessel_ids: input.targetVesselIds,
+    p_person_ids: input.targetPersonIds,
+  });
   assertResult(error, 'Impossible d’enregistrer le brouillon.');
   window.dispatchEvent(new Event('service-notes:changed'));
+}
+
+export async function fetchServiceNoteTargetingOptions(
+  client: SupabaseClient,
+  noteId: number,
+  onDate: string,
+): Promise<ServiceNoteTargetingOptions> {
+  const { data, error } = await client.rpc('service_note_targeting_options', {
+    p_note_id: noteId,
+    p_on_date: onDate,
+  });
+  assertResult(error, 'Impossible de charger les destinataires disponibles.');
+  const value = (data || {}) as Record<string, unknown>;
+  const people = Array.isArray(value.people) ? value.people as Array<Record<string, unknown>> : [];
+  const vessels = Array.isArray(value.vessels) ? value.vessels as Array<Record<string, unknown>> : [];
+  return {
+    date: text(value.date),
+    people: people.map((person) => ({
+      id: Number(person.id), firstName: text(person.first_name), lastName: text(person.last_name),
+      functionLabel: text(person.function_label), hiredOn: text(person.hired_on), departedOn: text(person.departed_on),
+      vesselIds: Array.isArray(person.vessel_ids) ? person.vessel_ids.map(Number) : [],
+    })),
+    vessels: vessels.map((vessel) => ({
+      id: Number(vessel.id), name: text(vessel.name), recipientCount: Number(vessel.recipient_count || 0),
+    })),
+  };
 }
 
 function safeStorageName(value: string): string {

@@ -18,6 +18,11 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
   const signatures = new Map(note.signatures.map((signature) => [signature.recipientId, signature]));
   const headerCode = note.chronologyCode || (note.status === 'recalled' ? 'Note rappelée' : 'Nouveau brouillon');
   const metadataCode = note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique');
+  const audienceLabel = note.scope === 'vessels'
+    ? note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) à sélectionner'
+    : note.scope === 'people'
+      ? `${note.targetPersonIds.length || note.recipients.length} personne${(note.targetPersonIds.length || note.recipients.length) > 1 ? 's' : ''}`
+      : 'Tous les utilisateurs';
 
   return (
     <div className="service-note-document" aria-label={`${headerCode} - ${note.subject}`}>
@@ -34,7 +39,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
           <div><span>Numéro chrono</span><strong>{metadataCode}</strong></div>
           <div><span>Émetteur</span><strong>{authorName}</strong></div>
           <div><span>Date</span><strong>{formatServiceNoteDate(note.authoredOn)}</strong></div>
-          <div><span>Périmètre</span><strong>{note.vesselName ? <><Ship aria-hidden="true" size={13} /> {note.vesselName}</> : 'Tous les comptes'}</strong></div>
+          <div><span>Périmètre</span><strong><Ship aria-hidden="true" size={13} /> {audienceLabel}</strong></div>
         </section>
 
         <div className="service-note-issuer-signature">
@@ -85,7 +90,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
                 <div className={`service-note-signature-row${signature ? ' is-signed' : ''}`} key={recipient.id} role="row">
                   <span role="cell"><strong>{`${recipient.firstName} ${recipient.lastName}`.trim() || 'Compte sans profil lié'}</strong><small>{recipient.functionLabel || 'Fonction non renseignée'}</small></span>
                   <span role="cell">
-                    {signature ? <><em><CheckCircle2 aria-hidden="true" size={14} /> Signé le {formatServiceNoteDate(signature.signedAt)}</em>{signatureUrl ? <img alt={`Signature de ${recipient.firstName} ${recipient.lastName}`} src={signatureUrl} /> : null}</> : <em className="is-pending"><Clock3 aria-hidden="true" size={14} /> En attente</em>}
+                    {signature ? <><em><CheckCircle2 aria-hidden="true" size={14} /> {signature.signatureKind === 'historical_assumed' ? 'Signature historique validée' : `Signé le ${formatServiceNoteDate(signature.signedAt)}`}</em>{signatureUrl ? <img alt={`Signature de ${recipient.firstName} ${recipient.lastName}`} src={signatureUrl} /> : signature.signatureKind === 'historical_assumed' ? <small>Archive réputée signée · aucune image de profil disponible</small> : null}</> : <em className="is-pending"><Clock3 aria-hidden="true" size={14} /> En attente</em>}
                   </span>
                 </div>
               );
@@ -94,7 +99,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
         ) : (
           <div className="service-note-empty-register"><Clock3 aria-hidden="true" size={24} /><strong>{note.sourceKind === 'sharepoint' ? 'Archive SharePoint' : 'Registre créé à la diffusion'}</strong><span>{note.sourceKind === 'sharepoint' ? 'Cette note historique précède la collecte de signatures SeaPilot.' : 'Les destinataires apparaîtront ici après publication.'}</span></div>
         )}
-        <footer>La date et la signature sont enregistrées sur ce document commun.</footer>
+        <footer>{note.sourceKind === 'sharepoint' ? 'Archive historique réputée signée · dates de signature non reportées.' : 'La date et la signature sont enregistrées sur ce document commun.'}</footer>
       </article>
     </div>
   );

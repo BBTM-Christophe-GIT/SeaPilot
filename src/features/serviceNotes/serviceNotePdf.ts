@@ -53,6 +53,11 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
   const teal: [number, number, number] = [20, 137, 145];
   const pale: [number, number, number] = [238, 246, 247];
   const authorName = String(note.authorIdentitySnapshot.display_name || note.authorIdentitySnapshot.signer_name || 'Non renseigné');
+  const audienceLabel = note.scope === 'vessels'
+    ? note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) sélectionné(s)'
+    : note.scope === 'people'
+      ? `${note.targetPersonIds.length || note.recipients.length} personne${(note.targetPersonIds.length || note.recipients.length) > 1 ? 's' : ''}`
+      : 'Tous les utilisateurs';
 
   const drawPageHeader = () => {
     document.setFillColor(...navy);
@@ -76,7 +81,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
       ['Numéro chrono', note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique')],
       ['Prénom NOM', authorName],
       ['Date', formatServiceNoteDate(note.authoredOn)],
-      ['Navire', note.vesselName || 'Toute la flotte'],
+      ['Périmètre', audienceLabel],
     ],
     columnStyles: { 0: { cellWidth: 39, fontStyle: 'bold', fillColor: pale }, 1: { cellWidth: 135 } },
     styles: { font: 'helvetica', fontSize: 9, textColor: navy, lineColor: [177, 194, 202], cellPadding: 3 },
@@ -94,7 +99,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
   document.setFont('helvetica', 'bold');
   document.setFontSize(8.5);
   document.setTextColor(...navy);
-  document.text('Diffusion à tous les comptes SeaPilot', 22, metadataEnd + 13);
+  document.text(`Diffusion · ${audienceLabel}`, 22, metadataEnd + 13, { maxWidth: 106 });
   document.setFont('helvetica', 'normal');
   document.setFontSize(7.6);
   document.text('À lire et signer individuellement. Une seule note rassemble toutes les signatures.', 22, metadataEnd + 18, { maxWidth: 106 });
@@ -164,7 +169,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
       const signature = signatureByRecipient.get(recipient.id);
       return [
         [`${recipient.firstName} ${recipient.lastName}`.trim() || 'Compte sans profil lié', recipient.functionLabel].filter(Boolean).join('\n'),
-        signature ? `Signé le ${formatServiceNoteDate(signature.signedAt)}` : 'Signature en attente',
+        signature ? (signature.signatureKind === 'historical_assumed' ? 'Signature historique validée' : `Signé le ${formatServiceNoteDate(signature.signedAt)}`) : 'Signature en attente',
       ];
     }),
     headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },

@@ -3,8 +3,8 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { buildServiceNoteLinkGroups, ServiceNotesPage } from './ServiceNotesPage';
-import type { ServiceNoteLinkOption } from './serviceNoteQueries';
+import { buildServiceNoteLinkGroups, groupServiceNotesByYear, ServiceNotesPage } from './ServiceNotesPage';
+import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
 
 function renderPage() {
   const context: AppShellOutletContext = {
@@ -21,11 +21,9 @@ describe('ServiceNotesPage', () => {
     expect(screen.getByText('Couverture signatures')).toBeInTheDocument();
     fireEvent.click(screen.getByText('NS 08-26'));
     expect(await screen.findByText('Registre de signatures')).toBeInTheDocument();
-    expect(screen.getByText('Signer après lecture')).toBeInTheDocument();
-    const signingButton = screen.getByRole('button', { name: 'Signer la note' });
-    expect(signingButton).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox'));
-    expect(signingButton).toBeEnabled();
+    expect(screen.getByText('1 signature manquante')).toBeInTheDocument();
+    expect(screen.getAllByText(/Luc MARTIN/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Signer après lecture')).not.toBeInTheDocument();
     expect(await screen.findByAltText('Signature de Camille DURAND')).toBeInTheDocument();
   });
 
@@ -33,8 +31,9 @@ describe('ServiceNotesPage', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Notes de Service' });
     fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
-    expect(await screen.findByText('NS 09-26')).toBeInTheDocument();
-    expect(screen.getByText('NS 07-26-KROKDUR')).toBeInTheDocument();
+    expect(await screen.findByText('Organisation des exercices trimestriels')).toBeInTheDocument();
+    expect(screen.getByText('Mise à jour du DUP de KROKDUR')).toBeInTheDocument();
+    expect(screen.getAllByText('Numéro à la diffusion')).toHaveLength(2);
     expect(screen.queryByText('NS 08-26')).not.toBeInTheDocument();
   });
 
@@ -54,12 +53,14 @@ describe('ServiceNotesPage', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Notes de Service' });
     fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
-    fireEvent.click(screen.getByText('NS 09-26'));
+    fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
     expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
     expect(screen.getByText('Attribué lors de la diffusion')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Armement - Cherbourg' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'YARD - Le Havre' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: /Un ou plusieurs navires/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Un ou plusieurs navires/ }));
+    expect(await screen.findByText('Armement - Cherbourg')).toBeInTheDocument();
+    expect(screen.getByText('YARD - Le Havre')).toBeInTheDocument();
   });
 
   it('shows manager-only recall, re-publication and draft deletion actions', async () => {
@@ -75,7 +76,21 @@ describe('ServiceNotesPage', () => {
     expect(screen.getByRole('button', { name: 'Diffuser à nouveau' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
-    fireEvent.click(screen.getByText('NS 09-26'));
+    fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
     expect(await screen.findByRole('button', { name: 'Supprimer le brouillon' })).toBeInTheDocument();
+  });
+
+  it('groups by chronology year and sorts each year from the newest code to the oldest', () => {
+    const note = (chronologyCode: string, authoredOn: string): ServiceNote => ({
+      id: Number(chronologyCode.match(/\d+/u)?.[0] || 1), companyId: 1, chronologyCode, subject: chronologyCode,
+      body: '', vesselId: null, vesselName: '', scope: 'all_accounts', targetVessels: [], targetPersonIds: [],
+      status: 'archived', authorPersonId: null, authorIdentitySnapshot: {}, authorSignatureSnapshot: null,
+      authoredOn, publishedAt: `${authoredOn}T00:00:00Z`, sourceKind: 'sharepoint', sourceFileName: '', sourceWebUrl: '',
+      sourceModifiedAt: '', createdBy: '', createdAt: `${authoredOn}T00:00:00Z`, updatedAt: `${authoredOn}T00:00:00Z`,
+      lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
+    });
+    const groups = groupServiceNotesByYear([note('NS 02-26', '2026-01-02'), note('NS 08-25', '2026-01-01'), note('NS 09-26', '2026-01-03')]);
+    expect(groups.map((group) => group.year)).toEqual([2026, 2025]);
+    expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 09-26', 'NS 02-26']);
   });
 });
