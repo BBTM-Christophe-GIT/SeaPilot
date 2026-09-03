@@ -61,8 +61,11 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
   const teal: [number, number, number] = [20, 137, 145];
   const pale: [number, number, number] = [238, 246, 247];
   const authorName = String(note.authorIdentitySnapshot.display_name || note.authorIdentitySnapshot.signer_name || 'Non renseigné');
+  const namedPeopleLabel = note.targetPersonIds.length
+    ? ` + ${note.targetPersonIds.length} personne${note.targetPersonIds.length > 1 ? 's' : ''} ajoutée${note.targetPersonIds.length > 1 ? 's' : ''}`
+    : '';
   const audienceLabel = note.scope === 'vessels'
-    ? note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) sélectionné(s)'
+    ? `${note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) sélectionné(s)'}${namedPeopleLabel}`
     : note.scope === 'people'
       ? `${note.targetPersonIds.length || note.recipients.length} personne${(note.targetPersonIds.length || note.recipients.length) > 1 ? 's' : ''}`
       : 'Tous les utilisateurs';
