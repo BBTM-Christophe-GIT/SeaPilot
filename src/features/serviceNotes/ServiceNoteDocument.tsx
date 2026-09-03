@@ -17,7 +17,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
   const authorName = String(note.authorIdentitySnapshot.display_name || note.authorIdentitySnapshot.signer_name || 'Non renseigné');
   const signatures = new Map(note.signatures.map((signature) => [signature.recipientId, signature]));
   const headerCode = note.chronologyCode || (note.status === 'recalled' ? 'Note rappelée' : 'Nouveau brouillon');
-  const metadataCode = note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Automatique');
+  const metadataCode = note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Attribué lors de la diffusion');
   const audienceLabel = note.scope === 'vessels'
     ? note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) à sélectionner'
     : note.scope === 'people'
@@ -29,7 +29,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
       <article className="service-note-paper service-note-paper-main">
         <div className="service-note-paper-accent" />
         <header className="service-note-paper-header">
-          <img alt="BBTM" src="/bbtm-logo.png" />
+          <img alt="BBTM" src="/bbtm-service-note-logo.png" />
           <div><span>QHSE · COMMUNICATION INTERNE</span><h2>Note de Service</h2></div>
           <strong>{headerCode}</strong>
         </header>
@@ -46,11 +46,6 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
           <span>Signature de l’émetteur</span>
           {authorSignatureUrl ? <img alt={`Signature de ${authorName}`} src={authorSignatureUrl} /> : <em>Apposée lors de la diffusion</em>}
         </div>
-
-        <aside className="service-note-reading-rule">
-          <CheckCircle2 aria-hidden="true" size={18} />
-          <p><strong>Lecture et signature obligatoires</strong><span>Une seule note rassemble les signatures de tous les destinataires.</span></p>
-        </aside>
 
         <section className="service-note-inventory">
           <h3><Paperclip aria-hidden="true" size={16} /> Pièce(s) jointe(s) et référence(s)</h3>
@@ -69,14 +64,12 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
           <h3>Message</h3>
           <p>{note.body || 'Le contenu de la note apparaîtra ici.'}</p>
         </section>
-
-        <footer>Document généré par SeaPilot · Registre de signatures partagé</footer>
       </article>
 
       <article className="service-note-paper service-note-signature-paper">
         <div className="service-note-paper-accent" />
         <header className="service-note-paper-header">
-          <img alt="BBTM" src="/bbtm-logo.png" />
+          <img alt="BBTM" src="/bbtm-service-note-logo.png" />
           <div><span>{headerCode}</span><h2>Registre de signatures</h2></div>
           <strong>{note.signatures.length}/{note.recipients.length || '—'}</strong>
         </header>

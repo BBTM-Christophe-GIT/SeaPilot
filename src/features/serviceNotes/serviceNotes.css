@@ -50,10 +50,14 @@
 .service-note-filters input,
 .service-note-link-filters input { width: 100%; min-width: 0; border: 0; outline: 0; color: #173747; background: transparent; }
 .service-note-filters select { min-width: 0; width: 100%; border: 0; outline: 0; color: #294656; background: transparent; font-size: .78rem; }
+.service-note-vessel-filter > span { color: #526a76; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .service-note-list { max-height: 660px; overflow: auto; }
 .service-note-year-heading { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 8px 16px; border-bottom: 1px solid #dfe9ed; color: var(--sn-navy); background: #f2f6f7; box-shadow: 0 2px 8px rgba(8, 47, 73, .04); }
 .service-note-year-heading span { font-size: .75rem; letter-spacing: .07em; }
 .service-note-year-heading small { color: #71838e; font-size: .65rem; font-weight: 700; }
+.service-note-vessel-heading { display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 16px 8px 54px; border-bottom: 1px solid #e4ecef; color: #15516c; background: #f9fbfc; }
+.service-note-vessel-heading > span { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.service-note-vessel-heading > small { margin-left: auto; color: #7a8d96; font-size: .62rem; font-weight: 700; }
 .service-note-list > button { display: grid; width: 100%; grid-template-columns: 42px minmax(0, 1fr) 104px 20px; align-items: center; gap: 11px; padding: 14px 15px; border: 0; border-bottom: 1px solid #e8eef1; color: inherit; text-align: left; background: white; transition: background .16s ease, box-shadow .16s ease; }
 .service-note-list > button:hover { background: #f7fbfb; }
 .service-note-list > button.is-selected { background: #eef8f7; box-shadow: inset 3px 0 var(--sn-teal); }
@@ -100,7 +104,8 @@
 .service-note-detail-actions a { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #cbd9df; border-radius: 8px; color: #174c68; background: white; font-size: .75rem; font-weight: 750; text-decoration: none; }
 .service-note-detail-actions button.is-danger,
 .service-note-detail-actions button.is-recall { border-color: #efb5b1; color: #b42318; background: #fff7f6; }
-.service-note-detail-actions button.is-republish { border-color: #87bfc0; color: #076b70; background: #eef9f8; }
+.service-note-detail-actions button.is-republish,
+.service-note-detail-actions button.is-publish { border-color: #4aa9aa; color: white; background: var(--sn-teal); }
 .service-note-detail-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .service-note-missing-summary { display: flex; align-items: flex-start; gap: 10px; margin: 12px 18px 0; padding: 11px 13px; border: 1px solid #b9dccb; border-radius: 10px; color: #08754f; background: #edf9f3; }
 .service-note-missing-summary.is-missing { border-color: #efc379; color: #9a5c05; background: #fff7e8; }
@@ -139,10 +144,6 @@
 .service-note-issuer-signature { display: grid; width: 48%; min-height: 66px; margin: 12px 0 0 auto; align-content: center; justify-items: center; border: 1px solid #c9d4d9; background: #fbfcfc; }
 .service-note-issuer-signature img { width: 120px; max-height: 48px; object-fit: contain; }
 .service-note-issuer-signature em { color: #8a989f; font-size: .68rem; }
-.service-note-reading-rule { display: flex; align-items: center; gap: 10px; margin-top: 13px; padding: 10px 12px; border-radius: 7px; color: #0a6c70; background: var(--sn-pale); }
-.service-note-reading-rule p { display: grid; gap: 2px; margin: 0; }
-.service-note-reading-rule strong { font-size: .75rem; }
-.service-note-reading-rule span { color: #57747a; font-size: .65rem; }
 .service-note-inventory { margin-top: 19px; }
 .service-note-inventory h3,
 .service-note-message h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; color: var(--sn-navy); font-size: .78rem; }

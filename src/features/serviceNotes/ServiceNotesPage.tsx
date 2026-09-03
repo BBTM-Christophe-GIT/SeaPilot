@@ -1,6 +1,6 @@
 import {
   ArchiveRestore, ArrowLeft, BellRing, Check, ChevronRight, CircleAlert, Download, ExternalLink,
-  FileCheck2, FileClock, FilePlus2, Filter, Link2, LoaderCircle, MailCheck, Paperclip, PenLine,
+  FileCheck2, FileClock, FilePlus2, Link2, LoaderCircle, MailCheck, Paperclip, PenLine,
   Building2, Plus, RotateCcw, Save, Search, Send, ShieldCheck, Ship, Trash2, UserRoundCheck, Upload, Users, X,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -75,12 +75,77 @@ export function groupServiceNotesByYear(notes: ServiceNote[]): Array<{ year: num
   return Array.from(grouped, ([year, groupedNotes]) => ({ year, notes: groupedNotes }));
 }
 
+export interface ServiceNoteLibraryVesselGroup {
+  vesselName: string;
+  notes: ServiceNote[];
+}
+
+export interface ServiceNoteLibraryYearGroup {
+  year: number;
+  notes: ServiceNote[];
+  notesWithoutVessel: ServiceNote[];
+  vesselGroups: ServiceNoteLibraryVesselGroup[];
+}
+
+function serviceNoteVesselNames(note: ServiceNote): string[] {
+  if (note.scope === 'people') return [];
+  return Array.from(new Set([
+    ...note.targetVessels.map((vessel) => vessel.name.trim()),
+    note.vesselName.trim(),
+  ].filter(Boolean)));
+}
+
+export function groupServiceNotesByYearAndVessel(notes: ServiceNote[]): ServiceNoteLibraryYearGroup[] {
+  return groupServiceNotesByYear(notes).map((yearGroup) => {
+    const vesselMap = new Map<string, ServiceNote[]>();
+    const notesWithoutVessel: ServiceNote[] = [];
+    yearGroup.notes.forEach((note) => {
+      const vesselNames = serviceNoteVesselNames(note);
+      if (!vesselNames.length) {
+        notesWithoutVessel.push(note);
+        return;
+      }
+      vesselNames.forEach((vesselName) => {
+        const vesselNotes = vesselMap.get(vesselName) || [];
+        vesselNotes.push(note);
+        vesselMap.set(vesselName, vesselNotes);
+      });
+    });
+    return {
+      ...yearGroup,
+      notesWithoutVessel,
+      vesselGroups: Array.from(vesselMap, ([vesselName, vesselNotes]) => ({ vesselName, notes: vesselNotes }))
+        .sort((left, right) => left.vesselName.localeCompare(right.vesselName, 'fr', { numeric: true })),
+    };
+  });
+}
+
 function noteMatches(note: ServiceNote, search: string, vessel: string): boolean {
   const query = search.trim().toLocaleLowerCase('fr');
   const targetVesselNames = note.targetVessels.map((target) => target.name);
   const haystack = [note.chronologyCode, note.subject, note.body, note.vesselName, ...targetVesselNames, ...note.attachments.map((item) => item.displayName)]
     .join(' ').toLocaleLowerCase('fr');
   return (!query || haystack.includes(query)) && (!vessel || note.vesselName === vessel || targetVesselNames.includes(vessel));
+}
+
+function ServiceNoteListRow({ note, currentUserId, selected, onSelect }: {
+  note: ServiceNote;
+  currentUserId: string;
+  selected: boolean;
+  onSelect: (noteId: number) => void;
+}) {
+  const signed = note.signatures.length;
+  const recipients = note.recipients.length;
+  const missing = missingServiceNoteRecipients(note);
+  const pendingForMe = note.status === 'published'
+    && note.recipients.some((recipient) => recipient.userId === currentUserId)
+    && !note.signatures.some((signature) => signature.userId === currentUserId);
+  return <button className={`${selected ? 'is-selected' : ''}${pendingForMe ? ' is-pending' : ''}`} onClick={() => onSelect(note.id)} role="listitem" type="button">
+    <span className={`service-note-file-icon is-${note.status}`}>{note.status === 'draft' ? <FileClock size={20} /> : note.status === 'recalled' ? <ArchiveRestore size={20} /> : <FileCheck2 size={20} />}</span>
+    <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
+    <span className={`service-note-list-progress${missing.length ? ' is-missing' : ''}`} title={missing.map((person) => `${person.firstName} ${person.lastName}`).join(', ')}><strong>{note.status === 'recalled' ? 'Archive' : recipients ? `${percent(signed, recipients)}%` : '—'}</strong><small>{note.status === 'recalled' ? 'Retirée des destinataires' : missing.length ? `${missing.length} non-signataire${missing.length > 1 ? 's' : ''}` : recipients ? 'Tout le monde a signé' : 'Non diffusée'}</small>{recipients && note.status !== 'recalled' ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
+    <ChevronRight size={18} />
+  </button>;
 }
 
 function attachmentKindLabel(kind: ServiceNoteAttachment['kind']): string {
@@ -411,6 +476,9 @@ export function ServiceNotesPage() {
   const [signatureUrls, setSignatureUrls] = useState<Map<number, string>>(new Map());
   const [authorSignatureUrl, setAuthorSignatureUrl] = useState('');
   const isManager = roles.includes('admin') || roles.includes('direction');
+  const visibleNotes = useMemo(() => isManager
+    ? notes
+    : notes.filter((note) => note.status === 'published' || note.status === 'archived'), [isManager, notes]);
 
   const reload = useCallback(async (preserveId?: number) => {
     const data = await fetchServiceNotes(client);
@@ -440,14 +508,14 @@ export function ServiceNotesPage() {
     return () => { mounted = false; };
   }, [client, currentPerson, searchParams]);
 
-  const selectedNote = notes.find((note) => note.id === selectedId) || null;
-  const editingNote = notes.find((note) => note.id === editingId) || null;
-  const latestPublishedNoteId = useMemo(() => notes
+  const selectedNote = visibleNotes.find((note) => note.id === selectedId) || null;
+  const editingNote = isManager ? visibleNotes.find((note) => note.id === editingId) || null : null;
+  const latestPublishedNoteId = useMemo(() => visibleNotes
     .filter((note) => note.status === 'published')
     .sort((left, right) => {
       const dateOrder = new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime();
       return dateOrder || right.id - left.id;
-    })[0]?.id || null, [notes]);
+    })[0]?.id || null, [visibleNotes]);
 
   useEffect(() => {
     if (!selectedNote) { setSignatureUrls(new Map()); setAuthorSignatureUrl(''); return; }
@@ -463,17 +531,17 @@ export function ServiceNotesPage() {
     return () => { mounted = false; };
   }, [client, selectedNote]);
 
-  const filteredNotes = useMemo(() => notes.filter((note) => {
+  const filteredNotes = useMemo(() => visibleNotes.filter((note) => {
     const statusMatch = filter === 'all' || note.status === filter || (filter === 'published' && note.status === 'archived');
     return statusMatch && noteMatches(note, query, vesselFilter);
-  }), [filter, notes, query, vesselFilter]);
-  const noteGroups = useMemo(() => groupServiceNotesByYear(filteredNotes), [filteredNotes]);
-  const distributed = notes.filter((note) => note.status === 'published' || note.status === 'archived');
+  }), [filter, query, vesselFilter, visibleNotes]);
+  const noteGroups = useMemo(() => groupServiceNotesByYearAndVessel(filteredNotes), [filteredNotes]);
+  const distributed = visibleNotes.filter((note) => note.status === 'published' || note.status === 'archived');
   const signedCount = distributed.reduce((total, note) => total + note.signatures.length, 0);
   const recipientCount = distributed.reduce((total, note) => total + note.recipients.length, 0);
-  const pendingForMe = notes.filter((note) => note.status === 'published' && note.recipients.some((recipient) => recipient.userId === currentUserId)
+  const pendingForMe = visibleNotes.filter((note) => note.status === 'published' && note.recipients.some((recipient) => recipient.userId === currentUserId)
     && !note.signatures.some((signature) => signature.userId === currentUserId)).length;
-  const vesselOptions = Array.from(new Set(notes.flatMap((note) => [note.vesselName, ...note.targetVessels.map((vessel) => vessel.name)]).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'fr'));
+  const vesselOptions = Array.from(new Set(visibleNotes.flatMap(serviceNoteVesselNames))).sort((a, b) => a.localeCompare(b, 'fr'));
   const hasSignedSelected = Boolean(selectedNote?.signatures.some((signature) => signature.userId === currentUserId));
   const isRecipientSelected = Boolean(selectedNote?.recipients.some((recipient) => recipient.userId === currentUserId));
 
@@ -537,6 +605,19 @@ export function ServiceNotesPage() {
     finally { setIsBusy(false); }
   }
 
+  async function handlePublishDraft() {
+    if (!selectedNote || selectedNote.status !== 'draft' || !isManager) return;
+    const confirmed = window.confirm(`Diffuser « ${selectedNote.subject || 'Sans objet'} » ?\n\nLe numéro chrono sera attribué maintenant et les destinataires recevront la note.`);
+    if (!confirmed) return;
+    setIsBusy(true); setMessage('');
+    try {
+      await publishServiceNote(client, selectedNote.id);
+      await reload(selectedNote.id);
+      setFilter('published');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Diffusion impossible.'); }
+    finally { setIsBusy(false); }
+  }
+
   async function handleDeleteDraft() {
     if (!selectedNote || selectedNote.status !== 'draft') return;
     const confirmed = window.confirm(`Supprimer définitivement le brouillon « ${selectedNote.subject || 'Sans objet'} » ?\n\nCette action supprimera également ses pièces jointes et ne peut pas être annulée.`);
@@ -565,30 +646,24 @@ export function ServiceNotesPage() {
         <article><span className="is-teal"><MailCheck size={19} /></span><div><small>Notes classées</small><strong>{distributed.length}</strong><em>Diffusées et archivées</em></div></article>
         <article><span className="is-blue"><Users size={19} /></span><div><small>Couverture signatures</small><strong>{percent(signedCount, recipientCount)}%</strong><em>{signedCount} sur {recipientCount || 0}</em></div></article>
         <article className={pendingForMe ? 'is-attention' : ''}><span className="is-orange"><BellRing size={19} /></span><div><small>À signer par moi</small><strong>{pendingForMe}</strong><em>{pendingForMe ? 'Lecture requise' : 'Vous êtes à jour'}</em></div></article>
-        <article><span className="is-navy"><Paperclip size={19} /></span><div><small>Documents liés</small><strong>{notes.reduce((total, note) => total + note.attachments.length, 0)}</strong><em>Fichiers et références</em></div></article>
+        <article><span className="is-navy"><Paperclip size={19} /></span><div><small>Documents liés</small><strong>{visibleNotes.reduce((total, note) => total + note.attachments.length, 0)}</strong><em>Fichiers et références</em></div></article>
       </section>
 
       <section className="service-note-workspace">
         <div className="service-note-library">
-          <header><div><h2>Bibliothèque</h2><span>{filteredNotes.length} note{filteredNotes.length > 1 ? 's' : ''}</span></div><div className="service-note-status-tabs"><button className={filter === 'published' ? 'is-active' : ''} onClick={() => setFilter('published')} type="button">Diffusées</button>{isManager ? <><button className={filter === 'draft' ? 'is-active' : ''} onClick={() => setFilter('draft')} type="button">Brouillons <em>{notes.filter((note) => note.status === 'draft').length}</em></button><button className={filter === 'recalled' ? 'is-active' : ''} onClick={() => setFilter('recalled')} type="button">Rappelées <em className="is-recalled-count">{notes.filter((note) => note.status === 'recalled').length}</em></button></> : null}<button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')} type="button">Toutes</button></div></header>
+          <header><div><h2>Bibliothèque</h2><span>{filteredNotes.length} note{filteredNotes.length > 1 ? 's' : ''}</span></div><div className="service-note-status-tabs"><button className={filter === 'published' ? 'is-active' : ''} onClick={() => setFilter('published')} type="button">Diffusées</button>{isManager ? <><button className={filter === 'draft' ? 'is-active' : ''} onClick={() => setFilter('draft')} type="button">Brouillons <em>{visibleNotes.filter((note) => note.status === 'draft').length}</em></button><button className={filter === 'recalled' ? 'is-active' : ''} onClick={() => setFilter('recalled')} type="button">Rappelées <em className="is-recalled-count">{visibleNotes.filter((note) => note.status === 'recalled').length}</em></button></> : null}<button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')} type="button">Toutes</button></div></header>
           <div className="service-note-filters">
             <label><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher une note, un objet, une pièce jointe…" value={query} /></label>
-            <label><Filter size={15} /><select aria-label="Filtrer par navire" onChange={(event) => setVesselFilter(event.target.value)} value={vesselFilter}><option value="">Tous les navires</option>{vesselOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label className="service-note-vessel-filter"><Ship size={15} /><span>Navire</span><select aria-label="Filtrer par navire" onChange={(event) => setVesselFilter(event.target.value)} value={vesselFilter}><option value="">Tous les navires</option>{vesselOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
           </div>
           <div className="service-note-list" role="list">
             {noteGroups.map((group) => <Fragment key={group.year}>
               <h3 className="service-note-year-heading"><span>{group.year || 'Sans année'}</span><small>{group.notes.length} note{group.notes.length > 1 ? 's' : ''}</small></h3>
-              {group.notes.map((note) => {
-                const signed = note.signatures.length; const recipients = note.recipients.length;
-                const missing = missingServiceNoteRecipients(note);
-                const notePendingForMe = note.status === 'published' && note.recipients.some((recipient) => recipient.userId === currentUserId) && !note.signatures.some((signature) => signature.userId === currentUserId);
-                return <button className={`${selectedId === note.id ? 'is-selected' : ''}${notePendingForMe ? ' is-pending' : ''}`} key={note.id} onClick={() => selectNote(note.id)} role="listitem" type="button">
-                  <span className={`service-note-file-icon is-${note.status}`}>{note.status === 'draft' ? <FileClock size={20} /> : note.status === 'recalled' ? <ArchiveRestore size={20} /> : <FileCheck2 size={20} />}</span>
-                  <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
-                  <span className={`service-note-list-progress${missing.length ? ' is-missing' : ''}`} title={missing.map((person) => `${person.firstName} ${person.lastName}`).join(', ')}><strong>{note.status === 'recalled' ? 'Archive' : recipients ? `${percent(signed, recipients)}%` : '—'}</strong><small>{note.status === 'recalled' ? 'Retirée des destinataires' : missing.length ? `${missing.length} non-signataire${missing.length > 1 ? 's' : ''}` : recipients ? 'Tout le monde a signé' : 'Non diffusée'}</small>{recipients && note.status !== 'recalled' ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
-                  <ChevronRight size={18} />
-                </button>;
-              })}
+              {group.notesWithoutVessel.map((note) => <ServiceNoteListRow currentUserId={currentUserId} key={`direct-${note.id}`} note={note} onSelect={selectNote} selected={selectedId === note.id} />)}
+              {group.vesselGroups.map((vesselGroup) => <Fragment key={`${group.year}-${vesselGroup.vesselName}`}>
+                <h4 className="service-note-vessel-heading"><Ship size={14} /><span>{vesselGroup.vesselName}</span><small>{vesselGroup.notes.length} note{vesselGroup.notes.length > 1 ? 's' : ''}</small></h4>
+                {vesselGroup.notes.map((note) => <ServiceNoteListRow currentUserId={currentUserId} key={`${vesselGroup.vesselName}-${note.id}`} note={note} onSelect={selectNote} selected={selectedId === note.id} />)}
+              </Fragment>)}
             </Fragment>)}
             {!filteredNotes.length ? <div className="service-note-empty-list"><FileClock size={28} /><strong>Aucune note dans cette vue</strong><span>Ajustez vos filtres ou créez un nouveau brouillon.</span></div> : null}
           </div>
@@ -599,10 +674,12 @@ export function ServiceNotesPage() {
             <header><div><span>{selectedNote.status === 'draft' ? 'BROUILLON PRIVÉ' : selectedNote.status === 'recalled' ? 'ARCHIVE · RAPPELÉE' : selectedNote.sourceKind === 'sharepoint' ? 'ARCHIVE SHAREPOINT' : serviceNoteStatusLabel(selectedNote.status).toUpperCase()}</span><h2>{serviceNoteDisplayCode(selectedNote)}</h2><p>{selectedNote.subject}</p></div><button aria-label="Fermer le détail" onClick={() => { setSelectedId(null); setSearchParams({}); }} type="button"><X size={18} /></button></header>
             <div className="service-note-detail-actions">
               {selectedNote.status === 'draft' && isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
+              {selectedNote.status === 'draft' && isManager ? <button className="is-publish" disabled={isBusy || !hasActiveSignature} onClick={() => void handlePublishDraft()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser</button> : null}
               {selectedNote.status === 'draft' && isManager ? <button className="is-danger" disabled={isBusy} onClick={() => void handleDeleteDraft()} type="button"><Trash2 size={16} /> Supprimer le brouillon</button> : null}
               {selectedNote.status === 'published' && selectedNote.id === latestPublishedNoteId && isManager ? <button className="is-recall" disabled={isBusy} onClick={() => void handleRecall()} type="button"><RotateCcw size={16} /> Rappeler</button> : null}
               {selectedNote.status === 'recalled' && isManager ? <button className="is-republish" disabled={isBusy || !hasActiveSignature} onClick={() => void handleRepublish()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser à nouveau</button> : null}
-              {selectedNote.sourceWebUrl ? <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><ExternalLink size={16} /> Ouvrir dans Word</a> : <button disabled={isBusy} onClick={() => void handleDownload()} type="button"><Download size={16} /> Télécharger le PDF</button>}
+              {selectedNote.sourceWebUrl ? <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><ExternalLink size={16} /> Ouvrir dans Word</a> : null}
+              <button disabled={isBusy} onClick={() => void handleDownload()} type="button"><Download size={16} /> Télécharger le PDF</button>
             </div>
             {selectedNote.status !== 'draft' && selectedNote.status !== 'recalled' ? (() => {
               const missing = missingServiceNoteRecipients(selectedNote);

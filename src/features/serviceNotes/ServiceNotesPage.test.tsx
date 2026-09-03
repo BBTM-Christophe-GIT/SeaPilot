@@ -3,12 +3,12 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { buildServiceNoteLinkGroups, groupServiceNotesByYear, ServiceNotesPage } from './ServiceNotesPage';
+import { buildServiceNoteLinkGroups, groupServiceNotesByYear, groupServiceNotesByYearAndVessel, ServiceNotesPage } from './ServiceNotesPage';
 import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
 
-function renderPage() {
+function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
   const context: AppShellOutletContext = {
-    roles: ['admin'], client: previewSupabaseClient, previewMode: true,
+    roles, client: previewSupabaseClient, previewMode: true,
     currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', gradeLabel: 'Capitaine 500' },
   };
   render(<MemoryRouter initialEntries={['/modules/serviceNotes']}><Routes><Route element={<Outlet context={context} />}><Route path="modules/serviceNotes" element={<ServiceNotesPage />} /></Route></Routes></MemoryRouter>);
@@ -25,6 +25,9 @@ describe('ServiceNotesPage', () => {
     expect(screen.getAllByText(/Luc MARTIN/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Signer après lecture')).not.toBeInTheDocument();
     expect(await screen.findByAltText('Signature de Camille DURAND')).toBeInTheDocument();
+    expect(screen.queryByText('Lecture et signature obligatoires')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Document généré par SeaPilot/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
   });
 
   it('keeps drafts in a dedicated manager-only view', async () => {
@@ -56,7 +59,7 @@ describe('ServiceNotesPage', () => {
     fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
     expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
-    expect(screen.getByText('Attribué lors de la diffusion')).toBeInTheDocument();
+    expect(screen.getAllByText('Attribué lors de la diffusion')).toHaveLength(2);
     expect(await screen.findByRole('radio', { name: /Un ou plusieurs navires/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: /Un ou plusieurs navires/ }));
     expect(await screen.findByText('Armement - Cherbourg')).toBeInTheDocument();
@@ -77,7 +80,10 @@ describe('ServiceNotesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
     fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
+    expect(await screen.findByRole('button', { name: 'Diffuser' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Supprimer le brouillon' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
   });
 
   it('groups by chronology year and sorts each year from the newest code to the oldest', () => {
@@ -92,5 +98,42 @@ describe('ServiceNotesPage', () => {
     const groups = groupServiceNotesByYear([note('NS 02-26', '2026-01-02'), note('NS 08-25', '2026-01-01'), note('NS 09-26', '2026-01-03')]);
     expect(groups.map((group) => group.year)).toEqual([2026, 2025]);
     expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 09-26', 'NS 02-26']);
+  });
+
+  it('groups vessel notes under each vessel and keeps people-only notes directly under the year', () => {
+    const note = (id: number, chronologyCode: string, scope: ServiceNote['scope'], vesselNames: string[]): ServiceNote => ({
+      id, companyId: 1, chronologyCode, subject: chronologyCode, body: '', vesselId: null, vesselName: '', scope,
+      targetVessels: vesselNames.map((name, index) => ({ id: id * 10 + index, name })), targetPersonIds: scope === 'people' ? [9302] : [],
+      status: 'archived', authorPersonId: null, authorIdentitySnapshot: {}, authorSignatureSnapshot: null,
+      authoredOn: '2026-01-01', publishedAt: '2026-01-01T00:00:00Z', sourceKind: 'sharepoint', sourceFileName: '', sourceWebUrl: '',
+      sourceModifiedAt: '', createdBy: '', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+      lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
+    });
+    const peopleNote = note(1, 'NS 01-26', 'people', []);
+    const gouryNote = note(2, 'NS 02-26', 'vessels', ['GOURY']);
+    const multiVesselNote = note(3, 'NS 03-26', 'vessels', ['KROKDUR', 'GOURY']);
+    const [year] = groupServiceNotesByYearAndVessel([peopleNote, gouryNote, multiVesselNote]);
+
+    expect(year.notesWithoutVessel.map((item) => item.id)).toEqual([peopleNote.id]);
+    expect(year.vesselGroups.map((group) => group.vesselName)).toEqual(['GOURY', 'KROKDUR']);
+    expect(year.vesselGroups[0].notes.map((item) => item.id)).toEqual([multiVesselNote.id, gouryNote.id]);
+    expect(year.vesselGroups[1].notes.map((item) => item.id)).toEqual([multiVesselNote.id]);
+  });
+
+  it('keeps management controls and private drafts out of a non-manager view', async () => {
+    renderPage(['marin']);
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+
+    expect(screen.queryByRole('button', { name: 'Nouvelle note' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Brouillons/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Toutes' }));
+    expect(screen.queryByText('Organisation des exercices trimestriels')).not.toBeInTheDocument();
+    expect(screen.queryByText('Mise à jour du DUP de KROKDUR')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('NS 08-26'));
+    expect(await screen.findByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rappeler' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Supprimer le brouillon' })).not.toBeInTheDocument();
   });
 });
