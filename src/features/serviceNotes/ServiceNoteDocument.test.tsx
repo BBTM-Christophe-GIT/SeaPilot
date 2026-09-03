@@ -49,4 +49,14 @@ describe('ServiceNoteDocument signature register', () => {
     expect(screen.queryByText(/Signé le :/)).not.toBeInTheDocument();
     expect(screen.getAllByText('Signé')).toHaveLength(2);
   });
+
+  it('renders safe rich text in the default Aptos-style document body', () => {
+    const richNote = { ...note, body: '<h2>Consigne</h2><p style="text-align: center"><strong>Important</strong></p><ul><li>Premier point</li></ul><script>alert(1)</script>' };
+    const { container } = render(<ServiceNoteDocument note={richNote} />);
+    expect(screen.getByRole('heading', { name: 'Consigne' })).toBeInTheDocument();
+    expect(screen.getByText('Important').closest('p')).toHaveStyle({ textAlign: 'center' });
+    expect(screen.getByText('Premier point')).toBeInTheDocument();
+    expect(container.querySelector('script')).not.toBeInTheDocument();
+    expect(container.querySelector('.service-note-message-content')).toBeInTheDocument();
+  });
 });

@@ -26,6 +26,10 @@ const combinedTargeting = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260903075755_service_note_combined_vessel_people_targeting.sql'),
   'utf8',
 );
+const activeWorkforceTargeting = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260903082732_service_note_rich_text_active_workforce.sql'),
+  'utf8',
+);
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -127,6 +131,17 @@ describe('QHSE service notes database contract', () => {
     expect(recipientScopes).toContain('person.departed_on > target_note.authored_on');
     expect(recipientScopes).toContain('person.id is distinct from target_note.author_person_id');
     expect(recipientScopes).toContain("lower(coalesce(assignment.confirmation_status, '')) <> 'cancelled'");
+  });
+
+  it('shows and resolves only current employees with active accounts', () => {
+    expect(activeWorkforceTargeting).toContain('person.active');
+    expect(activeWorkforceTargeting).toContain('(person.hired_on is null or person.hired_on <= target_date)');
+    expect(activeWorkforceTargeting).toContain('(person.departed_on is null or person.departed_on > target_date)');
+    expect(activeWorkforceTargeting).toContain('person.user_id is not null');
+    expect(activeWorkforceTargeting).toContain('membership.active');
+    expect(activeWorkforceTargeting).toContain('person.id is distinct from target_note.author_person_id');
+    expect(activeWorkforceTargeting).toContain('from public, anon;');
+    expect(activeWorkforceTargeting).toContain('to authenticated;');
   });
 
   it('marks imported archives as historically signed without inventing dates or images', () => {

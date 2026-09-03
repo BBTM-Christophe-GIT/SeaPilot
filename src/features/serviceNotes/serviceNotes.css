@@ -151,7 +151,17 @@
 .service-note-inventory button { display: inline-flex; align-items: center; gap: 5px; min-height: 29px; padding: 0 8px; border: 1px solid #cde0e3; border-radius: 6px; color: #16566d; background: #f6fbfb; font-size: .68rem; }
 .service-note-inventory p { color: #84929a; font-size: .7rem; }
 .service-note-message { margin-top: 20px; }
-.service-note-message p { min-height: 310px; margin: 0; padding: 17px; border: 1px solid #c6d1d7; white-space: pre-wrap; color: #243d48; font-family: Georgia, 'Times New Roman', serif; font-size: .82rem; line-height: 1.65; }
+.service-note-message-content { min-height: 310px; padding: 17px; border: 1px solid #c6d1d7; color: #243d48; font-family: Aptos, 'Segoe UI', Arial, sans-serif; font-size: .82rem; line-height: 1.65; overflow-wrap: anywhere; }
+.service-note-message-content > :first-child { margin-top: 0; }
+.service-note-message-content > :last-child { margin-bottom: 0; }
+.service-note-message-content p,
+.service-note-message-content div { margin: 0 0 .75em; }
+.service-note-message-content h2 { margin: 1em 0 .45em; color: var(--sn-navy); font-size: 1.18rem; }
+.service-note-message-content h3 { display: block; margin: .9em 0 .4em; color: var(--sn-navy); font-size: .98rem; }
+.service-note-message-content ul,
+.service-note-message-content ol { margin: .55em 0; padding-left: 1.6em; }
+.service-note-message-content blockquote { margin: .7em 0; padding: .35em .8em; border-left: 3px solid var(--sn-teal); color: #566f7a; background: #f3f8f8; }
+.service-note-message-content a { color: #066ba2; text-decoration: underline; }
 .service-note-paper footer { position: absolute; inset: auto 36px 17px; padding-top: 6px; border-top: 1px solid #d3dde1; color: #7d8c94; font-size: .57rem; font-style: italic; text-align: center; }
 .service-note-signature-table { display: grid; margin-top: 18px; border: solid #aebdc4; border-width: 1px 0 0 1px; }
 .service-note-signature-row { display: grid; min-height: 58px; grid-template-columns: 1fr 1.08fr; }
@@ -198,13 +208,32 @@
 .service-note-automatic-code > span { font-weight: 750; }
 .service-note-automatic-code > strong { color: #087a7d; font-size: .76rem; }
 .service-note-form-grid input,
-.service-note-form-grid select,
-.service-note-body-field textarea { width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid #cddae0; border-radius: 8px; outline: 0; color: #173747; background: white; font-size: .78rem; transition: border .15s ease, box-shadow .15s ease; }
+.service-note-form-grid select { width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid #cddae0; border-radius: 8px; outline: 0; color: #173747; background: white; font-size: .78rem; transition: border .15s ease, box-shadow .15s ease; }
 .service-note-form-grid input:focus,
-.service-note-form-grid select:focus,
-.service-note-body-field textarea:focus { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
+.service-note-form-grid select:focus { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
 .service-note-form-grid input[readonly] { color: #59717d; background: #f2f5f6; }
-.service-note-body-field textarea { resize: vertical; line-height: 1.55; }
+.service-note-rich-editor { overflow: hidden; border: 1px solid #cddae0; border-radius: 8px; background: white; transition: border .15s ease, box-shadow .15s ease; }
+.service-note-rich-editor:focus-within { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
+.service-note-rich-toolbar { display: flex; min-height: 40px; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #d8e2e6; background: #fbfcfd; }
+.service-note-rich-toolbar select { width: auto; min-height: 30px; padding: 0 24px 0 7px; border: 0; border-radius: 5px; outline: 0; color: #38515e; background: transparent; font: inherit; font-weight: 650; }
+.service-note-rich-toolbar select[aria-label='Style de paragraphe'] { max-width: 90px; }
+.service-note-rich-toolbar select[aria-label='Police'] { max-width: 92px; }
+.service-note-rich-toolbar button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 5px; color: #38515e; background: transparent; place-items: center; }
+.service-note-rich-toolbar button:hover,
+.service-note-rich-toolbar select:hover { color: #075f65; background: #e9f5f4; }
+.service-note-rich-toolbar > i { width: 1px; height: 20px; margin: 0 3px; background: #d9e2e6; }
+.service-note-rich-content { min-height: 215px; max-height: 440px; overflow: auto; padding: 12px 14px; outline: 0; color: #173747; font-family: Aptos, 'Segoe UI', Arial, sans-serif; font-size: .82rem; font-weight: 400; line-height: 1.55; }
+.service-note-rich-content:empty::before { color: #8999a1; content: attr(data-placeholder); pointer-events: none; }
+.service-note-rich-content > :first-child { margin-top: 0; }
+.service-note-rich-content > :last-child { margin-bottom: 0; }
+.service-note-rich-content p,
+.service-note-rich-content div { margin: 0 0 .75em; }
+.service-note-rich-content h2 { margin: .9em 0 .4em; font-size: 1.18rem; }
+.service-note-rich-content h3 { margin: .8em 0 .35em; font-size: 1rem; }
+.service-note-rich-content blockquote { margin: .65em 0; padding: .3em .75em; border-left: 3px solid var(--sn-teal); color: #526d78; background: #f3f8f8; }
+.service-note-rich-content ul,
+.service-note-rich-content ol { margin: .5em 0; padding-left: 1.6em; }
+.service-note-rich-content a { color: #066ba2; text-decoration: underline; }
 .service-note-scope-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .service-note-scope-cards > button { display: flex; min-width: 0; min-height: 66px; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid #d2dfe4; border-radius: 9px; color: #55707d; text-align: left; background: #fff; }
 .service-note-scope-cards > button > svg { flex: 0 0 auto; margin-top: 1px; }
@@ -339,6 +368,7 @@
   .service-note-scope-cards,
   .service-note-combined-targets,
   .service-note-target-picker > div { grid-template-columns: 1fr; }
+  .service-note-rich-toolbar select { flex: 0 0 auto; }
   .service-note-editor-footer { align-items: stretch; flex-direction: column-reverse; }
   .service-note-link-filters { grid-template-columns: 1fr; }
   .service-note-modal-backdrop { padding: 8px; }

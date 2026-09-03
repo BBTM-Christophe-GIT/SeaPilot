@@ -8,6 +8,7 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { fetchWorkingTimeProfileSignatures } from '../workingTime/workingTimeSignatureQueries';
 import { ServiceNoteDocument } from './ServiceNoteDocument';
+import { ServiceNoteRichTextEditor } from './ServiceNoteRichTextEditor';
 import {
   buildOfficeDesktopUrl, createServiceNoteAttachmentUrl, createServiceNoteDraft, createServiceNoteSignatureUrl,
   deleteServiceNoteAttachment, deleteServiceNoteDraft, fetchServiceNoteLinkOptions, fetchServiceNotes,
@@ -17,6 +18,7 @@ import {
   type ServiceNoteTargetingOptions,
 } from './serviceNoteQueries';
 import { downloadServiceNotePdf } from './serviceNotePdf';
+import { serviceNoteBodyHasContent } from './serviceNoteRichText';
 import './serviceNotes.css';
 
 type LibraryFilter = 'published' | 'draft' | 'recalled' | 'all';
@@ -64,6 +66,7 @@ export function resolveServiceNoteAudiencePeople(
   const vesselIds = new Set(targetVesselIds);
   const personIds = new Set(targetPersonIds);
   return people.filter((person) => {
+    if (!person.hasAccount || person.isAuthor) return false;
     if (scope === 'people') return personIds.has(person.id);
     if (scope === 'vessels') return personIds.has(person.id) || person.vesselIds.some((vesselId) => vesselIds.has(vesselId));
     return true;
@@ -279,6 +282,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
   const saveSequence = useRef(0);
   const targetVesselIdSet = useMemo(() => new Set(draft.targetVesselIds), [draft.targetVesselIds]);
   const targetPersonIdSet = useMemo(() => new Set(draft.targetPersonIds), [draft.targetPersonIds]);
+  const eligiblePeopleCount = useMemo(() => targetingOptions.people.filter((person) => person.hasAccount && !person.isAuthor).length, [targetingOptions.people]);
 
   const audiencePeople = useMemo(() => resolveServiceNoteAudiencePeople(
     draft.scope,
@@ -440,7 +444,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           <section className="service-note-form-section">
             <header><span>02</span><div><h2>Destinataires</h2><p>Le planning du {formatServiceNoteDate(draft.authoredOn)} détermine les personnes affectées aux navires.</p></div></header>
             <div className="service-note-scope-cards" role="radiogroup" aria-label="Périmètre de diffusion">
-              <button aria-checked={draft.scope === 'all_accounts'} className={draft.scope === 'all_accounts' ? 'is-active' : ''} onClick={() => updateScope('all_accounts')} role="radio" type="button"><Building2 size={18} /><span><strong>Tous les utilisateurs</strong><small>{targetingOptions.people.length} comptes éligibles</small></span></button>
+              <button aria-checked={draft.scope === 'all_accounts'} className={draft.scope === 'all_accounts' ? 'is-active' : ''} onClick={() => updateScope('all_accounts')} role="radio" type="button"><Building2 size={18} /><span><strong>Tous les utilisateurs</strong><small>{eligiblePeopleCount} comptes éligibles</small></span></button>
               <button aria-checked={draft.scope === 'vessels'} className={draft.scope === 'vessels' ? 'is-active' : ''} onClick={() => updateScope('vessels')} role="radio" type="button"><Ship size={18} /><span><strong>Un ou plusieurs navires</strong><small>Selon le planning</small></span></button>
               <button aria-checked={draft.scope === 'people'} className={draft.scope === 'people' ? 'is-active' : ''} onClick={() => updateScope('people')} role="radio" type="button"><UserRoundCheck size={18} /><span><strong>Liste de personnes</strong><small>Sélection nominative</small></span></button>
             </div>
@@ -478,7 +482,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           </section>
           <section className="service-note-form-section">
             <header><span>03</span><div><h2>Message</h2><p>Ce texte constituera le corps de la note commune.</p></div></header>
-            <label className="service-note-body-field"><span>Contenu</span><textarea maxLength={20000} onChange={(event) => { setSaveState('saving'); setDraft({ ...draft, body: event.target.value }); }} placeholder={'Bonjour,\n\nRédigez ici votre note de service…\n\nBien cordialement,'} rows={13} value={draft.body} /></label>
+            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => { setSaveState('saving'); setDraft((current) => ({ ...current, body })); }} value={draft.body} /></label>
           </section>
           <section className="service-note-form-section">
             <header><span>04</span><div><h2>Pièces jointes et liens</h2><p>Le nom sans extension sera inventorié dans la note.</p></div></header>
@@ -493,7 +497,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           </section>
           {message ? <div className="service-note-inline-error" role="alert"><CircleAlert size={17} />{message}</div> : null}
           {!hasActiveSignature ? <div className="service-note-inline-warning"><CircleAlert size={17} /><span>Ajoutez une signature active dans votre profil RH avant de diffuser cette note.</span><Link to="/modules/humanResources">Ouvrir mon profil</Link></div> : null}
-          <div className="service-note-editor-footer"><button className="is-secondary" onClick={onBack} type="button">Fermer</button><button className="is-draft" disabled={isSavingDraft || isPublishing} onClick={() => void handleSaveDraft()} type="button"><Save size={17} />{isSavingDraft ? 'Enregistrement…' : 'Enregistrer le brouillon'}</button><button className="is-primary" disabled={isPublishing || isSavingDraft || !draft.subject.trim() || !draft.body.trim() || !hasActiveSignature || !audiencePeople.length} onClick={() => void handlePublish()} type="button"><Send size={17} />{isPublishing ? 'Diffusion…' : `Diffuser à ${audiencePeople.length} destinataire${audiencePeople.length > 1 ? 's' : ''}`}</button></div>
+          <div className="service-note-editor-footer"><button className="is-secondary" onClick={onBack} type="button">Fermer</button><button className="is-draft" disabled={isSavingDraft || isPublishing} onClick={() => void handleSaveDraft()} type="button"><Save size={17} />{isSavingDraft ? 'Enregistrement…' : 'Enregistrer le brouillon'}</button><button className="is-primary" disabled={isPublishing || isSavingDraft || !draft.subject.trim() || !serviceNoteBodyHasContent(draft.body) || !hasActiveSignature || !audiencePeople.length} onClick={() => void handlePublish()} type="button"><Send size={17} />{isPublishing ? 'Diffusion…' : `Diffuser à ${audiencePeople.length} destinataire${audiencePeople.length > 1 ? 's' : ''}`}</button></div>
         </div>
         <aside className="service-note-preview-panel"><header><div><span>APERÇU EN DIRECT</span><strong>Document commun</strong></div><span>2 pages</span></header><div className="service-note-preview-scroll"><ServiceNoteDocument note={previewNote} /></div></aside>
       </div>
