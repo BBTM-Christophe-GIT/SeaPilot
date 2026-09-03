@@ -25,6 +25,8 @@ describe('ServiceNotesPage', () => {
     expect(screen.getAllByText(/Luc MARTIN/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Signer après lecture')).not.toBeInTheDocument();
     expect(await screen.findByAltText('Signature de Camille DURAND')).toBeInTheDocument();
+    expect(screen.getByText('Signé le : 01/09/2026')).toBeInTheDocument();
+    expect(screen.queryByText(/Signé le\s*Non renseignée/)).not.toBeInTheDocument();
     expect(screen.queryByText('Lecture et signature obligatoires')).not.toBeInTheDocument();
     expect(screen.queryByText(/Document généré par SeaPilot/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();

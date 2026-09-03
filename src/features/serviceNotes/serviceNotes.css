@@ -163,6 +163,10 @@
 .service-note-signature-row em { display: flex; align-items: center; gap: 4px; color: #08754f; font-size: .64rem; font-style: normal; font-weight: 800; }
 .service-note-signature-row em.is-pending { color: #9a670c; }
 .service-note-signature-row img { width: 105px; max-height: 32px; object-fit: contain; }
+.service-note-signature-proof { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.service-note-signature-proof small { white-space: nowrap; color: #294656; font-size: .61rem; }
+.service-note-signature-proof .is-signed-marker { white-space: nowrap; }
+.service-note-signature-proof .is-signed-marker i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: #158058; box-shadow: 0 0 0 3px #e1f4eb; }
 
 .service-note-editor { max-width: 1800px; margin: 0 auto; }
 .service-note-editor-header { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; align-items: center; gap: 15px; min-height: 77px; padding: 12px 22px; border-bottom: 1px solid var(--sn-border); background: white; }

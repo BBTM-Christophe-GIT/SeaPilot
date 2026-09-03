@@ -301,6 +301,11 @@ export function formatServiceNoteDate(value: string): string {
   return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 }
 
+export function formatServiceNoteSignatureDate(signature: ServiceNoteSignature, noteStatus: ServiceNoteStatus): string {
+  if (noteStatus === 'archived' || signature.signatureKind === 'historical_assumed' || !signature.signedAt) return '';
+  return formatServiceNoteDate(signature.signedAt);
+}
+
 export function buildOfficeDesktopUrl(url: string): string {
   return `ms-word:ofe|u|${url.replace(/[?&]web=1\b/u, '').replace(/[?&]$/u, '')}`;
 }

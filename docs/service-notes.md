@@ -10,6 +10,8 @@ La diffusion, depuis l'éditeur ou directement depuis la fiche d'un brouillon, a
 
 La signature appelle `sign_service_note`. Cette opération ajoute une ligne immuable dans `qhse_service_note_signatures` avec l'identité du destinataire, la version active de sa signature de profil et l'heure du serveur. Le registre est commun à tous les destinataires : aucune copie individuelle du document n'est créée.
 
+Dans le registre, une signature disposant d'une image affiche l'image puis `Signé le : JJ/MM/AAAA`. Si l'enregistrement est signé mais que son image est indisponible, une pastille verte `Signé` remplace l'image, suivie de la même date. Les validations historiques des notes archivées suivent la même règle d'image/pastille mais n'affichent aucune date, car aucune date de signature n'a été inventée lors de l'import.
+
 Les profils `Administrateur` et `Direction` peuvent rappeler uniquement la note actuellement diffusée la plus récente. `recall_service_note` retire son numéro chrono actif, la place au statut `Rappelée` et la rend immédiatement invisible aux autres profils, y compris dans la cloche. Le dernier numéro est conservé séparément pour l'audit de gestion. Une note rappelée peut être diffusée de nouveau : un nouveau numéro chrono est alors attribué et le registre des destinataires/signatures repart à zéro.
 
 Un brouillon privé peut être supprimé après confirmation. Les fichiers stockés sont retirés du bucket avant l'appel protégé à `delete_service_note_draft`; les autres enregistrements associés disparaissent par cascade.
