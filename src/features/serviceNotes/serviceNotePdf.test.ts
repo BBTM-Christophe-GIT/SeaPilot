@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import type { ServiceNote } from './serviceNoteQueries';
+import { formatServiceNoteSignatureDate, type ServiceNote } from './serviceNoteQueries';
 import { buildServiceNotePdf } from './serviceNotePdf';
 
 const note: ServiceNote = {
@@ -26,5 +26,13 @@ describe('service note PDF', () => {
     expect(result.blob.type).toBe('application/pdf');
     expect(result.blob.size).toBeGreaterThan(1_000);
     expect((await PDFDocument.load(await result.blob.arrayBuffer())).getPageCount()).toBe(2);
+  });
+
+  it('formats current signature dates and omits every historical archive date', () => {
+    const captured = { id: 1, noteId: 8, recipientId: 20, userId: 'user-2', personId: 12, identitySnapshot: {}, signatureSnapshot: null, signedAt: '2026-09-03T08:00:00Z', signatureKind: 'captured' as const };
+    expect(formatServiceNoteSignatureDate(captured, 'published')).toBe('03/09/2026');
+    expect(formatServiceNoteSignatureDate({ ...captured, signedAt: '' }, 'published')).toBe('');
+    expect(formatServiceNoteSignatureDate(captured, 'archived')).toBe('');
+    expect(formatServiceNoteSignatureDate({ ...captured, signatureKind: 'historical_assumed' }, 'archived')).toBe('');
   });
 });

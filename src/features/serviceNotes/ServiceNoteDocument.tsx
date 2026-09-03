@@ -1,6 +1,6 @@
-import { CheckCircle2, Clock3, ExternalLink, File, Link2, Paperclip, Ship } from 'lucide-react';
+import { Clock3, ExternalLink, File, Link2, Paperclip, Ship } from 'lucide-react';
 import type { ServiceNote, ServiceNoteAttachment } from './serviceNoteQueries';
-import { formatServiceNoteDate } from './serviceNoteQueries';
+import { formatServiceNoteDate, formatServiceNoteSignatureDate } from './serviceNoteQueries';
 
 interface ServiceNoteDocumentProps {
   note: ServiceNote;
@@ -79,11 +79,17 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
             {note.recipients.map((recipient) => {
               const signature = signatures.get(recipient.id);
               const signatureUrl = signature ? signatureUrls.get(signature.id) : '';
+              const signatureDate = signature ? formatServiceNoteSignatureDate(signature, note.status) : '';
               return (
                 <div className={`service-note-signature-row${signature ? ' is-signed' : ''}`} key={recipient.id} role="row">
                   <span role="cell"><strong>{`${recipient.firstName} ${recipient.lastName}`.trim() || 'Compte sans profil lié'}</strong><small>{recipient.functionLabel || 'Fonction non renseignée'}</small></span>
                   <span role="cell">
-                    {signature ? <><em><CheckCircle2 aria-hidden="true" size={14} /> {signature.signatureKind === 'historical_assumed' ? 'Signature historique validée' : `Signé le ${formatServiceNoteDate(signature.signedAt)}`}</em>{signatureUrl ? <img alt={`Signature de ${recipient.firstName} ${recipient.lastName}`} src={signatureUrl} /> : signature.signatureKind === 'historical_assumed' ? <small>Archive réputée signée · aucune image de profil disponible</small> : null}</> : <em className="is-pending"><Clock3 aria-hidden="true" size={14} /> En attente</em>}
+                    {signature ? <div className="service-note-signature-proof">
+                      {signatureUrl
+                        ? <img alt={`Signature de ${recipient.firstName} ${recipient.lastName}`} src={signatureUrl} />
+                        : <em className="is-signed-marker"><i aria-hidden="true" /> Signé</em>}
+                      {signatureDate ? <small>Signé le : {signatureDate}</small> : null}
+                    </div> : <em className="is-pending"><Clock3 aria-hidden="true" size={14} /> En attente</em>}
                   </span>
                 </div>
               );

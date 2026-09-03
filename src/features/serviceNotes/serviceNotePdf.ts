@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ServiceNote, ServiceNoteSignatureSnapshot } from './serviceNoteQueries';
-import { formatServiceNoteDate } from './serviceNoteQueries';
+import { formatServiceNoteDate, formatServiceNoteSignatureDate } from './serviceNoteQueries';
 
 interface SignatureAsset {
   snapshot: ServiceNoteSignatureSnapshot;
@@ -162,7 +162,7 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
       const signature = signatureByRecipient.get(recipient.id);
       return [
         [`${recipient.firstName} ${recipient.lastName}`.trim() || 'Compte sans profil lié', recipient.functionLabel].filter(Boolean).join('\n'),
-        signature ? (signature.signatureKind === 'historical_assumed' ? 'Signature historique validée' : `Signé le ${formatServiceNoteDate(signature.signedAt)}`) : 'Signature en attente',
+        signature ? '' : 'Signature en attente',
       ];
     }),
     headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
@@ -173,8 +173,30 @@ export async function buildServiceNotePdf(input: ServiceNotePdfInput): Promise<S
       const recipient = recipients[hook.row.index];
       const signature = recipient ? signatureByRecipient.get(recipient.id) : undefined;
       const asset = signature ? input.recipientSignatures.get(signature.recipientId) : undefined;
-      if (!asset) return;
-      document.addImage(asset.bytes, snapshotFormat(asset.snapshot), hook.cell.x + 42, hook.cell.y + 3, 39, 12, undefined, 'FAST');
+      if (!signature) return;
+      const signatureDate = formatServiceNoteSignatureDate(signature, note.status);
+      if (asset) {
+        document.addImage(asset.bytes, snapshotFormat(asset.snapshot), hook.cell.x + 3, hook.cell.y + 2.5, 38, 11, undefined, 'FAST');
+        if (signatureDate) {
+          document.setFont('helvetica', 'normal');
+          document.setFontSize(7.4);
+          document.setTextColor(...navy);
+          document.text(`Signé le : ${signatureDate}`, hook.cell.x + 45, hook.cell.y + 9.5);
+        }
+        return;
+      }
+      document.setFillColor(21, 128, 88);
+      document.circle(hook.cell.x + 6, hook.cell.y + 7.3, 1.3, 'F');
+      document.setFont('helvetica', 'bold');
+      document.setFontSize(8);
+      document.setTextColor(7, 117, 79);
+      document.text('Signé', hook.cell.x + 9, hook.cell.y + 8.2);
+      if (signatureDate) {
+        document.setFont('helvetica', 'normal');
+        document.setFontSize(7.4);
+        document.setTextColor(...navy);
+        document.text(`Signé le : ${signatureDate}`, hook.cell.x + 28, hook.cell.y + 8.2);
+      }
     },
   });
 
