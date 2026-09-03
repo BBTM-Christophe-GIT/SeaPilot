@@ -21,12 +21,13 @@ describe('previewSupabaseClient', () => {
     const write = await previewSupabaseClient.rpc('save_planning_manning_matrix', {});
 
     expect(catalog.error).toBeNull();
-    expect(catalog.data).toHaveLength(54);
+    expect(catalog.data).toHaveLength(55);
     expect(catalog.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: 'Pont' }),
       expect.objectContaining({ category: 'Machine' }),
       expect.objectContaining({ category: 'Formation de Sécurité' }),
       expect.objectContaining({ category: 'Ressources Humaines' }),
+      expect.objectContaining({ category: 'Ressources Humaines', name: 'Dérogation', source_item_id: 56 }),
       expect.objectContaining({ file_name: 'CFBS', source_item_id: 25 }),
       expect.objectContaining({ file_name: 'Visite Médicale', source_item_id: 37 }),
     ]));

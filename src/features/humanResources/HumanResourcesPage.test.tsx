@@ -521,6 +521,13 @@ describe('HumanResourcesPage', () => {
         category: 'Formation de Sécurité',
         file_name: 'CFBS',
       },
+      {
+        id: 56,
+        source_item_id: 56,
+        name: 'Dérogation',
+        category: 'Ressources Humaines',
+        file_name: 'Dérogation',
+      },
     ];
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
     const storagePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
@@ -568,6 +575,8 @@ describe('HumanResourcesPage', () => {
     await user.click(within(profile).getByRole('button', { name: 'Ajouter un document' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un document pour Jean MARTIN' });
+    const derogationOption = within(dialog).getByRole('option', { name: 'Dérogation' });
+    expect(derogationOption.closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
     await user.selectOptions(within(dialog).getByLabelText('Brevet / document'), '25');
     fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
     await user.upload(within(dialog).getByLabelText('Fichier'), file);
