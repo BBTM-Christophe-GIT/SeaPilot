@@ -18,6 +18,10 @@ const recallLifecycle = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260903053700_service_notes_recall_and_draft_delete.sql'),
   'utf8',
 );
+const recipientScopes = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260903062527_service_note_recipient_scopes_and_historical_signatures.sql'),
+  'utf8',
+);
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -95,5 +99,42 @@ describe('QHSE service notes database contract', () => {
     expect(recallLifecycle).toContain('create or replace function public.delete_service_note_draft');
     expect(recallLifecycle).toContain("target_note.status <> 'draft'");
     expect(recallLifecycle).toContain('grant execute on function public.delete_service_note_draft(bigint) to authenticated');
+  });
+
+  it('supports all-account, multi-vessel planning and explicit-person audiences', () => {
+    expect(recipientScopes).toContain("scope in ('all_accounts', 'vessels', 'people')");
+    expect(recipientScopes).toContain('create table public.qhse_service_note_target_vessels');
+    expect(recipientScopes).toContain('create table public.qhse_service_note_target_people');
+    expect(recipientScopes).toContain('from public.planning_assignments assignment');
+    expect(recipientScopes).toContain('from public.planning_periods period');
+    expect(recipientScopes).toContain('from public.planning_days day');
+  });
+
+  it('applies the HR employment dates and excludes the issuer from every audience', () => {
+    expect(recipientScopes).toContain('person.hired_on <= target_note.authored_on');
+    expect(recipientScopes).toContain('person.departed_on > target_note.authored_on');
+    expect(recipientScopes).toContain('person.id is distinct from target_note.author_person_id');
+    expect(recipientScopes).toContain("lower(coalesce(assignment.confirmation_status, '')) <> 'cancelled'");
+  });
+
+  it('marks imported archives as historically signed without inventing dates or images', () => {
+    expect(recipientScopes).toContain("signature_kind in ('captured', 'historical_assumed')");
+    expect(recipientScopes).toContain("'historical_assumed'");
+    expect(recipientScopes).toContain('case when profile_signature.id is null then null');
+    expect(recipientScopes).toContain("signed_at, read_confirmed, signature_kind");
+    expect(recipientScopes).toContain("set status = 'archived'");
+  });
+
+  it('deletes only the requested duplicate NS 03-26 record', () => {
+    expect(recipientScopes).toContain("note.chronology_code = 'NS 03-26'");
+    expect(recipientScopes).toContain("note.subject = 'Transmission et formation interne'");
+    expect(recipientScopes).toContain('if target_count <> 1 then');
+  });
+
+  it('keeps target tables behind RLS and limits published notes to managers or recipients', () => {
+    expect(recipientScopes).toContain('alter table public.qhse_service_note_target_vessels enable row level security');
+    expect(recipientScopes).toContain('alter table public.qhse_service_note_target_people enable row level security');
+    expect(recipientScopes).toContain('recipient.user_id = (select auth.uid())');
+    expect(recipientScopes).toContain("public.has_company_role(note.company_id, array['admin', 'direction'])");
   });
 });
