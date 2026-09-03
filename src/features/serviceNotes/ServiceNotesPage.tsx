@@ -73,40 +73,27 @@ export function resolveServiceNoteAudiencePeople(
   });
 }
 
-function serviceNoteChronology(note: ServiceNote): { year: number; sequence: number } {
-  const code = note.chronologyCode || note.lastRecalledChronologyCode;
-  const match = code.match(/^NS\s+(\d+)-(\d{2})/iu);
-  if (match) return { year: 2000 + Number(match[2]), sequence: Number(match[1]) };
-  const fallbackDate = new Date(note.authoredOn || note.updatedAt);
-  return { year: Number.isNaN(fallbackDate.getTime()) ? 0 : fallbackDate.getFullYear(), sequence: -1 };
+function serviceNoteLibraryTimestamp(note: ServiceNote): number {
+  const timestamp = new Date(note.publishedAt || note.updatedAt || note.authoredOn).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function serviceNoteLibraryYear(note: ServiceNote): number {
+  const date = new Date(note.publishedAt || note.updatedAt || note.authoredOn);
+  return Number.isNaN(date.getTime()) ? 0 : date.getFullYear();
 }
 
 export function groupServiceNotesByYear(notes: ServiceNote[]): Array<{ year: number; notes: ServiceNote[] }> {
   const sorted = [...notes].sort((left, right) => {
-    const leftCode = serviceNoteChronology(left);
-    const rightCode = serviceNoteChronology(right);
-    if (rightCode.year !== leftCode.year) return rightCode.year - leftCode.year;
-    if (rightCode.sequence !== leftCode.sequence) return rightCode.sequence - leftCode.sequence;
-    return new Date(right.publishedAt || right.updatedAt).getTime() - new Date(left.publishedAt || left.updatedAt).getTime();
+    const dateOrder = serviceNoteLibraryTimestamp(right) - serviceNoteLibraryTimestamp(left);
+    return dateOrder || right.id - left.id;
   });
   const grouped = new Map<number, ServiceNote[]>();
   sorted.forEach((note) => {
-    const year = serviceNoteChronology(note).year;
+    const year = serviceNoteLibraryYear(note);
     grouped.set(year, [...(grouped.get(year) || []), note]);
   });
   return Array.from(grouped, ([year, groupedNotes]) => ({ year, notes: groupedNotes }));
-}
-
-export interface ServiceNoteLibraryVesselGroup {
-  vesselName: string;
-  notes: ServiceNote[];
-}
-
-export interface ServiceNoteLibraryYearGroup {
-  year: number;
-  notes: ServiceNote[];
-  notesWithoutVessel: ServiceNote[];
-  vesselGroups: ServiceNoteLibraryVesselGroup[];
 }
 
 function serviceNoteVesselNames(note: ServiceNote): string[] {
@@ -115,31 +102,6 @@ function serviceNoteVesselNames(note: ServiceNote): string[] {
     ...note.targetVessels.map((vessel) => vessel.name.trim()),
     note.vesselName.trim(),
   ].filter(Boolean)));
-}
-
-export function groupServiceNotesByYearAndVessel(notes: ServiceNote[]): ServiceNoteLibraryYearGroup[] {
-  return groupServiceNotesByYear(notes).map((yearGroup) => {
-    const vesselMap = new Map<string, ServiceNote[]>();
-    const notesWithoutVessel: ServiceNote[] = [];
-    yearGroup.notes.forEach((note) => {
-      const vesselNames = serviceNoteVesselNames(note);
-      if (!vesselNames.length) {
-        notesWithoutVessel.push(note);
-        return;
-      }
-      vesselNames.forEach((vesselName) => {
-        const vesselNotes = vesselMap.get(vesselName) || [];
-        vesselNotes.push(note);
-        vesselMap.set(vesselName, vesselNotes);
-      });
-    });
-    return {
-      ...yearGroup,
-      notesWithoutVessel,
-      vesselGroups: Array.from(vesselMap, ([vesselName, vesselNotes]) => ({ vesselName, notes: vesselNotes }))
-        .sort((left, right) => left.vesselName.localeCompare(right.vesselName, 'fr', { numeric: true })),
-    };
-  });
 }
 
 function noteMatches(note: ServiceNote, search: string, vessel: string): boolean {
@@ -585,7 +547,7 @@ export function ServiceNotesPage() {
     const statusMatch = filter === 'all' || note.status === filter || (filter === 'published' && note.status === 'archived');
     return statusMatch && noteMatches(note, query, vesselFilter);
   }), [filter, query, vesselFilter, visibleNotes]);
-  const noteGroups = useMemo(() => groupServiceNotesByYearAndVessel(filteredNotes), [filteredNotes]);
+  const noteGroups = useMemo(() => groupServiceNotesByYear(filteredNotes), [filteredNotes]);
   const distributed = visibleNotes.filter((note) => note.status === 'published' || note.status === 'archived');
   const signedCount = distributed.reduce((total, note) => total + note.signatures.length, 0);
   const recipientCount = distributed.reduce((total, note) => total + note.recipients.length, 0);
@@ -714,11 +676,7 @@ export function ServiceNotesPage() {
           <div className="service-note-list" role="list">
             {noteGroups.map((group) => <Fragment key={group.year}>
               <h3 className="service-note-year-heading"><span>{group.year || 'Sans année'}</span><small>{group.notes.length} note{group.notes.length > 1 ? 's' : ''}</small></h3>
-              {group.notesWithoutVessel.map((note) => <ServiceNoteListRow currentUserId={currentUserId} key={`direct-${note.id}`} note={note} onSelect={selectNote} selected={selectedId === note.id} />)}
-              {group.vesselGroups.map((vesselGroup) => <Fragment key={`${group.year}-${vesselGroup.vesselName}`}>
-                <h4 className="service-note-vessel-heading"><Ship size={14} /><span>{vesselGroup.vesselName}</span><small>{vesselGroup.notes.length} note{vesselGroup.notes.length > 1 ? 's' : ''}</small></h4>
-                {vesselGroup.notes.map((note) => <ServiceNoteListRow currentUserId={currentUserId} key={`${vesselGroup.vesselName}-${note.id}`} note={note} onSelect={selectNote} selected={selectedId === note.id} />)}
-              </Fragment>)}
+              {group.notes.map((note) => <ServiceNoteListRow currentUserId={currentUserId} key={note.id} note={note} onSelect={selectNote} selected={selectedId === note.id} />)}
             </Fragment>)}
             {!filteredNotes.length ? <div className="service-note-empty-list"><FileClock size={28} /><strong>Aucune note dans cette vue</strong><span>Ajustez vos filtres ou créez un nouveau brouillon.</span></div> : null}
           </div>

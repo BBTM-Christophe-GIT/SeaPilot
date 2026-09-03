@@ -2,34 +2,19 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const migration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260902205314_service_notes_shared_signature_workflow.sql'),
-  'utf8',
-);
-const advisorIndexes = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260902214000_service_notes_advisor_indexes.sql'),
-  'utf8',
-);
-const publicationChronology = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260903044914_service_notes_publication_chronology.sql'),
-  'utf8',
-);
-const recallLifecycle = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260903053700_service_notes_recall_and_draft_delete.sql'),
-  'utf8',
-);
-const recipientScopes = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260903062527_service_note_recipient_scopes_and_historical_signatures.sql'),
-  'utf8',
-);
-const combinedTargeting = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260903075755_service_note_combined_vessel_people_targeting.sql'),
-  'utf8',
-);
-const activeWorkforceTargeting = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260903082732_service_note_rich_text_active_workforce.sql'),
-  'utf8',
-);
+function readMigration(filename: string) {
+  return readFileSync(resolve(process.cwd(), 'supabase/migrations', filename), 'utf8')
+    .replace(/\r\n/g, '\n');
+}
+
+const migration = readMigration('20260902205314_service_notes_shared_signature_workflow.sql');
+const advisorIndexes = readMigration('20260902214000_service_notes_advisor_indexes.sql');
+const publicationChronology = readMigration('20260903044914_service_notes_publication_chronology.sql');
+const recallLifecycle = readMigration('20260903053700_service_notes_recall_and_draft_delete.sql');
+const recipientScopes = readMigration('20260903062527_service_note_recipient_scopes_and_historical_signatures.sql');
+const combinedTargeting = readMigration('20260903075755_service_note_combined_vessel_people_targeting.sql');
+const activeWorkforceTargeting = readMigration('20260903082732_service_note_rich_text_active_workforce.sql');
+const embarkationRecipientSync = readMigration('20260903162403_sync_service_note_recipients_on_embarkation.sql');
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -142,6 +127,25 @@ describe('QHSE service notes database contract', () => {
     expect(activeWorkforceTargeting).toContain('person.id is distinct from target_note.author_person_id');
     expect(activeWorkforceTargeting).toContain('from public, anon;');
     expect(activeWorkforceTargeting).toContain('to authenticated;');
+  });
+
+  it('adds newly embarked people to every active note for their vessel', () => {
+    expect(embarkationRecipientSync).toContain('create or replace function private.add_active_vessel_service_note_recipient');
+    expect(embarkationRecipientSync).toContain("note.status = 'published'");
+    expect(embarkationRecipientSync).toContain("note.scope = 'vessels'");
+    expect(embarkationRecipientSync).toContain('target.vessel_id = p_vessel_id');
+    expect(embarkationRecipientSync).toContain('note.author_person_id is distinct from person.id');
+    expect(embarkationRecipientSync).toContain('on conflict (note_id, user_id) do nothing');
+  });
+
+  it('syncs both crew and captain assignments and backfills current or future embarkations', () => {
+    expect(embarkationRecipientSync).toContain('create trigger planning_assignments_sync_service_note_recipients');
+    expect(embarkationRecipientSync).toContain('after insert or update on public.planning_assignments');
+    expect(embarkationRecipientSync).toContain('new.crew_person_id');
+    expect(embarkationRecipientSync).toContain('new.captain_person_id');
+    expect(embarkationRecipientSync).toContain('assignment.ends_on >= current_date');
+    expect(embarkationRecipientSync).toContain("lower(coalesce(assignment.confirmation_status, '')) <> 'cancelled'");
+    expect(embarkationRecipientSync).toContain('from public, anon, authenticated;');
   });
 
   it('marks imported archives as historically signed without inventing dates or images', () => {

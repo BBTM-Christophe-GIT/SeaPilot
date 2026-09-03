@@ -3,7 +3,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { buildServiceNoteLinkGroups, groupServiceNotesByYear, groupServiceNotesByYearAndVessel, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
+import { buildServiceNoteLinkGroups, groupServiceNotesByYear, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
 import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
 
 function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
@@ -19,6 +19,7 @@ describe('ServiceNotesPage', () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Notes de Service' })).toBeInTheDocument();
     expect(screen.getByText('Couverture signatures')).toBeInTheDocument();
+    expect(screen.getByRole('list').querySelector('.service-note-vessel-heading')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('NS 08-26'));
     expect(await screen.findByText('Registre de signatures')).toBeInTheDocument();
     expect(screen.getByText('1 signature manquante')).toBeInTheDocument();
@@ -125,38 +126,22 @@ describe('ServiceNotesPage', () => {
     expect(screen.getByRole('button', { name: 'Télécharger' })).toBeInTheDocument();
   });
 
-  it('groups by chronology year and sorts each year from the newest code to the oldest', () => {
-    const note = (chronologyCode: string, authoredOn: string): ServiceNote => ({
+  it('sorts notes by emission date from newest to oldest regardless of chronology number or vessel', () => {
+    const note = (chronologyCode: string, publishedAt: string, vesselName: string): ServiceNote => ({
       id: Number(chronologyCode.match(/\d+/u)?.[0] || 1), companyId: 1, chronologyCode, subject: chronologyCode,
-      body: '', vesselId: null, vesselName: '', scope: 'all_accounts', targetVessels: [], targetPersonIds: [],
+      body: '', vesselId: null, vesselName, scope: 'vessels', targetVessels: [{ id: 1, name: vesselName }], targetPersonIds: [],
       status: 'archived', authorPersonId: null, authorIdentitySnapshot: {}, authorSignatureSnapshot: null,
-      authoredOn, publishedAt: `${authoredOn}T00:00:00Z`, sourceKind: 'sharepoint', sourceFileName: '', sourceWebUrl: '',
-      sourceModifiedAt: '', createdBy: '', createdAt: `${authoredOn}T00:00:00Z`, updatedAt: `${authoredOn}T00:00:00Z`,
+      authoredOn: publishedAt.slice(0, 10), publishedAt, sourceKind: 'sharepoint', sourceFileName: '', sourceWebUrl: '',
+      sourceModifiedAt: '', createdBy: '', createdAt: publishedAt, updatedAt: publishedAt,
       lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
     });
-    const groups = groupServiceNotesByYear([note('NS 02-26', '2026-01-02'), note('NS 08-25', '2026-01-01'), note('NS 09-26', '2026-01-03')]);
+    const groups = groupServiceNotesByYear([
+      note('NS 99-25', '2025-12-31T10:00:00Z', 'SUROÎT'),
+      note('NS 02-26', '2026-09-03T10:00:00Z', 'KROKDUR'),
+      note('NS 09-26', '2026-09-02T10:00:00Z', 'GOURY'),
+    ]);
     expect(groups.map((group) => group.year)).toEqual([2026, 2025]);
-    expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 09-26', 'NS 02-26']);
-  });
-
-  it('groups vessel notes under each vessel and keeps people-only notes directly under the year', () => {
-    const note = (id: number, chronologyCode: string, scope: ServiceNote['scope'], vesselNames: string[]): ServiceNote => ({
-      id, companyId: 1, chronologyCode, subject: chronologyCode, body: '', vesselId: null, vesselName: '', scope,
-      targetVessels: vesselNames.map((name, index) => ({ id: id * 10 + index, name })), targetPersonIds: scope === 'people' ? [9302] : [],
-      status: 'archived', authorPersonId: null, authorIdentitySnapshot: {}, authorSignatureSnapshot: null,
-      authoredOn: '2026-01-01', publishedAt: '2026-01-01T00:00:00Z', sourceKind: 'sharepoint', sourceFileName: '', sourceWebUrl: '',
-      sourceModifiedAt: '', createdBy: '', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
-      lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
-    });
-    const peopleNote = note(1, 'NS 01-26', 'people', []);
-    const gouryNote = note(2, 'NS 02-26', 'vessels', ['GOURY']);
-    const multiVesselNote = { ...note(3, 'NS 03-26', 'vessels', ['KROKDUR', 'GOURY']), targetPersonIds: [9302] };
-    const [year] = groupServiceNotesByYearAndVessel([peopleNote, gouryNote, multiVesselNote]);
-
-    expect(year.notesWithoutVessel.map((item) => item.id)).toEqual([peopleNote.id]);
-    expect(year.vesselGroups.map((group) => group.vesselName)).toEqual(['GOURY', 'KROKDUR']);
-    expect(year.vesselGroups[0].notes.map((item) => item.id)).toEqual([multiVesselNote.id, gouryNote.id]);
-    expect(year.vesselGroups[1].notes.map((item) => item.id)).toEqual([multiVesselNote.id]);
+    expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 02-26', 'NS 09-26']);
   });
 
   it('keeps management controls and private drafts out of a non-manager view', async () => {

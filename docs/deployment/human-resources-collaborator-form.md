@@ -19,6 +19,8 @@ La suppression définitive d'une personne est proposée uniquement au profil **A
 
 Depuis la fiche d’un collaborateur existant, les rôles de gestion disposent de l’action **Ajouter un document**. Le type vient du catalogue partagé `public.stcw_certificates`, la date d’échéance est obligatoire et le fichier est renommé selon la règle du Dashboard SPFx : `Collaborateur - Document - Année.extension`. Les fichiers restent dans le bucket privé `hr-documents`; un nom existant n’est jamais écrasé.
 
+La cloche de notifications affiche à chaque utilisateur les documents RH et brevets rattachés à son propre profil dont l’échéance se situe entre la date du jour et J+40 inclus. Cette liste est recalculée à la connexion, au retour sur l’application et après l’ajout ou le renouvellement d’un document. Les règles RLS de `hr_documents` restent la barrière d’accès aux données personnelles.
+
 Le catalogue RH reprend les **54 éléments actifs** de la liste SharePoint QHSE `8c8561d7-9fb4-420f-8290-b66309d07e92`. La colonne Supabase `file_name` conserve désormais le champ SharePoint **Nom de Fichier** et devient prioritaire pour le renommage automatique. Le mode de prévisualisation utilise le même catalogue complet.
 
 La sélection par cases à cocher permet de télécharger un fichier directement ou plusieurs fichiers dans une archive ZIP datée. Le détail complet de l’audit et des règles reprises est documenté dans `docs/migration/human-resources-spfx-document-workflow.md`.

@@ -789,12 +789,27 @@ button:disabled {
   font-size: 0.68rem;
 }
 
-.topbar-notification-popover > div {
+.topbar-notification-list {
   max-height: 330px;
   overflow: auto;
 }
 
-.topbar-notification-popover > div > a {
+.topbar-notification-group + .topbar-notification-group {
+  border-top: 5px solid #f2f6f8;
+}
+
+.topbar-notification-group > h4 {
+  margin: 0;
+  padding: 9px 15px 7px;
+  color: #5c7480;
+  background: #f8fafb;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.topbar-notification-group > a {
   display: grid;
   gap: 5px;
   padding: 12px 15px;
@@ -802,35 +817,35 @@ button:disabled {
   text-decoration: none;
 }
 
-.topbar-notification-popover > div > a:hover {
+.topbar-notification-group > a:hover {
   background: #f0f8f7;
 }
 
-.topbar-notification-popover > div > a > span {
+.topbar-notification-group > a > span {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.topbar-notification-popover > div > a strong {
+.topbar-notification-group > a strong {
   color: #0b7180;
   font-size: 0.69rem;
 }
 
-.topbar-notification-popover > div > a small {
+.topbar-notification-group > a small {
   color: #80909a;
   font-size: 0.62rem;
 }
 
-.topbar-notification-popover > div > a p {
+.topbar-notification-group > a p {
   margin: 0;
   color: #183848;
   font-size: 0.76rem;
   font-weight: 700;
 }
 
-.topbar-notification-popover > div > a em {
+.topbar-notification-group > a em {
   display: flex;
   align-items: center;
   gap: 3px;
@@ -852,14 +867,26 @@ button:disabled {
 }
 
 .topbar-notification-footer {
-  display: block;
-  padding: 10px 15px;
-  color: #0f6f77;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   background: #f5f9fa;
-  font-size: 0.7rem;
+}
+
+.topbar-notification-footer > a {
+  padding: 10px 12px;
+  color: #0f6f77;
+  font-size: 0.68rem;
   font-weight: 800;
   text-align: center;
   text-decoration: none;
+}
+
+.topbar-notification-footer > a + a {
+  border-left: 1px solid #dce6ea;
+}
+
+.topbar-notification-footer > a:hover {
+  background: #eaf4f4;
 }
 
 .topbar-menu-button:hover,
@@ -12352,6 +12379,14 @@ button:disabled {
   .topbar {
     padding-right: 14px;
     padding-left: 14px;
+  }
+
+  .topbar-notification-popover {
+    position: fixed;
+    top: 61px;
+    right: 8px;
+    left: 8px;
+    width: auto;
   }
 
   .content-area {
