@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getFleetCertificateCategory, getFleetCertificateCategoryParent } from '../fleetCertificates/fleetCertificateCategories';
 
 export const SERVICE_NOTE_FILE_BUCKET = 'service-note-files';
 export const SERVICE_NOTE_MAX_FILE_BYTES = 52_428_800;
@@ -81,7 +82,6 @@ export interface ServiceNote {
 }
 
 export interface ServiceNoteDraftInput {
-  chronologyCode: string;
   subject: string;
   body: string;
   vesselId: number | null;
@@ -94,6 +94,7 @@ export interface ServiceNoteLinkOption {
   label: string;
   description: string;
   href: string;
+  groupPath: string[];
 }
 
 export interface ServiceNoteNotification {
@@ -191,7 +192,41 @@ function mapSignatureSnapshot(value: Record<string, unknown> | null | undefined)
 
 function relationVessel(row: NoteRow['vessel']): string {
   const vessel = Array.isArray(row) ? row[0] : row;
-  return text(vessel?.acronym || vessel?.name);
+  return text(vessel?.name || vessel?.acronym);
+}
+
+const ISM_CHAPTER_LABELS: Record<string, string> = {
+  '01': '01 - Généralités',
+  '02': "02 - Politique en Matière de Sécurité et de Protection de l'Environnement",
+  '03': '03 - Responsabilité et Autorité de la Compagnie',
+  '04': '04 - Personne(s) Désignée(s)',
+  '05': '05 - Responsabilité et Autorité du Capitaine',
+  '06': '06 - Ressources et Personnel',
+  '07': '07 - Établissement de Plans pour les Opérations à Bord',
+  '08': "08 - Préparation aux Situations d'Urgence",
+  '09': '09 - Rapports et Analyse des Non-conformités, Accidents et Incidents',
+  '10': '10 - Maintenance du Navire et de son Équipement',
+  '11': '11 - Documentation',
+  '12': '12 - Vérification, Examen et Évaluation de la Compagnie',
+  '13': '13 - Certification, Vérification et Contrôle',
+  uncontrolled: 'Documents non contrôlés',
+  unassigned: 'ISM - Chapitre non renseigné',
+};
+
+function ismChapterLabel(value: unknown): string {
+  const raw = text(value).trim();
+  const key = raw.match(/^\d{1,2}/u)?.[0]?.padStart(2, '0')
+    || (raw.toLocaleLowerCase('fr').includes('non contr') ? 'uncontrolled' : 'unassigned');
+  return ISM_CHAPTER_LABELS[key] || raw || ISM_CHAPTER_LABELS.unassigned;
+}
+
+function procedureLinkLabel(codeValue: unknown, titleValue: unknown): string {
+  const code = text(codeValue).trim();
+  const title = removeFileExtension(text(titleValue)).trim();
+  const titleWithoutCode = code && title.toLocaleLowerCase('fr').startsWith(code.toLocaleLowerCase('fr'))
+    ? title.slice(code.length).replace(/^\s*[-–—·]\s*/u, '').trim()
+    : title;
+  return [code, titleWithoutCode].filter(Boolean).join(' - ');
 }
 
 export function removeFileExtension(value: string): string {
@@ -265,7 +300,7 @@ export async function createServiceNoteDraft(client: SupabaseClient): Promise<nu
 
 export async function saveServiceNoteDraft(client: SupabaseClient, noteId: number, input: ServiceNoteDraftInput): Promise<void> {
   const { error } = await client.from('qhse_service_notes').update({
-    chronology_code: input.chronologyCode.trim(), subject: input.subject.trim(), body: input.body,
+    subject: input.subject.trim(), body: input.body,
     vessel_id: input.vesselId, authored_on: input.authoredOn, updated_at: new Date().toISOString(),
   }).eq('id', noteId).eq('status', 'draft');
   assertResult(error, 'Impossible d’enregistrer le brouillon.');
@@ -322,26 +357,33 @@ export async function deleteServiceNoteAttachment(client: SupabaseClient, attach
 
 export async function fetchServiceNoteLinkOptions(client: SupabaseClient): Promise<ServiceNoteLinkOption[]> {
   const [procedures, actions, certificates] = await Promise.all([
-    client.from('published_procedures').select('id,procedure_code,title').order('procedure_code'),
-    client.from('action_items').select('id,title,project_code').order('title'),
-    client.from('fleet_certificates').select('id,document_title,title,vessel_name').order('vessel_name'),
+    client.from('published_procedures').select('id,procedure_code,title,ism_chapter').order('ism_chapter').order('procedure_code'),
+    client.from('action_items').select('id,title,vessel_name,deviation_type,action_type,audit_type,category_key').order('vessel_name').order('deviation_type').order('title'),
+    client.from('fleet_certificates').select('id,document_title,title,vessel_name,category_key,category_label').eq('is_active_fleet', true).order('vessel_name').order('category_label').order('document_title'),
   ]);
   assertResult(procedures.error, 'Impossible de charger les procédures QHSE.');
   assertResult(actions.error, 'Impossible de charger le plan d’action.');
   assertResult(certificates.error, 'Impossible de charger les certificats flotte.');
   return [
     ...((procedures.data || []) as Array<Record<string, unknown>>).map((row) => ({
-      id: Number(row.id), kind: 'procedure' as const, label: [text(row.procedure_code), text(row.title)].filter(Boolean).join(' - '),
+      id: Number(row.id), kind: 'procedure' as const, label: procedureLinkLabel(row.procedure_code, row.title),
       description: 'Procédure QHSE', href: `/modules/procedures?document=${row.id}`,
+      groupPath: [ismChapterLabel(row.ism_chapter)],
     })),
     ...((actions.data || []) as Array<Record<string, unknown>>).map((row) => ({
       id: Number(row.id), kind: 'action_item' as const, label: text(row.title),
-      description: ['Plan d’action', text(row.project_code)].filter(Boolean).join(' · '), href: `/modules/actionPlan?action=${row.id}`,
+      description: 'Plan d’action', href: `/modules/actionPlan?action=${row.id}`,
+      groupPath: [text(row.vessel_name) || 'Sans navire / lieu', text(row.deviation_type || row.action_type || row.audit_type || row.category_key) || 'Sans type d’écart'],
     })),
-    ...((certificates.data || []) as Array<Record<string, unknown>>).map((row) => ({
-      id: Number(row.id), kind: 'fleet_certificate' as const, label: text(row.document_title || row.title),
-      description: ['Certificat flotte', text(row.vessel_name)].filter(Boolean).join(' · '), href: `/modules/certificates?certificate=${row.id}`,
-    })),
+    ...((certificates.data || []) as Array<Record<string, unknown>>).map((row) => {
+      const category = getFleetCertificateCategory(text(row.category_key), text(row.category_label));
+      const parent = getFleetCertificateCategoryParent(category);
+      return {
+        id: Number(row.id), kind: 'fleet_certificate' as const, label: removeFileExtension(text(row.document_title || row.title)),
+        description: 'Certificat flotte', href: `/modules/certificates?certificate=${row.id}`,
+        groupPath: [text(row.vessel_name) || 'Sans navire', ...(parent ? [parent.label, category.label] : [category.label || 'Sans catégorie'])],
+      };
+    }),
   ];
 }
 

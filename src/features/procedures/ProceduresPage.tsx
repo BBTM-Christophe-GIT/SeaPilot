@@ -328,6 +328,7 @@ function PublishDialog({ procedure, onClose, onPublish, saving }: PublishDialogP
 
 export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
+  const linkedPublicationId = Number(new URLSearchParams(window.location.search).get('document')) || null;
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProcedures(effectiveRoles);
@@ -335,8 +336,8 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const [publications, setPublications] = useState<PublishedProcedureRecord[]>([]);
   const [procedureProjects, setProcedureProjects] = useState<ProcedureProjectOption[]>([]);
   const [filters, setFilters] = useState<ProcedureFilterState>(EMPTY_FILTERS);
-  const [view, setView] = useState<LibraryView>(isManager ? 'sources' : 'published');
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [view, setView] = useState<LibraryView>(linkedPublicationId ? 'published' : isManager ? 'sources' : 'published');
+  const [selectedId, setSelectedId] = useState<number | null>(linkedPublicationId);
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const [editorProcedure, setEditorProcedure] = useState<ProcedureRecord | 'new' | null>(null);
   const [publishTarget, setPublishTarget] = useState<ProcedureRecord | null>(null);
@@ -503,7 +504,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                   const recordProjects = projectNames(record.projectName);
                   const reviewAlert = getAnnualReviewAlert(record.annualReview, record.diffusionOn);
                   return (
-                    <article className={`${selectedId === record.id && source ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
+                    <article className={`${selectedId === record.id ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
                       <div className="procedure-document-copy">

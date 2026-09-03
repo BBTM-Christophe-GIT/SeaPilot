@@ -10,6 +10,10 @@ const advisorIndexes = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260902214000_service_notes_advisor_indexes.sql'),
   'utf8',
 );
+const publicationChronology = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260903044914_service_notes_publication_chronology.sql'),
+  'utf8',
+);
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -46,5 +50,20 @@ describe('QHSE service notes database contract', () => {
     expect(advisorIndexes).toContain('qhse_service_note_recipients_note_company_idx');
     expect(advisorIndexes).toContain('qhse_service_note_signatures_recipient_company_idx');
     expect(advisorIndexes).toContain('qhse_service_note_signatures_signature_version_idx');
+  });
+
+  it('allocates chronology under lock only when the note is published', () => {
+    expect(publicationChronology).toContain("target_company_id,\n    '',");
+    expect(publicationChronology).toContain("pg_advisory_xact_lock");
+    expect(publicationChronology).toContain("note.id <> target_note.id");
+    expect(publicationChronology).toContain("set chronology_code = format('NS %s-%s'");
+  });
+
+  it('returns the KROKDUR import to a private, unsigned draft', () => {
+    expect(publicationChronology).toContain("chronology_code = 'NS 07-26-KROKDUR'");
+    expect(publicationChronology).toContain("set status = 'draft'");
+    expect(publicationChronology).toContain('published_at = null');
+    expect(publicationChronology).toContain('delete from public.qhse_service_note_recipients');
+    expect(publicationChronology).toContain('delete from public.qhse_service_note_signatures');
   });
 });
