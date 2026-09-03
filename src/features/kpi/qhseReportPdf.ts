@@ -1,6 +1,8 @@
 import autoTable from 'jspdf-autotable';
 import type { jsPDF as JsPdfType } from 'jspdf';
-import { buildQhseReportContent, type QhseReportChart, type QhseReportSnapshot } from './qhseReportData';
+import {
+  buildQhseReportContent, type QhseReportChart, type QhseReportContent, type QhseReportSnapshot,
+} from './qhseReportData';
 import { qhseReportFileName, type QhseReportDefinition } from './qhseReportCatalog';
 
 const NAVY: [number, number, number] = [16, 49, 83];
@@ -43,6 +45,43 @@ async function loadLogo(): Promise<string> {
     logoPromise = loadPublicImage('/bbtm-report-logo.png');
   }
   return logoPromise;
+}
+
+export function fitImageWithinBox(imageWidth: number, imageHeight: number, boxWidth: number, boxHeight: number) {
+  if (imageWidth <= 0 || imageHeight <= 0 || boxWidth <= 0 || boxHeight <= 0) return { width: 0, height: 0 };
+  const scale = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+  return { width: imageWidth * scale, height: imageHeight * scale };
+}
+
+function drawReportLogo(doc: JsPdfType, logo: string, x: number, y: number, boxWidth: number, boxHeight: number): void {
+  if (!logo) return;
+  const properties = doc.getImageProperties(logo);
+  const size = fitImageWithinBox(properties.width, properties.height, boxWidth, boxHeight);
+  doc.addImage(logo, 'PNG', x + ((boxWidth - size.width) / 2), y + ((boxHeight - size.height) / 2), size.width, size.height, undefined, 'FAST');
+}
+
+export function sanitizeQhsePdfText(value: string): string {
+  return value.replace(/SeaPilot/gi, 'Supabase').replace(/Supabase\s+Supabase/gi, 'Supabase').replace(/₂/g, '2');
+}
+
+function sanitizePdfContent(content: QhseReportContent): QhseReportContent {
+  return {
+    summary: sanitizeQhsePdfText(content.summary),
+    metrics: content.metrics.map((item) => ({
+      ...item, label: sanitizeQhsePdfText(item.label), value: sanitizeQhsePdfText(item.value),
+      detail: item.detail ? sanitizeQhsePdfText(item.detail) : item.detail,
+    })),
+    charts: content.charts.map((chart) => ({
+      ...chart, title: sanitizeQhsePdfText(chart.title), labels: chart.labels.map(sanitizeQhsePdfText),
+      series: chart.series.map((series) => ({ ...series, label: sanitizeQhsePdfText(series.label) })),
+    })),
+    tables: content.tables.map((table) => ({
+      ...table, title: sanitizeQhsePdfText(table.title), columns: table.columns.map(sanitizeQhsePdfText),
+      rows: table.rows.map((row) => row.map(sanitizeQhsePdfText)),
+    })),
+    notes: content.notes.map((note) => ({ ...note, title: sanitizeQhsePdfText(note.title), text: sanitizeQhsePdfText(note.text) })),
+    sources: content.sources.map(sanitizeQhsePdfText),
+  };
 }
 
 function pageScope(snapshot: QhseReportSnapshot): string {
@@ -133,25 +172,30 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
   if (rightValues.length) doc.text(String(Math.round(rightMax * 100) / 100), plotX + plotW, plotY - 1.2, { align: 'right' });
 }
 
-const REFERENCE_PAGE_IDS = new Set(['social-safety-1', 'social-safety-vessel', 'environment', 'port-call-tracking-v2', 'social-governance']);
+const REFERENCE_PAGE_IDS = new Set(['social-safety-1', 'social-safety-vessel', 'environment', 'port-call-tracking-v2', 'social-governance', 'consumption']);
 
 function referenceTitle(report: QhseReportDefinition): string {
   if (report.id === 'social-safety-1') return 'Indicateur RSE - Social / Sécurité';
   if (report.id === 'social-safety-vessel') return 'Indicateur RSE - QHSE Situations Dangereuses et Accidentologie';
   if (report.id === 'environment') return 'Indicateur RSE - Environnement';
+  if (report.id === 'consumption') return 'Indicateur RSE - Environnement';
   if (report.id === 'port-call-tracking-v2') return 'KPI OPERATIONS';
   return 'Indicateur RSE - Social et Gouvernance';
 }
 
 function drawReferenceHeader(doc: JsPdfType, report: QhseReportDefinition, snapshot: QhseReportSnapshot, logo: string, generatedAt: Date): void {
   const pageWidth = doc.internal.pageSize.getWidth();
-  if (logo) doc.addImage(logo, 'PNG', 14, 8, 25, 13, undefined, 'FAST');
+  drawReportLogo(doc, logo, 14, 6, 20, 20);
   doc.setTextColor(18, 96, 130);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(report.id === 'social-safety-vessel' ? 12 : 14);
   const title = referenceTitle(report);
   const lines = doc.splitTextToSize(title, 118) as string[];
   doc.text(lines, pageWidth / 2, 15, { align: 'center' });
+  if (report.id === 'consumption') {
+    doc.setFontSize(7);
+    doc.text('RSE — consommations par projet', pageWidth / 2, 22, { align: 'center' });
+  }
   if (report.id === 'port-call-tracking-v2') {
     doc.setFontSize(7);
     doc.text('Projet P144 - EMDT - GOURY', pageWidth / 2, 21, { align: 'center' });
@@ -165,8 +209,7 @@ function drawReferenceHeader(doc: JsPdfType, report: QhseReportDefinition, snaps
   doc.line(14, 32, pageWidth - 14, 32);
 }
 
-function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snapshot: QhseReportSnapshot, logo: string, waterStressMap: string, generatedAt: Date): Blob {
-  const content = buildQhseReportContent(report, snapshot);
+function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snapshot: QhseReportSnapshot, content: QhseReportContent, logo: string, waterStressMap: string, generatedAt: Date): Blob {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 14;
   const width = pageWidth - (margin * 2);
@@ -229,6 +272,16 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
       doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...MUTED); doc.text(item.label, x + (width / 6), y + 8, { align: 'center' });
     });
     y += 13;
+  } else if (report.id === 'consumption') {
+    section("1. Eau avitaillée");
+    chart(0, margin, y, width, 43); y += 48;
+    section('2. Fuel avitaillé');
+    chart(1, margin, y, width, 43); y += 48;
+    section('3. Émissions issues du fuel consommé');
+    chart(2, margin, y, (width - 4) / 2, 52);
+    chart(3, margin + ((width + 4) / 2), y, (width - 4) / 2, 52);
+    y += 57;
+    table(0, 12);
   } else {
     section("1. Bien-être dans l'entreprise");
     const missing = content.notes.find((note) => note.title === 'Entretiens annuels');
@@ -249,14 +302,14 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
   }
   doc.setDrawColor(...LINE); doc.line(margin, 285, pageWidth - margin, 285);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...MUTED);
-  doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase de SeaPilot', margin, 290);
+  doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, 290);
   doc.text(`Page source ${report.sourcePage}`, pageWidth - margin, 290, { align: 'right' });
   return doc.output('blob');
 }
 
 export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot: QhseReportSnapshot): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
-  const content = buildQhseReportContent(report, snapshot);
+  const content = sanitizePdfContent(buildQhseReportContent(report, snapshot));
   const doc = new jsPDF({ format: 'a4', unit: 'mm', orientation: report.orientation });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -269,24 +322,24 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
 
   doc.setProperties({
     title: report.title,
-    subject: `Rapport QHSE SeaPilot · ${pageScope(snapshot)}`,
-    author: 'BBTM · SeaPilot', creator: 'SeaPilot',
+    subject: `Rapport QHSE BBTM · ${pageScope(snapshot)}`,
+    author: 'BBTM', creator: 'BBTM',
     keywords: `QHSE, KPI, ${snapshot.scope.year}, ${snapshot.scope.vesselName || 'flotte'}`,
   });
 
-  if (REFERENCE_PAGE_IDS.has(report.id)) return drawReferenceReport(doc, report, snapshot, logo, waterStressMap, generatedAt);
+  if (REFERENCE_PAGE_IDS.has(report.id)) return drawReferenceReport(doc, report, snapshot, content, logo, waterStressMap, generatedAt);
 
   const drawHeader = () => {
     doc.setFillColor(...NAVY);
     doc.rect(0, 0, pageWidth, 25, 'F');
-    if (logo) doc.addImage(logo, 'PNG', margin, 5, 27, 13, undefined, 'FAST');
+    drawReportLogo(doc, logo, margin, 3.5, 21, 18);
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
-    doc.text(report.title, logo ? margin + 33 : margin, 11);
+    doc.text(report.title, logo ? margin + 25 : margin, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text(`Page source ${report.sourcePage} · ${report.sourceTitle}`, logo ? margin + 33 : margin, 17);
+    doc.text(`Page source ${report.sourcePage} · ${report.sourceTitle}`, logo ? margin + 25 : margin, 17);
     doc.setFont('helvetica', 'bold');
     doc.text(pageScope(snapshot), pageWidth - margin, 11, { align: 'right' });
     doc.setFont('helvetica', 'normal');
@@ -430,7 +483,7 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.setTextColor(...MUTED);
-    doc.text('BBTM · Rapport QHSE généré exclusivement depuis SeaPilot', margin, pageHeight - 7);
+    doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, pageHeight - 7);
     doc.text(`Page ${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
   return doc.output('blob');

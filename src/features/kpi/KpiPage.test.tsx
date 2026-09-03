@@ -52,8 +52,8 @@ describe('KpiPage', () => {
     expect(screen.getByRole('heading', { name: 'Rapports PDF' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Années des rapports QHSE' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Navires des rapports QHSE' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(25);
-    expect(screen.getByRole('button', { name: 'Télécharger les 25 PDF' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(10);
+    expect(screen.getByRole('button', { name: 'Télécharger les 10 PDF' })).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Année des indicateurs HSE'), '2024');
     expect(await screen.findByText(/l’année 2024/)).toBeInTheDocument();

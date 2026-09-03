@@ -40,6 +40,46 @@ final result: passed
 
 ---
 
+# Design QA — Rapports QHSE ciblés et page 25 (2026-09-04)
+
+## Références et méthode
+
+- Référence métier : `C:/Users/chris/AppData/Local/Temp/codex-clipboard-c716be6b-c6fd-474e-8051-58d7e1ac4d34.png`.
+- Base Superdesign : [RSE — consommations par projet](https://superdesign.dev/teams/72b387e8-4c5d-44bd-8ae5-97dbc2f1181c/projects/f9960330-f385-426d-9e3c-dedc8ae59b48?node=draft-variant-86d7e1f3-ba66-4007-8747-635e6989abea).
+- Rendu final : `docs/design/qhse-page25-consumption-report-implementation.png`.
+- Superdesign a produit la reproduction de référence. L’itération demandée a ensuite été refusée par le quota de crédits du compte, y compris avec le modèle gratuit ; l’évolution a donc été appliquée directement à partir de la référence Power BI et du système visuel existant.
+- Vérification navigateur : Codex In-app Browser sur `http://127.0.0.1:4173/modules/kpi?preview=1`.
+- Vérification PDF : téléchargement réel depuis l’interface, `pdfinfo`, rendu PNG par `pdftoppm` à 150 DPI, puis inspection avec `view_image`.
+- Format natif contrôlé : A4 portrait, `595.28 × 841.89 pt`, une page ; rendu `1 241 × 1 754 px`.
+
+## Comparaison visuelle
+
+1. Hiérarchie : le titre bleu centré, les trois sections numérotées et le bilan annuel reprennent la lecture verticale de la référence.
+2. Disposition : eau et fuel occupent chacun une courbe pleine largeur ; GES et CO2 sont rapprochés en deux colonnes pour tenir sur un A4 sans seconde page.
+3. Couleurs : le bleu pétrole structure les titres et la série CO2 ; l’orange distingue les GES ; la série xBee est exclusivement verte.
+4. Typographie et densité : les libellés restent lisibles à 150 DPI, le tableau annuel tient sur une ligne par année et aucun contenu ne chevauche le pied de page.
+5. Logo : le fichier BBTM carré est centré dans une boîte carrée en conservant son ratio ; aucune déformation horizontale n’est visible.
+6. Données et interaction : la sélection 2024–2026 génère 36 points mensuels et trois lignes annuelles ; l’archive obtenue contient exactement les dix pages conservées.
+
+## Différence de texte
+
+- Ajout de la mention explicite « remise à zéro mensuelle » sur les courbes d’avitaillement.
+- Ajout des libellés `CO2 émis`, `CO2 avec xBee (-15 %)` et `CO2 réduit par xBee`.
+- Suppression du nom du produit dans les textes, sources, métadonnées et pieds de page PDF ; `Supabase` identifie désormais la source.
+
+## Écarts assumés et résultat
+
+- La carte de stress hydrique reste sur la page 7 Environnement ; elle n’est pas répétée sur la page 25 dédiée aux consommations par projet.
+- Les données de démonstration ne comportent aucun avitaillement en 2024–2026 : les deux courbes restent donc à zéro dans la capture, tandis que les calculs non nuls sont couverts par les tests unitaires.
+- Un message console générique provenant du module Planning de la préversion a été observé ; aucune exception KPI ou PDF n’a été produite.
+- La validation finale passe avec 133 fichiers / 969 tests sur un worker, ainsi que le lint complet et le build de production.
+
+Aucun écart P0 ou P1 n’est visible sur le rendu A4 final.
+
+final result: passed
+
+---
+
 # Design QA — Rapports PDF QHSE et qualification d'escale v3.29.0 (2026-09-03)
 
 ## Cibles et états comparés

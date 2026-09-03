@@ -4,7 +4,7 @@ import { QHSE_REPORT_CATALOG, qhseReportFileName } from './qhseReportCatalog';
 import {
   buildQhseReportContent, calculateFuelGhgTonnes, type QhseReportSnapshot,
 } from './qhseReportData';
-import { buildQhseReportPdf } from './qhseReportPdf';
+import { buildQhseReportPdf, fitImageWithinBox, sanitizeQhsePdfText } from './qhseReportPdf';
 
 function emptySnapshot(): QhseReportSnapshot {
   return {
@@ -21,11 +21,54 @@ describe('QHSE report catalog and calculations', () => {
   });
 
   it('maps every source page to a separate, stable PDF filename', () => {
-    expect(QHSE_REPORT_CATALOG).toHaveLength(25);
-    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).size).toBe(25);
+    expect(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).toEqual([1, 4, 5, 6, 7, 8, 12, 20, 21, 25]);
+    expect(QHSE_REPORT_CATALOG).toHaveLength(10);
+    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).size).toBe(10);
     const names = QHSE_REPORT_CATALOG.map((report) => qhseReportFileName(report, 2026, 'GOURY'));
-    expect(new Set(names).size).toBe(25);
+    expect(new Set(names).size).toBe(10);
     expect(names[0]).toBe('01-sommaire-des-rapports-qhse-2026-goury.pdf');
+  });
+
+  it('keeps the report logo proportions and removes the product name from PDF copy', () => {
+    expect(fitImageWithinBox(500, 500, 25, 13)).toEqual({ width: 13, height: 13 });
+    expect(fitImageWithinBox(1000, 500, 20, 20)).toEqual({ width: 20, height: 10 });
+    expect(sanitizeQhsePdfText('Données SeaPilot · SeaPilot · CO₂')).toBe('Données Supabase · Supabase · CO2');
+  });
+
+  it('builds page 25 from monthly supplies and annual fuel emissions', () => {
+    const snapshot = emptySnapshot();
+    snapshot.scope = { year: 2025, years: [2024, 2025], vesselId: null, vesselIds: [], vesselName: '', vesselNames: [] };
+    snapshot.reports = [
+      { id: 1, reportDate: '2024-01-10', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
+      { id: 2, reportDate: '2024-02-10', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
+      { id: 3, reportDate: '2025-01-10', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
+    ];
+    snapshot.supplies = [
+      { dprId: 1, fuelM3: 10, oilLiters: 0, waterM3: 4 },
+      { dprId: 2, fuelM3: 5, oilLiters: 0, waterM3: 6 },
+      { dprId: 3, fuelM3: 7, oilLiters: 0, waterM3: 8 },
+    ];
+    snapshot.metrics = [
+      { dprId: 1, fuelConsumedLiters: 100_000, fuelOnBoardLiters: 0 },
+      { dprId: 2, fuelConsumedLiters: 50_000, fuelOnBoardLiters: 0 },
+      { dprId: 3, fuelConsumedLiters: 200_000, fuelOnBoardLiters: 0 },
+    ];
+    snapshot.environmentParameters = [{ density: 0.85, emissionFactor: 3.206, xbeeReductionRate: 0.15, effectiveFrom: '2000-01-01', effectiveTo: '' }];
+    const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'consumption')!;
+    const content = buildQhseReportContent(report, snapshot);
+
+    expect(content.charts).toHaveLength(4);
+    expect(content.charts[0].series[0].values.slice(0, 2)).toEqual([4, 6]);
+    expect(content.charts[1].series[0].values.slice(0, 2)).toEqual([10, 5]);
+    expect(content.charts[2].series[0].values[0]).toBeCloseTo(408.765, 3);
+    expect(content.charts[2].series[0].values[1]).toBeCloseTo(545.02, 3);
+    expect(content.charts[3].series[1].color).toEqual([11, 153, 73]);
+    expect(content.charts[3].series[1].values[0]).toBeCloseTo(347.45025, 3);
+    expect(content.charts[3].series[1].values[1]).toBeCloseTo(463.267, 3);
+    expect(content.tables[0].rows).toEqual([
+      ['2024', '10 m³', '15 m³', '150 m³', '408,77 t', '61,31 t'],
+      ['2025', '8 m³', '7 m³', '200 m³', '545,02 t', '81,75 t'],
+    ]);
   });
 
   it('reuses the reference GHG conversion without importing PBIX values', () => {
@@ -63,11 +106,14 @@ describe('QHSE report catalog and calculations', () => {
     const [page] = document.getPages();
     expect(page.getWidth()).toBeGreaterThan(page.getHeight());
     expect(document.getTitle()).toBe(report.title);
+    expect(document.getSubject()).not.toContain('SeaPilot');
+    expect(document.getAuthor()).toBe('BBTM');
+    expect(document.getCreator()).toBe('BBTM');
     expect(document.getPageCount()).toBeGreaterThanOrEqual(1);
   });
 
   it('keeps each priority Power BI reproduction on one A4 portrait page', async () => {
-    const ids = ['social-safety-1', 'social-safety-vessel', 'environment', 'port-call-tracking-v2', 'social-governance'];
+    const ids = ['social-safety-1', 'social-safety-vessel', 'environment', 'port-call-tracking-v2', 'social-governance', 'consumption'];
     for (const id of ids) {
       const report = QHSE_REPORT_CATALOG.find((item) => item.id === id)!;
       const blob = await buildQhseReportPdf(report, emptySnapshot());

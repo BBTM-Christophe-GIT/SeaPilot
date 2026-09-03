@@ -147,6 +147,7 @@ export interface QhseReportSeed {
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 const BLUE: [number, number, number] = [24, 96, 174];
 const TEAL: [number, number, number] = [22, 151, 135];
+const GREEN: [number, number, number] = [11, 153, 73];
 const ORANGE: [number, number, number] = [220, 112, 48];
 const RED: [number, number, number] = [194, 57, 68];
 const PURPLE: [number, number, number] = [113, 82, 172];
@@ -461,7 +462,7 @@ function reportPeriodLabel(snapshot: QhseReportSnapshot): string {
 
 function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
   return {
-    summary: `Catalogue des 25 pages du rapport QHSE, reconstruites à partir des seules données SeaPilot — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Catalogue des ${QHSE_REPORT_CATALOG.length} rapports QHSE retenus, reconstruits à partir des seules données SeaPilot — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Rapports disponibles', QHSE_REPORT_CATALOG.length, 'Un PDF distinct par page', 'blue'),
       metric('Période', scopeYears(snapshot.scope).join(', '), snapshot.scope.vesselNames?.join(', ') || snapshot.scope.vesselName || 'Tous les navires', 'green'),
@@ -1024,27 +1025,49 @@ function buildDocumentsContent(snapshot: QhseReportSnapshot): QhseReportContent 
 
 function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const reports = reportMap(snapshot);
-  const fuel = snapshot.metrics.reduce((sum, item) => sum + item.fuelConsumedLiters, 0) / 1000;
-  const byProject = new Map<string, { fuel: number; supply: number; water: number }>();
-  const ensure = (label: string) => {
-    const key = label || 'Projet non renseigné';
-    if (!byProject.has(key)) byProject.set(key, { fuel: 0, supply: 0, water: 0 });
-    return byProject.get(key)!;
-  };
-  snapshot.metrics.forEach((item) => { ensure(reports.get(item.dprId)?.projectLabel || '').fuel += item.fuelConsumedLiters / 1000; });
-  snapshot.supplies.forEach((item) => { const target = ensure(reports.get(item.dprId)?.projectLabel || ''); target.supply += item.fuelM3; target.water += item.waterM3; });
-  const projects = [...byProject.entries()].sort((left, right) => right[1].fuel - left[1].fuel);
+  const years = scopeYears(snapshot.scope);
+  const waterPeriod = periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3);
+  const fuelSupplyPeriod = periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelM3);
+  const parameters = snapshot.environmentParameters || [];
+  const annual = years.map((year) => {
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+    const parameter = parameters.filter((item) => item.effectiveFrom <= yearEnd && (!item.effectiveTo || item.effectiveTo >= yearStart)).at(-1);
+    const metrics = snapshot.metrics.filter((item) => inYear(reports.get(item.dprId)?.reportDate || '', year));
+    const supplies = snapshot.supplies.filter((item) => inYear(reports.get(item.dprId)?.reportDate || '', year));
+    const fuelConsumedM3 = metrics.reduce((sum, item) => sum + item.fuelConsumedLiters, 0) / 1000;
+    const waterM3 = supplies.reduce((sum, item) => sum + item.waterM3, 0);
+    const fuelSupplyM3 = supplies.reduce((sum, item) => sum + item.fuelM3, 0);
+    const ghg = parameter ? calculateFuelGhgTonnes(fuelConsumedM3, parameter.density, parameter.emissionFactor) : null;
+    const withXbee = ghg === null || !parameter ? null : ghg * (1 - parameter.xbeeReductionRate);
+    return { year, waterM3, fuelSupplyM3, fuelConsumedM3, ghg, withXbee, avoided: ghg === null || withXbee === null ? null : ghg - withXbee };
+  });
+  const total = (value: (row: typeof annual[number]) => number) => annual.reduce((sum, row) => sum + value(row), 0);
+  const emissionsAvailable = annual.every((row) => row.ghg !== null && row.withXbee !== null);
+  const totalGhg = emissionsAvailable ? total((row) => row.ghg || 0) : null;
+  const totalAvoided = emissionsAvailable ? total((row) => row.avoided || 0) : null;
   return {
-    summary: `Consommations par projet et par mois — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Avitaillements mensuels et émissions annuelles calculés depuis les DPR — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
-      metric('Carburant consommé', `${formatNumber(fuel, 1)} m³`, 'DPR de la période', 'orange'),
-      metric('Carburant avitaillé', `${formatNumber(snapshot.supplies.reduce((sum, item) => sum + item.fuelM3, 0), 1)} m³`, 'Avitaillements', 'blue'),
-      metric('Eau avitaillée', `${formatNumber(snapshot.supplies.reduce((sum, item) => sum + item.waterM3, 0), 1)} m³`, 'Avitaillements', 'blue'),
-      metric('Projets', projects.length, 'Projets avec consommation', 'green'),
+      metric('Eau avitaillée', `${formatNumber(total((row) => row.waterM3), 1)} m³`, 'Cumul de la période', 'blue'),
+      metric('Fuel avitaillé', `${formatNumber(total((row) => row.fuelSupplyM3), 1)} m³`, 'Cumul de la période', 'blue'),
+      metric('CO₂ émis', totalGhg === null ? '—' : `${formatNumber(totalGhg, 2)} tCO₂`, emissionsAvailable ? 'Calculé depuis le fuel consommé' : 'Paramètres Supabase absents', 'orange'),
+      metric('Réduction xBee', totalAvoided === null ? '—' : `${formatNumber(totalAvoided, 2)} tCO₂`, emissionsAvailable ? 'Baisse appliquée : 15 %' : 'Paramètres Supabase absents', 'green'),
     ],
-    charts: [{ title: 'Carburant consommé par mois', kind: 'bar', labels: MONTHS, series: [{ label: 'm³', values: monthlyValues(snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000), color: ORANGE }], unit: 'm³' }, categoricalChart('Carburant par projet', projects.map(([label, values]) => [label, values.fuel]), BLUE)],
-    tables: [{ title: 'Bilan par projet', columns: ['Projet', 'Consommé (m³)', 'Avitaillé (m³)', 'Eau (m³)'], rows: rowsLimited(projects.map(([label, values]) => [label, formatNumber(values.fuel, 1), formatNumber(values.supply, 1), formatNumber(values.water, 1)]), 40) }],
-    notes: [],
+    charts: [
+      { title: 'Eau avitaillée par mois · remise à zéro mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³' },
+      { title: 'Fuel avitaillé par mois · remise à zéro mensuelle', kind: 'line', labels: fuelSupplyPeriod.labels, series: [{ label: 'Fuel avitaillé', values: fuelSupplyPeriod.values, color: BLUE }], unit: 'm³' },
+      { title: 'GES rejetés cumulés par an', kind: 'line', labels: annual.map((row) => String(row.year)), series: [{ label: 'GES', values: annual.map((row) => row.ghg), color: ORANGE }], unit: 'tCO₂e' },
+      { title: 'CO₂ rejeté et effet xBee par an', kind: 'line', labels: annual.map((row) => String(row.year)), series: [
+        { label: 'CO₂ émis', values: annual.map((row) => row.ghg), color: BLUE },
+        { label: 'CO₂ avec xBee (-15 %)', values: annual.map((row) => row.withXbee), color: GREEN },
+      ], unit: 'tCO₂' },
+    ],
+    tables: [{ title: 'Cumuls annuels', columns: ['Année', 'Eau avitaillée', 'Fuel avitaillé', 'Fuel consommé', 'CO₂ émis', 'CO₂ réduit par xBee'], rows: annual.map((row) => [
+      String(row.year), `${formatNumber(row.waterM3, 1)} m³`, `${formatNumber(row.fuelSupplyM3, 1)} m³`, `${formatNumber(row.fuelConsumedM3, 1)} m³`,
+      row.ghg === null ? '—' : `${formatNumber(row.ghg, 2)} t`, row.avoided === null ? '—' : `${formatNumber(row.avoided, 2)} t`,
+    ]) }],
+    notes: emissionsAvailable ? [{ title: 'Méthode de calcul', text: 'GES et CO₂ : fuel consommé × densité × facteur d’émission. La courbe xBee applique une réduction de 15 % ; le gain affiché correspond à l’écart avec les émissions sans additif.' }] : [unavailable('Paramètres environnementaux absents', 'La densité, le facteur d’émission et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
     sources: ['DPR soumis/validés · métriques et avitaillements', sourceNote()],
   };
 }
