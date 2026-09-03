@@ -34,6 +34,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
+import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
 import {
   buildStaffEvolution,
   buildMonthlyStaffEvolution,
@@ -1122,6 +1123,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     try {
       const createdDocument = await createHrDocument(effectiveClient, input);
       setDocuments((currentDocuments) => [...currentDocuments, createdDocument]);
+      notifyHrDocumentsChanged();
       setDocumentCreationPersonId(null);
       setStatusMessage('Document ajoute.');
     } catch (error) {
@@ -1150,6 +1152,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
       setDocuments((currentDocuments) =>
         currentDocuments.map((currentDocument) => (currentDocument.id === updatedDocument.id ? updatedDocument : currentDocument)),
       );
+      notifyHrDocumentsChanged();
       setRenewalDocumentId(null);
       setSelectedDocumentIds((currentIds) => {
         const nextIds = new Set(currentIds);
@@ -1226,6 +1229,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
       );
       setPeople((currentPeople) => currentPeople.filter((currentPerson) => currentPerson.id !== person.id));
       setDocuments((currentDocuments) => currentDocuments.filter((document) => document.personId !== person.id));
+      notifyHrDocumentsChanged();
       setSelectedDocumentIds((currentIds) => new Set(
         [...currentIds].filter((documentId) => !removedDocumentIds.has(documentId)),
       ));

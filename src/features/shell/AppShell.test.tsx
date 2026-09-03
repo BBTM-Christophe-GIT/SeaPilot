@@ -103,6 +103,49 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Administration' })).toBeInTheDocument();
   });
 
+  it('shows service-note and personal HR expiry notifications in separate groups', async () => {
+    const user = userEvent.setup();
+    const authClient = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+        signInWithPassword: vi.fn(),
+        signOut: vi.fn(),
+      },
+    };
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { id: 42, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Marin', grade_label: 'Matelot' },
+      error: null,
+    });
+    const appClient = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle }) }),
+      }),
+    };
+
+    render(
+      <AuthProvider client={authClient as never}>
+        <MemoryRouter>
+          <Routes>
+            <Route element={<AppShell client={appClient as never} rolesOverride={['admin']} previewMode />}>
+              <Route index element={<div>Accueil prive</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    const notificationButton = await screen.findByRole('button', { name: /Notifications, 2 élément/ });
+    await user.click(notificationButton);
+
+    expect(screen.getByRole('heading', { name: 'Notes de service' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'RH / Brevets · échéance à 40 jours' })).toBeInTheDocument();
+    expect(screen.getByText('Visite médicale d’aptitude')).toBeInTheDocument();
+    expect(screen.getByText('Expire dans 40 jours')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Visite médicale d’aptitude/ })).toHaveAttribute('href', '/modules/humanResources');
+  });
+
   it('does not expose the profile view selector to non administrators', async () => {
     const client = {
       auth: {
