@@ -55,9 +55,6 @@
 .service-note-year-heading { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 8px 16px; border-bottom: 1px solid #dfe9ed; color: var(--sn-navy); background: #f2f6f7; box-shadow: 0 2px 8px rgba(8, 47, 73, .04); }
 .service-note-year-heading span { font-size: .75rem; letter-spacing: .07em; }
 .service-note-year-heading small { color: #71838e; font-size: .65rem; font-weight: 700; }
-.service-note-vessel-heading { display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 16px 8px 54px; border-bottom: 1px solid #e4ecef; color: #15516c; background: #f9fbfc; }
-.service-note-vessel-heading > span { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.service-note-vessel-heading > small { margin-left: auto; color: #7a8d96; font-size: .62rem; font-weight: 700; }
 .service-note-list > button { display: grid; width: 100%; grid-template-columns: 42px minmax(0, 1fr) 104px 20px; align-items: center; gap: 11px; padding: 14px 15px; border: 0; border-bottom: 1px solid #e8eef1; color: inherit; text-align: left; background: white; transition: background .16s ease, box-shadow .16s ease; }
 .service-note-list > button:hover { background: #f7fbfb; }
 .service-note-list > button.is-selected { background: #eef8f7; box-shadow: inset 3px 0 var(--sn-teal); }
