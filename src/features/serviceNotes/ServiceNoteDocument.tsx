@@ -18,8 +18,11 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
   const signatures = new Map(note.signatures.map((signature) => [signature.recipientId, signature]));
   const headerCode = note.chronologyCode || (note.status === 'recalled' ? 'Note rappelée' : 'Nouveau brouillon');
   const metadataCode = note.chronologyCode || (note.status === 'recalled' ? 'Retiré lors du rappel' : 'Attribué lors de la diffusion');
+  const namedPeopleLabel = note.targetPersonIds.length
+    ? ` + ${note.targetPersonIds.length} personne${note.targetPersonIds.length > 1 ? 's' : ''} ajoutée${note.targetPersonIds.length > 1 ? 's' : ''}`
+    : '';
   const audienceLabel = note.scope === 'vessels'
-    ? note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) à sélectionner'
+    ? `${note.targetVessels.map((vessel) => vessel.name).join(', ') || 'Navire(s) à sélectionner'}${namedPeopleLabel}`
     : note.scope === 'people'
       ? `${note.targetPersonIds.length || note.recipients.length} personne${(note.targetPersonIds.length || note.recipients.length) > 1 ? 's' : ''}`
       : 'Tous les utilisateurs';

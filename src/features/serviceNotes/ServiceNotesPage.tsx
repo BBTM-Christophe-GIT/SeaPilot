@@ -46,9 +46,28 @@ function missingServiceNoteRecipients(note: ServiceNote) {
 }
 
 function serviceNoteAudienceLabel(note: ServiceNote): string {
-  if (note.scope === 'vessels') return note.targetVessels.map((vessel) => vessel.name).filter(Boolean).join(', ') || 'Navire(s) à sélectionner';
+  if (note.scope === 'vessels') {
+    const vessels = note.targetVessels.map((vessel) => vessel.name).filter(Boolean).join(', ') || 'Navire(s) à sélectionner';
+    const people = note.targetPersonIds.length;
+    return people ? `${vessels} + ${people} personne${people > 1 ? 's' : ''} ajoutée${people > 1 ? 's' : ''}` : vessels;
+  }
   if (note.scope === 'people') return `${note.targetPersonIds.length || note.recipients.length} personne${(note.targetPersonIds.length || note.recipients.length) > 1 ? 's' : ''}`;
   return 'Tous les utilisateurs';
+}
+
+export function resolveServiceNoteAudiencePeople(
+  scope: ServiceNoteDraftInput['scope'],
+  people: ServiceNoteTargetingOptions['people'],
+  targetVesselIds: number[],
+  targetPersonIds: number[],
+): ServiceNoteTargetingOptions['people'] {
+  const vesselIds = new Set(targetVesselIds);
+  const personIds = new Set(targetPersonIds);
+  return people.filter((person) => {
+    if (scope === 'people') return personIds.has(person.id);
+    if (scope === 'vessels') return personIds.has(person.id) || person.vesselIds.some((vesselId) => vesselIds.has(vesselId));
+    return true;
+  });
 }
 
 function serviceNoteChronology(note: ServiceNote): { year: number; sequence: number } {
@@ -255,22 +274,28 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
   const [linkOptions, setLinkOptions] = useState<ServiceNoteLinkOption[] | null>(null);
   const [isLinkPickerOpen, setIsLinkPickerOpen] = useState(false);
   const [targetingOptions, setTargetingOptions] = useState<ServiceNoteTargetingOptions>({ date: draft.authoredOn, people: [], vessels: [] });
-  const [targetQuery, setTargetQuery] = useState('');
+  const [targetVesselQuery, setTargetVesselQuery] = useState('');
+  const [targetPersonQuery, setTargetPersonQuery] = useState('');
   const saveSequence = useRef(0);
   const targetVesselIdSet = useMemo(() => new Set(draft.targetVesselIds), [draft.targetVesselIds]);
   const targetPersonIdSet = useMemo(() => new Set(draft.targetPersonIds), [draft.targetPersonIds]);
 
-  const audiencePeople = useMemo(() => targetingOptions.people.filter((person) => {
-    if (draft.scope === 'people') return targetPersonIdSet.has(person.id);
-    if (draft.scope === 'vessels') return person.vesselIds.some((vesselId) => targetVesselIdSet.has(vesselId));
-    return true;
-  }), [draft.scope, targetPersonIdSet, targetVesselIdSet, targetingOptions.people]);
-  const searchableTargets = useMemo(() => {
-    const search = targetQuery.trim().toLocaleLowerCase('fr');
-    if (!search) return draft.scope === 'vessels' ? targetingOptions.vessels : targetingOptions.people;
-    if (draft.scope === 'vessels') return targetingOptions.vessels.filter((vessel) => vessel.name.toLocaleLowerCase('fr').includes(search));
-    return targetingOptions.people.filter((person) => `${person.firstName} ${person.lastName} ${person.functionLabel}`.toLocaleLowerCase('fr').includes(search));
-  }, [draft.scope, targetQuery, targetingOptions.people, targetingOptions.vessels]);
+  const audiencePeople = useMemo(() => resolveServiceNoteAudiencePeople(
+    draft.scope,
+    targetingOptions.people,
+    draft.targetVesselIds,
+    draft.targetPersonIds,
+  ), [draft.scope, draft.targetPersonIds, draft.targetVesselIds, targetingOptions.people]);
+  const searchableVessels = useMemo(() => {
+    const search = targetVesselQuery.trim().toLocaleLowerCase('fr');
+    return search ? targetingOptions.vessels.filter((vessel) => vessel.name.toLocaleLowerCase('fr').includes(search)) : targetingOptions.vessels;
+  }, [targetVesselQuery, targetingOptions.vessels]);
+  const searchablePeople = useMemo(() => {
+    const search = targetPersonQuery.trim().toLocaleLowerCase('fr');
+    return search
+      ? targetingOptions.people.filter((person) => `${person.firstName} ${person.lastName} ${person.functionLabel}`.toLocaleLowerCase('fr').includes(search))
+      : targetingOptions.people;
+  }, [targetPersonQuery, targetingOptions.people]);
 
   const previewNote = useMemo(() => ({ ...note, ...{
     chronologyCode: '', subject: draft.subject, body: draft.body, vesselId: null,
@@ -314,7 +339,8 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
 
   function updateScope(scope: ServiceNoteDraftInput['scope']) {
     setSaveState('saving');
-    setTargetQuery('');
+    setTargetVesselQuery('');
+    setTargetPersonQuery('');
     setDraft((current) => ({ ...current, scope }));
   }
 
@@ -418,13 +444,32 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
               <button aria-checked={draft.scope === 'vessels'} className={draft.scope === 'vessels' ? 'is-active' : ''} onClick={() => updateScope('vessels')} role="radio" type="button"><Ship size={18} /><span><strong>Un ou plusieurs navires</strong><small>Selon le planning</small></span></button>
               <button aria-checked={draft.scope === 'people'} className={draft.scope === 'people' ? 'is-active' : ''} onClick={() => updateScope('people')} role="radio" type="button"><UserRoundCheck size={18} /><span><strong>Liste de personnes</strong><small>Sélection nominative</small></span></button>
             </div>
-            {draft.scope !== 'all_accounts' ? <div className="service-note-target-picker">
-              <label><Search size={15} /><input aria-label="Rechercher un destinataire" onChange={(event) => setTargetQuery(event.target.value)} placeholder={draft.scope === 'vessels' ? 'Rechercher un navire…' : 'Rechercher une personne…'} value={targetQuery} /></label>
+            {draft.scope === 'vessels' ? <div className="service-note-combined-targets">
+              <section>
+                <header><strong>Navire(s) d’archivage</strong><small>La note sera classée sous chaque navire sélectionné.</small></header>
+                <div className="service-note-target-picker">
+                  <label><Search size={15} /><input aria-label="Rechercher un navire" onChange={(event) => setTargetVesselQuery(event.target.value)} placeholder="Rechercher un navire…" value={targetVesselQuery} /></label>
+                  <div>
+                    {searchableVessels.map((vessel) => <label key={vessel.id}><input checked={targetVesselIdSet.has(vessel.id)} onChange={() => toggleVessel(vessel.id)} type="checkbox" /><span><strong>{vessel.name}</strong><small>{vessel.recipientCount} destinataire{vessel.recipientCount > 1 ? 's' : ''} au planning</small></span></label>)}
+                    {!searchableVessels.length ? <p>Aucun résultat.</p> : null}
+                  </div>
+                </div>
+              </section>
+              <section>
+                <header><strong>Personne(s) ajoutée(s)</strong><small>Ajoutez nominativement des destinataires, en complément du planning.</small></header>
+                <div className="service-note-target-picker">
+                  <label><Search size={15} /><input aria-label="Rechercher une personne à ajouter" onChange={(event) => setTargetPersonQuery(event.target.value)} placeholder="Rechercher une personne…" value={targetPersonQuery} /></label>
+                  <div>
+                    {searchablePeople.map((person) => <label key={person.id}><input checked={targetPersonIdSet.has(person.id)} onChange={() => togglePerson(person.id)} type="checkbox" /><span><strong>{person.firstName} {person.lastName}</strong><small>{person.functionLabel || 'Fonction non renseignée'}</small></span></label>)}
+                    {!searchablePeople.length ? <p>Aucun résultat.</p> : null}
+                  </div>
+                </div>
+              </section>
+            </div> : draft.scope === 'people' ? <div className="service-note-target-picker">
+              <label><Search size={15} /><input aria-label="Rechercher une personne" onChange={(event) => setTargetPersonQuery(event.target.value)} placeholder="Rechercher une personne…" value={targetPersonQuery} /></label>
               <div>
-                {draft.scope === 'vessels'
-                  ? (searchableTargets as ServiceNoteTargetingOptions['vessels']).map((vessel) => <label key={vessel.id}><input checked={targetVesselIdSet.has(vessel.id)} onChange={() => toggleVessel(vessel.id)} type="checkbox" /><span><strong>{vessel.name}</strong><small>{vessel.recipientCount} destinataire{vessel.recipientCount > 1 ? 's' : ''} au planning</small></span></label>)
-                  : (searchableTargets as ServiceNoteTargetingOptions['people']).map((person) => <label key={person.id}><input checked={targetPersonIdSet.has(person.id)} onChange={() => togglePerson(person.id)} type="checkbox" /><span><strong>{person.firstName} {person.lastName}</strong><small>{person.functionLabel || 'Fonction non renseignée'}</small></span></label>)}
-                {!searchableTargets.length ? <p>Aucun résultat.</p> : null}
+                {searchablePeople.map((person) => <label key={person.id}><input checked={targetPersonIdSet.has(person.id)} onChange={() => togglePerson(person.id)} type="checkbox" /><span><strong>{person.firstName} {person.lastName}</strong><small>{person.functionLabel || 'Fonction non renseignée'}</small></span></label>)}
+                {!searchablePeople.length ? <p>Aucun résultat.</p> : null}
               </div>
             </div> : null}
             <div className={`service-note-audience-summary${audiencePeople.length ? '' : ' is-empty'}`}>

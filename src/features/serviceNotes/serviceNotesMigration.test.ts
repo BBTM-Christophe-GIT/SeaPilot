@@ -22,6 +22,10 @@ const recipientScopes = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260903062527_service_note_recipient_scopes_and_historical_signatures.sql'),
   'utf8',
 );
+const combinedTargeting = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260903075755_service_note_combined_vessel_people_targeting.sql'),
+  'utf8',
+);
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -108,6 +112,14 @@ describe('QHSE service notes database contract', () => {
     expect(recipientScopes).toContain('from public.planning_assignments assignment');
     expect(recipientScopes).toContain('from public.planning_periods period');
     expect(recipientScopes).toContain('from public.planning_days day');
+  });
+
+  it('adds named people to a vessel audience without losing its vessel classification', () => {
+    expect(combinedTargeting).toContain("if p_scope in ('vessels', 'people') then");
+    expect(combinedTargeting).toContain("target_note.scope = 'vessels'");
+    expect(combinedTargeting).toContain('select 1 from public.qhse_service_note_target_people target');
+    expect(combinedTargeting).toContain("when p_scope = 'vessels' and cardinality(normalized_vessel_ids) = 1");
+    expect(combinedTargeting).toContain('from public, anon;');
   });
 
   it('applies the HR employment dates and excludes the issuer from every audience', () => {

@@ -3,7 +3,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { buildServiceNoteLinkGroups, groupServiceNotesByYear, groupServiceNotesByYearAndVessel, ServiceNotesPage } from './ServiceNotesPage';
+import { buildServiceNoteLinkGroups, groupServiceNotesByYear, groupServiceNotesByYearAndVessel, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
 import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
 
 function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
@@ -66,6 +66,20 @@ describe('ServiceNotesPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Un ou plusieurs navires/ }));
     expect(await screen.findByText('Armement - Cherbourg')).toBeInTheDocument();
     expect(screen.getByText('YARD - Le Havre')).toBeInTheDocument();
+    expect(screen.getByText('Personne(s) ajoutée(s)')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /GOURY/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Camille DURAND/ }));
+    expect(screen.getByText('3 destinataires')).toBeInTheDocument();
+    expect(screen.getByText('GOURY + 1 personne ajoutée')).toBeInTheDocument();
+  });
+
+  it('unites vessel planning recipients with explicitly selected people', () => {
+    const people = [
+      { id: 1, firstName: 'Luc', lastName: 'MARTIN', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10] },
+      { id: 2, firstName: 'Hugo', lastName: 'BERNARD', functionLabel: 'Marin', hiredOn: '2022-01-01', departedOn: '', vesselIds: [10] },
+      { id: 3, firstName: 'Camille', lastName: 'DURAND', functionLabel: 'Direction', hiredOn: '2020-01-01', departedOn: '', vesselIds: [20] },
+    ];
+    expect(resolveServiceNoteAudiencePeople('vessels', people, [10], [1, 3]).map((person) => person.id)).toEqual([1, 2, 3]);
   });
 
   it('shows manager-only recall, re-publication and draft deletion actions', async () => {
@@ -113,7 +127,7 @@ describe('ServiceNotesPage', () => {
     });
     const peopleNote = note(1, 'NS 01-26', 'people', []);
     const gouryNote = note(2, 'NS 02-26', 'vessels', ['GOURY']);
-    const multiVesselNote = note(3, 'NS 03-26', 'vessels', ['KROKDUR', 'GOURY']);
+    const multiVesselNote = { ...note(3, 'NS 03-26', 'vessels', ['KROKDUR', 'GOURY']), targetPersonIds: [9302] };
     const [year] = groupServiceNotesByYearAndVessel([peopleNote, gouryNote, multiVesselNote]);
 
     expect(year.notesWithoutVessel.map((item) => item.id)).toEqual([peopleNote.id]);

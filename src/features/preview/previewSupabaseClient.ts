@@ -1650,7 +1650,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     for (let index = vessels.length - 1; index >= 0; index -= 1) if (Number(vessels[index].note_id) === Number(note.id)) vessels.splice(index, 1);
     for (let index = people.length - 1; index >= 0; index -= 1) if (Number(people[index].note_id) === Number(note.id)) people.splice(index, 1);
     if (note.scope === 'vessels') (Array.isArray(args.p_vessel_ids) ? args.p_vessel_ids : []).forEach((id) => vessels.push({ note_id: note.id, vessel_id: Number(id), vessel: previewVessel(Number(id)) }));
-    if (note.scope === 'people') (Array.isArray(args.p_person_ids) ? args.p_person_ids : []).forEach((id) => people.push({ note_id: note.id, person_id: Number(id) }));
+    if (note.scope === 'vessels' || note.scope === 'people') (Array.isArray(args.p_person_ids) ? args.p_person_ids : []).forEach((id) => people.push({ note_id: note.id, person_id: Number(id) }));
     return createPreviewQuery({ data: note.id, error: null });
   }
   if (functionName === 'recall_service_note') {
