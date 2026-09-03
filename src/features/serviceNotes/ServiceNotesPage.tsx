@@ -1,5 +1,5 @@
 import {
-  ArchiveRestore, ArrowLeft, BellRing, Check, ChevronRight, CircleAlert, Download, ExternalLink,
+  ArchiveRestore, ArrowLeft, BellRing, Check, ChevronDown, ChevronRight, CircleAlert, Download, ExternalLink,
   FileCheck2, FileClock, FilePlus2, Link2, LoaderCircle, MailCheck, Paperclip, PenLine,
   Building2, Plus, RotateCcw, Save, Search, Send, ShieldCheck, Ship, Trash2, UserRoundCheck, Upload, Users, X,
 } from 'lucide-react';
@@ -17,7 +17,7 @@ import {
   type ServiceNote, type ServiceNoteAttachment, type ServiceNoteDraftInput, type ServiceNoteLinkOption,
   type ServiceNoteTargetingOptions,
 } from './serviceNoteQueries';
-import { downloadServiceNotePdf } from './serviceNotePdf';
+import { downloadServiceNoteSelection, type ServiceNoteDownloadMode } from './serviceNoteDownloads';
 import { serviceNoteBodyHasContent } from './serviceNoteRichText';
 import './serviceNotes.css';
 
@@ -262,9 +262,10 @@ interface EditorProps {
   hasActiveSignature: boolean;
   onBack: () => void;
   onChanged: (noteId?: number) => Promise<void>;
+  onPublished: (noteId: number) => Promise<void>;
 }
 
-function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, onChanged }: EditorProps) {
+function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, onChanged, onPublished }: EditorProps) {
   const [draft, setDraft] = useState<ServiceNoteDraftInput>({
     subject: note.subject, body: note.body, authoredOn: note.authoredOn || EMPTY_DRAFT.authoredOn,
     scope: note.scope, targetVesselIds: note.targetVessels.map((vessel) => vessel.id), targetPersonIds: note.targetPersonIds,
@@ -403,8 +404,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
     try {
       await persistDraft();
       await publishServiceNote(client, note.id);
-      await onChanged(note.id);
-      onBack();
+      await onPublished(note.id);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Diffusion impossible.'); }
     finally { setIsPublishing(false); }
   }
@@ -524,6 +524,7 @@ export function ServiceNotesPage() {
   const [readConfirmed, setReadConfirmed] = useState(false);
   const [signatureUrls, setSignatureUrls] = useState<Map<number, string>>(new Map());
   const [authorSignatureUrl, setAuthorSignatureUrl] = useState('');
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const isManager = roles.includes('admin') || roles.includes('direction');
   const visibleNotes = useMemo(() => isManager
     ? notes
@@ -595,7 +596,7 @@ export function ServiceNotesPage() {
   const isRecipientSelected = Boolean(selectedNote?.recipients.some((recipient) => recipient.userId === currentUserId));
 
   function selectNote(noteId: number) {
-    setSelectedId(noteId); setReadConfirmed(false); setSearchParams({ note: String(noteId) });
+    setSelectedId(noteId); setReadConfirmed(false); setIsDownloadMenuOpen(false); setSearchParams({ note: String(noteId) });
   }
 
   async function handleCreate() {
@@ -608,7 +609,8 @@ export function ServiceNotesPage() {
   async function handleOpenAttachment(attachment: ServiceNoteAttachment) {
     try {
       const url = await createServiceNoteAttachmentUrl(client, attachment);
-      if (url.startsWith('/modules/')) window.location.assign(url); else window.open(url, '_blank', 'noopener,noreferrer');
+      if (!url) throw new Error(`Aucun fichier n’est disponible pour « ${attachment.displayName} ».`);
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Ouverture impossible.'); }
   }
 
@@ -620,11 +622,11 @@ export function ServiceNotesPage() {
     finally { setIsBusy(false); }
   }
 
-  async function handleDownload() {
+  async function handleDownload(mode: ServiceNoteDownloadMode) {
     if (!selectedNote) return;
-    setIsBusy(true); setMessage('');
-    try { await downloadServiceNotePdf(client, selectedNote); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Génération du PDF impossible.'); }
+    setIsDownloadMenuOpen(false); setIsBusy(true); setMessage('');
+    try { await downloadServiceNoteSelection(client, selectedNote, mode); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Téléchargement impossible.'); }
     finally { setIsBusy(false); }
   }
 
@@ -649,7 +651,7 @@ export function ServiceNotesPage() {
     try {
       await publishServiceNote(client, selectedNote.id);
       await reload(selectedNote.id);
-      setFilter('published');
+      setFilter('published'); setQuery(''); setVesselFilter('');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Nouvelle diffusion impossible.'); }
     finally { setIsBusy(false); }
   }
@@ -662,7 +664,7 @@ export function ServiceNotesPage() {
     try {
       await publishServiceNote(client, selectedNote.id);
       await reload(selectedNote.id);
-      setFilter('published');
+      setFilter('published'); setQuery(''); setVesselFilter('');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Diffusion impossible.'); }
     finally { setIsBusy(false); }
   }
@@ -682,7 +684,11 @@ export function ServiceNotesPage() {
   }
 
   if (isLoading) return <div className="admin-state" role="status">Chargement des notes de service…</div>;
-  if (editingNote) return <ServiceNoteEditor client={client} hasActiveSignature={hasActiveSignature} note={editingNote} onBack={() => setEditingId(null)} onChanged={async (id) => { await reload(id); }} vessels={vessels} />;
+  if (editingNote) return <ServiceNoteEditor client={client} hasActiveSignature={hasActiveSignature} note={editingNote} onBack={() => setEditingId(null)} onChanged={async (id) => { await reload(id); }} onPublished={async (id) => {
+    await reload(id);
+    setEditingId(null); setSelectedId(id); setFilter('published'); setQuery(''); setVesselFilter('');
+    setSearchParams({ note: String(id) });
+  }} vessels={vessels} />;
 
   return (
     <div className="service-notes-page">
@@ -728,7 +734,14 @@ export function ServiceNotesPage() {
               {selectedNote.status === 'published' && selectedNote.id === latestPublishedNoteId && isManager ? <button className="is-recall" disabled={isBusy} onClick={() => void handleRecall()} type="button"><RotateCcw size={16} /> Rappeler</button> : null}
               {selectedNote.status === 'recalled' && isManager ? <button className="is-republish" disabled={isBusy || !hasActiveSignature} onClick={() => void handleRepublish()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser à nouveau</button> : null}
               {selectedNote.sourceWebUrl ? <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><ExternalLink size={16} /> Ouvrir dans Word</a> : null}
-              <button disabled={isBusy} onClick={() => void handleDownload()} type="button"><Download size={16} /> Télécharger le PDF</button>
+              <div className={`service-note-download-menu${isDownloadMenuOpen ? ' is-open' : ''}`}>
+                <button aria-expanded={isDownloadMenuOpen} aria-haspopup="menu" disabled={isBusy} onClick={() => setIsDownloadMenuOpen((open) => !open)} type="button"><Download size={16} /> Télécharger <ChevronDown size={14} /></button>
+                {isDownloadMenuOpen ? <div aria-label="Options de téléchargement" role="menu">
+                  <button onClick={() => void handleDownload('note')} role="menuitem" type="button"><FileCheck2 size={17} /><span><strong>Note de service uniquement</strong><small>Document PDF avec le registre</small></span></button>
+                  <button disabled={!selectedNote.attachments.length} onClick={() => void handleDownload('attachments')} role="menuitem" type="button"><Paperclip size={17} /><span><strong>Pièce{selectedNote.attachments.length > 1 ? 's' : ''} jointe{selectedNote.attachments.length > 1 ? 's' : ''} uniquement</strong><small>{selectedNote.attachments.length || 'Aucune'} pièce{selectedNote.attachments.length > 1 ? 's' : ''} originale{selectedNote.attachments.length > 1 ? 's' : ''}</small></span></button>
+                  <button disabled={!selectedNote.attachments.length} onClick={() => void handleDownload('complete')} role="menuitem" type="button"><Download size={17} /><span><strong>Note et pièce{selectedNote.attachments.length > 1 ? 's' : ''} jointe{selectedNote.attachments.length > 1 ? 's' : ''}</strong><small>Archive ZIP complète</small></span></button>
+                </div> : null}
+              </div>
             </div>
             {selectedNote.status !== 'draft' && selectedNote.status !== 'recalled' ? (() => {
               const missing = missingServiceNoteRecipients(selectedNote);

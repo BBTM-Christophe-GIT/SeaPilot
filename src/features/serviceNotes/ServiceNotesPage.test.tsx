@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { buildServiceNoteLinkGroups, groupServiceNotesByYear, groupServiceNotesByYearAndVessel, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
@@ -29,7 +29,10 @@ describe('ServiceNotesPage', () => {
     expect(screen.queryByText(/Signé le\s*Non renseignée/)).not.toBeInTheDocument();
     expect(screen.queryByText('Lecture et signature obligatoires')).not.toBeInTheDocument();
     expect(screen.queryByText(/Document généré par SeaPilot/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Télécharger' }));
+    expect(screen.getByRole('menuitem', { name: /Note de service uniquement/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Pièces jointes uniquement/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Note et pièces jointes/ })).toBeInTheDocument();
   });
 
   it('keeps drafts in a dedicated manager-only view', async () => {
@@ -119,7 +122,7 @@ describe('ServiceNotesPage', () => {
     expect(await screen.findByRole('button', { name: 'Diffuser' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Modifier' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Supprimer le brouillon' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Télécharger' })).toBeInTheDocument();
   });
 
   it('groups by chronology year and sorts each year from the newest code to the oldest', () => {
@@ -167,9 +170,34 @@ describe('ServiceNotesPage', () => {
     expect(screen.queryByText('Mise à jour du DUP de KROKDUR')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('NS 08-26'));
-    expect(await screen.findByRole('button', { name: 'Télécharger le PDF' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Télécharger' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Rappeler' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Supprimer le brouillon' })).not.toBeInTheDocument();
+  });
+
+  it('opens an attached procedure file directly without navigating to the Procedures module', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderPage(['marin']);
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+    fireEvent.click(screen.getByText('NS 08-26'));
+    fireEvent.click(await screen.findByRole('button', { name: /GEN 01-A/ }));
+
+    await waitFor(() => expect(open).toHaveBeenCalledWith('/templates/attestation-embarquement.pdf', '_blank', 'noopener,noreferrer'));
+    expect(window.location.pathname).not.toContain('/modules/procedures');
+    open.mockRestore();
+  });
+
+  it('returns to the published library and reveals a note immediately after diffusion', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+    fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
+    fireEvent.click(screen.getByText('Organisation des exercices trimestriels'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Diffuser à 4 destinataires/ }));
+
+    await screen.findByRole('heading', { name: 'Bibliothèque' });
+    expect(screen.getByRole('button', { name: 'Diffusées' })).toHaveClass('is-active');
+    expect(screen.getAllByText('Organisation des exercices trimestriels').length).toBeGreaterThan(0);
   });
 });
