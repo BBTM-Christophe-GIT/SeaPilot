@@ -14,6 +14,10 @@ const publicationChronology = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260903044914_service_notes_publication_chronology.sql'),
   'utf8',
 );
+const recallLifecycle = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260903053700_service_notes_recall_and_draft_delete.sql'),
+  'utf8',
+);
 
 describe('QHSE service notes database contract', () => {
   it('isolates the module from the pre-existing legacy service_notes table', () => {
@@ -65,5 +69,31 @@ describe('QHSE service notes database contract', () => {
     expect(publicationChronology).toContain('published_at = null');
     expect(publicationChronology).toContain('delete from public.qhse_service_note_recipients');
     expect(publicationChronology).toContain('delete from public.qhse_service_note_signatures');
+  });
+
+  it('makes recalled notes manager-only and removes their active chronology code', () => {
+    expect(recallLifecycle).toContain("status in ('draft', 'recalled')");
+    expect(recallLifecycle).toContain('set last_recalled_chronology_code = target_note.chronology_code');
+    expect(recallLifecycle).toContain("chronology_code = ''");
+    expect(recallLifecycle).toContain("status = 'recalled'");
+    expect(recallLifecycle).toContain("array['admin', 'direction']");
+    expect(recallLifecycle).toContain('service_note_can_read(note_id)');
+  });
+
+  it('allows only the latest published note to be recalled under a lifecycle lock', () => {
+    expect(recallLifecycle).toContain('create or replace function public.recall_service_note');
+    expect(recallLifecycle).toContain("format('service-notes-lifecycle:%s'");
+    expect(recallLifecycle).toContain("note.status = 'published'");
+    expect(recallLifecycle).toContain('order by note.published_at desc nulls last, note.id desc');
+    expect(recallLifecycle).toContain("message = 'SERVICE_NOTE_RECALL_LATEST_ONLY.'");
+  });
+
+  it('restarts distribution when recalled and permanently deletes only private drafts', () => {
+    expect(recallLifecycle).toContain("if target_note.status = 'recalled' then");
+    expect(recallLifecycle).toContain('delete from public.qhse_service_note_signatures');
+    expect(recallLifecycle).toContain('delete from public.qhse_service_note_recipients');
+    expect(recallLifecycle).toContain('create or replace function public.delete_service_note_draft');
+    expect(recallLifecycle).toContain("target_note.status <> 'draft'");
+    expect(recallLifecycle).toContain('grant execute on function public.delete_service_note_draft(bigint) to authenticated');
   });
 });

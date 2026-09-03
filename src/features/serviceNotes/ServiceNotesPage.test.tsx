@@ -61,4 +61,21 @@ describe('ServiceNotesPage', () => {
     expect(screen.getByRole('option', { name: 'Armement - Cherbourg' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'YARD - Le Havre' })).toBeInTheDocument();
   });
+
+  it('shows manager-only recall, re-publication and draft deletion actions', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+
+    fireEvent.click(screen.getByText('NS 08-26'));
+    expect(await screen.findByRole('button', { name: 'Rappeler' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Rappelées/ }));
+    fireEvent.click(screen.getByText('Politique d’accès aux zones techniques'));
+    expect(await screen.findByRole('heading', { name: 'Numéro supprimé' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Diffuser à nouveau' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Brouillons/ }));
+    fireEvent.click(screen.getByText('NS 09-26'));
+    expect(await screen.findByRole('button', { name: 'Supprimer le brouillon' })).toBeInTheDocument();
+  });
 });

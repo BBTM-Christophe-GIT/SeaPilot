@@ -4,7 +4,7 @@ import { getFleetCertificateCategory, getFleetCertificateCategoryParent } from '
 export const SERVICE_NOTE_FILE_BUCKET = 'service-note-files';
 export const SERVICE_NOTE_MAX_FILE_BYTES = 52_428_800;
 
-export type ServiceNoteStatus = 'draft' | 'published' | 'archived';
+export type ServiceNoteStatus = 'draft' | 'published' | 'archived' | 'recalled';
 export type ServiceNoteAttachmentKind = 'file' | 'procedure' | 'action_item' | 'fleet_certificate';
 
 export interface ServiceNoteSignatureSnapshot {
@@ -164,6 +164,19 @@ interface SignatureRow {
 
 function assertResult(error: { message?: string } | null, fallback: string): void {
   if (error) throw new Error(error.message || fallback);
+}
+
+const SERVICE_NOTE_RPC_MESSAGES: Record<string, string> = {
+  'SERVICE_NOTE_RECALL_FORBIDDEN.': 'Vous n’êtes pas autorisé à rappeler cette note de service.',
+  'SERVICE_NOTE_RECALL_PUBLISHED_ONLY.': 'Seule une note actuellement diffusée peut être rappelée.',
+  'SERVICE_NOTE_RECALL_LATEST_ONLY.': 'Seule la dernière note de service diffusée peut être rappelée.',
+  'SERVICE_NOTE_DELETE_DRAFT_FORBIDDEN.': 'Seul un brouillon privé peut être supprimé par Administration ou Direction.',
+};
+
+function assertServiceNoteRpcResult(error: { message?: string } | null, fallback: string): void {
+  if (!error) return;
+  const knownCode = Object.keys(SERVICE_NOTE_RPC_MESSAGES).find((code) => error.message?.includes(code));
+  throw new Error(knownCode ? SERVICE_NOTE_RPC_MESSAGES[knownCode] : error.message || fallback);
 }
 
 function text(value: unknown): string {
@@ -389,7 +402,30 @@ export async function fetchServiceNoteLinkOptions(client: SupabaseClient): Promi
 
 export async function publishServiceNote(client: SupabaseClient, noteId: number): Promise<void> {
   const { error } = await client.rpc('publish_service_note', { p_note_id: noteId });
-  assertResult(error, 'Impossible de diffuser la note de service.');
+  assertServiceNoteRpcResult(error, 'Impossible de diffuser la note de service.');
+  window.dispatchEvent(new Event('service-notes:changed'));
+}
+
+export async function recallServiceNote(client: SupabaseClient, noteId: number): Promise<void> {
+  const { error } = await client.rpc('recall_service_note', { p_note_id: noteId });
+  assertServiceNoteRpcResult(error, 'Impossible de rappeler la note de service.');
+  window.dispatchEvent(new Event('service-notes:changed'));
+}
+
+export async function deleteServiceNoteDraft(client: SupabaseClient, note: ServiceNote): Promise<void> {
+  const storedFiles = note.attachments.filter((attachment) => attachment.storageBucket && attachment.storagePath);
+  const pathsByBucket = new Map<string, string[]>();
+  storedFiles.forEach((attachment) => {
+    const paths = pathsByBucket.get(attachment.storageBucket) || [];
+    paths.push(attachment.storagePath);
+    pathsByBucket.set(attachment.storageBucket, paths);
+  });
+  for (const [bucket, paths] of pathsByBucket) {
+    const { error } = await client.storage.from(bucket).remove(paths);
+    assertResult(error, 'Impossible de supprimer les fichiers du brouillon.');
+  }
+  const { error } = await client.rpc('delete_service_note_draft', { p_note_id: note.id });
+  assertServiceNoteRpcResult(error, 'Impossible de supprimer le brouillon.');
   window.dispatchEvent(new Event('service-notes:changed'));
 }
 
