@@ -1191,7 +1191,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { report_year: 2025, vessel_id: null, worked_hours: 36230, person_days: 3448, source_label: 'Historique officiel validé par la Direction' },
   ],
   qhse_environment_parameters: [{
-    fuel_density_tonnes_per_m3: 0.85, emission_factor_tco2_per_tonne: 3.206, xbee_reduction_rate: 0.15,
+    fuel_density_tonnes_per_m3: 0.85, emission_factor_tco2_per_tonne: 3.206,
+    direct_combustion_factor_tco2e_per_m3: 2.85, xbee_reduction_rate: 0.15,
     effective_from: '1900-01-01', effective_to: null,
   }],
   qhse_contract_targets: [{

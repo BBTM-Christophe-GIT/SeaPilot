@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QHSE_REPORT_CATALOG, qhseReportFileName } from './qhseReportCatalog';
 import {
-  buildQhseReportContent, calculateFuelGhgTonnes, type QhseReportSnapshot,
+  buildQhseReportContent, calculateDirectFuelCo2eTonnes, calculateFuelGhgTonnes, type QhseReportSnapshot,
 } from './qhseReportData';
 import { buildQhseReportPdf, fitImageWithinBox, sanitizeQhsePdfText } from './qhseReportPdf';
 
@@ -35,7 +35,7 @@ describe('QHSE report catalog and calculations', () => {
     expect(sanitizeQhsePdfText('Données SeaPilot · SeaPilot · CO₂')).toBe('Données Supabase · Supabase · CO2');
   });
 
-  it('builds page 25 from monthly supplies and annual fuel emissions', () => {
+  it('builds page 25 fuel consumption and emissions from the DPR consumption field', () => {
     const snapshot = emptySnapshot();
     snapshot.scope = { year: 2025, years: [2024, 2025], vesselId: null, vesselIds: [], vesselName: '', vesselNames: [] };
     snapshot.reports = [
@@ -53,26 +53,28 @@ describe('QHSE report catalog and calculations', () => {
       { dprId: 2, fuelConsumedLiters: 50_000, fuelOnBoardLiters: 0 },
       { dprId: 3, fuelConsumedLiters: 200_000, fuelOnBoardLiters: 0 },
     ];
-    snapshot.environmentParameters = [{ density: 0.85, emissionFactor: 3.206, xbeeReductionRate: 0.15, effectiveFrom: '2000-01-01', effectiveTo: '' }];
+    snapshot.environmentParameters = [{ density: 0.85, emissionFactor: 3.206, directCombustionFactor: 2.85, xbeeReductionRate: 0.15, effectiveFrom: '2000-01-01', effectiveTo: '' }];
     const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'consumption')!;
     const content = buildQhseReportContent(report, snapshot);
 
-    expect(content.charts).toHaveLength(4);
-    expect(content.charts[0].series[0].values.slice(0, 2)).toEqual([4, 6]);
-    expect(content.charts[1].series[0].values.slice(0, 2)).toEqual([10, 5]);
-    expect(content.charts[2].series[0].values[0]).toBeCloseTo(408.765, 3);
-    expect(content.charts[2].series[0].values[1]).toBeCloseTo(545.02, 3);
-    expect(content.charts[3].series[1].color).toEqual([11, 153, 73]);
-    expect(content.charts[3].series[1].values[0]).toBeCloseTo(347.45025, 3);
-    expect(content.charts[3].series[1].values[1]).toBeCloseTo(463.267, 3);
+    expect(content.charts).toHaveLength(3);
+    expect(content.charts[0].series[0].values.slice(0, 4)).toEqual([0, 4, 0, 6]);
+    expect(content.charts[1].series[0].values.slice(0, 4)).toEqual([0, 100, 0, 50]);
+    expect(content.charts[1].series[0].values).not.toContain(10);
+    expect(content.charts[2].series[0].values[0]).toBeCloseTo(285, 3);
+    expect(content.charts[2].series[0].values[1]).toBeCloseTo(427.5, 3);
+    expect(content.charts[2].series[1].color).toEqual([11, 153, 73]);
+    expect(content.charts[2].series[1].values[1]).toBeCloseTo(363.375, 3);
+    expect(content.charts[2].series[1].values[12]).toBeCloseTo(484.5, 3);
     expect(content.tables[0].rows).toEqual([
-      ['2024', '10 m³', '15 m³', '150 m³', '408,77 t', '61,31 t'],
-      ['2025', '8 m³', '7 m³', '200 m³', '545,02 t', '81,75 t'],
+      ['2024', '10 m³', '150 m³', '427,5 tCO₂e', '363,38 tCO₂e', '64,13 tCO₂e'],
+      ['2025', '8 m³', '200 m³', '570 tCO₂e', '484,5 tCO₂e', '85,5 tCO₂e'],
     ]);
   });
 
   it('reuses the reference GHG conversion without importing PBIX values', () => {
     expect(calculateFuelGhgTonnes(100)).toBeCloseTo(272.51, 5);
+    expect(calculateDirectFuelCo2eTonnes(10, 2.85)).toBe(28.5);
   });
 
   it('documents unavailable social-governance inputs instead of inventing a score', () => {

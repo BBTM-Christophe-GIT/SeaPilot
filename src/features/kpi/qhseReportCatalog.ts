@@ -48,7 +48,7 @@ export const QHSE_REPORT_CATALOG: readonly QhseReportDefinition[] = [
   { id: 'port-call-tracking-v2', sourcePage: 12, sourceTitle: 'Opérations - Suivi Escales V2', title: 'Opérations — suivi des escales détaillé', family: 'Technique & opérations', description: 'Analyse mensuelle des durées d’escale et des ports fréquentés.', orientation: 'portrait', coverage: 'complete' },
   { id: 'hr-age-pyramid', sourcePage: 20, sourceTitle: 'RH - Pyramide des âges', title: 'RH — pyramide des âges', family: 'RH & QSMS', description: 'Répartition des collaborateurs par âge et genre renseigné.', orientation: 'landscape', coverage: 'complete' },
   { id: 'hr-management', sourcePage: 21, sourceTitle: 'RH - Management', title: 'RH — management', family: 'RH & QSMS', description: 'Effectifs actifs par fonction, contrat et ancienneté.', orientation: 'landscape', coverage: 'complete' },
-  { id: 'consumption', sourcePage: 25, sourceTitle: 'RSE - Consommation', title: 'RSE — consommations par projet', family: 'QHSE & RSE', description: 'Eau et fuel avitaillés par mois, émissions annuelles de GES et effet xBee.', orientation: 'portrait', coverage: 'complete' },
+  { id: 'consumption', sourcePage: 25, sourceTitle: 'RSE - Consommation', title: 'RSE — consommations par projet', family: 'QHSE & RSE', description: 'Eau avitaillée, fuel consommé et émissions cumulées de GES avec effet xBee.', orientation: 'portrait', coverage: 'complete' },
 ] as const;
 
 export const QHSE_REPORT_FAMILIES: readonly QhseReportFamily[] = [

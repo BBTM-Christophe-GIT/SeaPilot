@@ -39,6 +39,7 @@ export interface QhseExposureRecord {
 export interface QhseEnvironmentParameter {
   density: number;
   emissionFactor: number;
+  directCombustionFactor: number;
   xbeeReductionRate: number;
   effectiveFrom: string;
   effectiveTo: string;
@@ -66,6 +67,7 @@ export interface QhseReportChart {
   labels: string[];
   series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right' }>;
   unit?: string;
+  showValueLabels?: boolean;
 }
 
 export interface QhseReportTable {
@@ -302,9 +304,16 @@ export async function fetchQhseReportSnapshot(
       return (result.data || []).map((row) => ({ date: text(row.exposure_date), hours: numeric(row.exposure_hours), personId: nullableNumber(row.person_id), population: text(row.population), vesselId: nullableNumber(row.vessel_id) }));
     }),
     safeLoad('Paramètres environnementaux', [] as QhseEnvironmentParameter[], warnings, async () => {
-      const result = await client.from('qhse_environment_parameters').select('fuel_density_tonnes_per_m3,emission_factor_tco2_per_tonne,xbee_reduction_rate,effective_from,effective_to').order('effective_from');
+      const result = await client.from('qhse_environment_parameters').select('fuel_density_tonnes_per_m3,emission_factor_tco2_per_tonne,direct_combustion_factor_tco2e_per_m3,xbee_reduction_rate,effective_from,effective_to').order('effective_from');
       if (result.error) throw result.error;
-      return (result.data || []).map((row) => ({ density: numeric(row.fuel_density_tonnes_per_m3), emissionFactor: numeric(row.emission_factor_tco2_per_tonne), xbeeReductionRate: numeric(row.xbee_reduction_rate), effectiveFrom: text(row.effective_from), effectiveTo: text(row.effective_to) }));
+      return (result.data || []).map((row) => ({
+        density: numeric(row.fuel_density_tonnes_per_m3),
+        emissionFactor: numeric(row.emission_factor_tco2_per_tonne),
+        directCombustionFactor: numeric(row.direct_combustion_factor_tco2e_per_m3),
+        xbeeReductionRate: numeric(row.xbee_reduction_rate),
+        effectiveFrom: text(row.effective_from),
+        effectiveTo: text(row.effective_to),
+      }));
     }),
     safeLoad('Objectifs contractuels', [] as QhseContractTarget[], warnings, async () => {
       const result = await client.from('qhse_contract_targets').select('project_id,vessel_id,report_year,maintenance_days_limit,port_call_24h_limit,valid_until').in('report_year', years).order('report_year');
@@ -675,6 +684,10 @@ export function calculateFuelGhgTonnes(fuelM3: number, density = 0.85, emissionF
   return fuelM3 * density * emissionFactor;
 }
 
+export function calculateDirectFuelCo2eTonnes(fuelM3: number, factorTco2ePerM3: number): number {
+  return fuelM3 * factorTco2ePerM3;
+}
+
 function buildEnvironmentContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const reports = reportMap(snapshot);
   const fuelLiters = snapshot.metrics.reduce((sum, item) => sum + item.fuelConsumedLiters, 0);
@@ -1026,8 +1039,12 @@ function buildDocumentsContent(snapshot: QhseReportSnapshot): QhseReportContent 
 function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const reports = reportMap(snapshot);
   const years = scopeYears(snapshot.scope);
-  const waterPeriod = periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3);
-  const fuelSupplyPeriod = periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelM3);
+  const asMonthlyResetCurve = (period: { labels: string[]; values: number[] }) => ({
+    labels: period.labels.flatMap((label) => [label, '']),
+    values: period.values.flatMap((value) => [0, value]),
+  });
+  const waterPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3));
+  const fuelConsumptionPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000));
   const parameters = snapshot.environmentParameters || [];
   const annual = years.map((year) => {
     const yearStart = `${year}-01-01`;
@@ -1037,38 +1054,57 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     const supplies = snapshot.supplies.filter((item) => inYear(reports.get(item.dprId)?.reportDate || '', year));
     const fuelConsumedM3 = metrics.reduce((sum, item) => sum + item.fuelConsumedLiters, 0) / 1000;
     const waterM3 = supplies.reduce((sum, item) => sum + item.waterM3, 0);
-    const fuelSupplyM3 = supplies.reduce((sum, item) => sum + item.fuelM3, 0);
-    const ghg = parameter ? calculateFuelGhgTonnes(fuelConsumedM3, parameter.density, parameter.emissionFactor) : null;
+    const monthlyFuelM3 = monthlyValues(metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000);
+    const ghg = parameter ? calculateDirectFuelCo2eTonnes(fuelConsumedM3, parameter.directCombustionFactor) : null;
     const withXbee = ghg === null || !parameter ? null : ghg * (1 - parameter.xbeeReductionRate);
-    return { year, waterM3, fuelSupplyM3, fuelConsumedM3, ghg, withXbee, avoided: ghg === null || withXbee === null ? null : ghg - withXbee };
+    let cumulativeFuelM3 = 0;
+    const cumulativeGhg = monthlyFuelM3.map((value) => {
+      cumulativeFuelM3 += value;
+      return parameter ? calculateDirectFuelCo2eTonnes(cumulativeFuelM3, parameter.directCombustionFactor) : null;
+    });
+    const cumulativeWithXbee = cumulativeGhg.map((value) => value === null || !parameter ? null : value * (1 - parameter.xbeeReductionRate));
+    return {
+      year, waterM3, fuelConsumedM3, ghg, withXbee,
+      avoided: ghg === null || withXbee === null ? null : ghg - withXbee,
+      factor: parameter?.directCombustionFactor || null,
+      reduction: parameter?.xbeeReductionRate || null,
+      cumulativeGhg, cumulativeWithXbee,
+    };
   });
   const total = (value: (row: typeof annual[number]) => number) => annual.reduce((sum, row) => sum + value(row), 0);
   const emissionsAvailable = annual.every((row) => row.ghg !== null && row.withXbee !== null);
   const totalGhg = emissionsAvailable ? total((row) => row.ghg || 0) : null;
   const totalAvoided = emissionsAvailable ? total((row) => row.avoided || 0) : null;
   return {
-    summary: `Avitaillements mensuels et émissions annuelles calculés depuis les DPR — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Eau avitaillée, consommation mensuelle de fuel et émissions cumulées calculées depuis les DPR — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Eau avitaillée', `${formatNumber(total((row) => row.waterM3), 1)} m³`, 'Cumul de la période', 'blue'),
-      metric('Fuel avitaillé', `${formatNumber(total((row) => row.fuelSupplyM3), 1)} m³`, 'Cumul de la période', 'blue'),
-      metric('CO₂ émis', totalGhg === null ? '—' : `${formatNumber(totalGhg, 2)} tCO₂`, emissionsAvailable ? 'Calculé depuis le fuel consommé' : 'Paramètres Supabase absents', 'orange'),
-      metric('Réduction xBee', totalAvoided === null ? '—' : `${formatNumber(totalAvoided, 2)} tCO₂`, emissionsAvailable ? 'Baisse appliquée : 15 %' : 'Paramètres Supabase absents', 'green'),
+      metric('Fuel consommé', `${formatNumber(total((row) => row.fuelConsumedM3), 1)} m³`, 'Champ DPR « Consommation de carburant en L »', 'blue'),
+      metric('GES / CO₂e émis', totalGhg === null ? '—' : `${formatNumber(totalGhg, 2)} tCO₂e`, emissionsAvailable ? 'Facteur direct MDO : 2,85 tCO₂e/m³' : 'Paramètre Supabase absent', 'orange'),
+      metric('Réduction xBee', totalAvoided === null ? '—' : `${formatNumber(totalAvoided, 2)} tCO₂e`, emissionsAvailable ? 'Baisse appliquée : 15 %' : 'Paramètre Supabase absent', 'green'),
     ],
     charts: [
-      { title: 'Eau avitaillée par mois · remise à zéro mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³' },
-      { title: 'Fuel avitaillé par mois · remise à zéro mensuelle', kind: 'line', labels: fuelSupplyPeriod.labels, series: [{ label: 'Fuel avitaillé', values: fuelSupplyPeriod.values, color: BLUE }], unit: 'm³' },
-      { title: 'GES rejetés cumulés par an', kind: 'line', labels: annual.map((row) => String(row.year)), series: [{ label: 'GES', values: annual.map((row) => row.ghg), color: ORANGE }], unit: 'tCO₂e' },
-      { title: 'CO₂ rejeté et effet xBee par an', kind: 'line', labels: annual.map((row) => String(row.year)), series: [
-        { label: 'CO₂ émis', values: annual.map((row) => row.ghg), color: BLUE },
-        { label: 'CO₂ avec xBee (-15 %)', values: annual.map((row) => row.withXbee), color: GREEN },
-      ], unit: 'tCO₂' },
+      { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
+      { title: 'Consommation de fuel mensuelle', kind: 'line', labels: fuelConsumptionPeriod.labels, series: [{ label: 'Fuel consommé', values: fuelConsumptionPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
+      {
+        title: 'GES / CO₂e cumulés par an', kind: 'line', labels: years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`)),
+        series: [
+          { label: 'GES / CO₂e sans xBee', values: annual.flatMap((row) => row.cumulativeGhg), color: [128, 128, 128] },
+          { label: 'GES / CO₂e avec xBee (-15 %)', values: annual.flatMap((row) => row.cumulativeWithXbee), color: GREEN },
+        ],
+        unit: 'tCO₂e',
+      },
     ],
-    tables: [{ title: 'Cumuls annuels', columns: ['Année', 'Eau avitaillée', 'Fuel avitaillé', 'Fuel consommé', 'CO₂ émis', 'CO₂ réduit par xBee'], rows: annual.map((row) => [
-      String(row.year), `${formatNumber(row.waterM3, 1)} m³`, `${formatNumber(row.fuelSupplyM3, 1)} m³`, `${formatNumber(row.fuelConsumedM3, 1)} m³`,
-      row.ghg === null ? '—' : `${formatNumber(row.ghg, 2)} t`, row.avoided === null ? '—' : `${formatNumber(row.avoided, 2)} t`,
+    tables: [{ title: 'Cumuls annuels', columns: ['Année', 'Eau avitaillée', 'Fuel consommé', 'GES / CO₂e', 'Avec xBee', 'Réduction xBee'], rows: annual.map((row) => [
+      String(row.year), `${formatNumber(row.waterM3, 1)} m³`, `${formatNumber(row.fuelConsumedM3, 1)} m³`,
+      row.ghg === null ? '—' : `${formatNumber(row.ghg, 2)} tCO₂e`, row.withXbee === null ? '—' : `${formatNumber(row.withXbee, 2)} tCO₂e`,
+      row.avoided === null ? '—' : `${formatNumber(row.avoided, 2)} tCO₂e`,
     ]) }],
-    notes: emissionsAvailable ? [{ title: 'Méthode de calcul', text: 'GES et CO₂ : fuel consommé × densité × facteur d’émission. La courbe xBee applique une réduction de 15 % ; le gain affiché correspond à l’écart avec les émissions sans additif.' }] : [unavailable('Paramètres environnementaux absents', 'La densité, le facteur d’émission et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
-    sources: ['DPR soumis/validés · métriques et avitaillements', sourceNote()],
+    notes: emissionsAvailable ? [{
+      title: 'Méthode de calcul',
+      text: `Fuel consommé = somme du champ DPR « Consommation de carburant en L » ÷ 1 000. GES / CO₂e = volume MDO × ${formatNumber(annual[0]?.factor || 0, 2)} tCO₂e/m³. La courbe verte applique une réduction xBee de ${formatNumber((annual[0]?.reduction || 0) * 100)} %.`,
+    }] : [unavailable('Paramètres environnementaux absents', 'Le facteur direct MDO et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
+    sources: ['DPR soumis/validés · consommation de carburant et eau avitaillée', 'Paramètres environnementaux Supabase versionnés', sourceNote()],
   };
 }
 
