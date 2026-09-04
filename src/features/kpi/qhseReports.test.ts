@@ -22,11 +22,13 @@ describe('QHSE report catalog and calculations', () => {
 
   it('maps every source page to a separate, stable PDF filename', () => {
     expect(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).toEqual([1, 4, 5, 6, 7, 8, 12, 20, 21, 25]);
+    expect(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(QHSE_REPORT_CATALOG).toHaveLength(10);
-    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).size).toBe(10);
+    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).size).toBe(10);
     const names = QHSE_REPORT_CATALOG.map((report) => qhseReportFileName(report, 2026, 'GOURY'));
     expect(new Set(names).size).toBe(10);
     expect(names[0]).toBe('01-sommaire-des-rapports-qhse-2026-goury.pdf');
+    expect(names.at(-1)).toBe('10-rse-consommations-par-projet-2026-goury.pdf');
   });
 
   it('keeps the report logo proportions and removes the product name from PDF copy', () => {
@@ -37,7 +39,10 @@ describe('QHSE report catalog and calculations', () => {
 
   it('builds page 25 fuel consumption and emissions from the DPR consumption field', () => {
     const snapshot = emptySnapshot();
-    snapshot.scope = { year: 2025, years: [2024, 2025], vesselId: null, vesselIds: [], vesselName: '', vesselNames: [] };
+    snapshot.scope = {
+      year: 2025, years: [2024, 2025], vesselId: null, vesselIds: [], vesselName: '', vesselNames: [],
+      projectId: 1, projectIds: [1], projectName: 'P144', projectNames: ['P144'],
+    };
     snapshot.reports = [
       { id: 1, reportDate: '2024-01-10', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
       { id: 2, reportDate: '2024-02-10', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
@@ -59,7 +64,9 @@ describe('QHSE report catalog and calculations', () => {
 
     expect(content.charts).toHaveLength(3);
     expect(content.charts[0].series[0].values.slice(0, 4)).toEqual([0, 4, 0, 6]);
-    expect(content.charts[1].series[0].values.slice(0, 4)).toEqual([0, 100, 0, 50]);
+    expect(content.charts[1].title).toBe('Consommation de fuel journalière');
+    expect(content.charts[1].labels).toEqual(['10/01/2024', '10/02/2024', '10/01/2025']);
+    expect(content.charts[1].series[0].values).toEqual([100, 50, 200]);
     expect(content.charts[1].series[0].values).not.toContain(10);
     expect(content.charts[2].series[0].values[0]).toBeCloseTo(285, 3);
     expect(content.charts[2].series[0].values[1]).toBeCloseTo(427.5, 3);

@@ -61,10 +61,13 @@
 .qhse-report-card-body small.is-partial { color: #995c09; background: #fff3df; }
 .qhse-report-card > button { min-width: 72px; }
 
-@media (max-width: 1180px) {
+@media (max-width: 1480px) {
   .qhse-report-library > header { align-items: stretch; flex-direction: column; }
   .qhse-report-controls { align-items: stretch; }
   .qhse-report-controls label { flex: 1; }
+}
+
+@media (max-width: 1180px) {
   .qhse-report-grid { grid-template-columns: 1fr; }
 }
 

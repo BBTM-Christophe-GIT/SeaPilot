@@ -3,7 +3,7 @@ import type { jsPDF as JsPdfType } from 'jspdf';
 import {
   buildQhseReportContent, type QhseReportChart, type QhseReportContent, type QhseReportSnapshot,
 } from './qhseReportData';
-import { qhseReportFileName, type QhseReportDefinition } from './qhseReportCatalog';
+import { QHSE_REPORT_CATALOG, qhseReportFileName, type QhseReportDefinition } from './qhseReportCatalog';
 
 const NAVY: [number, number, number] = [16, 49, 83];
 const BLUE: [number, number, number] = [24, 96, 174];
@@ -88,7 +88,8 @@ function pageScope(snapshot: QhseReportSnapshot): string {
   const years = [...new Set(snapshot.scope.years?.length ? snapshot.scope.years : [snapshot.scope.year])].sort((left, right) => left - right);
   const period = years.length === 1 ? String(years[0]) : `${years[0]}–${years.at(-1)}`;
   const vessels = snapshot.scope.vesselNames?.length ? snapshot.scope.vesselNames.join(', ') : snapshot.scope.vesselName;
-  return `${period} · ${vessels || 'Tous les navires'}`;
+  const projects = snapshot.scope.projectNames?.length ? snapshot.scope.projectNames.join(', ') : snapshot.scope.projectName;
+  return `${period} · ${vessels || 'Tous les navires'} · ${projects || 'Tous les projets'}`;
 }
 
 function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number, width: number, height: number): void {
@@ -147,6 +148,9 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
       doc.setDrawColor(...series.color);
       doc.setLineWidth(0.7);
       let previous: [number, number] | null = null;
+      const labelCandidateCount = series.values.filter((value) => value !== null && Number.isFinite(value) && value > 0).length;
+      const valueLabelStep = Math.max(1, Math.ceil(labelCandidateCount / 12));
+      let valueLabelIndex = 0;
       series.values.forEach((value, index) => {
         if (value === null || !Number.isFinite(value)) { previous = null; return; }
         const pointX = plotX + (count === 1 ? plotW / 2 : (index / (count - 1)) * plotW);
@@ -155,7 +159,9 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
         if (previous) doc.line(previous[0], previous[1], pointX, pointY);
         doc.setFillColor(...series.color);
         doc.circle(pointX, pointY, 0.9, 'F');
-        if (chart.showValueLabels && chart.labels.length <= 24 && value > 0 && index % 2 === 1) {
+        const showValueLabel = value > 0 && valueLabelIndex % valueLabelStep === 0;
+        if (value > 0) valueLabelIndex += 1;
+        if (chart.showValueLabels && labelCandidateCount <= 48 && showValueLabel) {
           const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(4.7);
@@ -314,7 +320,7 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
   doc.setDrawColor(...LINE); doc.line(margin, 285, pageWidth - margin, 285);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...MUTED);
   doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, 290);
-  doc.text(`Page source ${report.sourcePage}`, pageWidth - margin, 290, { align: 'right' });
+  doc.text(`Page ${report.pageNumber} / ${QHSE_REPORT_CATALOG.length}`, pageWidth - margin, 290, { align: 'right' });
   return doc.output('blob');
 }
 
@@ -350,7 +356,7 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
     doc.text(report.title, logo ? margin + 25 : margin, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text(`Page source ${report.sourcePage} · ${report.sourceTitle}`, logo ? margin + 25 : margin, 17);
+    doc.text(`Page ${report.pageNumber} / ${QHSE_REPORT_CATALOG.length} · ${report.sourceTitle}`, logo ? margin + 25 : margin, 17);
     doc.setFont('helvetica', 'bold');
     doc.text(pageScope(snapshot), pageWidth - margin, 11, { align: 'right' });
     doc.setFont('helvetica', 'normal');
@@ -495,7 +501,8 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
     doc.setFontSize(6);
     doc.setTextColor(...MUTED);
     doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, pageHeight - 7);
-    doc.text(`Page ${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+    const pagination = `Page ${report.pageNumber} / ${QHSE_REPORT_CATALOG.length}${pageCount > 1 ? ` · Feuille ${page} / ${pageCount}` : ''}`;
+    doc.text(pagination, pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
   return doc.output('blob');
 }
@@ -510,7 +517,12 @@ export async function buildQhseReportArchive(
   for (let index = 0; index < reports.length; index += 1) {
     const report = reports[index];
     const blob = await buildQhseReportPdf(report, snapshot);
-    archive.file(qhseReportFileName(report, snapshot.scope.years || snapshot.scope.year, snapshot.scope.vesselNames?.join('-') || snapshot.scope.vesselName), await blob.arrayBuffer());
+    archive.file(qhseReportFileName(
+      report,
+      snapshot.scope.years || snapshot.scope.year,
+      snapshot.scope.vesselNames?.join('-') || snapshot.scope.vesselName,
+      snapshot.scope.projectNames?.join('-') || snapshot.scope.projectName,
+    ), await blob.arrayBuffer());
     onProgress?.(index + 1, reports.length);
   }
   return archive.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
@@ -530,7 +542,11 @@ export function qhseReportArchiveFileName(snapshot: QhseReportSnapshot): string 
   const vessel = vesselName
     ? `-${vesselName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`
     : '-flotte';
+  const projectName = snapshot.scope.projectNames?.join('-') || snapshot.scope.projectName;
+  const project = projectName
+    ? `-${projectName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`
+    : '-tous-projets';
   const years = [...new Set(snapshot.scope.years?.length ? snapshot.scope.years : [snapshot.scope.year])].sort((left, right) => left - right);
   const period = years.length === 1 ? String(years[0]) : `${years[0]}-${years.at(-1)}`;
-  return `rapports-qhse-${period}${vessel}.zip`;
+  return `rapports-qhse-${period}${vessel}${project}.zip`;
 }

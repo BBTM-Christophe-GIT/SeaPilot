@@ -27,6 +27,7 @@ function createClient() {
       if (table === 'action_documents') return { select: vi.fn().mockReturnValue(ordered([])) };
       if (table === 'action_type_catalog') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([])) }) };
       if (table === 'vessels') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([])) }) };
+      if (table === 'projects') return { select: vi.fn().mockReturnValue(ordered([{ id: 144, project_code: 'P144', title: 'EMDT - GOURY' }])) };
       if (table === 'hse_exposure_methodologies') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [{ id: 7 }], error: null }) }) }) };
       }
@@ -52,8 +53,13 @@ describe('KpiPage', () => {
     expect(screen.getByRole('heading', { name: 'Rapports PDF' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Années des rapports QHSE' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Navires des rapports QHSE' })).toBeInTheDocument();
+    const projectFilter = screen.getByRole('group', { name: 'Projets des rapports QHSE' });
+    expect(projectFilter).toBeInTheDocument();
+    await user.click(within(projectFilter).getByLabelText('P144 · EMDT - GOURY'));
+    expect(within(projectFilter).getByLabelText('P144 · EMDT - GOURY')).toBeChecked();
     expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(10);
     expect(screen.getByRole('button', { name: 'Télécharger les 10 PDF' })).toBeInTheDocument();
+    expect(screen.getByText('Page 10 / 10 · A4 portrait')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Année des indicateurs HSE'), '2024');
     expect(await screen.findByText(/l’année 2024/)).toBeInTheDocument();

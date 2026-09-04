@@ -18,6 +18,15 @@ export interface QhseReportScope {
   years?: number[];
   vesselIds?: number[];
   vesselNames?: string[];
+  projectId?: number | null;
+  projectName?: string;
+  projectIds?: number[];
+  projectNames?: string[];
+}
+
+export interface QhseReportProjectOption {
+  id: number;
+  label: string;
 }
 
 export interface QhseAnnualReferenceMetric {
@@ -146,6 +155,15 @@ export interface QhseReportSeed {
   hseDashboard: ActionPlanHseDashboard | null;
 }
 
+export async function fetchQhseReportProjectOptions(client: SupabaseClient): Promise<QhseReportProjectOption[]> {
+  const result = await client.from('projects').select('id,project_code,title').order('project_code');
+  if (result.error) throw result.error;
+  return (result.data || []).map((row) => ({
+    id: Number(row.id),
+    label: [text(row.project_code), text(row.title)].filter(Boolean).join(' · '),
+  })).filter((project) => Number.isInteger(project.id) && project.label);
+}
+
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 const BLUE: [number, number, number] = [24, 96, 174];
 const TEAL: [number, number, number] = [22, 151, 135];
@@ -193,6 +211,9 @@ function scopeYears(scope: QhseReportScope): number[] {
 function scopeVesselIds(scope: QhseReportScope): number[] {
   return [...new Set((scope.vesselIds?.length ? scope.vesselIds : scope.vesselId ? [scope.vesselId] : []).filter((id) => Number.isInteger(id)))];
 }
+function scopeProjectIds(scope: QhseReportScope): number[] {
+  return [...new Set((scope.projectIds?.length ? scope.projectIds : scope.projectId ? [scope.projectId] : []).filter((id) => Number.isInteger(id)))];
+}
 function inScope(value: string, scope: QhseReportScope): boolean { return scopeYears(scope).includes(Number(value.slice(0, 4))); }
 function scopeStart(scope: QhseReportScope): string { return `${scopeYears(scope)[0]}-01-01`; }
 function scopeEnd(scope: QhseReportScope): string { return `${scopeYears(scope).at(-1)}-12-31`; }
@@ -235,6 +256,8 @@ async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warn
       .is('deleted_at', null).in('status', ['submitted', 'validated']);
     const vesselIds = scopeVesselIds(scope);
     if (vesselIds.length) reportQuery = reportQuery.in('vessel_id', vesselIds);
+    const projectIds = scopeProjectIds(scope);
+    if (projectIds.length) reportQuery = reportQuery.in('project_id', projectIds);
     const reportResult = await reportQuery.order('report_date', { ascending: true }).limit(1000);
     if (reportResult.error) throw reportResult.error;
     const reports: DprReportRow[] = (reportResult.data || []).map((row) => ({
@@ -280,6 +303,7 @@ export async function fetchQhseReportSnapshot(
   const warnings: string[] = [];
   const years = scopeYears(scope);
   const vesselIds = scopeVesselIds(scope);
+  const projectIds = scopeProjectIds(scope);
   const startsOn = `${years[0]}-01-01`;
   const endsOn = `${years.at(-1)}-12-31`;
   const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets] = await Promise.all([
@@ -323,7 +347,10 @@ export async function fetchQhseReportSnapshot(
   ]);
   return {
     scope,
-    actions: seed.actions.filter((action) => !vesselIds.length || (action.vesselId !== null && vesselIds.includes(action.vesselId))),
+    actions: seed.actions.filter((action) => (
+      (!vesselIds.length || (action.vesselId !== null && vesselIds.includes(action.vesselId)))
+      && (!projectIds.length || (action.projectId !== null && projectIds.includes(action.projectId)))
+    )),
     actionTypes: seed.actionTypes,
     hseDashboard,
     certificates: certificates.filter((item) => !vesselIds.length || (item.vesselId !== null && vesselIds.includes(item.vesselId))),
@@ -333,7 +360,7 @@ export async function fetchQhseReportSnapshot(
     annualReferences,
     exposureRecords,
     environmentParameters,
-    contractTargets,
+    contractTargets: contractTargets.filter((target) => !projectIds.length || projectIds.includes(target.projectId)),
     warnings,
     ...dpr,
   };
@@ -389,6 +416,20 @@ function periodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => 
     if (yearIndex >= 0 && month >= 0) values[(yearIndex * 12) + month] += value(item);
   });
   return { labels, values };
+}
+
+function dailyPeriodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => string, value: (item: T) => number) {
+  const totals = new Map<string, number>();
+  items.forEach((item) => {
+    const raw = date(item).slice(0, 10);
+    if (!raw || !inScope(raw, scope)) return;
+    totals.set(raw, (totals.get(raw) || 0) + value(item));
+  });
+  const entries = [...totals.entries()].sort(([left], [right]) => left.localeCompare(right));
+  return {
+    labels: entries.map(([raw]) => formatDate(raw)),
+    values: entries.map(([, total]) => total),
+  };
 }
 
 function eventClassification(action: ActionItemRecord, snapshot: QhseReportSnapshot): string {
@@ -466,7 +507,8 @@ function reportPeriodLabel(snapshot: QhseReportSnapshot): string {
   const years = scopeYears(snapshot.scope);
   const period = years.length === 1 ? String(years[0]) : `${years[0]}–${years.at(-1)}`;
   const vessels = snapshot.scope.vesselNames?.length ? snapshot.scope.vesselNames.join(', ') : snapshot.scope.vesselName;
-  return `${period}${vessels ? ` · ${vessels}` : ' · flotte complète'}`;
+  const projects = snapshot.scope.projectNames?.length ? snapshot.scope.projectNames.join(', ') : snapshot.scope.projectName;
+  return `${period}${vessels ? ` · ${vessels}` : ' · flotte complète'}${projects ? ` · ${projects}` : ' · tous les projets'}`;
 }
 
 function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
@@ -474,7 +516,7 @@ function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
     summary: `Catalogue des ${QHSE_REPORT_CATALOG.length} rapports QHSE retenus, reconstruits à partir des seules données SeaPilot — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Rapports disponibles', QHSE_REPORT_CATALOG.length, 'Un PDF distinct par page', 'blue'),
-      metric('Période', scopeYears(snapshot.scope).join(', '), snapshot.scope.vesselNames?.join(', ') || snapshot.scope.vesselName || 'Tous les navires', 'green'),
+      metric('Période', scopeYears(snapshot.scope).join(', '), [snapshot.scope.vesselNames?.join(', ') || snapshot.scope.vesselName || 'Tous les navires', snapshot.scope.projectNames?.join(', ') || snapshot.scope.projectName || 'Tous les projets'].join(' · '), 'green'),
       metric('Couverture complète', QHSE_REPORT_CATALOG.filter((report) => report.coverage === 'complete').length, 'Rapports alimentés sans source manquante', 'green'),
       metric('Couverture partielle', QHSE_REPORT_CATALOG.filter((report) => report.coverage === 'partial').length, 'Lacunes identifiées dans le PDF', 'orange'),
     ],
@@ -482,7 +524,7 @@ function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
     tables: [{
       title: 'Correspondance des pages',
       columns: ['Page', 'Rapport SeaPilot', 'Famille', 'Couverture'],
-      rows: QHSE_REPORT_CATALOG.slice(1).map((report) => [String(report.sourcePage), report.title, report.family, report.coverage === 'complete' ? 'Complète' : 'Partielle']),
+      rows: QHSE_REPORT_CATALOG.slice(1).map((report) => [String(report.pageNumber), report.title, report.family, report.coverage === 'complete' ? 'Complète' : 'Partielle']),
     }],
     notes: [
       { title: 'Principe de reprise', text: 'La structure métier du fichier Power BI est conservée. Les calculs s’appuient sur le modèle SeaPilot et non sur les valeurs embarquées dans le PBIX.' },
@@ -1044,7 +1086,7 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     values: period.values.flatMap((value) => [0, value]),
   });
   const waterPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3));
-  const fuelConsumptionPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000));
+  const fuelConsumptionPeriod = dailyPeriodValues(snapshot.scope, snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000);
   const parameters = snapshot.environmentParameters || [];
   const annual = years.map((year) => {
     const yearStart = `${year}-01-01`;
@@ -1085,7 +1127,7 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     ],
     charts: [
       { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
-      { title: 'Consommation de fuel mensuelle', kind: 'line', labels: fuelConsumptionPeriod.labels, series: [{ label: 'Fuel consommé', values: fuelConsumptionPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
+      { title: 'Consommation de fuel journalière', kind: 'line', labels: fuelConsumptionPeriod.labels, series: [{ label: 'Fuel consommé', values: fuelConsumptionPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
       {
         title: 'GES / CO₂e cumulés par an', kind: 'line', labels: years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`)),
         series: [

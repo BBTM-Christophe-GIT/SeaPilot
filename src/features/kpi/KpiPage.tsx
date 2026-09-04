@@ -17,7 +17,10 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import {
   QHSE_REPORT_CATALOG, QHSE_REPORT_FAMILIES, qhseReportFileName, type QhseReportDefinition,
 } from './qhseReportCatalog';
-import { fetchQhseReportSnapshot, type QhseReportSnapshot } from './qhseReportData';
+import {
+  fetchQhseReportProjectOptions, fetchQhseReportSnapshot,
+  type QhseReportProjectOption, type QhseReportSnapshot,
+} from './qhseReportData';
 import {
   buildQhseReportArchive, buildQhseReportPdf, downloadQhseBlob, qhseReportArchiveFileName,
 } from './qhseReportPdf';
@@ -123,6 +126,8 @@ export function KpiPage({ client }: KpiPageProps) {
   const [error, setError] = useState('');
   const [reportYears, setReportYears] = useState<number[]>([currentYear]);
   const [reportVesselIds, setReportVesselIds] = useState<number[]>([]);
+  const [reportProjects, setReportProjects] = useState<QhseReportProjectOption[]>([]);
+  const [reportProjectIds, setReportProjectIds] = useState<number[]>([]);
   const [reportBusy, setReportBusy] = useState('');
   const [reportProgress, setReportProgress] = useState('');
   const [reportMessage, setReportMessage] = useState('');
@@ -131,13 +136,17 @@ export function KpiPage({ client }: KpiPageProps) {
   async function load() {
     setLoading(true); setError('');
     try {
-      const nextData = await fetchActionPlanData(effectiveClient);
+      const [nextData, nextProjects] = await Promise.all([
+        fetchActionPlanData(effectiveClient),
+        fetchQhseReportProjectOptions(effectiveClient),
+      ]);
       if (hseYear !== currentYear) {
         const dashboard = await fetchActionPlanHseDashboard(effectiveClient, hseYear);
         nextData.hseDashboard = dashboard;
         nextData.exposureHours = dashboard?.totals.exposureHours || 0;
       }
       setData(nextData);
+      setReportProjects(nextProjects);
       reportSnapshots.current.clear();
     } catch {
       setError('Impossible de charger les indicateurs HSE.');
@@ -168,10 +177,16 @@ export function KpiPage({ client }: KpiPageProps) {
   ])).sort((a, b) => b - a), [currentYear, data.actions]);
   const selectedVessels = data.vessels.filter((vessel) => reportVesselIds.includes(vessel.id));
   const selectedVesselNames = selectedVessels.map((vessel) => vessel.name);
+  const selectedProjects = reportProjects.filter((project) => reportProjectIds.includes(project.id));
+  const selectedProjectNames = selectedProjects.map((project) => project.label);
   const reportPeriod = [...reportYears].sort((left, right) => left - right);
 
   async function getReportSnapshot(): Promise<QhseReportSnapshot> {
-    const key = `${reportPeriod.join(',')}:${reportVesselIds.slice().sort((left, right) => left - right).join(',') || 'all'}`;
+    const key = [
+      reportPeriod.join(','),
+      reportVesselIds.slice().sort((left, right) => left - right).join(',') || 'all-vessels',
+      reportProjectIds.slice().sort((left, right) => left - right).join(',') || 'all-projects',
+    ].join(':');
     const cached = reportSnapshots.current.get(key);
     if (cached) return cached;
     const snapshot = await fetchQhseReportSnapshot(effectiveClient, {
@@ -181,6 +196,10 @@ export function KpiPage({ client }: KpiPageProps) {
       vesselIds: reportVesselIds,
       vesselName: selectedVesselNames.length === 1 ? selectedVesselNames[0] : '',
       vesselNames: selectedVesselNames,
+      projectId: reportProjectIds.length === 1 ? reportProjectIds[0] : null,
+      projectIds: reportProjectIds,
+      projectName: selectedProjectNames.length === 1 ? selectedProjectNames[0] : '',
+      projectNames: selectedProjectNames,
     }, {
       actions: data.actions,
       actionTypes: data.actionTypes,
@@ -196,7 +215,7 @@ export function KpiPage({ client }: KpiPageProps) {
       const snapshot = await getReportSnapshot();
       setReportProgress('Mise en page du PDF…');
       const blob = await buildQhseReportPdf(report, snapshot);
-      downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-')));
+      downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-'), selectedProjectNames.join('-')));
       setReportMessage(`${report.title} a été généré.`);
     } catch {
       setReportMessage(`Impossible de générer « ${report.title} ».`);
@@ -279,6 +298,7 @@ export function KpiPage({ client }: KpiPageProps) {
         <div className="qhse-report-controls">
           <details className="qhse-report-multiselect"><summary>Années <strong>{reportPeriod.join(', ')}</strong></summary><fieldset aria-label="Années des rapports QHSE">{hseYears.map((year) => <label key={year}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportYears.includes(year)} onChange={(event) => setReportYears((current) => event.target.checked ? [...current, year] : current.length > 1 ? current.filter((item) => item !== year) : current)}/>{year}</label>)}</fieldset></details>
           <details className="qhse-report-multiselect"><summary>Navires <strong>{selectedVesselNames.length ? `${selectedVesselNames.length} sélectionné(s)` : 'Tous'}</strong></summary><fieldset aria-label="Navires des rapports QHSE"><label><input type="checkbox" disabled={Boolean(reportBusy)} checked={!reportVesselIds.length} onChange={() => setReportVesselIds([])}/>Tous les navires</label>{data.vessels.map((vessel) => <label key={vessel.id}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportVesselIds.includes(vessel.id)} onChange={(event) => setReportVesselIds((current) => event.target.checked ? [...current, vessel.id] : current.filter((item) => item !== vessel.id))}/>{vessel.name}</label>)}</fieldset></details>
+          <details className="qhse-report-multiselect"><summary>Projets <strong>{selectedProjectNames.length ? `${selectedProjectNames.length} sélectionné(s)` : 'Tous'}</strong></summary><fieldset aria-label="Projets des rapports QHSE"><label><input type="checkbox" disabled={Boolean(reportBusy)} checked={!reportProjectIds.length} onChange={() => setReportProjectIds([])}/>Tous les projets</label>{reportProjects.map((project) => <label key={project.id}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportProjectIds.includes(project.id)} onChange={(event) => setReportProjectIds((current) => event.target.checked ? [...current, project.id] : current.filter((item) => item !== project.id))}/>{project.label}</label>)}</fieldset></details>
           <button className="qhse-report-all" disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateAllReports()}><Archive size={17} />{reportBusy === 'all' ? 'Génération…' : `Télécharger les ${QHSE_REPORT_CATALOG.length} PDF`}</button>
         </div>
       </header>
@@ -288,7 +308,7 @@ export function KpiPage({ client }: KpiPageProps) {
         const reports = QHSE_REPORT_CATALOG.filter((report) => report.family === family);
         return <section className="qhse-report-family" key={family}><header><h3>{family}</h3><span>{reports.length} rapport(s)</span></header><div className="qhse-report-grid">
           {reports.map((report) => <article className="qhse-report-card" key={report.id}>
-            <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Page {report.sourcePage} · {report.orientation === 'portrait' ? 'A4 portrait' : 'A4 paysage'}</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Couverture SeaPilot complète' : 'Couverture partielle documentée'}</small></div>
+            <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Page {report.pageNumber} / {QHSE_REPORT_CATALOG.length} · {report.orientation === 'portrait' ? 'A4 portrait' : 'A4 paysage'}</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Couverture SeaPilot complète' : 'Couverture partielle documentée'}</small></div>
             <button aria-label={`Générer ${report.title}`} disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateReport(report)}><Download size={16} />{reportBusy === report.id ? 'Génération…' : 'PDF'}</button>
           </article>)}
         </div></section>;
