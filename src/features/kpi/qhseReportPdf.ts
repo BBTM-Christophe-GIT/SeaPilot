@@ -155,6 +155,13 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
         if (previous) doc.line(previous[0], previous[1], pointX, pointY);
         doc.setFillColor(...series.color);
         doc.circle(pointX, pointY, 0.9, 'F');
+        if (chart.showValueLabels && chart.labels.length <= 24 && value > 0 && index % 2 === 1) {
+          const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(4.7);
+          doc.setTextColor(...MUTED);
+          doc.text(`${label}${chart.unit ? ` ${chart.unit}` : ''}`, pointX, Math.max(plotY + 3, pointY - 2), { align: 'center' });
+        }
         previous = [pointX, pointY];
       });
     });
@@ -162,7 +169,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
   const labelStep = chart.labels.length > 8 ? Math.ceil(chart.labels.length / 6) : 1;
   chart.labels.forEach((label, index) => {
     if (index % labelStep !== 0 && index !== chart.labels.length - 1) return;
-    const labelX = plotX + (count === 1 ? plotW / 2 : ((index + 0.5) / count) * plotW);
+    const labelX = plotX + (count === 1 ? plotW / 2 : chart.kind === 'line' ? (index / (count - 1)) * plotW : ((index + 0.5) / count) * plotW);
     doc.setFontSize(5.2);
     doc.setTextColor(...MUTED);
     doc.text(label.slice(0, 12), labelX, y + height - 3.2, { align: 'center' });
@@ -273,14 +280,18 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
     });
     y += 13;
   } else if (report.id === 'consumption') {
+    const annualCaption = (snapshot.scope.years?.length || 1) === 1 ? 'Total annuel en m³' : 'Total de la période en m³';
+    const valueCallout = (itemIndex: number, calloutY: number, caption: string) => {
+      const item = content.metrics[itemIndex]; if (!item) return;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...INK); doc.text(item.value, pageWidth - margin - 3, calloutY, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...MUTED); doc.text(caption, pageWidth - margin - 3, calloutY + 6, { align: 'right' });
+    };
     section("1. Eau avitaillée");
-    chart(0, margin, y, width, 43); y += 48;
-    section('2. Fuel avitaillé');
-    chart(1, margin, y, width, 43); y += 48;
-    section('3. Émissions issues du fuel consommé');
-    chart(2, margin, y, (width - 4) / 2, 52);
-    chart(3, margin + ((width + 4) / 2), y, (width - 4) / 2, 52);
-    y += 57;
+    chart(0, margin, y, width - 40, 43); valueCallout(0, y + 21, annualCaption); y += 48;
+    section('2. Consommation de fuel');
+    chart(1, margin, y, width - 40, 43); valueCallout(1, y + 21, annualCaption); y += 48;
+    section('3. Émissions de GES issues du fuel consommé');
+    chart(2, margin, y, width, 62); y += 67;
     table(0, 12);
   } else {
     section("1. Bien-être dans l'entreprise");
