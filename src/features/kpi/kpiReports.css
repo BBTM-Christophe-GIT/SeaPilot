@@ -60,6 +60,16 @@
 .qhse-report-card-body small { display: block; width: max-content; max-width: 100%; margin-top: 7px; padding: 3px 7px; border-radius: 999px; color: #1d714f; background: #eaf8f1; font-size: .58rem; font-weight: 800; }
 .qhse-report-card-body small.is-partial { color: #995c09; background: #fff3df; }
 .qhse-report-card > button { min-width: 72px; }
+.qhse-report-card.has-forecast > button { grid-column: 3; grid-row: 1; }
+
+.qhse-consumption-forecast { grid-column: 1 / -1; min-width: 0; margin: 5px 0 0; padding: 12px 0 0; border: 0; border-top: 1px solid #e0e7ef; }
+.qhse-consumption-forecast legend { padding: 0 8px 0 0; color: #243a52; font-size: .75rem; font-weight: 750; }
+.qhse-consumption-forecast > div { display: flex; flex-wrap: wrap; gap: 5px 16px; }
+.qhse-consumption-forecast label { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; color: #31465d; font-size: .75rem; cursor: pointer; }
+.qhse-consumption-forecast input { width: 16px; height: 16px; margin: 0; accent-color: #1769aa; }
+.qhse-consumption-forecast input:focus-visible { outline: 2px solid #1769aa; outline-offset: 3px; }
+.qhse-consumption-forecast p { margin: 6px 0 0; color: #617186; font-size: .68rem; line-height: 1.5; }
+.qhse-consumption-forecast:disabled { opacity: .6; }
 
 @media (max-width: 1480px) {
   .qhse-report-library > header { align-items: stretch; flex-direction: column; }
@@ -81,4 +91,5 @@
   .qhse-report-controls button.qhse-report-all { width: 100%; min-width: 0; }
   .qhse-report-card { grid-template-columns: 34px minmax(0, 1fr); }
   .qhse-report-card > button { grid-column: 1 / -1; width: 100%; }
+  .qhse-report-card.has-forecast > button { grid-column: 1 / -1; grid-row: auto; }
 }
