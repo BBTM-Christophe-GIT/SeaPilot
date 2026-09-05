@@ -1,6 +1,49 @@
 {
   "schemaVersion": 1,
   "targets": {
+    "/modules/kpi": {
+      "targetKind": "existing-ui",
+      "projectId": "f9960330-f385-426d-9e3c-dedc8ae59b48",
+      "activeDraftId": "555f235c-974a-46b5-a862-feffb1d325ac",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": ["f44147f4-d579-498b-a0c2-8f7175f601d3", "public-bbtm-logo.png", "public-bbtm-report-logo.png"],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/f9960330-f385-426d-9e3c-dedc8ae59b48/brand-assets/public-bbtm-logo.png/bbtm-logo.png",
+          "sourcePath": "public/bbtm-logo.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md", "src/features/shell/AppShell.tsx",
+        "src/features/kpi/KpiPage.tsx", "src/features/kpi/QhseReportComposer.tsx",
+        "src/features/kpi/QhseGraphOptions.tsx", "src/features/kpi/kpiReports.css",
+        "src/features/kpi/qhseReportCatalog.ts", "src/styles/index.css:1:720",
+        "src/features/actionPlan/actionPlan.css:1:174", "src/features/actionPlan/actionPlan.css:253:294",
+        "src/features/actionPlan/actionPlan.css:461:504"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1909e57ddc76c60046725764efdc4c7d3a8429026d0f95c20c611c23b0074959",
+        "src/features/shell/AppShell.tsx": "35cbd37a3cfb6de575313fdd3f284869e12c810d320f91086669b77c9158b6d3",
+        "src/features/kpi/KpiPage.tsx": "a98339693f709b024e1affb43c8d1e8835b6949b727305fdfb50e489476c9833",
+        "src/features/kpi/QhseReportComposer.tsx": "2c472f1881fd9443b96f6639aa670b5e03569e018692fc4bae4dea11efd73581",
+        "src/features/kpi/QhseGraphOptions.tsx": "10969ec1611b368456efd49a8c7d4bedf5be273ac783187ce54b819cf77c56ef",
+        "src/features/kpi/kpiReports.css": "d9c1acb4fcde227cd81df903337e5a0b3fcb4b1f61aa6a2a2501de6ea3b26975",
+        "src/features/kpi/qhseReportCatalog.ts": "a691f550c8295632b369a2318af0a3da081821299061bd78db404d35321e966b",
+        "src/styles/index.css": "9ef8f8c2964d741f68ac14a94183cc909c115c0fa70cc42016b21092cd451328",
+        "src/features/actionPlan/actionPlan.css": "c4adae3f394e5464613485a924afc137ee5bd06e06dc65c7cbba272c12f8d6f5"
+      },
+      "components": [{"name":"AppShell","id":"1737d43e-ee95-426f-b6a2-6134237aff33","sourcePath":"src/features/shell/AppShell.tsx","logoAssetKey":"public-bbtm-logo.png"}],
+      "drafts": {
+        "555f235c-974a-46b5-a862-feffb1d325ac": {
+          "title": "Pilotage QHSE - synthese compacte et atelier de rapport",
+          "visualDirection": "Synthèse QHSE compacte, filtres partagés, alertes à date, atelier de rapport à deux colonnes avec aperçu A4 ouvert; maquette à valider avant implémentation.",
+          "currentVersion": 2
+        }
+      },
+      "workflowNote": "User approved draft v2. Implemented KPI workspace v3.32.0 with shared Supabase scope, executive overview, independent graph options and real PDF.js preview of exported bytes. Existing AppShell and PDF generators retained. No database migration.",
+      "updatedAt": "2026-09-05T16:33:00Z"
+    },
     "/modules/actionPlan:new-action-dialog": {
       "targetKind": "existing-ui",
       "projectId": "60144cb8-a548-4802-85f3-1b45ec434e52",
