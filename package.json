@@ -1,11 +1,11 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.31.0",
+  "version": "3.32.0",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+    "node": "^22.13.0 || >=24.0.0"
   },
   "scripts": {
     "dev": "vite",
@@ -49,6 +49,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.22.0",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "6.3.289",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.2",
