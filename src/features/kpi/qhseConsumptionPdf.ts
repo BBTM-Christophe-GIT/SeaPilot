@@ -181,7 +181,7 @@ export function drawConsumptionPdf(doc: JsPdfType, report: QhseReportDefinition,
     const end = annualTable(content, y + 5);
     text('Comparaison des données réelles uniquement. Les prévisions ne sont pas additionnées aux cumuls.', MARGIN, end + 4, 7);
   }
-  for (let page = 1; page <= doc.getNumberOfPages(); page += 1) {
+  for (let page = 1; !options.omitPageNumbers && page <= doc.getNumberOfPages(); page += 1) {
     doc.setPage(page); text(String(page), 196, 290, 7, MUTED, false, 'right');
   }
   return doc.output('blob');

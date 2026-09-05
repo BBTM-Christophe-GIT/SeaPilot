@@ -21,14 +21,14 @@ describe('QHSE report catalog and calculations', () => {
   });
 
   it('maps every source page to a separate, stable PDF filename', () => {
-    expect(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).toEqual([1, 4, 5, 6, 7, 8, 12, 20, 21, 25]);
-    expect(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(QHSE_REPORT_CATALOG).toHaveLength(10);
-    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).size).toBe(10);
+    expect(QHSE_REPORT_CATALOG.map((report) => report.sourcePage)).toEqual([1, 4, 5, 6, 7, 8, 12, 20, 21, 25, 0]);
+    expect(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(QHSE_REPORT_CATALOG).toHaveLength(11);
+    expect(new Set(QHSE_REPORT_CATALOG.map((report) => report.pageNumber)).size).toBe(11);
     const names = QHSE_REPORT_CATALOG.map((report) => qhseReportFileName(report, 2026, 'GOURY'));
-    expect(new Set(names).size).toBe(10);
+    expect(new Set(names).size).toBe(11);
     expect(names[0]).toBe('01-sommaire-des-rapports-qhse-2026-goury.pdf');
-    expect(names.at(-1)).toBe('10-rse-consommations-par-projet-2026-goury.pdf');
+    expect(names[9]).toBe('10-rse-consommations-par-projet-2026-goury.pdf');
   });
 
   it('keeps the report logo proportions and removes the product name from PDF copy', () => {
@@ -165,19 +165,19 @@ describe('QHSE report catalog and calculations', () => {
     ];
     const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'social-safety-1')!;
     const content = buildQhseReportContent(report, snapshot);
-    expect(content.tables[0].rows.map((row) => row.slice(0, 3))).toEqual([
-      ['2023', '11 454', '1 091'], ['2024', '25 883', '2 394'], ['2025', '36 230', '3 448'],
+    expect(content.tables[1].rows.map((row) => row.slice(0, 2))).toEqual([
+      ['2023', '11 454'], ['2024', '25 883'], ['2025', '36 230'],
     ]);
-    expect(content.tables[1].rows[0].slice(1)).toEqual(Array.from({ length: 9 }, () => '—'));
-    expect(content.notes[0].title).toBe('Historique accidentologique incomplet');
+    expect(content.tables[0].rows[0].slice(1)).toEqual(Array.from({ length: 8 }, () => '—'));
+    expect(content.notes.some((note) => note.title === 'Données à compléter')).toBe(true);
   });
 
-  it('generates a valid landscape PDF for the source menu page', async () => {
+  it('generates a harmonized portrait PDF for the catalog page', async () => {
     const report = QHSE_REPORT_CATALOG[0];
     const blob = await buildQhseReportPdf(report, emptySnapshot());
     const document = await PDFDocument.load(await blob.arrayBuffer());
     const [page] = document.getPages();
-    expect(page.getWidth()).toBeGreaterThan(page.getHeight());
+    expect(page.getHeight()).toBeGreaterThan(page.getWidth());
     expect(document.getTitle()).toBe(report.title);
     expect(document.getSubject()).not.toContain('SeaPilot');
     expect(document.getAuthor()).toBe('BBTM');

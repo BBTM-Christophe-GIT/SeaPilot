@@ -59,9 +59,10 @@ describe('KpiPage', () => {
     expect(projectFilter).toBeInTheDocument();
     await user.click(within(projectFilter).getByLabelText('P144 · EMDT - GOURY'));
     expect(within(projectFilter).getByLabelText('P144 · EMDT - GOURY')).toBeChecked();
-    expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(10);
-    expect(screen.getByRole('button', { name: 'Télécharger les 10 PDF' })).toBeInTheDocument();
-    expect(screen.getByText('Page 10 / 10 · A4 portrait')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(11);
+    expect(screen.getByRole('button', { name: 'Télécharger les 11 PDF' })).toBeInTheDocument();
+    expect(screen.getByText('Modèle 10 / 11 · A4 portrait')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Composer mon rapport' })).toBeInTheDocument();
     const trends = within(screen.getByRole('group', { name: 'Tendances observées' }));
     expect(trends.getAllByRole('checkbox')).toHaveLength(4);
     for (const checkbox of trends.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
@@ -84,12 +85,14 @@ describe('KpiPage', () => {
     expect(buildPdf).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'consumption' }), snapshot, {
       forecast: { water: true, fuel: false, emissions: false, xbee: true },
       trend: { water: false, fuel: true, emissions: false, xbee: false },
+      charts: {},
     });
     await user.click(predictions.getByLabelText('Eau avitaillée'));
     await user.click(screen.getByRole('button', { name: 'Générer RSE — consommations par projet' }));
     expect(buildPdf).toHaveBeenLastCalledWith(expect.anything(), snapshot, {
       forecast: { water: false, fuel: false, emissions: false, xbee: true },
       trend: { water: false, fuel: true, emissions: false, xbee: false },
+      charts: {},
     });
 
     await user.selectOptions(screen.getByLabelText('Année des indicateurs HSE'), '2024');
