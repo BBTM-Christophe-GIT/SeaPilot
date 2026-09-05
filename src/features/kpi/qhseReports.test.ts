@@ -64,15 +64,16 @@ describe('QHSE report catalog and calculations', () => {
 
     expect(content.charts).toHaveLength(3);
     expect(content.charts[0].series[0].values.slice(0, 4)).toEqual([0, 4, 0, 6]);
-    expect(content.charts[1].title).toBe('Consommation de fuel journalière');
+    expect(content.charts[1].title).toBe('Consommation de fuel cumulée par mois');
     expect(content.charts[1].monthTicks?.map((tick) => tick.label)).toEqual([
       'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
     ]);
     expect(content.charts[1].series.map((series) => series.label)).toEqual(['2024', '2025']);
-    expect(content.charts[1].series[0].values.filter((value) => value !== null)).toEqual([100, 50]);
-    expect(content.charts[1].series[1].values.filter((value) => value !== null)).toEqual([200]);
-    expect(content.charts[1].series[0].values[9]).toBe(100);
-    expect(content.charts[1].series[1].values[9]).toBe(200);
+    const fuelChart = content.charts[1];
+    expect(fuelChart.series[0].valueLabelIndices?.map((index) => fuelChart.series[0].values[index])).toEqual([100, 50]);
+    expect(fuelChart.series[1].valueLabelIndices?.map((index) => fuelChart.series[1].values[index])).toEqual([200]);
+    expect(fuelChart.series[0].values[fuelChart.labels.indexOf('01-10')]).toBe(100);
+    expect(fuelChart.series[1].values[fuelChart.labels.indexOf('01-10')]).toBe(200);
     expect(content.charts[1].series[0].values).not.toContain(10);
     expect(content.charts[2].series[0].values[0]).toBeCloseTo(285, 3);
     expect(content.charts[2].series[0].values[1]).toBeCloseTo(427.5, 3);
@@ -116,6 +117,32 @@ describe('QHSE report catalog and calculations', () => {
   it('reuses the reference GHG conversion without importing PBIX values', () => {
     expect(calculateFuelGhgTonnes(100)).toBeCloseTo(272.51, 5);
     expect(calculateDirectFuelCo2eTonnes(10, 2.85)).toBe(28.5);
+  });
+
+  it('accumulates daily fuel within each month, resets at its boundary and labels the monthly total', () => {
+    const snapshot = emptySnapshot();
+    snapshot.scope = { ...snapshot.scope, year: 2024 };
+    const days = ['2024-01-01', '2024-01-02', '2024-01-31', '2024-02-01', '2024-02-29', '2024-03-01'];
+    snapshot.reports = days.map((date, index) => ({ id: index + 1, reportDate: date, projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' }));
+    snapshot.metrics = [1000, 2000, 500, 4000, 250, 0].map((liters, index) => ({ dprId: index + 1, fuelConsumedLiters: liters, fuelOnBoardLiters: 0 }));
+    const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'consumption')!;
+    const chart = buildQhseReportContent(report, snapshot).charts[1];
+    const valueAt = (date: string) => chart.series[0].values[chart.labels.indexOf(date)];
+    expect(valueAt('01-01:reset')).toBe(0);
+    expect(valueAt('01-01')).toBe(1);
+    expect(valueAt('01-02')).toBe(3);
+    expect(valueAt('01-03')).toBe(3); // No additional DPR: the recorded cumulative sum holds.
+    expect(valueAt('01-31')).toBe(3.5);
+    expect(valueAt('02-01:reset')).toBe(0);
+    expect(valueAt('02-01')).toBe(4);
+    expect(valueAt('02-29')).toBe(4.25);
+    expect(valueAt('03-01')).toBe(0);
+    expect(valueAt('03-02')).toBeNull(); // Future dates beyond the latest DPR stay empty.
+    expect(valueAt('04-01:reset')).toBeNull(); // A whole month without DPRs is not presented as zero.
+    expect(chart.pointPositions?.[chart.labels.indexOf('01-31')]).toBe(chart.pointPositions?.[chart.labels.indexOf('02-01:reset')]);
+    const endIndices = chart.series[0].valueLabelIndices!;
+    expect(endIndices.map((index) => chart.labels[index])).toEqual(['01-31', '02-29', '03-01']);
+    expect(endIndices.map((index) => chart.series[0].values[index])).toEqual([3.5, 4.25, 0]);
   });
 
   it('documents unavailable social-governance inputs instead of inventing a score', () => {
