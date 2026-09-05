@@ -429,7 +429,7 @@ function monthlyCumulativeFuelChart(snapshot: QhseReportSnapshot): QhseReportCha
   snapshot.metrics.forEach((item) => {
     const raw = reports.get(item.dprId)?.reportDate.slice(0, 10) || '';
     if (!raw || !inScope(raw, snapshot.scope)) return;
-    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters / 1000);
+    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters);
   });
   // Each month starts at zero, followed by its daily cumulative observations.
   // The month-end total and next reset share the same X position.
@@ -460,7 +460,7 @@ function monthlyCumulativeFuelChart(snapshot: QhseReportSnapshot): QhseReportCha
         const date = `${year}-${point.monthDay}`;
         if (date > lastDate || !recordedMonths.has(date.slice(0, 7)) || (!isLeapYear && point.monthDay === '02-29')) return null;
         if (!point.reset) cumulative += totals.get(date) || 0;
-        return cumulative;
+        return cumulative / 1000;
       });
       const valueLabelIndices = Array.from({ length: 12 }, (_, month) => points.reduce((last, point, pointIndex) => point.month === month && !point.reset && values[pointIndex] !== null ? pointIndex : last, -1))
         .filter((pointIndex) => pointIndex >= 0);

@@ -174,7 +174,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
         const showValueLabel = value > 0 && valueLabelIndex % valueLabelStep === 0;
         if (value > 0) valueLabelIndex += 1;
         if (series.valueLabelIndices?.includes(index) || (chart.showValueLabels && labelCandidateCount <= 48 && showValueLabel)) {
-          const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+          const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: series.valueLabelIndices ? 2 : 1 }).format(value);
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(4.7);
           doc.setTextColor(...MUTED);
