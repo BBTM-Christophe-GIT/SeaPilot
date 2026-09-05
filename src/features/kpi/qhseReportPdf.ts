@@ -66,6 +66,7 @@ export function sanitizeQhsePdfText(value: string): string {
 
 function sanitizePdfContent(content: QhseReportContent): QhseReportContent {
   return {
+    environmentalImpact: content.environmentalImpact,
     summary: sanitizeQhsePdfText(content.summary),
     metrics: content.metrics.map((item) => ({
       ...item, label: sanitizeQhsePdfText(item.label), value: sanitizeQhsePdfText(item.value),
@@ -73,6 +74,7 @@ function sanitizePdfContent(content: QhseReportContent): QhseReportContent {
     })),
     charts: content.charts.map((chart) => ({
       ...chart, title: sanitizeQhsePdfText(chart.title), labels: chart.labels.map(sanitizeQhsePdfText),
+      unit: chart.unit ? sanitizeQhsePdfText(chart.unit) : undefined,
       series: chart.series.map((series) => ({ ...series, label: sanitizeQhsePdfText(series.label) })),
     })),
     tables: content.tables.map((table) => ({
@@ -93,6 +95,7 @@ function pageScope(snapshot: QhseReportSnapshot): string {
 }
 
 function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number, width: number, height: number): void {
+  doc.setLineWidth(0.25);
   doc.setDrawColor(...LINE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, width, height, 2, 2, 'FD');
@@ -121,6 +124,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const max = Math.max(1, ...leftValues);
   const rightMax = Math.max(1, ...rightValues);
+  doc.setLineWidth(0.18);
   doc.setDrawColor(...LINE);
   doc.line(plotX, plotY + plotH, plotX + plotW, plotY + plotH);
   [0.25, 0.5, 0.75, 1].forEach((ratio) => {
@@ -129,6 +133,12 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
     doc.line(plotX, lineY, plotX + plotW, lineY);
   });
   const count = Math.max(1, chart.labels.length);
+  chart.monthTicks?.forEach((tick) => {
+    const boundaryX = plotX + ((tick.index - 14) / (count - 1)) * plotW;
+    doc.setDrawColor(236, 241, 244);
+    doc.setLineWidth(0.12);
+    doc.line(boundaryX, plotY, boundaryX, plotY + plotH);
+  });
   if (chart.kind === 'bar') {
     const groupWidth = plotW / count;
     const gap = 0.7;
@@ -146,7 +156,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
   } else {
     chart.series.forEach((series) => {
       doc.setDrawColor(...series.color);
-      doc.setLineWidth(0.7);
+      doc.setLineWidth(chart.compactDailyPoints ? 0.3 : 0.7);
       let previous: [number, number] | null = null;
       const labelCandidateCount = series.values.filter((value) => value !== null && Number.isFinite(value) && value > 0).length;
       const valueLabelStep = Math.max(1, Math.ceil(labelCandidateCount / 12));
@@ -158,7 +168,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
         const pointY = plotY + plotH - ((value / seriesMax) * plotH);
         if (previous) doc.line(previous[0], previous[1], pointX, pointY);
         doc.setFillColor(...series.color);
-        doc.circle(pointX, pointY, 0.9, 'F');
+        doc.circle(pointX, pointY, chart.compactDailyPoints ? 0.24 : 0.9, 'F');
         const showValueLabel = value > 0 && valueLabelIndex % valueLabelStep === 0;
         if (value > 0) valueLabelIndex += 1;
         if (chart.showValueLabels && labelCandidateCount <= 48 && showValueLabel) {
@@ -173,8 +183,9 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
     });
   }
   const labelStep = chart.labels.length > 8 ? Math.ceil(chart.labels.length / 6) : 1;
-  chart.labels.forEach((label, index) => {
-    if (index % labelStep !== 0 && index !== chart.labels.length - 1) return;
+  const ticks = chart.monthTicks || chart.labels.map((label, index) => ({ label, index }))
+    .filter(({ index }) => index % labelStep === 0 || index === chart.labels.length - 1);
+  ticks.forEach(({ label, index }) => {
     const labelX = plotX + (count === 1 ? plotW / 2 : chart.kind === 'line' ? (index / (count - 1)) * plotW : ((index + 0.5) / count) * plotW);
     doc.setFontSize(5.2);
     doc.setTextColor(...MUTED);
@@ -183,6 +194,37 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
   doc.setFontSize(5.4);
   doc.text(`${Math.round(max * 100) / 100}${chart.unit ? ` ${chart.unit}` : ''}`, plotX, plotY - 1.2);
   if (rightValues.length) doc.text(String(Math.round(rightMax * 100) / 100), plotX + plotW, plotY - 1.2, { align: 'right' });
+}
+
+function drawEnvironmentalImpact(doc: JsPdfType, impact: NonNullable<QhseReportContent['environmentalImpact']>, x: number, y: number, width: number): number {
+  const number = (value: number) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value).replace(/\u202f/g, ' ');
+  const green: [number, number, number] = [18, 116, 70];
+  const textX = x + 17;
+  const textWidth = width - 22;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+  const body = doc.splitTextToSize("Les additifs enzymatiques XBEE utilisés par BBTM ont permis de réduire les émissions de CO2 dans l'atmosphère de", textWidth) as string[];
+  const baseline = doc.splitTextToSize(`Sans additif, les rejets de CO2 auraient été de ${number(impact.baselineTonnes)} tonnes de CO2.`, textWidth) as string[];
+  const height = 19 + body.length * 2.8 + baseline.length * 2.8;
+  doc.setDrawColor(160, 212, 182); doc.setFillColor(239, 249, 242); doc.setLineWidth(0.3);
+  doc.roundedRect(x, y, width, height, 2.5, 2.5, 'FD');
+  doc.setFillColor(...green); doc.roundedRect(x, y + 3, 1, height - 6, 0.5, 0.5, 'F');
+  doc.setFillColor(215, 239, 224); doc.circle(x + 9, y + 9, 4.5, 'F');
+  // Small vector leaf remains sharp in print at any PDF zoom.
+  doc.setDrawColor(...green); doc.setLineWidth(0.35);
+  doc.lines([[0, -2.5, 1.5, -4, 5, -4], [0, 3, -1.5, 4.5, -5, 4]], x + 6.5, y + 11, [1, 1], 'S', true);
+  doc.line(x + 6.2, y + 11.7, x + 10.3, y + 8.4);
+  doc.setTextColor(...green); doc.setFont('helvetica', 'bold'); doc.setFontSize(5.7);
+  doc.text('IMPACT ENVIRONNEMENTAL · XBEE', textX, y + 4.5);
+  doc.setFontSize(9);
+  doc.text(`${number(impact.emittedTonnes)} tonnes de CO2 ont été émis.`, textX, y + 9.3);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(48, 77, 60);
+  doc.text(body, textX, y + 14, { lineHeightFactor: 1.22 });
+  const reductionY = y + 14 + body.length * 2.8;
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...green);
+  doc.text(`${number(impact.avoidedTonnes)} tonnes.`, textX, reductionY);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(76, 104, 86);
+  doc.text(baseline, textX, reductionY + 4, { lineHeightFactor: 1.22 });
+  return height;
 }
 
 const REFERENCE_PAGE_IDS = new Set(['social-safety-1', 'social-safety-vessel', 'environment', 'port-call-tracking-v2', 'social-governance', 'consumption']);
@@ -297,7 +339,8 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
     section('2. Consommation de fuel');
     chart(1, margin, y, width - 40, 43); valueCallout(1, y + 21, annualCaption); y += 48;
     section('3. Émissions de GES issues du fuel consommé');
-    chart(2, margin, y, width, 62); y += 67;
+    const emissionsHeight = Math.max(37, 62 - Math.max(0, content.tables[0].rows.length - 2) * 5);
+    chart(2, margin, y, width, emissionsHeight); y += emissionsHeight + 5;
     table(0, 12);
   } else {
     section("1. Bien-être dans l'entreprise");
@@ -309,6 +352,12 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
     table(0, 18);
   }
 
+  if (report.id === 'consumption' && content.environmentalImpact) {
+    if (y + 28 > 282) {
+      doc.addPage(); drawReferenceHeader(doc, report, snapshot, logo, generatedAt); y = 37;
+    }
+    y += drawEnvironmentalImpact(doc, content.environmentalImpact, margin, y, width) + 2;
+  }
   const notes = content.notes.filter((note) => report.id !== 'social-governance' || note.title !== 'Entretiens annuels');
   if (notes.length && y < 267) {
     const note = notes[0];
