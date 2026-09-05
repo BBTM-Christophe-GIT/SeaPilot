@@ -24,6 +24,8 @@ import {
 import {
   buildQhseReportArchive, buildQhseReportPdf, downloadQhseBlob, qhseReportArchiveFileName,
 } from './qhseReportPdf';
+import { QhseReportComposer } from './QhseReportComposer';
+import { QhseGraphOptions } from './QhseGraphOptions';
 import './kpiReports.css';
 
 interface KpiPageProps { client?: SupabaseClient }
@@ -133,6 +135,8 @@ export function KpiPage({ client }: KpiPageProps) {
   const [reportMessage, setReportMessage] = useState('');
   const [reportForecast, setReportForecast] = useState<NonNullable<QhseReportOptions['forecast']>>({ water: false, fuel: false, emissions: false, xbee: false });
   const [reportTrend, setReportTrend] = useState<NonNullable<QhseReportOptions['trend']>>({ water: false, fuel: false, emissions: false, xbee: false });
+  const [graphOptions, setGraphOptions] = useState<NonNullable<QhseReportOptions['charts']>>({});
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>(QHSE_REPORT_CATALOG.filter((r) => r.id !== 'menu').map((r) => r.id));
   const reportSnapshots = useRef(new Map<string, QhseReportSnapshot>());
 
   async function load() {
@@ -216,7 +220,7 @@ export function KpiPage({ client }: KpiPageProps) {
     try {
       const snapshot = await getReportSnapshot();
       setReportProgress('Mise en page du PDF…');
-      const blob = await buildQhseReportPdf(report, snapshot, { forecast: reportForecast, trend: reportTrend });
+      const blob = await buildQhseReportPdf(report, snapshot, { forecast: reportForecast, trend: reportTrend, charts: graphOptions });
       downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-'), selectedProjectNames.join('-')));
       setReportMessage(`${report.title} a été généré.`);
     } catch {
@@ -230,7 +234,7 @@ export function KpiPage({ client }: KpiPageProps) {
       const snapshot = await getReportSnapshot();
       const archive = await buildQhseReportArchive(QHSE_REPORT_CATALOG, snapshot, (completed, total) => {
         setReportProgress(`Génération des PDF : ${completed} / ${total}`);
-      }, { forecast: reportForecast, trend: reportTrend });
+      }, { forecast: reportForecast, trend: reportTrend, charts: graphOptions });
       downloadQhseBlob(archive, qhseReportArchiveFileName(snapshot));
       setReportMessage(`Les ${QHSE_REPORT_CATALOG.length} rapports PDF ont été regroupés dans une archive ZIP.`);
     } catch {
@@ -296,7 +300,7 @@ export function KpiPage({ client }: KpiPageProps) {
     </section>
 
     <section className="qhse-report-library" aria-labelledby="qhse-report-library-title">
-      <header><div><span className="action-plan-eyebrow">Rapport Général QHSE</span><h2 id="qhse-report-library-title">Rapports PDF</h2><p>Les {QHSE_REPORT_CATALOG.length} rapports retenus, recalculés exclusivement avec les données SeaPilot.</p></div>
+      <header><div><span className="action-plan-eyebrow">Rapport Général QHSE</span><h2 id="qhse-report-library-title">Rapports PDF</h2><p>{QHSE_REPORT_CATALOG.length} modèles harmonisés, alimentés exclusivement par Supabase. Le nombre de pages dépend des années et du détail à publier.</p></div>
         <div className="qhse-report-controls">
           <details className="qhse-report-multiselect"><summary>Années <strong>{reportPeriod.join(', ')}</strong></summary><fieldset aria-label="Années des rapports QHSE">{hseYears.map((year) => <label key={year}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportYears.includes(year)} onChange={(event) => setReportYears((current) => event.target.checked ? [...current, year] : current.length > 1 ? current.filter((item) => item !== year) : current)}/>{year}</label>)}</fieldset></details>
           <details className="qhse-report-multiselect"><summary>Navires <strong>{selectedVesselNames.length ? `${selectedVesselNames.length} sélectionné(s)` : 'Tous'}</strong></summary><fieldset aria-label="Navires des rapports QHSE"><label><input type="checkbox" disabled={Boolean(reportBusy)} checked={!reportVesselIds.length} onChange={() => setReportVesselIds([])}/>Tous les navires</label>{data.vessels.map((vessel) => <label key={vessel.id}><input type="checkbox" disabled={Boolean(reportBusy)} checked={reportVesselIds.includes(vessel.id)} onChange={(event) => setReportVesselIds((current) => event.target.checked ? [...current, vessel.id] : current.filter((item) => item !== vessel.id))}/>{vessel.name}</label>)}</fieldset></details>
@@ -306,11 +310,18 @@ export function KpiPage({ client }: KpiPageProps) {
       </header>
       <div className="qhse-report-assurance"><CheckCircle2 size={18} /><div><strong>Calculs SeaPilot traçables</strong><p>Les rapports utilisent les DPR soumis ou validés, le registre d’exposition HSE versionné et les référentiels métier visibles par votre profil. Les données absentes sont signalées dans le PDF.</p></div></div>
       {(reportProgress || reportMessage) && <p className={`qhse-report-status ${reportProgress ? 'is-progress' : ''}`} role="status">{reportProgress || reportMessage}</p>}
+      <QhseReportComposer reports={QHSE_REPORT_CATALOG.filter((r) => selectedReportIds.includes(r.id))}
+        options={{ forecast: reportForecast, trend: reportTrend, charts: graphOptions }}
+        scopeKey={`${reportPeriod.join(',')}:${reportVesselIds.join(',')}:${reportProjectIds.join(',')}`}
+        disabled={Boolean(reportBusy) || hseLoading} getSnapshot={getReportSnapshot} onBusy={(busy) => setReportBusy(busy ? 'composer' : '')} />
+      <div className="qhse-composer-actions"><strong>Rapports à inclure</strong><button disabled={Boolean(reportBusy)} onClick={() => setSelectedReportIds(QHSE_REPORT_CATALOG.map((r) => r.id))}>Tous les rapports</button><button disabled={Boolean(reportBusy)} onClick={() => setSelectedReportIds([])}>Aucun rapport</button></div>
       {QHSE_REPORT_FAMILIES.map((family) => {
         const reports = QHSE_REPORT_CATALOG.filter((report) => report.family === family);
         return <section className="qhse-report-family" key={family}><header><h3>{family}</h3><span>{reports.length} rapport(s)</span></header><div className="qhse-report-grid">
           {reports.map((report) => <article className={`qhse-report-card${report.id === 'consumption' ? ' has-forecast' : ''}`} key={report.id}>
-            <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Page {report.pageNumber} / {QHSE_REPORT_CATALOG.length} · {report.orientation === 'portrait' ? 'A4 portrait' : 'A4 paysage'}</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Couverture SeaPilot complète' : 'Couverture partielle documentée'}</small></div>
+            <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Modèle {report.pageNumber} / {QHSE_REPORT_CATALOG.length} · A4 portrait</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Sources Supabase · complétude vérifiée à l’édition' : 'Limites de données documentées'}</small>
+            <label className="qhse-report-selection"><input type="checkbox" disabled={Boolean(reportBusy)} checked={selectedReportIds.includes(report.id)} onChange={(event) => setSelectedReportIds((current) => event.target.checked ? [...current, report.id] : current.filter((id) => id !== report.id))} />Inclure {report.title}</label></div>
+            <QhseGraphOptions reportId={report.id} value={graphOptions} onChange={setGraphOptions} disabled={Boolean(reportBusy)} />
             {report.id === 'consumption' && <>
             <fieldset className="qhse-consumption-forecast" disabled={Boolean(reportBusy)} aria-describedby="consumption-trend-help">
               <legend>Tendances observées</legend>

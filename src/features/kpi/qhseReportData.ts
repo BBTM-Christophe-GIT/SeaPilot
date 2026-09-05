@@ -4,15 +4,21 @@ import type {
 } from '../actionPlan/actionPlanQueries';
 import { fetchActionPlanHseDashboard } from '../actionPlan/actionPlanQueries';
 import { fetchFleetCertificates, type FleetCertificateRecord } from '../fleetCertificates/fleetCertificateQueries';
-import { fetchPeople, type PersonRecord } from '../humanResources/peopleQueries';
+import { fetchPeople, fetchHrDocuments, type HrDocumentRecord, type PersonRecord } from '../humanResources/peopleQueries';
 import {
   fetchPlanningVesselVisits, planningVisitTypeLabel, type PlanningVesselVisit,
 } from '../planning/planningVisitQueries';
 import { fetchProceduresData, type ProceduresData } from '../procedures/procedureQueries';
 import { QHSE_REPORT_CATALOG, type QhseReportDefinition, type QhseReportId } from './qhseReportCatalog';
 import { buildConsumptionCharts, consumptionCutoff, consumptionYearSnapshot } from './qhseConsumption';
+import { buildMaritimeContent, scopeMaritimeSnapshot } from './qhseMaritimeReports';
+import { applyQhseChartOptions } from './qhseReportTrends';
 
 export interface QhseReportOptions {
+  /** Internal assembly options; individual exports retain their own page numbers. */
+  omitPageNumbers?: boolean;
+  contents?: Array<{ title: string; page: number }>;
+  charts?: Record<string, { trend?: boolean; forecast?: boolean }>;
   forecast?: { water: boolean; fuel: boolean; emissions: boolean; xbee: boolean };
   trend?: { water: boolean; fuel: boolean; emissions: boolean; xbee: boolean };
   /** Reproducible cut-off for exports/tests; defaults to today's date in Paris. */
@@ -20,6 +26,7 @@ export interface QhseReportOptions {
 }
 
 export interface QhseReportScope {
+  cutoffDate?: string;
   year: number;
   vesselId: number | null;
   vesselName: string;
@@ -51,6 +58,13 @@ export interface QhseExposureRecord {
   personId: number | null;
   population: string;
   vesselId: number | null;
+  projectId?: number | null;
+  actualHours?: number | null;
+}
+
+export interface QhseSafetyEvent {
+  id: number; date: string; classification: string; lostDays: number;
+  vesselId: number | null; projectId: number | null; actionId: number | null;
 }
 
 export interface QhseEnvironmentParameter {
@@ -79,6 +93,12 @@ export interface QhseReportMetric {
 }
 
 export interface QhseReportChart {
+  id?: string;
+  periods?: string[];
+  /** Complete, observed months eligible for regression/projection. Never infer completeness from zero. */
+  eligibleIndices?: number[];
+  forecastAllowed?: boolean;
+  horizontal?: boolean;
   title: string;
   kind: 'bar' | 'line';
   labels: string[];
@@ -159,9 +179,22 @@ export interface QhseReportSnapshot {
   procedures: ProceduresData;
   annualReferences?: QhseAnnualReferenceMetric[];
   exposureRecords?: QhseExposureRecord[];
+  safetyEvents?: QhseSafetyEvent[];
+  hrDocuments?: HrDocumentRecord[];
   environmentParameters?: QhseEnvironmentParameter[];
   contractTargets?: QhseContractTarget[];
   warnings: string[];
+}
+
+/** PostgREST caps responses; iterate instead of silently losing rows after the first 1,000. */
+export async function collectQhsePages<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += 500) {
+    const result = await page(from, from + 499);
+    if (result.error) throw result.error;
+    rows.push(...(result.data || []));
+    if (!result.data || result.data.length < 500) return rows;
+  }
 }
 
 export interface QhseReportSeed {
@@ -230,14 +263,15 @@ function scopeProjectIds(scope: QhseReportScope): number[] {
 }
 function inScope(value: string, scope: QhseReportScope): boolean { return scopeYears(scope).includes(Number(value.slice(0, 4))); }
 function scopeStart(scope: QhseReportScope): string { return `${scopeYears(scope)[0]}-01-01`; }
-function scopeEnd(scope: QhseReportScope): string { return `${scopeYears(scope).at(-1)}-12-31`; }
+function scopeEnd(scope: QhseReportScope): string { const end = `${scopeYears(scope).at(-1)}-12-31`; const cutoff = scope.cutoffDate || consumptionCutoff({}); return end < cutoff ? end : cutoff; }
 function scopeCalendarDays(scope: QhseReportScope): number { return scopeYears(scope).reduce((sum, year) => sum + daysInYear(year), 0); }
 function metric(label: string, value: string | number, detail = '', tone: QhseReportMetric['tone'] = 'blue'): QhseReportMetric {
   return { label, value: typeof value === 'number' ? formatNumber(value) : value, detail, tone };
 }
 function sourceNote(): string { return 'Données SeaPilot accessibles à l’utilisateur au moment de la génération.'; }
 function unavailable(title: string, textValue: string): QhseReportNote { return { title, text: textValue, tone: 'warning' }; }
-function rowsLimited(rows: string[][], limit = 48): string[][] { return rows.slice(0, limit); }
+// Legacy call sites pass a former row cap. Pagination now preserves every row.
+function rowsLimited(rows: string[][], formerLimit = 48): string[][] { void formerLimit; return rows; }
 
 async function safeLoad<T>(label: string, fallback: T, warnings: string[], work: () => Promise<T>): Promise<T> {
   try { return await work(); } catch {
@@ -255,14 +289,17 @@ async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warn
     exercises: [] as DprExerciseRow[], portCalls: [] as DprPortCallRow[], supplies: [] as DprSupplyRow[],
     waste: [] as DprWasteRow[], incidents: [] as DprIncidentRow[],
   }, warnings, async () => {
-    const [projectResult, vesselResult] = await Promise.all([
+    const [projectResult, vesselResult, exerciseTypes] = await Promise.all([
       client.from('projects').select('id,project_code,title').order('project_code'),
       client.from('vessels').select('id,name').order('name'),
+      client.from('emergency_exercise_types').select('key,label').order('key'),
     ]);
     if (projectResult.error) throw projectResult.error;
     if (vesselResult.error) throw vesselResult.error;
     const projects = new Map((projectResult.data || []).map((row) => [Number(row.id), [text(row.project_code), text(row.title)].filter(Boolean).join(' · ')]));
     const vessels = new Map((vesselResult.data || []).map((row) => [Number(row.id), text(row.name)]));
+    const exerciseLabels = new Map((exerciseTypes.data || []).map((row) => [text(row.key), text(row.label)]));
+    if (exerciseTypes.error) warnings.push('Libellés des exercices : catalogue indisponible.');
 
     let reportQuery = client.from('dpr_reports')
       .select('id,report_date,project_id,unlisted_project_name,vessel_id,status')
@@ -272,32 +309,40 @@ async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warn
     if (vesselIds.length) reportQuery = reportQuery.in('vessel_id', vesselIds);
     const projectIds = scopeProjectIds(scope);
     if (projectIds.length) reportQuery = reportQuery.in('project_id', projectIds);
-    const reportResult = await reportQuery.order('report_date', { ascending: true }).limit(1000);
-    if (reportResult.error) throw reportResult.error;
-    const reports: DprReportRow[] = (reportResult.data || []).map((row) => ({
+    const reportRows = await collectQhsePages((from, to) => reportQuery.order('report_date', { ascending: true }).order('id').range(from, to));
+    const reports: DprReportRow[] = reportRows.map((row) => ({
       id: Number(row.id), reportDate: text(row.report_date), projectId: nullableNumber(row.project_id),
       projectLabel: row.project_id ? projects.get(Number(row.project_id)) || '' : text(row.unlisted_project_name),
       vesselId: nullableNumber(row.vessel_id), vesselName: row.vessel_id ? vessels.get(Number(row.vessel_id)) || '' : '',
     }));
+    const groups = new Map<string, number[]>();
+    reports.forEach((r) => { const key = `${r.reportDate}:${r.vesselId}:${r.projectId}:${r.projectLabel}`; groups.set(key, [...(groups.get(key) || []), r.id]); });
+    const duplicates = [...groups.values()].filter((group) => group.length > 1);
+    if (duplicates.length) warnings.push(`DPR multiples : ${duplicates.length} couple(s) date/navire/projet ont plusieurs DPR validés ou soumis. Totaux = somme des enregistrements, à rapprocher avant validation officielle. Identifiants concernés : ${duplicates.flat().join(', ')}.`);
     const ids = reports.map((report) => report.id);
     if (!ids.length) return { reports, metrics: [], hseActions: [], exercises: [], portCalls: [], supplies: [], waste: [], incidents: [] };
 
+    const children = async (table: string, columns: string, order: string) => {
+      const data: Record<string, unknown>[] = [];
+      for (let index = 0; index < ids.length; index += 100) {
+        data.push(...await collectQhsePages((from, to) => client.from(table).select(columns).in('dpr_id', ids.slice(index, index + 100)).order(order).order('dpr_id').range(from, to)) as unknown as Record<string, unknown>[]);
+      }
+      return { data };
+    };
     const [metricResult, hseResult, exerciseResult, callResult, supplyResult, wasteResult, incidentResult] = await Promise.all([
-      client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters,fuel_on_board_liters').in('dpr_id', ids),
-      client.from('dpr_hse_actions').select('dpr_id,tbt_performed,hse_visit_performed,hse_audit_performed,good_practices_count,dangerous_situations_count,stop_work_count').in('dpr_id', ids),
-      client.from('dpr_emergency_exercises').select('dpr_id,exercise_type_key').in('dpr_id', ids),
-      client.from('dpr_port_calls').select('id,dpr_id,port_name,arrival_at,departure_at,reasons:dpr_port_call_reasons(reason_type_key)').in('dpr_id', ids).order('arrival_at'),
-      client.from('dpr_supplies').select('dpr_id,fuel_m3,oil_liters,water_m3').in('dpr_id', ids),
-      client.from('dpr_waste_records').select('dpr_id,waste_type_key,quantity,unit').in('dpr_id', ids),
-      client.from('dpr_incidents').select('dpr_id,category,level').in('dpr_id', ids),
+      children('dpr_daily_metrics', 'dpr_id,fuel_consumed_liters,fuel_on_board_liters', 'dpr_id'),
+      children('dpr_hse_actions', 'dpr_id,tbt_performed,hse_visit_performed,hse_audit_performed,good_practices_count,dangerous_situations_count,stop_work_count', 'dpr_id'),
+      children('dpr_emergency_exercises', 'dpr_id,exercise_type_key', 'exercise_type_key'),
+      children('dpr_port_calls', 'id,dpr_id,port_name,arrival_at,departure_at,reasons:dpr_port_call_reasons(reason_type_key)', 'id'),
+      children('dpr_supplies', 'dpr_id,fuel_m3,oil_liters,water_m3', 'dpr_id'),
+      children('dpr_waste_records', 'dpr_id,waste_type_key,quantity,unit', 'waste_type_key'),
+      children('dpr_incidents', 'id,dpr_id,category,level', 'id'),
     ]);
-    const errorResult = [metricResult, hseResult, exerciseResult, callResult, supplyResult, wasteResult, incidentResult].find((result) => result.error);
-    if (errorResult?.error) throw errorResult.error;
     return {
       reports,
       metrics: (metricResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), fuelConsumedLiters: numeric(row.fuel_consumed_liters), fuelOnBoardLiters: numeric(row.fuel_on_board_liters), fuelReported: row.fuel_consumed_liters !== null })),
       hseActions: (hseResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), tbtPerformed: Boolean(row.tbt_performed), hseVisitPerformed: Boolean(row.hse_visit_performed), hseAuditPerformed: Boolean(row.hse_audit_performed), goodPractices: numeric(row.good_practices_count), dangerousSituations: numeric(row.dangerous_situations_count), stopWork: numeric(row.stop_work_count) })),
-      exercises: (exerciseResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), type: text(row.exercise_type_key) })),
+      exercises: (exerciseResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), type: exerciseLabels.get(text(row.exercise_type_key)) || text(row.exercise_type_key) })),
       portCalls: (callResult.data || []).map((row) => ({
         id: Number(row.id), dprId: Number(row.dpr_id), portName: text(row.port_name), arrivalAt: text(row.arrival_at), departureAt: text(row.departure_at),
         reasons: ((row.reasons || []) as Array<Record<string, unknown>>).map((reason) => text(reason.reason_type_key)),
@@ -320,7 +365,7 @@ export async function fetchQhseReportSnapshot(
   const projectIds = scopeProjectIds(scope);
   const startsOn = `${years[0]}-01-01`;
   const endsOn = `${years.at(-1)}-12-31`;
-  const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets] = await Promise.all([
+  const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets, safetyEvents, hrDocuments] = await Promise.all([
     fetchDprData(client, scope, warnings),
     safeLoad('Certificats flotte', [] as FleetCertificateRecord[], warnings, () => fetchFleetCertificates(client)),
     safeLoad('Planning des visites', [] as PlanningVesselVisit[], warnings, () => fetchPlanningVesselVisits(client)),
@@ -335,11 +380,11 @@ export async function fetchQhseReportSnapshot(
       return (result.data || []).map((row) => ({ year: Number(row.report_year), vesselId: nullableNumber(row.vessel_id), workedHours: numeric(row.worked_hours), personDays: numeric(row.person_days), sourceLabel: text(row.source_label) }));
     }),
     safeLoad('Registre d’exposition HSE', [] as QhseExposureRecord[], warnings, async () => {
-      let query = client.from('hse_exposure_hours').select('exposure_date,exposure_hours,person_id,population,vessel_id').gte('exposure_date', startsOn).lte('exposure_date', endsOn);
+      let query = client.from('hse_exposure_hours').select('id,exposure_date,exposure_seconds,actual_work_seconds,person_id,population,vessel_id,project_id').gte('exposure_date', startsOn).lte('exposure_date', endsOn);
       if (vesselIds.length) query = query.in('vessel_id', vesselIds);
-      const result = await query.order('exposure_date');
-      if (result.error) throw result.error;
-      return (result.data || []).map((row) => ({ date: text(row.exposure_date), hours: numeric(row.exposure_hours), personId: nullableNumber(row.person_id), population: text(row.population), vesselId: nullableNumber(row.vessel_id) }));
+      if (projectIds.length) query = query.in('project_id', projectIds);
+      const rows = await collectQhsePages((from, to) => query.order('exposure_date').order('id').range(from, to));
+      return rows.map((row) => ({ date: text(row.exposure_date), hours: numeric(row.exposure_seconds) / 3600, actualHours: row.actual_work_seconds === null ? null : numeric(row.actual_work_seconds) / 3600, personId: nullableNumber(row.person_id), population: text(row.population), vesselId: nullableNumber(row.vessel_id), projectId: nullableNumber(row.project_id) }));
     }),
     safeLoad('Paramètres environnementaux', [] as QhseEnvironmentParameter[], warnings, async () => {
       const result = await client.from('qhse_environment_parameters').select('fuel_density_tonnes_per_m3,emission_factor_tco2_per_tonne,direct_combustion_factor_tco2e_per_m3,xbee_reduction_rate,effective_from,effective_to').order('effective_from');
@@ -358,6 +403,14 @@ export async function fetchQhseReportSnapshot(
       if (result.error) throw result.error;
       return (result.data || []).map((row) => ({ projectId: Number(row.project_id), vesselId: Number(row.vessel_id), year: Number(row.report_year), maintenanceDaysLimit: numeric(row.maintenance_days_limit), portCall24hLimit: numeric(row.port_call_24h_limit), validUntil: text(row.valid_until) }));
     }),
+    safeLoad('Événements HSE', [] as QhseSafetyEvent[], warnings, async () => {
+      let query = client.from('hse_safety_events').select('id,occurred_on,classification,lost_days,vessel_id,project_id,action_item_id').gte('occurred_on', startsOn).lte('occurred_on', endsOn);
+      if (vesselIds.length) query = query.in('vessel_id', vesselIds);
+      if (projectIds.length) query = query.in('project_id', projectIds);
+      const rows = await collectQhsePages((from, to) => query.order('occurred_on').order('id').range(from, to));
+      return rows.map((row) => ({ id: Number(row.id), date: text(row.occurred_on), classification: text(row.classification), lostDays: numeric(row.lost_days), vesselId: nullableNumber(row.vessel_id), projectId: nullableNumber(row.project_id), actionId: nullableNumber(row.action_item_id) }));
+    }),
+    safeLoad('Documents RH', [] as HrDocumentRecord[], warnings, () => fetchHrDocuments(client)),
   ]);
   return {
     scope,
@@ -373,6 +426,8 @@ export async function fetchQhseReportSnapshot(
     procedures,
     annualReferences,
     exposureRecords,
+    safetyEvents,
+    hrDocuments,
     environmentParameters,
     contractTargets: contractTargets.filter((target) => !projectIds.length || projectIds.includes(target.projectId)),
     warnings,
@@ -773,7 +828,7 @@ function buildEnvironmentContent(snapshot: QhseReportSnapshot): QhseReportConten
 }
 
 function employedAt(person: PersonRecord, date: string): boolean {
-  return (!person.hiredOn || person.hiredOn <= date) && (!person.departedOn || person.departedOn > date);
+  return Boolean(person.hiredOn) && person.hiredOn <= date && (!person.departedOn || person.departedOn > date);
 }
 function buildGovernanceContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const people = snapshot.people.filter((person) => employedAt(person, scopeEnd(snapshot.scope)));
@@ -781,7 +836,7 @@ function buildGovernanceContent(snapshot: QhseReportSnapshot): QhseReportContent
   return {
     summary: `Indicateurs sociaux et démarches d’amélioration disponibles — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
-      metric('Effectif en fin de période', people.length, 'Contrats présents au 31 décembre', 'blue'),
+      metric('Effectif en fin de période', people.length, 'Contrats présents à la date d’arrêté', 'blue'),
       metric('Propositions d’amélioration', improvementActions.length, 'Actions explicitement qualifiées', 'green'),
       metric('Propositions soldées', improvementActions.filter(closedAction).length, 'Clôture enregistrée', 'green'),
       metric('Entretiens annuels', '—', 'Aucune source structurée SeaPilot', 'orange'),
@@ -991,12 +1046,12 @@ function buildAgeContent(snapshot: QhseReportSnapshot): QhseReportContent {
 function buildManagementContent(snapshot: QhseReportSnapshot): QhseReportContent {
   const at = scopeEnd(snapshot.scope);
   const people = snapshot.people.filter((person) => employedAt(person, at));
-  const hires = people.filter((person) => inScope(person.hiredOn, snapshot.scope));
-  const departures = snapshot.people.filter((person) => inScope(person.departedOn, snapshot.scope));
+  const hires = snapshot.people.filter((person) => inScope(person.hiredOn, snapshot.scope) && person.hiredOn <= at);
+  const departures = snapshot.people.filter((person) => inScope(person.departedOn, snapshot.scope) && person.departedOn <= at);
   return {
     summary: `Vue management de l’effectif au ${formatDate(scopeEnd(snapshot.scope))}.`,
     metrics: [
-      metric('Effectif', people.length, 'Collaborateurs présents', 'blue'),
+      metric('Effectif', people.length, `${people.filter((p) => !normalize(p.gradeLabel).includes('sedentaire')).length} marins · ${people.filter((p) => normalize(p.gradeLabel).includes('sedentaire')).length} sédentaires (grade RH)`, 'blue'),
       metric('Entrées', hires.length, `Période ${scopeYears(snapshot.scope).join(', ')}`, 'green'),
       metric('Sorties', departures.length, `Période ${scopeYears(snapshot.scope).join(', ')}`, 'orange'),
       metric('Fonctions', new Set(people.map((person) => person.functionLabel).filter(Boolean)).size, 'Fonctions distinctes', 'blue'),
@@ -1129,7 +1184,8 @@ function buildConsumptionContent(input: QhseReportSnapshot, options: QhseReportO
   };
 }
 
-export function buildQhseReportContent(report: QhseReportDefinition, snapshot: QhseReportSnapshot, options: QhseReportOptions = {}): QhseReportContent {
+export function buildQhseReportContent(report: QhseReportDefinition, input: QhseReportSnapshot, options: QhseReportOptions = {}): QhseReportContent {
+  const snapshot = scopeMaritimeSnapshot(input, options);
   let content: QhseReportContent;
   switch (report.id as QhseReportId) {
     case 'menu': content = buildMenuContent(snapshot); break;
@@ -1157,6 +1213,18 @@ export function buildQhseReportContent(report: QhseReportDefinition, snapshot: Q
     case 'hse-audit-deviations-lems': content = buildAuditDeviationsContent(snapshot); break;
     case 'documents-list': content = buildDocumentsContent(snapshot); break;
     case 'consumption': content = buildConsumptionContent(snapshot, options); break;
+    case 'training-plan': content = { summary: '', metrics: [], charts: [], tables: [], notes: [], sources: [] }; break;
+  }
+  content = buildMaritimeContent(report, snapshot, options, () => content);
+  content.charts = content.charts.map((chart) => applyQhseChartOptions(chart, options));
+  if (['hr-management', 'hr-age-pyramid', 'social-governance', 'training-plan'].includes(report.id) && (scopeVesselIds(snapshot.scope).length || scopeProjectIds(snapshot.scope).length)) {
+    content.notes.push(unavailable('Périmètre RH documenté', 'Les personnes sont sélectionnées uniquement via leurs affectations dans le registre d’exposition HSE de la période. Les personnes sans affectation ne peuvent pas être ventilées par navire/projet ; sélectionner tous les navires et projets pour le bilan entreprise.'));
+    if (!snapshot.people.length) content.metrics = content.metrics.map((m) => ({ ...m, value: '—', detail: 'Aucune affectation RH documentée' }));
+  }
+  if (['hr-management', 'hr-age-pyramid', 'social-governance'].includes(report.id)) {
+    content.charts = content.charts.map((chart) => ({ ...chart, horizontal: chart.kind === 'bar' && chart.series.length === 1 }));
+    const missingHires = snapshot.people.filter((p) => !p.hiredOn).length;
+    if (missingHires) content.notes.push(unavailable('Historique RH incomplet', `${missingHires} personne(s) sans date d’entrée exclue(s) du calcul d’effectif daté.`));
   }
   if (snapshot.warnings.length) content.notes.push(unavailable('Accès partiel', snapshot.warnings.join(' ')));
   return content;

@@ -25,7 +25,8 @@ export type QhseReportId =
   | 'hse-kpi-lems'
   | 'hse-audit-deviations-lems'
   | 'documents-list'
-  | 'consumption';
+  | 'consumption'
+  | 'training-plan';
 
 export interface QhseReportDefinition {
   id: QhseReportId;
@@ -40,16 +41,17 @@ export interface QhseReportDefinition {
 }
 
 export const QHSE_REPORT_CATALOG: readonly QhseReportDefinition[] = [
-  { id: 'menu', pageNumber: 1, sourcePage: 1, sourceTitle: 'Menu', title: 'Sommaire des rapports QHSE', family: 'Sommaire', description: 'Index des rapports et périmètre de données SeaPilot.', orientation: 'landscape', coverage: 'complete' },
-  { id: 'social-safety-1', pageNumber: 2, sourcePage: 4, sourceTitle: 'RSE - Social Sécu 1', title: 'RSE — santé et sécurité 1', family: 'QHSE & RSE', description: 'Typologie des événements et indicateurs annuels de sécurité.', orientation: 'portrait', coverage: 'complete' },
-  { id: 'social-safety-2', pageNumber: 3, sourcePage: 5, sourceTitle: 'RSE - Social Sécu 2', title: 'RSE — santé et sécurité 2', family: 'QHSE & RSE', description: 'Pyramide de Bird et causes documentées des événements.', orientation: 'portrait', coverage: 'complete' },
+  { id: 'menu', pageNumber: 1, sourcePage: 1, sourceTitle: 'Menu', title: 'Sommaire des rapports QHSE', family: 'Sommaire', description: 'Index des rapports et périmètre de données Supabase.', orientation: 'portrait', coverage: 'complete' },
+  { id: 'social-safety-1', pageNumber: 2, sourcePage: 4, sourceTitle: 'RSE - Social Sécu 1', title: 'RSE — santé et sécurité 1', family: 'QHSE & RSE', description: 'TF, TG, LTIFR, TRIR et FAR : accidentologie et heures d’exposition rapprochées.', orientation: 'portrait', coverage: 'partial' },
+  { id: 'social-safety-2', pageNumber: 3, sourcePage: 5, sourceTitle: 'RSE - Social Sécu 2', title: 'RSE — santé et sécurité 2', family: 'QHSE & RSE', description: 'Typologie, gravité et causes documentées des événements.', orientation: 'portrait', coverage: 'complete' },
   { id: 'social-safety-vessel', pageNumber: 4, sourcePage: 6, sourceTitle: 'RSE - Social Sécu Navire', title: 'RSE — sécurité navire', family: 'QHSE & RSE', description: 'Événements, exercices et actions de prévention par navire.', orientation: 'portrait', coverage: 'complete' },
   { id: 'environment', pageNumber: 5, sourcePage: 7, sourceTitle: 'RSE - Environnement', title: 'RSE — environnement', family: 'QHSE & RSE', description: 'Carburant, eau, déchets et estimation des émissions de GES.', orientation: 'portrait', coverage: 'complete' },
   { id: 'social-governance', pageNumber: 6, sourcePage: 8, sourceTitle: 'RSE - Social Gouvernance', title: 'RSE — social et gouvernance', family: 'QHSE & RSE', description: 'Effectifs et propositions d’amélioration ; lacunes signalées sans extrapolation.', orientation: 'portrait', coverage: 'partial' },
   { id: 'port-call-tracking-v2', pageNumber: 7, sourcePage: 12, sourceTitle: 'Opérations - Suivi Escales V2', title: 'Opérations — suivi des escales détaillé', family: 'Technique & opérations', description: 'Analyse mensuelle des durées d’escale et des ports fréquentés.', orientation: 'portrait', coverage: 'complete' },
-  { id: 'hr-age-pyramid', pageNumber: 8, sourcePage: 20, sourceTitle: 'RH - Pyramide des âges', title: 'RH — pyramide des âges', family: 'RH & QSMS', description: 'Répartition des collaborateurs par âge et genre renseigné.', orientation: 'landscape', coverage: 'complete' },
-  { id: 'hr-management', pageNumber: 9, sourcePage: 21, sourceTitle: 'RH - Management', title: 'RH — management', family: 'RH & QSMS', description: 'Effectifs actifs par fonction, contrat et ancienneté.', orientation: 'landscape', coverage: 'complete' },
+  { id: 'hr-age-pyramid', pageNumber: 8, sourcePage: 20, sourceTitle: 'RH - Pyramide des âges', title: 'RH — pyramide des âges', family: 'RH & QSMS', description: 'Répartition des collaborateurs par âge et genre renseigné.', orientation: 'portrait', coverage: 'complete' },
+  { id: 'hr-management', pageNumber: 9, sourcePage: 21, sourceTitle: 'RH - Management', title: 'RH — management', family: 'RH & QSMS', description: 'Effectifs actifs par fonction, contrat et ancienneté.', orientation: 'portrait', coverage: 'complete' },
   { id: 'consumption', pageNumber: 10, sourcePage: 25, sourceTitle: 'RSE - Consommation', title: 'RSE — consommations par projet', family: 'QHSE & RSE', description: 'Eau avitaillée, fuel consommé et émissions cumulées de GES avec effet xBee.', orientation: 'portrait', coverage: 'complete' },
+  { id: 'training-plan', pageNumber: 11, sourcePage: 0, sourceTitle: 'Plan de formation RH', title: 'RH — plan de formation', family: 'RH & QSMS', description: 'Calendrier des renouvellements de formations et titres, issu des documents RH.', orientation: 'portrait', coverage: 'partial' },
 ] as const;
 
 export const QHSE_REPORT_FAMILIES: readonly QhseReportFamily[] = [
