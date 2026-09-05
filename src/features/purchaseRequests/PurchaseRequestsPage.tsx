@@ -38,6 +38,9 @@ import {
   fetchPurchaseRequests,
   fetchPurchaseVessels,
   isActiveUrgentPurchaseRequest,
+  isPurchaseRequestApproved,
+  isPurchaseRequestDecisionPending,
+  isPurchaseRequestRejected,
   transitionPurchaseRequest,
   type CreatePurchaseRequestInput,
   type PurchaseRequestAction,
@@ -104,6 +107,7 @@ const EMPTY_FORM: CreatePurchaseRequestInput = {
 const WIZARD_STEPS = ['Demandeur', 'Besoin', 'Prix', 'Livraison', 'Notes', 'Pièces jointes'];
 const PURCHASE_REQUEST_MANAGER_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine'];
 const PURCHASE_REQUEST_PROCESSOR_ROLES: RoleKey[] = [...PURCHASE_REQUEST_MANAGER_ROLES, 'marin'];
+const PURCHASE_REQUEST_DECIDER_ROLES: RoleKey[] = ['admin', 'direction', 'armement'];
 
 function normalize(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -111,6 +115,10 @@ function normalize(value: string): string {
 
 function canProcess(roles: RoleKey[]): boolean {
   return roles.some((role) => PURCHASE_REQUEST_PROCESSOR_ROLES.includes(role));
+}
+
+function canDecide(roles: RoleKey[]): boolean {
+  return roles.some((role) => PURCHASE_REQUEST_DECIDER_ROLES.includes(role));
 }
 
 function canCreate(roles: RoleKey[], functionLabel: string): boolean {
@@ -178,6 +186,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const effectiveRoles = roles || outletContext?.roles || [];
   const currentPerson = outletContext?.currentPerson || null;
   const processingAllowed = canProcess(effectiveRoles);
+  const decisionAllowed = canDecide(effectiveRoles);
   const creationAllowed = canCreate(effectiveRoles, currentPerson?.functionLabel || '');
   const captainView = isCaptainScopedPurchaseView(effectiveRoles);
 
@@ -248,6 +257,9 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const paginatedRequests = visibleRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedRequest = visibleRequests.find((request) => request.id === selectedId) || paginatedRequests[0] || null;
   const metrics = useMemo(() => buildPurchaseRequestMetrics(baseRequests), [baseRequests]);
+  const selectedRequestApproved = selectedRequest ? isPurchaseRequestApproved(selectedRequest) : false;
+  const selectedRequestRejected = selectedRequest ? isPurchaseRequestRejected(selectedRequest) : false;
+  const selectedRequestDecisionPending = selectedRequest ? isPurchaseRequestDecisionPending(selectedRequest) : false;
 
   useEffect(() => {
     setPage(1);
@@ -370,7 +382,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
                 <span>{request.vesselName || '—'}</span>
                 <span><em className={`purchase-category is-${categoryKind(request.categoryLabel)}`}>{categoryKind(request.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em></span>
                 <span>{formatDate(request.expectedDeliveryOn)}</span>
-                <span className={`purchase-list-state is-${request.stage}`}>{request.urgent && request.stage === 'to_process' ? <strong>Urgente</strong> : <strong>{STAGE_LABELS[request.stage].replace('À ', '')}</strong>}<small>{requestStateLabel(request)}</small></span>
+                <span className={`purchase-list-state is-${request.stage}`}>{request.urgent && request.stage === 'to_process' ? <strong>Urgente</strong> : <strong>{STAGE_LABELS[request.stage]}</strong>}<small>{requestStateLabel(request)}</small></span>
               </button>
             )) : <div className="purchase-empty">Aucune demande dans cette étape.</div>}
           </div>
@@ -388,9 +400,10 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
                 <div className="purchase-detail-meta-line">
                   <div className="purchase-detail-meta"><span><Ship size={15} />{selectedRequest.vesselName || 'Sans navire'}</span><em className={`purchase-category is-${categoryKind(selectedRequest.categoryLabel)}`}>{categoryKind(selectedRequest.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em><span><CircleUserRound size={15} />{selectedRequest.requesterName || 'Demandeur'}</span><span><CalendarDays size={15} />{formatDate(selectedRequest.requestedOn)}</span></div>
                   <div className="purchase-context-actions">
-                    {processingAllowed && selectedRequest.stage === 'to_process' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={15} />Prendre en charge</button> : null}
-                    {processingAllowed && selectedRequest.stage === 'ordered' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={15} />Planifier la livraison</button> : null}
-                    {processingAllowed && selectedRequest.stage === 'receiving' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={15} />Reçu à bord</button> : null}
+                    {decisionAllowed && selectedRequest.stage === 'to_process' && selectedRequestDecisionPending ? <><button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('approve')} type="button"><ShieldCheck size={15} />Approuver</button><button className="purchase-context-danger" disabled={isSaving} onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} type="button"><AlertTriangle size={15} />Refuser</button></> : null}
+                    {processingAllowed && selectedRequest.stage === 'to_process' && selectedRequestApproved ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={15} />Prendre en charge</button> : null}
+                    {processingAllowed && selectedRequestApproved && selectedRequest.stage === 'ordered' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={15} />Planifier la livraison</button> : null}
+                    {processingAllowed && selectedRequestApproved && selectedRequest.stage === 'receiving' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={15} />Reçu à bord</button> : null}
                   </div>
                 </div>
               </div>
@@ -398,10 +411,10 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
             <div className="purchase-workflow" aria-label="Avancement de la demande">
               <WorkflowStep active={false} complete icon={<FileCheck2 size={22} />} label="Demande créée" meta={`${formatDate(selectedRequest.createdAt, true)} · ${selectedRequest.requesterName || 'Demandeur'}`} />
-              <span className={`purchase-workflow-line${selectedRequest.stage !== 'to_process' ? ' is-complete' : ''}`} />
-              <WorkflowStep active={selectedRequest.stage === 'to_process'} complete={selectedRequest.stage !== 'to_process'} icon={<ShieldCheck size={22} />} label={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'Refusée' : 'Approbation'} meta={selectedRequest.approvalStatus || 'En attente de décision'} rejected={normalize(selectedRequest.approvalStatus).includes('refuse')} />
+              <span className={`purchase-workflow-line${selectedRequestApproved ? ' is-complete' : ''}`} />
+              <WorkflowStep active={selectedRequest.stage === 'to_process' && !selectedRequestApproved} complete={selectedRequestApproved} icon={<ShieldCheck size={22} />} label={selectedRequestRejected ? 'Refusée' : 'Approbation'} meta={selectedRequestRejected && selectedRequest.approvalReason ? selectedRequest.approvalReason : selectedRequest.approvalStatus || 'En attente de décision'} rejected={selectedRequestRejected} />
               <span className={`purchase-workflow-line${['receiving', 'completed'].includes(selectedRequest.stage) ? ' is-complete' : ''}`} />
-              <WorkflowStep active={selectedRequest.stage === 'ordered'} complete={['receiving', 'completed'].includes(selectedRequest.stage)} icon={<ShoppingCart size={22} />} label="Commande" meta={selectedRequest.orderedOn ? formatDate(selectedRequest.orderedOn) : selectedRequest.stage === 'ordered' ? 'En cours' : 'À venir'} />
+              <WorkflowStep active={selectedRequest.stage === 'ordered' || (selectedRequest.stage === 'to_process' && selectedRequestApproved)} complete={['receiving', 'completed'].includes(selectedRequest.stage)} icon={<ShoppingCart size={22} />} label="Commande" meta={selectedRequest.orderedOn ? formatDate(selectedRequest.orderedOn) : selectedRequestApproved ? 'À prendre en charge' : 'À venir'} />
               <span className={`purchase-workflow-line${selectedRequest.stage === 'completed' ? ' is-complete' : ''}`} />
               <WorkflowStep active={selectedRequest.stage === 'receiving'} complete={selectedRequest.stage === 'completed'} icon={<PackageCheck size={22} />} label="Réception" meta={selectedRequest.receivedOn ? formatDate(selectedRequest.receivedOn) : selectedRequest.expectedDeliveryOn ? `Prévue ${formatDate(selectedRequest.expectedDeliveryOn)}` : 'À venir'} />
             </div>
@@ -426,7 +439,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       </AppDialog> : null}
 
       {actionDialog ? <AppDialog footer={<div className="app-dialog__actions"><button className="is-secondary" onClick={() => setActionDialog(null)} type="button">Annuler</button><button className="is-primary" disabled={isSaving || (['refuse', 'request_information'].includes(actionDialog.action) && !actionDialog.comment.trim()) || (actionDialog.action === 'plan_delivery' && !actionDialog.effectiveDate)} onClick={() => void runAction(actionDialog.action, { comment: actionDialog.comment, effectiveDate: actionDialog.effectiveDate })} type="button">Confirmer</button></div>} icon={actionDialog.action === 'refuse' ? <AlertTriangle size={20} /> : <ClipboardCheck size={20} />} isBusy={isSaving} onClose={() => setActionDialog(null)} size="sm" title={actionDialog.title}>
-        {actionDialog.action === 'plan_delivery' ? <label>Date de livraison<input onChange={(event) => setActionDialog((current) => current ? { ...current, effectiveDate: event.target.value } : current)} type="date" value={actionDialog.effectiveDate} /></label> : <label>{actionDialog.action === 'refuse' ? 'Justification du refus' : 'Complément demandé'}<textarea onChange={(event) => setActionDialog((current) => current ? { ...current, comment: event.target.value } : current)} value={actionDialog.comment} /></label>}
+        {actionDialog.action === 'plan_delivery' ? <label>Date de livraison<input onChange={(event) => setActionDialog((current) => current ? { ...current, effectiveDate: event.target.value } : current)} required type="date" value={actionDialog.effectiveDate} /></label> : <label>{actionDialog.action === 'refuse' ? 'Justification du refus' : 'Complément demandé'}<textarea onChange={(event) => setActionDialog((current) => current ? { ...current, comment: event.target.value } : current)} required value={actionDialog.comment} /></label>}
       </AppDialog> : null}
     </section>
   );

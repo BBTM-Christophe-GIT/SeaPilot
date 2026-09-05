@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { isCaptainScopedPurchaseView, PurchaseRequestsPage } from './PurchaseRequestsPage';
+import { derivePurchaseRequestStage } from './purchaseRequestQueries';
 
 const baseRequest = {
   id: 95,
@@ -23,7 +24,7 @@ const baseRequest = {
   unit_price_ht: 0,
   amount_ht: 0,
   currency: 'EUR',
-  status: 'Approbation en attente',
+  status: 'À traiter',
   description: 'Remplacement du moteur de commande régulation GE1 défectueux.',
   urgent: false,
   urgency_reason: null,
@@ -65,6 +66,12 @@ const completedUrgentRequest = {
   received_on: '2026-08-26',
 };
 
+const approvedRequest = {
+  ...baseRequest,
+  approval_status: 'Demande acceptée',
+  approver_name: 'Responsable Armement',
+};
+
 function orderedResult(data: unknown[]) {
   return {
     select: vi.fn().mockReturnValue({
@@ -100,6 +107,27 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest]) {
 }
 
 describe('PurchaseRequestsPage', () => {
+  it('keeps a newly created request in À traiter even when a desired delivery date is present', () => {
+    expect(derivePurchaseRequestStage({
+      expectedDeliveryOn: '2026-09-12',
+      orderedOn: '',
+      receivedOn: '',
+      status: 'À traiter',
+    })).toBe('to_process');
+    expect(derivePurchaseRequestStage({
+      expectedDeliveryOn: '2026-09-12',
+      orderedOn: '2026-09-06',
+      receivedOn: '',
+      status: 'En commande',
+    })).toBe('ordered');
+    expect(derivePurchaseRequestStage({
+      expectedDeliveryOn: '2026-09-12',
+      orderedOn: '2026-09-06',
+      receivedOn: '',
+      status: 'À réception',
+    })).toBe('receiving');
+  });
+
   it('keeps office profiles company-wide when they also own a captain role', () => {
     expect(isCaptainScopedPurchaseView(['admin', 'capitaine', 'marin'])).toBe(false);
     expect(isCaptainScopedPurchaseView(['direction', 'capitaine'])).toBe(false);
@@ -117,7 +145,9 @@ describe('PurchaseRequestsPage', () => {
     expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /À traiter 2/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Remplacement du moteur de commande régulation GE1 défectueux.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approuver' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refuser' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Menu des demandes d’achat' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Demandes' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Vues' })).toBeInTheDocument();
@@ -139,7 +169,7 @@ describe('PurchaseRequestsPage', () => {
 
   it('uses the ribbon views to change the workflow stage', async () => {
     const user = userEvent.setup();
-    const orderedRequest = { ...baseRequest, id: 101, request_number: '101', status: 'Commande en cours', ordered_on: '2026-08-01' };
+    const orderedRequest = { ...approvedRequest, id: 101, request_number: '101', status: 'Commande en cours', ordered_on: '2026-08-01' };
     const { client } = createClient([baseRequest, orderedRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
@@ -171,7 +201,7 @@ describe('PurchaseRequestsPage', () => {
 
   it('runs the take-charge transition through the secured workflow RPC', async () => {
     const user = userEvent.setup();
-    const { client, rpc } = createClient([baseRequest]);
+    const { client, rpc } = createClient([approvedRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['armement']} />);
     await screen.findByRole('heading', { name: /#95.*Moteur de commande/i });
@@ -185,35 +215,71 @@ describe('PurchaseRequestsPage', () => {
     }));
   });
 
-  it('keeps the contextual workflow action for administrators without an Actions menu', async () => {
+  it('lets administrators approve or refuse pending requests without exposing logistics first', async () => {
+    const user = userEvent.setup();
     const { client } = createClient([baseRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['admin']} />);
 
     expect(await screen.findByRole('heading', { name: /#95.*Moteur de commande/i })).toBeInTheDocument();
     expect(screen.getAllByText('En attente')).not.toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Approuver' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Refuser' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Actions de la demande' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Refuser' }));
+    const confirmButton = screen.getByRole('button', { name: 'Confirmer' });
+    expect(screen.getByLabelText('Justification du refus')).toBeRequired();
+    expect(confirmButton).toBeDisabled();
+    await user.type(screen.getByLabelText('Justification du refus'), 'Budget non validé');
+    expect(confirmButton).toBeEnabled();
+  });
+
+  it.each(['admin', 'direction', 'armement'] as const)('lets the %s profile approve a pending request', async (role) => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient([baseRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'Approuver' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
+      p_request_id: 95,
+      p_action: 'approve',
+      p_comment: null,
+      p_effective_date: null,
+    }));
+  });
+
+  it.each(['capitaine', 'marin'] as const)('does not expose approval decisions to the %s profile', async (role) => {
+    const { client } = createClient([baseRequest]);
+
+    render(<PurchaseRequestsPage client={client as never} roles={[role]} />);
+    await screen.findByRole('heading', { name: /#95.*Moteur de commande/i });
+
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
   });
 
   it('lets a Marin run each contextual order-processing transition without granting request creation', async () => {
     const user = userEvent.setup();
     const orderedRequest = {
-      ...baseRequest,
+      ...approvedRequest,
       id: 101,
       request_number: '101',
       status: 'Commande en cours',
       ordered_on: '2026-08-01',
     };
     const receivingRequest = {
-      ...baseRequest,
+      ...approvedRequest,
       id: 102,
       request_number: '102',
       status: 'En attente de réception',
       ordered_on: '2026-08-02',
       expected_delivery_on: '2026-08-30',
     };
-    const { client, rpc } = createClient([baseRequest, orderedRequest, receivingRequest]);
+    const { client, rpc } = createClient([approvedRequest, orderedRequest, receivingRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
 
@@ -243,7 +309,7 @@ describe('PurchaseRequestsPage', () => {
   });
 
   it('opens the first non-empty workflow tab on initial load', async () => {
-    const orderedRequest = { ...baseRequest, status: 'Commande en cours', ordered_on: '2026-08-01' };
+    const orderedRequest = { ...approvedRequest, status: 'Commande en cours', ordered_on: '2026-08-01' };
     const { client } = createClient([orderedRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);

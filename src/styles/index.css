@@ -4824,7 +4824,8 @@ button:disabled {
   gap: 6px;
 }
 
-.purchase-context-primary {
+.purchase-context-primary,
+.purchase-context-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4846,6 +4847,17 @@ button:disabled {
 
 .purchase-context-primary:hover:not(:disabled) {
   background: #006d80;
+}
+
+.purchase-context-danger {
+  border: 1px solid #d92d3a;
+  color: #b4232f;
+  background: #fff;
+}
+
+.purchase-context-danger:hover:not(:disabled) {
+  color: #fff;
+  background: #b4232f;
 }
 
 .purchase-workflow {
@@ -5276,7 +5288,7 @@ button:disabled {
   .purchase-detail-header, .purchase-detail-section, .purchase-activity { padding-inline: 18px; }
   .purchase-detail-meta-line { align-items: flex-start; flex-direction: column; }
   .purchase-context-actions { width: 100%; }
-  .purchase-context-primary { flex: 1 1 auto; }
+  .purchase-context-primary, .purchase-context-danger { flex: 1 1 auto; }
   .purchase-detail-section dl { grid-template-columns: 1fr; }
   .purchase-attachments summary { grid-template-columns: 105px 1fr auto; padding-inline: 18px; }
   .purchase-attachments > div { padding: 0 18px 16px; }

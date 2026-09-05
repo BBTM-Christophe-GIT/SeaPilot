@@ -272,10 +272,26 @@ function normalizeSearchValue(value: string): string {
 
 export function derivePurchaseRequestStage(input: Pick<PurchaseRequestRecord, 'expectedDeliveryOn' | 'orderedOn' | 'receivedOn' | 'status'>): PurchaseRequestStage {
   const status = normalizeSearchValue(input.status);
+  if (status.includes('a traiter') || (status.includes('approbation') && status.includes('attente'))) return 'to_process';
   if (input.receivedOn || status.includes('traitee') || status.includes('recu') || status.includes('termine')) return 'completed';
-  if (status.includes('reception') || (input.expectedDeliveryOn && !input.receivedOn)) return 'receiving';
+  if (status.includes('reception')) return 'receiving';
   if (input.orderedOn || status.includes('cours') || status.includes('commande')) return 'ordered';
+  if (input.expectedDeliveryOn && !input.receivedOn) return 'receiving';
   return 'to_process';
+}
+
+export function isPurchaseRequestApproved(request: Pick<PurchaseRequestRecord, 'approvalStatus'>): boolean {
+  const approval = normalizeSearchValue(request.approvalStatus);
+  return approval.includes('accep') || approval.includes('approuv');
+}
+
+export function isPurchaseRequestRejected(request: Pick<PurchaseRequestRecord, 'approvalStatus'>): boolean {
+  return normalizeSearchValue(request.approvalStatus).includes('refus');
+}
+
+export function isPurchaseRequestDecisionPending(request: Pick<PurchaseRequestRecord, 'approvalStatus'>): boolean {
+  const approval = normalizeSearchValue(request.approvalStatus);
+  return !approval || approval.includes('attente') || approval.includes('complement demande');
 }
 
 export function isActiveUrgentPurchaseRequest(request: Pick<PurchaseRequestRecord, 'stage' | 'urgent'>): boolean {
