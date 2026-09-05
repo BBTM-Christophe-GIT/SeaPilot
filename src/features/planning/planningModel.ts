@@ -2,6 +2,7 @@ import {
   PLANNING_ASSIGNMENT_NOTE_SOURCE,
   PLANNING_VESSEL_LOCATION_SOURCE,
   type PlanningAssignmentRecord,
+  type PlanningAnnualReviewRecord,
   type PlanningDayRecord,
   type PlanningHrDocumentRecord,
   type PlanningOverview,
@@ -45,7 +46,7 @@ export interface PlanningMonthSegment {
 
 export interface PlanningCrewEvent {
   id: string;
-  kind: 'assignment' | 'day' | 'period';
+  kind: 'assignment' | 'day' | 'period' | 'annualReview';
   personId: number | null;
   vesselId: number | null;
   person: string;
@@ -95,6 +96,37 @@ export interface PlanningFilters {
 export interface PlanningDateRange {
   start: string;
   end: string;
+}
+
+function annualReviewPlanningDate(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(value));
+  const valueFor = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
+  return `${valueFor('year')}-${valueFor('month')}-${valueFor('day')}`;
+}
+
+function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): PlanningCrewEvent {
+  return {
+    id: `annual-review-${review.id}`,
+    kind: 'annualReview',
+    personId: review.employeePersonId,
+    vesselId: null,
+    person: review.employeeName,
+    vessel: 'Armement',
+    board: 'Ressources Humaines',
+    functionLabel: review.employeeFunction,
+    status: 'Entretien professionnel',
+    confirmationStatus: 'confirmed',
+    responsible: review.managerName,
+    rhythm: '',
+    startsOn: annualReviewPlanningDate(review.startsAt),
+    endsOn: annualReviewPlanningDate(review.endsAt),
+    startsAt: review.startsAt,
+    endsAt: review.endsAt,
+    comments: review.meetingMode === 'video' ? `Visioconférence · ${review.videoUrl}` : review.meetingLocation,
+    sourceLabel: 'annual_review',
+  };
 }
 
 export interface PlanningCrewRowOptions {
@@ -397,6 +429,7 @@ function crewEventFromDay(day: PlanningDayRecord, vesselName = day.vesselName): 
 }
 
 function eventKey(event: PlanningCrewEvent): string {
+  if (event.kind === 'annualReview') return event.id;
   return [normalizePlanningText(event.person), normalizePlanningText(event.vessel), normalizePlanningText(event.board), event.startsOn, event.endsOn].join('|');
 }
 
@@ -409,6 +442,7 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     period,
     canonicalVesselName(period.vesselId, period.vesselName),
   ));
+  events.push(...(overview.annualReviews || []).map(crewEventFromAnnualReview));
   const eventIndexesByKey = new Map(events.map((event, index) => [eventKey(event), index]));
   const notesByAssignment = new Map<number, Record<string, string>>();
   const statusesByAssignment = new Map<number, Record<string, string>>();

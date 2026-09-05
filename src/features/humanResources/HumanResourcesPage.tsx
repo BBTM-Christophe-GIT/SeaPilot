@@ -200,6 +200,7 @@ const DOCUMENT_DUE_OPTIONS: Array<{ label: string; value: string }> = [
 ];
 
 const HR_CATEGORY_ORDER = [
+  'annual_review',
   'deck',
   'engine',
   'safety_training',
@@ -219,6 +220,7 @@ const HR_DETAILS_SECTIONS = [
   { key: 'health', label: 'Santé et habilitations' },
   { key: 'clothing', label: 'Tenues et mensurations' },
   { key: 'signature', label: 'Signature' },
+  { key: 'annualReviews', label: 'Entretien Annuel' },
   { key: 'documents', label: 'Documents' },
 ] as const;
 
@@ -396,6 +398,8 @@ function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
       return <Ruler aria-hidden="true" size={18} />;
     case 'signature':
       return <FileSignature aria-hidden="true" size={18} />;
+    case 'annualReviews':
+      return <FileText aria-hidden="true" size={18} />;
     default:
       return <FileText aria-hidden="true" size={18} />;
   }
@@ -411,6 +415,7 @@ function getProfileSectionLabel(tabKey: HrDetailsSectionKey): string {
     health: 'Santé & habilitations',
     clothing: 'Tenues',
     signature: 'Signature',
+    annualReviews: 'Entretien Annuel',
     documents: 'Documents',
   };
 
@@ -2550,6 +2555,19 @@ function CreatePersonDialog({
             </div>
           </section>
         );
+      case 'annualReviews':
+        return (
+          <section>
+            <h3>Entretien Annuel</h3>
+            <div className="hr-create-documents-note">
+              <FileText aria-hidden="true" size={22} />
+              <div>
+                <strong>Rapports ajoutés après signature</strong>
+                <p>Les rapports d’entretien signés seront automatiquement classés ici avec leur année.</p>
+              </div>
+            </div>
+          </section>
+        );
       case 'documents':
         return (
           <section>
@@ -3027,10 +3045,24 @@ function PersonDetailsPanel({
         );
       case 'signature':
         return <ProfileSignaturePanel canManage={canManageSignature} client={client} person={person} />;
+      case 'annualReviews':
+        return (
+          <ProfileDocumentsSection
+            documents={documents.filter((document) => document.categoryKey === 'annual_review')}
+            isManager={false}
+            isSaving={isSaving}
+            onDocumentCreate={onDocumentCreate}
+            onDocumentOpen={onDocumentOpen}
+            onDocumentRenew={onDocumentRenew}
+            onDocumentSelect={onDocumentSelect}
+            selectedDocumentIds={selectedDocumentIds}
+            title="Entretien Annuel"
+          />
+        );
       case 'documents':
         return (
           <ProfileDocumentsSection
-            documents={documents}
+            documents={documents.filter((document) => document.categoryKey !== 'annual_review')}
             isManager={isManager}
             isSaving={isSaving}
             onDocumentCreate={onDocumentCreate}
@@ -3156,7 +3188,8 @@ function PersonDetailsPanel({
               <ProfileTabIcon tabKey={section.key} />
               <span>{getProfileSectionLabel(section.key)}</span>
               {section.key === 'health' && urgentCount > 0 ? <small className="is-danger">{urgentCount}</small> : null}
-              {section.key === 'documents' ? <small>{documents.length}</small> : null}
+              {section.key === 'documents' ? <small>{documents.filter((document) => document.categoryKey !== 'annual_review').length}</small> : null}
+              {section.key === 'annualReviews' ? <small>{documents.filter((document) => document.categoryKey === 'annual_review').length}</small> : null}
             </button>
           ))}
         </nav>
@@ -3184,6 +3217,7 @@ function ProfileDocumentsSection({
   onDocumentRenew,
   onDocumentSelect,
   selectedDocumentIds,
+  title = 'Documents',
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
@@ -3193,6 +3227,7 @@ function ProfileDocumentsSection({
   onDocumentRenew: (document: HrDocumentRecord) => void;
   onDocumentSelect: (documentId: number) => void;
   selectedDocumentIds: Set<number>;
+  title?: string;
 }) {
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
   const documentGroups = Array.from(
@@ -3223,7 +3258,7 @@ function ProfileDocumentsSection({
   return (
     <section>
       <div className="hr-profile-section-title">
-        <h3>Documents</h3>
+        <h3>{title}</h3>
         <span>{documents.length}</span>
         {isManager ? (
           <button className="hr-profile-add-document" disabled={isSaving} onClick={onDocumentCreate} type="button">

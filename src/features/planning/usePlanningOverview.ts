@@ -13,6 +13,7 @@ export const EMPTY_PLANNING_OVERVIEW: PlanningOverview = {
   projects: [],
   certificates: [],
   hrDocuments: [],
+  annualReviews: [],
   rules: [],
   publications: [],
   versions: [],

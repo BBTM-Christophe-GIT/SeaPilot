@@ -47,6 +47,7 @@ describe('module access', () => {
       ['Achats', 'Gestion des Sous-Traitants', 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
+      ['Ressources Humaines', 'Entretien Professionnel et d’Evaluation', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],
       ['Maintenance', 'Marad', 'submenu'],
       ['Maintenance', 'Documents Techniques', 'submenu'],
@@ -61,4 +62,10 @@ describe('module access', () => {
     'allows the %s profile to open published QHSE service notes',
     (role) => expect(canAccessModule([role], 'serviceNotes')).toBe(true),
   );
+
+  it.each([
+    ['admin', true], ['direction', true], ['armement', true], ['capitaine', true], ['marin', false],
+  ] as const)('applies the annual review role matrix to %s', (role, expected) => {
+    expect(canAccessModule([role], 'annualReviews')).toBe(expected);
+  });
 });

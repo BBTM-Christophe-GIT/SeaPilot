@@ -23,6 +23,7 @@ import {
   timelineRange,
 } from './planningModel';
 import { getPlanningConflicts, getPlanningConflictEventIds } from './planningOverlap';
+import { planningCrewEventType } from './planningViews';
 import type { PlanningOverview } from './planningQueries';
 
 const overview: PlanningOverview = {
@@ -62,6 +63,23 @@ const overview: PlanningOverview = {
 };
 
 describe('planning timeline rules', () => {
+  it('exposes accepted annual reviews as read-only HR planning events', () => {
+    const events = getAllPlanningCrewEvents({
+      ...overview,
+      annualReviews: [{
+        id: 91, employeePersonId: 2, employeeName: 'Marc LIBRE', employeeFunction: 'Matelot',
+        managerName: 'Anne CAPITAINE', startsAt: '2026-07-08T08:00:00Z', endsAt: '2026-07-08T09:00:00Z',
+        meetingMode: 'in_person', meetingLocation: 'Bureau Armement', videoUrl: '', status: 'scheduled',
+      }],
+    });
+    const review = events.find((event) => event.kind === 'annualReview');
+    expect(review).toMatchObject({
+      id: 'annual-review-91', personId: 2, person: 'Marc LIBRE', vessel: 'Armement',
+      board: 'Ressources Humaines', status: 'Entretien professionnel', startsOn: '2026-07-08',
+    });
+    expect(planningCrewEventType(review!)).toBe('annual_review');
+  });
+
   it('builds day, week, fortnight, month and year ranges', () => {
     expect(buildPlanningTimeline('2026-07-12', 'day')).toHaveLength(7);
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'day'))).toEqual({ start: '2026-07-09', end: '2026-07-15' });

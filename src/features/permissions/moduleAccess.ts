@@ -15,6 +15,7 @@ export type ModuleKey =
   | 'planning'
   | 'fleet'
   | 'humanResources'
+  | 'annualReviews'
   | 'workingTime'
   | 'projects'
   | 'marad'
@@ -125,6 +126,13 @@ export const APP_MODULES: AppModule[] = [
     family: 'Ressources Humaines',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'annualReviews',
+    label: 'Entretien Professionnel et d’Evaluation',
+    family: 'Ressources Humaines',
+    navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction', 'armement', 'capitaine'],
   },
   {
     key: 'workingTime',

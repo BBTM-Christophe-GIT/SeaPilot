@@ -1679,6 +1679,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function openEvent(event: PlanningCrewEvent) {
+    if (event.kind === 'annualReview') {
+      window.history.pushState({}, '', `/annual-review/${Number(event.id.split('-').pop())}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
     const vessel = activeVessels.find((item) => item.id === event.vesselId || item.name === event.vessel);
     setSelectedEvent(event);
     setSelectedTimelineId(event.id);
@@ -1692,6 +1697,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function saveEvent(event: PlanningCrewEvent, form: EventFormState, closePanel = true) {
+    if (event.kind === 'annualReview') return openEvent(event);
     if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
@@ -1747,6 +1753,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function removeEvent(event: PlanningCrewEvent) {
+    if (event.kind === 'annualReview') return openEvent(event);
     if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     if (event.kind === 'assignment') {
       if (!eventForm) return;
@@ -1767,6 +1774,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function moveEvent(event: PlanningCrewEvent, startsOn: string) {
+    if (event.kind === 'annualReview') return;
     const vessel = activeVessels.find((item) => item.id === event.vesselId || item.name === event.vessel);
     if (!vessel) return setErrorMessage('Ce navire ne peut pas recevoir une affectation.');
     const endsOn = addPlanningDays(startsOn, daysBetween(event.startsOn, event.endsOn));
@@ -1801,6 +1809,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function resizeEvent(event: PlanningCrewEvent, edge: 'start' | 'end', delta: number) {
+    if (event.kind === 'annualReview') return;
     if (!delta) return;
     const startsOn = edge === 'start' ? addPlanningDays(event.startsOn, delta) : event.startsOn;
     const endsOn = edge === 'end' ? addPlanningDays(event.endsOn, delta) : event.endsOn;

@@ -80,7 +80,8 @@ export function planningConfirmationLabel(status: PlanningConfirmationStatus): s
   return CONFIRMATION_LABELS[status];
 }
 
-export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status'>): string {
+export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status' | 'kind'>): string {
+  if (event.kind === 'annualReview') return 'annual_review';
   const status = normalizePlanningStatus(event.status);
   if (status === 'Repos') return 'rest';
   if (status === 'Vacance') return 'leave';
@@ -96,6 +97,7 @@ export function planningCrewEventTypeLabel(type: string): string {
     leave: 'Congés',
     training: 'Formation',
     unavailability: 'Indisponibilité',
+    annual_review: 'Entretien professionnel',
   }[type] || type;
 }
 

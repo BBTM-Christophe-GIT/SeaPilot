@@ -49,6 +49,7 @@ import { fetchVisibleModulesForRoles, getDefaultVisibleModules } from '../permis
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import { fetchCurrentPersonSummary, fetchCurrentUserRoles, type CurrentPersonSummary } from '../profiles/profileQueries';
 import { fetchUnsignedServiceNoteNotifications, formatServiceNoteDate, type ServiceNoteNotification } from '../serviceNotes/serviceNoteQueries';
+import { fetchAnnualReviewNotifications, type AnnualReviewNotification } from '../annualReviews/annualReviewQueries';
 
 interface AppShellProps {
   rolesOverride?: RoleKey[];
@@ -119,6 +120,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   planning: CalendarDays,
   fleet: Ship,
   humanResources: Users,
+  annualReviews: ClipboardCheck,
   workingTime: Clock3,
   projects: FolderKanban,
   marad: Wrench,
@@ -173,6 +175,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
+  const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
   const [adminProfileView, setAdminProfileView] = useState<AdminProfileView>('actual');
   const [adminProfileModules, setAdminProfileModules] = useState<AppModule[] | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
@@ -294,11 +297,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         expiresOn: getHrDocumentExpiryWindow().endsOn,
         daysUntilExpiry: 40,
       }]);
+      setAnnualReviewNotifications([]);
       return;
     }
     if (!sessionUserId) {
       setServiceNoteNotifications([]);
       setHrDocumentNotifications([]);
+      setAnnualReviewNotifications([]);
       return;
     }
     let mounted = true;
@@ -310,19 +315,25 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         void fetchHrDocumentExpiryNotifications(client, currentPerson.id)
           .then((items) => { if (mounted) setHrDocumentNotifications(items); })
           .catch(() => { if (mounted) setHrDocumentNotifications([]); });
+        void fetchAnnualReviewNotifications(client, currentPerson.id)
+          .then((items) => { if (mounted) setAnnualReviewNotifications(items); })
+          .catch(() => { if (mounted) setAnnualReviewNotifications([]); });
       } else {
         setHrDocumentNotifications([]);
+        setAnnualReviewNotifications([]);
       }
     };
     refresh();
     window.addEventListener('focus', refresh);
     window.addEventListener('service-notes:changed', refresh);
     window.addEventListener('hr-documents:changed', refresh);
+    window.addEventListener('annual-reviews:changed', refresh);
     return () => {
       mounted = false;
       window.removeEventListener('focus', refresh);
       window.removeEventListener('service-notes:changed', refresh);
       window.removeEventListener('hr-documents:changed', refresh);
+      window.removeEventListener('annual-reviews:changed', refresh);
     };
   }, [client, currentPerson?.id, previewMode, sessionUserId]);
 
@@ -354,7 +365,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion SeaPilot' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => effectiveRoles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length;
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length;
 
   function toggleFamily(family: AppModule['family']) {
     setExpandedFamilies((currentFamilies) => {
@@ -538,9 +549,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                 <div className="topbar-notification-list">
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {hrDocumentNotifications.length ? <section aria-label="Documents RH et brevets" className="topbar-notification-group"><h4>RH / Brevets · échéance à 40 jours</h4>{hrDocumentNotifications.map((notification) => <Link key={notification.documentId} to="/modules/humanResources"><span><strong>Document personnel</strong><small>{formatHrDocumentExpiryDate(notification.expiresOn)}</small></span><p>{notification.title}</p><em>{notification.daysUntilExpiry === 0 ? 'Expire aujourd’hui' : notification.daysUntilExpiry === 1 ? 'Expire demain' : `Expire dans ${notification.daysUntilExpiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
+                  {annualReviewNotifications.length ? <section aria-label="Entretiens professionnels et d’évaluation" className="topbar-notification-group"><h4>Entretien Professionnel et d’Evaluation</h4>{annualReviewNotifications.map((notification) => <Link key={`${notification.reviewId}-${notification.kind}`} to={`/annual-review/${notification.reviewId}`}><span><strong>{notification.title}</strong></span><p>{notification.detail}</p><em>{notification.kind === 'invitation' ? 'Répondre à l’invitation' : notification.kind === 'counter_proposal' ? 'Traiter le nouveau créneau' : 'Lire et signer'} <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {!notificationCount ? <p className="topbar-notification-empty"><Check aria-hidden="true" size={18} /> Vous êtes à jour.</p> : null}
                 </div>
-                <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link><Link to="/modules/humanResources">Mes documents RH</Link></nav>
+                <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
               </div> : null}
             </div>
             <div className="user-menu">
