@@ -501,6 +501,20 @@ export interface PlanningHrDocumentRecord {
   fileUrl: string;
 }
 
+export interface PlanningAnnualReviewRecord {
+  id: number;
+  employeePersonId: number;
+  employeeName: string;
+  employeeFunction: string;
+  managerName: string;
+  startsAt: string;
+  endsAt: string;
+  meetingMode: 'in_person' | 'video';
+  meetingLocation: string;
+  videoUrl: string;
+  status: string;
+}
+
 export interface PlanningRuleRecord {
   id: number;
   code: string;
@@ -644,6 +658,7 @@ export interface PlanningOverview {
   projects: PlanningProjectRecord[];
   certificates: PlanningCertificateRecord[];
   hrDocuments: PlanningHrDocumentRecord[];
+  annualReviews?: PlanningAnnualReviewRecord[];
   rules: PlanningRuleRecord[];
   publications: PlanningPublicationRecord[];
   versions: PlanningVersionRecord[];
@@ -1341,6 +1356,34 @@ export async function fetchPlanningHrDocuments(client: SupabaseClient): Promise<
   return mapPlanningHrDocumentRows((data || []) as unknown as PlanningHrDocumentRow[]);
 }
 
+export async function fetchPlanningAnnualReviews(client: SupabaseClient): Promise<PlanningAnnualReviewRecord[]> {
+  try {
+    const { data, error } = await client
+      .from('annual_reviews')
+      .select('id,employee_person_id,employee_name_snapshot,employee_function_snapshot,manager_name_snapshot,starts_at,ends_at,meeting_mode,meeting_location,video_url,status')
+      .in('status', ['scheduled', 'collaborator_submitted', 'awaiting_signature', 'archived'])
+      .order('starts_at', { ascending: true });
+    if (error) return [];
+    return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
+    id: Number(row.id),
+    employeePersonId: Number(row.employee_person_id),
+    employeeName: String(row.employee_name_snapshot || ''),
+    employeeFunction: String(row.employee_function_snapshot || ''),
+    managerName: String(row.manager_name_snapshot || ''),
+    startsAt: String(row.starts_at || ''),
+    endsAt: String(row.ends_at || ''),
+    meetingMode: row.meeting_mode === 'video' ? 'video' : 'in_person',
+    meetingLocation: String(row.meeting_location || ''),
+    videoUrl: String(row.video_url || ''),
+    status: String(row.status || ''),
+    }));
+  } catch {
+    // Les entretiens enrichissent le Planning sans empêcher l'accès au planning
+    // opérationnel pendant une migration progressive ou dans les anciens mocks.
+    return [];
+  }
+}
+
 export async function fetchPlanningRules(client: SupabaseClient): Promise<PlanningRuleRecord[]> {
   const { data, error } = await client
     .from('planning_rules')
@@ -1442,12 +1485,13 @@ export async function fetchPlanningOverview(
   options: FetchPlanningOverviewOptions = {},
 ): Promise<PlanningOverview> {
   if (options.publishedOnly) {
-    const [[vessels, people, certificates, hrDocuments, rules, versions], snapshot] = await Promise.all([
+    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions], snapshot] = await Promise.all([
       Promise.all([
         fetchVessels(client),
         fetchPlanningPeople(client),
         fetchPlanningCertificates(client),
         fetchPlanningHrDocuments(client),
+        fetchPlanningAnnualReviews(client),
         fetchPlanningRules(client),
         fetchPlanningVersions(client),
       ]),
@@ -1461,6 +1505,7 @@ export async function fetchPlanningOverview(
       ...releasedPlanning,
       certificates,
       hrDocuments,
+      ...(annualReviews.length ? { annualReviews } : {}),
       rules,
       publications: [],
       versions,
@@ -1469,7 +1514,7 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, rules, versions, history, handovers] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
@@ -1479,6 +1524,7 @@ export async function fetchPlanningOverview(
     fetchPlanningProjects(client),
     fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
+    fetchPlanningAnnualReviews(client),
     fetchPlanningRules(client),
     fetchPlanningVersions(client),
     fetchPlanningHistory(client),
@@ -1495,6 +1541,7 @@ export async function fetchPlanningOverview(
     projects,
     certificates,
     hrDocuments,
+    ...(annualReviews.length ? { annualReviews } : {}),
     rules,
     publications: [],
     versions,

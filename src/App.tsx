@@ -27,6 +27,7 @@ const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePag
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
+const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -75,6 +76,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <FleetPage />
                 ) : module.key === 'humanResources' ? (
                   <HumanResourcesPage />
+                ) : module.key === 'annualReviews' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des entretiens…</div>}><AnnualReviewsPage /></Suspense>
                 ) : module.key === 'workingTime' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du suivi du temps de travail…</div>}><WorkingTimePage /></Suspense>
                 ) : module.key === 'procedures' ? (
@@ -97,6 +100,7 @@ export default function App({ previewModeOverride }: AppProps) {
               }
             />
           ))}
+          <Route path="annual-review/:reviewId" element={<Suspense fallback={<div className="admin-state" role="status">Chargement de l’entretien…</div>}><AnnualReviewsPage recipientRoute /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Route>

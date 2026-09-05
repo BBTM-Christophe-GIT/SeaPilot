@@ -73,6 +73,7 @@ const HR_DOCUMENT_SELECT = [
 const HR_DOCUMENT_TYPE_SELECT = 'id, source_item_id, name, category, file_name';
 
 export const HR_DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
+  annual_review: 'Entretien Annuel',
   administrative: 'Documents administratifs',
   certificate: 'Certificats',
   deck: 'Pont',

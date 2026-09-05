@@ -17,6 +17,7 @@ describe('navigation permissions', () => {
     expect(sailorModules.map((module) => module.key)).not.toContain('admin');
     expect(sailorModules.map((module) => module.key)).not.toContain('projects');
     expect(sailorModules.map((module) => module.key)).not.toContain('billingElements');
+    expect(sailorModules.map((module) => module.key)).not.toContain('annualReviews');
     expect(sailorModules.map((module) => module.key)).toContain('workingTime');
     expect(sailorModules.map((module) => module.key)).toContain('lifting');
   });

@@ -9,11 +9,20 @@ import {
 interface ServiceNoteRichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
+  ariaLabel?: string;
+  placeholder?: string;
+  toolbarLabel?: string;
 }
 
 type EditorCommand = 'bold' | 'italic' | 'underline' | 'insertUnorderedList' | 'insertOrderedList' | 'justifyLeft' | 'justifyCenter' | 'justifyRight' | 'removeFormat';
 
-export function ServiceNoteRichTextEditor({ value, onChange }: ServiceNoteRichTextEditorProps) {
+export function ServiceNoteRichTextEditor({
+  value,
+  onChange,
+  ariaLabel = 'Contenu',
+  placeholder = 'Bonjour, rédigez ici votre note de service…',
+  toolbarLabel = 'Mise en forme du message',
+}: ServiceNoteRichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<Range | null>(null);
 
@@ -83,7 +92,7 @@ export function ServiceNoteRichTextEditor({ value, onChange }: ServiceNoteRichTe
 
   return (
     <div className="service-note-rich-editor" style={{ fontFamily: SERVICE_NOTE_FONT_STACK }}>
-      <div aria-label="Mise en forme du message" className="service-note-rich-toolbar" role="toolbar">
+      <div aria-label={toolbarLabel} className="service-note-rich-toolbar" role="toolbar">
         <select aria-label="Style de paragraphe" defaultValue="p" onChange={(event) => formatBlock(event.target.value)} onMouseDown={rememberSelection}>
           <option value="p">Normal</option><option value="h2">Titre</option><option value="h3">Sous-titre</option><option value="blockquote">Citation</option>
         </select>
@@ -106,11 +115,11 @@ export function ServiceNoteRichTextEditor({ value, onChange }: ServiceNoteRichTe
         {toolbarButton('Effacer la mise en forme', 'removeFormat', <RemoveFormatting size={16} />)}
       </div>
       <div
-        aria-label="Contenu"
+        aria-label={ariaLabel}
         aria-multiline="true"
         className="service-note-rich-content"
         contentEditable
-        data-placeholder="Bonjour, rédigez ici votre note de service…"
+        data-placeholder={placeholder}
         onBlur={rememberSelection}
         onInput={emitValue}
         onKeyUp={rememberSelection}

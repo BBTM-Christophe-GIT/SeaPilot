@@ -1,0 +1,169 @@
+.annual-review-page { min-height: 100%; color: #123247; }
+.annual-review-command-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.annual-review-command-header h1 { margin: 3px 0 5px; font-size: clamp(1.65rem, 2.2vw, 2.25rem); letter-spacing: -.035em; color: #0b3048; }
+.annual-review-command-header > div:first-child > span { color: #607684; font-size: .92rem; }
+.annual-review-command-header > div:last-child, .annual-review-primary-actions, .annual-review-export-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.annual-review-page button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #0c7d88; border-radius: 9px; background: #0c7d88; color: white; font: inherit; font-size: .85rem; font-weight: 700; padding: 9px 13px; cursor: pointer; transition: .16s ease; }
+.annual-review-page button:hover:not(:disabled) { background: #086873; transform: translateY(-1px); }
+.annual-review-page button:disabled { cursor: not-allowed; opacity: .48; }
+.annual-review-page button.is-secondary { border-color: #c3d2d9; background: white; color: #23465a; }
+.annual-review-page button.is-secondary:hover:not(:disabled) { background: #f3f7f8; }
+.annual-review-layout { display: grid; grid-template-columns: minmax(245px, 300px) minmax(0, 1fr); gap: 17px; align-items: start; }
+.annual-review-layout.is-recipient { grid-template-columns: 1fr; }
+.annual-review-list-panel, .annual-review-workspace, .annual-review-editor, .annual-review-summary, .annual-review-action-card, .annual-review-response-area { border: 1px solid #d8e2e6; border-radius: 15px; background: #fff; box-shadow: 0 9px 28px rgba(17, 49, 67, .055); }
+.annual-review-list-panel { position: sticky; top: 12px; overflow: hidden; }
+.annual-review-list-panel > header { padding: 16px 17px 13px; border-bottom: 1px solid #e2eaed; background: #f8fafb; }
+.annual-review-list-panel > header div { display: flex; justify-content: space-between; gap: 10px; }
+.annual-review-list-panel > header span, .annual-review-list-panel > p { color: #6e828d; font-size: .78rem; }
+.annual-review-list-panel > p { padding: 18px; }
+.annual-review-list-panel > div { max-height: calc(100vh - 240px); overflow: auto; padding: 7px; }
+.annual-review-list-panel > div > button { width: 100%; display: grid; grid-template-columns: 9px 1fr; gap: 10px; text-align: left; justify-content: stretch; border: 0; background: transparent; color: #173a4e; padding: 11px 10px; border-radius: 10px; }
+.annual-review-list-panel > div > button:hover, .annual-review-list-panel > div > button.is-active { background: #edf7f7; transform: none; }
+.annual-review-list-panel > div > button > span:last-child { display: grid; gap: 3px; min-width: 0; }
+.annual-review-list-panel strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.annual-review-list-panel small, .annual-review-list-panel em { color: #6b808c; font-size: .73rem; font-style: normal; }
+.annual-review-list-panel em { color: #08747e; }
+.annual-review-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3ac; margin-top: 5px; }
+.annual-review-status-dot.is-progress { background: #168995; box-shadow: 0 0 0 3px #d9f0f0; }
+.annual-review-status-dot.is-attention { background: #d78114; box-shadow: 0 0 0 3px #faecd5; }
+.annual-review-status-dot.is-success { background: #23865f; box-shadow: 0 0 0 3px #dcf2e8; }
+.annual-review-workspace { padding: 17px; min-width: 0; }
+.annual-review-summary { display: grid; grid-template-columns: 56px minmax(200px, 1fr) minmax(320px, 1.2fr); gap: 15px; padding: 18px; box-shadow: none; background: linear-gradient(135deg, #f7fbfb, #fff); }
+.annual-review-avatar { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 14px; background: #0d394f; color: white; font-weight: 800; letter-spacing: .05em; }
+.annual-review-summary h2 { margin: 6px 0 2px; font-size: 1.35rem; }
+.annual-review-summary p { margin: 0; color: #6a7e89; font-size: .82rem; }
+.annual-review-status { display: inline-flex; border-radius: 999px; padding: 4px 8px; background: #edf2f4; color: #526974; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .045em; }
+.annual-review-status.is-progress { background: #dcf2f2; color: #08727a; }
+.annual-review-status.is-attention { background: #fbedda; color: #9a5b0d; }
+.annual-review-status.is-success { background: #dff3e8; color: #176746; }
+.annual-review-summary dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.annual-review-summary dl div { padding: 9px 10px; border: 1px solid #dde7ea; border-radius: 9px; background: white; min-width: 0; }
+.annual-review-summary dt { display: flex; align-items: center; gap: 5px; color: #728690; font-size: .68rem; text-transform: uppercase; font-weight: 800; }
+.annual-review-summary dd { margin: 4px 0 0; font-size: .78rem; font-weight: 650; overflow-wrap: anywhere; }
+.annual-review-summary dd a { display: inline-flex; align-items: center; gap: 4px; color: #087984; }
+.annual-review-summary blockquote { grid-column: 2 / -1; margin: 0; padding: 9px 12px; border-left: 3px solid #15919a; background: #edf8f8; color: #4f6976; font-size: .8rem; }
+.annual-review-action-card { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; margin-top: 13px; padding: 14px 16px; box-shadow: none; }
+.annual-review-action-card > div:first-child { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.annual-review-action-card > div:first-child > svg { color: #0f838c; }
+.annual-review-action-card > div:first-child span { display: grid; color: #627985; font-size: .78rem; }
+.annual-review-action-card > div:first-child strong { color: #173b4e; font-size: .91rem; }
+.annual-review-action-card details { flex-basis: 100%; border-top: 1px solid #e0e8eb; padding-top: 10px; }
+.annual-review-action-card summary { color: #0b7780; cursor: pointer; font-weight: 700; font-size: .82rem; }
+.annual-review-counter-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 11px; }
+.annual-review-counter-grid label:last-of-type { grid-column: 1 / -1; }
+.annual-review-counter-grid button { justify-self: start; }
+.annual-review-action-card label, .annual-review-editor label { display: grid; gap: 5px; color: #365565; font-size: .77rem; font-weight: 700; }
+.annual-review-action-card input, .annual-review-action-card textarea, .annual-review-editor input, .annual-review-editor textarea, .annual-review-editor select, .annual-review-form-section textarea, .annual-review-form-section select { width: 100%; border: 1px solid #cbd8de; border-radius: 8px; background: #fff; color: #17394b; font: inherit; padding: 9px 10px; box-sizing: border-box; }
+.annual-review-action-card input:focus, .annual-review-action-card textarea:focus, .annual-review-editor input:focus, .annual-review-editor textarea:focus, .annual-review-editor select:focus, .annual-review-form-section textarea:focus, .annual-review-form-section select:focus { outline: 3px solid rgba(13, 131, 140, .14); border-color: #0d838c; }
+.annual-review-share-choice { flex-basis: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; border: 0; }
+.annual-review-share-choice legend { margin-bottom: 7px; font-size: .78rem; font-weight: 800; }
+.annual-review-share-choice label { grid-template-columns: auto 1fr; padding: 10px; border: 1px solid #d6e1e5; border-radius: 9px; cursor: pointer; }
+.annual-review-share-choice label.is-selected { border-color: #0f8790; background: #edf8f8; }
+.annual-review-share-choice input { width: auto; grid-row: span 2; }
+.annual-review-share-choice small { color: #6b7e88; font-weight: 400; }
+.annual-review-read-confirm { flex-basis: 100%; grid-template-columns: auto 1fr !important; align-items: center; padding: 11px; border-radius: 9px; background: #f4f7f8; }
+.annual-review-read-confirm input { width: auto; }
+.annual-review-wait-note { flex-basis: 100%; color: #7a6a4d; }
+.annual-review-alert { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border: 1px solid; border-radius: 10px; padding: 10px 13px; font-size: .84rem; }
+.annual-review-alert.is-error { border-color: #edc5c2; background: #fff3f2; color: #9b302a; }
+.annual-review-alert.is-success { border-color: #bbe0cf; background: #effaf5; color: #19684b; }
+.annual-review-editor { padding: 24px; box-shadow: none; }
+.annual-review-editor > header { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; }
+.annual-review-editor > header > span { display: grid; place-items: center; width: 45px; height: 45px; border-radius: 12px; background: #e2f4f3; color: #0c7d86; }
+.annual-review-editor h2, .annual-review-editor p { margin: 0; }
+.annual-review-editor p { color: #0c7d86; text-transform: uppercase; font-size: .69rem; font-weight: 800; letter-spacing: .06em; }
+.annual-review-editor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.annual-review-meeting-mode { display: flex; gap: 9px; margin: 16px 0; padding: 0; border: 0; }
+.annual-review-meeting-mode legend { margin-bottom: 7px; color: #365565; font-size: .77rem; font-weight: 700; }
+.annual-review-meeting-mode label { display: flex; align-items: center; border: 1px solid #d1dde1; border-radius: 9px; padding: 9px 12px; cursor: pointer; }
+.annual-review-meeting-mode label.is-selected { border-color: #0d838c; background: #edf8f8; color: #08747e; }
+.annual-review-meeting-mode input { width: auto; }
+.annual-review-full-field { margin-top: 12px; }
+.annual-review-editor footer { display: flex; justify-content: flex-end; margin-top: 18px; }
+.annual-review-response-area { margin-top: 13px; overflow: hidden; box-shadow: none; }
+.annual-review-response-switcher { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid #e0e8eb; background: #f8fafb; }
+.annual-review-response-switcher > div:first-child { display: grid; }
+.annual-review-response-switcher span { color: #6a7f8a; font-size: .75rem; }
+.annual-review-response-switcher > div:last-child { display: flex; gap: 5px; }
+.annual-review-response-switcher button { border-color: transparent; background: transparent; color: #58717e; padding: 6px 9px; font-size: .75rem; }
+.annual-review-response-switcher button.is-active { background: #dff1f1; color: #08757d; }
+.annual-review-privacy { display: flex; align-items: center; gap: 9px; margin: 13px; padding: 11px 13px; border-radius: 9px; background: #f2f5f6; color: #627984; font-size: .78rem; }
+.annual-review-privacy > span { display: grid; }
+.annual-review-privacy strong { color: #284a5b; }
+.annual-review-tabs { display: flex; gap: 3px; overflow-x: auto; padding: 9px 11px; border-bottom: 1px solid #e1e9ec; background: white; }
+.annual-review-tabs button { flex: 0 0 auto; border: 0; background: transparent; color: #617783; padding: 8px 10px; font-size: .75rem; }
+.annual-review-tabs button:hover, .annual-review-tabs button.is-active { background: #e8f5f5; color: #077681; transform: none; }
+.annual-review-tab-panel { padding: 16px; }
+.annual-review-form-section > header, .annual-review-guide > header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.annual-review-form-section > header > span { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: #0d394f; color: white; font-size: .78rem; font-weight: 800; }
+.annual-review-form-section h2, .annual-review-form-section p, .annual-review-guide h2, .annual-review-guide p { margin: 0; }
+.annual-review-form-section header p, .annual-review-guide header p { color: #11818a; font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.annual-review-form-section h2, .annual-review-guide h2 { font-size: 1.25rem; }
+.annual-review-help { margin-bottom: 16px !important; color: #687e89; font-size: .81rem; }
+.annual-review-rating-group { margin-top: 14px; }
+.annual-review-rating-group > h3 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 9px 12px; border-radius: 9px 9px 0 0; background: #173e52; color: white; font-size: .85rem; }
+.annual-review-rating-card { padding: 13px; border: 1px solid #dfe7ea; border-top: 0; }
+.annual-review-rating-options { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; margin: 10px 0; }
+.annual-review-rating-options label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 33px; border: 1px solid #dae3e6; border-radius: 7px; color: #5d737f; font-size: .7rem; cursor: pointer; text-align: center; }
+.annual-review-rating-options label.is-selected { border-color: #0d838c; background: #e8f6f5; color: #086f77; font-weight: 800; }
+.annual-review-rating-options input { position: absolute; opacity: 0; pointer-events: none; }
+.annual-review-comment-field { display: grid; gap: 5px; color: #5f7580; font-size: .72rem; font-weight: 700; }
+.annual-review-long-field, .annual-review-select-field, .annual-review-rich-field { display: grid; gap: 5px; margin: 13px 0; color: #24485a; }
+.annual-review-long-field small, .annual-review-rich-field small { color: #718690; font-size: .76rem; font-weight: 400; }
+.annual-review-choice-field { margin: 14px 0; padding: 13px; border: 1px solid #dce6e9; border-radius: 10px; }
+.annual-review-choice-field legend { padding: 0 5px; font-weight: 750; font-size: .82rem; }
+.annual-review-choice-field > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.annual-review-choice-field label { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #d9e3e6; border-radius: 8px; color: #5b727d; font-size: .73rem; cursor: pointer; }
+.annual-review-choice-field label.is-selected { border-color: #10848c; background: #e7f5f5; color: #08727a; font-weight: 750; }
+.annual-review-choice-field input { width: auto; }
+.annual-review-condition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.annual-review-rich-readonly { min-height: 100px; padding: 13px; border: 1px solid #d8e3e6; border-radius: 9px; background: #f9fbfb; }
+.annual-review-page .service-note-rich-editor { overflow: hidden; border: 1px solid #cddae0; border-radius: 8px; background: #fff; transition: border .15s ease, box-shadow .15s ease; }
+.annual-review-page .service-note-rich-editor:focus-within { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
+.annual-review-page .service-note-rich-toolbar { display: flex; min-height: 40px; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #d8e2e6; background: #fbfcfd; }
+.annual-review-page .service-note-rich-toolbar select { width: auto; min-height: 30px; padding: 0 24px 0 7px; border: 0; border-radius: 5px; outline: 0; color: #38515e; background: transparent; font: inherit; font-weight: 650; }
+.annual-review-page .service-note-rich-toolbar select[aria-label='Style de paragraphe'] { max-width: 90px; }
+.annual-review-page .service-note-rich-toolbar select[aria-label='Police'] { max-width: 92px; }
+.annual-review-page .service-note-rich-toolbar button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; padding: 0; place-items: center; border: 0; border-radius: 5px; color: #38515e; background: transparent; transform: none; }
+.annual-review-page .service-note-rich-toolbar button:hover:not(:disabled), .annual-review-page .service-note-rich-toolbar select:hover { color: #075f65; background: #e9f5f4; transform: none; }
+.annual-review-page .service-note-rich-toolbar > i { width: 1px; height: 20px; margin: 0 3px; background: #d9e2e6; }
+.annual-review-page .service-note-rich-content { min-height: 215px; max-height: 440px; overflow: auto; padding: 12px 14px; outline: 0; color: #173747; font-size: .82rem; font-weight: 400; line-height: 1.55; }
+.annual-review-page .service-note-rich-content:empty::before { color: #8999a1; content: attr(data-placeholder); pointer-events: none; }
+.annual-review-page .service-note-rich-content blockquote { margin: .65em 0; padding: .3em .75em; border-left: 3px solid #0c7d88; color: #526d78; background: #f3f8f8; }
+.annual-review-page .service-note-rich-content ul, .annual-review-page .service-note-rich-content ol { margin: .5em 0; padding-left: 1.6em; }
+.annual-review-page .service-note-rich-content a { color: #066ba2; text-decoration: underline; }
+.annual-review-guide > header > svg { color: #0b818a; }
+.annual-review-guide > article { padding: 15px 0; border-top: 1px solid #e0e8eb; }
+.annual-review-guide > article h3 { margin: 0 0 9px; font-size: 1rem; }
+.annual-review-guide > article p, .annual-review-guide li { color: #536c78; font-size: .83rem; line-height: 1.55; }
+.annual-review-guide-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 11px; }
+.annual-review-guide-grid section { padding: 12px; border: 1px solid #dce6e9; border-radius: 10px; background: #f9fbfb; }
+.annual-review-guide-grid h4 { margin: 0 0 6px; color: #0d7982; }
+.annual-review-empty { display: grid; place-items: center; min-height: 430px; text-align: center; color: #71858f; }
+.annual-review-empty h2 { margin: 8px 0 0; color: #27495a; }
+.annual-review-empty p { margin: 0 0 8px; }
+.annual-review-archive-link { width: 100%; justify-content: flex-start !important; margin-top: 13px; padding: 13px 15px !important; background: #eff9f4 !important; border-color: #bfe1d0 !important; color: #176a4a !important; }
+.annual-review-archive-link span { display: grid; margin-right: auto; text-align: left; }
+.annual-review-state { padding: 45px; color: #627984; text-align: center; }
+
+@media (max-width: 1100px) {
+  .annual-review-layout { grid-template-columns: 230px minmax(0, 1fr); }
+  .annual-review-summary { grid-template-columns: 52px 1fr; }
+  .annual-review-summary dl { grid-column: 1 / -1; }
+  .annual-review-summary blockquote { grid-column: 1 / -1; }
+  .annual-review-rating-options { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .annual-review-command-header { flex-direction: column; }
+  .annual-review-command-header > div:last-child { width: 100%; }
+  .annual-review-layout { grid-template-columns: 1fr; }
+  .annual-review-list-panel { position: static; }
+  .annual-review-list-panel > div { max-height: 230px; }
+  .annual-review-workspace { padding: 10px; }
+  .annual-review-summary dl, .annual-review-editor-grid, .annual-review-condition-grid, .annual-review-guide-grid, .annual-review-share-choice { grid-template-columns: 1fr; }
+  .annual-review-rating-options { grid-template-columns: repeat(2, 1fr); }
+  .annual-review-response-switcher { align-items: flex-start; flex-direction: column; }
+  .annual-review-action-card { align-items: stretch; }
+  .annual-review-action-card > button { width: 100%; }
+}

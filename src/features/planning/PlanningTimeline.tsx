@@ -799,6 +799,7 @@ export function PlanningCrewTimelineRow({
         const conflictDates = conflictDatesByEvent.get(event.id) || EMPTY_CONFLICT_DATES;
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
+        const eventEditable = editable && event.kind !== 'annualReview';
         const hasDailyGrid = hierarchy && Boolean(event.assignmentId);
         const visibleDailyStates = hasDailyGrid
           ? days.flatMap((day) => {
@@ -821,8 +822,8 @@ export function PlanningCrewTimelineRow({
           <button
             aria-busy={isPending}
             aria-label={`${event.person}, ${planningStatusDisplayLabel(event.status)}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${editable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
-            draggable={editable && !preview && !isPending}
+            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${eventEditable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
+            draggable={eventEditable && !preview && !isPending}
             onClick={(clickEvent) => {
               if (suppressClickRef.current) {
                 suppressClickRef.current = false;
@@ -832,7 +833,8 @@ export function PlanningCrewTimelineRow({
               onSelect(event.id);
             }}
             onContextMenu={(contextEvent) => {
-              if (!editable) {
+              if (event.kind === 'annualReview') return;
+              if (!eventEditable) {
                 if (!onRequestAbsence) return;
                 contextEvent.preventDefault();
                 contextEvent.stopPropagation();
@@ -861,11 +863,11 @@ export function PlanningCrewTimelineRow({
             title={`${event.person}\n${event.vessel} · ${planningStatusDisplayLabel(event.status)} · ${planningConfirmationLabel(event.confirmationStatus)}\n${formatPlanningDate(startsOn)} → ${formatPlanningDate(endsOn)}`}
             type="button"
           >
-            {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
+            {eventEditable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
             {placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
-            {editable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
+            {eventEditable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
           </button>
           {hasDailyGrid ? days.map((day, dayIndex) => {
             if (day.date < event.startsOn || day.date > event.endsOn) return null;
