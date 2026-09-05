@@ -74,10 +74,11 @@ export interface QhseReportChart {
   title: string;
   kind: 'bar' | 'line';
   labels: string[];
-  series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right' }>;
+  series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right'; valueLabelIndices?: number[] }>;
   unit?: string;
   showValueLabels?: boolean;
-  monthTicks?: Array<{ label: string; index: number }>;
+  monthTicks?: Array<{ label: string; index: number; startIndex?: number }>;
+  pointPositions?: number[];
   compactDailyPoints?: boolean;
 }
 
@@ -421,34 +422,53 @@ function periodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => 
   return { labels, values };
 }
 
-function dailyFuelChart(snapshot: QhseReportSnapshot): QhseReportChart {
+function monthlyCumulativeFuelChart(snapshot: QhseReportSnapshot): QhseReportChart {
   const reports = reportMap(snapshot);
   const years = scopeYears(snapshot.scope);
   const totals = new Map<string, number>();
   snapshot.metrics.forEach((item) => {
     const raw = reports.get(item.dprId)?.reportDate.slice(0, 10) || '';
     if (!raw || !inScope(raw, snapshot.scope)) return;
-    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters / 1000);
+    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters);
   });
-  // A shared leap-year calendar keeps every daily point aligned across selected years.
-  // Missing DPRs and nonexistent February 29 dates remain null, never zero.
-  const days = Array.from({ length: 366 }, (_, index) => new Date(Date.UTC(2000, 0, index + 1)));
+  // Each month starts at zero, followed by its daily cumulative observations.
+  // The month-end total and next reset share the same X position.
+  const includeLeapDay = years.some((year) => new Date(Date.UTC(year, 1, 29)).getUTCMonth() === 1);
+  const days = Array.from({ length: includeLeapDay ? 366 : 365 }, (_, index) => new Date(Date.UTC(includeLeapDay ? 2000 : 2001, 0, index + 1)));
+  const points = days.flatMap((day, index) => {
+    const point = { monthDay: day.toISOString().slice(5, 10), month: day.getUTCMonth(), reset: false, position: (index + 1) / days.length };
+    return day.getUTCDate() === 1 ? [{ ...point, reset: true, position: index / days.length }, point] : [point];
+  });
   const colors = [BLUE, TEAL, PURPLE, ORANGE, RED];
   return {
-    title: 'Consommation de fuel journalière', kind: 'line', unit: 'm³', compactDailyPoints: true,
-    labels: days.map((day) => day.toISOString().slice(5, 10)),
+    title: 'Consommation de fuel cumulée par mois', kind: 'line', unit: 'm³', compactDailyPoints: true,
+    labels: points.map((point) => `${point.monthDay}${point.reset ? ':reset' : ''}`),
+    pointPositions: points.map((point) => point.position),
     monthTicks: Array.from({ length: 12 }, (_, month) => ({
       label: new Intl.DateTimeFormat('fr-FR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month, 1))),
-      index: days.findIndex((day) => day.getUTCMonth() === month && day.getUTCDate() === 15),
+      index: points.findIndex((point) => point.month === month && point.monthDay.endsWith('-15')),
+      startIndex: points.findIndex((point) => point.month === month && point.reset),
     })),
-    series: years.map((year, index) => ({
-      label: years.length === 1 ? `Fuel consommé · ${year}` : String(year),
-      color: colors[index % colors.length],
-      values: days.map((day) => {
-        const date = `${year}-${day.toISOString().slice(5, 10)}`;
-        return totals.get(date) ?? null;
-      }),
-    })),
+    series: years.map((year, index) => {
+      const recordedDates = [...totals.keys()].filter((date) => date.startsWith(`${year}-`)).sort();
+      const lastDate = recordedDates.at(-1) || '';
+      const recordedMonths = new Set(recordedDates.map((date) => date.slice(0, 7)));
+      const isLeapYear = new Date(Date.UTC(year, 1, 29)).getUTCMonth() === 1;
+      let cumulative = 0;
+      const values = points.map((point) => {
+        if (point.reset) cumulative = 0;
+        const date = `${year}-${point.monthDay}`;
+        if (date > lastDate || !recordedMonths.has(date.slice(0, 7)) || (!isLeapYear && point.monthDay === '02-29')) return null;
+        if (!point.reset) cumulative += totals.get(date) || 0;
+        return cumulative / 1000;
+      });
+      const valueLabelIndices = Array.from({ length: 12 }, (_, month) => points.reduce((last, point, pointIndex) => point.month === month && !point.reset && values[pointIndex] !== null ? pointIndex : last, -1))
+        .filter((pointIndex) => pointIndex >= 0);
+      return {
+        label: years.length === 1 ? `Cumul mensuel · ${year}` : String(year),
+        color: colors[index % colors.length], values, valueLabelIndices,
+      };
+    }),
   };
 }
 
@@ -1147,7 +1167,7 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     ],
     charts: [
       { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
-      dailyFuelChart(snapshot),
+      monthlyCumulativeFuelChart(snapshot),
       {
         title: 'GES / CO₂e cumulés par an', kind: 'line', labels: years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`)),
         series: [

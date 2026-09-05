@@ -122,7 +122,8 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const rightValues = chart.series.filter((series) => series.axis === 'right').flatMap((series) => series.values)
     .filter((value): value is number => value !== null && Number.isFinite(value));
-  const max = Math.max(1, ...leftValues);
+  const dataMax = Math.max(1, ...leftValues);
+  const max = chart.series.some((series) => series.valueLabelIndices?.length) ? Math.ceil(dataMax * 1.15 * 2) / 2 : dataMax;
   const rightMax = Math.max(1, ...rightValues);
   doc.setLineWidth(0.18);
   doc.setDrawColor(...LINE);
@@ -133,8 +134,9 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
     doc.line(plotX, lineY, plotX + plotW, lineY);
   });
   const count = Math.max(1, chart.labels.length);
+  const pointPosition = (index: number) => chart.pointPositions?.[index] ?? (count === 1 ? 0.5 : index / (count - 1));
   chart.monthTicks?.forEach((tick) => {
-    const boundaryX = plotX + ((tick.index - 14) / (count - 1)) * plotW;
+    const boundaryX = plotX + pointPosition(tick.startIndex ?? tick.index - 14) * plotW;
     doc.setDrawColor(236, 241, 244);
     doc.setLineWidth(0.12);
     doc.line(boundaryX, plotY, boundaryX, plotY + plotH);
@@ -163,7 +165,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
       let valueLabelIndex = 0;
       series.values.forEach((value, index) => {
         if (value === null || !Number.isFinite(value)) { previous = null; return; }
-        const pointX = plotX + (count === 1 ? plotW / 2 : (index / (count - 1)) * plotW);
+        const pointX = plotX + pointPosition(index) * plotW;
         const seriesMax = series.axis === 'right' ? rightMax : max;
         const pointY = plotY + plotH - ((value / seriesMax) * plotH);
         if (previous) doc.line(previous[0], previous[1], pointX, pointY);
@@ -171,12 +173,12 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
         doc.circle(pointX, pointY, chart.compactDailyPoints ? 0.24 : 0.9, 'F');
         const showValueLabel = value > 0 && valueLabelIndex % valueLabelStep === 0;
         if (value > 0) valueLabelIndex += 1;
-        if (chart.showValueLabels && labelCandidateCount <= 48 && showValueLabel) {
-          const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+        if (series.valueLabelIndices?.includes(index) || (chart.showValueLabels && labelCandidateCount <= 48 && showValueLabel)) {
+          const label = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: series.valueLabelIndices ? 2 : 1 }).format(value);
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(4.7);
           doc.setTextColor(...MUTED);
-          doc.text(`${label}${chart.unit ? ` ${chart.unit}` : ''}`, pointX, Math.max(plotY + 3, pointY - 2), { align: 'center' });
+          doc.text(`${label}${chart.unit ? ` ${chart.unit}` : ''}`, pointX, Math.max(plotY + 1.5, pointY - 2), { align: index === count - 1 ? 'right' : 'center' });
         }
         previous = [pointX, pointY];
       });
@@ -186,7 +188,7 @@ function drawChart(doc: JsPdfType, chart: QhseReportChart, x: number, y: number,
   const ticks = chart.monthTicks || chart.labels.map((label, index) => ({ label, index }))
     .filter(({ index }) => index % labelStep === 0 || index === chart.labels.length - 1);
   ticks.forEach(({ label, index }) => {
-    const labelX = plotX + (count === 1 ? plotW / 2 : chart.kind === 'line' ? (index / (count - 1)) * plotW : ((index + 0.5) / count) * plotW);
+    const labelX = plotX + (chart.kind === 'line' ? pointPosition(index) * plotW : ((index + 0.5) / count) * plotW);
     doc.setFontSize(5.2);
     doc.setTextColor(...MUTED);
     doc.text(label.slice(0, 12), labelX, y + height - 3.2, { align: 'center' });
