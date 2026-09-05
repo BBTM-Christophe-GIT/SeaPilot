@@ -19,7 +19,7 @@ import {
 } from './qhseReportCatalog';
 import {
   fetchQhseReportProjectOptions, fetchQhseReportSnapshot,
-  type QhseReportProjectOption, type QhseReportSnapshot,
+  type QhseReportOptions, type QhseReportProjectOption, type QhseReportSnapshot,
 } from './qhseReportData';
 import {
   buildQhseReportArchive, buildQhseReportPdf, downloadQhseBlob, qhseReportArchiveFileName,
@@ -131,6 +131,8 @@ export function KpiPage({ client }: KpiPageProps) {
   const [reportBusy, setReportBusy] = useState('');
   const [reportProgress, setReportProgress] = useState('');
   const [reportMessage, setReportMessage] = useState('');
+  const [reportForecast, setReportForecast] = useState<NonNullable<QhseReportOptions['forecast']>>({ water: false, fuel: false, emissions: false, xbee: false });
+  const [reportTrend, setReportTrend] = useState<NonNullable<QhseReportOptions['trend']>>({ water: false, fuel: false, emissions: false, xbee: false });
   const reportSnapshots = useRef(new Map<string, QhseReportSnapshot>());
 
   async function load() {
@@ -214,7 +216,7 @@ export function KpiPage({ client }: KpiPageProps) {
     try {
       const snapshot = await getReportSnapshot();
       setReportProgress('Mise en page du PDF…');
-      const blob = await buildQhseReportPdf(report, snapshot);
+      const blob = await buildQhseReportPdf(report, snapshot, { forecast: reportForecast, trend: reportTrend });
       downloadQhseBlob(blob, qhseReportFileName(report, reportPeriod, selectedVesselNames.join('-'), selectedProjectNames.join('-')));
       setReportMessage(`${report.title} a été généré.`);
     } catch {
@@ -228,7 +230,7 @@ export function KpiPage({ client }: KpiPageProps) {
       const snapshot = await getReportSnapshot();
       const archive = await buildQhseReportArchive(QHSE_REPORT_CATALOG, snapshot, (completed, total) => {
         setReportProgress(`Génération des PDF : ${completed} / ${total}`);
-      });
+      }, { forecast: reportForecast, trend: reportTrend });
       downloadQhseBlob(archive, qhseReportArchiveFileName(snapshot));
       setReportMessage(`Les ${QHSE_REPORT_CATALOG.length} rapports PDF ont été regroupés dans une archive ZIP.`);
     } catch {
@@ -307,8 +309,30 @@ export function KpiPage({ client }: KpiPageProps) {
       {QHSE_REPORT_FAMILIES.map((family) => {
         const reports = QHSE_REPORT_CATALOG.filter((report) => report.family === family);
         return <section className="qhse-report-family" key={family}><header><h3>{family}</h3><span>{reports.length} rapport(s)</span></header><div className="qhse-report-grid">
-          {reports.map((report) => <article className="qhse-report-card" key={report.id}>
+          {reports.map((report) => <article className={`qhse-report-card${report.id === 'consumption' ? ' has-forecast' : ''}`} key={report.id}>
             <div className="qhse-report-card-icon"><FileText size={20} /></div><div className="qhse-report-card-body"><span>Page {report.pageNumber} / {QHSE_REPORT_CATALOG.length} · {report.orientation === 'portrait' ? 'A4 portrait' : 'A4 paysage'}</span><h4>{report.title}</h4><p>{report.description}</p><small className={report.coverage === 'partial' ? 'is-partial' : ''}>{report.coverage === 'complete' ? 'Couverture SeaPilot complète' : 'Couverture partielle documentée'}</small></div>
+            {report.id === 'consumption' && <>
+            <fieldset className="qhse-consumption-forecast" disabled={Boolean(reportBusy)} aria-describedby="consumption-trend-help">
+              <legend>Tendances observées</legend>
+              <div>{([
+                ['water', 'Eau avitaillée'], ['fuel', 'Fuel consommé'], ['emissions', 'GES sans XBEE'], ['xbee', 'GES avec XBEE'],
+              ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={reportTrend[key]} onChange={(event) => {
+                const checked = event.target.checked;
+                setReportTrend((current) => ({ ...current, [key]: checked }));
+              }} />{label}</label>)}</div>
+              <p id="consumption-trend-help">Hausse ou baisse des totaux mensuels : droite de tendance sur les mois terminés suffisamment renseignés (minimum 3). Traits pleins avec losanges, sans projection future. GES mensuels : axe droit.</p>
+            </fieldset>
+            <fieldset className="qhse-consumption-forecast" disabled={Boolean(reportBusy)} aria-describedby="consumption-forecast-help">
+              <legend>Prévisions futures</legend>
+              <div>{([
+                ['water', 'Eau avitaillée'], ['fuel', 'Fuel consommé'], ['emissions', 'GES sans XBEE'], ['xbee', 'GES avec XBEE'],
+              ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={reportForecast[key]} onChange={(event) => {
+                const checked = event.target.checked;
+                setReportForecast((current) => ({ ...current, [key]: checked }));
+              }} />{label}</label>)}</div>
+              <p id="consumption-forecast-help">Pointillés après aujourd’hui, pour l’année en cours. Moyenne des 3 derniers mois terminés, si suffisamment renseignés. Totaux réels inchangés.</p>
+              <p>Plusieurs années : une page par année et une synthèse dans le même PDF.</p>
+            </fieldset></>}
             <button aria-label={`Générer ${report.title}`} disabled={Boolean(reportBusy) || hseLoading} onClick={() => void generateReport(report)}><Download size={16} />{reportBusy === report.id ? 'Génération…' : 'PDF'}</button>
           </article>)}
         </div></section>;

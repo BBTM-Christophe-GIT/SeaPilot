@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { KpiPage } from './KpiPage';
+import * as reportData from './qhseReportData';
+import * as reportPdf from './qhseReportPdf';
 
 function ordered(data: unknown[]) {
   const result = Promise.resolve({ data, error: null });
@@ -60,6 +62,35 @@ describe('KpiPage', () => {
     expect(screen.getAllByRole('button', { name: /^Générer / })).toHaveLength(10);
     expect(screen.getByRole('button', { name: 'Télécharger les 10 PDF' })).toBeInTheDocument();
     expect(screen.getByText('Page 10 / 10 · A4 portrait')).toBeInTheDocument();
+    const trends = within(screen.getByRole('group', { name: 'Tendances observées' }));
+    expect(trends.getAllByRole('checkbox')).toHaveLength(4);
+    for (const checkbox of trends.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+    await user.click(trends.getByLabelText('Fuel consommé'));
+    const predictions = within(screen.getByRole('group', { name: 'Prévisions futures' }));
+    expect(predictions.getAllByRole('checkbox')).toHaveLength(4);
+    for (const checkbox of predictions.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+    await user.click(predictions.getByLabelText('Eau avitaillée'));
+    await user.click(predictions.getByLabelText('GES avec XBEE'));
+    expect(predictions.getByLabelText('Eau avitaillée')).toBeChecked();
+    expect(predictions.getByLabelText('Fuel consommé')).not.toBeChecked();
+    expect(predictions.getByLabelText('GES sans XBEE')).not.toBeChecked();
+    expect(predictions.getByLabelText('GES avec XBEE')).toBeChecked();
+    const snapshot = { scope: { year: 2026, vesselName: '', vesselId: null } } as reportData.QhseReportSnapshot;
+    vi.spyOn(reportData, 'fetchQhseReportSnapshot').mockResolvedValue(snapshot);
+    const buildPdf = vi.spyOn(reportPdf, 'buildQhseReportPdf').mockResolvedValue(new Blob(['PDF']));
+    vi.spyOn(reportPdf, 'downloadQhseBlob').mockImplementation(() => {});
+    await user.click(screen.getByRole('button', { name: 'Générer RSE — consommations par projet' }));
+    expect(await screen.findByText('RSE — consommations par projet a été généré.')).toBeInTheDocument();
+    expect(buildPdf).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'consumption' }), snapshot, {
+      forecast: { water: true, fuel: false, emissions: false, xbee: true },
+      trend: { water: false, fuel: true, emissions: false, xbee: false },
+    });
+    await user.click(predictions.getByLabelText('Eau avitaillée'));
+    await user.click(screen.getByRole('button', { name: 'Générer RSE — consommations par projet' }));
+    expect(buildPdf).toHaveBeenLastCalledWith(expect.anything(), snapshot, {
+      forecast: { water: false, fuel: false, emissions: false, xbee: true },
+      trend: { water: false, fuel: true, emissions: false, xbee: false },
+    });
 
     await user.selectOptions(screen.getByLabelText('Année des indicateurs HSE'), '2024');
     expect(await screen.findByText(/l’année 2024/)).toBeInTheDocument();

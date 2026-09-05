@@ -63,7 +63,9 @@ describe('QHSE report catalog and calculations', () => {
     const content = buildQhseReportContent(report, snapshot);
 
     expect(content.charts).toHaveLength(3);
-    expect(content.charts[0].series[0].values.slice(0, 4)).toEqual([0, 4, 0, 6]);
+    const waterChart = content.charts[0];
+    expect(waterChart.series[0].step).toBe(true);
+    expect(waterChart.series[0].valueLabelIndices?.map((index) => waterChart.series[0].values[index])).toEqual([4, 6]);
     expect(content.charts[1].title).toBe('Consommation de fuel cumulée par mois');
     expect(content.charts[1].monthTicks?.map((tick) => tick.label)).toEqual([
       'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
@@ -75,11 +77,12 @@ describe('QHSE report catalog and calculations', () => {
     expect(fuelChart.series[0].values[fuelChart.labels.indexOf('01-10')]).toBe(100);
     expect(fuelChart.series[1].values[fuelChart.labels.indexOf('01-10')]).toBe(200);
     expect(content.charts[1].series[0].values).not.toContain(10);
-    expect(content.charts[2].series[0].values[0]).toBeCloseTo(285, 3);
-    expect(content.charts[2].series[0].values[1]).toBeCloseTo(427.5, 3);
+    const emissions = content.charts[2];
+    expect(emissions.series[0].values[emissions.labels.indexOf('01-10')]).toBeCloseTo(285, 3);
+    expect(emissions.series[0].values[emissions.labels.indexOf('02-10')]).toBeCloseTo(427.5, 3);
     expect(content.charts[2].series[1].color).toEqual([11, 153, 73]);
-    expect(content.charts[2].series[1].values[1]).toBeCloseTo(363.375, 3);
-    expect(content.charts[2].series[1].values[12]).toBeCloseTo(484.5, 3);
+    expect(emissions.series[1].values[emissions.labels.indexOf('02-10')]).toBeCloseTo(363.375, 3);
+    expect(emissions.series[3].values[emissions.labels.indexOf('01-10')]).toBeCloseTo(484.5, 3);
     expect(content.tables[0].rows).toEqual([
       ['2024', '10 m³', '150 m³', '427,5 tCO₂e', '363,38 tCO₂e', '64,13 tCO₂e'],
       ['2025', '8 m³', '200 m³', '570 tCO₂e', '484,5 tCO₂e', '85,5 tCO₂e'],

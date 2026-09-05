@@ -1,9 +1,10 @@
 import autoTable from 'jspdf-autotable';
 import type { jsPDF as JsPdfType } from 'jspdf';
 import {
-  buildQhseReportContent, type QhseReportChart, type QhseReportContent, type QhseReportSnapshot,
+  buildQhseReportContent, type QhseReportChart, type QhseReportContent, type QhseReportOptions, type QhseReportSnapshot,
 } from './qhseReportData';
 import { QHSE_REPORT_CATALOG, qhseReportFileName, type QhseReportDefinition } from './qhseReportCatalog';
+import { drawConsumptionPdf } from './qhseConsumptionPdf';
 
 const NAVY: [number, number, number] = [16, 49, 83];
 const BLUE: [number, number, number] = [24, 96, 174];
@@ -61,7 +62,7 @@ function drawReportLogo(doc: JsPdfType, logo: string, x: number, y: number, boxW
 }
 
 export function sanitizeQhsePdfText(value: string): string {
-  return value.replace(/SeaPilot/gi, 'Supabase').replace(/Supabase\s+Supabase/gi, 'Supabase').replace(/₂/g, '2');
+  return value.replace(/SeaPilot/gi, 'Supabase').replace(/Supabase\s+Supabase/gi, 'Supabase').replace(/₂/g, '2').replace(/≥/g, '>=').replace(/≤/g, '<=');
 }
 
 function sanitizePdfContent(content: QhseReportContent): QhseReportContent {
@@ -204,9 +205,23 @@ function drawEnvironmentalImpact(doc: JsPdfType, impact: NonNullable<QhseReportC
   const textX = x + 17;
   const textWidth = width - 22;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
-  const body = doc.splitTextToSize("Les additifs enzymatiques XBEE utilisés par BBTM ont permis de réduire les émissions de CO2 dans l'atmosphère de", textWidth) as string[];
+  const reduction = `${number(impact.avoidedTonnes)} tonnes.`;
+  doc.setFont('helvetica', 'bold');
+  const reductionWidth = doc.getTextWidth(reduction);
+  doc.setFont('helvetica', 'normal');
+  const ending = "dans l'atmosphère de ";
+  const body: string[] = [''];
+  // Keep the ending and the bold dynamic quantity together, wrapping earlier words if needed.
+  for (const word of 'Les additifs enzymatiques XBEE utilisés par BBTM ont permis de réduire les émissions de CO2'.split(' ')) {
+    const last = body.length - 1;
+    const candidate = body[last] ? `${body[last]} ${word}` : word;
+    if (doc.getTextWidth(candidate) > textWidth) body.push(word); else body[last] = candidate;
+  }
+  const last = body.length - 1;
+  if (doc.getTextWidth(`${body[last]} ${ending}`) + reductionWidth + 0.5 > textWidth) body.push(ending);
+  else body[last] += ` ${ending}`;
   const baseline = doc.splitTextToSize(`Sans additif, les rejets de CO2 auraient été de ${number(impact.baselineTonnes)} tonnes de CO2.`, textWidth) as string[];
-  const height = 19 + body.length * 2.8 + baseline.length * 2.8;
+  const height = 16.2 + body.length * 2.8 + baseline.length * 2.8;
   doc.setDrawColor(160, 212, 182); doc.setFillColor(239, 249, 242); doc.setLineWidth(0.3);
   doc.roundedRect(x, y, width, height, 2.5, 2.5, 'FD');
   doc.setFillColor(...green); doc.roundedRect(x, y + 3, 1, height - 6, 0.5, 0.5, 'F');
@@ -220,10 +235,11 @@ function drawEnvironmentalImpact(doc: JsPdfType, impact: NonNullable<QhseReportC
   doc.setFontSize(9);
   doc.text(`${number(impact.emittedTonnes)} tonnes de CO2 ont été émis.`, textX, y + 9.3);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(48, 77, 60);
-  doc.text(body, textX, y + 14, { lineHeightFactor: 1.22 });
-  const reductionY = y + 14 + body.length * 2.8;
+  body.forEach((line, index) => doc.text(line, textX, y + 14 + index * 2.8));
+  const reductionY = y + 14 + (body.length - 1) * 2.8;
+  const reductionX = textX + doc.getTextWidth(body.at(-1)!) + 0.5;
   doc.setFont('helvetica', 'bold'); doc.setTextColor(...green);
-  doc.text(`${number(impact.avoidedTonnes)} tonnes.`, textX, reductionY);
+  doc.text(reduction, reductionX, reductionY);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(76, 104, 86);
   doc.text(baseline, textX, reductionY + 4, { lineHeightFactor: 1.22 });
   return height;
@@ -368,16 +384,17 @@ function drawReferenceReport(doc: JsPdfType, report: QhseReportDefinition, snaps
     const boxHeight = Math.min(18, 6 + (lines.length * 3));
     doc.roundedRect(margin, y, width, boxHeight, 2, 2, 'FD'); doc.setFontSize(6); doc.setTextColor(...INK); doc.text(lines.slice(0, 4), margin + 4, y + 5); y += boxHeight + 2;
   }
-  doc.setDrawColor(...LINE); doc.line(margin, 285, pageWidth - margin, 285);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...MUTED);
-  doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, 290);
-  doc.text(`Page ${report.pageNumber} / ${QHSE_REPORT_CATALOG.length}`, pageWidth - margin, 290, { align: 'right' });
+  for (let page = 1; page <= doc.getNumberOfPages(); page += 1) {
+    doc.setPage(page);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+    doc.text(String(page), pageWidth - margin, 290, { align: 'right' });
+  }
   return doc.output('blob');
 }
 
-export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot: QhseReportSnapshot): Promise<Blob> {
+export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot: QhseReportSnapshot, options: QhseReportOptions = {}): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
-  const content = sanitizePdfContent(buildQhseReportContent(report, snapshot));
+  const content = sanitizePdfContent(buildQhseReportContent(report, snapshot, options));
   const doc = new jsPDF({ format: 'a4', unit: 'mm', orientation: report.orientation });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -395,6 +412,11 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
     keywords: `QHSE, KPI, ${snapshot.scope.year}, ${snapshot.scope.vesselName || 'flotte'}`,
   });
 
+  if (report.id === 'consumption') return drawConsumptionPdf(doc, report, snapshot, options, {
+    logo: () => drawReportLogo(doc, logo, 14, 6, 20, 20),
+    impact: (impact, impactY) => drawEnvironmentalImpact(doc, impact, 14, impactY, 182),
+    clean: sanitizeQhsePdfText,
+  });
   if (REFERENCE_PAGE_IDS.has(report.id)) return drawReferenceReport(doc, report, snapshot, content, logo, waterStressMap, generatedAt);
 
   const drawHeader = () => {
@@ -546,14 +568,10 @@ export async function buildQhseReportPdf(report: QhseReportDefinition, snapshot:
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
-    doc.setDrawColor(...LINE);
-    doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.setTextColor(...MUTED);
-    doc.text('BBTM · Rapport QHSE généré exclusivement depuis les données Supabase', margin, pageHeight - 7);
-    const pagination = `Page ${report.pageNumber} / ${QHSE_REPORT_CATALOG.length}${pageCount > 1 ? ` · Feuille ${page} / ${pageCount}` : ''}`;
-    doc.text(pagination, pageWidth - margin, pageHeight - 7, { align: 'right' });
+    doc.text(String(page), pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
   return doc.output('blob');
 }
@@ -562,12 +580,13 @@ export async function buildQhseReportArchive(
   reports: readonly QhseReportDefinition[],
   snapshot: QhseReportSnapshot,
   onProgress?: (completed: number, total: number) => void,
+  options: QhseReportOptions = {},
 ): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const archive = new JSZip();
   for (let index = 0; index < reports.length; index += 1) {
     const report = reports[index];
-    const blob = await buildQhseReportPdf(report, snapshot);
+    const blob = await buildQhseReportPdf(report, snapshot, options);
     archive.file(qhseReportFileName(
       report,
       snapshot.scope.years || snapshot.scope.year,

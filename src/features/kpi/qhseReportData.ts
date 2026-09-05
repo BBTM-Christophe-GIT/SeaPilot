@@ -10,6 +10,14 @@ import {
 } from '../planning/planningVisitQueries';
 import { fetchProceduresData, type ProceduresData } from '../procedures/procedureQueries';
 import { QHSE_REPORT_CATALOG, type QhseReportDefinition, type QhseReportId } from './qhseReportCatalog';
+import { buildConsumptionCharts, consumptionCutoff, consumptionYearSnapshot } from './qhseConsumption';
+
+export interface QhseReportOptions {
+  forecast?: { water: boolean; fuel: boolean; emissions: boolean; xbee: boolean };
+  trend?: { water: boolean; fuel: boolean; emissions: boolean; xbee: boolean };
+  /** Reproducible cut-off for exports/tests; defaults to today's date in Paris. */
+  asOfDate?: string;
+}
 
 export interface QhseReportScope {
   year: number;
@@ -74,12 +82,15 @@ export interface QhseReportChart {
   title: string;
   kind: 'bar' | 'line';
   labels: string[];
-  series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right'; valueLabelIndices?: number[] }>;
+  series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right'; valueLabelIndices?: number[]; forecast?: boolean; trend?: boolean; step?: boolean; year?: number }>;
   unit?: string;
   showValueLabels?: boolean;
   monthTicks?: Array<{ label: string; index: number; startIndex?: number }>;
   pointPositions?: number[];
   compactDailyPoints?: boolean;
+  subtitle?: string;
+  forecastNote?: string;
+  trendNote?: string;
 }
 
 export interface QhseReportTable {
@@ -113,7 +124,7 @@ interface DprReportRow {
   vesselName: string;
 }
 
-interface DprMetricRow { dprId: number; fuelConsumedLiters: number; fuelOnBoardLiters: number }
+interface DprMetricRow { dprId: number; fuelConsumedLiters: number; fuelOnBoardLiters: number; fuelReported?: boolean }
 interface DprHseRow {
   dprId: number;
   tbtPerformed: boolean;
@@ -125,7 +136,7 @@ interface DprHseRow {
 }
 interface DprExerciseRow { dprId: number; type: string }
 interface DprPortCallRow { id: number; dprId: number; portName: string; arrivalAt: string; departureAt: string; reasons: string[] }
-interface DprSupplyRow { dprId: number; fuelM3: number; oilLiters: number; waterM3: number }
+interface DprSupplyRow { dprId: number; fuelM3: number; oilLiters: number; waterM3: number; waterReported?: boolean }
 interface DprWasteRow { dprId: number; type: string; quantity: number; unit: string }
 interface DprIncidentRow { dprId: number; category: string; level: string }
 
@@ -171,7 +182,6 @@ export async function fetchQhseReportProjectOptions(client: SupabaseClient): Pro
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 const BLUE: [number, number, number] = [24, 96, 174];
 const TEAL: [number, number, number] = [22, 151, 135];
-const GREEN: [number, number, number] = [11, 153, 73];
 const ORANGE: [number, number, number] = [220, 112, 48];
 const RED: [number, number, number] = [194, 57, 68];
 const PURPLE: [number, number, number] = [113, 82, 172];
@@ -285,14 +295,14 @@ async function fetchDprData(client: SupabaseClient, scope: QhseReportScope, warn
     if (errorResult?.error) throw errorResult.error;
     return {
       reports,
-      metrics: (metricResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), fuelConsumedLiters: numeric(row.fuel_consumed_liters), fuelOnBoardLiters: numeric(row.fuel_on_board_liters) })),
+      metrics: (metricResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), fuelConsumedLiters: numeric(row.fuel_consumed_liters), fuelOnBoardLiters: numeric(row.fuel_on_board_liters), fuelReported: row.fuel_consumed_liters !== null })),
       hseActions: (hseResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), tbtPerformed: Boolean(row.tbt_performed), hseVisitPerformed: Boolean(row.hse_visit_performed), hseAuditPerformed: Boolean(row.hse_audit_performed), goodPractices: numeric(row.good_practices_count), dangerousSituations: numeric(row.dangerous_situations_count), stopWork: numeric(row.stop_work_count) })),
       exercises: (exerciseResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), type: text(row.exercise_type_key) })),
       portCalls: (callResult.data || []).map((row) => ({
         id: Number(row.id), dprId: Number(row.dpr_id), portName: text(row.port_name), arrivalAt: text(row.arrival_at), departureAt: text(row.departure_at),
         reasons: ((row.reasons || []) as Array<Record<string, unknown>>).map((reason) => text(reason.reason_type_key)),
       })),
-      supplies: (supplyResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), fuelM3: numeric(row.fuel_m3), oilLiters: numeric(row.oil_liters), waterM3: numeric(row.water_m3) })),
+      supplies: (supplyResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), fuelM3: numeric(row.fuel_m3), oilLiters: numeric(row.oil_liters), waterM3: numeric(row.water_m3), waterReported: row.water_m3 !== null })),
       waste: (wasteResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), type: text(row.waste_type_key), quantity: numeric(row.quantity), unit: text(row.unit) })),
       incidents: (incidentResult.data || []).map((row) => ({ dprId: Number(row.dpr_id), category: text(row.category), level: text(row.level) })),
     };
@@ -420,56 +430,6 @@ function periodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => 
     if (yearIndex >= 0 && month >= 0) values[(yearIndex * 12) + month] += value(item);
   });
   return { labels, values };
-}
-
-function monthlyCumulativeFuelChart(snapshot: QhseReportSnapshot): QhseReportChart {
-  const reports = reportMap(snapshot);
-  const years = scopeYears(snapshot.scope);
-  const totals = new Map<string, number>();
-  snapshot.metrics.forEach((item) => {
-    const raw = reports.get(item.dprId)?.reportDate.slice(0, 10) || '';
-    if (!raw || !inScope(raw, snapshot.scope)) return;
-    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters);
-  });
-  // Each month starts at zero, followed by its daily cumulative observations.
-  // The month-end total and next reset share the same X position.
-  const includeLeapDay = years.some((year) => new Date(Date.UTC(year, 1, 29)).getUTCMonth() === 1);
-  const days = Array.from({ length: includeLeapDay ? 366 : 365 }, (_, index) => new Date(Date.UTC(includeLeapDay ? 2000 : 2001, 0, index + 1)));
-  const points = days.flatMap((day, index) => {
-    const point = { monthDay: day.toISOString().slice(5, 10), month: day.getUTCMonth(), reset: false, position: (index + 1) / days.length };
-    return day.getUTCDate() === 1 ? [{ ...point, reset: true, position: index / days.length }, point] : [point];
-  });
-  const colors = [BLUE, TEAL, PURPLE, ORANGE, RED];
-  return {
-    title: 'Consommation de fuel cumulée par mois', kind: 'line', unit: 'm³', compactDailyPoints: true,
-    labels: points.map((point) => `${point.monthDay}${point.reset ? ':reset' : ''}`),
-    pointPositions: points.map((point) => point.position),
-    monthTicks: Array.from({ length: 12 }, (_, month) => ({
-      label: new Intl.DateTimeFormat('fr-FR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month, 1))),
-      index: points.findIndex((point) => point.month === month && point.monthDay.endsWith('-15')),
-      startIndex: points.findIndex((point) => point.month === month && point.reset),
-    })),
-    series: years.map((year, index) => {
-      const recordedDates = [...totals.keys()].filter((date) => date.startsWith(`${year}-`)).sort();
-      const lastDate = recordedDates.at(-1) || '';
-      const recordedMonths = new Set(recordedDates.map((date) => date.slice(0, 7)));
-      const isLeapYear = new Date(Date.UTC(year, 1, 29)).getUTCMonth() === 1;
-      let cumulative = 0;
-      const values = points.map((point) => {
-        if (point.reset) cumulative = 0;
-        const date = `${year}-${point.monthDay}`;
-        if (date > lastDate || !recordedMonths.has(date.slice(0, 7)) || (!isLeapYear && point.monthDay === '02-29')) return null;
-        if (!point.reset) cumulative += totals.get(date) || 0;
-        return cumulative / 1000;
-      });
-      const valueLabelIndices = Array.from({ length: 12 }, (_, month) => points.reduce((last, point, pointIndex) => point.month === month && !point.reset && values[pointIndex] !== null ? pointIndex : last, -1))
-        .filter((pointIndex) => pointIndex >= 0);
-      return {
-        label: years.length === 1 ? `Cumul mensuel · ${year}` : String(year),
-        color: colors[index % colors.length], values, valueLabelIndices,
-      };
-    }),
-  };
 }
 
 function eventClassification(action: ActionItemRecord, snapshot: QhseReportSnapshot): string {
@@ -1118,38 +1078,27 @@ function buildDocumentsContent(snapshot: QhseReportSnapshot): QhseReportContent 
   };
 }
 
-function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportContent {
+function buildConsumptionContent(input: QhseReportSnapshot, options: QhseReportOptions): QhseReportContent {
+  const yearSnapshots = scopeYears(input.scope).map((year) => consumptionYearSnapshot(input, year, consumptionCutoff(options)));
+  const snapshot = { ...input, reports: yearSnapshots.flatMap((year) => year.reports), metrics: yearSnapshots.flatMap((year) => year.metrics), supplies: yearSnapshots.flatMap((year) => year.supplies) };
   const reports = reportMap(snapshot);
   const years = scopeYears(snapshot.scope);
-  const asMonthlyResetCurve = (period: { labels: string[]; values: number[] }) => ({
-    labels: period.labels.flatMap((label) => [label, '']),
-    values: period.values.flatMap((value) => [0, value]),
-  });
-  const waterPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3));
   const parameters = snapshot.environmentParameters || [];
   const annual = years.map((year) => {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
     const parameter = parameters.filter((item) => item.effectiveFrom <= yearEnd && (!item.effectiveTo || item.effectiveTo >= yearStart)).at(-1);
-    const metrics = snapshot.metrics.filter((item) => inYear(reports.get(item.dprId)?.reportDate || '', year));
-    const supplies = snapshot.supplies.filter((item) => inYear(reports.get(item.dprId)?.reportDate || '', year));
+    const metrics = snapshot.metrics.filter((item) => item.fuelReported !== false && inYear(reports.get(item.dprId)?.reportDate || '', year));
+    const supplies = snapshot.supplies.filter((item) => item.waterReported !== false && inYear(reports.get(item.dprId)?.reportDate || '', year));
     const fuelConsumedM3 = metrics.reduce((sum, item) => sum + item.fuelConsumedLiters, 0) / 1000;
     const waterM3 = supplies.reduce((sum, item) => sum + item.waterM3, 0);
-    const monthlyFuelM3 = monthlyValues(metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000);
-    const ghg = parameter ? calculateDirectFuelCo2eTonnes(fuelConsumedM3, parameter.directCombustionFactor) : null;
+    const ghg = parameter && metrics.length ? calculateDirectFuelCo2eTonnes(fuelConsumedM3, parameter.directCombustionFactor) : null;
     const withXbee = ghg === null || !parameter ? null : ghg * (1 - parameter.xbeeReductionRate);
-    let cumulativeFuelM3 = 0;
-    const cumulativeGhg = monthlyFuelM3.map((value) => {
-      cumulativeFuelM3 += value;
-      return parameter ? calculateDirectFuelCo2eTonnes(cumulativeFuelM3, parameter.directCombustionFactor) : null;
-    });
-    const cumulativeWithXbee = cumulativeGhg.map((value) => value === null || !parameter ? null : value * (1 - parameter.xbeeReductionRate));
     return {
       year, waterM3, fuelConsumedM3, ghg, withXbee,
       avoided: ghg === null || withXbee === null ? null : ghg - withXbee,
       factor: parameter?.directCombustionFactor || null,
       reduction: parameter?.xbeeReductionRate || null,
-      cumulativeGhg, cumulativeWithXbee,
     };
   });
   const total = (value: (row: typeof annual[number]) => number) => annual.reduce((sum, row) => sum + value(row), 0);
@@ -1160,36 +1109,27 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
   return {
     summary: `Eau avitaillée, consommation mensuelle de fuel et émissions cumulées calculées depuis les DPR — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
-      metric('Eau avitaillée', `${formatNumber(total((row) => row.waterM3), 1)} m³`, 'Cumul de la période', 'blue'),
-      metric('Fuel consommé', `${formatNumber(total((row) => row.fuelConsumedM3), 1)} m³`, 'Champ DPR « Consommation de carburant en L »', 'blue'),
+      metric('Eau avitaillée', snapshot.supplies.some((row) => row.waterReported !== false) ? `${formatNumber(total((row) => row.waterM3), 2)} m³` : '—', 'Cumul réel de la période', 'blue'),
+      metric('Fuel consommé', snapshot.metrics.some((row) => row.fuelReported !== false) ? `${formatNumber(total((row) => row.fuelConsumedM3), 2)} m³` : '—', 'Champ DPR « Consommation de carburant en L »', 'blue'),
       metric('GES / CO₂e émis', totalGhg === null ? '—' : `${formatNumber(totalGhg, 2)} tCO₂e`, emissionsAvailable ? 'Facteur direct MDO : 2,85 tCO₂e/m³' : 'Paramètre Supabase absent', 'orange'),
       metric('Réduction xBee', totalAvoided === null ? '—' : `${formatNumber(totalAvoided, 2)} tCO₂e`, emissionsAvailable ? 'Baisse appliquée : 15 %' : 'Paramètre Supabase absent', 'green'),
     ],
-    charts: [
-      { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
-      monthlyCumulativeFuelChart(snapshot),
-      {
-        title: 'GES / CO₂e cumulés par an', kind: 'line', labels: years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`)),
-        series: [
-          { label: 'GES / CO₂e sans xBee', values: annual.flatMap((row) => row.cumulativeGhg), color: [128, 128, 128] },
-          { label: 'GES / CO₂e avec xBee (-15 %)', values: annual.flatMap((row) => row.cumulativeWithXbee), color: GREEN },
-        ],
-        unit: 'tCO₂e',
-      },
-    ],
+    charts: buildConsumptionCharts(snapshot, options),
     tables: [{ title: 'Cumuls annuels', columns: ['Année', 'Eau avitaillée', 'Fuel consommé', 'GES / CO₂e', 'Avec xBee', 'Réduction xBee'], rows: annual.map((row) => [
-      String(row.year), `${formatNumber(row.waterM3, 1)} m³`, `${formatNumber(row.fuelConsumedM3, 1)} m³`,
+      String(row.year), snapshot.supplies.some((item) => item.waterReported !== false && inYear(reports.get(item.dprId)?.reportDate || '', row.year)) ? `${formatNumber(row.waterM3, 2)} m³` : '—', snapshot.metrics.some((item) => item.fuelReported !== false && inYear(reports.get(item.dprId)?.reportDate || '', row.year)) ? `${formatNumber(row.fuelConsumedM3, 2)} m³` : '—',
       row.ghg === null ? '—' : `${formatNumber(row.ghg, 2)} tCO₂e`, row.withXbee === null ? '—' : `${formatNumber(row.withXbee, 2)} tCO₂e`,
       row.avoided === null ? '—' : `${formatNumber(row.avoided, 2)} tCO₂e`,
     ]) }],
     environmentalImpact: totalGhg !== null && totalWithXbee !== null && totalAvoided !== null
       ? { emittedTonnes: totalWithXbee, avoidedTonnes: totalAvoided, baselineTonnes: totalGhg } : undefined,
-    notes: emissionsAvailable ? [] : [unavailable('Paramètres environnementaux absents', 'Le facteur direct MDO et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
+    notes: emissionsAvailable ? [] : annual.some((row) => row.factor === null)
+      ? [unavailable('Paramètres environnementaux absents', 'Le facteur direct MDO et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')]
+      : [unavailable('Données de fuel absentes', 'Certaines années ne contiennent aucune consommation renseignée ; leurs émissions restent indisponibles.')],
     sources: ['DPR soumis/validés · consommation de carburant et eau avitaillée', 'Paramètres environnementaux Supabase versionnés', sourceNote()],
   };
 }
 
-export function buildQhseReportContent(report: QhseReportDefinition, snapshot: QhseReportSnapshot): QhseReportContent {
+export function buildQhseReportContent(report: QhseReportDefinition, snapshot: QhseReportSnapshot, options: QhseReportOptions = {}): QhseReportContent {
   let content: QhseReportContent;
   switch (report.id as QhseReportId) {
     case 'menu': content = buildMenuContent(snapshot); break;
@@ -1216,7 +1156,7 @@ export function buildQhseReportContent(report: QhseReportDefinition, snapshot: Q
     case 'hse-kpi-lems': content = buildHseKpiContent(snapshot); break;
     case 'hse-audit-deviations-lems': content = buildAuditDeviationsContent(snapshot); break;
     case 'documents-list': content = buildDocumentsContent(snapshot); break;
-    case 'consumption': content = buildConsumptionContent(snapshot); break;
+    case 'consumption': content = buildConsumptionContent(snapshot, options); break;
   }
   if (snapshot.warnings.length) content.notes.push(unavailable('Accès partiel', snapshot.warnings.join(' ')));
   return content;
