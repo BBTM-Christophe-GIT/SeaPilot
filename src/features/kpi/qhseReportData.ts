@@ -77,6 +77,8 @@ export interface QhseReportChart {
   series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right' }>;
   unit?: string;
   showValueLabels?: boolean;
+  monthTicks?: Array<{ label: string; index: number }>;
+  compactDailyPoints?: boolean;
 }
 
 export interface QhseReportTable {
@@ -98,6 +100,7 @@ export interface QhseReportContent {
   tables: QhseReportTable[];
   notes: QhseReportNote[];
   sources: string[];
+  environmentalImpact?: { emittedTonnes: number; avoidedTonnes: number; baselineTonnes: number };
 }
 
 interface DprReportRow {
@@ -418,17 +421,34 @@ function periodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => 
   return { labels, values };
 }
 
-function dailyPeriodValues<T>(scope: QhseReportScope, items: T[], date: (item: T) => string, value: (item: T) => number) {
+function dailyFuelChart(snapshot: QhseReportSnapshot): QhseReportChart {
+  const reports = reportMap(snapshot);
+  const years = scopeYears(snapshot.scope);
   const totals = new Map<string, number>();
-  items.forEach((item) => {
-    const raw = date(item).slice(0, 10);
-    if (!raw || !inScope(raw, scope)) return;
-    totals.set(raw, (totals.get(raw) || 0) + value(item));
+  snapshot.metrics.forEach((item) => {
+    const raw = reports.get(item.dprId)?.reportDate.slice(0, 10) || '';
+    if (!raw || !inScope(raw, snapshot.scope)) return;
+    totals.set(raw, (totals.get(raw) || 0) + item.fuelConsumedLiters / 1000);
   });
-  const entries = [...totals.entries()].sort(([left], [right]) => left.localeCompare(right));
+  // A shared leap-year calendar keeps every daily point aligned across selected years.
+  // Missing DPRs and nonexistent February 29 dates remain null, never zero.
+  const days = Array.from({ length: 366 }, (_, index) => new Date(Date.UTC(2000, 0, index + 1)));
+  const colors = [BLUE, TEAL, PURPLE, ORANGE, RED];
   return {
-    labels: entries.map(([raw]) => formatDate(raw)),
-    values: entries.map(([, total]) => total),
+    title: 'Consommation de fuel journalière', kind: 'line', unit: 'm³', compactDailyPoints: true,
+    labels: days.map((day) => day.toISOString().slice(5, 10)),
+    monthTicks: Array.from({ length: 12 }, (_, month) => ({
+      label: new Intl.DateTimeFormat('fr-FR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month, 1))),
+      index: days.findIndex((day) => day.getUTCMonth() === month && day.getUTCDate() === 15),
+    })),
+    series: years.map((year, index) => ({
+      label: years.length === 1 ? `Fuel consommé · ${year}` : String(year),
+      color: colors[index % colors.length],
+      values: days.map((day) => {
+        const date = `${year}-${day.toISOString().slice(5, 10)}`;
+        return totals.get(date) ?? null;
+      }),
+    })),
   };
 }
 
@@ -1086,7 +1106,6 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     values: period.values.flatMap((value) => [0, value]),
   });
   const waterPeriod = asMonthlyResetCurve(periodValues(snapshot.scope, snapshot.supplies, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.waterM3));
-  const fuelConsumptionPeriod = dailyPeriodValues(snapshot.scope, snapshot.metrics, (item) => reports.get(item.dprId)?.reportDate || '', (item) => item.fuelConsumedLiters / 1000);
   const parameters = snapshot.environmentParameters || [];
   const annual = years.map((year) => {
     const yearStart = `${year}-01-01`;
@@ -1116,6 +1135,7 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
   const total = (value: (row: typeof annual[number]) => number) => annual.reduce((sum, row) => sum + value(row), 0);
   const emissionsAvailable = annual.every((row) => row.ghg !== null && row.withXbee !== null);
   const totalGhg = emissionsAvailable ? total((row) => row.ghg || 0) : null;
+  const totalWithXbee = emissionsAvailable ? total((row) => row.withXbee || 0) : null;
   const totalAvoided = emissionsAvailable ? total((row) => row.avoided || 0) : null;
   return {
     summary: `Eau avitaillée, consommation mensuelle de fuel et émissions cumulées calculées depuis les DPR — ${reportPeriodLabel(snapshot)}.`,
@@ -1127,7 +1147,7 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
     ],
     charts: [
       { title: 'Eau avitaillée mensuelle', kind: 'line', labels: waterPeriod.labels, series: [{ label: 'Eau avitaillée', values: waterPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
-      { title: 'Consommation de fuel journalière', kind: 'line', labels: fuelConsumptionPeriod.labels, series: [{ label: 'Fuel consommé', values: fuelConsumptionPeriod.values, color: BLUE }], unit: 'm³', showValueLabels: true },
+      dailyFuelChart(snapshot),
       {
         title: 'GES / CO₂e cumulés par an', kind: 'line', labels: years.flatMap((year) => MONTHS.map((month) => `${month} ${year}`)),
         series: [
@@ -1142,10 +1162,9 @@ function buildConsumptionContent(snapshot: QhseReportSnapshot): QhseReportConten
       row.ghg === null ? '—' : `${formatNumber(row.ghg, 2)} tCO₂e`, row.withXbee === null ? '—' : `${formatNumber(row.withXbee, 2)} tCO₂e`,
       row.avoided === null ? '—' : `${formatNumber(row.avoided, 2)} tCO₂e`,
     ]) }],
-    notes: emissionsAvailable ? [{
-      title: 'Méthode de calcul',
-      text: `Fuel consommé = somme du champ DPR « Consommation de carburant en L » ÷ 1 000. GES / CO₂e = volume MDO × ${formatNumber(annual[0]?.factor || 0, 2)} tCO₂e/m³. La courbe verte applique une réduction xBee de ${formatNumber((annual[0]?.reduction || 0) * 100)} %.`,
-    }] : [unavailable('Paramètres environnementaux absents', 'Le facteur direct MDO et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
+    environmentalImpact: totalGhg !== null && totalWithXbee !== null && totalAvoided !== null
+      ? { emittedTonnes: totalWithXbee, avoidedTonnes: totalAvoided, baselineTonnes: totalGhg } : undefined,
+    notes: emissionsAvailable ? [] : [unavailable('Paramètres environnementaux absents', 'Le facteur direct MDO et le taux xBee doivent être renseignés dans Supabase ; aucune émission n’est inventée.')],
     sources: ['DPR soumis/validés · consommation de carburant et eau avitaillée', 'Paramètres environnementaux Supabase versionnés', sourceNote()],
   };
 }

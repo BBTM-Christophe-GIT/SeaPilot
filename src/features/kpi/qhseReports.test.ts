@@ -65,8 +65,14 @@ describe('QHSE report catalog and calculations', () => {
     expect(content.charts).toHaveLength(3);
     expect(content.charts[0].series[0].values.slice(0, 4)).toEqual([0, 4, 0, 6]);
     expect(content.charts[1].title).toBe('Consommation de fuel journalière');
-    expect(content.charts[1].labels).toEqual(['10/01/2024', '10/02/2024', '10/01/2025']);
-    expect(content.charts[1].series[0].values).toEqual([100, 50, 200]);
+    expect(content.charts[1].monthTicks?.map((tick) => tick.label)).toEqual([
+      'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+    ]);
+    expect(content.charts[1].series.map((series) => series.label)).toEqual(['2024', '2025']);
+    expect(content.charts[1].series[0].values.filter((value) => value !== null)).toEqual([100, 50]);
+    expect(content.charts[1].series[1].values.filter((value) => value !== null)).toEqual([200]);
+    expect(content.charts[1].series[0].values[9]).toBe(100);
+    expect(content.charts[1].series[1].values[9]).toBe(200);
     expect(content.charts[1].series[0].values).not.toContain(10);
     expect(content.charts[2].series[0].values[0]).toBeCloseTo(285, 3);
     expect(content.charts[2].series[0].values[1]).toBeCloseTo(427.5, 3);
@@ -77,6 +83,34 @@ describe('QHSE report catalog and calculations', () => {
       ['2024', '10 m³', '150 m³', '427,5 tCO₂e', '363,38 tCO₂e', '64,13 tCO₂e'],
       ['2025', '8 m³', '200 m³', '570 tCO₂e', '484,5 tCO₂e', '85,5 tCO₂e'],
     ]);
+    expect(content.environmentalImpact?.emittedTonnes).toBeCloseTo(847.875);
+    expect(content.environmentalImpact?.avoidedTonnes).toBeCloseTo(149.625);
+    expect(content.environmentalImpact?.baselineTonnes).toBeCloseTo(997.5);
+    expect(content.notes).toEqual([]);
+  });
+
+  it('keeps real leap-day and zero-consumption DPRs distinct from missing daily data', () => {
+    const snapshot = emptySnapshot();
+    snapshot.scope = { ...snapshot.scope, year: 2024 };
+    snapshot.reports = [
+      { id: 1, reportDate: '2024-02-29', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
+      { id: 2, reportDate: '2024-02-29', projectId: 2, projectLabel: 'P145', vesselId: 3, vesselName: 'GOURY' },
+      { id: 3, reportDate: '2024-03-01', projectId: 1, projectLabel: 'P144', vesselId: 3, vesselName: 'GOURY' },
+    ];
+    snapshot.metrics = [
+      { dprId: 1, fuelConsumedLiters: 500, fuelOnBoardLiters: 0 },
+      { dprId: 2, fuelConsumedLiters: 250, fuelOnBoardLiters: 0 },
+      { dprId: 3, fuelConsumedLiters: 0, fuelOnBoardLiters: 0 },
+    ];
+    const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'consumption')!;
+    const content = buildQhseReportContent(report, snapshot);
+    const chart = content.charts[1];
+    expect(chart.series[0].values[chart.labels.indexOf('02-29')]).toBe(0.75);
+    expect(chart.series[0].values[chart.labels.indexOf('03-01')]).toBe(0);
+    expect(chart.series[0].values[chart.labels.indexOf('03-02')]).toBeNull();
+    expect(chart.monthTicks).toHaveLength(12);
+    expect(content.environmentalImpact).toBeUndefined();
+    expect(content.notes[0].title).toBe('Paramètres environnementaux absents');
   });
 
   it('reuses the reference GHG conversion without importing PBIX values', () => {
