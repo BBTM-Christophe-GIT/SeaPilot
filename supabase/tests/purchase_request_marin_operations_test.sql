@@ -31,7 +31,7 @@ insert into public.purchase_requests (
   company_id, request_number, title, status, approval_status, source_label
 )
 select company.id, 'MARIN-OPERATIONS-001', 'Test Marin operations',
-       'Commandes à traiter', 'En attente', 'seapilot'
+       'À traiter', 'Demande acceptée', 'seapilot'
 from public.companies company
 where company.code = 'bbtm';
 
@@ -48,7 +48,7 @@ select lives_ok(
 
 select is(
   (select status from public.purchase_requests where request_number = 'MARIN-OPERATIONS-001'),
-  'Commandes en cours',
+  'En commande',
   'taking charge advances the request to the ordering stage'
 );
 
@@ -82,7 +82,7 @@ select lives_ok(
 
 select is(
   (select status from public.purchase_requests where request_number = 'MARIN-OPERATIONS-001'),
-  'Commandes traitées',
+  'Traitée',
   'receiving the order completes the purchase request'
 );
 
@@ -97,13 +97,13 @@ select throws_ok(
     (select id from public.purchase_requests where request_number = 'MARIN-OPERATIONS-001'),
     'approve', null, null
   )$$,
-  'P0002', null,
+  '42501', null,
   'a Marin cannot approve a purchase request'
 );
 
 select is(
   (select approval_status from public.purchase_requests where request_number = 'MARIN-OPERATIONS-001'),
-  'En attente',
+  'Demande acceptée',
   'a rejected approval attempt leaves the approval state unchanged'
 );
 
