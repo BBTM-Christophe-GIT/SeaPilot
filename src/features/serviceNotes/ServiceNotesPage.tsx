@@ -779,7 +779,7 @@ export function ServiceNotesPage() {
           {selectedNote ? <>
             <header><div><span>{selectedNote.status === 'draft' ? 'BROUILLON PRIVÉ' : selectedNote.status === 'recalled' ? 'ARCHIVE · RAPPELÉE' : selectedNote.sourceKind === 'sharepoint' ? 'ARCHIVE SHAREPOINT' : serviceNoteStatusLabel(selectedNote.status).toUpperCase()}</span><h2>{serviceNoteDisplayCode(selectedNote)}</h2><p>{selectedNote.subject}</p></div><button aria-label="Fermer le détail" onClick={() => { setSelectedId(null); setSearchParams({}); }} type="button"><X size={18} /></button></header>
             <div className="service-note-detail-actions">
-              {isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
+              {selectedNote.status === 'draft' && isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
               {selectedNote.status === 'draft' && isManager ? <button className="is-publish" disabled={isBusy || !hasActiveSignature} onClick={() => void handlePublishDraft()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser</button> : null}
               {selectedNote.status === 'draft' && isManager ? <button className="is-danger" disabled={isBusy} onClick={() => void handleDeleteDraft()} type="button"><Trash2 size={16} /> Supprimer le brouillon</button> : null}
               {selectedNote.status === 'published' && selectedNote.id === latestPublishedNoteId && isManager ? <button className="is-recall" disabled={isBusy} onClick={() => void handleRecall()} type="button"><RotateCcw size={16} /> Rappeler</button> : null}
