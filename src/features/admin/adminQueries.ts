@@ -66,6 +66,10 @@ export interface AdminInvitationResult {
   activationLink: string;
 }
 
+export interface ActionPlanAdminSettings {
+  editButtonEnabled: boolean;
+}
+
 interface AdminInvitationResponse {
   delivery?: unknown;
   activationLink?: unknown;
@@ -205,6 +209,26 @@ export async function inviteSeaPilotUser(
   }
 
   return { delivery: 'email', activationLink: '' };
+}
+
+export async function fetchActionPlanAdminSettings(client: SupabaseClient): Promise<ActionPlanAdminSettings> {
+  const { data, error } = await client.from('action_plan_settings')
+    .select('edit_button_enabled')
+    .maybeSingle();
+  if (error) throw error;
+  return { editButtonEnabled: data?.edit_button_enabled !== false };
+}
+
+export async function saveActionPlanAdminSettings(
+  client: SupabaseClient,
+  settings: ActionPlanAdminSettings,
+): Promise<ActionPlanAdminSettings> {
+  const { data, error } = await client.rpc('action_plan_save_settings', {
+    p_edit_button_enabled: settings.editButtonEnabled,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as { edit_button_enabled?: boolean } | null;
+  return { editButtonEnabled: row?.edit_button_enabled !== false };
 }
 
 async function manageSeaPilotUser(

@@ -1294,6 +1294,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       attachment_file_name: 'controle-reception-garde-corps.pdf', attachment_storage_bucket: 'action-plan-evidence',
       attachment_storage_path: 'demo/rapport-visite-CSN.pdf', attachment_mime_type: 'application/pdf',
       attachment_size_bytes: 815000, created_by_person_id: 9303, created_by_name: 'Luc MARTIN',
+      signature_snapshot: { signature_id: 9832, storage_bucket: 'working-time-signatures', storage_path: '1/9303/preview.png', signed_at: '2026-08-10T15:20:00Z' },
       created_at: '2026-08-10T15:20:00Z',
     },
     {
@@ -1301,6 +1302,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       note: 'Commande validée auprès du fournisseur. Intervention prévue au prochain arrêt à quai.',
       attachment_file_name: null, attachment_storage_bucket: null, attachment_storage_path: null,
       attachment_mime_type: null, attachment_size_bytes: null, created_by_person_id: 9301,
+      signature_snapshot: { signature_id: 9830, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', signed_at: '2026-08-05T14:05:00Z' },
       created_by_name: 'Arthur DEMO', created_at: '2026-08-05T14:05:00Z',
     },
     {
@@ -1308,9 +1310,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       note: 'Brief sécurité réalisé et action contrôlée.', attachment_file_name: null,
       attachment_storage_bucket: null, attachment_storage_path: null, attachment_mime_type: null,
       attachment_size_bytes: null, created_by_person_id: 9302, created_by_name: 'Camille DURAND',
+      signature_snapshot: { signature_id: 9831, storage_bucket: 'working-time-signatures', storage_path: '1/9302/preview.png', signed_at: '2026-07-19T13:15:00Z' },
       created_at: '2026-07-19T13:15:00Z',
     },
   ],
+  action_plan_settings: [{ company_id: 1, edit_button_enabled: true, updated_at: '2026-09-06T18:00:00Z' }],
   action_documents: [
     {
       id: 9871, action_item_id: 9861, action_sharepoint_item_id: 'preview-action-101',
@@ -1815,6 +1819,13 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     }
     return createPreviewQuery({ data: type, error: null });
   }
+  if (functionName === 'action_plan_save_settings') {
+    const settings = previewRows('action_plan_settings')[0] || { company_id: 1 };
+    settings.edit_button_enabled = args.p_edit_button_enabled !== false;
+    settings.updated_at = new Date().toISOString();
+    if (!previewRows('action_plan_settings').length) PREVIEW_ROWS.action_plan_settings.push(settings);
+    return createPreviewQuery({ data: settings, error: null });
+  }
   if (functionName === 'action_item_admin_update') {
     const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
     const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));
@@ -1955,14 +1966,45 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       attachment_mime_type: args.p_attachment_mime_type || null,
       attachment_size_bytes: args.p_attachment_size_bytes || null,
       created_by_person_id: 9301, created_by_name: 'Arthur DEMO', created_at: new Date().toISOString(),
+      signature_snapshot: { signature_id: 9830, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', signed_at: new Date().toISOString() },
     };
     PREVIEW_ROWS.action_item_treatment_events.unshift(event);
     if (args.p_close_action) {
-      action.status = 'Ecart Soldé';
-      action.workflow_status = 'closed';
-      action.closed_on = new Date().toISOString().slice(0, 10);
+      action.closure_review_status = 'pending';
+      action.closure_requested_by_person_id = 9301;
+      action.closure_requested_by_name = 'Arthur DEMO';
+      action.closure_requested_at = new Date().toISOString();
+      event.event_type = 'closure_requested';
     }
     return createPreviewQuery({ data: event, error: null });
+  }
+  if (functionName === 'action_item_review_closure') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    if (!action) return createPreviewQuery({ data: null, error: { message: 'Action introuvable.' } });
+    const approved = args.p_approve === true;
+    const event = {
+      id: nextPreviewId('action_item_treatment_events', 9900), company_id: action.company_id,
+      action_item_id: action.id, event_type: approved ? 'closure_approved' : 'closure_rejected',
+      note: args.p_comment || (approved ? 'Clôture validée.' : 'Clôture refusée.'),
+      attachment_file_name: null, attachment_storage_bucket: null, attachment_storage_path: null,
+      attachment_mime_type: null, attachment_size_bytes: null,
+      created_by_person_id: 9301, created_by_name: 'Arthur DEMO', created_at: new Date().toISOString(),
+      signature_snapshot: { signature_id: 9830, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', signed_at: new Date().toISOString() },
+    };
+    PREVIEW_ROWS.action_item_treatment_events.unshift(event);
+    action.closure_review_status = 'none';
+    action.closure_requested_by_person_id = null;
+    action.closure_requested_by_name = null;
+    action.closure_requested_at = null;
+    if (approved) {
+      action.status = 'Ecart Soldé'; action.workflow_status = 'closed'; action.closed_on = new Date().toISOString().slice(0, 10);
+    }
+    return createPreviewQuery({ data: event, error: null });
+  }
+  if (functionName === 'mark_planning_notification_read') {
+    const notification = previewRows('planning_notifications').find((row) => Number(row.id) === Number(args.p_notification_id));
+    if (notification) notification.read_at = args.p_read === false ? null : new Date().toISOString();
+    return createPreviewQuery({ data: Boolean(notification), error: null });
   }
   if (functionName === 'create_fleet_certificate_line') {
     const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));

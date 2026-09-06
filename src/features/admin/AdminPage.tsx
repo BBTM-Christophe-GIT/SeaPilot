@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
+import { ClipboardCheck, Database, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { NAVIGATION_MODULES, type ModuleKey } from '../permissions/moduleAccess';
@@ -12,10 +12,13 @@ import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import {
   assignUserRole,
   deleteSeaPilotUser,
+  fetchActionPlanAdminSettings,
   fetchAdminUsers,
   fetchSharePointImportSources,
   removeUserRole,
   resendSeaPilotUserAccess,
+  saveActionPlanAdminSettings,
+  type ActionPlanAdminSettings,
   type AdminInvitationResult,
   type AdminUser,
   type SharePointImportSource,
@@ -64,10 +67,12 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [importSources, setImportSources] = useState<SharePointImportSource[]>([]);
   const [navigationPermissions, setNavigationPermissions] = useState<NavigationPermission[]>([]);
+  const [actionPlanSettings, setActionPlanSettings] = useState<ActionPlanAdminSettings>({ editButtonEnabled: true });
   const [isLoading, setIsLoading] = useState(true);
   const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
   const [savingUserActionKey, setSavingUserActionKey] = useState<string | null>(null);
   const [savingNavigationKey, setSavingNavigationKey] = useState<string | null>(null);
+  const [isSavingActionPlanSettings, setIsSavingActionPlanSettings] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -78,12 +83,18 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     setIsLoading(true);
     setErrorMessage(null);
 
-    Promise.all([fetchAdminUsers(client), fetchSharePointImportSources(client), fetchNavigationPermissions(client)])
-      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions]) => {
+    Promise.all([
+      fetchAdminUsers(client),
+      fetchSharePointImportSources(client),
+      fetchNavigationPermissions(client),
+      fetchActionPlanAdminSettings(client).catch(() => ({ editButtonEnabled: true })),
+    ])
+      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions, loadedActionPlanSettings]) => {
         if (isMounted) {
           setUsers(loadedUsers);
           setImportSources(loadedImportSources);
           setNavigationPermissions(loadedNavigationPermissions);
+          setActionPlanSettings(loadedActionPlanSettings);
         }
       })
       .catch(() => {
@@ -194,6 +205,25 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
       setUsers(loadedUsers);
     } catch {
       setErrorMessage("Le compte a bien été créé, mais la liste des utilisateurs n'a pas pu être actualisée.");
+    }
+  }
+
+  async function handleActionPlanSettingsChange(editButtonEnabled: boolean) {
+    const previous = actionPlanSettings;
+    setActionPlanSettings({ editButtonEnabled });
+    setIsSavingActionPlanSettings(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      setActionPlanSettings(await saveActionPlanAdminSettings(client, { editButtonEnabled }));
+      setStatusMessage(editButtonEnabled
+        ? 'Le bouton « Modifier la fiche » est affiché aux Administrateurs.'
+        : 'Le bouton « Modifier la fiche » est maintenant masqué.');
+    } catch {
+      setActionPlanSettings(previous);
+      setErrorMessage("Impossible de modifier le réglage du Plan d'action.");
+    } finally {
+      setIsSavingActionPlanSettings(false);
     }
   }
 
@@ -366,6 +396,30 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="admin-action-plan-settings" aria-label="Réglages du Plan d'action">
+        <div className="admin-header admin-section-header">
+          <div>
+            <p className="module-family">Plan d&apos;action</p>
+            <h2>Réglages des fiches</h2>
+            <p className="admin-section-description">
+              Activez ou masquez le bouton de correction factuelle sans modifier le workflow ni les droits côté serveur.
+            </p>
+          </div>
+          <div className="admin-summary" aria-hidden="true"><ClipboardCheck size={18} /></div>
+        </div>
+        <label className="admin-setting-card">
+          <span><strong>Afficher « Modifier la fiche »</strong><small>Le bouton est réservé aux profils Administrateur et Direction.</small></span>
+          <input
+            aria-label="Afficher Modifier la fiche"
+            checked={actionPlanSettings.editButtonEnabled}
+            disabled={isSavingActionPlanSettings}
+            onChange={(event) => void handleActionPlanSettingsChange(event.target.checked)}
+            type="checkbox"
+          />
+          <i aria-hidden="true" />
+        </label>
       </section>
 
       <section className="admin-import-monitor" aria-label="Suivi import SharePoint">

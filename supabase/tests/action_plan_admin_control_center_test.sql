@@ -1,6 +1,9 @@
 begin;
 
-select plan(22);
+select plan(29);
+
+select has_table('public', 'action_plan_settings', 'Action Plan UI settings are company scoped');
+select has_function('public', 'action_plan_save_settings', array['boolean'], 'Administration setting uses a protected RPC');
 
 select has_function(
   'public', 'action_item_admin_update',
@@ -91,21 +94,37 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', '7c340000-0000-0000-0000-000000000002', true);
 
 select throws_ok(
+  $$select public.action_plan_save_settings(false)$$,
+  '42501', null,
+  'Direction cannot change the Administration-only correction setting'
+);
+
+select lives_ok(
   format(
     'select public.action_item_admin_update(%s,%L,(select id from public.vessels where name=%L),%L,%L,now(),current_date + 30,%L,%L,%L,%L,0,%L)',
     current_setting('test.action_admin.id')::bigint, 'Altération Direction', 'ACTION ADMIN TEST',
     'audit_internal', 'Remarque', 'À quai', 'Beau temps', 'Description', 'Action', 'Tentative Direction'
   ),
-  '42501', null,
-  'Direction cannot correct a recorded action sheet'
+  'Direction can correct a recorded action sheet without changing workflow'
 );
-select throws_ok(
+select is((select title from public.action_items where id = current_setting('test.action_admin.id')::bigint), 'Altération Direction', 'Direction correction is persisted');
+select is((select workflow_status from public.action_items where id = current_setting('test.action_admin.id')::bigint), 'approved', 'Direction correction keeps the workflow status');
+select lives_ok(
   $$select public.action_type_catalog_admin_save('Audit Direction', 'audit', true, true, 40, 'audit_internal')$$,
-  '42501', null,
-  'Direction cannot edit the event-type catalogue'
+  'Direction can edit the event-type catalogue'
 );
 
 select set_config('request.jwt.claim.sub', '7c340000-0000-0000-0000-000000000001', true);
+
+select lives_ok(
+  $$select public.action_plan_save_settings(false)$$,
+  'Administrator can hide the correction button'
+);
+select is(
+  (select edit_button_enabled from public.action_plan_settings where company_id = public.current_planning_company_id()),
+  false,
+  'the correction-button setting is persisted for the company'
+);
 
 select lives_ok(
   format(
@@ -123,8 +142,8 @@ select is((select status from public.action_items where id = current_setting('te
 select is((select owner_name from public.action_items where id = current_setting('test.action_admin.id')::bigint), 'Équipage — ACTION ADMIN TEST', 'the assignee summary is unchanged');
 select is((select realized_action from public.action_items where id = current_setting('test.action_admin.id')::bigint), 'Traitement à préserver', 'the treatment content is unchanged');
 select is((select approved_at from public.action_items where id = current_setting('test.action_admin.id')::bigint), current_setting('test.action_admin.approved_at')::timestamptz, 'the approval timestamp is unchanged');
-select is((select count(*) from public.action_item_correction_log where action_item_id = current_setting('test.action_admin.id')::bigint), 1::bigint, 'the correction is audited once');
-select is((select reason from public.action_item_correction_log where action_item_id = current_setting('test.action_admin.id')::bigint), 'Informations initiales incomplètes', 'the correction reason is retained');
+select is((select count(*) from public.action_item_correction_log where action_item_id = current_setting('test.action_admin.id')::bigint), 2::bigint, 'the corrections are audited once per management edit');
+select is((select reason from public.action_item_correction_log where action_item_id = current_setting('test.action_admin.id')::bigint order by corrected_at desc limit 1), 'Informations initiales incomplètes', 'the latest correction reason is retained');
 
 select lives_ok(
   $$select public.action_type_catalog_admin_save('Audit interne – BBTM', 'audit', true, true, 40, 'audit_internal')$$,

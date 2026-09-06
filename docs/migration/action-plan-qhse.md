@@ -77,3 +77,6 @@ group by sharepoint_list_title;
 ```
 
 Le chargement initial du 9 août 2026 a produit 113 actions, 35 indicateurs QHSE et 10 événements reliés aux KPI d’exposition.
+## Workflow signé et clôture contre-validée
+
+Depuis la version `3.36.1`, tous les rôles peuvent créer une fiche et contribuer au suivi d'une fiche qu'ils sont autorisés à consulter. Chaque contribution reprend automatiquement l'identité, l'horodatage serveur et la signature RH active. Les profils Armement, Capitaine et Marin demandent une clôture ; un profil Administrateur ou Direction doit la valider ou la refuser. Les décisions sont diffusées aux intervenants dans la cloche de notifications. Les boutons de gestion des types, de traitement et de correction sont protégés, dans l'interface comme dans les RPC, pour Administrateur et Direction. Le réglage de visibilité de la correction reste piloté depuis Administration.

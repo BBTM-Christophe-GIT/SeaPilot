@@ -25,6 +25,7 @@ interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 
 const EMPTY_DATA: ActionPlanData = {
   actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [], treatmentEvents: [],
+  settings: { editButtonEnabled: true },
   exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
@@ -65,10 +66,6 @@ function newActionForm(issuerName = '', previewMode = false): CreateActionItemIn
     description: "Absence de l'indication « Zone de levage - Accès interdit » et pictogramme de port du casque fortement dégradé.",
     correctiveAction: "Remplacer les panneaux et vérifier l'ensemble de la signalisation sur les accès à la zone de la grue.",
   };
-}
-
-function canManage(roles: RoleKey[]): boolean {
-  return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
 
 function unique(values: string[]): string[] {
@@ -396,8 +393,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const effectiveRoles = roles || context?.roles || [];
   const profileName = context?.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '';
   const previewMode = Boolean(context?.previewMode);
-  const isManager = canManage(effectiveRoles);
-  const isAdmin = effectiveRoles.includes('admin');
+  const canManageActionPlan = effectiveRoles.includes('admin') || effectiveRoles.includes('direction');
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
   const [filters, setFilters] = useState<ActionPlanFilters>(EMPTY_FILTERS);
   const [createOpen, setCreateOpen] = useState(false);
@@ -407,6 +403,9 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pdfActionId, setPdfActionId] = useState<number | null>(null);
+  const requestedActionId = typeof window === 'undefined'
+    ? null
+    : Number(new URLSearchParams(window.location.search).get('action')) || null;
 
   async function load() {
     setLoading(true); setError('');
@@ -428,10 +427,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     setTreatmentAction(null); setMessage('Action mise à jour.');
   }
   function actionCanBeTreated(action: ActionItemRecord): boolean {
-    if (action.workflowStatus !== 'approved') return false;
-    if (isManager) return true;
-    if (action.sourceLabel !== 'seapilot') return effectiveRoles.includes('capitaine');
-    return effectiveRoles.includes('capitaine') || effectiveRoles.includes('marin');
+    return !isActionClosed(action);
   }
   function actionCanBeApproved(action: ActionItemRecord): boolean {
     return action.workflowStatus === 'pending_approval'
@@ -461,13 +457,14 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     <ActionPlanControlCenter
       actions={filtered}
       canApprove={actionCanBeApproved}
-      canCreate={isManager}
+      canCreate={effectiveRoles.length > 0}
+      canEdit={canManageActionPlan && data.settings.editButtonEnabled}
+      canManage={canManageActionPlan}
       canTreat={actionCanBeTreated}
       client={effectiveClient}
       data={data}
       filterOptions={{ vessels: vesselOptions, actionTypes: typeOptions, deviationTypes: deviationOptions }}
       filters={filters}
-      isAdmin={isAdmin}
       metrics={metrics}
       onActionSaved={(action) => { replaceAction(action); setMessage('Fiche corrigée sans modification du workflow.'); }}
       onApprove={setApprovalAction}
@@ -475,8 +472,15 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       onExport={(action) => void exportActionSheet(action)}
       onFilterChange={updateFilter}
       onReload={() => void load()}
-      onTreatmentFollowupSaved={(_action, closed) => {
-        setMessage(closed ? 'Action clôturée et ajoutée au suivi.' : 'Suivi du traitement ajouté.');
+      onTreatmentFollowupSaved={(_action, outcome) => {
+        setMessage(outcome === 'closure_requested'
+          ? 'Demande de clôture transmise pour contre-validation.'
+          : outcome === 'closure_approved'
+            ? 'Clôture validée et intervenants notifiés.'
+            : outcome === 'closure_rejected'
+              ? 'Clôture refusée : la fiche reste ouverte et les intervenants sont notifiés.'
+              : 'Suivi signé ajouté.');
+        window.dispatchEvent(new CustomEvent('action-plan:changed'));
         void load();
       }}
       onTreat={setTreatmentAction}
@@ -490,6 +494,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       }}
       pdfActionId={pdfActionId}
       previewMode={previewMode}
+      requestedActionId={requestedActionId}
     />
 
     <CreateActionDialog client={effectiveClient} data={data} issuerName={profileName} onClose={() => setCreateOpen(false)} onCreated={(action) => { setData((current) => ({ ...current, actions: [action, ...current.actions] })); setCreateOpen(false); setMessage('Rapport créé et soumis à Christophe MINASSIAN.'); }} open={createOpen} previewMode={previewMode} />

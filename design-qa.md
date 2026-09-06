@@ -38,6 +38,37 @@ La comparaison complète normalisée est suffisamment lisible pour vérifier les
 
 final result: passed
 
+---
+
+# Design QA — Plan d'action, permissions des commandes et clôture
+
+## Référence et méthode
+
+- Références fournies : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-f57ddc64-1b13-47fe-83b8-d70558bb6ae2.png` et `C:\Users\chris\AppData\Local\Temp\codex-clipboard-14527bd1-e418-41d2-99b7-8ac0bed6a269.png`.
+- Implémentation rendue : `http://127.0.0.1:4179/modules/actionPlan?preview=1`, build `2026-09-06.008`.
+- Comparaison combinée : `http://127.0.0.1:4179/tmp/action-plan-permissions-compare.html`, avec les deux références et l'application affichées dans la même vue.
+- États vérifiés : profil Administrateur avec les trois commandes visibles, puis profil Marin avec les commandes réservées masquées.
+
+## Résultat visuel et fonctionnel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; les commandes restent dans les en-têtes de cartes et sont visibles sans défilement.
+- P2 : aucun défaut restant ; les boutons de gestion et de correction respectent les droits attendus.
+- Administrateur et Direction voient **Gérer les types**, **Traiter l'action** et, lorsque le réglage est actif, **Modifier la fiche**.
+- Les autres profils conservent **Télécharger le PDF**, **Nouveau rapport** et le suivi/commentaire selon leurs droits de lecture ; les commandes de gestion ne sont pas rendues dans leur arbre d'accessibilité.
+- La clôture signée, le refus, les horodatages, les signatures et les notifications cloche sont représentés dans le journal du workflow.
+
+## Parcours vérifiés
+
+- réglage Administration « Afficher Modifier la fiche » désactivable ;
+- formulaire de suivi accessible aux profils autorisés à lire la fiche ;
+- demande de clôture pour un profil non gestionnaire ;
+- validation ou refus par Administrateur/Direction avec notification ;
+- clôture directe signée par Administrateur/Direction ;
+- catalogue des types et traitement masqués pour Marin.
+
+final result: passed
+
 # Design QA — Rapports QHSE ciblés et page 25 (2026-09-04)
 
 ## Références et méthode
