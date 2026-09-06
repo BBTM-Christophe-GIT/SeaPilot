@@ -56,9 +56,11 @@ import {
   type ProjectOperationDocumentRecord,
   type ProjectPlanningOccurrenceRecord,
   type ProjectRecord,
+  type ProjectTowedAssetRecord,
   type ProjectsData,
   type ProjectsDataSource,
 } from './projectQueries';
+import { BIMCO_P144_GROUPS } from './projectContractModels';
 import {
   buildSupplytimePreview,
   documentBelongsToProject,
@@ -93,7 +95,6 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 
 const PROJECTS_PER_PAGE = 40;
 const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
-const CONTRACT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Contractuels';
 
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
 
@@ -249,62 +250,158 @@ function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: 
   );
 }
 
-const PROJECT_DETAIL_TABS = [
-  { id: 'identification', label: 'Identité & contrat' },
-  { id: 'operations', label: 'Opérations' },
-  { id: 'billing', label: 'Facturation' },
-  { id: 'commercial', label: 'Conditions commerciales' },
-  { id: 'contract', label: 'Document contractuel' },
-  { id: 'documents', label: 'Documents' },
-] as const;
+type ProjectContractVariant = 'towage' | 'bareboat' | 'time-charter' | 'bimco';
+type ProjectDetailTab =
+  | 'identification'
+  | 'operations'
+  | 'billing'
+  | 'offer-contract'
+  | 'documents'
+  | 'towage-parties'
+  | 'towage-route'
+  | 'towage-terms'
+  | 'towage-signatures'
+  | 'bareboat-vessel'
+  | 'bareboat-duration'
+  | 'bareboat-terms'
+  | 'bareboat-signatures'
+  | 'time-charter-vessel'
+  | 'time-charter-operations'
+  | 'time-charter-rates'
+  | 'time-charter-clauses'
+  | 'bimco-boxes-01-12'
+  | 'bimco-boxes-13-21'
+  | 'bimco-boxes-22-34'
+  | 'bimco-signatures'
+  | 'bimco-annexes';
 
-type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]['id'];
+interface ProjectDetailTabDefinition {
+  description?: string;
+  group?: string;
+  icon: typeof FileText;
+  id: ProjectDetailTab;
+  label: string;
+}
+
+const PROJECT_CONTRACT_VARIANTS: ReadonlyArray<{
+  documentKind: ProjectGeneratedDocumentKind;
+  id: ProjectContractVariant;
+  label: string;
+}> = [
+  { documentKind: 'towage_contract', id: 'towage', label: 'Contrat de remorquage' },
+  { documentKind: 'bareboat_charter', id: 'bareboat', label: 'Affrètement coque nue' },
+  { documentKind: 'bimco_supplytime', id: 'time-charter', label: 'Affrètement à temps' },
+  { documentKind: 'bimco_supplytime', id: 'bimco', label: 'BIMCO' },
+];
+
+const PROJECT_BASE_TABS: ProjectDetailTabDefinition[] = [
+  { icon: Users, id: 'identification', label: 'Identité' },
+  { icon: CalendarDays, id: 'operations', label: 'Opérations' },
+  { icon: ReceiptText, id: 'billing', label: 'Facturation' },
+  { icon: FileText, id: 'offer-contract', label: 'Offre & contrat' },
+];
+
+const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefinition[]> = {
+  towage: [
+    { group: 'Contrat de remorquage', icon: Ship, id: 'towage-parties', label: 'Parties & convoi' },
+    { group: 'Contrat de remorquage', icon: CalendarDays, id: 'towage-route', label: 'Itinéraire & délais' },
+    { group: 'Contrat de remorquage', icon: ReceiptText, id: 'towage-terms', label: 'Tarifs & conditions' },
+    { group: 'Contrat de remorquage', icon: PackageCheck, id: 'towage-signatures', label: 'Signatures' },
+  ],
+  bareboat: [
+    { group: 'Affrètement coque nue', icon: Ship, id: 'bareboat-vessel', label: 'Navire & livraison' },
+    { group: 'Affrètement coque nue', icon: CalendarDays, id: 'bareboat-duration', label: 'Durée & loyers' },
+    { group: 'Affrètement coque nue', icon: Info, id: 'bareboat-terms', label: 'Assurance & droit' },
+    { group: 'Affrètement coque nue', icon: PackageCheck, id: 'bareboat-signatures', label: 'Signatures' },
+  ],
+  'time-charter': [
+    { group: 'Affrètement à temps', icon: Ship, id: 'time-charter-vessel', label: 'Navire & période' },
+    { group: 'Affrètement à temps', icon: CalendarDays, id: 'time-charter-operations', label: 'Exploitation' },
+    { group: 'Affrètement à temps', icon: ReceiptText, id: 'time-charter-rates', label: 'Conditions tarifaires' },
+    { group: 'Affrètement à temps', icon: PackageCheck, id: 'time-charter-clauses', label: 'Clauses & signatures' },
+  ],
+  bimco: [
+    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-01-12', label: 'Cases 1–12' },
+    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-13-21', label: 'Cases 13–21' },
+    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-22-34', label: 'Cases 22–34' },
+    { group: 'BIMCO', icon: PackageCheck, id: 'bimco-signatures', label: 'Signatures' },
+    { group: 'BIMCO', icon: Files, id: 'bimco-annexes', label: 'Annexes' },
+  ],
+};
+
+function projectContractVariant(contractType?: string | null): ProjectContractVariant | null {
+  const lowered = contractType?.trim().toLocaleLowerCase('fr-FR') || '';
+  if (lowered.includes('remorquage')) return 'towage';
+  if (lowered.includes('affrètement à temps')) return 'time-charter';
+  if (lowered.includes('coque nue') || lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
+    return 'bareboat';
+  }
+  if (lowered.includes('bimco') || lowered.includes('supplytime')) return 'bimco';
+  return null;
+}
+
+function projectDetailTabs(variant: ProjectContractVariant | null): ProjectDetailTabDefinition[] {
+  return [
+    ...PROJECT_BASE_TABS,
+    ...(variant ? PROJECT_CONTRACT_TABS[variant] : []),
+    { icon: Files, id: 'documents', label: 'Documents' },
+  ];
+}
 
 function ProjectDetailTabs({
   activeTab,
   onChange,
+  tabs,
 }: {
   activeTab: ProjectDetailTab;
   onChange: (tab: ProjectDetailTab) => void;
+  tabs: ProjectDetailTabDefinition[];
 }) {
   function moveFocus(currentTab: ProjectDetailTab, direction: -1 | 1) {
-    const currentIndex = PROJECT_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
-    const nextIndex = (currentIndex + direction + PROJECT_DETAIL_TABS.length) % PROJECT_DETAIL_TABS.length;
-    const nextTab = PROJECT_DETAIL_TABS[nextIndex];
+    const currentIndex = tabs.findIndex((tab) => tab.id === currentTab);
+    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
     onChange(nextTab.id);
     window.requestAnimationFrame(() => document.getElementById(`project-tab-${nextTab.id}`)?.focus());
   }
 
   return (
     <div aria-label="Sections du projet" className="project-detail-tabs" role="tablist">
-      {PROJECT_DETAIL_TABS.map((tab) => (
-        <button
-          aria-controls="project-detail-panel"
-          aria-selected={activeTab === tab.id}
-          id={`project-tab-${tab.id}`}
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowRight') {
-              event.preventDefault();
-              moveFocus(tab.id, 1);
-            } else if (event.key === 'ArrowLeft') {
-              event.preventDefault();
-              moveFocus(tab.id, -1);
-            } else if (event.key === 'Home' || event.key === 'End') {
-              event.preventDefault();
-              const target = event.key === 'Home' ? PROJECT_DETAIL_TABS[0] : PROJECT_DETAIL_TABS.at(-1)!;
-              onChange(target.id);
-              window.requestAnimationFrame(() => document.getElementById(`project-tab-${target.id}`)?.focus());
-            }
-          }}
-          role="tab"
-          tabIndex={activeTab === tab.id ? 0 : -1}
-          type="button"
-        >
-          {tab.label}
-        </button>
-      ))}
+      {tabs.map((tab, index) => {
+        const Icon = tab.icon;
+        const startsGroup = Boolean(tab.group && tab.group !== tabs[index - 1]?.group);
+        return (
+          <div className="project-detail-tab-item" key={tab.id}>
+            {startsGroup ? <span className="project-detail-tab-group">{tab.group}</span> : null}
+            <button
+              aria-controls="project-detail-panel"
+              aria-selected={activeTab === tab.id}
+              id={`project-tab-${tab.id}`}
+              onClick={() => onChange(tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  moveFocus(tab.id, 1);
+                } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  moveFocus(tab.id, -1);
+                } else if (event.key === 'Home' || event.key === 'End') {
+                  event.preventDefault();
+                  const target = event.key === 'Home' ? tabs[0] : tabs.at(-1)!;
+                  onChange(target.id);
+                  window.requestAnimationFrame(() => document.getElementById(`project-tab-${target.id}`)?.focus());
+                }
+              }}
+              role="tab"
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              type="button"
+            >
+              <Icon aria-hidden="true" size={19} />
+              <span>{tab.label}</span>
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -315,6 +412,39 @@ function DetailField({ label, value, wide = false }: { label: string; value: Rea
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
+  );
+}
+
+interface ProjectInformationField {
+  label: string;
+  value: string | number | null | undefined;
+  wide?: boolean;
+}
+
+function ProjectContractInformation({
+  description,
+  fields,
+  title,
+}: {
+  description: string;
+  fields: ProjectInformationField[];
+  title: string;
+}) {
+  return (
+    <section aria-label={title} className="project-detail-section project-contract-information">
+      <div className="project-context-heading">
+        <div>
+          <span>Informations enregistrées</span>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+      </div>
+      <dl className="project-detail-grid">
+        {fields.map((field) => (
+          <DetailField key={field.label} label={field.label} value={displayText(field.value)} wide={field.wide} />
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -448,44 +578,6 @@ function ProjectStoredAttachments({
   );
 }
 
-function SupplytimePreview({ project, contract }: { project: ProjectRecord; contract?: ProjectContractRecord }) {
-  const groups = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
-  const populatedCount = groups.flatMap((group) => group.fields).filter((field) => field.value).length;
-
-  return (
-    <div className="project-supplytime">
-      <div className="project-supplytime-heading">
-        <div>
-          <h4>Aperçu BIMCO</h4>
-          <p>{`${populatedCount} zone(s) renseignée(s) sur 36. Les champs métier canoniques priment sur leur copie historique.`}</p>
-        </div>
-        <span>{contract?.supplytimeSchemaVersion || 'supplytime-2017-v1'}</span>
-      </div>
-      {groups.map((group, index) => (
-        <details key={group.id} open={index === 0}>
-          <summary>{group.label}</summary>
-          <dl className="project-supplytime-grid">
-            {group.fields.map((field) => (
-              <DetailField
-                key={field.key}
-                label={field.label}
-                value={
-                  <>
-                    <span>{displayText(field.value)}</span>
-                    {field.source === 'canonical' ? <small>Donnée métier canonique</small> : null}
-                    {field.source === 'supplytime' ? <small>Valeur contractuelle historique</small> : null}
-                  </>
-                }
-                wide
-              />
-            ))}
-          </dl>
-        </details>
-      ))}
-    </div>
-  );
-}
-
 function ProjectDocumentEmissionDialog({
   attachmentCount,
   definition,
@@ -581,6 +673,7 @@ function ProjectDetail({
   onOpenPlanning,
   operationDocuments,
   planningOccurrences,
+  towedAsset,
 }: {
   project: ProjectRecord;
   contract?: ProjectContractRecord;
@@ -600,9 +693,13 @@ function ProjectDetail({
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
+  towedAsset?: ProjectTowedAssetRecord;
 }) {
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>('identification');
+  const savedContractVariant = projectContractVariant(project.contractType);
+  const [selectedContractVariant, setSelectedContractVariant] = useState<ProjectContractVariant | null>(savedContractVariant);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
+  const detailTabs = useMemo(() => projectDetailTabs(selectedContractVariant), [selectedContractVariant]);
   const projectAttachments = useMemo(
     () => operationDocuments.filter((document) => (
       document.documentType === 'project_attachment' && document.planningOccurrenceId === null
@@ -612,9 +709,40 @@ function ProjectDetail({
   useEffect(() => {
     setSelectedOccurrenceId(planningOccurrences[0]?.id ?? null);
   }, [planningOccurrences, project.id]);
+  useEffect(() => {
+    setSelectedContractVariant(savedContractVariant);
+    setActiveTab('identification');
+  }, [project.id, savedContractVariant]);
+  useEffect(() => {
+    if (!detailTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab('offer-contract');
+    }
+  }, [activeTab, detailTabs]);
   const projectStart = project.deliveryAt || project.charterStartsAt || project.startsOn;
   const projectEnd = project.redeliveryAt || project.charterEndsAt || project.endsOn;
-  const generatedDocumentKind = generatedDocumentKindForContract(project.contractType);
+  const selectedContractDefinition = PROJECT_CONTRACT_VARIANTS.find((definition) => definition.id === selectedContractVariant);
+  const selectedContractKind = selectedContractDefinition?.documentKind;
+  const supplytime = contract?.supplytimeData || {};
+  const supplytimePreview = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
+  const bimcoPreviewFields = supplytimePreview.flatMap((group) => group.fields);
+  const activeBimcoFields = activeTab === 'bimco-boxes-01-12'
+    ? bimcoPreviewFields.filter((field) => {
+        const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
+        return boxNumber >= 1 && boxNumber <= 12;
+      })
+    : activeTab === 'bimco-boxes-13-21'
+      ? bimcoPreviewFields.filter((field) => {
+          const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
+          return boxNumber >= 13 && boxNumber <= 21;
+        })
+      : activeTab === 'bimco-boxes-22-34'
+        ? bimcoPreviewFields.filter((field) => {
+            const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
+            return boxNumber >= 22 && boxNumber <= 34;
+          })
+        : activeTab === 'bimco-signatures'
+          ? bimcoPreviewFields.filter((field) => field.key.startsWith('signature_'))
+          : [];
   return (
     <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
       <header className="project-contract-header">
@@ -655,7 +783,7 @@ function ProjectDetail({
       ) : null}
 
       <div className="project-detail-tabs-shell">
-        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} />
+        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} tabs={detailTabs} />
         <div
           aria-labelledby={`project-tab-${activeTab}`}
           className="project-detail-tab-panel"
@@ -688,19 +816,81 @@ function ProjectDetail({
       </section>
       ) : null}
 
-      {activeTab === 'commercial' ? (
-      <section aria-label="Offre commerciale" className="project-detail-section">
-        <dl className="project-detail-grid">
-          <DetailField label="Forfait mobilisation" value={formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || '')} />
-          <DetailField label="Forfait démobilisation" value={formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || '')} />
-          <DetailField label="Loyer d’affrètement" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
-          <DetailField label="Loyer en prolongation" value={formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
-        </dl>
-        <div className="project-generated-document-note">
-          <span>Rubriques commerciales reprises des offres historiques SharePoint. Le PDF est généré localement pour validation.</span>
-          <a href={CONTRACT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
-            <ExternalLink aria-hidden="true" size={15} /> Ouvrir Documents Contractuels
-          </a>
+      {activeTab === 'offer-contract' ? (
+      <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
+        <div className="project-context-heading">
+          <div>
+            <span>Parcours documentaire</span>
+            <h3>Offre & contrat</h3>
+            <p>L’offre commerciale est facultative. Le contrat peut être préparé directement et un seul type de contrat est retenu pour le projet.</p>
+          </div>
+        </div>
+
+        <div className="project-offer-document-row">
+          <span className="project-offer-document-icon"><FileText aria-hidden="true" size={22} /></span>
+          <div>
+            <strong>Offre commerciale</strong>
+            <span>Document facultatif, indépendant du contrat sélectionné.</span>
+            <small>Les offres déjà émises restent accessibles dans Documents.</small>
+          </div>
+          {isManager ? (
+            <button
+              disabled={generatingDocument !== null}
+              onClick={() => onGenerateDocument('offer', selectedOccurrenceId)}
+              type="button"
+            >
+              <Download aria-hidden="true" size={15} />
+              {generatingDocument === 'offer' ? 'Émission et classement…' : 'Émettre le document'}
+            </button>
+          ) : null}
+        </div>
+
+        <fieldset className="project-contract-selector">
+          <legend>Choisir le contrat</legend>
+          <p>Sélectionnez exactement un type de contrat. Les rubriques de consultation s’adaptent immédiatement au choix.</p>
+          <div role="radiogroup" aria-label="Type de contrat à préparer">
+            {PROJECT_CONTRACT_VARIANTS.map((definition) => {
+              const Icon = definition.id === 'bimco'
+                ? ClipboardList
+                : definition.id === 'time-charter'
+                  ? CalendarDays
+                  : Ship;
+              return (
+                <label className={selectedContractVariant === definition.id ? 'is-selected' : undefined} key={definition.id}>
+                  <input
+                    checked={selectedContractVariant === definition.id}
+                    disabled={!isManager}
+                    name={`project-contract-${project.id}`}
+                    onChange={() => setSelectedContractVariant(definition.id)}
+                    type="radio"
+                    value={definition.id}
+                  />
+                  <Icon aria-hidden="true" size={22} />
+                  <span>{definition.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="project-contract-next-step">
+          <div>
+            <Info aria-hidden="true" size={20} />
+            <span>
+              <strong>{selectedContractDefinition ? selectedContractDefinition.label : 'Aucun contrat sélectionné'}</strong>
+              <small>Les informations saisies restent consultables dans les rubriques dédiées à gauche.</small>
+            </span>
+          </div>
+          {isManager ? (
+            <button
+              disabled={!selectedContractKind || generatingDocument !== null}
+              onClick={() => selectedContractKind && onGenerateDocument(selectedContractKind, selectedOccurrenceId)}
+              type="button"
+            >
+              <Download aria-hidden="true" size={15} />
+              {selectedContractKind && generatingDocument === selectedContractKind ? 'Émission et classement…' : 'Émettre le contrat'}
+            </button>
+          ) : null}
         </div>
       </section>
       ) : null}
@@ -726,41 +916,9 @@ function ProjectDetail({
         ) : (
           <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
         )}
-        <label className="project-document-occurrence-select">
-          Mission / occurrence à reprendre dans le document
-          <select
-            onChange={(event) => setSelectedOccurrenceId(event.target.value ? Number(event.target.value) : null)}
-            value={selectedOccurrenceId ?? ''}
-          >
-            <option value="">Période générale du projet</option>
-            {planningOccurrences.map((occurrence) => (
-              <option key={occurrence.id} value={occurrence.id}>
-                {formatPeriod(occurrence.startsOn, occurrence.endsOn)} · {displayText(occurrence.primaryVesselName)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="project-document-factory-grid">
-          {PROJECT_DOCUMENT_TYPES.filter((definition) => definition.kind === generatedDocumentKind).map((definition) => (
-            <article className={definition.available ? '' : 'is-pending'} key={definition.kind}>
-              <FileText aria-hidden="true" size={22} />
-              <div>
-                <strong>{definition.label}</strong>
-                <span>{definition.description}</span>
-                <small>{definition.extension.toUpperCase()}</small>
-              </div>
-              {isManager ? (
-                <button
-                  disabled={!definition.available || generatingDocument !== null}
-                  onClick={() => onGenerateDocument(definition.kind, selectedOccurrenceId)}
-                  type="button"
-                >
-                  <Download aria-hidden="true" size={15} />
-                  {generatingDocument === definition.kind ? 'Émission et classement…' : definition.available ? 'Émettre le document' : 'Modèle attendu'}
-                </button>
-              ) : null}
-            </article>
-          ))}
+        <div className="project-generated-document-note">
+          <span>La préparation d’une offre ou d’un contrat s’effectue depuis la rubrique « Offre & contrat ».</span>
+          <button onClick={() => setActiveTab('offer-contract')} type="button">Ouvrir Offre & contrat</button>
         </div>
       </section>
       ) : null}
@@ -871,20 +1029,199 @@ function ProjectDetail({
         />
       ) : null}
 
-      {activeTab === 'contract' ? (
-      <section aria-label="Contrat" className="project-detail-section">
-        {!contractUnavailable ? <SupplytimePreview contract={contract} project={project} /> : null}
-        <h4>Documents contractuels</h4>
-        {contractDocumentsUnavailable ? (
-          <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
-        ) : (
-          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
-        )}
-        <p className="project-document-help">
-          Le BIMCO reprend les quatre pages particulières du P144 et les clauses générales du document de référence fourni.
-          Les documents contractuels migrés sont conservés dans l’espace privé Supabase ; leur provenance SharePoint reste tracée.
-        </p>
-      </section>
+      {activeTab === 'towage-parties' ? (
+        <ProjectContractInformation
+          description="Les parties au contrat et les caractéristiques enregistrées pour le convoi remorqué."
+          fields={[
+            { label: 'Armateur', value: contract?.ownerIdentity, wide: true },
+            { label: 'Affréteur / client', value: project.clientName },
+            { label: 'Remorqueur', value: project.primaryVesselName },
+            { label: 'Remorqué', value: towedAsset?.name },
+            { label: 'Type de remorqué', value: towedAsset?.assetType },
+            { label: 'Dimensions', value: towedAsset ? `${towedAsset.lengthOverallM ?? '—'} m × ${towedAsset.breadthOverallM ?? '—'} m` : '' },
+            { label: 'Conditions du remorqué', value: supplytime.towed_conditions, wide: true },
+          ]}
+          title="Parties & convoi"
+        />
+      ) : null}
+
+      {activeTab === 'towage-route' ? (
+        <ProjectContractInformation
+          description="Le voyage prévu, les créneaux et les temps d’opérations associés au remorquage."
+          fields={[
+            { label: 'Prise en charge', value: project.deliveryPort },
+            { label: 'Créneau de départ', value: supplytime.departure_window || formatDate(projectStart) },
+            { label: 'Destination', value: project.redeliveryPort },
+            { label: 'Créneau d’arrivée', value: supplytime.arrival_window || formatDate(projectEnd) },
+            { label: 'Temps de connexion', value: supplytime.connection_time },
+            { label: 'Temps de déconnexion', value: supplytime.disconnection_time },
+          ]}
+          title="Itinéraire & délais"
+        />
+      ) : null}
+
+      {activeTab === 'towage-terms' ? (
+        <ProjectContractInformation
+          description="Les éléments financiers et les conditions particulières conservés avec le contrat de remorquage."
+          fields={[
+            { label: 'Tarif forfaitaire HT', value: formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || 'EUR') },
+            { label: 'Coûts additionnels facultatifs', value: supplytime.optional_costs, wide: true },
+            { label: 'Conditions de paiement', value: supplytime.box23_payment, wide: true },
+            { label: 'Frais additionnels', value: supplytime.additional_charges, wide: true },
+            { label: 'Conditions particulières', value: supplytime.special_conditions, wide: true },
+          ]}
+          title="Tarifs & conditions"
+        />
+      ) : null}
+
+      {activeTab === 'towage-signatures' ? (
+        <ProjectContractInformation
+          description="Les signataires prévus pour l’affréteur et l’armateur."
+          fields={[
+            { label: 'Signataire de l’affréteur', value: supplytime.charterer_signatory || client?.representedBy },
+            { label: 'Signataire de l’armateur', value: supplytime.owner_signatory },
+          ]}
+          title="Signatures"
+        />
+      ) : null}
+
+      {activeTab === 'bareboat-vessel' ? (
+        <ProjectContractInformation
+          description="Le navire affrété et les modalités de livraison et de restitution enregistrées."
+          fields={[
+            { label: 'Navire affrété', value: project.primaryVesselName },
+            { label: 'Livraison', value: `${formatDate(project.deliveryAt)} · ${project.deliveryPort}` },
+            { label: 'Livraison sur camion', value: supplytime.bareboat_delivery_by_truck === 'true' ? 'Oui' : 'Non' },
+            { label: 'Restitution', value: `${formatDate(project.redeliveryAt)} · ${project.redeliveryPort}` },
+            { label: 'Refit / année de construction', value: supplytime.bareboat_refit_details },
+            { label: 'Limites d’exploitation', value: supplytime.bareboat_operating_limits, wide: true },
+          ]}
+          title="Navire & livraison"
+        />
+      ) : null}
+
+      {activeTab === 'bareboat-duration' ? (
+        <ProjectContractInformation
+          description="Les dates, la durée et les montants contractuels de l’affrètement coque nue."
+          fields={[
+            { label: 'Lieu de signature', value: supplytime.bareboat_contract_place },
+            { label: 'Date de signature', value: supplytime.bareboat_contract_date },
+            { label: 'Durée minimale', value: supplytime.bareboat_minimum_duration },
+            { label: 'Options de prolongation', value: supplytime.bareboat_extension_options, wide: true },
+            { label: 'Indemnité de fin anticipée', value: supplytime.bareboat_early_termination_indemnity, wide: true },
+            { label: 'Loyer journalier', value: formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit || 'jour') },
+            { label: 'Frais de mobilisation', value: formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
+            { label: 'Frais de démobilisation', value: formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
+          ]}
+          title="Durée & loyers"
+        />
+      ) : null}
+
+      {activeTab === 'bareboat-terms' ? (
+        <ProjectContractInformation
+          description="Les responsabilités d’assurance et le cadre juridique saisis pour le contrat."
+          fields={[
+            { label: 'Identité du propriétaire', value: contract?.ownerIdentity, wide: true },
+            { label: 'Identité de l’affréteur', value: supplytime.bareboat_charterer_identity, wide: true },
+            { label: 'Valeur à assurer', value: supplytime.bareboat_insured_value },
+            { label: 'Assurance à la charge de', value: supplytime.bareboat_insurance_payer },
+            { label: 'Loi applicable', value: supplytime.bareboat_applicable_law },
+            { label: 'Juridiction compétente', value: supplytime.bareboat_jurisdiction },
+          ]}
+          title="Assurance & droit"
+        />
+      ) : null}
+
+      {activeTab === 'bareboat-signatures' ? (
+        <ProjectContractInformation
+          description="Les représentants qui signeront le contrat d’affrètement coque nue."
+          fields={[
+            { label: 'Signataire de l’affréteur', value: supplytime.bareboat_charterer_signatory || client?.representedBy },
+            { label: 'Signataire du propriétaire', value: supplytime.bareboat_owner_signatory },
+            { label: 'Fonction du signataire propriétaire', value: supplytime.bareboat_owner_signatory_function },
+          ]}
+          title="Signatures"
+        />
+      ) : null}
+
+      {activeTab === 'time-charter-vessel' ? (
+        <ProjectContractInformation
+          description="Le navire, les parties et la période retenue pour l’affrètement à temps."
+          fields={[
+            { label: 'Armateur', value: contract?.ownerIdentity, wide: true },
+            { label: 'Affréteur / client', value: project.clientName },
+            { label: 'Navire principal', value: project.primaryVesselName },
+            { label: 'Second navire', value: project.secondaryVesselName },
+            { label: 'Début d’affrètement', value: formatDate(projectStart) },
+            { label: 'Fin d’affrètement', value: formatDate(projectEnd) },
+          ]}
+          title="Navire & période"
+        />
+      ) : null}
+
+      {activeTab === 'time-charter-operations' ? (
+        <ProjectContractInformation
+          description="Le périmètre d’emploi et les capacités opérationnelles enregistrées pour le navire."
+          fields={[
+            { label: 'Zone d’opération', value: project.operationArea, wide: true },
+            { label: 'Affectation du navire limitée à', value: contract?.vesselAssignmentLimit, wide: true },
+            { label: 'Support ROV', value: project.isRovSupport ? 'Oui' : 'Non' },
+            { label: 'Support plongée', value: project.isDivingSupport ? 'Oui' : 'Non' },
+            { label: 'Fuel', value: supplytime.box19_special_fuel, wide: true },
+          ]}
+          title="Exploitation"
+        />
+      ) : null}
+
+      {activeTab === 'time-charter-rates' ? (
+        <ProjectContractInformation
+          description="Les montants et modalités tarifaires applicables à l’affrètement à temps."
+          fields={[
+            { label: 'Mobilisation', value: formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
+            { label: 'Démobilisation', value: formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
+            { label: 'Loyer d’affrètement', value: formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
+            { label: 'Loyer en prolongation', value: formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
+            { label: 'Modalités de paiement', value: supplytime.box23_payment, wide: true },
+          ]}
+          title="Conditions tarifaires"
+        />
+      ) : null}
+
+      {activeTab === 'time-charter-clauses' ? (
+        <ProjectContractInformation
+          description="Les prolongations, audits, clauses particulières et signatures enregistrés."
+          fields={[
+            { label: 'Nombre de prolongations', value: contract?.extensionCount },
+            { label: 'Durée de prolongation', value: [contract?.extensionDuration, contract?.extensionUnit].filter(Boolean).join(' ') },
+            { label: 'Période de reconduction', value: contract?.autoExtensionPeriod },
+            { label: 'Maximum de jours', value: contract?.maxExtensionDays },
+            { label: 'Période maximale d’audit', value: contract?.maxAuditPeriod },
+            { label: 'Clauses additionnelles', value: supplytime.box34_additional_clauses, wide: true },
+            { label: 'Signature armateur', value: supplytime.signature_owners },
+            { label: 'Signature affréteur', value: supplytime.signature_charterers },
+          ]}
+          title="Clauses & signatures"
+        />
+      ) : null}
+
+      {activeBimcoFields.length > 0 ? (
+        <ProjectContractInformation
+          description="Les données métier et les valeurs historiques enregistrées dans les cases du formulaire BIMCO."
+          fields={activeBimcoFields.map((field) => ({ label: field.label, value: field.value, wide: true }))}
+          title={detailTabs.find((tab) => tab.id === activeTab)?.label || 'BIMCO'}
+        />
+      ) : null}
+
+      {activeTab === 'bimco-annexes' ? (
+        <ProjectContractInformation
+          description="Les pièces et informations annexes conservées avec le contrat BIMCO."
+          fields={BIMCO_P144_GROUPS.find((group) => group.id === 'annexes')?.fields.map((field) => ({
+            label: field.label,
+            value: supplytime[field.key],
+            wide: true,
+          })) || []}
+          title="Annexes"
+        />
       ) : null}
         </div>
       </div>
@@ -1038,6 +1375,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const selectedProject = resolveSelectedProject(filteredProjects, selectedProjectId);
   const selectedContract = selectedProject
     ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
+    : undefined;
+  const selectedTowedAsset = selectedContract?.towedAssetId
+    ? projectsData.towedAssets.find((asset) => asset.id === selectedContract.towedAssetId)
     : undefined;
   const selectedClient = selectedProject
     ? projectsData.clients.find(
@@ -1511,6 +1851,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}
+              towedAsset={selectedTowedAsset}
             />
           ) : null}
         </div>
