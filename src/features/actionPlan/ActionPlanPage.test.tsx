@@ -285,7 +285,9 @@ describe('ActionPlanPage', () => {
     await screen.findByRole('heading', { name: "Plan d'action" });
     expect(screen.queryByRole('button', { name: 'Nouveau rapport' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Traiter l’action' }));
+    const treatButton = screen.getByRole('button', { name: 'Traiter l’action' });
+    expect(treatButton.closest('.action-control-detail-header')).not.toBeNull();
+    await user.click(treatButton);
     const dialog = within(screen.getByRole('dialog', { name: openAction.title }));
     fireEvent.change(dialog.getByLabelText('Action réalisée'), { target: { value: 'Filtre remplacé' } });
     fireEvent.change(dialog.getByLabelText('Commentaire'), { target: { value: 'Contrôle terminé' } });
@@ -387,7 +389,9 @@ describe('ActionPlanPage', () => {
     const { client } = createClient([openAction]);
     renderWithProfile(client, ['admin']);
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
-    await user.click(screen.getByRole('button', { name: 'Gérer les types' }));
+    const manageTypesButton = screen.getByRole('button', { name: 'Gérer les types' });
+    expect(manageTypesButton.closest('.action-control-queue-header')).not.toBeNull();
+    await user.click(manageTypesButton);
     await user.click(screen.getByRole('button', { name: 'Modifier Audit Interne - BBTM' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Modifier le type d’évènement' }));
     fireEvent.change(dialog.getByLabelText('Libellé *'), { target: { value: 'Audit interne – BBTM' } });

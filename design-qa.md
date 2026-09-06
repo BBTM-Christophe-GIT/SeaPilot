@@ -38,8 +38,6 @@ La comparaison complète normalisée est suffisamment lisible pour vérifier les
 
 final result: passed
 
----
-
 # Design QA — Rapports QHSE ciblés et page 25 (2026-09-04)
 
 ## Références et méthode
@@ -786,5 +784,36 @@ final result: passed
 - clôture depuis le même formulaire ;
 - disparition des champs après clôture et conservation de l'évènement de clôture dans le journal ;
 - version `3.35.0` et build `2026-09-06.005` visibles.
+
+final result: passed
+
+---
+
+# Design QA — Plan d'action, commandes en tête des cartes
+
+## Référence et méthode
+
+- Source visuelle : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-e2b56847-d3f3-4246-a808-9bcb7fc335e2.png` (`690 × 91` pixels).
+- Implémentation rendue : `http://127.0.0.1:4179/modules/actionPlan?preview=1`, capturée dans le navigateur intégré Codex à `711 × 1272` CSS pixels, densité 1.
+- Comparaison combinée : `http://127.0.0.1:4179/__qa_action_top_actions_compare.html`, référence et région réelle de l'application affichées dans la même vue.
+- Région d'implémentation comparée : `711 × 220` CSS pixels ; la référence a été ajustée uniformément de `690` à `711` pixels de large, sans recadrage.
+- État : profil Administrateur, fiche en retard sélectionnée, panneau des types fermé, page à `scrollY = 0`.
+
+## Résultat visuel
+
+- Vue complète : les trois commandes montrées dans la référence sont visibles dès le haut des deux cartes, sans défilement interne ou vertical.
+- Région ciblée : **Gérer les types** est aligné avec le compteur de la liste ; **Traiter l'action** et **Télécharger le PDF** sont alignés avec le statut et la référence de la fiche.
+- Typographie : famille, graisse, taille et libellés SeaPilot existants sont conservés.
+- Espacement : les commandes restent compactes, séparées et sans débordement au viewport étroit vérifié.
+- Couleurs : le bouton primaire bleu et les boutons secondaires blancs conservent les jetons existants.
+- Images et icônes : aucune image n'est introduite ; les icônes existantes sont réutilisées sans modification.
+- Copie : les libellés fonctionnels restent strictement inchangés.
+- Interactions : ouverture/fermeture du catalogue et ouverture/annulation du traitement vérifiées ; aucune erreur console.
+
+## Historique de comparaison
+
+- P0 : aucun.
+- P1 : aucun.
+- P2 corrigé : les commandes auparavant placées en pied de carte nécessitaient un défilement. Elles sont maintenant dans les en-têtes et mesurées entre `339` et `413` pixels depuis le haut du viewport, avec `scrollY = 0`.
 
 final result: passed
