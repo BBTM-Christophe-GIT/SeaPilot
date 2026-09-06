@@ -201,3 +201,40 @@
   .kpi-page button { min-height: 32px; }
 }
 @media (prefers-reduced-motion: reduce) { .kpi-page * { transition: none !important; } }
+.kpi-social-governance { margin-top: 18px; border: 1px solid #dbe5ed; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgba(21, 49, 68, .05); overflow: hidden; }
+.kpi-social-governance > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid #e1e9ef; background: linear-gradient(135deg, #f7fafc, #fff); }
+.kpi-social-governance > header h2, .kpi-social-governance > header p { margin: 0; }
+.kpi-social-governance > header > div:first-child > span { color: #126082; font-size: .7rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.kpi-social-governance > header h2 { margin-top: 3px; color: #123f59; font-size: 1.35rem; }
+.kpi-social-governance > header p { margin-top: 4px; color: #667b89; font-size: .82rem; }
+.kpi-social-badges { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.kpi-social-badges span { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 9px; background: #edf6f7; color: #176574; font-size: .72rem; font-weight: 750; }
+.kpi-social-grid { display: grid; grid-template-columns: minmax(360px, .85fr) minmax(0, 1.15fr); gap: 14px; padding: 16px; }
+.kpi-social-radar, .kpi-social-proposals, .kpi-social-comment { border: 1px solid #e0e8ee; border-radius: 12px; background: #fbfcfd; padding: 15px; }
+.kpi-social-radar h3, .kpi-social-proposals h3, .kpi-social-comment h3 { margin: 0; color: #173f57; font-size: .96rem; }
+.kpi-social-radar small, .kpi-social-proposals small, .kpi-social-comment small { color: #718492; font-size: .72rem; }
+.kpi-social-radar .kpi-chart { height: 330px; margin-top: 8px; }
+.kpi-social-proposals { display: grid; align-content: start; gap: 10px; }
+.kpi-social-proposals fieldset { display: grid; gap: 6px; margin: 0; border: 1px solid #dbe5eb; border-radius: 9px; padding: 10px; background: #fff; }
+.kpi-social-proposals legend { padding: 0 5px; color: #126082; font-size: .77rem; font-weight: 850; }
+.kpi-social-proposals label { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; color: #334f60; font-size: .76rem; line-height: 1.4; }
+.kpi-social-proposals input { margin-top: 2px; accent-color: #126082; }
+.kpi-social-proposals p { margin: 0; color: #84939d; font-size: .73rem; }
+.kpi-social-comment { margin: 0 16px 16px; background: #fff; }
+.kpi-social-comment > header { margin-bottom: 10px; }
+.kpi-social-comment .service-note-rich-editor { overflow: hidden; border: 1px solid #cddae0; border-radius: 8px; }
+.kpi-social-comment .service-note-rich-toolbar { display: flex; min-height: 40px; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #d8e2e6; background: #fbfcfd; }
+.kpi-social-comment .service-note-rich-toolbar button { width: 30px; height: 30px; border: 0; padding: 0; color: #38515e; background: transparent; }
+.kpi-social-comment .service-note-rich-toolbar select { width: auto; border: 0; background: transparent; }
+.kpi-social-comment .service-note-rich-content { min-height: 140px; max-height: 300px; overflow: auto; padding: 12px 14px; outline: 0; color: #173747; font-size: .82rem; line-height: 1.55; }
+.kpi-social-comment .service-note-rich-content:empty::before { color: #8999a1; content: attr(data-placeholder); }
+.kpi-social-comment footer { display: flex; justify-content: flex-end; margin-top: 10px; }
+.kpi-social-message { display: flex; align-items: center; gap: 7px; margin: 0 16px 16px; border-radius: 9px; padding: 9px 11px; font-size: .78rem; }
+.kpi-social-message.is-success { background: #edf8f3; color: #216c4e; }
+.kpi-social-message.is-error { background: #fff1ef; color: #97362f; }
+
+@media (max-width: 900px) {
+  .kpi-social-grid { grid-template-columns: 1fr; }
+  .kpi-social-governance > header { flex-direction: column; }
+  .kpi-social-badges { justify-content: flex-start; }
+}

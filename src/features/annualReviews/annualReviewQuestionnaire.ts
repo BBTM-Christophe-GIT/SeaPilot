@@ -120,12 +120,29 @@ export const ANNUAL_REVIEW_TABS = [
 
 export type AnnualReviewTabKey = (typeof ANNUAL_REVIEW_TABS)[number][0];
 
+export interface AnnualReviewGoal {
+  id: string;
+  objective: string;
+  progress: number;
+  comment: string;
+}
+
 export interface AnnualReviewAnswers {
   evaluation: Record<string, { rating: string; comment: string }>;
   esg: Record<string, string>;
   life: { overall: string; conditions: Record<string, string>; why: string };
   evolution: { choice: string; desiredPosition: string; desiredTraining: string; reasons: string; other: string };
   objectives: string;
+  goals?: AnnualReviewGoal[];
+}
+
+export function createAnnualReviewGoal(): AnnualReviewGoal {
+  return {
+    id: `goal-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    objective: '',
+    progress: 0,
+    comment: '',
+  };
 }
 
 export function emptyAnnualReviewAnswers(): AnnualReviewAnswers {
@@ -135,6 +152,7 @@ export function emptyAnnualReviewAnswers(): AnnualReviewAnswers {
     life: { overall: '', conditions: {}, why: '' },
     evolution: { choice: '', desiredPosition: '', desiredTraining: '', reasons: '', other: '' },
     objectives: '',
+    goals: [],
   };
 }
 
@@ -158,8 +176,11 @@ export function annualReviewValidationErrors(answers: AnnualReviewAnswers): stri
     errors.push('La raison du souhait d’évolution doit être précisée.');
   }
   if (!answers.objectives.replace(/<[^>]+>/gu, ' ').replace(/&nbsp;/gu, ' ').trim()) {
-    errors.push('Les objectifs personnels pour l’année N+1 sont requis.');
+    errors.push('Le commentaire général est requis.');
   }
+  const goals = answers.goals || [];
+  if (!goals.length) errors.push('Ajoutez au moins un objectif pour l’année N+1.');
+  if (goals.some((goal) => !goal.objective.trim())) errors.push('Chaque objectif doit être renseigné.');
   return errors;
 }
 

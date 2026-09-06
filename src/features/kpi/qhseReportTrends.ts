@@ -10,7 +10,7 @@ export const QHSE_CHART_CONTROLS: Record<string, QhseChartControl[]> = {
   'social-safety-2': [category('safety-types', 'Typologie des événements'), category('safety-causes', 'Causes documentées')],
   'social-safety-vessel': [temporal('prevention-exercises', 'Exercices d’urgence'), temporal('prevention-tbt', 'Couverture des TBT', false)],
   environment: [temporal('environment-solid', 'Déchets solides'), temporal('environment-liquid', 'Déchets liquides')],
-  'social-governance': [category('governance-contracts', 'Contrats'), category('governance-actions', 'Propositions par statut')],
+  'social-governance': [category('governance-wellbeing', 'Bien-être dans l’entreprise')],
   'port-call-tracking-v2': [temporal('port-hours', 'Durée mensuelle des escales'), category('port-reasons', 'Motifs des escales')],
   'hr-age-pyramid': [category('hr-ages', 'Tranches d’âge et genre')],
   'hr-management': [category('hr-functions', 'Fonctions'), category('hr-contracts', 'Contrats')],

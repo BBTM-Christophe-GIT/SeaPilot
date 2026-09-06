@@ -81,6 +81,7 @@ import {
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
 import { ProfileSignaturePanel } from '../workingTime/ProfileSignaturePanel';
+import { updateAnnualReviewDueDate } from '../annualReviews/annualReviewQueries';
 
 interface HumanResourcesPageProps {
   client?: SupabaseClient;
@@ -716,6 +717,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManagePersonnel(effectiveRoles);
+  const canEditAnnualReviewDueDate = effectiveRoles.some((role) => role === 'admin' || role === 'direction');
   const canDeletePerson = effectiveRoles.includes('admin');
   const isMarinView = effectiveRoles.includes('marin')
     && !effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement' || role === 'capitaine');
@@ -1173,6 +1175,22 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     }
   }
 
+  async function handleAnnualReviewDueDate(document: HrDocumentRecord, dueOn: string) {
+    setStatusMessage(null); setErrorMessage(null); setIsSaving(true);
+    try {
+      await updateAnnualReviewDueDate(effectiveClient, document.id, dueOn);
+      const today = new Date().toISOString().slice(0, 10);
+      const renewalThreshold = new Date(); renewalThreshold.setDate(renewalThreshold.getDate() + 90);
+      const status: HrDocumentRecord['status'] = dueOn < today ? 'expired' : dueOn <= renewalThreshold.toISOString().slice(0, 10) ? 'renew_due' : 'valid';
+      setDocuments((current) => current.map((item) => item.id === document.id ? { ...item, expiresOn: dueOn, status } : item));
+      notifyHrDocumentsChanged();
+      setStatusMessage("Date d'échéance de l'entretien mise à jour.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible de modifier l'échéance.");
+      throw error;
+    } finally { setIsSaving(false); }
+  }
+
   async function handleSavePersonDetails(
     personId: number,
     input: UpdatePersonDetailsInput,
@@ -1525,6 +1543,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
             || effectiveRoles.includes('admin')
             || effectiveRoles.includes('armement')
           ))}
+          canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
           canClose={!isMarinView}
           client={effectiveClient}
           documents={selectedPersonDocuments}
@@ -1534,6 +1553,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onDocumentCreate={(person) => setDocumentCreationPersonId(person.id)}
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
+          onAnnualReviewDueDate={handleAnnualReviewDueDate}
           onDocumentSelect={toggleDocumentSelection}
           onDelete={handleDeletePerson}
           onSave={handleSavePersonDetails}
@@ -1948,6 +1968,7 @@ function PersonProfileCard({
   canDelete,
   canEdit,
   canManageSignature,
+  canEditAnnualReviewDueDate,
   canClose = true,
   client,
   documents,
@@ -1957,6 +1978,7 @@ function PersonProfileCard({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
   onSave,
@@ -1967,6 +1989,7 @@ function PersonProfileCard({
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  canEditAnnualReviewDueDate: boolean;
   canClose?: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
@@ -1976,6 +1999,7 @@ function PersonProfileCard({
   onDocumentCreate: (person: PersonRecord) => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: (person: PersonRecord) => Promise<void>;
   onSave: (
@@ -2010,6 +2034,7 @@ function PersonProfileCard({
         canDelete={canDelete}
         canEdit={canEdit}
         canManageSignature={canManageSignature}
+        canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
         documents={documents}
         isManager={isManager}
@@ -2019,6 +2044,7 @@ function PersonProfileCard({
         onDocumentCreate={() => onDocumentCreate(person)}
         onDocumentOpen={onDocumentOpen}
         onDocumentRenew={onDocumentRenew}
+        onAnnualReviewDueDate={onAnnualReviewDueDate}
         onDocumentSelect={onDocumentSelect}
         onDelete={() => onDelete(person)}
         onSave={onSave}
@@ -2638,6 +2664,7 @@ function PersonDetailsPanel({
   canDelete,
   canEdit,
   canManageSignature,
+  canEditAnnualReviewDueDate,
   client,
   documents,
   isManager,
@@ -2647,6 +2674,7 @@ function PersonDetailsPanel({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
   onSave,
@@ -2660,6 +2688,7 @@ function PersonDetailsPanel({
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  canEditAnnualReviewDueDate: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
   isManager: boolean;
@@ -2669,6 +2698,7 @@ function PersonDetailsPanel({
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: () => Promise<void>;
   onSave: (
@@ -3051,9 +3081,11 @@ function PersonDetailsPanel({
             documents={documents.filter((document) => document.categoryKey === 'annual_review')}
             isManager={false}
             isSaving={isSaving}
+            canEditDueDate={canEditAnnualReviewDueDate}
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
             onDocumentRenew={onDocumentRenew}
+            onDueDateChange={onAnnualReviewDueDate}
             onDocumentSelect={onDocumentSelect}
             selectedDocumentIds={selectedDocumentIds}
             title="Entretien Annuel"
@@ -3211,25 +3243,30 @@ function PersonDetailsPanel({
 function ProfileDocumentsSection({
   documents,
   isManager,
+  canEditDueDate = false,
   isSaving,
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDueDateChange,
   onDocumentSelect,
   selectedDocumentIds,
   title = 'Documents',
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
+  canEditDueDate?: boolean;
   isSaving: boolean;
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDueDateChange?: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   selectedDocumentIds: Set<number>;
   title?: string;
 }) {
   const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(() => new Set());
+  const [dueDateDrafts, setDueDateDrafts] = useState<Record<number, string>>({});
   const documentGroups = Array.from(
     documents.reduce<Map<string, HrDocumentRecord[]>>((result, document) => {
       result.set(document.categoryKey, (result.get(document.categoryKey) || []).concat(document));
@@ -3304,6 +3341,7 @@ function ProfileDocumentsSection({
                         <strong>{getHrDocumentDisplayName(document)}</strong>
                         <small>{document.expiresOn ? `Expire le ${formatDateForDisplay(document.expiresOn)}` : 'Sans échéance'}</small>
                       </button>
+                      {canEditDueDate && document.categoryKey === 'annual_review' ? <div className="hr-profile-document-due-editor"><label>Échéance<input aria-label={`Échéance de ${document.title}`} onChange={(event) => setDueDateDrafts((current) => ({ ...current, [document.id]: event.target.value }))} type="date" value={dueDateDrafts[document.id] ?? document.expiresOn} /></label><button disabled={isSaving || !dueDateDrafts[document.id] || dueDateDrafts[document.id] === document.expiresOn} onClick={() => void onDueDateChange?.(document, dueDateDrafts[document.id])} type="button">Enregistrer</button></div> : null}
                       <div className="hr-profile-document-state">
                         <span className={`hr-document-status hr-document-${document.status}`}>
                           {DOCUMENT_STATUS_LABELS[document.status]}

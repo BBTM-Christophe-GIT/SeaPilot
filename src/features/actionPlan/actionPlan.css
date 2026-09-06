@@ -343,6 +343,7 @@
 .action-sheet-form input[readonly],
 .action-sheet-form select:disabled { background: #f1f5f9; color: #607087; cursor: not-allowed; }
 .action-plan-link-note { display: flex; gap: 8px; align-items: center; margin: 20px 0 0; padding: 12px; border-radius: 10px; background: #eef8fa; color: #176b79; font-size: .78rem; }
+.action-plan-link-note.is-confidential { border: 1px solid #edc6c1; background: #fff3f1; color: #8d342b; }
 .action-sheet-dialog form > footer { z-index: 2; display: flex; min-height: 66px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 22px; border-top: 1px solid var(--ap-line); background: white; box-shadow: 0 -8px 22px rgb(23 35 58 / 4%); }
 .action-sheet-dialog form > footer > span { display: flex; gap: 8px; align-items: center; color: var(--ap-muted); font-size: .76rem; font-weight: 700; }
 .action-sheet-dialog form > footer > span svg { color: #d83535; }

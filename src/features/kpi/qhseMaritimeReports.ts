@@ -274,5 +274,19 @@ export function buildMaritimeContent(report: QhseReportDefinition, snapshot: Qhs
 }
 
 export function maritimeYearSnapshot(snapshot: QhseReportSnapshot, year: number, options: QhseReportOptions) {
-  return scopeMaritimeSnapshot({ ...snapshot, ...consumptionYearSnapshot(snapshot, year, consumptionCutoff(options)), scope: { ...snapshot.scope, year, years: [year] } }, options);
+  const yearGovernance = snapshot.socialGovernance?.byYear?.[String(year)];
+  const socialGovernance = yearGovernance
+    ? { ...yearGovernance, years: [year], byYear: { [String(year)]: yearGovernance } }
+    : snapshot.socialGovernance ? {
+      ...snapshot.socialGovernance,
+      years: [year],
+      proposals: snapshot.socialGovernance.proposals.filter((item) => item.year === year),
+      comments: snapshot.socialGovernance.comments.filter((item) => item.year === year),
+    } : undefined;
+  return scopeMaritimeSnapshot({
+    ...snapshot,
+    ...consumptionYearSnapshot(snapshot, year, consumptionCutoff(options)),
+    scope: { ...snapshot.scope, year, years: [year] },
+    socialGovernance,
+  }, options);
 }

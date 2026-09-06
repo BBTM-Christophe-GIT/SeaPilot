@@ -1,4 +1,4 @@
-import { BookOpenCheck, CheckCircle2, Circle } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, Circle, Plus, Trash2 } from 'lucide-react';
 import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
 import { sanitizeServiceNoteHtml } from '../serviceNotes/serviceNoteRichText';
 import {
@@ -10,6 +10,7 @@ import {
   ANNUAL_REVIEW_SATISFACTION,
   ANNUAL_REVIEW_TABS,
   ANNUAL_REVIEW_WORK_CONDITIONS,
+  createAnnualReviewGoal,
   type AnnualReviewAnswers,
   type AnnualReviewTabKey,
 } from './annualReviewQuestionnaire';
@@ -23,6 +24,7 @@ interface AnnualReviewQuestionnaireProps {
 }
 
 export function AnnualReviewQuestionnaire({ answers, activeTab, readOnly = false, onChange, onTabChange }: AnnualReviewQuestionnaireProps) {
+  const goals = answers.goals || [];
   const setRating = (questionId: string, rating: string) => onChange({
     ...answers,
     evaluation: { ...answers.evaluation, [questionId]: { rating, comment: answers.evaluation[questionId]?.comment || '' } },
@@ -110,8 +112,18 @@ export function AnnualReviewQuestionnaire({ answers, activeTab, readOnly = false
         {activeTab === 'objectives' ? (
           <section className="annual-review-form-section">
             <header><span>05</span><div><p>Cap sur l’année prochaine</p><h2>Objectifs personnels</h2></div></header>
-            <label className="annual-review-rich-field"><strong>Objectif(s) personnel(s) pour l’année N+1</strong><small>Décrivez des objectifs concrets, mesurables et les moyens nécessaires.</small></label>
-            {readOnly ? <div className="annual-review-rich-readonly" dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(answers.objectives) }} /> : <ServiceNoteRichTextEditor ariaLabel="Objectifs personnels pour l’année N+1" onChange={(objectives) => onChange({ ...answers, objectives })} placeholder="Décrivez ici vos objectifs personnels…" toolbarLabel="Mise en forme des objectifs" value={answers.objectives} />}
+            <div className="annual-review-goals-heading"><div><strong>Objectifs de l’année N+1</strong><small>Ajoutez autant d’objectifs que nécessaire et indiquez leur niveau d’atteinte initial.</small></div>{!readOnly ? <button className="is-secondary" onClick={() => onChange({ ...answers, goals: [...goals, createAnnualReviewGoal()] })} type="button"><Plus size={16} />Ajouter un objectif</button> : null}</div>
+            <div className="annual-review-goals">
+              {goals.map((goal, index) => <article className="annual-review-goal" key={goal.id}>
+                <header><strong>Objectif {index + 1}</strong>{!readOnly ? <button aria-label={`Supprimer l’objectif ${index + 1}`} className="is-secondary" onClick={() => onChange({ ...answers, goals: goals.filter((item) => item.id !== goal.id) })} type="button"><Trash2 size={15} /></button> : null}</header>
+                <label><strong>Objectif</strong><input disabled={readOnly} maxLength={1_000} onChange={(event) => onChange({ ...answers, goals: goals.map((item) => item.id === goal.id ? { ...item, objective: event.target.value } : item) })} value={goal.objective} /></label>
+                <label className="annual-review-goal-progress"><strong>Pourcentage d’atteinte</strong><div><input aria-label={`Pourcentage d’atteinte de l’objectif ${index + 1}`} disabled={readOnly} max="100" min="0" onChange={(event) => onChange({ ...answers, goals: goals.map((item) => item.id === goal.id ? { ...item, progress: Number(event.target.value) } : item) })} step="1" type="range" value={goal.progress} /><output>{goal.progress} %</output></div></label>
+                <label><strong>Commentaire</strong><textarea disabled={readOnly} maxLength={2_000} onChange={(event) => onChange({ ...answers, goals: goals.map((item) => item.id === goal.id ? { ...item, comment: event.target.value } : item) })} rows={3} value={goal.comment} /></label>
+              </article>)}
+              {!goals.length ? <p className="annual-review-help">Aucun objectif ajouté.</p> : null}
+            </div>
+            <label className="annual-review-rich-field"><strong>Commentaire général</strong><small>Ajoutez les moyens nécessaires, le contexte ou les points de vigilance.</small></label>
+            {readOnly ? <div className="annual-review-rich-readonly" dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(answers.objectives) }} /> : <ServiceNoteRichTextEditor ariaLabel="Commentaire général" onChange={(objectives) => onChange({ ...answers, objectives })} placeholder="Saisissez le commentaire général…" toolbarLabel="Mise en forme du commentaire général" value={answers.objectives} />}
           </section>
         ) : null}
       </div>

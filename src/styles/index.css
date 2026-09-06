@@ -12103,7 +12103,7 @@ button:disabled {
 .hr-profile-document-row {
   display: grid;
   min-height: 54px;
-  grid-template-columns: 18px 20px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 20px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 7px;
   border-bottom: 1px solid #e8edf3;
@@ -12165,6 +12165,40 @@ button:disabled {
   color: #1763bd;
   background: transparent;
   font-size: 0.56rem;
+  font-weight: 800;
+}
+
+.hr-profile-document-due-editor {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+}
+
+.hr-profile-document-due-editor label {
+  display: grid;
+  gap: 2px;
+  color: #66788f;
+  font-size: 0.56rem;
+  font-weight: 750;
+}
+
+.hr-profile-document-due-editor input {
+  width: 128px;
+  border: 1px solid #cfd9e5;
+  border-radius: 6px;
+  padding: 5px 6px;
+  color: #213552;
+  background: #fff;
+  font: inherit;
+}
+
+.hr-profile-document-due-editor button {
+  border: 1px solid #bad0e8;
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: #1763bd;
+  background: #f5f9fd;
+  font-size: 0.58rem;
   font-weight: 800;
 }
 
@@ -12601,6 +12635,11 @@ button:disabled {
   .hr-profile-document-state {
     grid-column: 3;
     justify-items: start;
+  }
+
+  .hr-profile-document-due-editor {
+    grid-column: 3;
+    flex-wrap: wrap;
   }
 
   .hr-turnover-panel {

@@ -12,6 +12,7 @@ import { KpiOverview } from './KpiOverview';
 import { buildKpiOverview } from './kpiOverviewData';
 import { KpiDefinitions, KpiDialog } from './KpiDialog';
 import { consumptionCutoff } from './qhseConsumption';
+import { SocialGovernancePanel } from './SocialGovernancePanel';
 import './kpiReports.css';
 
 function ScopeFilter({ label, summary, items, selected, onChange, required = false, disabled = false }: {
@@ -103,6 +104,7 @@ export function KpiPage({ client }: { client?: SupabaseClient }) {
     </section>
     {(error || projectError) && <div className="kpi-error" role="alert">{error || projectError}<button className="kpi-button" onClick={() => setRevision((r) => r + 1)}>Réessayer</button></div>}
     <KpiOverview snapshot={snapshot} options={options} loading={loading} onQuality={() => setDialog('quality')} />
+    <SocialGovernancePanel client={effectiveClient} loading={loading} onSaved={() => setRevision((value) => value + 1)} snapshot={snapshot} year={scope.year} />
     <QhseReportComposer reports={QHSE_REPORT_CATALOG} options={options} scopeKey={scopeKey} disabled={!snapshot || loading || Boolean(error)} getSnapshot={getSnapshot} snapshot={snapshot} />
     {dialog && <KpiDialog title={dialog === 'definitions' ? 'Définitions et formules' : 'Qualité et couverture des données'} onClose={() => setDialog(null)}>
       {dialog === 'definitions' ? <KpiDefinitions /> : <>

@@ -100,7 +100,8 @@ export interface QhseReportChart {
   forecastAllowed?: boolean;
   horizontal?: boolean;
   title: string;
-  kind: 'bar' | 'line';
+  kind: 'bar' | 'line' | 'radar';
+  maxValue?: number;
   labels: string[];
   series: Array<{ label: string; values: Array<number | null>; color: [number, number, number]; axis?: 'left' | 'right'; valueLabelIndices?: number[]; forecast?: boolean; trend?: boolean; step?: boolean; year?: number }>;
   unit?: string;
@@ -133,6 +134,29 @@ export interface QhseReportContent {
   notes: QhseReportNote[];
   sources: string[];
   environmentalImpact?: { emittedTonnes: number; avoidedTonnes: number; baselineTonnes: number };
+}
+
+export interface QhseSocialGovernanceProposal {
+  key: string;
+  year: number;
+  theme: 'environment' | 'social' | 'governance' | 'other';
+  text: string;
+  selected: boolean;
+}
+
+export interface QhseSocialGovernanceYearData {
+  canConfigure: boolean;
+  radar: Array<{ key: string; label: string; value: number; responseCount: number }>;
+  proposals: QhseSocialGovernanceProposal[];
+  comments: Array<{ year: number; html: string }>;
+  reviewCount: number;
+  respondentCount: number;
+  discriminationCount: number;
+}
+
+export interface QhseSocialGovernanceData extends QhseSocialGovernanceYearData {
+  years: number[];
+  byYear?: Record<string, QhseSocialGovernanceYearData>;
 }
 
 interface DprReportRow {
@@ -183,6 +207,7 @@ export interface QhseReportSnapshot {
   hrDocuments?: HrDocumentRecord[];
   environmentParameters?: QhseEnvironmentParameter[];
   contractTargets?: QhseContractTarget[];
+  socialGovernance?: QhseSocialGovernanceData;
   warnings: string[];
 }
 
@@ -239,6 +264,50 @@ function formatDate(value: string): string {
   if (!value) return '—';
   const date = new Date(`${value.slice(0, 10)}T12:00:00`);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('fr-FR').format(date);
+}
+
+function mapSocialGovernanceRow(row: Record<string, unknown>): QhseSocialGovernanceYearData {
+  return {
+    canConfigure: Boolean(row.canConfigure),
+    radar: Array.isArray(row.radar) ? row.radar.map((item) => {
+      const value = item as Record<string, unknown>;
+      return { key: text(value.key), label: text(value.label), value: numeric(value.value), responseCount: numeric(value.responseCount) };
+    }) : [],
+    proposals: Array.isArray(row.proposals) ? row.proposals.map((item) => {
+      const value = item as Record<string, unknown>;
+      return { key: text(value.key), year: numeric(value.year), theme: text(value.theme) as QhseSocialGovernanceProposal['theme'], text: text(value.text), selected: Boolean(value.selected) };
+    }) : [],
+    comments: Array.isArray(row.comments) ? row.comments.map((item) => {
+      const value = item as Record<string, unknown>;
+      return { year: numeric(value.year), html: text(value.html) };
+    }) : [],
+    reviewCount: numeric(row.reviewCount), respondentCount: numeric(row.respondentCount),
+    discriminationCount: numeric(row.discriminationCount),
+  };
+}
+
+function combineSocialGovernanceYears(years: number[], values: QhseSocialGovernanceYearData[]): QhseSocialGovernanceData {
+  const axes = new Map<string, { key: string; label: string; weightedTotal: number; responseCount: number }>();
+  values.forEach((value) => value.radar.forEach((axis) => {
+    const current = axes.get(axis.key) || { key: axis.key, label: axis.label, weightedTotal: 0, responseCount: 0 };
+    current.weightedTotal += axis.value * axis.responseCount;
+    current.responseCount += axis.responseCount;
+    axes.set(axis.key, current);
+  }));
+  return {
+    canConfigure: values.some((value) => value.canConfigure),
+    years,
+    radar: [...axes.values()].map((axis) => ({
+      key: axis.key, label: axis.label, responseCount: axis.responseCount,
+      value: axis.responseCount ? Math.round((axis.weightedTotal / axis.responseCount) * 100) / 100 : 0,
+    })),
+    proposals: values.flatMap((value) => value.proposals),
+    comments: values.flatMap((value) => value.comments),
+    reviewCount: values.reduce((sum, value) => sum + value.reviewCount, 0),
+    respondentCount: values.reduce((sum, value) => sum + value.respondentCount, 0),
+    discriminationCount: values.reduce((sum, value) => sum + value.discriminationCount, 0),
+    byYear: Object.fromEntries(years.map((year, index) => [String(year), values[index]])),
+  };
 }
 function percent(value: number): string { return `${formatNumber(value, 1)} %`; }
 function hoursBetween(start: string, end: string): number {
@@ -365,7 +434,7 @@ export async function fetchQhseReportSnapshot(
   const projectIds = scopeProjectIds(scope);
   const startsOn = `${years[0]}-01-01`;
   const endsOn = `${years.at(-1)}-12-31`;
-  const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets, safetyEvents, hrDocuments] = await Promise.all([
+  const [dpr, certificates, visits, people, procedures, hseDashboard, annualReferences, exposureRecords, environmentParameters, contractTargets, safetyEvents, hrDocuments, socialGovernance] = await Promise.all([
     fetchDprData(client, scope, warnings),
     safeLoad('Certificats flotte', [] as FleetCertificateRecord[], warnings, () => fetchFleetCertificates(client)),
     safeLoad('Planning des visites', [] as PlanningVesselVisit[], warnings, () => fetchPlanningVesselVisits(client)),
@@ -411,6 +480,14 @@ export async function fetchQhseReportSnapshot(
       return rows.map((row) => ({ id: Number(row.id), date: text(row.occurred_on), classification: text(row.classification), lostDays: numeric(row.lost_days), vesselId: nullableNumber(row.vessel_id), projectId: nullableNumber(row.project_id), actionId: nullableNumber(row.action_item_id) }));
     }),
     safeLoad('Documents RH', [] as HrDocumentRecord[], warnings, () => fetchHrDocuments(client)),
+    safeLoad('KPI Social et Gouvernance', undefined as QhseSocialGovernanceData | undefined, warnings, async () => {
+      const values = await Promise.all(years.map(async (year) => {
+        const result = await client.rpc('kpi_social_governance_context', { p_years: [year] });
+        if (result.error) throw result.error;
+        return mapSocialGovernanceRow((result.data || {}) as Record<string, unknown>);
+      }));
+      return combineSocialGovernanceYears(years, values);
+    }),
   ]);
   return {
     scope,
@@ -430,9 +507,22 @@ export async function fetchQhseReportSnapshot(
     hrDocuments,
     environmentParameters,
     contractTargets: contractTargets.filter((target) => !projectIds.length || projectIds.includes(target.projectId)),
+    socialGovernance,
     warnings,
     ...dpr,
   };
+}
+
+export async function saveKpiSocialGovernanceSettings(client: SupabaseClient, input: {
+  year: number; selectedResponseKeys: string[]; generalCommentHtml: string;
+}): Promise<number> {
+  const result = await client.rpc('kpi_social_governance_save_settings', {
+    p_report_year: input.year,
+    p_selected_response_keys: input.selectedResponseKeys,
+    p_general_comment_html: input.generalCommentHtml,
+  });
+  if (result.error) throw result.error;
+  return Number(result.data);
 }
 
 function reportMap(snapshot: QhseReportSnapshot): Map<number, DprReportRow> {
@@ -831,23 +921,41 @@ function employedAt(person: PersonRecord, date: string): boolean {
   return Boolean(person.hiredOn) && person.hiredOn <= date && (!person.departedOn || person.departedOn > date);
 }
 function buildGovernanceContent(snapshot: QhseReportSnapshot): QhseReportContent {
-  const people = snapshot.people.filter((person) => employedAt(person, scopeEnd(snapshot.scope)));
-  const improvementActions = yearActions(snapshot).filter((action) => normalize(`${action.deviationType} ${action.categoryKey} ${action.title}`).includes('amelior'));
+  const governance = snapshot.socialGovernance;
+  const selected = (governance?.proposals || []).filter((proposal) => proposal.selected);
+  const themeLabels: Record<QhseSocialGovernanceProposal['theme'], string> = {
+    governance: 'Gouvernance', social: 'Social', environment: 'Environnement', other: 'Autres',
+  };
+  const comments = (governance?.comments || []).map((comment) => {
+    const plain = comment.html.replace(/<[^>]+>/gu, ' ').replace(/&nbsp;/gu, ' ').replace(/\s+/gu, ' ').trim();
+    return scopeYears(snapshot.scope).length > 1 ? `${comment.year} — ${plain}` : plain;
+  }).filter(Boolean);
+  const radar = governance?.radar || [];
   return {
-    summary: `Indicateurs sociaux et démarches d’amélioration disponibles — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Indicateur RSE — Social et Gouvernance · campagne d’entretien professionnel et d’évaluation — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
-      metric('Effectif en fin de période', people.length, 'Contrats présents à la date d’arrêté', 'blue'),
-      metric('Propositions d’amélioration', improvementActions.length, 'Actions explicitement qualifiées', 'green'),
-      metric('Propositions soldées', improvementActions.filter(closedAction).length, 'Clôture enregistrée', 'green'),
-      metric('Entretiens annuels', '—', 'Aucune source structurée SeaPilot', 'orange'),
+      metric('Entretiens réalisés', governance?.reviewCount || 0, 'Questionnaires remis ou finalisés', 'blue'),
+      metric('Répondants au radar', governance?.respondentCount || 0, 'Réponses collaborateur partagées', 'green'),
+      metric('Propositions retenues', selected.length, 'Sélection Direction pour le rapport', 'green'),
+      metric('Discrimination / droits humains', governance?.discriminationCount || 0, 'Signalements confidentiels enregistrés', governance?.discriminationCount ? 'orange' : 'green'),
     ],
-    charts: [categoricalChart('Effectif par type de contrat', countBy(people, (person) => person.contractType), BLUE), categoricalChart('Propositions par statut', countBy(improvementActions, (action) => action.status), TEAL)],
-    tables: [{ title: 'Propositions d’amélioration', columns: ['Date', 'Proposition', 'Responsable', 'Statut'], rows: rowsLimited(improvementActions.map((action) => [formatDate(action.openedOn), action.title, action.ownerName || '—', action.status || '—']), 36) }],
+    charts: [{
+      id: 'governance-wellbeing', title: 'Bien-être dans l’entreprise', kind: 'radar', maxValue: 4,
+      labels: radar.map((item) => item.label), unit: 'Score de 1 à 4',
+      subtitle: '4 = Très satisfait · 1 = Insatisfait · réponses partagées et agrégées',
+      series: [{ label: 'Satisfaction moyenne', values: radar.map((item) => item.responseCount ? item.value : null), color: [26, 173, 87] }],
+    }],
+    tables: (['governance', 'social', 'environment', 'other'] as const).map((theme) => ({
+      title: `Propositions d’amélioration · ${themeLabels[theme]}`,
+      columns: ['Année', 'Proposition'],
+      rows: selected.filter((proposal) => proposal.theme === theme).map((proposal) => [String(proposal.year), proposal.text]),
+    })),
     notes: [
-      unavailable('Entretiens annuels', 'SeaPilot ne dispose pas encore d’un registre structuré des campagnes et scores d’entretien annuel.'),
-      unavailable('Discrimination et droits humains', 'Aucun registre dédié n’est présent ; aucune valeur n’est déduite des actions génériques.'),
+      { title: 'Discrimination et atteintes aux droits humains', text: governance?.discriminationCount ? `${governance.discriminationCount} signalement(s) confidentiel(s) enregistré(s) sur la période. Aucun détail nominatif n’est exposé dans ce KPI.` : 'Aucun signalement confidentiel enregistré sur la période.' },
+      ...(comments.length ? [{ title: 'Commentaire Général de la Direction', text: comments.join(' ') }] : []),
+      ...(!governance ? [unavailable('Données d’entretien', 'La source structurée Social et Gouvernance est indisponible pour ce profil.')] : []),
     ],
-    sources: ['Référentiel RH SeaPilot', 'Plan d’action QHSE', sourceNote()],
+    sources: ['Questionnaire Entretien Professionnel et d’Evaluation · réponses management sélectionnées', 'Plan d’action · registre confidentiel agrégé', sourceNote()],
   };
 }
 
@@ -1217,9 +1325,12 @@ export function buildQhseReportContent(report: QhseReportDefinition, input: Qhse
   }
   content = buildMaritimeContent(report, snapshot, options, () => content);
   content.charts = content.charts.map((chart) => applyQhseChartOptions(chart, options));
-  if (['hr-management', 'hr-age-pyramid', 'social-governance', 'training-plan'].includes(report.id) && (scopeVesselIds(snapshot.scope).length || scopeProjectIds(snapshot.scope).length)) {
+  if (['hr-management', 'hr-age-pyramid', 'training-plan'].includes(report.id) && (scopeVesselIds(snapshot.scope).length || scopeProjectIds(snapshot.scope).length)) {
     content.notes.push(unavailable('Périmètre RH documenté', 'Les personnes sont sélectionnées uniquement via leurs affectations dans le registre d’exposition HSE de la période. Les personnes sans affectation ne peuvent pas être ventilées par navire/projet ; sélectionner tous les navires et projets pour le bilan entreprise.'));
     if (!snapshot.people.length) content.metrics = content.metrics.map((m) => ({ ...m, value: '—', detail: 'Aucune affectation RH documentée' }));
+  }
+  if (report.id === 'social-governance' && (scopeVesselIds(snapshot.scope).length || scopeProjectIds(snapshot.scope).length)) {
+    content.notes.push(unavailable('Périmètre entreprise', 'Les réponses d’entretien et signalements confidentiels sont agrégés au niveau de l’entreprise ; les filtres navire et projet ne sont pas appliqués à cet indicateur.'));
   }
   if (['hr-management', 'hr-age-pyramid', 'social-governance'].includes(report.id)) {
     content.charts = content.charts.map((chart) => ({ ...chart, horizontal: chart.kind === 'bar' && chart.series.length === 1 }));

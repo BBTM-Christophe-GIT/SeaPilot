@@ -15,11 +15,11 @@ Le questionnaire reprend le classeur source `Entretien Evaluation - Professionne
 | 4.Evolution | 4. Évolution |
 | 5.Objectifs | 5. Objectifs |
 
-Les 23 critères d’évaluation utilisent une réponse unique parmi `Non Applicable`, `Très faible`, `Faible`, `Moyen`, `Bon` et `Excellent`. Le champ « Objectif(s) personnel(s) pour l’année N+1 » utilise l’éditeur de texte enrichi partagé par l’application.
+Les 23 critères d’évaluation utilisent une réponse unique parmi `Non Applicable`, `Très faible`, `Faible`, `Moyen`, `Bon` et `Excellent`. Le dernier volet contient plusieurs objectifs structurés (`Objectif`, curseur d’atteinte de 0 à 100 %, `Commentaire`) et un champ riche **Commentaire général**.
 
 ## Workflow
 
-1. Un manager sélectionne un collaborateur actif et propose une date, une heure de début et de fin, ainsi qu’un lieu physique ou un lien de visioconférence.
+1. Un manager sélectionne un collaborateur actif et propose une date/heure de début par quart d’heure, une durée en heures et minutes par paliers de 15 minutes, ainsi qu’un lieu physique ou un lien de visioconférence. L’année est déduite de la date de début côté interface et côté serveur.
 2. Le collaborateur reçoit l’invitation dans la cloche. Il accepte le créneau ou en propose un autre.
 3. En cas de contre-proposition, le manager l’accepte. Le rendez-vous n’apparaît dans le Planning qu’une fois le créneau accepté.
 4. Le collaborateur et le manager remplissent leurs questionnaires séparément. Le collaborateur peut télécharger ou imprimer sa propre version.
@@ -27,6 +27,8 @@ Les 23 critères d’évaluation utilisent une réponse unique parmi `Non Applic
 6. Après la remise du collaborateur, le manager valide ses propres réponses. Son identité, la date et sa signature active sont figées avec le rapport PDF.
 7. Le collaborateur reçoit une notification, lit le rapport du manager, puis le signe avec sa signature active.
 8. Le PDF final signé est archivé dans **Dossier collaborateur > Entretien Annuel**. Son nom contient l’année de l’entretien.
+9. L’échéance initiale est fixée au 31 décembre de l’année N+1. Seuls les rôles `admin` et `direction` peuvent la modifier dans la fiche RH.
+10. Après validation du management, les rôles `admin`, `direction`, `armement` et `capitaine` peuvent mettre à jour le pourcentage d’atteinte jusqu’à l’échéance. Le profil `marin` reste en lecture seule.
 
 Le rapport transmis et archivé contient exclusivement les réponses du manager. Les réponses personnelles du collaborateur n’y sont jamais intégrées, même lorsque leur consultation dans SeaPilot a été autorisée.
 
@@ -42,4 +44,4 @@ Le rapport transmis et archivé contient exclusivement les réponses du manager.
 
 ## Données et déploiement
 
-La migration `20260905204756_annual_professional_evaluation_workflow.sql` crée les tables, fonctions, politiques RLS, bucket privé et permissions de module. Le test pgTAP `annual_review_workflow_test.sql` couvre les rôles, l’invitation, la négociation du créneau, les deux choix de confidentialité, les signatures et l’archivage RH.
+La migration `20260905204756_annual_professional_evaluation_workflow.sql` crée le workflow initial. La migration `20260906050024_annual_review_kpi_social_governance_v3_33_0.sql` ajoute l’échéance, le suivi des objectifs, le KPI Social et Gouvernance et les règles de confidentialité des signalements. Les tests pgTAP `annual_review_workflow_test.sql` et `annual_review_kpi_social_governance_test.sql` couvrent le parcours, les signatures, l’archivage, les objectifs, les rôles et l’agrégation KPI.

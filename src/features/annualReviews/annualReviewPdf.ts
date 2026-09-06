@@ -183,11 +183,21 @@ export async function buildAnnualReviewPdf(input: AnnualReviewPdfInput): Promise
     styles: { font: 'helvetica', fontSize: 8, textColor: navy, lineColor: [190, 203, 210], cellPadding: 2.6 },
   });
 
-  y = sectionHeading('5. Objectifs personnels pour l’année N+1', lastY() + 6, 27);
+  y = sectionHeading('5. Objectifs et suivi pour l’année N+1', lastY() + 6, 42);
+  const goals = input.answers.goals || [];
+  autoTable(pdf, {
+    startY: y, margin: { left: 15, right: 15, top: 32, bottom: 18 }, theme: 'grid',
+    head: [['Objectif', 'Atteinte', 'Commentaire']],
+    body: goals.length ? goals.map((goal) => [goal.objective || 'Non renseigné', `${goal.progress} %`, goal.comment || '—']) : [['Aucun objectif renseigné', '—', '—']],
+    headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 78 }, 1: { cellWidth: 25 }, 2: { cellWidth: 77 } },
+    styles: { font: 'helvetica', fontSize: 8, textColor: navy, lineColor: [190, 203, 210], cellPadding: 2.6 },
+  });
+  y = sectionHeading('Commentaire général', lastY() + 6, 24);
   autoTable(pdf, {
     startY: y, margin: { left: 15, right: 15, top: 32, bottom: 18 }, theme: 'grid',
     body: [[htmlToText(input.answers.objectives) || 'Non renseigné']],
-    styles: { font: 'helvetica', fontSize: 8.5, textColor: navy, lineColor: [190, 203, 210], cellPadding: 3, minCellHeight: 18 },
+    styles: { font: 'helvetica', fontSize: 8.5, textColor: navy, lineColor: [190, 203, 210], cellPadding: 3, minCellHeight: 15 },
   });
 
   if (input.kind !== 'personal') {

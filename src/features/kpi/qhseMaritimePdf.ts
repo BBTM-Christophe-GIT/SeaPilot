@@ -44,11 +44,49 @@ export function drawMaritimePdf(doc: Pdf, report: QhseReportDefinition, input: Q
   const title = (value: string) => { ensure(14); text(value, M, y + 3, 9, BLUE, true); y += 7; };
 
   const chart = (item: QhseReportChart) => {
-    const height = item.horizontal ? Math.max(49, item.labels.length * 5 + 20) : 49;
+    const height = item.kind === 'radar' ? 86 : item.horizontal ? Math.max(49, item.labels.length * 5 + 20) : 49;
     ensure(height + 4);
     doc.setLineDashPattern([], 0); doc.setDrawColor(...LINE); doc.setFillColor(255, 255, 255); doc.setLineWidth(.25); doc.roundedRect(M, y, W, height, 2, 2, 'FD');
     text(item.title, M + 4, y + 7, 10, BLUE, true);
     text(item.subtitle || `${item.unit || 'Nombre'} · valeurs enregistrées`, M + 4, y + 12, 6.5);
+    if (item.kind === 'radar') {
+      const values = item.series[0]?.values || [];
+      const hasValues = values.some((value) => value !== null && Number.isFinite(value));
+      if (!hasValues) {
+        text('Aucune réponse partagée exploitable pour ce radar', M + W / 2, y + 46, 8, MUTED, false, 'center');
+        y += height + 4;
+        return;
+      }
+      const cx = M + W / 2; const cy = y + 48; const radius = 27; const max = item.maxValue || 4;
+      const point = (index: number, scale: number) => {
+        const angle = (-Math.PI / 2) + (index * 2 * Math.PI / item.labels.length);
+        return [cx + Math.cos(angle) * radius * scale, cy + Math.sin(angle) * radius * scale] as [number, number];
+      };
+      const polygon = (points: Array<[number, number]>, style: 'S' | 'FD') => {
+        const start = points[0];
+        const segments = points.slice(1).map((current, index) => [current[0] - points[index][0], current[1] - points[index][1]] as [number, number]);
+        segments.push([start[0] - points.at(-1)![0], start[1] - points.at(-1)![1]]);
+        doc.lines(segments, start[0], start[1], [1, 1], style, true);
+      };
+      for (let ring = 1; ring <= max; ring += 1) {
+        doc.setDrawColor(...LINE); doc.setLineWidth(ring === max ? .35 : .15);
+        polygon(item.labels.map((_, index) => point(index, ring / max)), 'S');
+      }
+      item.labels.forEach((label, index) => {
+        const axis = point(index, 1); doc.setDrawColor(...LINE); doc.setLineWidth(.15); doc.line(cx, cy, axis[0], axis[1]);
+        const anchor = point(index, 1.22); const align = Math.abs(anchor[0] - cx) < 4 ? 'center' : anchor[0] < cx ? 'right' : 'left';
+        lines(label, 38, 6.5).slice(0, 2).forEach((line, row) => text(line, anchor[0], anchor[1] + row * 2.6, 6.5, MUTED, false, align));
+      });
+      const dataPoints = values.map((value, index) => point(index, Math.max(0, Math.min(max, value || 0)) / max));
+      doc.setFillColor(207, 239, 217); doc.setDrawColor(...item.series[0].color); doc.setLineWidth(.65); polygon(dataPoints, 'FD');
+      dataPoints.forEach(([x, yy], index) => {
+        doc.setFillColor(...item.series[0].color); doc.circle(x, yy, .75, 'F');
+        if (values[index] !== null) text(number(values[index]!), x + (x < cx ? -1.3 : 1.3), yy - 1.2, 6, item.series[0].color, true, x < cx ? 'right' : 'left');
+      });
+      text(`${item.series[0].label} · ${item.unit || ''}`, M + 4, y + height - 4, 6.5, item.series[0].color, true);
+      y += height + 4;
+      return;
+    }
     let legendX = M + 4; let legendY = y + 16;
     item.series.forEach((series) => {
       const label = assets.clean(series.label); doc.setFontSize(6);

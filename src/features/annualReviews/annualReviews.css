@@ -73,6 +73,8 @@
 .annual-review-editor h2, .annual-review-editor p { margin: 0; }
 .annual-review-editor p { color: #0c7d86; text-transform: uppercase; font-size: .69rem; font-weight: 800; letter-spacing: .06em; }
 .annual-review-editor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.annual-review-duration { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0; padding: 0; border: 0; }
+.annual-review-duration legend { margin-bottom: 5px; color: #365565; font-size: .77rem; font-weight: 700; }
 .annual-review-meeting-mode { display: flex; gap: 9px; margin: 16px 0; padding: 0; border: 0; }
 .annual-review-meeting-mode legend { margin-bottom: 7px; color: #365565; font-size: .77rem; font-weight: 700; }
 .annual-review-meeting-mode label { display: flex; align-items: center; border: 1px solid #d1dde1; border-radius: 9px; padding: 9px 12px; cursor: pointer; }
@@ -81,6 +83,19 @@
 .annual-review-full-field { margin-top: 12px; }
 .annual-review-editor footer { display: flex; justify-content: flex-end; margin-top: 18px; }
 .annual-review-response-area { margin-top: 13px; overflow: hidden; box-shadow: none; }
+.annual-review-objective-tracker { margin-top: 13px; padding: 16px; border: 1px solid #d8e2e6; border-radius: 15px; background: #fff; }
+.annual-review-objective-tracker > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.annual-review-objective-tracker > header p, .annual-review-objective-tracker h3 { margin: 0; }
+.annual-review-objective-tracker > header p { color: #11818a; font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.annual-review-objective-tracker > header span, .annual-review-objective-tracker > small { color: #6a7f8a; font-size: .75rem; }
+.annual-review-objective-tracker > div { display: grid; gap: 8px; }
+.annual-review-objective-tracker article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .65fr); gap: 14px; padding: 12px; border: 1px solid #dfe8eb; border-radius: 10px; background: #f9fbfb; }
+.annual-review-objective-tracker article > div, .annual-review-objective-tracker label { display: grid; gap: 5px; }
+.annual-review-objective-tracker article small { color: #607984; }
+.annual-review-objective-tracker label > span { color: #607984; font-size: .73rem; font-weight: 700; }
+.annual-review-objective-tracker label > div { display: flex; align-items: center; gap: 10px; }
+.annual-review-objective-tracker input { flex: 1; accent-color: #0c7d88; }
+.annual-review-objective-tracker output { min-width: 58px; border-radius: 999px; background: #def1f1; color: #08727a; font-size: .78rem; font-weight: 800; padding: 5px 8px; text-align: center; }
 .annual-review-response-switcher { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid #e0e8eb; background: #f8fafb; }
 .annual-review-response-switcher > div:first-child { display: grid; }
 .annual-review-response-switcher span { color: #6a7f8a; font-size: .75rem; }
@@ -118,6 +133,19 @@
 .annual-review-choice-field input { width: auto; }
 .annual-review-condition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
 .annual-review-rich-readonly { min-height: 100px; padding: 13px; border: 1px solid #d8e3e6; border-radius: 9px; background: #f9fbfb; }
+.annual-review-goals-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 10px; }
+.annual-review-goals-heading > div { display: grid; gap: 4px; }
+.annual-review-goals-heading small { color: #718690; font-size: .76rem; }
+.annual-review-goals { display: grid; gap: 10px; }
+.annual-review-goal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); gap: 12px; padding: 14px; border: 1px solid #d8e3e6; border-radius: 11px; background: #f9fbfb; }
+.annual-review-goal > header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.annual-review-goal > header button { width: 34px; height: 32px; padding: 0; }
+.annual-review-goal label { display: grid; gap: 6px; color: #365565; font-size: .77rem; }
+.annual-review-goal label:first-of-type, .annual-review-goal label:last-of-type { grid-column: 1 / -1; }
+.annual-review-goal input[type='text'], .annual-review-goal input:not([type]), .annual-review-goal textarea { width: 100%; border: 1px solid #cbd8de; border-radius: 8px; background: white; color: #17394b; font: inherit; padding: 9px 10px; box-sizing: border-box; }
+.annual-review-goal-progress > div { display: flex; align-items: center; gap: 12px; }
+.annual-review-goal-progress input { flex: 1; accent-color: #0c7d88; }
+.annual-review-goal-progress output { min-width: 58px; border-radius: 999px; background: #def1f1; color: #08727a; font-weight: 800; padding: 5px 9px; text-align: center; }
 .annual-review-page .service-note-rich-editor { overflow: hidden; border: 1px solid #cddae0; border-radius: 8px; background: #fff; transition: border .15s ease, box-shadow .15s ease; }
 .annual-review-page .service-note-rich-editor:focus-within { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
 .annual-review-page .service-note-rich-toolbar { display: flex; min-height: 40px; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #d8e2e6; background: #fbfcfd; }
@@ -162,8 +190,12 @@
   .annual-review-list-panel > div { max-height: 230px; }
   .annual-review-workspace { padding: 10px; }
   .annual-review-summary dl, .annual-review-editor-grid, .annual-review-condition-grid, .annual-review-guide-grid, .annual-review-share-choice { grid-template-columns: 1fr; }
+  .annual-review-objective-tracker article { grid-template-columns: 1fr; }
   .annual-review-rating-options { grid-template-columns: repeat(2, 1fr); }
   .annual-review-response-switcher { align-items: flex-start; flex-direction: column; }
+  .annual-review-goals-heading { align-items: stretch; flex-direction: column; }
+  .annual-review-goal { grid-template-columns: 1fr; }
+  .annual-review-goal > * { grid-column: 1 !important; }
   .annual-review-action-card { align-items: stretch; }
   .annual-review-action-card > button { width: 100%; }
 }
