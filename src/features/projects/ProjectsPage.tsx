@@ -13,6 +13,7 @@ import {
   Filter,
   Info,
   Pencil,
+  PackageCheck,
   Plus,
   RefreshCw,
   ReceiptText,
@@ -32,7 +33,7 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import type { StoredProjectDocument } from './projectDocumentStorage';
-import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
+import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
 import {
   BAREBOAT_CONTRACT_TYPE,
@@ -918,6 +919,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [clientCatalogOpen, setClientCatalogOpen] = useState(false);
   const [towedAssetCatalogOpen, setTowedAssetCatalogOpen] = useState(false);
+  const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [compactDensity, setCompactDensity] = useState(true);
@@ -1320,6 +1322,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Facturation">
           <ProjectRibbonLink icon={<ReceiptText aria-hidden="true" size={20} />} label="Éléments de facturation" to={billingElementsUrl()} />
+          <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck aria-hidden="true" size={20} />} label="Liste des prestations" onClick={() => setServiceCatalogOpen(true)} />
         </ProjectRibbonGroup>
         <ProjectRibbonGroup label="Affichage">
           <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
@@ -1568,6 +1571,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           onChanged={() => setLoadAttempt((attempt) => attempt + 1)}
           onClose={() => setTowedAssetCatalogOpen(false)}
           towedAssets={projectsData.towedAssets}
+        />
+      ) : null}
+      {serviceCatalogOpen ? (
+        <ServiceCatalogDialog
+          canManage={isManager}
+          client={effectiveClient}
+          onClose={() => setServiceCatalogOpen(false)}
         />
       ) : null}
       {planningEditorOpen && selectedProject ? (

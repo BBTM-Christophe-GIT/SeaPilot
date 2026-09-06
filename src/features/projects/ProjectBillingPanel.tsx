@@ -26,6 +26,7 @@ import {
   type ServiceProviderDraft,
 } from '../serviceProviders/serviceProviders';
 import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
+import { ServiceCatalogDialog } from './ProjectCatalogDialogs';
 import {
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
@@ -34,9 +35,11 @@ import {
   completeBillingDprs,
   countDailyOperations,
   defaultProjectClientReference,
+  deleteProjectBillingService,
   deleteProjectChargeableExpense,
   fetchProjectBillingData,
   fetchProjectBillingDprs,
+  fetchProjectServiceCatalog,
   generateBillingExportPackage,
   missingBillingDates,
   saveProjectBillingPeriod,
@@ -50,16 +53,38 @@ import {
   type BillingExportFormat,
   type BillingPeriodDraft,
   type BillingPeriodMode,
+  type BillingServiceDraft,
   type ProjectBillingData,
   type ProjectBillingDpr,
   type ProjectBillingDocument,
   type ProjectBillingPeriod,
   type ProjectBillingService,
   type ProjectChargeableExpense,
+  type ProjectServiceCatalogEntry,
 } from './projectBilling';
 
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
 const BILLING_UNIT_OPTIONS = ['Unité', 'm²', 'm³', 'L'];
+
+interface BillingServiceLineDraft extends BillingServiceDraft {
+  key: string;
+  id?: number;
+}
+
+function serviceLineFromEntry(entry: ProjectServiceCatalogEntry, quantity = 0): BillingServiceLineDraft {
+  return {
+    key: `new-${entry.id}-${Date.now()}`,
+    serviceCatalogId: entry.id,
+    category: entry.category,
+    descriptionHtml: entry.descriptionHtml,
+    unitAmountHt: entry.unitAmountHt,
+    quantity,
+  };
+}
+
+function serviceLineFromSaved(service: ProjectBillingService): BillingServiceLineDraft {
+  return { ...service, key: `saved-${service.id}` };
+}
 
 export interface ProjectBillingSectionVisibility {
   services: boolean;
@@ -171,8 +196,9 @@ export function ProjectBillingPanel({
   const [vesselFilter, setVesselFilter] = useState('');
   const [dprs, setDprs] = useState<ProjectBillingDpr[]>([]);
   const [completeMissingDays, setCompleteMissingDays] = useState(false);
-  const [serviceDraft, setServiceDraft] = useState({ unitAmountHt: 0, quantity: 0 });
-  const [serviceQuantityEdited, setServiceQuantityEdited] = useState(false);
+  const [serviceCatalog, setServiceCatalog] = useState<ProjectServiceCatalogEntry[]>([]);
+  const [serviceDrafts, setServiceDrafts] = useState<BillingServiceLineDraft[]>([]);
+  const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<BillingExportFormat>('pdf');
   const [previewUrl, setPreviewUrl] = useState('');
   const [busy, setBusy] = useState('');
@@ -183,7 +209,12 @@ export function ProjectBillingPanel({
     setBusy('load');
     setError('');
     try {
-      setData(await fetchProjectBillingData(client, project.id));
+      const [billingData, catalog] = await Promise.all([
+        fetchProjectBillingData(client, project.id),
+        fetchProjectServiceCatalog(client),
+      ]);
+      setData(billingData);
+      setServiceCatalog(catalog);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'La facturation est indisponible.');
     } finally {
@@ -201,7 +232,7 @@ export function ProjectBillingPanel({
     setCustomEnd(range.end);
     setDprs([]);
     setCompleteMissingDays(false);
-    setServiceQuantityEdited(false);
+    setServiceDrafts([]);
     void reload();
     void reloadServiceProviders();
   }, [initialMonth, project.id]);
@@ -213,9 +244,12 @@ export function ProjectBillingPanel({
   const periodDocuments = selectedPeriod
     ? data.documents.filter((document) => document.billingPeriodId === selectedPeriod.id)
     : [];
-  const periodServices = selectedPeriod
-    ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
-    : [];
+  const periodServices = useMemo(
+    () => selectedPeriod
+      ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
+      : [],
+    [data.services, selectedPeriod?.id],
+  );
   const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const providerCategories = useMemo(
     () => Array.from(new Set(serviceProviders.map((provider) => provider.category).filter((category) => category !== 'Non classé'))).sort((left, right) => left.localeCompare(right, 'fr')),
@@ -250,14 +284,18 @@ export function ProjectBillingPanel({
     })
     : dprs;
   const defaultServiceQuantity = countDailyOperations(exportDprs);
-  const serviceForExport: ProjectBillingService[] = [{
-    id: periodServices[0]?.id || 0,
-    billingPeriodId: selectedPeriod?.id || 0,
-    category: 'spread_antipollution',
-    unitAmountHt: serviceDraft.unitAmountHt,
-    quantity: serviceDraft.quantity,
-    includeInPdf: true,
-  }];
+  const serviceForExport: ProjectBillingService[] = serviceDrafts
+    .filter((service) => service.category.trim())
+    .map((service) => ({
+      id: service.id || 0,
+      billingPeriodId: selectedPeriod?.id || 0,
+      serviceCatalogId: service.serviceCatalogId,
+      category: service.category,
+      descriptionHtml: service.descriptionHtml,
+      unitAmountHt: service.unitAmountHt,
+      quantity: service.quantity,
+      includeInPdf: true,
+    }));
 
   useEffect(() => {
     let cancelled = false;
@@ -280,21 +318,20 @@ export function ProjectBillingPanel({
   }, [client, project.id, exportRange.start, exportRange.end, vesselFilter]);
 
   useEffect(() => {
-    const saved = periodServices[0];
-    if (saved) {
-      setServiceDraft({ unitAmountHt: saved.unitAmountHt, quantity: saved.quantity });
-      setServiceQuantityEdited(true);
-    } else {
-      setServiceDraft((draft) => ({ ...draft, quantity: defaultServiceQuantity }));
-      setServiceQuantityEdited(false);
+    if (periodServices.length) {
+      setServiceDrafts(periodServices.map(serviceLineFromSaved));
+      return;
     }
-  }, [selectedPeriod?.id, periodServices[0]?.id]);
+    setServiceDrafts(serviceCatalog[0] ? [serviceLineFromEntry(serviceCatalog[0])] : []);
+  }, [periodServices, serviceCatalog, selectedPeriod?.id]);
 
   useEffect(() => {
-    if (!serviceQuantityEdited && !periodServices[0]) {
-      setServiceDraft((draft) => ({ ...draft, quantity: defaultServiceQuantity }));
+    if (!periodServices.length && defaultServiceQuantity > 0) {
+      setServiceDrafts((current) => current.map((service) => (
+        service.id || service.quantity > 0 ? service : { ...service, quantity: defaultServiceQuantity }
+      )));
     }
-  }, [defaultServiceQuantity, periodServices[0]?.id, serviceQuantityEdited]);
+  }, [defaultServiceQuantity, periodServices.length]);
 
   function selectMonth(month: string) {
     const normalized = month.slice(0, 7);
@@ -305,7 +342,6 @@ export function ProjectBillingPanel({
     setCustomStart(range.start);
     setCustomEnd(range.end);
     setCompleteMissingDays(false);
-    setServiceQuantityEdited(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl('');
   }
@@ -483,27 +519,84 @@ export function ProjectBillingPanel({
     }
   }
 
-  async function saveService() {
+  function updateServiceDraft(key: string, changes: Partial<BillingServiceLineDraft>) {
+    setServiceDrafts((current) => current.map((service) => service.key === key ? { ...service, ...changes } : service));
+  }
+
+  function selectServiceCategory(key: string, catalogId: number) {
+    const entry = serviceCatalog.find((item) => item.id === catalogId);
+    if (!entry) return;
+    updateServiceDraft(key, {
+      serviceCatalogId: entry.id,
+      category: entry.category,
+      descriptionHtml: entry.descriptionHtml,
+      unitAmountHt: entry.unitAmountHt,
+    });
+  }
+
+  function addServiceDraft() {
+    const usedCatalogIds = new Set(serviceDrafts.map((service) => service.serviceCatalogId));
+    const next = serviceCatalog.find((entry) => !usedCatalogIds.has(entry.id));
+    if (!next) {
+      setError(serviceCatalog.length
+        ? 'Toutes les catégories actives sont déjà présentes sur cette période.'
+        : 'Ajoutez d’abord une catégorie au catalogue des prestations.');
+      return;
+    }
+    setServiceDrafts((current) => [...current, serviceLineFromEntry(next)]);
+    setError('');
+  }
+
+  async function saveService(serviceDraft: BillingServiceLineDraft) {
     if (!selectedPeriod || !isManager || busy) return;
+    if (!serviceDraft.serviceCatalogId || !serviceDraft.category.trim()) {
+      setError('Sélectionnez une catégorie de prestation.');
+      return;
+    }
     if (serviceDraft.unitAmountHt < 0 || serviceDraft.quantity < 0) {
       setError('Le montant unitaire et le nombre d’unités doivent être positifs.');
       return;
     }
-    setBusy('service');
+    setBusy(`service-${serviceDraft.key}`);
     setError('');
     try {
       const saved = await saveProjectBillingService(client, project.id, selectedPeriod.id, {
-        category: 'spread_antipollution',
-        ...serviceDraft,
-      });
+        serviceCatalogId: serviceDraft.serviceCatalogId,
+        category: serviceDraft.category,
+        descriptionHtml: serviceDraft.descriptionHtml,
+        unitAmountHt: serviceDraft.unitAmountHt,
+        quantity: serviceDraft.quantity,
+      }, serviceDraft.id);
       setData((current) => ({
         ...current,
         services: [saved, ...current.services.filter((service) => service.id !== saved.id)],
       }));
-      setServiceQuantityEdited(true);
-      setMessage('Prestation BBTM enregistrée.');
+      setMessage(`${saved.category} enregistrée dans les prestations BBTM.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la prestation BBTM.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function removeService(serviceDraft: BillingServiceLineDraft) {
+    if (!isManager || busy) return;
+    if (!serviceDraft.id) {
+      setServiceDrafts((current) => current.filter((service) => service.key !== serviceDraft.key));
+      return;
+    }
+    if (!window.confirm(`Supprimer la prestation « ${serviceDraft.category} » de cette période ?`)) return;
+    setBusy(`service-delete-${serviceDraft.id}`);
+    setError('');
+    try {
+      await deleteProjectBillingService(client, serviceDraft.id);
+      setData((current) => ({
+        ...current,
+        services: current.services.filter((service) => service.id !== serviceDraft.id),
+      }));
+      setMessage('Prestation supprimée de cette période.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible de supprimer la prestation.');
     } finally {
       setBusy('');
     }
@@ -674,45 +767,44 @@ export function ProjectBillingPanel({
             <span>
               <strong>Prestation BBTM</strong>
               <small>{money(billingServicesTotal(serviceForExport))} HT</small>
-              <label className="project-billing-section-selection"><input checked={selectedPeriod?.includeBbtmInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })} type="checkbox" /> Inclure la prestation BBTM dans le PDF</label>
+              <label className="project-billing-section-selection"><input checked={selectedPeriod?.includeBbtmInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })} type="checkbox" /> Inclure les prestations BBTM dans le PDF</label>
             </span>
           </div>
           <div className="project-billing-card-actions">
             {isManager ? (
-              <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService()} type="button">
-                <Save aria-hidden="true" size={16} /> Enregistrer
-              </button>
+              <button disabled={Boolean(busy)} onClick={addServiceDraft} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une prestation</button>
             ) : null}
           </div>
         </header>
-        <div className="project-billing-service-grid">
-          <label>Catégorie<input disabled value="Spread Antipollution" /></label>
-          <label>
-            Montant unitaire HT
-            <input
-              disabled={!isManager}
-              min="0"
-              onChange={(event) => setServiceDraft((draft) => ({ ...draft, unitAmountHt: Number(event.target.value) }))}
-              step="0.01"
-              type="number"
-              value={serviceDraft.unitAmountHt}
-            />
-          </label>
-          <label>
-            Nombre d’unités
-            <input
-              disabled={!isManager}
-              min="0"
-              onChange={(event) => {
-                setServiceQuantityEdited(true);
-                setServiceDraft((draft) => ({ ...draft, quantity: Number(event.target.value) }));
-              }}
-              step="1"
-              type="number"
-              value={serviceDraft.quantity}
-            />
-          </label>
-          <label>Montant total HT<input disabled value={money(serviceDraft.unitAmountHt * serviceDraft.quantity)} /></label>
+        <div className="project-billing-service-list">
+          {serviceDrafts.map((service, index) => (
+            <div className="project-billing-service-grid" key={service.key}>
+              <label className="project-billing-service-category">
+                Catégorie
+                <span>
+                  <select aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
+                    {!serviceCatalog.some((entry) => entry.id === service.serviceCatalogId) && service.category ? <option value={service.serviceCatalogId ?? ''}>{service.category}</option> : null}
+                    {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}</option>)}
+                  </select>
+                  {isManager ? <button aria-label="Ajouter une catégorie de prestation" onClick={() => setServiceCatalogOpen(true)} title="Ajouter une catégorie" type="button"><Plus aria-hidden="true" size={17} /></button> : null}
+                </span>
+              </label>
+              <label>
+                Montant unitaire HT
+                <input disabled={!isManager} min="0" onChange={(event) => updateServiceDraft(service.key, { unitAmountHt: Number(event.target.value) })} step="0.01" type="number" value={service.unitAmountHt} />
+              </label>
+              <label>
+                Nombre d’unités
+                <input disabled={!isManager} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value) })} step="0.001" type="number" value={service.quantity} />
+              </label>
+              <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
+              {isManager ? <div className="project-billing-service-actions">
+                <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
+                <button aria-label={`Supprimer la prestation ${service.category}`} className="is-danger" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
+              </div> : null}
+            </div>
+          ))}
+          {!serviceDrafts.length ? <p className="project-billing-empty">Aucune prestation BBTM pour cette période.</p> : null}
         </div>
       </article> : null}
 
@@ -786,6 +878,7 @@ export function ProjectBillingPanel({
         </AppDialog>
       ) : null}
       {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
+      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} initialMode="create" onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
     </section>
   );
 }

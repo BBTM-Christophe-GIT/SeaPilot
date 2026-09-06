@@ -2,7 +2,8 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
+import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
+import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { ClientRecord, ProjectTowedAssetRecord } from './projectQueries';
 
 const clients: ClientRecord[] = [
@@ -111,6 +112,19 @@ afterEach(() => {
 });
 
 describe('ProjectCatalogDialogs', () => {
+  it('shows the service catalogue and its three editable fields', async () => {
+    const user = userEvent.setup();
+    render(<ServiceCatalogDialog canManage client={previewSupabaseClient as never} onClose={vi.fn()} />);
+
+    const serviceList = await screen.findByRole('listbox', { name: 'Prestations' });
+    const spreadService = within(serviceList).getByRole('option', { name: /Spread Antipollution/ });
+    expect(spreadService).toHaveTextContent(/1 250,00 € HT/u);
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    expect(screen.getByLabelText('Catégorie *')).toBeInTheDocument();
+    expect(screen.getByLabelText('Montant unitaire (€ HT) *')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Description de la prestation' })).toBeInTheDocument();
+  });
+
   it('filters client keywords and saves an automatically proposed, replaceable logo', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient();

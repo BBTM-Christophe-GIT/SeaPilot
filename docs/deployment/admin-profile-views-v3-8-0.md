@@ -1,5 +1,7 @@
 # SeaPilot v3.8.0 — vues de profils administrateur
 
+> Retiré en version `3.37.0` (`2026-09-06.009`) : le sélecteur « Vue » et la simulation de rôles ont été supprimés de la barre supérieure. Les droits réellement affectés au compte sont désormais toujours utilisés par l’interface.
+
 Date de livraison : 1er août 2026.
 
 ## Objet

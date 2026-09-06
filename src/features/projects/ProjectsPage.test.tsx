@@ -347,7 +347,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent('1 contrats');
   });
 
-  it('replaces direct client commands with the two searchable catalogues', async () => {
+  it('exposes the searchable project catalogues from the command ribbon', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
 
@@ -356,6 +356,7 @@ describe('ProjectsPage', () => {
     await screen.findByRole('heading', { name: 'Projets' });
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
       .toHaveAttribute('href', '/modules/billingElements');
+    expect(screen.getByRole('button', { name: 'Liste des prestations' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Liste des clients' }));
@@ -437,7 +438,7 @@ describe('ProjectsPage', () => {
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Inclure les services refacturables dans le PDF')).toBeInTheDocument();
-    expect(screen.getByLabelText('Inclure la prestation BBTM dans le PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure les prestations BBTM dans le PDF')).toBeInTheDocument();
     expect(within(screen.getByText('Prestation BBTM').closest('article')!).getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les loyers dans le PDF')).toBeInTheDocument();
@@ -454,6 +455,7 @@ describe('ProjectsPage', () => {
           'clients',
           'project_billing_periods',
           'project_billing_services',
+          'project_service_catalog',
           'project_chargeable_expenses',
           'project_billing_documents',
           'service_providers',

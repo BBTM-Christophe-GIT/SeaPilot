@@ -17,7 +17,6 @@ import {
   FolderKanban,
   Gauge,
   Home,
-  Eye,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -68,8 +67,6 @@ export interface AppShellOutletContext {
   previewMode: boolean;
   currentPerson: CurrentPersonSummary | null;
 }
-
-type AdminProfileView = 'actual' | RoleKey;
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
@@ -182,8 +179,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
   const [actionPlanNotifications, setActionPlanNotifications] = useState<ActionPlanNotification[]>([]);
-  const [adminProfileView, setAdminProfileView] = useState<AdminProfileView>('actual');
-  const [adminProfileModules, setAdminProfileModules] = useState<AppModule[] | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
     () => new Set(NAVIGATION_FAMILIES),
   );
@@ -254,34 +249,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       .finally(() => { if (isMounted) setIsLoadingPerson(false); });
     return () => { isMounted = false; };
   }, [client, previewMode, rolesOverride, sessionUserId]);
-
-  const isActualAdmin = roles.includes('admin');
-  const simulatedRole = isActualAdmin && adminProfileView !== 'actual' ? adminProfileView : null;
-  const effectiveRoles: RoleKey[] = simulatedRole ? [simulatedRole] : roles;
-
-  useEffect(() => {
-    if (!isActualAdmin) {
-      setAdminProfileView('actual');
-      setAdminProfileModules(null);
-      return;
-    }
-
-    if (!simulatedRole) {
-      setAdminProfileModules(null);
-      return;
-    }
-
-    const fallbackModules = getDefaultVisibleModules([simulatedRole]);
-    setAdminProfileModules(fallbackModules);
-    if (rolesOverride) return;
-
-    let isMounted = true;
-    fetchVisibleModulesForRoles(client, [simulatedRole])
-      .then((modules) => { if (isMounted) setAdminProfileModules(modules); })
-      .catch(() => { if (isMounted) setAdminProfileModules(fallbackModules); });
-
-    return () => { isMounted = false; };
-  }, [client, isActualAdmin, rolesOverride, simulatedRole]);
 
   useEffect(() => {
     setIsMobileNavigationOpen(false);
@@ -358,8 +325,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }, [client, currentPerson?.id, previewMode, sessionUserId]);
 
   const requestedModule = getRequestedModule(location.pathname);
-  const roleVisibleModules = simulatedRole ? adminProfileModules || getDefaultVisibleModules([simulatedRole]) : visibleModules;
-  const activeVisibleModules = roleVisibleModules;
+  const activeVisibleModules = visibleModules;
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
     : false;
@@ -383,7 +349,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     : '';
   const userDisplayName = personDisplayName
     || (previewMode ? 'Préversion SeaPilot' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
-  const primaryRole = ROLE_KEYS.find((role) => effectiveRoles.includes(role));
+  const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
   const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length;
 
@@ -560,11 +526,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             <ChevronRight aria-hidden="true" size={16} />
             <strong>{requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
-            {simulatedRole ? <span className="admin-profile-view-badge"><Eye aria-hidden="true" size={14}/> Vue {ROLE_LABELS[simulatedRole]}</span> : null}
           </div>
 
           <div className="topbar-actions">
-            {isActualAdmin ? <label className="admin-profile-view-selector"><span>Vue</span><select aria-label="Vue de profil" value={adminProfileView} onChange={(event) => setAdminProfileView(event.target.value as AdminProfileView)}><option value="actual">Réelle</option>{ROLE_KEYS.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label> : null}
             <div className="topbar-notifications">
               <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
                 <Bell aria-hidden="true" size={19} />
@@ -600,7 +564,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               {isUserMenuOpen ? (
                 <div className="user-menu-popover" role="menu">
                   <span>{userEmail}</span>
-                  {simulatedRole ? <span className="admin-profile-view-note">Simulation visuelle {ROLE_LABELS[simulatedRole]}. Vos droits administrateur réels restent inchangés.</span> : null}
                   {previewMode ? (
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
@@ -619,7 +582,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles: effectiveRoles, client, previewMode, currentPerson } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles, client, previewMode, currentPerson } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>
