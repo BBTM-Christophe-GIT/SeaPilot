@@ -101,6 +101,13 @@ export interface ServiceNoteDraftInput {
   targetPersonIds: number[];
 }
 
+export interface ServiceNoteInformationInput {
+  subject: string;
+  body: string;
+  authoredOn: string;
+  authorDisplayName: string;
+}
+
 export interface ServiceNoteTargetPersonOption {
   id: number;
   firstName: string;
@@ -236,6 +243,11 @@ const SERVICE_NOTE_RPC_MESSAGES: Record<string, string> = {
   'SERVICE_NOTE_VESSEL_TARGET_REQUIRED.': 'Sélectionnez au moins un navire avant la diffusion.',
   'SERVICE_NOTE_PEOPLE_TARGET_REQUIRED.': 'Sélectionnez au moins une personne avant la diffusion.',
   'SERVICE_NOTE_RECIPIENTS_REQUIRED.': 'Aucun compte éligible ne correspond à ce périmètre dans le planning.',
+  'SERVICE_NOTE_INFORMATION_UPDATE_FORBIDDEN.': 'Seuls les profils Administrateur et Direction peuvent modifier les informations d’une note.',
+  'SERVICE_NOTE_SUBJECT_INVALID.': 'L’objet doit contenir entre 2 et 500 caractères.',
+  'SERVICE_NOTE_BODY_INVALID.': 'Le contenu doit contenir entre 2 et 20 000 caractères.',
+  'SERVICE_NOTE_DATE_REQUIRED.': 'La date de la note est obligatoire.',
+  'SERVICE_NOTE_AUTHOR_NAME_INVALID.': 'Le nom de l’émetteur ne peut pas dépasser 250 caractères.',
 };
 
 function assertServiceNoteRpcResult(error: { message?: string } | null, fallback: string): void {
@@ -407,6 +419,22 @@ export async function saveServiceNoteDraft(client: SupabaseClient, noteId: numbe
     p_person_ids: input.targetPersonIds,
   });
   assertResult(error, 'Impossible d’enregistrer le brouillon.');
+  window.dispatchEvent(new Event('service-notes:changed'));
+}
+
+export async function updateServiceNoteInformation(
+  client: SupabaseClient,
+  noteId: number,
+  input: ServiceNoteInformationInput,
+): Promise<void> {
+  const { error } = await client.rpc('update_service_note_information', {
+    p_note_id: noteId,
+    p_subject: input.subject.trim(),
+    p_body: input.body,
+    p_authored_on: input.authoredOn,
+    p_author_display_name: input.authorDisplayName.trim(),
+  });
+  assertServiceNoteRpcResult(error, 'Impossible de modifier les informations de la note de service.');
   window.dispatchEvent(new Event('service-notes:changed'));
 }
 

@@ -13,9 +13,9 @@ import {
   buildOfficeDesktopUrl, createServiceNoteAttachmentUrl, createServiceNoteDraft, createServiceNoteSignatureUrl,
   deleteServiceNoteAttachment, deleteServiceNoteDraft, fetchServiceNoteLinkOptions, fetchServiceNotes,
   fetchServiceNoteTargetingOptions, formatServiceNoteDate, linkServiceNoteRecord, publishServiceNote, recallServiceNote, saveServiceNoteDraft,
-  signServiceNote, uploadServiceNoteAttachment,
+  signServiceNote, updateServiceNoteInformation, uploadServiceNoteAttachment,
   type ServiceNote, type ServiceNoteAttachment, type ServiceNoteDraftInput, type ServiceNoteLinkOption,
-  type ServiceNoteTargetingOptions,
+  type ServiceNoteInformationInput, type ServiceNoteTargetingOptions,
 } from './serviceNoteQueries';
 import { downloadServiceNoteSelection, type ServiceNoteDownloadMode } from './serviceNoteDownloads';
 import { serviceNoteBodyHasContent } from './serviceNoteRichText';
@@ -468,6 +468,94 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
   );
 }
 
+interface InformationEditorProps {
+  note: ServiceNote;
+  client: AppShellOutletContext['client'];
+  authorSignatureUrl: string;
+  signatureUrls: Map<number, string>;
+  onBack: () => void;
+  onSaved: (noteId: number) => Promise<void>;
+}
+
+function ServiceNoteInformationEditor({ note, client, authorSignatureUrl, signatureUrls, onBack, onSaved }: InformationEditorProps) {
+  const [information, setInformation] = useState<ServiceNoteInformationInput>({
+    subject: note.subject,
+    body: note.body,
+    authoredOn: note.authoredOn,
+    authorDisplayName: String(note.authorIdentitySnapshot.display_name || note.authorIdentitySnapshot.signer_name || ''),
+  });
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [message, setMessage] = useState('');
+  const previewNote = useMemo<ServiceNote>(() => ({
+    ...note,
+    subject: information.subject,
+    body: information.body,
+    authoredOn: information.authoredOn,
+    authorIdentitySnapshot: {
+      ...note.authorIdentitySnapshot,
+      display_name: information.authorDisplayName,
+    },
+  }), [information, note]);
+  const canSave = information.subject.trim().length >= 2
+    && serviceNoteBodyHasContent(information.body)
+    && Boolean(information.authoredOn)
+    && information.authorDisplayName.trim().length <= 250;
+
+  function changeInformation(change: Partial<ServiceNoteInformationInput>) {
+    setSaveState('idle');
+    setInformation((current) => ({ ...current, ...change }));
+  }
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaveState('saving');
+    setMessage('');
+    try {
+      await updateServiceNoteInformation(client, note.id, information);
+      setSaveState('saved');
+      await onSaved(note.id);
+    } catch (error) {
+      setSaveState('error');
+      setMessage(error instanceof Error ? error.message : 'Modification impossible.');
+    }
+  }
+
+  return (
+    <section className="service-note-editor">
+      <header className="service-note-editor-header">
+        <button className="service-note-back-button" onClick={onBack} type="button"><ArrowLeft size={18} /> Bibliothèque</button>
+        <div><span>QHSE · CORRECTION D’INFORMATIONS</span><h1>{information.subject || serviceNoteDisplayCode(note)}</h1></div>
+        <div className={`service-note-save-state is-${saveState}`} aria-live="polite">
+          {saveState === 'saving' ? <LoaderCircle className="is-spinning" size={15} /> : saveState === 'error' ? <CircleAlert size={15} /> : <Check size={15} />}
+          {saveState === 'saving' ? 'Enregistrement…' : saveState === 'error' ? 'Non enregistré' : saveState === 'saved' ? 'Informations enregistrées' : 'Prêt à enregistrer'}
+        </div>
+      </header>
+
+      <div className="service-note-editor-layout">
+        <div className="service-note-form-panel">
+          <div className="service-note-private-banner"><ShieldCheck size={20} /><p><strong>Statut et workflow inchangés</strong><span>Le chrono, le périmètre, les destinataires, les signatures et les pièces jointes sont verrouillés.</span></p></div>
+          <section className="service-note-form-section">
+            <header><span>01</span><div><h2>Informations du document</h2><p>Corrigez uniquement les informations manquantes ou incomplètes.</p></div></header>
+            <div className="service-note-form-grid">
+              <div className="service-note-automatic-code"><span>Numéro chrono</span><strong>{serviceNoteDisplayCode(note)}</strong></div>
+              <label><span>Date</span><input onChange={(event) => changeInformation({ authoredOn: event.target.value })} type="date" value={information.authoredOn} /></label>
+              <label className="is-wide"><span>Émetteur</span><input maxLength={250} onChange={(event) => changeInformation({ authorDisplayName: event.target.value })} placeholder="Prénom NOM" value={information.authorDisplayName} /><small>L’identité du compte et la signature déjà enregistrées restent inchangées.</small></label>
+              <label className="is-wide"><span>Objet</span><input maxLength={500} onChange={(event) => changeInformation({ subject: event.target.value })} placeholder="Objet clair et synthétique" value={information.subject} /></label>
+            </div>
+          </section>
+          <section className="service-note-form-section">
+            <header><span>02</span><div><h2>Message</h2><p>Complétez ou corrigez le contenu du document.</p></div></header>
+            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => changeInformation({ body })} value={information.body} /></label>
+          </section>
+          {message ? <div className="service-note-inline-error" role="alert"><CircleAlert size={17} />{message}</div> : null}
+          <div className="service-note-editor-footer"><button className="is-secondary" disabled={saveState === 'saving'} onClick={onBack} type="button">Annuler</button><button className="is-primary" disabled={!canSave || saveState === 'saving'} onClick={() => void handleSave()} type="button"><Save size={17} />{saveState === 'saving' ? 'Enregistrement…' : 'Enregistrer les informations'}</button></div>
+        </div>
+        <aside className="service-note-preview-panel"><header><div><span>APERÇU EN DIRECT</span><strong>Document commun</strong></div><span>2 pages</span></header><div className="service-note-preview-scroll"><ServiceNoteDocument authorSignatureUrl={authorSignatureUrl} note={previewNote} signatureUrls={signatureUrls} /></div></aside>
+      </div>
+    </section>
+  );
+}
+
 export function ServiceNotesPage() {
   const { client, roles, currentPerson } = useOutletContext<AppShellOutletContext>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -646,11 +734,16 @@ export function ServiceNotesPage() {
   }
 
   if (isLoading) return <div className="admin-state" role="status">Chargement des notes de service…</div>;
-  if (editingNote) return <ServiceNoteEditor client={client} hasActiveSignature={hasActiveSignature} note={editingNote} onBack={() => setEditingId(null)} onChanged={async (id) => { await reload(id); }} onPublished={async (id) => {
-    await reload(id);
-    setEditingId(null); setSelectedId(id); setFilter('published'); setQuery(''); setVesselFilter('');
-    setSearchParams({ note: String(id) });
-  }} vessels={vessels} />;
+  if (editingNote) return editingNote.status === 'draft'
+    ? <ServiceNoteEditor client={client} hasActiveSignature={hasActiveSignature} note={editingNote} onBack={() => setEditingId(null)} onChanged={async (id) => { await reload(id); }} onPublished={async (id) => {
+        await reload(id);
+        setEditingId(null); setSelectedId(id); setFilter('published'); setQuery(''); setVesselFilter('');
+        setSearchParams({ note: String(id) });
+      }} vessels={vessels} />
+    : <ServiceNoteInformationEditor authorSignatureUrl={authorSignatureUrl} client={client} note={editingNote} onBack={() => setEditingId(null)} onSaved={async (id) => {
+        await reload(id);
+        setEditingId(null); setSelectedId(id); setSearchParams({ note: String(id) });
+      }} signatureUrls={signatureUrls} />;
 
   return (
     <div className="service-notes-page">
@@ -686,7 +779,7 @@ export function ServiceNotesPage() {
           {selectedNote ? <>
             <header><div><span>{selectedNote.status === 'draft' ? 'BROUILLON PRIVÉ' : selectedNote.status === 'recalled' ? 'ARCHIVE · RAPPELÉE' : selectedNote.sourceKind === 'sharepoint' ? 'ARCHIVE SHAREPOINT' : serviceNoteStatusLabel(selectedNote.status).toUpperCase()}</span><h2>{serviceNoteDisplayCode(selectedNote)}</h2><p>{selectedNote.subject}</p></div><button aria-label="Fermer le détail" onClick={() => { setSelectedId(null); setSearchParams({}); }} type="button"><X size={18} /></button></header>
             <div className="service-note-detail-actions">
-              {selectedNote.status === 'draft' && isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
+              {isManager ? <button onClick={() => setEditingId(selectedNote.id)} type="button"><PenLine size={16} /> Modifier</button> : null}
               {selectedNote.status === 'draft' && isManager ? <button className="is-publish" disabled={isBusy || !hasActiveSignature} onClick={() => void handlePublishDraft()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser</button> : null}
               {selectedNote.status === 'draft' && isManager ? <button className="is-danger" disabled={isBusy} onClick={() => void handleDeleteDraft()} type="button"><Trash2 size={16} /> Supprimer le brouillon</button> : null}
               {selectedNote.status === 'published' && selectedNote.id === latestPublishedNoteId && isManager ? <button className="is-recall" disabled={isBusy} onClick={() => void handleRecall()} type="button"><RotateCcw size={16} /> Rappeler</button> : null}
