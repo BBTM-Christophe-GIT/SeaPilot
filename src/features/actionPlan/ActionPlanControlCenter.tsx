@@ -266,7 +266,14 @@ function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, o
   const tone = actionTone(action);
   return <article className="action-control-detail">
     <header className="action-control-detail-header">
-      <div><span className={`action-control-status is-${tone}`}>{actionStatus(action)}</span><small>Rapport #{actionReference(action)}</small></div>
+      <div className="action-control-detail-topbar">
+        <div><span className={`action-control-status is-${tone}`}>{actionStatus(action)}</span><small>Rapport #{actionReference(action)}</small></div>
+        <div className="action-control-detail-actions" aria-label="Actions de la fiche">
+          {canApprove && <button onClick={onApprove} type="button"><ShieldCheck size={16} />Approuver le rapport</button>}
+          {canTreat && !isActionClosed(action) && <button onClick={onTreat} type="button"><CheckCircle2 size={16} />Traiter l’action</button>}
+          <button className="is-secondary" disabled={pdfActionId === action.id} onClick={onExport} type="button"><FileDown size={16} />{pdfActionId === action.id ? 'Génération…' : 'Télécharger le PDF'}</button>
+        </div>
+      </div>
       <time>Créé le {formatDate(action.openedOn || action.occurredAt)}</time>
       <div className="action-control-detail-title">
         {action.thumbnailUrl ? <img alt="Photo du constat" src={action.thumbnailUrl} /> : <span aria-hidden="true"><Ship size={24} /></span>}
@@ -312,11 +319,6 @@ function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, o
       <WorkflowHistory action={action} />
     </div>
 
-    <footer className="action-control-detail-actions">
-      {canApprove && <button onClick={onApprove} type="button"><ShieldCheck size={16} />Approuver le rapport</button>}
-      {canTreat && !isActionClosed(action) && <button onClick={onTreat} type="button"><CheckCircle2 size={16} />Traiter l’action</button>}
-      <button className="is-secondary" disabled={pdfActionId === action.id} onClick={onExport} type="button"><FileDown size={16} />{pdfActionId === action.id ? 'Génération…' : 'Télécharger le PDF'}</button>
-    </footer>
   </article>;
 }
 
@@ -454,10 +456,12 @@ export function ActionPlanControlCenter(props: ControlCenterProps) {
     </section>
     <div className={`action-control-layout${typesOpen ? ' has-types' : ''}`}>
       <aside className="action-control-queue">
-        <header><label><Search size={17} /><span className="sr-only">Rechercher</span><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, type…" value={props.filters.search} onChange={(event) => props.onFilterChange('search', event.target.value)} /></label><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></header>
+        <header className="action-control-queue-header">
+          <div className="action-control-queue-topbar"><span>{props.actions.length} rapport(s)</span>{props.isAdmin && <button onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button>}</div>
+          <div className="action-control-queue-search"><label><Search size={17} /><span className="sr-only">Rechercher</span><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, type…" value={props.filters.search} onChange={(event) => props.onFilterChange('search', event.target.value)} /></label><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></div>
+        </header>
         <details className="action-control-filters"><summary><Filter size={15} />Filtres actifs<ChevronDown size={15} /></summary><div><label>Navire<select aria-label="Navire / lieu" value={props.filters.vessel} onChange={(event) => props.onFilterChange('vessel', event.target.value)}><option value="">Tous</option>{props.filterOptions.vessels.map((value) => <option key={value}>{value}</option>)}</select></label><label>Type<select aria-label="Type d'évènement" value={props.filters.actionType} onChange={(event) => props.onFilterChange('actionType', event.target.value)}><option value="">Tous</option>{props.filterOptions.actionTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Statut<select aria-label="Statut" value={props.filters.status} onChange={(event) => props.onFilterChange('status', event.target.value)}><option value="">Tous</option><option value="open">Non soldé</option><option value="closed">Soldé</option></select></label><label>Écart<select aria-label="Type d'écart" value={props.filters.deviationType} onChange={(event) => props.onFilterChange('deviationType', event.target.value)}><option value="">Tous</option>{props.filterOptions.deviationTypes.map((value) => <option key={value}>{value}</option>)}</select></label></div></details>
         <ActionQueue actions={props.actions} onSelect={setSelectedId} selectedId={selected?.id || null} />
-        <footer><span>{props.actions.length} rapport(s)</span>{props.isAdmin && <button onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button>}</footer>
       </aside>
       {selected ? <ActionDetail action={selected} canApprove={props.canApprove(selected)} canTreat={props.canTreat(selected)} client={props.client} data={props.data} isAdmin={props.isAdmin} onApprove={() => props.onApprove(selected)} onEdit={() => setEditAction(selected)} onExport={() => props.onExport(selected)} onTreatmentFollowupSaved={(closed) => props.onTreatmentFollowupSaved(selected, closed)} onTreat={() => props.onTreat(selected)} pdfActionId={props.pdfActionId} /> : <div className="action-control-detail action-control-empty"><FileImage size={30} />Sélectionnez un rapport pour afficher sa fiche.</div>}
       {typesOpen && props.isAdmin && <TypeCatalogPanel client={props.client} onClose={() => setTypesOpen(false)} onSaved={props.onTypeSaved} types={props.data.actionTypes} />}
