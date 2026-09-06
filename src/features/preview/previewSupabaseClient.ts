@@ -1200,22 +1200,32 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   hse_safety_events: [],
   action_type_catalog: [
-    { type_key: 'action_progress', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, sort_order: 10, active: true },
-    { type_key: 'audit_client', label: 'Audit Client', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 20, active: true },
-    { type_key: 'audit_ecmid', label: 'Audit eCMID - IMCA', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 30, active: true },
-    { type_key: 'audit_internal', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 40, active: true },
-    { type_key: 'visit_davit', label: 'Visite Bossoir', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 60, active: true },
-    { type_key: 'visit_crane', label: 'Visite Grue', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 70, active: true },
-    { type_key: 'visit_hse', label: 'Visite HSE/Exploitation', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 80, active: true },
-    { type_key: 'visit_radio', label: 'Visite Radio', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 90, active: true },
-    { type_key: 'visit_classification', label: 'Visite Société de Classification', family: 'visit', hse_classification: null, tracks_exposure_rate: false, sort_order: 100, active: true },
-    { type_key: 'fatality', label: 'Décès (FAT)', family: 'event', hse_classification: 'FAT', tracks_exposure_rate: true, sort_order: 200, active: true },
-    { type_key: 'lost_time_injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, sort_order: 210, active: true },
-    { type_key: 'restricted_work_case', label: 'Blessure - Travail adapté (RWC)', family: 'event', hse_classification: 'RWC', tracks_exposure_rate: true, sort_order: 220, active: true },
-    { type_key: 'medical_treatment_case', label: 'Accident avec traitement médical (MTC)', family: 'event', hse_classification: 'MTC', tracks_exposure_rate: true, sort_order: 230, active: true },
-    { type_key: 'first_aid_case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, sort_order: 240, active: true },
-    { type_key: 'near_miss', label: 'Presque-accident', family: 'event', hse_classification: 'NEAR_MISS', tracks_exposure_rate: true, sort_order: 250, active: true },
-    { type_key: 'safety_observation', label: 'Observation sécurité', family: 'event', hse_classification: 'SAFETY_OBSERVATION', tracks_exposure_rate: true, sort_order: 260, active: true },
+    { type_key: 'action_progress', label: 'Action de Progrès - BBTM', family: 'action', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 10, active: true },
+    { type_key: 'audit_client', label: 'Audit Client', family: 'audit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 20, active: true },
+    { type_key: 'audit_ecmid', label: 'Audit eCMID - IMCA', family: 'audit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 30, active: true },
+    { type_key: 'audit_internal', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 40, active: true },
+    { type_key: 'decarbonation_plan', label: 'Plan de décarbonation', family: 'action', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 50, active: true },
+    { type_key: 'visit_davit', label: 'Visite Bossoir', family: 'visit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 60, active: true },
+    { type_key: 'visit_crane', label: 'Visite Grue', family: 'visit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 70, active: true },
+    { type_key: 'visit_hse', label: 'Visite HSE/Exploitation', family: 'visit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 80, active: true },
+    { type_key: 'visit_radio', label: 'Visite Radio', family: 'visit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 90, active: true },
+    { type_key: 'visit_classification', label: 'Visite Société de Classification', family: 'visit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, sort_order: 100, active: true },
+    { type_key: 'technical_stop', label: 'Arrêt Technique', family: 'action', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 110, active: true },
+    { type_key: 'fatality', label: 'Décès (FAT)', family: 'event', hse_classification: 'FAT', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 200, active: true },
+    { type_key: 'lost_time_injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 210, active: true },
+    { type_key: 'restricted_work_case', label: 'Blessure - Travail adapté (RWC)', family: 'event', hse_classification: 'RWC', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 220, active: true },
+    { type_key: 'medical_treatment_case', label: 'Accident avec traitement médical (MTC)', family: 'event', hse_classification: 'MTC', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 230, active: true },
+    { type_key: 'first_aid_case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 240, active: true },
+    { type_key: 'near_miss', label: 'Presqu’accident', family: 'event', hse_classification: 'NEAR_MISS', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 250, active: true },
+    { type_key: 'safety_observation', label: 'Observation sécurité', family: 'event', hse_classification: 'SAFETY_OBSERVATION', tracks_exposure_rate: true, requires_deviation_type: false, sort_order: 260, active: true },
+    { type_key: 'dangerous_situation', label: 'Situation dangereuse', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 270, active: true },
+    { type_key: 'material_damage', label: 'Dommage / casse matérielle', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 280, active: true },
+    { type_key: 'equipment_failure_t1', label: 'Avarie équipement T1', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 290, active: true },
+    { type_key: 'equipment_failure_t2', label: 'Avarie équipement T2', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 300, active: true },
+    { type_key: 'commuting_accident', label: 'Accident de trajet', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 310, active: true },
+    { type_key: 'marine_report', label: 'Rapport de mer', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 320, active: true },
+    { type_key: 'environmental_event', label: 'Événement environnemental', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 330, active: true },
+    { type_key: 'discrimination_human_rights', label: 'Discrimination et atteintes aux droits humains', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 340, active: true },
   ],
   action_items: [
     {
@@ -1755,6 +1765,54 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       if (Number(attachments[index].note_id) === Number(deleted.id)) attachments.splice(index, 1);
     }
     return createPreviewQuery({ data: deleted.id, error: null });
+  }
+  if (functionName === 'action_type_catalog_admin_save') {
+    const types = previewRows('action_type_catalog');
+    const requestedKey = String(args.p_type_key || '').trim();
+    let type = requestedKey ? types.find((row) => row.type_key === requestedKey) : undefined;
+    if (!type) {
+      type = {
+        type_key: requestedKey || `custom_preview_${Date.now()}`,
+        label: String(args.p_label || ''),
+        family: String(args.p_family || 'event'),
+        hse_classification: null,
+        tracks_exposure_rate: false,
+        requires_deviation_type: Boolean(args.p_requires_deviation_type),
+        active: args.p_active !== false,
+        sort_order: Number(args.p_sort_order || 0),
+      };
+      types.push(type);
+    } else {
+      type.label = String(args.p_label || type.label);
+      type.family = String(args.p_family || type.family);
+      type.requires_deviation_type = Boolean(args.p_requires_deviation_type);
+      type.active = args.p_active !== false;
+      type.sort_order = Number(args.p_sort_order || 0);
+    }
+    return createPreviewQuery({ data: type, error: null });
+  }
+  if (functionName === 'action_item_admin_update') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));
+    const type = previewRows('action_type_catalog').find((row) => row.type_key === args.p_action_type_key);
+    if (!action || !vessel || !type) return createPreviewQuery({ data: null, error: { message: 'Rapport introuvable ou inaccessible.' } });
+    action.title = String(args.p_title || action.title);
+    action.vessel_id = vessel.id;
+    action.vessel_name = vessel.name;
+    action.category_key = type.family;
+    action.action_type_key = type.type_key;
+    action.action_type = type.label;
+    action.deviation_type = args.p_deviation_type || null;
+    action.occurred_at = args.p_occurred_at || action.occurred_at;
+    action.opened_on = String(args.p_occurred_at || action.opened_on).slice(0, 10);
+    action.due_on = args.p_due_on || action.due_on;
+    action.vessel_maneuver = args.p_vessel_maneuver || null;
+    action.weather_conditions = args.p_weather_conditions || null;
+    action.description = args.p_description || null;
+    action.corrective_action = args.p_corrective_action || null;
+    action.lost_days = Number(args.p_lost_days || 0);
+    action.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: action, error: null });
   }
   if (functionName === 'action_item_create') {
     const vessel = previewRows('vessels').find((row) => Number(row.id) === Number(args.p_vessel_id));

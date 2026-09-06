@@ -47,9 +47,9 @@ const closedAction = {
 };
 
 const actionTypes = [
-  { type_key: 'audit_internal', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, sort_order: 40 },
-  { type_key: 'lost_time_injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, sort_order: 210 },
-  { type_key: 'first_aid_case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, sort_order: 240 },
+  { type_key: 'audit_internal', label: 'Audit Interne - BBTM', family: 'audit', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: true, active: true, sort_order: 40 },
+  { type_key: 'lost_time_injury', label: 'Accident avec Arrêt de Travail (LTI)', family: 'event', hse_classification: 'LWDC', tracks_exposure_rate: true, requires_deviation_type: false, active: true, sort_order: 210 },
+  { type_key: 'first_aid_case', label: 'Accident sans arrêt de travail (FAC)', family: 'event', hse_classification: 'FAC', tracks_exposure_rate: true, requires_deviation_type: false, active: true, sort_order: 240 },
 ];
 
 function ordered(data: unknown[]) {
@@ -113,6 +113,37 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
           status: 'Ecart Non Soldé', approved_by_person_id: 1008, approved_at: '2026-08-27T15:00:00Z',
         }, error: null });
       }
+      if (functionName === 'action_item_admin_update') {
+        const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
+        const type = actionTypes.find((item) => item.type_key === parameters?.p_action_type_key);
+        return Promise.resolve({ data: {
+          ...action,
+          title: parameters?.p_title,
+          vessel_id: parameters?.p_vessel_id,
+          action_type_key: parameters?.p_action_type_key,
+          action_type: type?.label,
+          deviation_type: parameters?.p_deviation_type,
+          occurred_at: parameters?.p_occurred_at,
+          due_on: parameters?.p_due_on,
+          vessel_maneuver: parameters?.p_vessel_maneuver,
+          weather_conditions: parameters?.p_weather_conditions,
+          description: parameters?.p_description,
+          corrective_action: parameters?.p_corrective_action,
+          lost_days: parameters?.p_lost_days,
+        }, error: null });
+      }
+      if (functionName === 'action_type_catalog_admin_save') {
+        const type = actionTypes.find((item) => item.type_key === parameters?.p_type_key);
+        return Promise.resolve({ data: {
+          ...type,
+          type_key: parameters?.p_type_key || 'custom_test',
+          label: parameters?.p_label,
+          family: parameters?.p_family,
+          requires_deviation_type: parameters?.p_requires_deviation_type,
+          active: parameters?.p_active,
+          sort_order: parameters?.p_sort_order,
+        }, error: null });
+      }
       return Promise.resolve(functionName === 'refresh_hse_exposure_hours'
         ? { data: { actual_days: 24, planning_days: 0, methodology_id: 7 }, error: null }
         : { data: {
@@ -126,7 +157,7 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       if (table === 'action_items') return { select: vi.fn().mockReturnValue(ordered(actions)) };
       if (table === 'action_documents') return { select: vi.fn().mockReturnValue(ordered([])) };
       if (table === 'action_type_catalog') {
-        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered(actionTypes)) }) };
+        return { select: vi.fn().mockReturnValue(ordered(actionTypes)) };
       }
       if (table === 'vessels') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }])) }) };
@@ -147,10 +178,10 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
   return { client };
 }
 
-function renderWithProfile(client: unknown) {
+function renderWithProfile(client: unknown, roles = ['armement']) {
   const context = {
     client,
-    roles: ['armement'],
+    roles,
     currentPerson: {
       id: 1008,
       firstName: 'Christophe',
@@ -171,32 +202,24 @@ function renderWithProfile(client: unknown) {
 }
 
 describe('ActionPlanPage', () => {
-  it('shows the SharePoint hierarchy and filters without an HSE indicators tab', async () => {
+  it('shows the prioritized control center and filters without an HSE indicators tab', async () => {
     const { client } = createClient();
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
 
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
-    expect(screen.getByLabelText('Actions non soldées')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Non-conformités majeures')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Actions ouvertes')).toHaveTextContent('1');
+    expect(screen.getByLabelText('En retard')).toHaveTextContent('1');
     expect(screen.getByLabelText('Heures travaillées')).toHaveTextContent('124 500 h');
     expect(screen.queryByRole('button', { name: 'Sources importées' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Indicateurs HSE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Date - titre')).not.toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
-
-    const openRow = screen.getByText("Réaliser une analyse d'eau").closest('article');
-    expect(openRow).not.toBeNull();
-    expect(within(openRow!).getByText("Réaliser une analyse d'eau").parentElement).toHaveTextContent("31/08/2026 - Réaliser une analyse d'eau");
-    expect(within(openRow!).getByRole('button', { name: 'Traiter' })).toBeInTheDocument();
-    expect(within(openRow!).getByRole('img', { name: /Photo jointe/ })).toHaveAttribute('src', 'https://evidence.example/1/810/photo-source.jpg');
-
-    const closedRow = screen.getByText('Vérifier la filtration machine').closest('article');
-    expect(closedRow).not.toBeNull();
-    expect(within(closedRow!).queryByRole('button', { name: 'Traiter' })).not.toBeInTheDocument();
-    expect(within(closedRow!).getByRole('img', { name: /Preuve de traitement/ })).toHaveAttribute('src', 'https://evidence.example/1/811/preuve-traitement.jpg');
+    expect(screen.getByRole('heading', { name: "Réaliser une analyse d'eau" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /GOURY.*Audit Interne - BBTM.*31\/08\/2026.*En retard/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('img', { name: 'Photo du constat' })).toHaveAttribute('src', 'https://evidence.example/1/810/photo-source.jpg');
 
     fireEvent.change(screen.getByLabelText("Type d'évènement"), { target: { value: 'Audit Interne - BBTM' } });
-    expect(screen.getByText("Réaliser une analyse d'eau")).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: "Réaliser une analyse d'eau" })).toBeInTheDocument();
     expect(screen.queryByText('Vérifier la filtration machine')).not.toBeInTheDocument();
 
   });
@@ -237,7 +260,7 @@ describe('ActionPlanPage', () => {
     await screen.findByRole('heading', { name: "Plan d'action" });
     expect(screen.queryByRole('button', { name: 'Nouveau rapport' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Traiter' }));
+    await user.click(screen.getByRole('button', { name: 'Traiter l’action' }));
     const dialog = within(screen.getByRole('dialog', { name: openAction.title }));
     fireEvent.change(dialog.getByLabelText('Action réalisée'), { target: { value: 'Filtre remplacé' } });
     fireEvent.change(dialog.getByLabelText('Commentaire'), { target: { value: 'Contrôle terminé' } });
@@ -264,7 +287,7 @@ describe('ActionPlanPage', () => {
     renderWithProfile(client);
 
     await screen.findByRole('heading', { name: "Plan d'action" });
-    await user.click(screen.getByRole('button', { name: 'Approuver' }));
+    await user.click(screen.getByRole('button', { name: 'Approuver le rapport' }));
     const dialog = within(screen.getByRole('dialog', { name: pendingAction.title }));
     await user.selectOptions(dialog.getByLabelText("Cause de l'anomalie *"), 'Panne Equipement');
     await user.click(dialog.getByRole('checkbox', { name: /Arthur MAREST/ }));
@@ -275,5 +298,53 @@ describe('ActionPlanPage', () => {
       p_action_id: 812, p_anomaly_cause: 'Panne Equipement', p_person_ids: [1010], p_vessel_ids: [12],
     });
     expect(await screen.findByText('Rapport approuvé et responsables affectés.')).toBeInTheDocument();
+  });
+
+  it('lets only an Administrator correct factual information without changing workflow fields', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction]);
+    renderWithProfile(client, ['admin']);
+
+    await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
+    await user.click(screen.getByRole('button', { name: 'Modifier la fiche' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier la fiche' }));
+    fireEvent.change(dialog.getByLabelText('Constat *'), { target: { value: 'Analyse eau potable à reprogrammer' } });
+    fireEvent.change(dialog.getByLabelText('Motif de la correction *'), { target: { value: 'Complément des informations manquantes' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer la correction' }));
+
+    expect(client.rpc).toHaveBeenCalledWith('action_item_admin_update', expect.objectContaining({
+      p_action_id: 810,
+      p_title: 'Analyse eau potable à reprogrammer',
+      p_correction_reason: 'Complément des informations manquantes',
+    }));
+    const updateCall = client.rpc.mock.calls.find((call) => call[0] === 'action_item_admin_update');
+    expect(updateCall?.[1]).not.toHaveProperty('p_status');
+    expect(updateCall?.[1]).not.toHaveProperty('p_workflow_status');
+    expect(await screen.findByText('Fiche corrigée sans modification du workflow.')).toBeInTheDocument();
+  });
+
+  it('hides correction and catalogue administration from Direction', async () => {
+    const { client } = createClient([openAction]);
+    render(<ActionPlanPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
+    expect(screen.queryByRole('button', { name: 'Modifier la fiche' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les types' })).not.toBeInTheDocument();
+  });
+
+  it('lets an Administrator rename a type while retaining its KPI mapping', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction]);
+    renderWithProfile(client, ['admin']);
+    await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
+    await user.click(screen.getByRole('button', { name: 'Gérer les types' }));
+    await user.click(screen.getByRole('button', { name: 'Modifier Audit Interne - BBTM' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier le type d’évènement' }));
+    fireEvent.change(dialog.getByLabelText('Libellé *'), { target: { value: 'Audit interne – BBTM' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+
+    expect(client.rpc).toHaveBeenCalledWith('action_type_catalog_admin_save', expect.objectContaining({
+      p_type_key: 'audit_internal', p_label: 'Audit interne – BBTM',
+    }));
+    expect(await screen.findByText('Type d’évènement mis à jour. Les rattachements KPI et le workflow sont inchangés.')).toBeInTheDocument();
   });
 });

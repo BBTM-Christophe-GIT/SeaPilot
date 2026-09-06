@@ -97,6 +97,8 @@ export interface ActionTypeCatalogRecord {
   family: 'action' | 'audit' | 'visit' | 'event';
   hseClassification: string;
   tracksExposureRate: boolean;
+  requiresDeviationType: boolean;
+  active: boolean;
   sortOrder: number;
 }
 
@@ -195,6 +197,26 @@ export interface ActionTreatmentInput {
   comments: string;
   realizedAction: string;
   closeAction: boolean;
+}
+
+export interface ActionItemAdminUpdateInput extends CreateActionItemInput {
+  correctionReason: string;
+}
+
+export interface ActionTypeAdminInput {
+  key?: string;
+  label: string;
+  family: ActionTypeCatalogRecord['family'];
+  requiresDeviationType: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
+export interface ActionFindingPhotoChanges {
+  photo1?: File;
+  photo2?: File;
+  removePhoto1?: boolean;
+  removePhoto2?: boolean;
 }
 
 function nullableText(value: unknown): string {
@@ -383,14 +405,17 @@ async function fetchActionDocuments(client: SupabaseClient): Promise<ActionDocum
 
 async function fetchActionTypes(client: SupabaseClient): Promise<ActionTypeCatalogRecord[]> {
   const { data, error } = await client.from('action_type_catalog')
-    .select('type_key,label,family,hse_classification,tracks_exposure_rate,sort_order')
-    .eq('active', true).order('sort_order', { ascending: true });
+    .select('type_key,label,family,hse_classification,tracks_exposure_rate,requires_deviation_type,active,sort_order')
+    .order('sort_order', { ascending: true });
   if (error) throw error;
   return (data || []).map((row) => ({
     key: String(row.type_key), label: String(row.label),
     family: row.family as ActionTypeCatalogRecord['family'],
     hseClassification: nullableText(row.hse_classification),
-    tracksExposureRate: Boolean(row.tracks_exposure_rate), sortOrder: Number(row.sort_order || 0),
+    tracksExposureRate: Boolean(row.tracks_exposure_rate),
+    requiresDeviationType: Boolean(row.requires_deviation_type),
+    active: row.active !== false,
+    sortOrder: Number(row.sort_order || 0),
   }));
 }
 
@@ -532,11 +557,16 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     fetchPeople(client), fetchActionAssignees(client), fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
-  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value);
+  const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
+  const currentLabels = new Map(actionTypes.map((type) => [type.key, type.label]));
+  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value.map((action) => ({
+    ...action,
+    actionType: currentLabels.get(action.actionTypeKey) || action.actionType,
+  })));
   return {
     actions,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
-    actionTypes: typesResult.status === 'fulfilled' ? typesResult.value : [],
+    actionTypes,
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
@@ -624,4 +654,73 @@ export async function approveActionItem(
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
   return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function updateActionItemAsAdmin(
+  client: SupabaseClient,
+  action: ActionItemRecord,
+  input: ActionItemAdminUpdateInput,
+  photoChanges: ActionFindingPhotoChanges = {},
+): Promise<ActionItemRecord> {
+  const { data, error } = await client.rpc('action_item_admin_update', {
+    p_action_id: action.id,
+    p_title: input.title.trim(),
+    p_vessel_id: input.vesselId,
+    p_action_type_key: input.actionTypeKey,
+    p_deviation_type: optionalText(input.deviationType),
+    p_occurred_at: input.occurredAt,
+    p_due_on: input.dueOn,
+    p_vessel_maneuver: optionalText(input.vesselManeuver),
+    p_weather_conditions: optionalText(input.weatherConditions),
+    p_description: optionalText(input.description),
+    p_corrective_action: optionalText(input.correctiveAction),
+    p_lost_days: input.lostDays || 0,
+    p_correction_reason: input.correctionReason.trim(),
+  });
+  if (error) throw error;
+  let row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
+  const companyId = Number(row.company_id);
+  const photosChanged = Boolean(
+    photoChanges.photo1 || photoChanges.photo2 || photoChanges.removePhoto1 || photoChanges.removePhoto2,
+  );
+  if (photosChanged && companyId) {
+    let photo1Path = photoChanges.removePhoto1 ? null : nullableText(row.photo_1_path) || null;
+    let photo2Path = photoChanges.removePhoto2 ? null : nullableText(row.photo_2_path) || null;
+    if (photoChanges.photo1) photo1Path = await uploadEvidence(client, companyId, action.id, 'photo-1', photoChanges.photo1);
+    if (photoChanges.photo2) photo2Path = await uploadEvidence(client, companyId, action.id, 'photo-2', photoChanges.photo2);
+    const { data: photoData, error: photoError } = await client.rpc('action_item_attach_finding_photos', {
+      p_action_id: action.id,
+      p_photo_1_path: photo1Path,
+      p_photo_2_path: photo2Path,
+    });
+    if (photoError) throw photoError;
+    row = (Array.isArray(photoData) ? photoData[0] : photoData) as unknown as ActionItemRow;
+  }
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function saveActionTypeAsAdmin(
+  client: SupabaseClient,
+  input: ActionTypeAdminInput,
+): Promise<ActionTypeCatalogRecord> {
+  const { data, error } = await client.rpc('action_type_catalog_admin_save', {
+    p_label: input.label.trim(),
+    p_family: input.family,
+    p_requires_deviation_type: input.requiresDeviationType,
+    p_active: input.active,
+    p_sort_order: input.sortOrder,
+    p_type_key: input.key || null,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
+  return {
+    key: String(row.type_key),
+    label: String(row.label),
+    family: row.family as ActionTypeCatalogRecord['family'],
+    hseClassification: nullableText(row.hse_classification),
+    tracksExposureRate: Boolean(row.tracks_exposure_rate),
+    requiresDeviationType: Boolean(row.requires_deviation_type),
+    active: row.active !== false,
+    sortOrder: Number(row.sort_order || 0),
+  };
 }

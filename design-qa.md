@@ -730,3 +730,32 @@ The source and implementation were inspected together at the same dimensions. Th
 No actionable P0, P1 or P2 visual issue remains in the verified states.
 
 final result: passed
+
+---
+
+# Design QA — Plan d'action, option 3
+
+## Référence et méthode
+
+- Référence sélectionnée : `C:\Users\chris\.codex\generated_images\01a07279-0615-7752-90bf-d045b7496dea\exec-f4a3fedf-c7d7-4fa0-b377-4ee33fa19c9c.png`
+- État comparé : profil Administrateur, catalogue des types ouvert, fiche en retard sélectionnée.
+- Viewport de comparaison : `1487 × 1058` pour la référence et l'iframe de l'implémentation.
+- Comparaison : référence et implémentation ont été affichées ensemble dans le navigateur intégré, à la même échelle.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; le centre de contrôle conserve la hiérarchie de l'option 3 (synthèse, file priorisée, dossier, panneau d'administration).
+- P2 : aucun défaut restant ; les espacements, bordures, densité, statuts, contrôles et comportements responsive sont cohérents avec le design SeaPilot existant.
+- Écart assumé : la navigation latérale SeaPilot reste visible dans l'application réelle, alors que la référence de design se concentre sur le contenu du module.
+
+## Parcours vérifiés
+
+- ouverture/fermeture du catalogue des types ;
+- ouverture de la correction Administrateur ;
+- motif de correction obligatoire et enregistrement réussi ;
+- message confirmant que le workflow n'a pas été modifié ;
+- rendu trois colonnes sur écran large et panneau superposé sur écran étroit ;
+- version `3.34.0` visible dans la navigation.
+
+final result: passed
