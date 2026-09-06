@@ -4,6 +4,8 @@
 
 Le module `Notes de Service` est placé dans la famille QHSE. Les profils `Administrateur` et `Direction` peuvent créer, modifier, diffuser, rappeler et supprimer un brouillon. Les autres profils ne voient que les notes diffusées ou archivées dont ils sont destinataires; ils disposent uniquement de la lecture, du téléchargement PDF et de leur propre signature.
 
+À titre temporaire, le bouton `Modifier` est également disponible pour les profils `Administrateur` et `Direction` sur une note diffusée, archivée ou rappelée. Il ouvre un mode de correction limité à la date du document, l'objet, le nom d'émetteur affiché et le contenu enrichi. L'enregistrement appelle `update_service_note_information`; le statut, le numéro chrono, la date et l'auteur de diffusion, le périmètre, les destinataires, les signatures, les pièces jointes et les références restent verrouillés. Ce bouton et son point d'entrée protégé sont destinés à être retirés à la demande après la campagne de complétion.
+
 La création enregistre immédiatement un brouillon privé dans `qhse_service_notes`, sans lui réserver de numéro. Le bouton `Enregistrer le brouillon` permet de revenir à la bibliothèque sans diffuser. L'émetteur choisit tous les utilisateurs, un ou plusieurs navires, ou une liste nominative. Pour un ciblage par navire, les destinataires sont résolus depuis les affectations du Planning à la date de la note (`planning_assignments`, `planning_periods` et `planning_days`). Le sélecteur nominatif affiche toutes les fiches RH courantes liées à un compte SeaPilot actif. Les anciens collaborateurs, les fiches sans compte et l'émetteur sont exclus.
 
 Le message dispose d'une barre de mise en forme : styles de paragraphe, polices, gras, italique, souligné, listes, alignements, liens et nettoyage du format. La police par défaut est `Aptos`, avec `Segoe UI` puis `Arial` en repli. Le HTML enregistré est limité à une liste blanche et nettoyé avant l'aperçu; les liens dangereux, scripts, gestionnaires d'événements et styles non autorisés sont supprimés. Le PDF reprend les titres, listes, alignements, emphases, soulignements et liens avec Helvetica comme équivalent embarqué d'Aptos.
@@ -43,7 +45,7 @@ Chaque archive contient un destinataire et une validation historique pour toute 
 ## Sécurité et limites
 
 - Les tables `qhse_service_notes`, `qhse_service_note_attachments`, `qhse_service_note_recipients`, `qhse_service_note_signatures` et les deux tables de ciblage ont RLS activé.
-- Les fonctions de diffusion, rappel, suppression de brouillon et signature sont `SECURITY DEFINER`, sans accès `anon`, avec `search_path` vide et contrôles de société/rôle explicites.
+- Les fonctions de diffusion, rappel, suppression de brouillon, correction d'informations et signature sont `SECURITY DEFINER`, sans accès `anon`, avec `search_path` vide et contrôles de société/rôle explicites.
 - Les nouvelles tables reçoivent explicitement les droits Data API pour le rôle `authenticated`.
 - Un compte sans fiche `people` liée et une fiche RH sans compte actif n'entrent pas dans un nouveau périmètre de diffusion. Un destinataire sans signature de profil active peut lire la note mais ne peut pas la signer; l'interface l'oriente vers son profil RH.
 - Le PDF est généré à partir du même enregistrement de note et du registre partagé au moment du téléchargement.

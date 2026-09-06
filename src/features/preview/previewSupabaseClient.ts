@@ -1698,6 +1698,19 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     if (note.scope === 'vessels' || note.scope === 'people') (Array.isArray(args.p_person_ids) ? args.p_person_ids : []).forEach((id) => people.push({ note_id: note.id, person_id: Number(id) }));
     return createPreviewQuery({ data: note.id, error: null });
   }
+  if (functionName === 'update_service_note_information') {
+    const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
+    if (!note) return createPreviewQuery({ data: null, error: { message: 'SERVICE_NOTE_INFORMATION_UPDATE_FORBIDDEN.' } });
+    note.subject = String(args.p_subject || '');
+    note.body = String(args.p_body || '');
+    note.authored_on = String(args.p_authored_on || note.authored_on || '');
+    note.author_identity_snapshot = {
+      ...(note.author_identity_snapshot as Record<string, unknown> || {}),
+      display_name: String(args.p_author_display_name || ''),
+    };
+    note.updated_at = new Date().toISOString();
+    return createPreviewQuery({ data: note.id, error: null });
+  }
   if (functionName === 'recall_service_note') {
     const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
     const latest = previewRows('qhse_service_notes')

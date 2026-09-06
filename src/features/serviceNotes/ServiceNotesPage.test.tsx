@@ -36,6 +36,25 @@ describe('ServiceNotesPage', () => {
     expect(screen.getByRole('menuitem', { name: /Note et pièces jointes/ })).toBeInTheDocument();
   });
 
+  it('lets management correct document information without exposing workflow fields', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Notes de Service' });
+    fireEvent.click(screen.getByText('NS 08-26'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
+
+    expect(await screen.findByText('Statut et workflow inchangés')).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Périmètre de diffusion' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer les informations' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Objet' }), {
+      target: { value: 'Consignes de sécurité complétées' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer les informations' }));
+
+    expect(await screen.findByRole('heading', { name: 'Bibliothèque' })).toBeInTheDocument();
+    expect(screen.getAllByText('Consignes de sécurité complétées').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Rappeler' })).toBeInTheDocument();
+  });
+
   it('keeps drafts in a dedicated manager-only view', async () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Notes de Service' });
