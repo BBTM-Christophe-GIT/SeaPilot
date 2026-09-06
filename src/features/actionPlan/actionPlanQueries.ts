@@ -19,6 +19,11 @@ const ACTION_DOCUMENT_SELECT = [
 
 const ACTION_PLAN_EVIDENCE_BUCKET = 'action-plan-evidence';
 const ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS = 60 * 60;
+const ACTION_TREATMENT_EVENT_SELECT = [
+  'id', 'company_id', 'action_item_id', 'event_type', 'note', 'attachment_file_name',
+  'attachment_storage_bucket', 'attachment_storage_path', 'attachment_mime_type',
+  'attachment_size_bytes', 'created_by_person_id', 'created_by_name', 'created_at',
+].join(', ');
 
 type ActionItemRow = Record<string, unknown> & { id: number; title: string };
 type ActionDocumentRow = Record<string, unknown> & { id: number; title: string };
@@ -97,6 +102,8 @@ export interface ActionTypeCatalogRecord {
   family: 'action' | 'audit' | 'visit' | 'event';
   hseClassification: string;
   tracksExposureRate: boolean;
+  requiresDeviationType: boolean;
+  active: boolean;
   sortOrder: number;
 }
 
@@ -120,6 +127,23 @@ export interface ActionAssigneeRecord {
   displayName: string;
 }
 
+export interface ActionTreatmentEventRecord {
+  id: number;
+  companyId: number;
+  actionItemId: number;
+  eventType: 'commented' | 'attachment_added' | 'closed';
+  note: string;
+  attachmentFileName: string;
+  attachmentStorageBucket: string;
+  attachmentStoragePath: string;
+  attachmentMimeType: string;
+  attachmentSizeBytes: number;
+  attachmentUrl: string;
+  authorPersonId: number | null;
+  authorName: string;
+  createdAt: string;
+}
+
 export interface ActionPlanData {
   actions: ActionItemRecord[];
   documents: ActionDocumentRecord[];
@@ -127,6 +151,7 @@ export interface ActionPlanData {
   vessels: VesselOption[];
   people: PersonOption[];
   assignees: ActionAssigneeRecord[];
+  treatmentEvents: ActionTreatmentEventRecord[];
   exposureHours: number;
   hseKpis: Record<string, number | string | boolean | null> | null;
   hseDashboard: ActionPlanHseDashboard | null;
@@ -195,6 +220,31 @@ export interface ActionTreatmentInput {
   comments: string;
   realizedAction: string;
   closeAction: boolean;
+}
+
+export interface ActionTreatmentFollowupInput {
+  note: string;
+  closeAction: boolean;
+}
+
+export interface ActionItemAdminUpdateInput extends CreateActionItemInput {
+  correctionReason: string;
+}
+
+export interface ActionTypeAdminInput {
+  key?: string;
+  label: string;
+  family: ActionTypeCatalogRecord['family'];
+  requiresDeviationType: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
+export interface ActionFindingPhotoChanges {
+  photo1?: File;
+  photo2?: File;
+  removePhoto1?: boolean;
+  removePhoto2?: boolean;
 }
 
 function nullableText(value: unknown): string {
@@ -383,14 +433,17 @@ async function fetchActionDocuments(client: SupabaseClient): Promise<ActionDocum
 
 async function fetchActionTypes(client: SupabaseClient): Promise<ActionTypeCatalogRecord[]> {
   const { data, error } = await client.from('action_type_catalog')
-    .select('type_key,label,family,hse_classification,tracks_exposure_rate,sort_order')
-    .eq('active', true).order('sort_order', { ascending: true });
+    .select('type_key,label,family,hse_classification,tracks_exposure_rate,requires_deviation_type,active,sort_order')
+    .order('sort_order', { ascending: true });
   if (error) throw error;
   return (data || []).map((row) => ({
     key: String(row.type_key), label: String(row.label),
     family: row.family as ActionTypeCatalogRecord['family'],
     hseClassification: nullableText(row.hse_classification),
-    tracksExposureRate: Boolean(row.tracks_exposure_rate), sortOrder: Number(row.sort_order || 0),
+    tracksExposureRate: Boolean(row.tracks_exposure_rate),
+    requiresDeviationType: Boolean(row.requires_deviation_type),
+    active: row.active !== false,
+    sortOrder: Number(row.sort_order || 0),
   }));
 }
 
@@ -423,6 +476,43 @@ async function fetchActionAssignees(client: SupabaseClient): Promise<ActionAssig
     vesselId: row.vessel_id == null ? null : Number(row.vessel_id),
     displayName: nullableText(row.display_name_snapshot),
   }));
+}
+
+async function fetchActionTreatmentEvents(client: SupabaseClient): Promise<ActionTreatmentEventRecord[]> {
+  const { data, error } = await client.from('action_item_treatment_events')
+    .select(ACTION_TREATMENT_EVENT_SELECT)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+  if (error) return [];
+
+  const rows = (data || []) as unknown as Record<string, unknown>[];
+  const paths = Array.from(new Set(rows.map((row) => nullableText(row.attachment_storage_path)).filter(Boolean)));
+  const signedUrls = paths.length
+    ? await client.storage.from(ACTION_PLAN_EVIDENCE_BUCKET).createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS)
+    : { data: [], error: null };
+  const urlsByPath = new Map((signedUrls.data || [])
+    .filter((item) => item.path && item.signedUrl)
+    .map((item) => [item.path, item.signedUrl]));
+
+  return rows.map((row) => {
+    const attachmentStoragePath = nullableText(row.attachment_storage_path);
+    return {
+      id: Number(row.id),
+      companyId: Number(row.company_id),
+      actionItemId: Number(row.action_item_id),
+      eventType: row.event_type as ActionTreatmentEventRecord['eventType'],
+      note: nullableText(row.note),
+      attachmentFileName: nullableText(row.attachment_file_name),
+      attachmentStorageBucket: nullableText(row.attachment_storage_bucket),
+      attachmentStoragePath,
+      attachmentMimeType: nullableText(row.attachment_mime_type),
+      attachmentSizeBytes: Number(row.attachment_size_bytes || 0),
+      attachmentUrl: urlsByPath.get(attachmentStoragePath) || '',
+      authorPersonId: row.created_by_person_id == null ? null : Number(row.created_by_person_id),
+      authorName: nullableText(row.created_by_name),
+      createdAt: nullableText(row.created_at),
+    };
+  });
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -527,19 +617,26 @@ export async function fetchActionPlanHseDashboard(
 
 export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
-  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, hseResult] = await Promise.allSettled([
+  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, hseResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
-    fetchPeople(client), fetchActionAssignees(client), fetchActionPlanHseDashboard(client, currentYear),
+    fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
+    fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
-  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value);
+  const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
+  const currentLabels = new Map(actionTypes.map((type) => [type.key, type.label]));
+  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value.map((action) => ({
+    ...action,
+    actionType: currentLabels.get(action.actionTypeKey) || action.actionType,
+  })));
   return {
     actions,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
-    actionTypes: typesResult.status === 'fulfilled' ? typesResult.value : [],
+    actionTypes,
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
+    treatmentEvents: treatmentEventsResult.status === 'fulfilled' ? treatmentEventsResult.value : [],
     exposureHours: hseResult.status === 'fulfilled' ? hseResult.value?.totals.exposureHours || 0 : 0,
     hseKpis: hseResult.status === 'fulfilled' && hseResult.value ? hseResult.value.totals as unknown as ActionPlanData['hseKpis'] : null,
     hseDashboard: hseResult.status === 'fulfilled' ? hseResult.value : null,
@@ -610,6 +707,36 @@ export async function updateActionItemTreatment(
   return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
 }
 
+export async function addActionTreatmentFollowup(
+  client: SupabaseClient,
+  action: ActionItemRecord,
+  input: ActionTreatmentFollowupInput,
+  attachment?: File,
+): Promise<void> {
+  if (!input.note.trim() && !attachment && !input.closeAction) {
+    throw new Error("Ajoutez un commentaire, une pièce jointe ou clôturez l'action.");
+  }
+  if (attachment && attachment.size > 10 * 1024 * 1024) {
+    throw new Error('La pièce jointe ne doit pas dépasser 10 Mo.');
+  }
+
+  let attachmentPath: string | null = null;
+  if (attachment && action.companyId) {
+    attachmentPath = await uploadEvidence(client, action.companyId, action.id, 'suivi', attachment);
+  }
+
+  const { error } = await client.rpc('action_item_add_treatment_followup', {
+    p_action_id: action.id,
+    p_note: optionalText(input.note),
+    p_attachment_file_name: attachment?.name || null,
+    p_attachment_storage_path: attachmentPath,
+    p_attachment_mime_type: attachment?.type || null,
+    p_attachment_size_bytes: attachment?.size || null,
+    p_close_action: input.closeAction,
+  });
+  if (error) throw error;
+}
+
 export async function approveActionItem(
   client: SupabaseClient,
   actionId: number,
@@ -624,4 +751,73 @@ export async function approveActionItem(
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
   return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function updateActionItemAsAdmin(
+  client: SupabaseClient,
+  action: ActionItemRecord,
+  input: ActionItemAdminUpdateInput,
+  photoChanges: ActionFindingPhotoChanges = {},
+): Promise<ActionItemRecord> {
+  const { data, error } = await client.rpc('action_item_admin_update', {
+    p_action_id: action.id,
+    p_title: input.title.trim(),
+    p_vessel_id: input.vesselId,
+    p_action_type_key: input.actionTypeKey,
+    p_deviation_type: optionalText(input.deviationType),
+    p_occurred_at: input.occurredAt,
+    p_due_on: input.dueOn,
+    p_vessel_maneuver: optionalText(input.vesselManeuver),
+    p_weather_conditions: optionalText(input.weatherConditions),
+    p_description: optionalText(input.description),
+    p_corrective_action: optionalText(input.correctiveAction),
+    p_lost_days: input.lostDays || 0,
+    p_correction_reason: input.correctionReason.trim(),
+  });
+  if (error) throw error;
+  let row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
+  const companyId = Number(row.company_id);
+  const photosChanged = Boolean(
+    photoChanges.photo1 || photoChanges.photo2 || photoChanges.removePhoto1 || photoChanges.removePhoto2,
+  );
+  if (photosChanged && companyId) {
+    let photo1Path = photoChanges.removePhoto1 ? null : nullableText(row.photo_1_path) || null;
+    let photo2Path = photoChanges.removePhoto2 ? null : nullableText(row.photo_2_path) || null;
+    if (photoChanges.photo1) photo1Path = await uploadEvidence(client, companyId, action.id, 'photo-1', photoChanges.photo1);
+    if (photoChanges.photo2) photo2Path = await uploadEvidence(client, companyId, action.id, 'photo-2', photoChanges.photo2);
+    const { data: photoData, error: photoError } = await client.rpc('action_item_attach_finding_photos', {
+      p_action_id: action.id,
+      p_photo_1_path: photo1Path,
+      p_photo_2_path: photo2Path,
+    });
+    if (photoError) throw photoError;
+    row = (Array.isArray(photoData) ? photoData[0] : photoData) as unknown as ActionItemRow;
+  }
+  return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function saveActionTypeAsAdmin(
+  client: SupabaseClient,
+  input: ActionTypeAdminInput,
+): Promise<ActionTypeCatalogRecord> {
+  const { data, error } = await client.rpc('action_type_catalog_admin_save', {
+    p_label: input.label.trim(),
+    p_family: input.family,
+    p_requires_deviation_type: input.requiresDeviationType,
+    p_active: input.active,
+    p_sort_order: input.sortOrder,
+    p_type_key: input.key || null,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
+  return {
+    key: String(row.type_key),
+    label: String(row.label),
+    family: row.family as ActionTypeCatalogRecord['family'],
+    hseClassification: nullableText(row.hse_classification),
+    tracksExposureRate: Boolean(row.tracks_exposure_rate),
+    requiresDeviationType: Boolean(row.requires_deviation_type),
+    active: row.active !== false,
+    sortOrder: Number(row.sort_order || 0),
+  };
 }

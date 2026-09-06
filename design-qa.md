@@ -730,3 +730,61 @@ The source and implementation were inspected together at the same dimensions. Th
 No actionable P0, P1 or P2 visual issue remains in the verified states.
 
 final result: passed
+
+---
+
+# Design QA — Plan d'action, option 3
+
+## Référence et méthode
+
+- Référence sélectionnée : `C:\Users\chris\.codex\generated_images\01a07279-0615-7752-90bf-d045b7496dea\exec-f4a3fedf-c7d7-4fa0-b377-4ee33fa19c9c.png`
+- État comparé : profil Administrateur, catalogue des types ouvert, fiche en retard sélectionnée.
+- Viewport de comparaison : `1487 × 1058` pour la référence et l'iframe de l'implémentation.
+- Comparaison : référence et implémentation ont été affichées ensemble dans le navigateur intégré, à la même échelle.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; le centre de contrôle conserve la hiérarchie de l'option 3 (synthèse, file priorisée, dossier, panneau d'administration).
+- P2 : aucun défaut restant ; les espacements, bordures, densité, statuts, contrôles et comportements responsive sont cohérents avec le design SeaPilot existant.
+- Écart assumé : la navigation latérale SeaPilot reste visible dans l'application réelle, alors que la référence de design se concentre sur le contenu du module.
+
+## Parcours vérifiés
+
+- ouverture/fermeture du catalogue des types ;
+- ouverture de la correction Administrateur ;
+- motif de correction obligatoire et enregistrement réussi ;
+- message confirmant que le workflow n'a pas été modifié ;
+- rendu trois colonnes sur écran large et panneau superposé sur écran étroit ;
+- version `3.34.0` visible dans la navigation.
+
+final result: passed
+
+---
+
+# Design QA — Plan d'action, suivi du traitement
+
+## Référence et méthode
+
+- Référence fournie : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-04a53616-f660-47d8-bbf3-af9500b2aa3c.png`.
+- État comparé : fiche approuvée en retard, profil Administrateur, deux suivis existants dont une pièce jointe.
+- Comparaison : référence et section réelle clonée depuis `/modules/actionPlan?preview=1` ont été affichées ensemble dans le navigateur intégré, dans deux cadres de même largeur.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; le titre, la zone de saisie et le bouton primaire reprennent la hiérarchie de la référence.
+- P2 : aucun défaut restant après correction du repli des commandes sur une fiche étroite ; aucun libellé de bouton ne déborde.
+- Écart fonctionnel assumé : une seconde ligne contient la pièce jointe et l'option de clôture, nécessaires au pilotage demandé, puis le journal horodaté apparaît sous le formulaire.
+- Le rendu réutilise les couleurs, bordures, rayons, typographies et icônes du centre de contrôle SeaPilot.
+
+## Parcours vérifiés
+
+- ajout d'un commentaire depuis la fiche ;
+- apparition immédiate du commentaire avec `Arthur DEMO` et l'heure locale ;
+- affichage et ouverture d'une pièce jointe existante ;
+- clôture depuis le même formulaire ;
+- disparition des champs après clôture et conservation de l'évènement de clôture dans le journal ;
+- version `3.35.0` et build `2026-09-06.005` visibles.
+
+final result: passed

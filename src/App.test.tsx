@@ -771,10 +771,9 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
-    expect(screen.getByLabelText('Actions non soldées')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Non-conformités majeures')).toHaveTextContent('0');
-    expect(screen.getAllByText('Audit pont COTENTIN').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: /Audit pont COTENTIN/ }));
+    expect(screen.getByLabelText('Actions ouvertes')).toHaveTextContent('1');
+    expect(screen.getByLabelText('En retard')).toHaveTextContent('1');
+    expect(screen.getByRole('heading', { name: 'Audit pont COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText('Controle pont')).toBeInTheDocument();
     expect(screen.getByText('Remplacer garde-corps')).toBeInTheDocument();
     expect(screen.getAllByText('COTENTIN').length).toBeGreaterThan(0);

@@ -1,10 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Circle,
-  ClipboardList, Clock3, CloudSun, FileDown, FileImage, FileText, History, ImagePlus, Info, Plus, RefreshCw, Search,
-  ShieldCheck, Ship, Upload, UserRound, UsersRound, X,
+  Check, CheckCircle2, Circle, ClipboardList, Clock3, CloudSun, FileDown, FileText, ImagePlus, Info,
+  Plus, RefreshCw, ShieldCheck, Ship, Upload, UserRound, UsersRound, X,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -19,26 +18,21 @@ import {
   actionSheetFileName, actionSheetReference, buildActionSheetPdf, downloadActionSheetPdf,
   type ActionSheetData,
 } from './actionPlanPdf';
+import { ActionPlanControlCenter, type ActionPlanFilters } from './ActionPlanControlCenter';
 import './actionPlan.css';
 
 interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 
-interface Filters { search: string; status: string; vessel: string; actionType: string; deviationType: string }
-
 const EMPTY_DATA: ActionPlanData = {
-  actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [],
+  actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [], treatmentEvents: [],
   exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
-const EMPTY_FILTERS: Filters = { search: '', status: '', vessel: '', actionType: '', deviationType: '' };
+const EMPTY_FILTERS: ActionPlanFilters = { search: '', status: '', vessel: '', actionType: '', deviationType: '' };
 const DEVIATION_TYPES = [
   'Non Conformité Majeure', 'Non Conformité Mineure', 'Prescription', "Proposition d'Amélioration",
   'Recommandation', 'Remarque', 'Remarque Positive',
 ];
-const DEVIATION_TYPE_ACTION_KEYS = new Set([
-  'audit_client', 'audit_ecmid', 'audit_internal', 'visit_davit',
-  'visit_crane', 'visit_hse', 'visit_radio', 'visit_classification',
-]);
 const ANOMALY_CAUSES = [
   'Avarie Moteur de Propulsion', 'Matériel/Equipement défectueux /Inadapté',
   'Non Respect des Procédures/Consignes', 'Opération de Levage', 'Panne Equipement',
@@ -77,27 +71,15 @@ function canManage(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
 
-function display(value: string, fallback = 'Non renseigné'): string { return value || fallback }
-
 function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'fr'));
-}
-
-function formatDate(value: string): string {
-  if (!value) return 'Sans échéance';
-  const [year, month, day] = value.slice(0, 10).split('-');
-  return year && month && day ? `${day}/${month}/${year}` : value;
-}
-
-function formatHours(value: number): string {
-  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value)} h`;
 }
 
 function actionTypeLabel(action: ActionItemRecord): string {
   return action.actionType || action.auditType || 'Autre action';
 }
 
-function actionMatches(action: ActionItemRecord, filters: Filters): boolean {
+function actionMatches(action: ActionItemRecord, filters: ActionPlanFilters): boolean {
   if (filters.status === 'open' && isActionClosed(action)) return false;
   if (filters.status === 'closed' && !isActionClosed(action)) return false;
   if (filters.vessel && action.vesselName !== filters.vessel) return false;
@@ -109,25 +91,6 @@ function actionMatches(action: ActionItemRecord, filters: Filters): boolean {
     action.issuerName, action.correctiveAction, action.comments, action.description,
   ].join(' '));
   return haystack.includes(normalizeActionLabel(filters.search));
-}
-
-function severityClass(value: string): string {
-  const normalized = normalizeActionLabel(value);
-  if (normalized.includes('majeure') || normalized.includes('deces') || normalized.includes('fatal')) return 'is-critical';
-  if (normalized.includes('mineure') || normalized.includes('prescription')) return 'is-warning';
-  if (normalized.includes('positive')) return 'is-positive';
-  return 'is-neutral';
-}
-
-function MetricCard({ icon, label, value, tone, detail }: {
-  icon: ReactNode; label: string; value: string | number; tone: string; detail: string;
-}) {
-  return (
-    <article className={`action-plan-metric ${tone}`} aria-label={label}>
-      <span className="action-plan-metric-icon">{icon}</span>
-      <span><small>{label}</small><strong>{value}</strong><em>{detail}</em></span>
-    </article>
-  );
 }
 
 function formatActionSheetDate(value: string, withTime = false): string {
@@ -215,7 +178,7 @@ function CreateActionDialog({
   const completionPercent = actionSheetCompletionPercent(sheetData);
   const completeCount = completion.filter((item) => item.complete).length;
   const selectedType = data.actionTypes.find((item) => item.key === form.actionTypeKey);
-  const deviationRequired = DEVIATION_TYPE_ACTION_KEYS.has(form.actionTypeKey);
+  const deviationRequired = Boolean(selectedType?.requiresDeviationType);
   const isConfidentialReport = form.actionTypeKey === 'discrimination_human_rights';
 
   if (!open) return null;
@@ -293,10 +256,10 @@ function CreateActionDialog({
               </section>
               <section aria-labelledby="action-qualification"><h3 id="action-qualification"><ShieldCheck size={20} />3 · Qualification</h3>
                 <div className="action-plan-form-grid">
-                  <label>Type d&apos;évènement <b>*</b><select required value={form.actionTypeKey} onChange={(event) => { const type = data.actionTypes.find((item) => item.key === event.target.value); update('actionTypeKey', type?.key || ''); update('actionType', type?.label || ''); if (!DEVIATION_TYPE_ACTION_KEYS.has(type?.key || '')) update('deviationType', ''); }}>
+                  <label>Type d&apos;évènement <b>*</b><select required value={form.actionTypeKey} onChange={(event) => { const type = data.actionTypes.find((item) => item.key === event.target.value); update('actionTypeKey', type?.key || ''); update('actionType', type?.label || ''); if (!type?.requiresDeviationType) update('deviationType', ''); }}>
                     <option value="">Sélectionner un type</option>
-                    <optgroup label="Actions, audits et visites">{data.actionTypes.filter((type) => type.family !== 'event').map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}</optgroup>
-                    <optgroup label="Événements liés aux indicateurs HSE">{data.actionTypes.filter((type) => type.family === 'event').map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}</optgroup>
+                    <optgroup label="Actions, audits et visites">{data.actionTypes.filter((type) => type.active && type.family !== 'event').map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}</optgroup>
+                    <optgroup label="Événements liés aux indicateurs HSE">{data.actionTypes.filter((type) => type.active && type.family === 'event').map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}</optgroup>
                   </select></label>
                   {deviationRequired && <label>Type d&apos;écart <b>*</b><select required value={form.deviationType} onChange={(event) => update('deviationType', event.target.value)}><option value="">Sélectionner un type d&apos;écart</option>{DEVIATION_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>}
                   {selectedType?.tracksExposureRate && <label>Jours d&apos;arrêt<input min="0" step="0.5" type="number" value={form.lostDays} onChange={(event) => update('lostDays', Number(event.target.value))} /></label>}
@@ -434,9 +397,9 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const profileName = context?.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '';
   const previewMode = Boolean(context?.previewMode);
   const isManager = canManage(effectiveRoles);
+  const isAdmin = effectiveRoles.includes('admin');
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [expandedActionId, setExpandedActionId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get('action')) || null);
+  const [filters, setFilters] = useState<ActionPlanFilters>(EMPTY_FILTERS);
   const [createOpen, setCreateOpen] = useState(false);
   const [approvalAction, setApprovalAction] = useState<ActionItemRecord | null>(null);
   const [treatmentAction, setTreatmentAction] = useState<ActionItemRecord | null>(null);
@@ -458,9 +421,8 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const vesselOptions = useMemo(() => unique(data.actions.map((a) => a.vesselName)), [data.actions]);
   const typeOptions = useMemo(() => unique(data.actions.map(actionTypeLabel)), [data.actions]);
   const deviationOptions = useMemo(() => unique([...DEVIATION_TYPES, ...data.actions.map((a) => a.deviationType)]), [data.actions]);
-  const vesselCount = unique(filtered.map((a) => a.vesselName)).length;
 
-  function updateFilter(key: keyof Filters, value: string) { setFilters((current) => ({ ...current, [key]: value })); }
+  function updateFilter(key: keyof ActionPlanFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); }
   function replaceAction(updated: ActionItemRecord) {
     setData((current) => ({ ...current, actions: current.actions.map((action) => action.id === updated.id ? updated : action) }));
     setTreatmentAction(null); setMessage('Action mise à jour.');
@@ -492,80 +454,43 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     }
   }
 
-  const groupedStatuses = [
-    { key: 'open', label: 'Écarts non soldés', actions: filtered.filter((a) => !isActionClosed(a)) },
-    { key: 'closed', label: 'Actions soldées', actions: filtered.filter(isActionClosed) },
-  ];
-
   if (loading) return <div className="admin-state" role="status">Chargement du plan d'action…</div>;
 
   return <section className="action-plan-page">
-    <header className="action-plan-header"><div><h1>Plan d'action</h1><p>Suivi des écarts, événements QHSE, actions correctives, responsables et échéances.</p></div></header>
-    <nav className="action-plan-toolbar" aria-label="Fonctionnalités du plan d'action">
-      <div><button aria-current="page" className="is-active"><ShieldCheck size={16} />Actions</button></div>
-      <span><button className="is-secondary" onClick={() => void load()}><RefreshCw size={16} />Actualiser</button>{isManager && <button onClick={() => setCreateOpen(true)}><Plus size={17} />Nouveau rapport</button>}</span>
-    </nav>
-
     {(message || error) && <p className={`action-plan-message${error ? ' is-error' : ' is-success'}`}>{error || message}</p>}
-
-    <div className="action-plan-metrics">
-      <MetricCard detail={`${vesselCount} navire(s) / lieu(x)`} icon={<Clock3 size={20} />} label="Actions non soldées" tone="is-orange" value={metrics.openActionCount} />
-      <MetricCard detail={`${metrics.overdueActionCount} action(s) en retard`} icon={<AlertTriangle size={20} />} label="Non-conformités majeures" tone="is-red" value={metrics.majorNonConformityCount} />
-      <MetricCard detail={`${filtered.length} action(s) affichée(s)`} icon={<CheckCircle2 size={20} />} label="Actions soldées" tone="is-green" value={metrics.closedActionCount} />
-      <MetricCard detail={`Période ${new Date().getFullYear()}`} icon={<History size={20} />} label="Heures travaillées" tone="is-teal" value={formatHours(metrics.exposureHours)} />
-    </div>
-
-    <>
-      <div className="action-plan-filters">
-        <label>Navire / lieu<select value={filters.vessel} onChange={(e) => updateFilter('vessel', e.target.value)}><option value="">Tous les navires</option>{vesselOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Type d&apos;évènement<select value={filters.actionType} onChange={(e) => updateFilter('actionType', e.target.value)}><option value="">Tous les types</option>{typeOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Statut<select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">Tous les statuts</option><option value="open">Non soldé</option><option value="closed">Soldé</option></select></label>
-        <label>Type d'écart<select value={filters.deviationType} onChange={(e) => updateFilter('deviationType', e.target.value)}><option value="">Tous les types d'écart</option>{deviationOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label className="action-plan-search"><span className="sr-only">Rechercher</span><Search size={17} /><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, responsable…" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} /></label>
-      </div>
-      <div className="action-plan-list" aria-label="Actions groupées">
-        {groupedStatuses.map((statusGroup) => statusGroup.actions.length > 0 && <details key={statusGroup.key} open>
-          <summary><span className={`action-plan-count ${statusGroup.key}`}>{statusGroup.actions.length}</span>{statusGroup.label}</summary>
-          {unique(statusGroup.actions.map((a) => a.vesselName || 'Sans navire')).map((vessel) => {
-            const vesselActions = statusGroup.actions.filter((a) => (a.vesselName || 'Sans navire') === vessel);
-            return <details key={`${statusGroup.key}-${vessel}`} open><summary><span className="action-plan-count vessel">{vesselActions.length}</span>{vessel}</summary>
-              {unique(vesselActions.map(actionTypeLabel)).map((type) => { const typeActions = vesselActions.filter((a) => actionTypeLabel(a) === type);
-                return <details key={`${statusGroup.key}-${vessel}-${type}`} open><summary><span className="action-plan-count type">{typeActions.length}</span>{type}</summary>
-                  {typeActions.map((action) => <article className={`action-plan-row ${severityClass(action.deviationType)}`} key={action.id}>
-                    {actionCanBeApproved(action)
-                      ? <button className="action-plan-treat is-approval" onClick={() => setApprovalAction(action)}>Approuver</button>
-                      : actionCanBeTreated(action) && !isActionClosed(action)
-                        ? <button className="action-plan-treat" onClick={() => setTreatmentAction(action)}>Traiter</button>
-                        : <span aria-hidden="true" className="action-plan-treat-spacer" />}
-                    {action.thumbnailUrl
-                      ? <a aria-label={isActionClosed(action) ? `Ouvrir la preuve de traitement de ${action.title}` : `Ouvrir la photo jointe de ${action.title}`} className="action-plan-thumbnail" href={action.thumbnailUrl} rel="noreferrer" target="_blank"><img alt={isActionClosed(action) ? `Preuve de traitement — ${action.title}` : `Photo jointe — ${action.title}`} src={action.thumbnailUrl} /></a>
-                      : <span aria-hidden="true" className="action-plan-thumbnail is-empty"><FileImage size={18} /></span>}
-                    <button aria-expanded={expandedActionId === action.id} className="action-plan-row-main" onClick={() => setExpandedActionId(expandedActionId === action.id ? null : action.id)}>
-                      <span>{expandedActionId === action.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<strong><time className={action.dueOn && action.dueOn < new Date().toISOString().slice(0, 10) && !isActionClosed(action) ? 'is-overdue' : ''} dateTime={action.dueOn || undefined}>{formatDate(action.dueOn)}</time><span> - </span><span className="action-plan-row-title-text">{action.title}</span></strong></span>
-                      <span><strong>{display(action.ownerName, action.workflowStatus === 'pending_approval' ? 'À définir par Christophe' : 'Non renseigné')}</strong><small>Responsable du traitement</small></span>
-                      <span>{display(action.deviationType, 'Remarque')}</span>
-                      <span><em className={isActionClosed(action) ? 'is-closed' : action.workflowStatus === 'pending_approval' ? 'is-pending' : 'is-open'}>{isActionClosed(action) ? 'Soldé' : action.workflowStatus === 'pending_approval' ? 'À approuver' : 'À traiter'}</em></span>
-                    </button>
-                    {expandedActionId === action.id && <div className="action-plan-row-details"><dl>
-                      <dt>Constat</dt><dd>{display(action.description, action.title)}</dd>
-                      <dt>Date et heure du constat</dt><dd>{formatActionSheetDate(action.occurredAt || action.openedOn, true)}</dd>
-                      <dt>Manœuvre du navire</dt><dd>{display(action.vesselManeuver)}</dd>
-                      <dt>Conditions météo</dt><dd>{display(action.weatherConditions)}</dd>
-                      <dt>Cause de l&apos;anomalie</dt><dd>{display(action.anomalyCause, 'À définir lors de l’approbation.')}</dd>
-                      <dt>Proposition d'action</dt><dd>{display(action.correctiveAction, 'Aucune proposition renseignée.')}</dd>
-                      <dt>Commentaire</dt><dd>{display(action.comments, 'Aucun commentaire renseigné.')}</dd>
-                      {action.realizedAction && <><dt>Action réalisée</dt><dd>{action.realizedAction}</dd></>}
-                      <dt>Émetteur</dt><dd>{display(action.issuerName)}</dd>
-                      {(action.projectCode || action.projectTitle) && <><dt>Projet</dt><dd>{[action.projectCode, action.projectTitle].filter(Boolean).join(' · ')}</dd></>}
-                      {data.documents.filter((document) => document.actionItemId === action.id || (document.actionSharePointItemId && document.actionSharePointItemId === action.sourceItemId)).map((document) => <Fragment key={document.id}><dt>Fiche de progrès</dt><dd><a aria-label={`Ouvrir le fichier ${document.title}`} href={document.fileUrl} rel="noreferrer" target="_blank">{document.title}</a></dd></Fragment>)}
-                    </dl><button className="action-plan-pdf-button is-secondary" disabled={pdfActionId === action.id} onClick={() => void exportActionSheet(action)}><FileDown size={16} />{pdfActionId === action.id ? 'Génération…' : 'Télécharger la fiche PDF'}</button></div>}
-                  </article>)}
-                </details>; })}
-            </details>; })}
-        </details>)}
-        {filtered.length === 0 && <div className="action-plan-empty">Aucune action ne correspond aux filtres.</div>}
-      </div>
-    </>
+    <ActionPlanControlCenter
+      actions={filtered}
+      canApprove={actionCanBeApproved}
+      canCreate={isManager}
+      canTreat={actionCanBeTreated}
+      client={effectiveClient}
+      data={data}
+      filterOptions={{ vessels: vesselOptions, actionTypes: typeOptions, deviationTypes: deviationOptions }}
+      filters={filters}
+      isAdmin={isAdmin}
+      metrics={metrics}
+      onActionSaved={(action) => { replaceAction(action); setMessage('Fiche corrigée sans modification du workflow.'); }}
+      onApprove={setApprovalAction}
+      onCreate={() => setCreateOpen(true)}
+      onExport={(action) => void exportActionSheet(action)}
+      onFilterChange={updateFilter}
+      onReload={() => void load()}
+      onTreatmentFollowupSaved={(_action, closed) => {
+        setMessage(closed ? 'Action clôturée et ajoutée au suivi.' : 'Suivi du traitement ajouté.');
+        void load();
+      }}
+      onTreat={setTreatmentAction}
+      onTypeSaved={(type) => {
+        setData((current) => ({
+          ...current,
+          actionTypes: [...current.actionTypes.filter((item) => item.key !== type.key), type],
+          actions: current.actions.map((action) => action.actionTypeKey === type.key ? { ...action, actionType: type.label } : action),
+        }));
+        setMessage('Type d’évènement mis à jour. Les rattachements KPI et le workflow sont inchangés.');
+      }}
+      pdfActionId={pdfActionId}
+      previewMode={previewMode}
+    />
 
     <CreateActionDialog client={effectiveClient} data={data} issuerName={profileName} onClose={() => setCreateOpen(false)} onCreated={(action) => { setData((current) => ({ ...current, actions: [action, ...current.actions] })); setCreateOpen(false); setMessage('Rapport créé et soumis à Christophe MINASSIAN.'); }} open={createOpen} previewMode={previewMode} />
     <ApprovalDialog action={approvalAction} client={effectiveClient} data={data} onClose={() => setApprovalAction(null)} onSaved={(action) => { setApprovalAction(null); replaceAction(action); setMessage('Rapport approuvé et responsables affectés.'); void load(); }} />

@@ -25,6 +25,20 @@ L'émetteur est prérempli depuis le profil connecté et sa signature active est
 
 Les affectations d'équipage sont dynamiques : un Marin voit et peut traiter l'action lorsqu'une affectation Planning confirmée le rattache au navire concerné. Les politiques RLS et les RPC appliquent ce périmètre côté base, indépendamment de l'interface.
 
+## Centre de contrôle et corrections administratives
+
+À compter de la version `3.34.0`, le module est présenté comme un centre de contrôle : file priorisée, indicateurs synthétiques, dossier détaillé et historique du workflow restent visibles dans un même écran.
+
+Le profil `Administrateur` peut corriger les informations factuelles d'une fiche avec un motif obligatoire. Le RPC `action_item_admin_update` n'accepte aucun champ de statut, de workflow, d'approbation, de traitement, de clôture ou d'affectation. Chaque correction est historisée dans `public.action_item_correction_log` avec les valeurs avant/après.
+
+Le catalogue `public.action_type_catalog` est également administrable via `action_type_catalog_admin_save`. Les champs modifiables sont le libellé, la famille d'affichage, l'ordre, l'état actif et l'obligation de renseigner un type d'écart. La clé stable, la classification KPI/HSE et la confidentialité restent immuables pour les types existants afin d'éviter toute rupture des indicateurs ou des règles d'accès. Un nouveau type est créé sans rattachement KPI jusqu'à validation de la matrice métier.
+
+## Pilotage du traitement
+
+À compter de la version `3.35.0`, chaque action approuvée dispose d'un journal de suivi. Un responsable autorisé peut ajouter un commentaire, joindre un fichier de 10 Mo maximum ou clôturer l'action. Chaque entrée de `public.action_item_treatment_events` est immuable et conserve le nom de l'émetteur, son profil, sa personne RH et l'horodatage serveur.
+
+Les pièces jointes utilisent le bucket privé `action-plan-evidence` et sont accessibles uniquement aux profils déjà autorisés à lire la fiche. La clôture reprend la transition existante (`Ecart Soldé`, `workflow_status = closed`, date du jour) sans écraser l'action réalisée ni les commentaires historiques du formulaire de traitement. Les signalements confidentiels conservent leur restriction à l'émetteur et à Christophe MINASSIAN.
+
 ## Catégories HSE et temps d’exposition
 
 `public.action_type_catalog` contient les catégories historiques et les catégories de sécurité suivantes :
