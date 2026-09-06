@@ -19,6 +19,11 @@ const ACTION_DOCUMENT_SELECT = [
 
 const ACTION_PLAN_EVIDENCE_BUCKET = 'action-plan-evidence';
 const ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS = 60 * 60;
+const ACTION_TREATMENT_EVENT_SELECT = [
+  'id', 'company_id', 'action_item_id', 'event_type', 'note', 'attachment_file_name',
+  'attachment_storage_bucket', 'attachment_storage_path', 'attachment_mime_type',
+  'attachment_size_bytes', 'created_by_person_id', 'created_by_name', 'created_at',
+].join(', ');
 
 type ActionItemRow = Record<string, unknown> & { id: number; title: string };
 type ActionDocumentRow = Record<string, unknown> & { id: number; title: string };
@@ -122,6 +127,23 @@ export interface ActionAssigneeRecord {
   displayName: string;
 }
 
+export interface ActionTreatmentEventRecord {
+  id: number;
+  companyId: number;
+  actionItemId: number;
+  eventType: 'commented' | 'attachment_added' | 'closed';
+  note: string;
+  attachmentFileName: string;
+  attachmentStorageBucket: string;
+  attachmentStoragePath: string;
+  attachmentMimeType: string;
+  attachmentSizeBytes: number;
+  attachmentUrl: string;
+  authorPersonId: number | null;
+  authorName: string;
+  createdAt: string;
+}
+
 export interface ActionPlanData {
   actions: ActionItemRecord[];
   documents: ActionDocumentRecord[];
@@ -129,6 +151,7 @@ export interface ActionPlanData {
   vessels: VesselOption[];
   people: PersonOption[];
   assignees: ActionAssigneeRecord[];
+  treatmentEvents: ActionTreatmentEventRecord[];
   exposureHours: number;
   hseKpis: Record<string, number | string | boolean | null> | null;
   hseDashboard: ActionPlanHseDashboard | null;
@@ -196,6 +219,11 @@ export interface CreateActionItemInput {
 export interface ActionTreatmentInput {
   comments: string;
   realizedAction: string;
+  closeAction: boolean;
+}
+
+export interface ActionTreatmentFollowupInput {
+  note: string;
   closeAction: boolean;
 }
 
@@ -450,6 +478,43 @@ async function fetchActionAssignees(client: SupabaseClient): Promise<ActionAssig
   }));
 }
 
+async function fetchActionTreatmentEvents(client: SupabaseClient): Promise<ActionTreatmentEventRecord[]> {
+  const { data, error } = await client.from('action_item_treatment_events')
+    .select(ACTION_TREATMENT_EVENT_SELECT)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+  if (error) return [];
+
+  const rows = (data || []) as unknown as Record<string, unknown>[];
+  const paths = Array.from(new Set(rows.map((row) => nullableText(row.attachment_storage_path)).filter(Boolean)));
+  const signedUrls = paths.length
+    ? await client.storage.from(ACTION_PLAN_EVIDENCE_BUCKET).createSignedUrls(paths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS)
+    : { data: [], error: null };
+  const urlsByPath = new Map((signedUrls.data || [])
+    .filter((item) => item.path && item.signedUrl)
+    .map((item) => [item.path, item.signedUrl]));
+
+  return rows.map((row) => {
+    const attachmentStoragePath = nullableText(row.attachment_storage_path);
+    return {
+      id: Number(row.id),
+      companyId: Number(row.company_id),
+      actionItemId: Number(row.action_item_id),
+      eventType: row.event_type as ActionTreatmentEventRecord['eventType'],
+      note: nullableText(row.note),
+      attachmentFileName: nullableText(row.attachment_file_name),
+      attachmentStorageBucket: nullableText(row.attachment_storage_bucket),
+      attachmentStoragePath,
+      attachmentMimeType: nullableText(row.attachment_mime_type),
+      attachmentSizeBytes: Number(row.attachment_size_bytes || 0),
+      attachmentUrl: urlsByPath.get(attachmentStoragePath) || '',
+      authorPersonId: row.created_by_person_id == null ? null : Number(row.created_by_person_id),
+      authorName: nullableText(row.created_by_name),
+      createdAt: nullableText(row.created_at),
+    };
+  });
+}
+
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
@@ -552,9 +617,10 @@ export async function fetchActionPlanHseDashboard(
 
 export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
-  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, hseResult] = await Promise.allSettled([
+  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, hseResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
-    fetchPeople(client), fetchActionAssignees(client), fetchActionPlanHseDashboard(client, currentYear),
+    fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
+    fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
@@ -570,6 +636,7 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
+    treatmentEvents: treatmentEventsResult.status === 'fulfilled' ? treatmentEventsResult.value : [],
     exposureHours: hseResult.status === 'fulfilled' ? hseResult.value?.totals.exposureHours || 0 : 0,
     hseKpis: hseResult.status === 'fulfilled' && hseResult.value ? hseResult.value.totals as unknown as ActionPlanData['hseKpis'] : null,
     hseDashboard: hseResult.status === 'fulfilled' ? hseResult.value : null,
@@ -638,6 +705,36 @@ export async function updateActionItemTreatment(
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as unknown as ActionItemRow;
   return (await hydrateActionThumbnailUrls(client, mapActionItemRows([row])))[0];
+}
+
+export async function addActionTreatmentFollowup(
+  client: SupabaseClient,
+  action: ActionItemRecord,
+  input: ActionTreatmentFollowupInput,
+  attachment?: File,
+): Promise<void> {
+  if (!input.note.trim() && !attachment && !input.closeAction) {
+    throw new Error("Ajoutez un commentaire, une pièce jointe ou clôturez l'action.");
+  }
+  if (attachment && attachment.size > 10 * 1024 * 1024) {
+    throw new Error('La pièce jointe ne doit pas dépasser 10 Mo.');
+  }
+
+  let attachmentPath: string | null = null;
+  if (attachment && action.companyId) {
+    attachmentPath = await uploadEvidence(client, action.companyId, action.id, 'suivi', attachment);
+  }
+
+  const { error } = await client.rpc('action_item_add_treatment_followup', {
+    p_action_id: action.id,
+    p_note: optionalText(input.note),
+    p_attachment_file_name: attachment?.name || null,
+    p_attachment_storage_path: attachmentPath,
+    p_attachment_mime_type: attachment?.type || null,
+    p_attachment_size_bytes: attachment?.size || null,
+    p_close_action: input.closeAction,
+  });
+  if (error) throw error;
 }
 
 export async function approveActionItem(

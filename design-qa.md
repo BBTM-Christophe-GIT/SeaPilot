@@ -759,3 +759,32 @@ final result: passed
 - version `3.34.0` visible dans la navigation.
 
 final result: passed
+
+---
+
+# Design QA — Plan d'action, suivi du traitement
+
+## Référence et méthode
+
+- Référence fournie : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-04a53616-f660-47d8-bbf3-af9500b2aa3c.png`.
+- État comparé : fiche approuvée en retard, profil Administrateur, deux suivis existants dont une pièce jointe.
+- Comparaison : référence et section réelle clonée depuis `/modules/actionPlan?preview=1` ont été affichées ensemble dans le navigateur intégré, dans deux cadres de même largeur.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; le titre, la zone de saisie et le bouton primaire reprennent la hiérarchie de la référence.
+- P2 : aucun défaut restant après correction du repli des commandes sur une fiche étroite ; aucun libellé de bouton ne déborde.
+- Écart fonctionnel assumé : une seconde ligne contient la pièce jointe et l'option de clôture, nécessaires au pilotage demandé, puis le journal horodaté apparaît sous le formulaire.
+- Le rendu réutilise les couleurs, bordures, rayons, typographies et icônes du centre de contrôle SeaPilot.
+
+## Parcours vérifiés
+
+- ajout d'un commentaire depuis la fiche ;
+- apparition immédiate du commentaire avec `Arthur DEMO` et l'heure locale ;
+- affichage et ouverture d'une pièce jointe existante ;
+- clôture depuis le même formulaire ;
+- disparition des champs après clôture et conservation de l'évènement de clôture dans le journal ;
+- version `3.35.0` et build `2026-09-06.005` visibles.
+
+final result: passed

@@ -60,6 +60,13 @@ function ordered(data: unknown[]) {
 }
 
 function createClient(actions: unknown[] = [openAction, closedAction]) {
+  const treatmentEvents: Record<string, unknown>[] = [{
+    id: 8801, company_id: 1, action_item_id: 810, event_type: 'commented',
+    note: 'Commande validée auprès du fournisseur.', attachment_file_name: null,
+    attachment_storage_bucket: null, attachment_storage_path: null, attachment_mime_type: null,
+    attachment_size_bytes: null, created_by_person_id: 1010, created_by_name: 'Arthur MAREST',
+    created_at: '2026-09-05T14:05:00Z',
+  }];
   const created = {
     ...openAction,
     id: 900,
@@ -74,6 +81,7 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       createSignedUrls: vi.fn().mockImplementation((paths: string[]) => Promise.resolve({
         data: paths.map((path) => ({ path, signedUrl: `https://evidence.example/${path}` })), error: null,
       })),
+      upload: vi.fn().mockImplementation((path: string) => Promise.resolve({ data: { path }, error: null })),
     }) },
     rpc: vi.fn().mockImplementation((functionName: string, parameters?: Record<string, unknown>) => {
       if (functionName === 'action_item_create') {
@@ -112,6 +120,22 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
           owner_name: 'Arthur MAREST, Équipage — GOURY', workflow_status: 'approved',
           status: 'Ecart Non Soldé', approved_by_person_id: 1008, approved_at: '2026-08-27T15:00:00Z',
         }, error: null });
+      }
+      if (functionName === 'action_item_add_treatment_followup') {
+        const createdEvent = {
+          id: 8802, company_id: 1, action_item_id: parameters?.p_action_id,
+          event_type: parameters?.p_close_action ? 'closed' : parameters?.p_attachment_storage_path ? 'attachment_added' : 'commented',
+          note: parameters?.p_note || (parameters?.p_close_action ? 'Action clôturée.' : null),
+          attachment_file_name: parameters?.p_attachment_file_name,
+          attachment_storage_bucket: parameters?.p_attachment_storage_path ? 'action-plan-evidence' : null,
+          attachment_storage_path: parameters?.p_attachment_storage_path,
+          attachment_mime_type: parameters?.p_attachment_mime_type,
+          attachment_size_bytes: parameters?.p_attachment_size_bytes,
+          created_by_person_id: 1008, created_by_name: 'Christophe MINASSIAN',
+          created_at: '2026-09-06T10:30:00Z',
+        };
+        treatmentEvents.unshift(createdEvent);
+        return Promise.resolve({ data: createdEvent, error: null });
       }
       if (functionName === 'action_item_admin_update') {
         const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
@@ -169,6 +193,7 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
         ])) }) };
       }
       if (table === 'action_item_assignees') return { select: vi.fn().mockReturnValue(ordered([])) };
+      if (table === 'action_item_treatment_events') return { select: vi.fn().mockReturnValue(ordered(treatmentEvents)) };
       if (table === 'hse_exposure_methodologies') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [{ id: 7 }], error: null }) }) }) };
       }
@@ -298,6 +323,32 @@ describe('ActionPlanPage', () => {
       p_action_id: 812, p_anomaly_cause: 'Panne Equipement', p_person_ids: [1010], p_vessel_ids: [12],
     });
     expect(await screen.findByText('Rapport approuvé et responsables affectés.')).toBeInTheDocument();
+  });
+
+  it('adds a timestamped treatment follow-up with its author, attachment and optional closure', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction]);
+    renderWithProfile(client, ['admin']);
+
+    expect(await screen.findByText('Commande validée auprès du fournisseur.')).toBeInTheDocument();
+    expect(screen.getAllByText('Arthur MAREST').length).toBeGreaterThan(0);
+    const note = screen.getByLabelText('Commentaire de suivi');
+    await user.type(note, 'Garde-corps réceptionné et contrôlé.');
+    const attachment = new File(['preuve'], 'controle-garde-corps.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText('Pièce jointe de suivi'), attachment);
+    await user.click(screen.getByRole('checkbox', { name: 'Clôturer l’action avec ce suivi' }));
+    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+
+    expect(client.storage.from).toHaveBeenCalledWith('action-plan-evidence');
+    expect(client.rpc).toHaveBeenCalledWith('action_item_add_treatment_followup', expect.objectContaining({
+      p_action_id: 810,
+      p_note: 'Garde-corps réceptionné et contrôlé.',
+      p_attachment_file_name: 'controle-garde-corps.pdf',
+      p_attachment_mime_type: 'application/pdf',
+      p_attachment_size_bytes: attachment.size,
+      p_close_action: true,
+    }));
+    expect(await screen.findByText('Action clôturée et ajoutée au suivi.')).toBeInTheDocument();
   });
 
   it('lets only an Administrator correct factual information without changing workflow fields', async () => {

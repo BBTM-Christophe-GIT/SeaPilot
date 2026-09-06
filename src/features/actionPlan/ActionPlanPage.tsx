@@ -24,7 +24,7 @@ import './actionPlan.css';
 interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 
 const EMPTY_DATA: ActionPlanData = {
-  actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [],
+  actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [], treatmentEvents: [],
   exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
@@ -475,6 +475,10 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       onExport={(action) => void exportActionSheet(action)}
       onFilterChange={updateFilter}
       onReload={() => void load()}
+      onTreatmentFollowupSaved={(_action, closed) => {
+        setMessage(closed ? 'Action clôturée et ajoutée au suivi.' : 'Suivi du traitement ajouté.');
+        void load();
+      }}
       onTreat={setTreatmentAction}
       onTypeSaved={(type) => {
         setData((current) => ({

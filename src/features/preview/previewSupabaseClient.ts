@@ -1287,6 +1287,30 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9881, company_id: 1, action_item_id: 9861, assignee_kind: 'person', person_id: 9303, vessel_id: null, created_at: '2026-07-28T08:30:00Z' },
     { id: 9882, company_id: 1, action_item_id: 9861, assignee_kind: 'vessel_crew', person_id: null, vessel_id: 9201, created_at: '2026-07-28T08:30:00Z' },
   ],
+  action_item_treatment_events: [
+    {
+      id: 9890, company_id: 1, action_item_id: 9861, event_type: 'attachment_added',
+      note: 'Le garde-corps de remplacement a été réceptionné à bord.',
+      attachment_file_name: 'controle-reception-garde-corps.pdf', attachment_storage_bucket: 'action-plan-evidence',
+      attachment_storage_path: 'demo/rapport-visite-CSN.pdf', attachment_mime_type: 'application/pdf',
+      attachment_size_bytes: 815000, created_by_person_id: 9303, created_by_name: 'Luc MARTIN',
+      created_at: '2026-08-10T15:20:00Z',
+    },
+    {
+      id: 9889, company_id: 1, action_item_id: 9861, event_type: 'commented',
+      note: 'Commande validée auprès du fournisseur. Intervention prévue au prochain arrêt à quai.',
+      attachment_file_name: null, attachment_storage_bucket: null, attachment_storage_path: null,
+      attachment_mime_type: null, attachment_size_bytes: null, created_by_person_id: 9301,
+      created_by_name: 'Arthur DEMO', created_at: '2026-08-05T14:05:00Z',
+    },
+    {
+      id: 9891, company_id: 1, action_item_id: 9862, event_type: 'closed',
+      note: 'Brief sécurité réalisé et action contrôlée.', attachment_file_name: null,
+      attachment_storage_bucket: null, attachment_storage_path: null, attachment_mime_type: null,
+      attachment_size_bytes: null, created_by_person_id: 9302, created_by_name: 'Camille DURAND',
+      created_at: '2026-07-19T13:15:00Z',
+    },
+  ],
   action_documents: [
     {
       id: 9871, action_item_id: 9861, action_sharepoint_item_id: 'preview-action-101',
@@ -1917,6 +1941,29 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     }
     return createPreviewQuery({ data: action, error: null });
   }
+  if (functionName === 'action_item_add_treatment_followup') {
+    const action = previewRows('action_items').find((row) => Number(row.id) === Number(args.p_action_id));
+    if (!action) return createPreviewQuery({ data: null, error: { message: 'Action introuvable.' } });
+    const event = {
+      id: nextPreviewId('action_item_treatment_events', 9900), company_id: action.company_id,
+      action_item_id: action.id,
+      event_type: args.p_close_action ? 'closed' : args.p_attachment_storage_path ? 'attachment_added' : 'commented',
+      note: args.p_note || (args.p_close_action ? 'Action clôturée.' : null),
+      attachment_file_name: args.p_attachment_file_name || null,
+      attachment_storage_bucket: args.p_attachment_storage_path ? 'action-plan-evidence' : null,
+      attachment_storage_path: args.p_attachment_storage_path || null,
+      attachment_mime_type: args.p_attachment_mime_type || null,
+      attachment_size_bytes: args.p_attachment_size_bytes || null,
+      created_by_person_id: 9301, created_by_name: 'Arthur DEMO', created_at: new Date().toISOString(),
+    };
+    PREVIEW_ROWS.action_item_treatment_events.unshift(event);
+    if (args.p_close_action) {
+      action.status = 'Ecart Soldé';
+      action.workflow_status = 'closed';
+      action.closed_on = new Date().toISOString().slice(0, 10);
+    }
+    return createPreviewQuery({ data: event, error: null });
+  }
   if (functionName === 'create_fleet_certificate_line') {
     const vesselSource = previewRows('fleet_certificates').find((row) => Number(row.vessel_id) === Number(args.p_vessel_id));
     const categoryKey = String(args.p_category_key || '').trim();
@@ -2431,6 +2478,7 @@ export const previewSupabaseClient = {
       },
       upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
         bucket === 'project-catalog-media'
+        || bucket === 'action-plan-evidence'
         || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')
       )
         ? Promise.resolve({ data: { path: _path }, error: null })
