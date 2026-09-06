@@ -103,7 +103,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Administration' })).toBeInTheDocument();
   });
 
-  it('shows service-note and personal HR expiry notifications in separate groups', async () => {
+  it('shows service-note, Action Plan and personal HR expiry notifications in separate groups', async () => {
     const user = userEvent.setup();
     const authClient = {
       auth: {
@@ -136,11 +136,13 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    const notificationButton = await screen.findByRole('button', { name: /Notifications, 2 élément/ });
+    const notificationButton = await screen.findByRole('button', { name: /Notifications, 3 élément/ });
     await user.click(notificationButton);
 
     expect(screen.getByRole('heading', { name: 'Notes de service' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'RH / Brevets · échéance à 40 jours' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Clôture à contre-valider/ })).toHaveAttribute('href', '/modules/actionPlan?action=9861');
     expect(screen.getByText('Visite médicale d’aptitude')).toBeInTheDocument();
     expect(screen.getByText('Expire dans 40 jours')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Visite médicale d’aptitude/ })).toHaveAttribute('href', '/modules/humanResources');

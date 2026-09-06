@@ -1,12 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3,
-  FileDown, FileImage, FileText, Filter, History, Info, LockKeyhole, MoreVertical, Paperclip, Pencil, Plus,
+  FileDown, FileImage, FileSignature, FileText, Filter, History, Info, LockKeyhole, MoreVertical, Paperclip, Pencil, Plus,
   RefreshCw, Search, ShieldCheck, Ship, Upload, UserRound, UsersRound, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  addActionTreatmentFollowup, fetchActionEvidenceUrls, isActionClosed, saveActionTypeAsAdmin, updateActionItemAsAdmin,
+  addActionTreatmentFollowup, fetchActionEvidenceUrls, isActionClosed, reviewActionClosure, saveActionTypeAsAdmin, updateActionItemAsAdmin,
   type ActionFindingPhotoChanges, type ActionItemAdminUpdateInput, type ActionItemRecord,
   type ActionPlanData, type ActionPlanMetrics, type ActionTreatmentEventRecord,
   type ActionTypeAdminInput, type ActionTypeCatalogRecord,
@@ -27,9 +27,11 @@ interface ControlCenterProps {
   metrics: ActionPlanMetrics;
   filters: ActionPlanFilters;
   filterOptions: { vessels: string[]; actionTypes: string[]; deviationTypes: string[] };
-  isAdmin: boolean;
+  canManage: boolean;
+  canEdit: boolean;
   canCreate: boolean;
   previewMode: boolean;
+  requestedActionId?: number | null;
   pdfActionId: number | null;
   onFilterChange(key: keyof ActionPlanFilters, value: string): void;
   onCreate(): void;
@@ -37,7 +39,7 @@ interface ControlCenterProps {
   onApprove(action: ActionItemRecord): void;
   onTreat(action: ActionItemRecord): void;
   onActionSaved(action: ActionItemRecord): void;
-  onTreatmentFollowupSaved(action: ActionItemRecord, closed: boolean): void;
+  onTreatmentFollowupSaved(action: ActionItemRecord, outcome: 'commented' | 'closure_requested' | 'closure_approved' | 'closure_rejected'): void;
   onTypeSaved(type: ActionTypeCatalogRecord): void;
   onExport(action: ActionItemRecord): void;
   canApprove(action: ActionItemRecord): boolean;
@@ -155,12 +157,14 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
 }
 
-function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
+function TreatmentFollowup({ action, canComment, canDirectlyClose, canReviewClosure, client, events, onSaved }: {
   action: ActionItemRecord;
-  canTreat: boolean;
+  canComment: boolean;
+  canDirectlyClose: boolean;
+  canReviewClosure: boolean;
   client: SupabaseClient;
   events: ActionTreatmentEventRecord[];
-  onSaved(closed: boolean): void;
+  onSaved(outcome: 'commented' | 'closure_requested' | 'closure_approved' | 'closure_rejected'): void;
 }) {
   const [note, setNote] = useState('');
   const [attachment, setAttachment] = useState<File>();
@@ -168,6 +172,8 @@ function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const closurePending = action.closureReviewStatus === 'pending';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -179,7 +185,7 @@ function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
       setAttachment(undefined);
       setCloseAction(false);
       setFileInputKey((current) => current + 1);
-      onSaved(closeAction);
+      onSaved(closeAction ? (canDirectlyClose ? 'closure_approved' : 'closure_requested') : 'commented');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Impossible d'ajouter ce suivi.");
     } finally {
@@ -187,12 +193,32 @@ function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
     }
   }
 
+  async function reviewClosure(approve: boolean) {
+    setSaving(true);
+    setError('');
+    try {
+      await reviewActionClosure(client, action.id, { approve, comment: reviewComment });
+      setReviewComment('');
+      onSaved(approve ? 'closure_approved' : 'closure_rejected');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Impossible de traiter la demande de clôture.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const eventLabels: Record<ActionTreatmentEventRecord['eventType'], string> = {
+    commented: 'Commentaire ajouté', attachment_added: 'Pièce jointe ajoutée', closed: 'Action clôturée',
+    closure_requested: 'Clôture demandée', closure_approved: 'Clôture validée', closure_rejected: 'Clôture refusée',
+  };
+
   return <section className="action-control-followup" aria-labelledby={`action-followup-title-${action.id}`}>
     <header>
       <div><h3 id={`action-followup-title-${action.id}`}><History size={17} />Suivi du traitement</h3><p>Chaque ajout conserve son auteur et son horodatage.</p></div>
       {isActionClosed(action) && <span><CheckCircle2 size={15} />Action clôturée</span>}
+      {!isActionClosed(action) && closurePending && <span className="is-pending"><Clock3 size={15} />Clôture à valider</span>}
     </header>
-    {canTreat && !isActionClosed(action) && <form onSubmit={submit}>
+    {canComment && !isActionClosed(action) && <form onSubmit={submit}>
       <textarea
         aria-label="Commentaire de suivi"
         maxLength={5000}
@@ -213,30 +239,35 @@ function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
             type="file"
           />
         </label>
-        <label className="action-control-close-choice">
+        {action.workflowStatus === 'approved' && !closurePending ? <label className="action-control-close-choice">
           <input checked={closeAction} onChange={(event) => setCloseAction(event.target.checked)} type="checkbox" />
-          <span>Clôturer l’action avec ce suivi</span>
-        </label>
+          <span>{canDirectlyClose ? 'Clôturer l’action avec ce suivi' : 'Demander la clôture avec ce suivi'}</span>
+        </label> : null}
         <button disabled={saving || (!note.trim() && !attachment && !closeAction)} type="submit">
           {closeAction ? <CheckCircle2 size={17} /> : <Plus size={17} />}
-          {saving ? 'Enregistrement…' : closeAction ? 'Clôturer' : 'Ajouter'}
+          {saving ? 'Enregistrement…' : closeAction ? (canDirectlyClose ? 'Clôturer' : 'Demander la clôture') : 'Ajouter'}
         </button>
       </div>
+      <p className="action-control-signature-note"><FileSignature size={14} />Votre identité, la date et votre signature RH active seront archivées avec cet ajout.</p>
       {error && <p className="action-plan-message is-error" role="alert">{error}</p>}
     </form>}
-    {!canTreat && !isActionClosed(action) && action.workflowStatus === 'pending_approval'
-      ? <p className="action-control-followup-empty">Le pilotage sera disponible après l’approbation et l’affectation du rapport.</p>
-      : null}
+    {closurePending && canReviewClosure && <section className="action-control-closure-review" aria-label="Contre-validation de la clôture">
+      <div><ShieldCheck size={18} /><span><strong>Contre-validation obligatoire</strong><small>Demande de {action.closureRequestedByName || 'l’émetteur'} · {formatDate(action.closureRequestedAt, true)}</small></span></div>
+      <textarea aria-label="Commentaire de contre-validation" maxLength={5000} onChange={(event) => setReviewComment(event.target.value)} placeholder="Commentaire éventuel…" rows={2} value={reviewComment} />
+      <p className="action-control-signature-note"><FileSignature size={14} />Votre signature RH active sera enregistrée avec la décision.</p>
+      <footer><button className="is-secondary is-danger" disabled={saving} onClick={() => void reviewClosure(false)} type="button"><X size={16} />Refuser</button><button disabled={saving} onClick={() => void reviewClosure(true)} type="button"><CheckCircle2 size={16} />Valider la clôture</button></footer>
+    </section>}
     <ol>
-      {events.map((item) => <li className={item.eventType === 'closed' ? 'is-closed' : ''} key={item.id}>
-        <span aria-hidden="true">{item.eventType === 'closed' ? <CheckCircle2 size={15} /> : <Circle size={12} />}</span>
+      {events.map((item) => <li className={item.eventType === 'closed' || item.eventType === 'closure_approved' ? 'is-closed' : item.eventType === 'closure_rejected' ? 'is-rejected' : item.eventType === 'closure_requested' ? 'is-requested' : ''} key={item.id}>
+        <span aria-hidden="true">{item.eventType === 'closed' || item.eventType === 'closure_approved' ? <CheckCircle2 size={15} /> : item.eventType === 'closure_rejected' ? <X size={13} /> : <Circle size={12} />}</span>
         <div>
-          <strong>{item.eventType === 'closed' ? 'Action clôturée' : item.note || 'Pièce jointe ajoutée'}</strong>
-          {item.eventType === 'closed' && item.note && item.note !== 'Action clôturée.' && <p>{item.note}</p>}
+          <strong>{eventLabels[item.eventType]}</strong>
+          {item.note && !['Action clôturée.', 'Clôture demandée.', 'Clôture validée.', 'Clôture refusée.'].includes(item.note) && <p>{item.note}</p>}
           {item.attachmentFileName && (item.attachmentUrl
             ? <a href={item.attachmentUrl} rel="noreferrer" target="_blank"><Paperclip size={14} />{item.attachmentFileName}<small>{formatFileSize(item.attachmentSizeBytes)}</small></a>
             : <p className="action-control-followup-file"><Paperclip size={14} />{item.attachmentFileName}</p>)}
           <small><b>{item.authorName || 'Utilisateur SeaPilot'}</b><time dateTime={item.createdAt}>{formatDate(item.createdAt, true)}</time></small>
+          <span className="action-control-event-signature">{item.signatureUrl ? <img alt={`Signature de ${item.authorName}`} src={item.signatureUrl} /> : <FileSignature aria-hidden="true" size={14} />}<em>{item.signatureUrl ? 'Signature enregistrée' : 'Signature historique non disponible'}</em></span>
         </div>
       </li>)}
     </ol>
@@ -244,9 +275,9 @@ function TreatmentFollowup({ action, canTreat, client, events, onSaved }: {
   </section>;
 }
 
-function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, onTreat, onEdit, onExport, onTreatmentFollowupSaved, canApprove, canTreat }: {
-  client: SupabaseClient; action: ActionItemRecord; data: ActionPlanData; isAdmin: boolean; pdfActionId: number | null;
-  onApprove(): void; onTreat(): void; onEdit(): void; onExport(): void; onTreatmentFollowupSaved(closed: boolean): void; canApprove: boolean; canTreat: boolean;
+function ActionDetail({ client, action, data, canEdit, canManage, pdfActionId, onApprove, onTreat, onEdit, onExport, onTreatmentFollowupSaved, canApprove, canComment }: {
+  client: SupabaseClient; action: ActionItemRecord; data: ActionPlanData; canEdit: boolean; canManage: boolean; pdfActionId: number | null;
+  onApprove(): void; onTreat(): void; onEdit(): void; onExport(): void; onTreatmentFollowupSaved(outcome: 'commented' | 'closure_requested' | 'closure_approved' | 'closure_rejected'): void; canApprove: boolean; canComment: boolean;
 }) {
   const [evidence, setEvidence] = useState<string[]>(action.thumbnailUrl ? [action.thumbnailUrl] : []);
   useEffect(() => {
@@ -270,7 +301,7 @@ function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, o
         <div><span className={`action-control-status is-${tone}`}>{actionStatus(action)}</span><small>Rapport #{actionReference(action)}</small></div>
         <div className="action-control-detail-actions" aria-label="Actions de la fiche">
           {canApprove && <button onClick={onApprove} type="button"><ShieldCheck size={16} />Approuver le rapport</button>}
-          {canTreat && !isActionClosed(action) && <button onClick={onTreat} type="button"><CheckCircle2 size={16} />Traiter l’action</button>}
+          {canManage && action.workflowStatus === 'approved' && !isActionClosed(action) && <button onClick={onTreat} type="button"><CheckCircle2 size={16} />Traiter l’action</button>}
           <button className="is-secondary" disabled={pdfActionId === action.id} onClick={onExport} type="button"><FileDown size={16} />{pdfActionId === action.id ? 'Génération…' : 'Télécharger le PDF'}</button>
         </div>
       </div>
@@ -285,7 +316,7 @@ function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, o
     <div className="action-control-detail-body">
       <div className="action-control-facts">
         <section>
-          <header><h3><Info size={17} />Informations factuelles</h3>{isAdmin && <button className="is-secondary" onClick={onEdit} type="button"><Pencil size={15} />Modifier la fiche</button>}</header>
+          <header><h3><Info size={17} />Informations factuelles</h3>{canEdit && <button className="is-secondary" onClick={onEdit} type="button"><Pencil size={15} />Modifier la fiche</button>}</header>
           <dl>
             <dt>Date et heure</dt><dd>{formatDate(action.occurredAt || action.openedOn, true)}</dd>
             <dt>Lieu</dt><dd>{display(action.locationDetail, action.vesselName)}</dd>
@@ -314,7 +345,7 @@ function ActionDetail({ client, action, data, isAdmin, pdfActionId, onApprove, o
           {evidence.length ? <div className="action-control-evidence">{evidence.map((url, index) => <a href={url} key={url} rel="noreferrer" target="_blank"><img alt={`Preuve ${index + 1}`} src={url} /></a>)}</div> : <p className="action-control-no-evidence">Aucune photo jointe.</p>}
           {documents.length > 0 && <div className="action-control-documents">{documents.map((document) => <a aria-label={`Ouvrir le fichier ${document.title}`} href={document.fileUrl} key={document.id} rel="noreferrer" target="_blank"><FileText size={18} /><span><strong>{document.title}</strong><small>Fiche de progrès</small></span><ChevronRight size={16} /></a>)}</div>}
         </section>
-        <TreatmentFollowup action={action} canTreat={canTreat} client={client} events={treatmentEvents} onSaved={onTreatmentFollowupSaved} />
+        <TreatmentFollowup action={action} canComment={canComment} canDirectlyClose={canManage} canReviewClosure={canManage && action.closureReviewStatus === 'pending'} client={client} events={treatmentEvents} onSaved={onTreatmentFollowupSaved} />
       </div>
       <WorkflowHistory action={action} />
     </div>
@@ -379,7 +410,7 @@ function TypeCatalogPanel({ client, types, onClose, onSaved }: {
       <button aria-label={`${type.active ? 'Désactiver' : 'Activer'} ${type.label}`} className={`action-control-active${type.active ? ' is-active' : ''}`} onClick={() => void toggle(type)} type="button"><Circle size={16} fill="currentColor" /></button>
       <button aria-label={`Modifier ${type.label}`} className="action-control-more" onClick={() => setEditing(type)} type="button"><MoreVertical size={17} /></button>
     </div>)}</div>
-    <footer><button onClick={() => setEditing(null)} type="button"><Plus size={16} />Ajouter un type d’évènement</button><small>Réservé au profil Administrateur.</small></footer>
+    <footer><button onClick={() => setEditing(null)} type="button"><Plus size={16} />Ajouter un type d’évènement</button><small>Réservé aux profils Administrateur et Direction.</small></footer>
     {editing !== undefined && <TypeEditorDialog client={client} initial={editing} onClose={() => setEditing(undefined)} onSaved={(type) => { onSaved(type); setEditing(undefined); }} />}
   </aside>;
 }
@@ -436,14 +467,15 @@ function ActionEditDialog({ client, action, data, onClose, onSaved }: {
 }
 
 export function ActionPlanControlCenter(props: ControlCenterProps) {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [typesOpen, setTypesOpen] = useState(props.previewMode && props.isAdmin);
+  const [selectedId, setSelectedId] = useState<number | null>(props.requestedActionId || null);
+  const [typesOpen, setTypesOpen] = useState(props.previewMode && props.canManage);
   const [editAction, setEditAction] = useState<ActionItemRecord | null>(null);
   const selected = props.actions.find((action) => action.id === selectedId) || props.actions[0] || null;
   useEffect(() => {
-    if (!props.actions.length) setSelectedId(null);
+    if (props.requestedActionId && props.actions.some((action) => action.id === props.requestedActionId)) setSelectedId(props.requestedActionId);
+    else if (!props.actions.length) setSelectedId(null);
     else if (!props.actions.some((action) => action.id === selectedId)) setSelectedId(props.actions[0].id);
-  }, [props.actions, selectedId]);
+  }, [props.actions, props.requestedActionId, selectedId]);
   const openCount = props.actions.filter((action) => !isActionClosed(action)).length;
   const pendingCount = props.actions.filter((action) => action.workflowStatus === 'pending_approval').length;
   return <>
@@ -457,14 +489,14 @@ export function ActionPlanControlCenter(props: ControlCenterProps) {
     <div className={`action-control-layout${typesOpen ? ' has-types' : ''}`}>
       <aside className="action-control-queue">
         <header className="action-control-queue-header">
-          <div className="action-control-queue-topbar"><span>{props.actions.length} rapport(s)</span>{props.isAdmin && <button onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button>}</div>
+          <div className="action-control-queue-topbar"><span>{props.actions.length} rapport(s)</span>{props.canManage && <button onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button>}</div>
           <div className="action-control-queue-search"><label><Search size={17} /><span className="sr-only">Rechercher</span><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, type…" value={props.filters.search} onChange={(event) => props.onFilterChange('search', event.target.value)} /></label><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></div>
         </header>
         <details className="action-control-filters"><summary><Filter size={15} />Filtres actifs<ChevronDown size={15} /></summary><div><label>Navire<select aria-label="Navire / lieu" value={props.filters.vessel} onChange={(event) => props.onFilterChange('vessel', event.target.value)}><option value="">Tous</option>{props.filterOptions.vessels.map((value) => <option key={value}>{value}</option>)}</select></label><label>Type<select aria-label="Type d'évènement" value={props.filters.actionType} onChange={(event) => props.onFilterChange('actionType', event.target.value)}><option value="">Tous</option>{props.filterOptions.actionTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Statut<select aria-label="Statut" value={props.filters.status} onChange={(event) => props.onFilterChange('status', event.target.value)}><option value="">Tous</option><option value="open">Non soldé</option><option value="closed">Soldé</option></select></label><label>Écart<select aria-label="Type d'écart" value={props.filters.deviationType} onChange={(event) => props.onFilterChange('deviationType', event.target.value)}><option value="">Tous</option>{props.filterOptions.deviationTypes.map((value) => <option key={value}>{value}</option>)}</select></label></div></details>
         <ActionQueue actions={props.actions} onSelect={setSelectedId} selectedId={selected?.id || null} />
       </aside>
-      {selected ? <ActionDetail action={selected} canApprove={props.canApprove(selected)} canTreat={props.canTreat(selected)} client={props.client} data={props.data} isAdmin={props.isAdmin} onApprove={() => props.onApprove(selected)} onEdit={() => setEditAction(selected)} onExport={() => props.onExport(selected)} onTreatmentFollowupSaved={(closed) => props.onTreatmentFollowupSaved(selected, closed)} onTreat={() => props.onTreat(selected)} pdfActionId={props.pdfActionId} /> : <div className="action-control-detail action-control-empty"><FileImage size={30} />Sélectionnez un rapport pour afficher sa fiche.</div>}
-      {typesOpen && props.isAdmin && <TypeCatalogPanel client={props.client} onClose={() => setTypesOpen(false)} onSaved={props.onTypeSaved} types={props.data.actionTypes} />}
+      {selected ? <ActionDetail action={selected} canApprove={props.canApprove(selected)} canComment={props.canTreat(selected)} canEdit={props.canEdit} canManage={props.canManage} client={props.client} data={props.data} onApprove={() => props.onApprove(selected)} onEdit={() => setEditAction(selected)} onExport={() => props.onExport(selected)} onTreatmentFollowupSaved={(outcome) => props.onTreatmentFollowupSaved(selected, outcome)} onTreat={() => props.onTreat(selected)} pdfActionId={props.pdfActionId} /> : <div className="action-control-detail action-control-empty"><FileImage size={30} />Sélectionnez un rapport pour afficher sa fiche.</div>}
+      {typesOpen && props.canManage && <TypeCatalogPanel client={props.client} onClose={() => setTypesOpen(false)} onSaved={props.onTypeSaved} types={props.data.actionTypes} />}
     </div>
     {editAction && <ActionEditDialog action={editAction} client={props.client} data={props.data} onClose={() => setEditAction(null)} onSaved={(action) => { props.onActionSaved(action); setEditAction(null); setSelectedId(action.id); }} />}
   </>;

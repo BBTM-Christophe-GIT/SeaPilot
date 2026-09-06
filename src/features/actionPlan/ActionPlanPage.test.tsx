@@ -59,12 +59,13 @@ function ordered(data: unknown[]) {
   return chain;
 }
 
-function createClient(actions: unknown[] = [openAction, closedAction]) {
+function createClient(actions: unknown[] = [openAction, closedAction], editButtonEnabled = true) {
   const treatmentEvents: Record<string, unknown>[] = [{
     id: 8801, company_id: 1, action_item_id: 810, event_type: 'commented',
     note: 'Commande validée auprès du fournisseur.', attachment_file_name: null,
     attachment_storage_bucket: null, attachment_storage_path: null, attachment_mime_type: null,
     attachment_size_bytes: null, created_by_person_id: 1010, created_by_name: 'Arthur MAREST',
+    signature_snapshot: { signature_id: 11, storage_bucket: 'working-time-signatures', storage_path: '1/1010/signature.png' },
     created_at: '2026-09-05T14:05:00Z',
   }];
   const created = {
@@ -131,11 +132,21 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
           attachment_storage_path: parameters?.p_attachment_storage_path,
           attachment_mime_type: parameters?.p_attachment_mime_type,
           attachment_size_bytes: parameters?.p_attachment_size_bytes,
+          signature_snapshot: { signature_id: 12, storage_bucket: 'working-time-signatures', storage_path: '1/1008/signature.png' },
           created_by_person_id: 1008, created_by_name: 'Christophe MINASSIAN',
           created_at: '2026-09-06T10:30:00Z',
         };
         treatmentEvents.unshift(createdEvent);
         return Promise.resolve({ data: createdEvent, error: null });
+      }
+      if (functionName === 'action_item_review_closure') {
+        return Promise.resolve({ data: {
+          id: 8803, company_id: 1, action_item_id: parameters?.p_action_id,
+          event_type: parameters?.p_approve ? 'closure_approved' : 'closure_rejected',
+          note: parameters?.p_comment, signature_snapshot: { signature_id: 12 },
+          created_by_person_id: 1008, created_by_name: 'Christophe MINASSIAN',
+          created_at: '2026-09-06T11:00:00Z',
+        }, error: null });
       }
       if (functionName === 'action_item_admin_update') {
         const action = actions.find((item) => Number((item as { id?: number }).id) === Number(parameters?.p_action_id)) as typeof openAction | undefined;
@@ -194,6 +205,7 @@ function createClient(actions: unknown[] = [openAction, closedAction]) {
       }
       if (table === 'action_item_assignees') return { select: vi.fn().mockReturnValue(ordered([])) };
       if (table === 'action_item_treatment_events') return { select: vi.fn().mockReturnValue(ordered(treatmentEvents)) };
+      if (table === 'action_plan_settings') return { select: vi.fn().mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: { edit_button_enabled: editButtonEnabled }, error: null }) }) };
       if (table === 'hse_exposure_methodologies') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [{ id: 7 }], error: null }) }) }) };
       }
@@ -277,30 +289,20 @@ describe('ActionPlanPage', () => {
     expect(await screen.findByText('Rapport créé et soumis à Christophe MINASSIAN.')).toBeInTheDocument();
   });
 
-  it('lets a Capitaine treat an open action without exposing action creation', async () => {
+  it('lets a Capitaine create and comment without exposing management treatment', async () => {
     const user = userEvent.setup();
     const { client } = createClient([openAction]);
     render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
 
     await screen.findByRole('heading', { name: "Plan d'action" });
-    expect(screen.queryByRole('button', { name: 'Nouveau rapport' })).not.toBeInTheDocument();
-
-    const treatButton = screen.getByRole('button', { name: 'Traiter l’action' });
-    expect(treatButton.closest('.action-control-detail-header')).not.toBeNull();
-    await user.click(treatButton);
-    const dialog = within(screen.getByRole('dialog', { name: openAction.title }));
-    fireEvent.change(dialog.getByLabelText('Action réalisée'), { target: { value: 'Filtre remplacé' } });
-    fireEvent.change(dialog.getByLabelText('Commentaire'), { target: { value: 'Contrôle terminé' } });
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
-
-    expect(client.rpc).toHaveBeenCalledWith('action_item_treat', {
-      p_action_id: openAction.id,
-      p_comments: 'Contrôle terminé',
-      p_realized_action: 'Filtre remplacé',
-      p_close_action: false,
-      p_closure_photo_path: null,
-    });
-    expect(await screen.findByText('Action mise à jour.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouveau rapport' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Traiter l’action' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Commentaire de suivi'), 'Contrôle terminé à bord.');
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    expect(client.rpc).toHaveBeenCalledWith('action_item_add_treatment_followup', expect.objectContaining({
+      p_action_id: openAction.id, p_note: 'Contrôle terminé à bord.', p_close_action: false,
+    }));
+    expect(await screen.findByText('Suivi signé ajouté.')).toBeInTheDocument();
   });
 
   it('lets Christophe approve a pending report and assign people and a vessel crew', async () => {
@@ -334,6 +336,7 @@ describe('ActionPlanPage', () => {
 
     expect(await screen.findByText('Commande validée auprès du fournisseur.')).toBeInTheDocument();
     expect(screen.getAllByText('Arthur MAREST').length).toBeGreaterThan(0);
+    expect(screen.getByRole('img', { name: 'Signature de Arthur MAREST' })).toHaveAttribute('src', 'https://evidence.example/1/1010/signature.png');
     const note = screen.getByLabelText('Commentaire de suivi');
     await user.type(note, 'Garde-corps réceptionné et contrôlé.');
     const attachment = new File(['preuve'], 'controle-garde-corps.pdf', { type: 'application/pdf' });
@@ -350,7 +353,31 @@ describe('ActionPlanPage', () => {
       p_attachment_size_bytes: attachment.size,
       p_close_action: true,
     }));
-    expect(await screen.findByText('Action clôturée et ajoutée au suivi.')).toBeInTheDocument();
+    expect(await screen.findByText('Clôture validée et intervenants notifiés.')).toBeInTheDocument();
+  });
+
+  it('lets Direction countersign and reject a pending closure while keeping the action open', async () => {
+    const user = userEvent.setup();
+    const pendingClosure = {
+      ...openAction,
+      closure_review_status: 'pending',
+      closure_requested_by_person_id: 1010,
+      closure_requested_by_name: 'Arthur MAREST',
+      closure_requested_at: '2026-09-06T09:15:00Z',
+    };
+    const { client } = createClient([pendingClosure]);
+    render(<MemoryRouter><ActionPlanPage client={client as never} roles={['direction']} /></MemoryRouter>);
+
+    expect(await screen.findByText('Contre-validation obligatoire')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Commentaire de contre-validation'), 'Ajouter la photo du contrôle final.');
+    await user.click(screen.getByRole('button', { name: 'Refuser' }));
+
+    expect(client.rpc).toHaveBeenCalledWith('action_item_review_closure', {
+      p_action_id: openAction.id,
+      p_approve: false,
+      p_comment: 'Ajouter la photo du contrôle final.',
+    });
+    expect(await screen.findByText('Clôture refusée : la fiche reste ouverte et les intervenants sont notifiés.')).toBeInTheDocument();
   });
 
   it('lets only an Administrator correct factual information without changing workflow fields', async () => {
@@ -376,12 +403,21 @@ describe('ActionPlanPage', () => {
     expect(await screen.findByText('Fiche corrigée sans modification du workflow.')).toBeInTheDocument();
   });
 
-  it('hides correction and catalogue administration from Direction', async () => {
+  it('exposes every captured management command only to Direction and Admin', async () => {
     const { client } = createClient([openAction]);
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
+    expect(screen.getByRole('button', { name: 'Modifier la fiche' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gérer les types' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Traiter l’action' })).toBeInTheDocument();
+  });
+
+  it('honors the Administration setting that hides factual correction', async () => {
+    const { client } = createClient([openAction], false);
+    renderWithProfile(client, ['admin']);
+    await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     expect(screen.queryByRole('button', { name: 'Modifier la fiche' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Gérer les types' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gérer les types' })).toBeInTheDocument();
   });
 
   it('lets an Administrator rename a type while retaining its KPI mapping', async () => {

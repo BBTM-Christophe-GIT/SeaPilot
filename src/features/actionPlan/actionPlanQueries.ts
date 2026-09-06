@@ -9,6 +9,7 @@ const ACTION_ITEM_SELECT = [
   'closure_photo_path', 'victim_person_id', 'victim_sharepoint_item_id', 'lost_days', 'safety_event_details',
   'occurred_at', 'vessel_maneuver', 'weather_conditions', 'issuer_person_id', 'issuer_signature_snapshot',
   'workflow_status', 'approval_requested_at', 'approver_person_id', 'approved_at', 'approved_by_person_id',
+  'closure_review_status', 'closure_requested_by_person_id', 'closure_requested_by_name', 'closure_requested_at',
   'source_label', 'sharepoint_list_title', 'sharepoint_item_id', 'source_modified_at',
 ].join(', ');
 
@@ -22,7 +23,7 @@ const ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS = 60 * 60;
 const ACTION_TREATMENT_EVENT_SELECT = [
   'id', 'company_id', 'action_item_id', 'event_type', 'note', 'attachment_file_name',
   'attachment_storage_bucket', 'attachment_storage_path', 'attachment_mime_type',
-  'attachment_size_bytes', 'created_by_person_id', 'created_by_name', 'created_at',
+  'attachment_size_bytes', 'signature_snapshot', 'created_by_person_id', 'created_by_name', 'created_at',
 ].join(', ');
 
 type ActionItemRow = Record<string, unknown> & { id: number; title: string };
@@ -66,6 +67,10 @@ export interface ActionItemRecord {
   approverPersonId: number | null;
   approvedAt: string;
   approvedByPersonId: number | null;
+  closureReviewStatus: 'none' | 'pending';
+  closureRequestedByPersonId: number | null;
+  closureRequestedByName: string;
+  closureRequestedAt: string;
   comments: string;
   levelLabel: string;
   locationDetail: string;
@@ -131,7 +136,7 @@ export interface ActionTreatmentEventRecord {
   id: number;
   companyId: number;
   actionItemId: number;
-  eventType: 'commented' | 'attachment_added' | 'closed';
+  eventType: 'commented' | 'attachment_added' | 'closed' | 'closure_requested' | 'closure_approved' | 'closure_rejected';
   note: string;
   attachmentFileName: string;
   attachmentStorageBucket: string;
@@ -139,9 +144,15 @@ export interface ActionTreatmentEventRecord {
   attachmentMimeType: string;
   attachmentSizeBytes: number;
   attachmentUrl: string;
+  signatureSnapshot: Record<string, unknown>;
+  signatureUrl: string;
   authorPersonId: number | null;
   authorName: string;
   createdAt: string;
+}
+
+export interface ActionPlanSettings {
+  editButtonEnabled: boolean;
 }
 
 export interface ActionPlanData {
@@ -152,6 +163,7 @@ export interface ActionPlanData {
   people: PersonOption[];
   assignees: ActionAssigneeRecord[];
   treatmentEvents: ActionTreatmentEventRecord[];
+  settings: ActionPlanSettings;
   exposureHours: number;
   hseKpis: Record<string, number | string | boolean | null> | null;
   hseDashboard: ActionPlanHseDashboard | null;
@@ -225,6 +237,20 @@ export interface ActionTreatmentInput {
 export interface ActionTreatmentFollowupInput {
   note: string;
   closeAction: boolean;
+}
+
+export interface ActionClosureReviewInput {
+  approve: boolean;
+  comment: string;
+}
+
+export interface ActionPlanNotification {
+  id: number;
+  actionItemId: number;
+  type: 'action_closure_requested' | 'action_closure_approved' | 'action_closure_rejected';
+  title: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface ActionItemAdminUpdateInput extends CreateActionItemInput {
@@ -326,6 +352,10 @@ export function mapActionItemRows(rows: ActionItemRow[]): ActionItemRecord[] {
     approverPersonId: row.approver_person_id == null ? null : Number(row.approver_person_id),
     approvedAt: nullableText(row.approved_at),
     approvedByPersonId: row.approved_by_person_id == null ? null : Number(row.approved_by_person_id),
+    closureReviewStatus: (nullableText(row.closure_review_status) || 'none') as ActionItemRecord['closureReviewStatus'],
+    closureRequestedByPersonId: row.closure_requested_by_person_id == null ? null : Number(row.closure_requested_by_person_id),
+    closureRequestedByName: nullableText(row.closure_requested_by_name),
+    closureRequestedAt: nullableText(row.closure_requested_at),
     comments: nullableText(row.comments),
     levelLabel: nullableText(row.level_label),
     locationDetail: nullableText(row.location_detail),
@@ -494,8 +524,24 @@ async function fetchActionTreatmentEvents(client: SupabaseClient): Promise<Actio
     .filter((item) => item.path && item.signedUrl)
     .map((item) => [item.path, item.signedUrl]));
 
+  const signaturePaths = Array.from(new Set(rows.map((row) => {
+    const snapshot = row.signature_snapshot && typeof row.signature_snapshot === 'object'
+      ? row.signature_snapshot as Record<string, unknown>
+      : {};
+    return nullableText(snapshot.storage_path);
+  }).filter(Boolean)));
+  const signatureUrls = signaturePaths.length
+    ? await client.storage.from('working-time-signatures').createSignedUrls(signaturePaths, ACTION_PLAN_EVIDENCE_URL_TTL_SECONDS)
+    : { data: [], error: null };
+  const signatureUrlsByPath = new Map((signatureUrls.data || [])
+    .filter((item) => item.path && item.signedUrl)
+    .map((item) => [item.path, item.signedUrl]));
+
   return rows.map((row) => {
     const attachmentStoragePath = nullableText(row.attachment_storage_path);
+    const signatureSnapshot = row.signature_snapshot && typeof row.signature_snapshot === 'object'
+      ? row.signature_snapshot as Record<string, unknown>
+      : {};
     return {
       id: Number(row.id),
       companyId: Number(row.company_id),
@@ -508,11 +554,21 @@ async function fetchActionTreatmentEvents(client: SupabaseClient): Promise<Actio
       attachmentMimeType: nullableText(row.attachment_mime_type),
       attachmentSizeBytes: Number(row.attachment_size_bytes || 0),
       attachmentUrl: urlsByPath.get(attachmentStoragePath) || '',
+      signatureSnapshot,
+      signatureUrl: signatureUrlsByPath.get(nullableText(signatureSnapshot.storage_path)) || '',
       authorPersonId: row.created_by_person_id == null ? null : Number(row.created_by_person_id),
       authorName: nullableText(row.created_by_name),
       createdAt: nullableText(row.created_at),
     };
   });
+}
+
+async function fetchActionPlanSettings(client: SupabaseClient): Promise<ActionPlanSettings> {
+  const { data, error } = await client.from('action_plan_settings')
+    .select('edit_button_enabled')
+    .maybeSingle();
+  if (error) return { editButtonEnabled: true };
+  return { editButtonEnabled: data?.edit_button_enabled !== false };
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -617,9 +673,10 @@ export async function fetchActionPlanHseDashboard(
 
 export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
-  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, hseResult] = await Promise.allSettled([
+  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, settingsResult, hseResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
     fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
+    fetchActionPlanSettings(client),
     fetchActionPlanHseDashboard(client, currentYear),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
@@ -637,6 +694,7 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
     treatmentEvents: treatmentEventsResult.status === 'fulfilled' ? treatmentEventsResult.value : [],
+    settings: settingsResult.status === 'fulfilled' ? settingsResult.value : { editButtonEnabled: true },
     exposureHours: hseResult.status === 'fulfilled' ? hseResult.value?.totals.exposureHours || 0 : 0,
     hseKpis: hseResult.status === 'fulfilled' && hseResult.value ? hseResult.value.totals as unknown as ActionPlanData['hseKpis'] : null,
     hseDashboard: hseResult.status === 'fulfilled' ? hseResult.value : null,
@@ -733,6 +791,45 @@ export async function addActionTreatmentFollowup(
     p_attachment_mime_type: attachment?.type || null,
     p_attachment_size_bytes: attachment?.size || null,
     p_close_action: input.closeAction,
+  });
+  if (error) throw error;
+}
+
+export async function reviewActionClosure(
+  client: SupabaseClient,
+  actionId: number,
+  input: ActionClosureReviewInput,
+): Promise<void> {
+  const { error } = await client.rpc('action_item_review_closure', {
+    p_action_id: actionId,
+    p_approve: input.approve,
+    p_comment: optionalText(input.comment),
+  });
+  if (error) throw error;
+}
+
+export async function fetchActionPlanNotifications(client: SupabaseClient): Promise<ActionPlanNotification[]> {
+  const { data, error } = await client.from('planning_notifications')
+    .select('id,notification_type,title,body,entity_id,created_at')
+    .in('notification_type', ['action_closure_requested', 'action_closure_approved', 'action_closure_rejected'])
+    .is('read_at', null)
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    id: Number(row.id),
+    actionItemId: Number(row.entity_id),
+    type: row.notification_type as ActionPlanNotification['type'],
+    title: String(row.title || ''),
+    body: String(row.body || ''),
+    createdAt: String(row.created_at || ''),
+  }));
+}
+
+export async function markActionPlanNotificationRead(client: SupabaseClient, notificationId: number): Promise<void> {
+  const { error } = await client.rpc('mark_planning_notification_read', {
+    p_notification_id: notificationId,
+    p_read: true,
   });
   if (error) throw error;
 }

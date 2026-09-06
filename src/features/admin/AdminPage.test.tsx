@@ -347,4 +347,30 @@ describe('AdminPage', () => {
     expect(projectsForSailor).toBeChecked();
     expect(screen.getByText('Acces de navigation mis a jour.')).toBeInTheDocument();
   });
+
+  it("can hide the Action Plan correction button from Administration", async () => {
+    const user = userEvent.setup();
+    const baseClient = createAdminClient();
+    const rpc = vi.fn().mockResolvedValue({ data: { edit_button_enabled: false }, error: null });
+    const client = {
+      ...baseClient,
+      rpc,
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'action_plan_settings') {
+          return { select: vi.fn().mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: { edit_button_enabled: true }, error: null }) }) };
+        }
+        return baseClient.from(table);
+      }),
+    };
+
+    render(<AdminPage client={client as never} />);
+    const toggle = await screen.findByRole('checkbox', { name: 'Afficher Modifier la fiche' });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('action_plan_save_settings', {
+      p_edit_button_enabled: false,
+    }));
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText('Le bouton « Modifier la fiche » est maintenant masqué.')).toBeInTheDocument();
+  });
 });

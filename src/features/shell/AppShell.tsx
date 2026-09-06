@@ -50,6 +50,11 @@ import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import { fetchCurrentPersonSummary, fetchCurrentUserRoles, type CurrentPersonSummary } from '../profiles/profileQueries';
 import { fetchUnsignedServiceNoteNotifications, formatServiceNoteDate, type ServiceNoteNotification } from '../serviceNotes/serviceNoteQueries';
 import { fetchAnnualReviewNotifications, type AnnualReviewNotification } from '../annualReviews/annualReviewQueries';
+import {
+  fetchActionPlanNotifications,
+  markActionPlanNotificationRead,
+  type ActionPlanNotification,
+} from '../actionPlan/actionPlanQueries';
 
 interface AppShellProps {
   rolesOverride?: RoleKey[];
@@ -176,6 +181,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
+  const [actionPlanNotifications, setActionPlanNotifications] = useState<ActionPlanNotification[]>([]);
   const [adminProfileView, setAdminProfileView] = useState<AdminProfileView>('actual');
   const [adminProfileModules, setAdminProfileModules] = useState<AppModule[] | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
@@ -298,12 +304,21 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         daysUntilExpiry: 40,
       }]);
       setAnnualReviewNotifications([]);
+      setActionPlanNotifications([{
+        id: 9899,
+        actionItemId: 9861,
+        type: 'action_closure_requested',
+        title: 'Clôture à contre-valider',
+        body: 'Luc MARTIN demande la clôture de la fiche « Contrôler la protection du poste de manœuvre ».',
+        createdAt: new Date().toISOString(),
+      }]);
       return;
     }
     if (!sessionUserId) {
       setServiceNoteNotifications([]);
       setHrDocumentNotifications([]);
       setAnnualReviewNotifications([]);
+      setActionPlanNotifications([]);
       return;
     }
     let mounted = true;
@@ -311,6 +326,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       void fetchUnsignedServiceNoteNotifications(client)
         .then((items) => { if (mounted) setServiceNoteNotifications(items); })
         .catch(() => { if (mounted) setServiceNoteNotifications([]); });
+      void fetchActionPlanNotifications(client)
+        .then((items) => { if (mounted) setActionPlanNotifications(items); })
+        .catch(() => { if (mounted) setActionPlanNotifications([]); });
       if (currentPerson?.id) {
         void fetchHrDocumentExpiryNotifications(client, currentPerson.id)
           .then((items) => { if (mounted) setHrDocumentNotifications(items); })
@@ -328,12 +346,14 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     window.addEventListener('service-notes:changed', refresh);
     window.addEventListener('hr-documents:changed', refresh);
     window.addEventListener('annual-reviews:changed', refresh);
+    window.addEventListener('action-plan:changed', refresh);
     return () => {
       mounted = false;
       window.removeEventListener('focus', refresh);
       window.removeEventListener('service-notes:changed', refresh);
       window.removeEventListener('hr-documents:changed', refresh);
       window.removeEventListener('annual-reviews:changed', refresh);
+      window.removeEventListener('action-plan:changed', refresh);
     };
   }, [client, currentPerson?.id, previewMode, sessionUserId]);
 
@@ -365,7 +385,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion SeaPilot' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => effectiveRoles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length;
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length;
+
+  function openActionPlanNotification(notification: ActionPlanNotification) {
+    setActionPlanNotifications((items) => items.filter((item) => item.id !== notification.id));
+    setIsNotificationsOpen(false);
+    void markActionPlanNotificationRead(client, notification.id).catch(() => undefined);
+  }
 
   function toggleFamily(family: AppModule['family']) {
     setExpandedFamilies((currentFamilies) => {
@@ -550,9 +576,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {hrDocumentNotifications.length ? <section aria-label="Documents RH et brevets" className="topbar-notification-group"><h4>RH / Brevets · échéance à 40 jours</h4>{hrDocumentNotifications.map((notification) => <Link key={notification.documentId} to="/modules/humanResources"><span><strong>Document personnel</strong><small>{formatHrDocumentExpiryDate(notification.expiresOn)}</small></span><p>{notification.title}</p><em>{notification.daysUntilExpiry === 0 ? 'Expire aujourd’hui' : notification.daysUntilExpiry === 1 ? 'Expire demain' : `Expire dans ${notification.daysUntilExpiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {annualReviewNotifications.length ? <section aria-label="Entretiens professionnels et d’évaluation" className="topbar-notification-group"><h4>Entretien Professionnel et d’Evaluation</h4>{annualReviewNotifications.map((notification) => <Link key={`${notification.reviewId}-${notification.kind}`} to={`/annual-review/${notification.reviewId}`}><span><strong>{notification.title}</strong></span><p>{notification.detail}</p><em>{notification.kind === 'invitation' ? 'Répondre à l’invitation' : notification.kind === 'counter_proposal' ? 'Traiter le nouveau créneau' : 'Lire et signer'} <ChevronRight size={14} /></em></Link>)}</section> : null}
+                  {actionPlanNotifications.length ? <section aria-label="Plan d'action" className="topbar-notification-group"><h4>Plan d&apos;action</h4>{actionPlanNotifications.map((notification) => <Link key={notification.id} onClick={() => openActionPlanNotification(notification)} to={`/modules/actionPlan?action=${notification.actionItemId}`}><span><strong>{notification.title}</strong><small>{new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(notification.createdAt))}</small></span><p>{notification.body}</p><em>Ouvrir la fiche <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {!notificationCount ? <p className="topbar-notification-empty"><Check aria-hidden="true" size={18} /> Vous êtes à jour.</p> : null}
                 </div>
-                <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
+                <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'actionPlan') ? <Link to="/modules/actionPlan">Plan d&apos;action</Link> : null}{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
               </div> : null}
             </div>
             <div className="user-menu">

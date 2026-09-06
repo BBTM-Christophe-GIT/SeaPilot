@@ -65,16 +65,17 @@ where company.code = 'bbtm';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '7b000000-0000-0000-0000-000000000001', true);
 
-select lives_ok(
+select throws_ok(
   $$insert into storage.objects (bucket_id, name, metadata)
     select 'action-plan-evidence', action.company_id || '/' || action.id || '/cloture-test.png',
            jsonb_build_object('mimetype', 'image/png', 'size', 256)
     from public.action_items action
     where action.title = 'ACTION-CAPTAIN-OPEN'$$,
-  'a Capitaine can upload treatment evidence in the active company folder'
+  '42501', null,
+  'a Capitaine cannot upload management-only closure evidence'
 );
 
-select lives_ok(
+select throws_ok(
   $$select public.action_item_treat(
     (select id from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
     'Traitement contrôlé',
@@ -83,17 +84,18 @@ select lives_ok(
     (select company_id || '/' || id || '/cloture-test.png'
      from public.action_items where title = 'ACTION-CAPTAIN-OPEN')
   )$$,
-  'a Capitaine can treat an open action'
+  '42501', null,
+  'a Capitaine cannot invoke the management treatment command'
 );
 select is(
   (select comments from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
-  'Traitement contrôlé',
-  'the workflow saves the treatment comment'
+  null,
+  'the rejected command does not save a treatment comment'
 );
 select is(
   (select realized_action from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
-  'Filtre remplacé',
-  'the workflow saves the realized action'
+  null,
+  'the rejected command does not save a realized action'
 );
 select is(
   (select status from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
@@ -102,21 +104,21 @@ select is(
 );
 select is(
   (select closure_photo_path from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
-  (select company_id || '/' || id || '/cloture-test.png'
-   from public.action_items where title = 'ACTION-CAPTAIN-OPEN'),
-  'the workflow retains the scoped closure evidence path'
+  null,
+  'the rejected command stores no closure evidence'
 );
-select lives_ok(
+select throws_ok(
   $$select public.action_item_treat(
     (select id from public.action_items where title = 'ACTION-CAPTAIN-TO-CLOSE'),
     'Clôture contrôlée', 'Action terminée', true, null
   )$$,
-  'a Capitaine can close an open action'
+  '42501', null,
+  'a Capitaine cannot directly close an action through management treatment'
 );
 select ok(
-  (select status = 'Ecart Soldé' and closed_on = current_date
+  (select status = 'Ecart Non Soldé' and closed_on is null
    from public.action_items where title = 'ACTION-CAPTAIN-TO-CLOSE'),
-  'closing an action sets its sold status and closure date atomically'
+  'the action remains open after rejected direct closure'
 );
 select throws_ok(
   $$update public.action_items set title = 'CAPTAIN-BYPASS'
@@ -136,8 +138,8 @@ select throws_ok(
     (select id from public.action_items where title = 'ACTION-CAPTAIN-CLOSED'),
     'Nouvelle modification', null, false, null
   )$$,
-  '55000', null,
-  'a sold action cannot be treated again'
+  '42501', null,
+  'a Capitaine cannot treat even an already sold action'
 );
 
 select set_config('request.jwt.claim.sub', '7b000000-0000-0000-0000-000000000002', true);

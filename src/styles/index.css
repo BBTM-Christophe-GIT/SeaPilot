@@ -2371,6 +2371,7 @@ button:disabled {
 }
 
 .admin-navigation-access,
+.admin-action-plan-settings,
 .admin-import-monitor {
   display: grid;
   gap: 14px;
@@ -4848,6 +4849,30 @@ button:disabled {
 .purchase-context-primary:hover:not(:disabled) {
   background: #006d80;
 }
+
+.admin-setting-card {
+  display: flex;
+  position: relative;
+  min-height: 78px;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid #d7e0eb;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(18, 33, 58, 0.04);
+}
+
+.admin-setting-card > span { display: grid; flex: 1; gap: 4px; }
+.admin-setting-card strong { color: #1b2b43; font-size: 0.92rem; }
+.admin-setting-card small { color: #667085; font-size: 0.78rem; }
+.admin-setting-card input { position: absolute; width: 48px; height: 26px; right: 18px; z-index: 1; cursor: pointer; opacity: 0; }
+.admin-setting-card i { position: relative; width: 48px; height: 26px; flex: 0 0 auto; border-radius: 999px; background: #b8c4d2; transition: background 140ms ease; }
+.admin-setting-card i::after { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(18, 33, 58, 0.2); content: ''; transition: transform 140ms ease; }
+.admin-setting-card input:checked + i { background: #0c5598; }
+.admin-setting-card input:checked + i::after { transform: translateX(22px); }
+.admin-setting-card input:focus-visible + i { outline: 3px solid rgba(12, 102, 183, 0.18); outline-offset: 3px; }
+.admin-setting-card input:disabled + i { opacity: 0.55; }
 
 .purchase-context-danger {
   border: 1px solid #d92d3a;
