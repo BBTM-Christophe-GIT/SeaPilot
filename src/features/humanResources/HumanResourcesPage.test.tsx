@@ -511,6 +511,26 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
   });
 
+  it('lets only Administrators and Direction edit an annual-review due date', async () => {
+    const user = userEvent.setup();
+    const annualReviewDocument: HrDocumentFixture = {
+      ...documents[0], id: 91, category_key: 'annual_review', title: 'Entretien Professionnel et d’Evaluation 2026',
+      issued_on: '2026-09-06', expires_on: '2027-12-31', status: 'valid', file_url: 'https://example.test/entretien-2026.pdf',
+    };
+    const adminView = render(<HumanResourcesPage client={createClient([activePerson], [...documents, annualReviewDocument]) as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    let profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Entretien Annuel' }));
+    expect(within(profile).getByLabelText('Échéance de Entretien Professionnel et d’Evaluation 2026')).toHaveValue('2027-12-31');
+    adminView.unmount();
+
+    render(<HumanResourcesPage client={createClient([activePerson], [...documents, annualReviewDocument]) as never} roles={['armement']} />);
+    await user.click(await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Entretien Annuel' }));
+    expect(within(profile).queryByLabelText('Échéance de Entretien Professionnel et d’Evaluation 2026')).not.toBeInTheDocument();
+  });
+
   it('adds a catalog document with an expiry date and the SPFx automatic file name', async () => {
     const user = userEvent.setup();
     const catalogRows = [

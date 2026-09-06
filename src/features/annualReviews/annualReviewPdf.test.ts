@@ -11,7 +11,7 @@ const transparentPng = Uint8Array.from(
 const review: AnnualReviewRecord = {
   id: 12, companyId: 1, reviewYear: 2026, employeePersonId: 2, managerPersonId: 1,
   employeeName: 'Luc MARTIN', managerName: 'Anne CAPITAINE', employeeFunction: 'Matelot',
-  status: 'scheduled', startsAt: '2026-10-12T08:00:00Z', endsAt: '2026-10-12T09:00:00Z',
+  status: 'scheduled', startsAt: '2026-10-12T08:00:00Z', endsAt: '2026-10-12T09:00:00Z', dueOn: '2027-12-31',
   meetingMode: 'in_person', meetingLocation: 'Cherbourg', videoUrl: '', proposalNote: '', proposedByPersonId: 1,
   collaboratorSubmittedAt: '', managerValidatedAt: '', collaboratorSignedAt: '', managerIdentitySnapshot: {},
   managerSignatureSnapshot: {}, collaboratorIdentitySnapshot: {}, collaboratorSignatureSnapshot: {},
@@ -28,6 +28,7 @@ describe('annual review PDF', () => {
     answers.life.overall = 'satisfait';
     answers.evolution.choice = '1. Poursuivre tel qu’aujourd’hui';
     answers.objectives = '<p><strong>Objectif :</strong> progresser.</p>';
+    answers.goals = [{ id: 'goal-1', objective: 'Progresser sur la passerelle', progress: 25, comment: 'Suivi trimestriel.' }];
 
     const generated = await buildAnnualReviewPdf({
       review, answers, ownerName: review.employeeName, kind: 'personal', logoBytes: transparentPng,

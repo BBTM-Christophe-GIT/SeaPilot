@@ -43,6 +43,7 @@ export interface AnnualReviewRecord {
   status: AnnualReviewStatus;
   startsAt: string;
   endsAt: string;
+  dueOn: string;
   meetingMode: 'in_person' | 'video';
   meetingLocation: string;
   videoUrl: string;
@@ -74,6 +75,16 @@ export interface AnnualReviewResponseRecord {
   submittedAt: string;
 }
 
+export interface AnnualReviewObjectiveRecord {
+  id: number;
+  reviewId: number;
+  objectiveKey: string;
+  objective: string;
+  completionPercent: number;
+  comment: string;
+  updatedAt: string;
+}
+
 export interface AnnualReviewNotification {
   reviewId: number;
   kind: 'invitation' | 'counter_proposal' | 'signature';
@@ -94,6 +105,7 @@ interface ReviewRow {
   status: AnnualReviewStatus;
   starts_at: string;
   ends_at: string;
+  due_on: string;
   meeting_mode: 'in_person' | 'video';
   meeting_location: string | null;
   video_url: string | null;
@@ -126,7 +138,7 @@ interface ResponseRow {
 }
 
 const REVIEW_SELECT = [
-  'id,company_id,review_year,employee_person_id,manager_person_id,employee_name_snapshot,employee_function_snapshot,manager_name_snapshot,status,starts_at,ends_at',
+  'id,company_id,review_year,employee_person_id,manager_person_id,employee_name_snapshot,employee_function_snapshot,manager_name_snapshot,status,starts_at,ends_at,due_on',
   'meeting_mode,meeting_location,video_url,proposal_note,proposed_by_person_id',
   'collaborator_submitted_at,manager_validated_at,collaborator_signed_at',
   'manager_identity_snapshot,manager_signature_snapshot,collaborator_identity_snapshot,collaborator_signature_snapshot',
@@ -140,7 +152,7 @@ function mapReview(row: ReviewRow): AnnualReviewRecord {
     employeePersonId: Number(row.employee_person_id), managerPersonId: Number(row.manager_person_id),
     employeeName: row.employee_name_snapshot, managerName: row.manager_name_snapshot,
     employeeFunction: row.employee_function_snapshot, status: row.status,
-    startsAt: row.starts_at, endsAt: row.ends_at, meetingMode: row.meeting_mode,
+    startsAt: row.starts_at, endsAt: row.ends_at, dueOn: row.due_on, meetingMode: row.meeting_mode,
     meetingLocation: row.meeting_location || '', videoUrl: row.video_url || '', proposalNote: row.proposal_note || '',
     proposedByPersonId: Number(row.proposed_by_person_id), collaboratorSubmittedAt: row.collaborator_submitted_at || '',
     managerValidatedAt: row.manager_validated_at || '', collaboratorSignedAt: row.collaborator_signed_at || '',
@@ -169,6 +181,8 @@ function assertResult(error: { message?: string } | null, fallback: string): voi
   if (message.includes('SHARING_DECISION_REQUIRED')) throw new Error('Choisissez si vos réponses peuvent être partagées avec le manager.');
   if (message.includes('ANSWERS_INCOMPLETE')) throw new Error('Toutes les réponses obligatoires doivent être renseignées avant la remise.');
   if (message.includes('RESPONSE_LOCKED')) throw new Error('Vos réponses et votre choix de confidentialité sont figés depuis leur remise.');
+  if (message.includes('OBJECTIVE_UPDATE_FORBIDDEN')) throw new Error('Ce pourcentage ne peut pas être modifié avec votre profil ou après l’échéance.');
+  if (message.includes('DUE_DATE_FORBIDDEN')) throw new Error('Seuls les profils Administrateur et Direction peuvent modifier cette échéance.');
   if (message.includes('CAPTAIN_SCOPE')) throw new Error('Ce collaborateur ne relève pas de votre équipage à la date proposée.');
   if (message.includes('ROLE_REQUIRED') || message.includes('SCOPE_DENIED') || message.includes('FORBIDDEN')) {
     throw new Error('Vous n’êtes pas autorisé à effectuer cette action.');
@@ -212,6 +226,30 @@ export async function fetchAnnualReviewResponses(client: SupabaseClient, reviewI
     .eq('review_id', reviewId);
   assertResult(error, 'Impossible de charger les réponses.');
   return ((data || []) as unknown as ResponseRow[]).map(mapResponse);
+}
+
+export async function fetchAnnualReviewObjectives(client: SupabaseClient, reviewId: number): Promise<AnnualReviewObjectiveRecord[]> {
+  const { data, error } = await client.from('annual_review_objectives')
+    .select('id,review_id,objective_key,objective,completion_percent,comment,updated_at')
+    .eq('review_id', reviewId).order('id');
+  assertResult(error, 'Impossible de charger le suivi des objectifs.');
+  return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
+    id: Number(row.id), reviewId: Number(row.review_id), objectiveKey: String(row.objective_key || ''),
+    objective: String(row.objective || ''), completionPercent: Number(row.completion_percent || 0),
+    comment: String(row.comment || ''), updatedAt: String(row.updated_at || ''),
+  }));
+}
+
+export async function updateAnnualReviewObjectiveProgress(client: SupabaseClient, objectiveId: number, completionPercent: number): Promise<number> {
+  return callReviewRpc(client, 'annual_review_update_objective_progress', {
+    p_objective_id: objectiveId, p_completion_percent: completionPercent,
+  }, 'Impossible de mettre à jour le pourcentage d’atteinte.');
+}
+
+export async function updateAnnualReviewDueDate(client: SupabaseClient, hrDocumentId: number, dueOn: string): Promise<number> {
+  return callReviewRpc(client, 'annual_review_update_due_date', {
+    p_hr_document_id: hrDocumentId, p_due_on: dueOn,
+  }, 'Impossible de modifier la date d’échéance.');
 }
 
 export async function createAnnualReviewInvitation(client: SupabaseClient, input: {

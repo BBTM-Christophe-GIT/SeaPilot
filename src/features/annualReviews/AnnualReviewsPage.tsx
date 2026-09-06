@@ -21,6 +21,7 @@ import {
   createAnnualReviewReportUrl,
   fetchAnnualReview,
   fetchAnnualReviewPeople,
+  fetchAnnualReviewObjectives,
   fetchAnnualReviewResponses,
   fetchAnnualReviews,
   formatAnnualReviewDateTime,
@@ -30,6 +31,8 @@ import {
   signAndArchiveAnnualReview,
   uploadAnnualReviewReport,
   validateAnnualReviewManagerReport,
+  updateAnnualReviewObjectiveProgress,
+  type AnnualReviewObjectiveRecord,
   type AnnualReviewPerson,
   type AnnualReviewRecord,
   type AnnualReviewResponseRecord,
@@ -49,9 +52,9 @@ interface AnnualReviewsPageProps {
 
 interface InvitationForm {
   employeePersonId: string;
-  reviewYear: string;
   startsAt: string;
-  endsAt: string;
+  durationHours: string;
+  durationMinutes: string;
   meetingMode: 'in_person' | 'video';
   meetingLocation: string;
   videoUrl: string;
@@ -76,10 +79,9 @@ function initialInvitationForm(): InvitationForm {
   const start = new Date();
   start.setDate(start.getDate() + 7);
   start.setHours(10, 0, 0, 0);
-  const end = new Date(start.getTime() + 60 * 60_000);
   return {
-    employeePersonId: '', reviewYear: String(start.getFullYear()), startsAt: localInputValue(start),
-    endsAt: localInputValue(end), meetingMode: 'in_person', meetingLocation: '', videoUrl: '', proposalNote: '',
+    employeePersonId: '', startsAt: localInputValue(start), durationHours: '1', durationMinutes: '0',
+    meetingMode: 'in_person', meetingLocation: '', videoUrl: '', proposalNote: '',
   };
 }
 
@@ -88,7 +90,7 @@ function previewReview(): AnnualReviewRecord {
   return {
     id: 9901, companyId: 1, reviewYear: start.getFullYear(), employeePersonId: 9303, managerPersonId: 9301,
     employeeName: 'Luc MARTIN', managerName: 'Arthur DEMO', employeeFunction: 'Matelot polyvalent',
-    status: 'scheduled', startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 60 * 60_000).toISOString(),
+    status: 'scheduled', startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 60 * 60_000).toISOString(), dueOn: `${start.getFullYear() + 1}-12-31`,
     meetingMode: 'in_person', meetingLocation: 'Bureau Armement · Cherbourg', videoUrl: '', proposalNote: 'Prévoir le bilan des objectifs de l’année.',
     proposedByPersonId: 9301, collaboratorSubmittedAt: '', managerValidatedAt: '', collaboratorSignedAt: '',
     managerIdentitySnapshot: {}, managerSignatureSnapshot: {}, collaboratorIdentitySnapshot: {}, collaboratorSignatureSnapshot: {},
@@ -100,6 +102,20 @@ function toUtc(value: string): string {
   const date = new Date(value);
   if (!value || Number.isNaN(date.getTime())) throw new Error('Renseignez une date et une heure valides.');
   return date.toISOString();
+}
+
+function invitationYear(startsAt: string): number {
+  const value = new Date(startsAt);
+  return Number.isNaN(value.getTime()) ? new Date().getFullYear() : value.getFullYear();
+}
+
+function invitationEnd(form: InvitationForm): string {
+  const start = new Date(form.startsAt);
+  const durationMinutes = (Number(form.durationHours) * 60) + Number(form.durationMinutes);
+  if (Number.isNaN(start.getTime()) || durationMinutes < 15 || durationMinutes > 480 || durationMinutes % 15 !== 0) {
+    throw new Error('Choisissez une durée comprise entre 15 minutes et 8 heures, par paliers de 15 minutes.');
+  }
+  return new Date(start.getTime() + durationMinutes * 60_000).toISOString();
 }
 
 function reportFileName(review: AnnualReviewRecord): string {
@@ -125,6 +141,7 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
   const [people, setPeople] = useState<AnnualReviewPerson[]>([]);
   const [selectedReviewId, setSelectedReviewId] = useState<number | null>(Number.isInteger(requestedReviewId) && requestedReviewId > 0 ? requestedReviewId : null);
   const [responses, setResponses] = useState<AnnualReviewResponseRecord[]>([]);
+  const [objectives, setObjectives] = useState<AnnualReviewObjectiveRecord[]>([]);
   const [answers, setAnswers] = useState<AnnualReviewAnswers>(emptyAnnualReviewAnswers());
   const [activeTab, setActiveTab] = useState<AnnualReviewTabKey>('guide');
   const [responseView, setResponseView] = useState<'mine' | 'collaborator' | 'manager'>('mine');
@@ -145,6 +162,7 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
   const ownResponse = responses.find((response) => response.respondentRole === ownRole);
   const collaboratorResponse = responses.find((response) => response.respondentRole === 'collaborator');
   const managerResponse = responses.find((response) => response.respondentRole === 'manager');
+  const canUpdateObjectives = context.roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));
 
   const load = useCallback(async () => {
     setIsLoading(true); setErrorMessage('');
@@ -175,10 +193,13 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
   }, [context.client, context.previewMode, currentPersonId, isManagerProfile, recipientRoute, requestedReviewId]);
 
   const loadResponses = useCallback(async (review: AnnualReviewRecord | null) => {
-    if (!review || context.previewMode) { setResponses([]); setAnswers(emptyAnnualReviewAnswers()); return; }
+    if (!review || context.previewMode) { setResponses([]); setObjectives([]); setAnswers(emptyAnnualReviewAnswers()); return; }
     try {
-      const loaded = await fetchAnnualReviewResponses(context.client, review.id);
+      const [loaded, loadedObjectives] = await Promise.all([
+        fetchAnnualReviewResponses(context.client, review.id), fetchAnnualReviewObjectives(context.client, review.id),
+      ]);
       setResponses(loaded);
+      setObjectives(loadedObjectives);
       const role = review.managerPersonId === currentPersonId ? 'manager' : 'collaborator';
       const own = loaded.find((response) => response.respondentRole === role);
       setAnswers(own?.answers || emptyAnnualReviewAnswers());
@@ -209,11 +230,18 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
     if (!employeePersonId) { setErrorMessage('Sélectionnez un collaborateur actif.'); return; }
     await mutate(async () => {
       const id = await createAnnualReviewInvitation(context.client, {
-        employeePersonId, reviewYear: Number(invitation.reviewYear), startsAt: toUtc(invitation.startsAt), endsAt: toUtc(invitation.endsAt),
+        employeePersonId, reviewYear: invitationYear(invitation.startsAt), startsAt: toUtc(invitation.startsAt), endsAt: invitationEnd(invitation),
         meetingMode: invitation.meetingMode, meetingLocation: invitation.meetingLocation, videoUrl: invitation.videoUrl, proposalNote: invitation.proposalNote,
       });
       setSelectedReviewId(id); setIsCreating(false); setInvitation(initialInvitationForm());
     }, 'L’invitation a été envoyée dans la cloche du collaborateur.');
+  }
+
+  async function updateObjectiveProgress(objective: AnnualReviewObjectiveRecord, completionPercent: number) {
+    await mutate(async () => {
+      await updateAnnualReviewObjectiveProgress(context.client, objective.id, completionPercent);
+      setObjectives((current) => current.map((item) => item.id === objective.id ? { ...item, completionPercent } : item));
+    }, 'Le pourcentage d’atteinte a été mis à jour.');
   }
 
   async function saveResponse(submit = false) {
@@ -293,6 +321,7 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
           {isCreating ? <InvitationEditor form={invitation} isSaving={isSaving} onChange={setInvitation} onSend={() => void sendInvitation()} people={people} /> : selectedReview ? (
             <>
               <ReviewSummary review={selectedReview} />
+              {objectives.length ? <AnnualReviewObjectiveTracker canUpdate={canUpdateObjectives} isSaving={isSaving} objectives={objectives} onUpdate={(objective, percent) => void updateObjectiveProgress(objective, percent)} review={selectedReview} /> : null}
               <WorkflowActions
                 answers={answers} collaboratorResponse={collaboratorResponse} counterForm={counterForm} hasReadReport={hasReadReport}
                 isCollaborator={isCollaborator} isManager={isReviewManager} isSaving={isSaving} managerResponse={managerResponse}
@@ -323,11 +352,20 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
 }
 
 function InvitationEditor({ form, people, isSaving, onChange, onSend }: { form: InvitationForm; people: AnnualReviewPerson[]; isSaving: boolean; onChange: (form: InvitationForm) => void; onSend: () => void }) {
-  return <section className="annual-review-editor"><header><span><BellRing size={22} /></span><div><p>Nouvelle invitation</p><h2>Proposer un rendez-vous</h2></div></header><div className="annual-review-editor-grid"><label>Collaborateur actif<select required value={form.employeePersonId} onChange={(event) => onChange({ ...form, employeePersonId: event.target.value })}><option value="">Sélectionner une personne</option>{people.map((person) => <option key={person.id} value={person.id}>{person.firstName} {person.lastName.toUpperCase()} · {person.functionLabel}</option>)}</select></label><label>Année de l’entretien<input min="2020" max="2200" onChange={(event) => onChange({ ...form, reviewYear: event.target.value })} type="number" value={form.reviewYear} /></label><label>Date et heure de début<input min={localInputValue(new Date())} onChange={(event) => onChange({ ...form, startsAt: event.target.value })} type="datetime-local" value={form.startsAt} /></label><label>Date et heure de fin<input min={form.startsAt} onChange={(event) => onChange({ ...form, endsAt: event.target.value })} type="datetime-local" value={form.endsAt} /></label></div><fieldset className="annual-review-meeting-mode"><legend>Modalité</legend><label className={form.meetingMode === 'in_person' ? 'is-selected' : ''}><input checked={form.meetingMode === 'in_person'} onChange={() => onChange({ ...form, meetingMode: 'in_person', videoUrl: '' })} type="radio" /><MapPin size={17} />Lieu physique</label><label className={form.meetingMode === 'video' ? 'is-selected' : ''}><input checked={form.meetingMode === 'video'} onChange={() => onChange({ ...form, meetingMode: 'video', meetingLocation: '' })} type="radio" /><Video size={17} />Visioconférence</label></fieldset>{form.meetingMode === 'in_person' ? <label className="annual-review-full-field">Lieu<input placeholder="Ex. Bureau Armement · Cherbourg" onChange={(event) => onChange({ ...form, meetingLocation: event.target.value })} value={form.meetingLocation} /></label> : <label className="annual-review-full-field">Lien visio<input placeholder="https://…" onChange={(event) => onChange({ ...form, videoUrl: event.target.value })} type="url" value={form.videoUrl} /></label>}<label className="annual-review-full-field">Message facultatif<textarea maxLength={1_000} onChange={(event) => onChange({ ...form, proposalNote: event.target.value })} rows={3} value={form.proposalNote} /></label><footer><button disabled={isSaving} onClick={onSend} type="button"><Send size={17} />Envoyer l’invitation</button></footer></section>;
+  return <section className="annual-review-editor"><header><span><BellRing size={22} /></span><div><p>Nouvelle invitation</p><h2>Proposer un rendez-vous</h2></div></header><div className="annual-review-editor-grid"><label>Collaborateur actif<select required value={form.employeePersonId} onChange={(event) => onChange({ ...form, employeePersonId: event.target.value })}><option value="">Sélectionner une personne</option>{people.map((person) => <option key={person.id} value={person.id}>{person.firstName} {person.lastName.toUpperCase()} · {person.functionLabel}</option>)}</select></label><label>Année de l’entretien<input aria-label="Année de l’entretien calculée" readOnly type="number" value={invitationYear(form.startsAt)} /></label><label>Date et heure de début<input min={localInputValue(new Date())} onChange={(event) => onChange({ ...form, startsAt: event.target.value })} step="900" type="datetime-local" value={form.startsAt} /></label><fieldset className="annual-review-duration"><legend>Durée</legend><label>Heures<input max="8" min="0" onChange={(event) => onChange({ ...form, durationHours: event.target.value })} type="number" value={form.durationHours} /></label><label>Minutes<select onChange={(event) => onChange({ ...form, durationMinutes: event.target.value })} value={form.durationMinutes}>{['0', '15', '30', '45'].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></fieldset></div><fieldset className="annual-review-meeting-mode"><legend>Modalité</legend><label className={form.meetingMode === 'in_person' ? 'is-selected' : ''}><input checked={form.meetingMode === 'in_person'} onChange={() => onChange({ ...form, meetingMode: 'in_person', videoUrl: '' })} type="radio" /><MapPin size={17} />Lieu physique</label><label className={form.meetingMode === 'video' ? 'is-selected' : ''}><input checked={form.meetingMode === 'video'} onChange={() => onChange({ ...form, meetingMode: 'video', meetingLocation: '' })} type="radio" /><Video size={17} />Visioconférence</label></fieldset>{form.meetingMode === 'in_person' ? <label className="annual-review-full-field">Lieu<input placeholder="Ex. Bureau Armement · Cherbourg" onChange={(event) => onChange({ ...form, meetingLocation: event.target.value })} value={form.meetingLocation} /></label> : <label className="annual-review-full-field">Lien visio<input placeholder="https://…" onChange={(event) => onChange({ ...form, videoUrl: event.target.value })} type="url" value={form.videoUrl} /></label>}<label className="annual-review-full-field">Message facultatif<textarea maxLength={1_000} onChange={(event) => onChange({ ...form, proposalNote: event.target.value })} rows={3} value={form.proposalNote} /></label><footer><button disabled={isSaving} onClick={onSend} type="button"><Send size={17} />Envoyer l’invitation</button></footer></section>;
 }
 
 function ReviewSummary({ review }: { review: AnnualReviewRecord }) {
-  return <header className="annual-review-summary"><div className="annual-review-avatar">{review.employeeName.split(/\s+/u).slice(0, 2).map((part) => part[0]).join('')}</div><div><span className={`annual-review-status is-${statusTone(review.status)}`}>{STATUS_LABELS[review.status]}</span><h2>{review.employeeName}</h2><p>{review.employeeFunction || 'Fonction non renseignée'} · Entretien {review.reviewYear}</p></div><dl><div><dt><CalendarClock size={15} />Date</dt><dd>{formatAnnualReviewDateTime(review.startsAt)}</dd></div><div><dt>{review.meetingMode === 'video' ? <Video size={15} /> : <MapPin size={15} />}{review.meetingMode === 'video' ? 'Visio' : 'Lieu'}</dt><dd>{review.meetingMode === 'video' ? <a href={review.videoUrl} rel="noreferrer" target="_blank">Ouvrir le lien <ExternalLink size={13} /></a> : review.meetingLocation}</dd></div><div><dt><UserRoundCheck size={15} />Manager</dt><dd>{review.managerName}</dd></div></dl>{review.proposalNote ? <blockquote>{review.proposalNote}</blockquote> : null}</header>;
+  return <header className="annual-review-summary"><div className="annual-review-avatar">{review.employeeName.split(/\s+/u).slice(0, 2).map((part) => part[0]).join('')}</div><div><span className={`annual-review-status is-${statusTone(review.status)}`}>{STATUS_LABELS[review.status]}</span><h2>{review.employeeName}</h2><p>{review.employeeFunction || 'Fonction non renseignée'} · Entretien {review.reviewYear}</p></div><dl><div><dt><CalendarClock size={15} />Date</dt><dd>{formatAnnualReviewDateTime(review.startsAt)}</dd></div><div><dt>{review.meetingMode === 'video' ? <Video size={15} /> : <MapPin size={15} />}{review.meetingMode === 'video' ? 'Visio' : 'Lieu'}</dt><dd>{review.meetingMode === 'video' ? <a href={review.videoUrl} rel="noreferrer" target="_blank">Ouvrir le lien <ExternalLink size={13} /></a> : review.meetingLocation}</dd></div><div><dt><UserRoundCheck size={15} />Manager</dt><dd>{review.managerName}</dd></div><div><dt><CalendarCheck2 size={15} />Échéance</dt><dd>{new Intl.DateTimeFormat('fr-FR').format(new Date(`${review.dueOn}T12:00:00`))}</dd></div></dl>{review.proposalNote ? <blockquote>{review.proposalNote}</blockquote> : null}</header>;
+}
+
+function AnnualReviewObjectiveTracker({ objectives, review, canUpdate, isSaving, onUpdate }: { objectives: AnnualReviewObjectiveRecord[]; review: AnnualReviewRecord; canUpdate: boolean; isSaving: boolean; onUpdate: (objective: AnnualReviewObjectiveRecord, percent: number) => void }) {
+  const expired = review.dueOn < new Date().toISOString().slice(0, 10);
+  const [drafts, setDrafts] = useState<Record<number, number>>({});
+  return <section className="annual-review-objective-tracker"><header><div><p>Suivi annuel</p><h3>Atteinte des objectifs</h3></div><span>Échéance · {new Intl.DateTimeFormat('fr-FR').format(new Date(`${review.dueOn}T12:00:00`))}</span></header><div>{objectives.map((objective) => {
+    const value = drafts[objective.id] ?? objective.completionPercent;
+    return <article key={objective.id}><div><strong>{objective.objective}</strong>{objective.comment ? <small>{objective.comment}</small> : null}</div><label><span>Avancement</span><div><input aria-label={`Avancement de ${objective.objective}`} disabled={!canUpdate || expired || isSaving} max="100" min="0" onChange={(event) => setDrafts((current) => ({ ...current, [objective.id]: Number(event.target.value) }))} onPointerUp={() => { if (value !== objective.completionPercent) onUpdate(objective, value); }} onKeyUp={(event) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key) && value !== objective.completionPercent) onUpdate(objective, value); }} step="1" type="range" value={value} /><output>{value} %</output></div></label></article>;
+  })}</div>{!canUpdate ? <small>Le suivi est en lecture seule pour le profil Marin.</small> : expired ? <small>L’échéance de suivi est dépassée.</small> : null}</section>;
 }
 
 function WorkflowActions(props: {
@@ -339,7 +377,7 @@ function WorkflowActions(props: {
   onDownload: () => void; onPrint: () => void; onOpenReport: () => void; onSign: () => void;
 }) {
   const { review } = props;
-  if (props.isCollaborator && review.status === 'invitation_pending') return <section className="annual-review-action-card is-invitation"><div><BellRing size={23} /><span><strong>Répondez à l’invitation</strong>Ce rendez-vous n’apparaîtra dans le Planning qu’après accord.</span></div><div className="annual-review-primary-actions"><button disabled={props.isSaving} onClick={props.onAccept} type="button"><CalendarCheck2 size={17} />Accepter le créneau</button></div><details><summary>Proposer un nouvel horaire</summary><div className="annual-review-counter-grid"><label>Nouveau début<input onChange={(event) => props.onCounterChange({ ...props.counterForm, startsAt: event.target.value })} type="datetime-local" value={props.counterForm.startsAt} /></label><label>Nouvelle fin<input onChange={(event) => props.onCounterChange({ ...props.counterForm, endsAt: event.target.value })} type="datetime-local" value={props.counterForm.endsAt} /></label><label>Message<textarea onChange={(event) => props.onCounterChange({ ...props.counterForm, note: event.target.value })} rows={2} value={props.counterForm.note} /></label><button disabled={props.isSaving} onClick={props.onCounter} type="button"><Clock3 size={17} />Envoyer la proposition</button></div></details></section>;
+  if (props.isCollaborator && review.status === 'invitation_pending') return <section className="annual-review-action-card is-invitation"><div><BellRing size={23} /><span><strong>Répondez à l’invitation</strong>Ce rendez-vous n’apparaîtra dans le Planning qu’après accord.</span></div><div className="annual-review-primary-actions"><button disabled={props.isSaving} onClick={props.onAccept} type="button"><CalendarCheck2 size={17} />Accepter le créneau</button></div><details><summary>Proposer un nouvel horaire</summary><div className="annual-review-counter-grid"><label>Nouveau début<input onChange={(event) => props.onCounterChange({ ...props.counterForm, startsAt: event.target.value })} step="900" type="datetime-local" value={props.counterForm.startsAt} /></label><label>Nouvelle fin<input onChange={(event) => props.onCounterChange({ ...props.counterForm, endsAt: event.target.value })} step="900" type="datetime-local" value={props.counterForm.endsAt} /></label><label>Message<textarea onChange={(event) => props.onCounterChange({ ...props.counterForm, note: event.target.value })} rows={2} value={props.counterForm.note} /></label><button disabled={props.isSaving} onClick={props.onCounter} type="button"><Clock3 size={17} />Envoyer la proposition</button></div></details></section>;
   if (props.isManager && review.status === 'counter_proposed') return <section className="annual-review-action-card is-invitation"><div><Clock3 size={23} /><span><strong>Nouveau créneau proposé</strong>Le Planning sera mis à jour dès votre acceptation.</span></div><button disabled={props.isSaving} onClick={props.onAcceptCounter} type="button"><CalendarCheck2 size={17} />Accepter le nouveau créneau</button></section>;
   if ((review.status === 'scheduled' || review.status === 'collaborator_submitted') && (props.isCollaborator || props.isManager)) {
     const submitted = props.isCollaborator && Boolean(props.collaboratorResponse?.submittedAt);

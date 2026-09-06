@@ -5,6 +5,7 @@ import {
   buildQhseReportContent, calculateDirectFuelCo2eTonnes, calculateFuelGhgTonnes, type QhseReportSnapshot,
 } from './qhseReportData';
 import { buildQhseReportPdf, fitImageWithinBox, sanitizeQhsePdfText } from './qhseReportPdf';
+import { maritimeYearSnapshot } from './qhseMaritimeReports';
 
 function emptySnapshot(): QhseReportSnapshot {
   return {
@@ -148,11 +149,45 @@ describe('QHSE report catalog and calculations', () => {
     expect(endIndices.map((index) => chart.series[0].values[index])).toEqual([3.5, 4.25, 0]);
   });
 
-  it('documents unavailable social-governance inputs instead of inventing a score', () => {
+  it('builds the social-governance report from structured, selected annual-review data', () => {
     const report = QHSE_REPORT_CATALOG.find((item) => item.id === 'social-governance')!;
-    const content = buildQhseReportContent(report, emptySnapshot());
-    expect(content.metrics.find((item) => item.label === 'Entretiens annuels')?.value).toBe('—');
-    expect(content.notes.map((note) => note.title)).toContain('Discrimination et droits humains');
+    const snapshot = emptySnapshot();
+    snapshot.socialGovernance = {
+      canConfigure: true, years: [2026], reviewCount: 3, respondentCount: 2, discriminationCount: 1,
+      radar: [
+        { key: 'presence', label: 'Satisfaction présence entreprise', value: 3.5, responseCount: 2 },
+        { key: 'missions', label: 'Mission', value: 3, responseCount: 2 },
+      ],
+      proposals: [{ key: '12:governance', year: 2026, theme: 'governance', text: 'Clarifier les processus.', selected: true }],
+      comments: [{ year: 2026, html: '<p>Suivi trimestriel par la Direction.</p>' }],
+    };
+    const content = buildQhseReportContent(report, snapshot);
+    expect(content.charts[0].kind).toBe('radar');
+    expect(content.metrics.find((item) => item.label === 'Entretiens réalisés')?.value).toBe('3');
+    expect(content.tables[0].rows[0]).toEqual(['2026', 'Clarifier les processus.']);
+    expect(content.notes.map((note) => note.title)).toContain('Commentaire Général de la Direction');
+  });
+
+  it('uses the matching Social and Governance values on each page of a multi-year export', () => {
+    const snapshot = emptySnapshot();
+    const yearData = {
+      canConfigure: true, respondentCount: 1, discriminationCount: 0,
+      radar: [{ key: 'mission', label: 'Mission', value: 3, responseCount: 1 }],
+      proposals: [{ key: '1:social', year: 2025, theme: 'social' as const, text: 'Communication 2025', selected: true }],
+      comments: [{ year: 2025, html: '<p>Commentaire 2025</p>' }], reviewCount: 1,
+    };
+    snapshot.scope = { ...snapshot.scope, year: 2026, years: [2025, 2026] };
+    snapshot.socialGovernance = {
+      ...yearData, years: [2025, 2026], reviewCount: 3, respondentCount: 2,
+      byYear: {
+        '2025': yearData,
+        '2026': { ...yearData, reviewCount: 2, proposals: [{ ...yearData.proposals[0], key: '2:social', year: 2026, text: 'Communication 2026' }], comments: [] },
+      },
+    };
+    const page = maritimeYearSnapshot(snapshot, 2026, { asOfDate: '2026-09-06' });
+    expect(page.socialGovernance?.reviewCount).toBe(2);
+    expect(page.socialGovernance?.proposals.map((item) => item.text)).toEqual(['Communication 2026']);
+    expect(page.socialGovernance?.comments).toEqual([]);
   });
 
   it('uses the official Supabase annual history and marks missing accident data', () => {

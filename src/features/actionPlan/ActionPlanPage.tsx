@@ -216,6 +216,7 @@ function CreateActionDialog({
   const completeCount = completion.filter((item) => item.complete).length;
   const selectedType = data.actionTypes.find((item) => item.key === form.actionTypeKey);
   const deviationRequired = DEVIATION_TYPE_ACTION_KEYS.has(form.actionTypeKey);
+  const isConfidentialReport = form.actionTypeKey === 'discrimination_human_rights';
 
   if (!open) return null;
 
@@ -301,6 +302,7 @@ function CreateActionDialog({
                   {selectedType?.tracksExposureRate && <label>Jours d&apos;arrêt<input min="0" step="0.5" type="number" value={form.lostDays} onChange={(event) => update('lostDays', Number(event.target.value))} /></label>}
                 </div>
                 <p className="action-plan-link-note"><Clock3 size={16} />Les champs HSE s&apos;adaptent automatiquement au type d&apos;événement sélectionné.</p>
+                {isConfidentialReport ? <p className="action-plan-link-note is-confidential"><ShieldCheck size={16} /><strong>Rapport strictement confidentiel.</strong> Seuls l’émetteur et Christophe MINASSIAN pourront le consulter et le traiter.</p> : null}
               </section>
               <section aria-labelledby="action-finding"><h3 id="action-finding"><FileText size={20} />4 · Constat</h3>
                 <label>Constat <b>*</b><textarea required value={form.title} onChange={(event) => update('title', event.target.value)} /></label>
@@ -364,9 +366,12 @@ function ApprovalDialog({ action, data, client, onClose, onSaved }: {
   useEffect(() => {
     if (!action) return;
     setAnomalyCause(action.anomalyCause || '');
-    setPersonIds([]); setVesselIds([]); setError('');
+    setPersonIds(action.actionTypeKey === 'discrimination_human_rights' && action.issuerPersonId ? [action.issuerPersonId] : []);
+    setVesselIds([]); setError('');
   }, [action]);
   if (!action) return null;
+  const isConfidentialReport = action.actionTypeKey === 'discrimination_human_rights';
+  const availablePeople = isConfidentialReport ? data.people.filter((person) => person.id === action.issuerPersonId) : data.people;
 
   function toggle(list: number[], id: number, setter: (ids: number[]) => void) {
     setter(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
@@ -382,11 +387,11 @@ function ApprovalDialog({ action, data, client, onClose, onSaved }: {
   }
 
   return <div className="action-plan-dialog-backdrop" role="presentation"><section className="action-plan-approval" role="dialog" aria-modal="true" aria-labelledby="approval-title">
-    <header><span>Approbation QHSE</span><h2 id="approval-title">{action.title}</h2><p>Définissez la cause puis affectez une ou plusieurs personnes, ou l&apos;équipage complet d&apos;un navire.</p><button aria-label="Fermer" onClick={onClose} type="button"><X size={22} /></button></header>
+    <header><span>Approbation QHSE</span><h2 id="approval-title">{action.title}</h2><p>{isConfidentialReport ? 'Définissez la cause. Le traitement reste limité à Christophe MINASSIAN et à l’émetteur.' : 'Définissez la cause puis affectez une ou plusieurs personnes, ou l’équipage complet d’un navire.'}</p><button aria-label="Fermer" onClick={onClose} type="button"><X size={22} /></button></header>
     <form onSubmit={submit}>
       <label>Cause de l&apos;anomalie <b>*</b><select required value={anomalyCause} onChange={(event) => setAnomalyCause(event.target.value)}><option value="">Sélectionner une cause</option>{ANOMALY_CAUSES.map((cause) => <option key={cause}>{cause}</option>)}</select></label>
-      <fieldset><legend>Personnes responsables</legend><div className="action-plan-assignee-grid">{data.people.map((person) => <label key={person.id}><input checked={personIds.includes(person.id)} onChange={() => toggle(personIds, person.id, setPersonIds)} type="checkbox" /><span><strong>{person.name}</strong><small>{person.functionLabel || 'Personnel BBTM'}</small></span></label>)}</div></fieldset>
-      <fieldset><legend>Équipage d&apos;un navire</legend><div className="action-plan-assignee-grid is-vessels">{data.vessels.map((vessel) => <label key={vessel.id}><input checked={vesselIds.includes(vessel.id)} onChange={() => toggle(vesselIds, vessel.id, setVesselIds)} type="checkbox" /><span><strong>Équipage — {vessel.name}</strong><small>Les marins planifiés sur ce navire verront l&apos;action.</small></span></label>)}</div></fieldset>
+      <fieldset><legend>Personnes responsables</legend><div className="action-plan-assignee-grid">{availablePeople.map((person) => <label key={person.id}><input checked={personIds.includes(person.id)} disabled={isConfidentialReport} onChange={() => toggle(personIds, person.id, setPersonIds)} type="checkbox" /><span><strong>{person.name}</strong><small>{isConfidentialReport ? 'Émetteur · accès confidentiel' : person.functionLabel || 'Personnel BBTM'}</small></span></label>)}</div></fieldset>
+      {!isConfidentialReport ? <fieldset><legend>Équipage d&apos;un navire</legend><div className="action-plan-assignee-grid is-vessels">{data.vessels.map((vessel) => <label key={vessel.id}><input checked={vesselIds.includes(vessel.id)} onChange={() => toggle(vesselIds, vessel.id, setVesselIds)} type="checkbox" /><span><strong>Équipage — {vessel.name}</strong><small>Les marins planifiés sur ce navire verront l&apos;action.</small></span></label>)}</div></fieldset> : <p className="action-plan-link-note is-confidential"><ShieldCheck size={16} />Aucun autre collaborateur ou équipage ne peut être affecté à ce rapport.</p>}
       <p className="action-plan-approval-selection"><UsersRound size={16} />{personIds.length + vesselIds.length} responsable(s) sélectionné(s)</p>
       {error && <p className="action-plan-message is-error" role="alert">{error}</p>}
       <footer><button className="is-secondary" disabled={saving} onClick={onClose} type="button">Annuler</button><button disabled={saving || !anomalyCause || personIds.length + vesselIds.length === 0} type="submit">{saving ? 'Approbation…' : 'Approuver et affecter'}</button></footer>

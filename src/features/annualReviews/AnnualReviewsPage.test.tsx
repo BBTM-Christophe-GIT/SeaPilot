@@ -30,6 +30,11 @@ describe('AnnualReviewsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Nouvel entretien' }));
     expect(screen.getByRole('heading', { name: 'Proposer un rendez-vous' })).toBeInTheDocument();
     expect(screen.getByLabelText('Collaborateur actif')).toBeInTheDocument();
+    expect(screen.queryByText('Date et heure de fin')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Durée' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Date et heure de début')).toHaveAttribute('step', '900');
+    expect(screen.getByLabelText('Année de l’entretien calculée')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Minutes')).toHaveDisplayValue('0 min');
     expect(screen.getByText('Lieu physique')).toBeInTheDocument();
     expect(screen.getByText('Visioconférence')).toBeInTheDocument();
   });

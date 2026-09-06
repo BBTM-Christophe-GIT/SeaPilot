@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, Database, Info, TriangleAlert, CalendarClock } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { QhseReportChart, QhseReportOptions, QhseReportSnapshot } from './qhseReportData';
 import { buildKpiDomainContent, buildKpiOverview, buildKpiSafetyChart, KPI_DOMAINS, type KpiDomain, type KpiSafetyMetric } from './kpiOverviewData';
 
@@ -11,7 +11,14 @@ export function KpiChart({ chart }: { chart: QhseReportChart }) {
   const ticks = chart.monthTicks?.map((tick) => chart.pointPositions?.[tick.index] ?? tick.index);
   const present = chart.series.some((s) => s.values.some((v) => v !== null));
   return <div className="kpi-chart" role="img" aria-label={`${chart.title} · ${chart.unit || ''}`}>
-    {present ? <ResponsiveContainer width="100%" height="100%"><ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+    {present && chart.kind === 'radar' ? <ResponsiveContainer width="100%" height="100%"><RadarChart data={data} margin={{ top: 14, right: 42, bottom: 14, left: 42 }}>
+      <PolarGrid stroke="#d9e5e6" />
+      <PolarAngleAxis dataKey="label" tick={{ fontSize: 10, fill: '#536b78' }} />
+      <PolarRadiusAxis angle={90} domain={[0, chart.maxValue || 4]} tickCount={(chart.maxValue || 4) + 1} tick={{ fontSize: 9, fill: '#64748b' }} />
+      <Tooltip formatter={(value, name) => [`${number(Number(value), 2)} / ${chart.maxValue || 4}`, name]} />
+      <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+      {chart.series.map((series, index) => <Radar key={index} dataKey={`s${index}`} name={series.label} stroke={`rgb(${series.color.join(',')})`} fill={`rgb(${series.color.join(',')})`} fillOpacity={0.24} isAnimationActive={false} />)}
+    </RadarChart></ResponsiveContainer> : present ? <ResponsiveContainer width="100%" height="100%"><ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
       <CartesianGrid stroke="#e8eef4" vertical={false} />
       <XAxis dataKey="position" type="number" domain={['dataMin', 'dataMax']} ticks={ticks || (chart.labels.length === 12 ? data.map((d) => d.position) : undefined)} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} minTickGap={4} tickFormatter={(position: number) => {
         const month = ticks?.indexOf(position) ?? -1;

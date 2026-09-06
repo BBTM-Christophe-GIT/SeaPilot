@@ -83,7 +83,7 @@ as $$
         'behaviour_initiative'
       ]) question_id
     ),
-    'esg', '{}'::jsonb,
+    'esg', jsonb_build_object('environment', 'Réduire les déchets', 'social', 'Améliorer les échanges', 'governance', 'Clarifier les processus', 'other', ''),
     'life', jsonb_build_object(
       'overall', 'satisfait',
       'conditions', jsonb_build_object(
@@ -96,7 +96,11 @@ as $$
       'choice', '1. Poursuivre tel qu’aujourd’hui', 'desiredPosition', '',
       'desiredTraining', '', 'reasons', '', 'other', ''
     ),
-    'objectives', p_objectives
+    'objectives', p_objectives,
+    'goals', jsonb_build_array(jsonb_build_object(
+      'id', 'goal-test', 'objective', 'Obtenir le brevet supérieur',
+      'progress', 20, 'comment', 'Suivi trimestriel'
+    ))
   );
 $$;
 
@@ -105,7 +109,7 @@ select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000101
 select set_config('test.annual_review_id', public.annual_review_create_invitation(
   (select id from public.people where user_id = '79000000-0000-0000-0000-000000000102'),
   extract(year from current_date)::integer,
-  now() + interval '7 days', now() + interval '7 days 1 hour',
+  date_trunc('hour', now()) + interval '7 days', date_trunc('hour', now()) + interval '7 days 1 hour',
   'in_person', 'Bureau Armement', null, 'Préparer le bilan annuel'
 )::text, true);
 
@@ -186,8 +190,9 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000101', true);
 select set_config('test.annual_review_counter_id', public.annual_review_create_invitation(
   (select id from public.people where user_id = '79000000-0000-0000-0000-000000000102'),
-  extract(year from current_date)::integer + 1,
-  now() + interval '30 days', now() + interval '30 days 1 hour',
+  extract(year from current_date)::integer,
+  make_timestamptz(extract(year from current_date)::integer + 1, 1, 15, 10, 0, 0, 'Europe/Paris'),
+  make_timestamptz(extract(year from current_date)::integer + 1, 1, 15, 11, 0, 0, 'Europe/Paris'),
   'video', null, 'https://meet.example.invalid/annual', null
 )::text, true);
 select ok(current_setting('test.annual_review_counter_id')::bigint > 0, 'manager can create the following annual campaign');
@@ -197,7 +202,8 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000102', true);
 select public.annual_review_counter_propose(
   current_setting('test.annual_review_counter_id')::bigint,
-  now() + interval '31 days', now() + interval '31 days 1 hour', 'Autre quart de travail'
+  make_timestamptz(extract(year from current_date)::integer + 1, 1, 16, 10, 15, 0, 'Europe/Paris'),
+  make_timestamptz(extract(year from current_date)::integer + 1, 1, 16, 11, 15, 0, 'Europe/Paris'), 'Autre quart de travail'
 );
 select is((select status from public.annual_reviews where id = current_setting('test.annual_review_counter_id')::bigint), 'counter_proposed', 'employee can propose another time');
 
