@@ -264,18 +264,15 @@ describe('ProjectEditor contract hire periods', () => {
     fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
     fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
     await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
-    await user.type(
-      screen.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement'),
-      'Navire et équipage dédiés.',
-    );
-    await user.type(
-      screen.getByLabelText('Description de la prestation incluse dans les frais de mobilisation'),
-      'Préparation et transit aller.',
-    );
-    await user.type(
-      screen.getByLabelText('Description de la prestation incluse dans les frais de démobilisation'),
-      'Transit retour et remise en configuration.',
-    );
+    [
+      ['Description de la prestation incluse dans le loyer d’affrètement', 'Navire et équipage dédiés.'],
+      ['Description de la prestation incluse dans les frais de mobilisation', 'Préparation et transit aller.'],
+      ['Description de la prestation incluse dans les frais de démobilisation', 'Transit retour et remise en configuration.'],
+    ].forEach(([label, value]) => {
+      const editor = screen.getByRole('textbox', { name: label });
+      editor.innerHTML = value;
+      fireEvent.input(editor);
+    });
     await user.click(screen.getByRole('button', { name: /Facturation/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
     await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
@@ -298,9 +295,9 @@ describe('ProjectEditor contract hire periods', () => {
       501,
       expect.objectContaining({
         supplytimeData: expect.objectContaining({
-          commercial_charter_hire_service_description: 'Navire et équipage dédiés.',
-          commercial_demobilisation_service_description: 'Transit retour et remise en configuration.',
-          commercial_mobilisation_service_description: 'Préparation et transit aller.',
+          commercial_charter_hire_service_description: '<p>Navire et équipage dédiés.</p>',
+          commercial_demobilisation_service_description: '<p>Transit retour et remise en configuration.</p>',
+          commercial_mobilisation_service_description: '<p>Préparation et transit aller.</p>',
         }),
       }),
       null,
@@ -355,7 +352,9 @@ describe('ProjectEditor contract hire periods', () => {
       screen.getByLabelText('Devise des frais'),
       screen.getByLabelText('Fuel'),
     ];
-    commercialFields.forEach((field) => expect(field.closest('label')).toHaveClass('is-wide'));
+    commercialFields.forEach((field) => {
+      expect(field.closest('label, .project-editor-rich-field')).toHaveClass('is-wide');
+    });
     commercialFields.slice(1).forEach((field, index) => {
       expect(commercialFields[index].compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
@@ -439,6 +438,42 @@ describe('ProjectEditor contract hire periods', () => {
 
     expect(preview.getByText('Prestation incluse')).toBeInTheDocument();
     expect(preview.getByText('Navire et équipage dédiés.')).toBeInTheDocument();
+  });
+
+  it('switches to a preserved free-text conditions editor with commercial annexes', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectEditor
+        client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+        clients={[]}
+        contractTypes={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        statuses={['Non validé']}
+        towedAssets={[]}
+        vessels={vessels}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.click(screen.getByRole('radio', { name: /Description libre et annexes/ }));
+
+    expect(screen.queryByRole('spinbutton', { name: /Loyer d’affrètement/ })).not.toBeInTheDocument();
+    const editor = screen.getByRole('textbox', { name: 'Description des conditions' });
+    editor.innerHTML = '<p><strong>Forfait global</strong> incluant le transit.</p>';
+    fireEvent.input(editor);
+    await user.upload(
+      screen.getByLabelText('Ajouter des pièces jointes aux conditions'),
+      new File(['annexe'], 'Annexe commerciale.pdf', { type: 'application/pdf' }),
+    );
+
+    expect(screen.getAllByText('Annexe commerciale.pdf')).toHaveLength(2);
+    expect(within(screen.getByRole('region', { name: 'Aperçu du document généré' })).getByText('Forfait global')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /Conditions détaillées/ }));
+    expect(screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /Description libre et annexes/ }));
+    expect(screen.getByRole('textbox', { name: 'Description des conditions' })).toHaveTextContent('Forfait global');
   });
 
   it('does not rewrite an unchanged historical project while its contract snapshot is missing', async () => {

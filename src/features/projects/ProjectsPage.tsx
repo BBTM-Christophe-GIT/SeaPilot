@@ -43,6 +43,7 @@ import {
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
+import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
 import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
@@ -582,17 +583,21 @@ function ProjectDocumentEmissionDialog({
   attachmentCount,
   definition,
   isBusy,
+  language,
   mode,
   onClose,
   onConfirm,
+  onLanguageChange,
   onModeChange,
 }: {
   attachmentCount: number;
   definition: (typeof PROJECT_DOCUMENT_TYPES)[number];
   isBusy: boolean;
+  language: ProjectDocumentLanguage;
   mode: ProjectDocumentDownloadMode;
   onClose: () => void;
   onConfirm: () => void;
+  onLanguageChange: (language: ProjectDocumentLanguage) => void;
   onModeChange: (mode: ProjectDocumentDownloadMode) => void;
 }) {
   return (
@@ -614,6 +619,35 @@ function ProjectDocumentEmissionDialog({
       size="sm"
       title={`Émettre : ${definition.label}`}
     >
+      {definition.kind === 'offer' ? (
+        <div aria-label="Langue de l’offre commerciale" className="project-document-language-options" role="radiogroup">
+          <strong>Langue du document</strong>
+          <div>
+            <label className={language === 'fr' ? 'is-selected' : undefined}>
+              <input
+                checked={language === 'fr'}
+                disabled={isBusy}
+                name="project-document-language"
+                onChange={() => onLanguageChange('fr')}
+                type="radio"
+                value="fr"
+              />
+              <span><strong>Français</strong><small>Libellés et dates en français.</small></span>
+            </label>
+            <label className={language === 'en' ? 'is-selected' : undefined}>
+              <input
+                checked={language === 'en'}
+                disabled={isBusy}
+                name="project-document-language"
+                onChange={() => onLanguageChange('en')}
+                type="radio"
+                value="en"
+              />
+              <span><strong>English</strong><small>Traduction anglaise des libellés standards. Les textes libres restent modifiables tels que saisis.</small></span>
+            </label>
+          </div>
+        </div>
+      ) : null}
       <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
         <label className={mode === 'document' ? 'is-selected' : undefined}>
           <input
@@ -1270,6 +1304,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
   const [documentDownloadMode, setDocumentDownloadMode] = useState<ProjectDocumentDownloadMode>('document');
+  const [documentLanguage, setDocumentLanguage] = useState<ProjectDocumentLanguage>('fr');
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -1444,6 +1479,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
     setMutationError('');
     setDocumentDownloadMode('document');
+    setDocumentLanguage('fr');
     setDocumentEmissionRequest({ kind, planningOccurrenceId });
   }
 
@@ -1506,6 +1542,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     kind: ProjectGeneratedDocumentKind,
     planningOccurrenceId: number | null,
     downloadMode: ProjectDocumentDownloadMode,
+    language: ProjectDocumentLanguage,
   ) {
     if (!selectedProject) return;
     setMutationError('');
@@ -1531,6 +1568,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         emitter,
         occurrence,
         project: selectedProject,
+        language,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
         vesselCertificates,
@@ -1862,13 +1900,16 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           attachmentCount={selectedProjectAttachments.length}
           definition={documentEmissionDefinition}
           isBusy={generatingDocument !== null}
+          language={documentLanguage}
           mode={documentDownloadMode}
           onClose={() => setDocumentEmissionRequest(null)}
           onConfirm={() => void generateSelectedProjectDocument(
             documentEmissionRequest.kind,
             documentEmissionRequest.planningOccurrenceId,
             documentDownloadMode,
+            documentLanguage,
           )}
+          onLanguageChange={setDocumentLanguage}
           onModeChange={setDocumentDownloadMode}
         />
       ) : null}

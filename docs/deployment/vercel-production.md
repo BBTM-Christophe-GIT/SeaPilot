@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.39.0` enrichit l’offre commerciale du module Projet : trois descriptions Aptos, choix entre conditions
+détaillées et description libre avec annexes, et modèle anglais des libellés PDF. Appliquer
+`supabase/migrations/20260907062022_project_offer_rich_conditions.sql` avant le client. Voir
+[project-commercial-offer-v3-39-0.md](./project-commercial-offer-v3-39-0.md).
+
 Version `3.22.1` distingue la limite d'envoi Supabase des autres erreurs d'invitation. Lorsque le quota du SMTP
 intégré est atteint, l'administrateur peut copier un lien personnel à usage unique au lieu de perdre la saisie.
 Voir [user-invitations-v3-22-1.md](./user-invitations-v3-22-1.md).
