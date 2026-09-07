@@ -1,4 +1,3 @@
-import autoTable from 'jspdf-autotable';
 import type {
   ClientRecord,
   ProjectContractRecord,
@@ -24,11 +23,17 @@ import { BIMCO_P144_FIELDS } from './projectContractModels';
 import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
 import {
   buildCommercialReserves,
+  COMMERCIAL_RESERVE_AVAILABILITY,
+  COMMERCIAL_RESERVE_WEATHER,
   formatProjectDocumentEmitterName,
+  getCommercialConditionsDescription,
+  getCommercialConditionsMode,
   getCommercialIncludedServiceDescriptions,
+  getCommercialIncludedServiceRichDescriptions,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
+import { renderProjectPdfRichText } from './projectPdfRichText';
 import {
   buildBareboatDeliveryLabel,
   buildBareboatRedeliveryLabel,
@@ -56,7 +61,10 @@ export interface ProjectDocumentGenerationInput {
   towedAsset?: ProjectTowedAssetRecord;
   vessel?: VesselRecord;
   vesselCertificates?: ProjectVesselCertificateRecord[];
+  language?: ProjectDocumentLanguage;
 }
+
+export type ProjectDocumentLanguage = 'fr' | 'en';
 
 export interface ProjectOfferRow {
   label: string;
@@ -115,15 +123,15 @@ function present(value: string | number | null | undefined): string {
   return value === null || value === undefined || value === '' ? '' : String(value);
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, language: ProjectDocumentLanguage = 'fr'): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(date);
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', { dateStyle: 'medium' }).format(date);
 }
 
-export function formatOfferGenerationDate(value: Date): string {
-  return new Intl.DateTimeFormat('fr-FR', {
+export function formatOfferGenerationDate(value: Date, language: ProjectDocumentLanguage = 'fr'): string {
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -137,21 +145,139 @@ const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
   USD: '$',
 };
 
-function formatHireUnit(unit: string): string {
+function formatHireUnit(unit: string, language: ProjectDocumentLanguage = 'fr'): string {
   const normalized = unit.trim().toLocaleLowerCase('fr-FR');
-  if (['jour', 'jours', 'journalier', 'journalière'].includes(normalized)) return 'Jour';
+  if (['jour', 'jours', 'journalier', 'journalière'].includes(normalized)) return language === 'en' ? 'Day' : 'Jour';
   return normalized ? `${normalized[0].toLocaleUpperCase('fr-FR')}${normalized.slice(1)}` : '';
 }
 
-function formatMoney(value: number | null | undefined, currency: string, unit = ''): string {
+function formatMoney(
+  value: number | null | undefined,
+  currency: string,
+  unit = '',
+  language: ProjectDocumentLanguage = 'fr',
+): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  const amount = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
+  const amount = new Intl.NumberFormat(language === 'en' ? 'en-GB' : 'fr-FR', { maximumFractionDigits: 2 })
     .format(value)
     .replace(/[\s\u00a0\u202f]+/g, ' ');
   const normalizedCurrency = currency.trim().toLocaleUpperCase('fr-FR');
   const currencyLabel = CURRENCY_SYMBOLS[normalizedCurrency] || normalizedCurrency;
-  const unitLabel = formatHireUnit(unit);
-  return [amount, currencyLabel, 'HT', unitLabel ? `/ ${unitLabel}` : ''].filter(Boolean).join(' ');
+  const unitLabel = formatHireUnit(unit, language);
+  return [amount, currencyLabel, language === 'en' ? 'excl. VAT' : 'HT', unitLabel ? `/ ${unitLabel}` : '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+export const PROJECT_OFFER_TRANSLATIONS = {
+  fr: {
+    title: 'OFFRE COMMERCIALE',
+    issuedOn: 'Émise le',
+    proposalAddressedTo: 'PROPOSITION ADRESSÉE À',
+    attention: 'À l’attention de',
+    contactMissing: 'Interlocuteur à renseigner',
+    clientMissing: 'CLIENT À RENSEIGNER',
+    project: 'PROJET',
+    newProject: 'NOUVEAU PROJET',
+    contractType: 'Offre Commerciale',
+    ourProposal: 'NOTRE PROPOSITION',
+    serviceMissing: 'Prestation à renseigner.',
+    vessel: 'Navire',
+    period: 'Période',
+    route: 'Route',
+    operationalFramework: 'Cadre opérationnel',
+    proposedScope: 'PÉRIMÈTRE PROPOSÉ',
+    operationAreaMissing: 'Zone d’opération à renseigner',
+    delivery: 'Livraison',
+    redelivery: 'Redélivraison',
+    firmDuration: 'Durée ferme',
+    calendarDays: 'jours calendaires',
+    fuel: 'Carburant',
+    commercialTerms: 'Conditions commerciales',
+    descriptionOfTerms: 'DESCRIPTION DES CONDITIONS',
+    termsDetailedBelow: 'Description complète présentée ci-après.',
+    mobilisation: 'Mobilisation',
+    demobilisation: 'Démobilisation',
+    operation: 'Opération',
+    extension: 'Extension',
+    invoicing: 'FACTURATION',
+    payment: 'PAIEMENT',
+    includedServices: 'PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES',
+    charterHire: 'Loyer d’affrètement',
+    mobilisationFees: 'Frais de mobilisation',
+    demobilisationFees: 'Frais de démobilisation',
+    commercialReserves: 'RÉSERVES COMMERCIALES',
+    owner: 'Armateur',
+    client: 'Client',
+    emitterMissing: 'Émetteur à renseigner',
+    functionMissing: 'Fonction à renseigner',
+    signatureMissing: 'Signature non renseignée',
+    agreed: 'BON POUR ACCORD',
+    nameAndCapacity: 'NOM ET QUALITÉ',
+    signature: 'SIGNATURE',
+    dateAndStamp: 'DATE ET CACHET',
+    generatedOn: 'Offre générée le',
+  },
+  en: {
+    title: 'COMMERCIAL OFFER',
+    issuedOn: 'Issued on',
+    proposalAddressedTo: 'PROPOSAL ADDRESSED TO',
+    attention: 'For the attention of',
+    contactMissing: 'Contact to be provided',
+    clientMissing: 'CLIENT TO BE PROVIDED',
+    project: 'PROJECT',
+    newProject: 'NEW PROJECT',
+    contractType: 'Commercial Offer',
+    ourProposal: 'OUR PROPOSAL',
+    serviceMissing: 'Service description to be provided.',
+    vessel: 'Vessel',
+    period: 'Period',
+    route: 'Route',
+    operationalFramework: 'Operational framework',
+    proposedScope: 'PROPOSED SCOPE',
+    operationAreaMissing: 'Operating area to be provided',
+    delivery: 'Delivery',
+    redelivery: 'Redelivery',
+    firmDuration: 'Firm period',
+    calendarDays: 'calendar days',
+    fuel: 'Fuel',
+    commercialTerms: 'Commercial terms',
+    descriptionOfTerms: 'DESCRIPTION OF TERMS',
+    termsDetailedBelow: 'Full description provided below.',
+    mobilisation: 'Mobilization',
+    demobilisation: 'Demobilization',
+    operation: 'Operations',
+    extension: 'Extension',
+    invoicing: 'INVOICING',
+    payment: 'PAYMENT',
+    includedServices: 'SERVICES INCLUDED IN THE COMMERCIAL TERMS',
+    charterHire: 'Charter hire',
+    mobilisationFees: 'Mobilization fees',
+    demobilisationFees: 'Demobilization fees',
+    commercialReserves: 'COMMERCIAL RESERVATIONS',
+    owner: 'Owners',
+    client: 'Client',
+    emitterMissing: 'Issuer to be provided',
+    functionMissing: 'Position to be provided',
+    signatureMissing: 'Signature not provided',
+    agreed: 'AGREED AND ACCEPTED',
+    nameAndCapacity: 'NAME AND CAPACITY',
+    signature: 'SIGNATURE',
+    dateAndStamp: 'DATE AND COMPANY STAMP',
+    generatedOn: 'Offer generated on',
+  },
+} as const;
+
+function translateProjectOfferStandardText(value: string, language: ProjectDocumentLanguage): string {
+  if (language === 'fr') return value;
+  if (value === DEFAULT_PROJECT_FUEL_TERMS) return "For the Charterer's account.";
+  if (value === COMMERCIAL_RESERVE_AVAILABILITY) {
+    return 'Subject to vessel availability and technical and contractual approval.';
+  }
+  if (value === COMMERCIAL_RESERVE_WEATHER) {
+    return 'Subject to weather conditions compatible with the operation.';
+  }
+  return value;
 }
 
 function projectReference(project: ProjectRecord): string {
@@ -291,7 +417,11 @@ export function buildProjectBimcoP144PdfFields({
   return Object.fromEntries(BIMCO_P144_FIELDS.map((field) => [field.key, canonical[field.key] || saved[field.key] || '']));
 }
 
-export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKind, project: ProjectRecord): string {
+export function buildGeneratedDocumentFileName(
+  kind: ProjectGeneratedDocumentKind,
+  project: ProjectRecord,
+  language: ProjectDocumentLanguage = 'fr',
+): string {
   const reference = (project.projectCode || project.title || 'Projet')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -299,7 +429,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
     .replace(/\s+/g, ' ')
     .trim();
   const suffixes: Record<ProjectGeneratedDocumentKind, string> = {
-    offer: 'Offre - R1.pdf',
+    offer: language === 'en' ? 'Commercial Offer - R1.pdf' : 'Offre - R1.pdf',
     bimco_supplytime: 'BIMCO - R1.pdf',
     towage_contract: 'Contrat de remorquage - R1.pdf',
     bareboat_charter: "Contrat d'affretement - R1.pdf",
@@ -333,8 +463,9 @@ export async function generateProjectDocument(
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const title = projectReference(input.project);
+  const language = input.language || 'fr';
   pdf.setProperties({
-    title: buildGeneratedDocumentFileName(kind, input.project),
+    title: buildGeneratedDocumentFileName(kind, input.project, language),
     subject: title,
     creator: 'SeaPilot',
   });
@@ -348,13 +479,21 @@ export async function generateProjectDocument(
     ]);
     const contract = input.contract;
     const supplytime = contract?.supplytimeData || {};
-    const reserves = buildCommercialReserves(supplytime);
-    const includedServices = getCommercialIncludedServiceDescriptions(supplytime);
+    const copy = PROJECT_OFFER_TRANSLATIONS[language];
+    const reserves = buildCommercialReserves(supplytime).map((reserve) => (
+      translateProjectOfferStandardText(reserve, language)
+    ));
+    const conditionsMode = getCommercialConditionsMode(supplytime);
+    const conditionsDescription = getCommercialConditionsDescription(supplytime);
+    const includedServices = getCommercialIncludedServiceRichDescriptions(supplytime);
     const includedServiceRows = [
-      ['Loyer d’affrètement', includedServices.charterHire],
-      ['Frais de mobilisation', includedServices.mobilisation],
-      ['Frais de démobilisation', includedServices.demobilisation],
+      [copy.charterHire, includedServices.charterHire],
+      [copy.mobilisationFees, includedServices.mobilisation],
+      [copy.demobilisationFees, includedServices.demobilisation],
     ].filter((row): row is [string, string] => Boolean(row[1]));
+    const richConditionRows = conditionsMode === 'free_text'
+      ? conditionsDescription ? [{ html: conditionsDescription, label: copy.descriptionOfTerms }] : []
+      : includedServiceRows.map(([label, html]) => ({ html, label }));
     const emitterName = formatProjectDocumentEmitterName(input.emitter);
     const duration = input.project.startsOn && input.project.endsOn
       ? Math.max(1, Math.round((new Date(input.project.endsOn).getTime() - new Date(input.project.startsOn).getTime()) / 86_400_000) + 1)
@@ -391,16 +530,16 @@ export async function generateProjectDocument(
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(15);
-    pdf.text('OFFRE COMMERCIALE', 39, 18);
+    pdf.text(copy.title, 39, 18);
     pdf.setFontSize(9);
     pdf.text(reference, 196, 12, { align: 'right' });
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Émise le ${formatOfferGenerationDate(new Date())}`, 196, 19, { align: 'right' });
+    pdf.text(`${copy.issuedOn} ${formatOfferGenerationDate(new Date(), language)}`, 196, 19, { align: 'right' });
     pdf.setTextColor(24, 33, 50);
 
-    [[14, 'PROPOSITION ADRESSÉE À', input.client?.name || input.project.clientName || 'CLIENT À RENSEIGNER', input.client?.representedBy ? `À l’attention de ${input.client.representedBy}` : 'Interlocuteur à renseigner'],
-      [108, 'PROJET', title || 'NOUVEAU PROJET', input.project.contractType || 'Offre Commerciale']]
+    [[14, copy.proposalAddressedTo, input.client?.name || input.project.clientName || copy.clientMissing, input.client?.representedBy ? `${copy.attention} ${input.client.representedBy}` : copy.contactMissing],
+      [108, copy.project, title || copy.newProject, copy.contractType]]
       .forEach(([xValue, label, primary, secondary]) => {
         const x = Number(xValue);
         pdf.setFillColor(243, 246, 250);
@@ -425,86 +564,117 @@ export async function generateProjectDocument(
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(6.2);
     pdf.setTextColor(113, 128, 150);
-    pdf.text('NOTRE PROPOSITION', 18, 69);
+    pdf.text(copy.ourProposal, 18, 69);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7.5);
     pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.description || 'Prestation à renseigner.', 105, 5), 18, 75);
-    detailRow('Navire', input.project.primaryVesselName || '-', 132, 68, 59);
-    detailRow('Période', [formatDate(input.project.startsOn), formatDate(input.project.endsOn)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
+    pdf.text(line(input.project.description || copy.serviceMissing, 105, 5), 18, 75);
+    detailRow(copy.vessel, input.project.primaryVesselName || '-', 132, 68, 59);
+    detailRow(copy.period, [formatDate(input.project.startsOn, language), formatDate(input.project.endsOn, language)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
     if (shouldDisplayCommercialOfferRoute(input.project.deliveryPort, input.project.redeliveryPort)) {
-      detailRow('Route', [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+      detailRow(copy.route, [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
     }
 
     pdf.setDrawColor(216, 226, 237);
     pdf.rect(14, 106, 88, 82);
     pdf.rect(108, 106, 88, 82);
-    sectionHeading('1', 'Cadre opérationnel', 18, 111);
+    sectionHeading('1', copy.operationalFramework, 18, 111);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(6.2);
     pdf.setTextColor(113, 128, 150);
-    pdf.text('PÉRIMÈTRE PROPOSÉ', 18, 124);
+    pdf.text(copy.proposedScope, 18, 124);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7.1);
     pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.operationArea || 'Zone d’opération à renseigner', 78, 3), 18, 130);
-    detailRow('Type de contrat', input.project.contractType || 'Offre Commerciale', 18, 145, 78);
-    detailRow('Livraison', [input.project.deliveryPort, formatDate(input.project.deliveryAt)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
-    detailRow('Redélivraison', [input.project.redeliveryPort, formatDate(input.project.redeliveryAt)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
-    detailRow('Durée ferme', duration ? `${duration} jours calendaires` : '-', 18, 169, 78);
-    detailRow('Carburant', supplytime.box19_special_fuel || '-', 18, 177, 78);
+    pdf.text(line(input.project.operationArea || copy.operationAreaMissing, 78, 3), 18, 130);
+    detailRow(language === 'en' ? 'Contract type' : 'Type de contrat', copy.contractType, 18, 145, 78);
+    detailRow(copy.delivery, [input.project.deliveryPort, formatDate(input.project.deliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
+    detailRow(copy.redelivery, [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
+    detailRow(copy.firmDuration, duration ? `${duration} ${copy.calendarDays}` : '-', 18, 169, 78);
+    detailRow(copy.fuel, translateProjectOfferStandardText(supplytime.box19_special_fuel || '-', language), 18, 177, 78);
 
-    sectionHeading('2', 'Conditions commerciales', 112, 111);
-    detailRow('Mobilisation', formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') || '-', 112, 126, 78);
-    detailRow('Démobilisation', formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '') || '-', 112, 136, 78);
-    detailRow('Opération', formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 146, 78);
-    detailRow('Extension', formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 156, 78);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.2);
-    pdf.setTextColor(113, 128, 150);
-    pdf.text('FACTURATION', 112, 172);
-    pdf.text('PAIEMENT', 151, 172);
-    pdf.setFontSize(6.7);
-    pdf.setTextColor(35, 59, 87);
-    pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
-    pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+    sectionHeading('2', copy.commercialTerms, 112, 111);
+    if (conditionsMode === 'free_text') {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(copy.descriptionOfTerms, 112, 127);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.2);
+      pdf.setTextColor(35, 59, 87);
+      pdf.text(line(conditionsDescription ? copy.termsDetailedBelow : copy.serviceMissing, 74, 4), 112, 136);
+    } else {
+      detailRow(copy.mobilisation, formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 126, 78);
+      detailRow(copy.demobilisation, formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 136, 78);
+      detailRow(copy.operation, formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 146, 78);
+      detailRow(copy.extension, formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 156, 78);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(copy.invoicing, 112, 172);
+      pdf.text(copy.payment, 151, 172);
+      pdf.setFontSize(6.7);
+      pdf.setTextColor(35, 59, 87);
+      pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
+      pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+    }
+
+    const addRichCanvasPages = (canvas: HTMLCanvasElement, startY: number): number => {
+      const widthMm = 182;
+      const mmPerPixel = widthMm / canvas.width;
+      let sourceY = 0;
+      let targetY = startY;
+      while (sourceY < canvas.height) {
+        if (279 - targetY < 24) {
+          pdf.addPage();
+          targetY = 18;
+        }
+        const availableHeightMm = 279 - targetY;
+        const sourceHeight = Math.min(
+          canvas.height - sourceY,
+          Math.max(1, Math.floor(availableHeightMm / mmPerPixel)),
+        );
+        const pageCanvas = sourceY === 0 && sourceHeight === canvas.height
+          ? canvas
+          : document.createElement('canvas');
+        if (pageCanvas !== canvas) {
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sourceHeight;
+          pageCanvas.getContext('2d')?.drawImage(
+            canvas,
+            0,
+            sourceY,
+            canvas.width,
+            sourceHeight,
+            0,
+            0,
+            canvas.width,
+            sourceHeight,
+          );
+        }
+        const renderedHeightMm = sourceHeight * mmPerPixel;
+        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 14, targetY, widthMm, renderedHeightMm, undefined, 'FAST');
+        sourceY += sourceHeight;
+        targetY += renderedHeightMm + 6;
+      }
+      return targetY;
+    };
 
     const reserveLines = reserves.flatMap((reserve) => line(`- ${reserve}`, 169, 2)).slice(0, 6);
     const reserveHeight = reserves.length > 0 ? 10 + reserveLines.length * 4 : 0;
     let contentY = 194;
 
-    if (includedServiceRows.length > 0) {
-      const estimatedDescriptionHeight = 12 + includedServiceRows.reduce((height, [, value]) => (
-        height + Math.max(8, (pdf.splitTextToSize(value, 116) as string[]).length * 3.2 + 4)
-      ), 0);
-      if (contentY + estimatedDescriptionHeight + reserveHeight + 52 > 279) {
+    if (richConditionRows.length > 0) {
+      if (contentY + reserveHeight + 72 > 279) {
         pdf.addPage();
         contentY = 18;
       }
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(7);
       pdf.setTextColor(18, 61, 104);
-      pdf.text('PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES', 14, contentY + 5);
-      autoTable(pdf, {
-        body: includedServiceRows,
-        columnStyles: {
-          0: { cellWidth: 48, fontStyle: 'bold', textColor: [35, 59, 87] },
-          1: { cellWidth: 134, textColor: [35, 59, 87] },
-        },
-        margin: { bottom: 18, left: 14, right: 14, top: 18 },
-        startY: contentY + 8,
-        styles: {
-          cellPadding: 2.4,
-          font: 'helvetica',
-          fontSize: 6.5,
-          lineColor: [216, 226, 237],
-          lineWidth: 0.15,
-          overflow: 'linebreak',
-          valign: 'top',
-        },
-        theme: 'grid',
-      });
-      contentY = ((pdf as typeof pdf & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || contentY) + 6;
+      pdf.text(conditionsMode === 'free_text' ? copy.commercialTerms.toLocaleUpperCase(language === 'en' ? 'en-GB' : 'fr-FR') : copy.includedServices, 14, contentY + 5);
+      const richCanvas = await renderProjectPdfRichText(richConditionRows);
+      contentY = addRichCanvasPages(richCanvas, contentY + 8);
     }
 
     if (reserves.length > 0) {
@@ -518,7 +688,7 @@ export async function generateProjectDocument(
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.5);
       pdf.setTextColor(139, 90, 8);
-      pdf.text('RÉSERVES COMMERCIALES', 18, contentY + 6);
+      pdf.text(copy.commercialReserves, 18, contentY + 6);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(6.5);
       pdf.setTextColor(107, 85, 43);
@@ -526,7 +696,7 @@ export async function generateProjectDocument(
       contentY += reserveHeight + 8;
     }
 
-    let signatureY = includedServiceRows.length === 0 && reserves.length === 0 ? 202 : contentY;
+    let signatureY = richConditionRows.length === 0 && reserves.length === 0 ? 202 : contentY;
     if (signatureY + 42 > 279) {
       pdf.addPage();
       signatureY = 18;
@@ -539,35 +709,35 @@ export async function generateProjectDocument(
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8);
     pdf.setTextColor(23, 60, 102);
-    pdf.text('Armateur', 18, signatureY + 7);
-    pdf.text('Client', 109, signatureY + 7);
+    pdf.text(copy.owner, 18, signatureY + 7);
+    pdf.text(copy.client, 109, signatureY + 7);
     pdf.setFontSize(7.2);
     pdf.setTextColor(35, 59, 87);
-    pdf.text(emitterName || 'Émetteur à renseigner', 18, signatureY + 14);
+    pdf.text(emitterName || copy.emitterMissing, 18, signatureY + 14);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(6.7);
     pdf.setTextColor(80, 97, 120);
-    pdf.text(input.emitter?.functionLabel || 'Fonction à renseigner', 18, signatureY + 20);
+    pdf.text(input.emitter?.functionLabel || copy.functionMissing, 18, signatureY + 20);
     if (signatureBytes) {
       pdf.addImage(signatureBytes, 'PNG', 18, signatureY + 23, 34, Math.min(16, signatureHeight - 25), undefined, 'FAST');
     } else {
-      pdf.text('Signature non renseignée', 18, signatureY + 29);
+      pdf.text(copy.signatureMissing, 18, signatureY + 29);
     }
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(7.2);
     pdf.setTextColor(35, 59, 87);
-    pdf.text('BON POUR ACCORD', 109, signatureY + 14);
+    pdf.text(copy.agreed, 109, signatureY + 14);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(6.5);
     pdf.setTextColor(80, 97, 120);
-    ['NOM ET QUALITÉ', 'SIGNATURE', 'Date ET CACHET'].forEach((label, index) => {
+    [copy.nameAndCapacity, copy.signature, copy.dateAndStamp].forEach((label, index) => {
       const labelY = signatureY + 22 + index * 8;
       pdf.text(label, 109, labelY);
       pdf.setDrawColor(190, 202, 216);
       pdf.line(132, labelY, 191, labelY);
     });
 
-    const generatedOn = `Offre générée le ${formatOfferGenerationDate(new Date())}`;
+    const generatedOn = `${copy.generatedOn} ${formatOfferGenerationDate(new Date(), language)}`;
     pdf.setFont('helvetica', 'italic');
     pdf.setFontSize(8);
     pdf.setTextColor(92, 111, 124);
@@ -615,14 +785,14 @@ export async function generateProjectDocument(
     const bytes = await merged.save({ useObjectStreams: true });
     return {
       blob: new Blob([bytes as BlobPart], { type: 'application/pdf' }),
-      fileName: buildGeneratedDocumentFileName(kind, input.project),
+      fileName: buildGeneratedDocumentFileName(kind, input.project, language),
       mimeType: 'application/pdf',
     };
   }
 
   return {
     blob: pdf.output('blob'),
-    fileName: buildGeneratedDocumentFileName(kind, input.project),
+    fileName: buildGeneratedDocumentFileName(kind, input.project, language),
     mimeType: 'application/pdf',
   };
 }

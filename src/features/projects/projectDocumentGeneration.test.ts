@@ -12,7 +12,16 @@ import {
   buildTowageTemplateFields,
   formatOfferGenerationDate,
   generateProjectDocument,
+  PROJECT_OFFER_TRANSLATIONS,
 } from './projectDocumentGeneration';
+
+vi.mock('./projectPdfRichText', () => ({
+  renderProjectPdfRichText: vi.fn(async () => ({
+    height: 120,
+    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4XmP4DwQACfsD/YcUtbcAAAAASUVORK5CYII=',
+    width: 960,
+  })),
+}));
 
 const project: ProjectRecord = {
   id: 901,
@@ -181,6 +190,7 @@ describe('projectDocumentGeneration', () => {
 
   it('creates safe and explicit offer and contract filenames', () => {
     expect(buildGeneratedDocumentFileName('offer', project)).toBe('P1107 - Offre - R1.pdf');
+    expect(buildGeneratedDocumentFileName('offer', project, 'en')).toBe('P1107 - Commercial Offer - R1.pdf');
     expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
       'Campagne - Atlantique - BIMCO - R1.pdf',
     );
@@ -191,6 +201,38 @@ describe('projectDocumentGeneration', () => {
 
   it('formats the commercial offer generation date for the PDF footer', () => {
     expect(formatOfferGenerationDate(new Date('2026-08-20T12:00:00Z'))).toBe('20/08/2026');
+    expect(formatOfferGenerationDate(new Date('2026-08-20T12:00:00Z'), 'en')).toBe('20/08/2026');
+    expect(PROJECT_OFFER_TRANSLATIONS.en.title).toBe('COMMERCIAL OFFER');
+    expect(PROJECT_OFFER_TRANSLATIONS.en.includedServices).toBe('SERVICES INCLUDED IN THE COMMERCIAL TERMS');
+  });
+
+  it('generates an English commercial-offer draft with translated static copy', async () => {
+    const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(logo, { headers: { 'content-type': 'image/png' }, status: 200 }),
+    );
+
+    try {
+      const generated = await generateProjectDocument('offer', {
+        client,
+        contract: {
+          ...contract,
+          supplytimeData: {
+            ...contract.supplytimeData,
+            commercial_conditions_description: '<p><strong>Lump sum</strong> including transit.</p>',
+            commercial_conditions_mode: 'free_text',
+          },
+        },
+        language: 'en',
+        project,
+      });
+
+      expect(generated.fileName).toBe('P1107 - Commercial Offer - R1.pdf');
+      const generatedBytes = new Uint8Array(await generated.blob.arrayBuffer());
+      expect(new TextDecoder('latin1').decode(generatedBytes.slice(0, 5))).toBe('%PDF-');
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it('generates an offer PDF with the BBTM logo asset', async () => {

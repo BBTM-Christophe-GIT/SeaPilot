@@ -869,6 +869,29 @@ describe('ProjectsPage', () => {
     );
   });
 
+  it('lets the issuer choose the English commercial-offer template', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      projects: {
+        data: [{ ...atlantiqueProjectRow, contract_type: 'Offre Commerciale' }],
+        error: null,
+      },
+    });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    await user.click(within(screen.getByRole('region', { name: 'Offre et contrat' })).getByRole('button', { name: 'Émettre le document' }));
+    expect(screen.getByRole('radio', { name: /Français/ })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: /English/ }));
+    await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
+
+    await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
+      'offer',
+      expect.objectContaining({ language: 'en' }),
+    ));
+  });
+
   it('maps a bareboat charter project to the dedicated generated document type', async () => {
     const user = userEvent.setup();
     const { client } = createClient({

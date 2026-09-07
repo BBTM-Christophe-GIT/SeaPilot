@@ -40,6 +40,7 @@ import { resolveClientCountry } from './clientLocation';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
+import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
 import {
   cloneDefaultProjectDocumentCategories,
   fetchProjectDocumentCategories,
@@ -66,6 +67,8 @@ import {
 import { BIMCO_P144_GROUPS } from './projectContractModels';
 import {
   COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
+  COMMERCIAL_CONDITIONS_DESCRIPTION_KEY,
+  COMMERCIAL_CONDITIONS_MODE_KEY,
   COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
@@ -74,6 +77,7 @@ import {
   COMMERCIAL_RESERVE_WEATHER,
   COMMERCIAL_RESERVE_WEATHER_KEY,
   fetchProjectDocumentEmitter,
+  getCommercialConditionsMode,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
 import {
@@ -407,6 +411,15 @@ interface ProjectAssistantStepDefinition {
   label: string;
 }
 
+function RichField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="project-editor-rich-field is-wide">
+      <span>{label}</span>
+      {children}
+    </div>
+  );
+}
+
 function PortSelect({
   label,
   onChange,
@@ -493,6 +506,13 @@ export function ProjectEditor({
   const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
   const isBareboat = normalizedContractType === BAREBOAT_CONTRACT_TYPE;
   const isBimco = normalizedContractType === BIMCO_CONTRACT_TYPE;
+  const commercialConditionsMode = getCommercialConditionsMode(form.supplytimeData);
+  const commercialConditionAttachmentDrafts = projectAttachmentDrafts.filter((draft) => (
+    draft.categoryKey === 'commercial_offer' && draft.subcategoryKey === 'commercial_appendix'
+  ));
+  const commercialConditionAttachments = projectAttachments.filter((document) => (
+    document.categoryKey === 'commercial_offer' && document.subcategoryKey === 'commercial_appendix'
+  ));
   const contractStep: ProjectAssistantStep = isBimco ? 'bimco' : 'offer';
   const assistantSteps: ProjectAssistantStepDefinition[] = [
     { description: 'Projet, client et contrat', icon: FolderOpen, id: 'identification', label: 'Identification' },
@@ -1193,7 +1213,96 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {isCommercialOffer || isTowage || isBareboat ? (
+              {isCommercialOffer ? (
+                <section aria-label="Présentation des conditions commerciales" className="project-commercial-conditions-mode is-wide">
+                  <div>
+                    <strong>Présentation des conditions commerciales</strong>
+                    <small>Choisissez la saisie tarifaire détaillée ou une description libre avec annexes. Le contenu masqué reste conservé.</small>
+                  </div>
+                  <div role="radiogroup" aria-label="Format des conditions commerciales">
+                    <label className={commercialConditionsMode === 'structured' ? 'is-selected' : undefined}>
+                      <input
+                        checked={commercialConditionsMode === 'structured'}
+                        name="commercial-conditions-mode"
+                        onChange={() => update('supplytimeData', {
+                          ...form.supplytimeData,
+                          [COMMERCIAL_CONDITIONS_MODE_KEY]: 'structured',
+                        })}
+                        type="radio"
+                        value="structured"
+                      />
+                      <span><strong>Conditions détaillées</strong><small>Loyer, mobilisation, démobilisation et descriptions associées.</small></span>
+                    </label>
+                    <label className={commercialConditionsMode === 'free_text' ? 'is-selected' : undefined}>
+                      <input
+                        checked={commercialConditionsMode === 'free_text'}
+                        name="commercial-conditions-mode"
+                        onChange={() => update('supplytimeData', {
+                          ...form.supplytimeData,
+                          [COMMERCIAL_CONDITIONS_MODE_KEY]: 'free_text',
+                        })}
+                        type="radio"
+                        value="free_text"
+                      />
+                      <span><strong>Description libre et annexes</strong><small>Un texte complet, mis en forme en Aptos, complété par vos pièces jointes.</small></span>
+                    </label>
+                  </div>
+                </section>
+              ) : null}
+              {isCommercialOffer && commercialConditionsMode === 'free_text' ? (
+                <section aria-label="Conditions commerciales libres" className="project-commercial-conditions-free is-wide">
+                  <RichField label="Description des conditions">
+                    <div className="project-service-rich-field is-large">
+                      <ServiceNoteRichTextEditor
+                        ariaLabel="Description des conditions"
+                        onChange={(value) => update('supplytimeData', {
+                          ...form.supplytimeData,
+                          [COMMERCIAL_CONDITIONS_DESCRIPTION_KEY]: value,
+                        })}
+                        placeholder="Décrivez les conditions commerciales, le périmètre inclus, les exclusions et les modalités particulières…"
+                        toolbarLabel="Mise en forme de la description des conditions"
+                        value={form.supplytimeData[COMMERCIAL_CONDITIONS_DESCRIPTION_KEY] || ''}
+                      />
+                    </div>
+                  </RichField>
+                  <div className="project-commercial-condition-attachments">
+                    <div>
+                      <strong>Pièces jointes aux conditions</strong>
+                      <small>Elles seront classées dans Offre Commerciale · Prestation annexe et pourront accompagner le PDF.</small>
+                    </div>
+                    <label className="project-document-upload-target">
+                      <span>Annexes commerciales</span>
+                      <span><FileUp aria-hidden="true" size={17} /><strong>Ajouter des fichiers</strong></span>
+                      <input
+                        aria-label="Ajouter des pièces jointes aux conditions"
+                        multiple
+                        onChange={(event) => {
+                          addProjectAttachmentFiles('commercial_offer', 'commercial_appendix', event.target.files);
+                          event.currentTarget.value = '';
+                        }}
+                        type="file"
+                      />
+                    </label>
+                    {commercialConditionAttachmentDrafts.map((draft) => (
+                      <div className="project-commercial-condition-attachment" key={draft.id}>
+                        <FileText aria-hidden="true" size={16} />
+                        <span><strong>{draft.file.name}</strong><small>À enregistrer avec le projet</small></span>
+                        <button aria-label={`Retirer ${draft.file.name}`} onClick={() => setProjectAttachmentDrafts((drafts) => drafts.filter((item) => item.id !== draft.id))} type="button">
+                          <X aria-hidden="true" size={15} />
+                        </button>
+                      </div>
+                    ))}
+                    {commercialConditionAttachments.map((document) => (
+                      <div className="project-commercial-condition-attachment" key={document.id}>
+                        <FileText aria-hidden="true" size={16} />
+                        <span><strong>{document.fileName}</strong><small>Déjà classé dans SeaPilot</small></span>
+                        <ProjectStoredDocumentLink client={client} document={document} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isBareboat ? (
                 <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isBareboat ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
                   <span className="project-commercial-hire-input">
                     <input
@@ -1212,54 +1321,72 @@ export function ProjectEditor({
                   </span>
                 </Field>
               ) : null}
-              {isCommercialOffer ? (
-                <Field label="Description de la prestation incluse dans le loyer d’affrètement" wide>
-                  <textarea
-                    onChange={(event) => update('supplytimeData', {
+              {isCommercialOffer && commercialConditionsMode === 'structured' ? (
+                <RichField label="Description de la prestation incluse dans le loyer d’affrètement">
+                  <div className="project-service-rich-field">
+                    <ServiceNoteRichTextEditor
+                    ariaLabel="Description de la prestation incluse dans le loyer d’affrètement"
+                    onChange={(value) => update('supplytimeData', {
                       ...form.supplytimeData,
-                      [COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]: event.target.value,
+                      [COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]: value,
                     })}
-                    rows={3}
+                    placeholder="Précisez la prestation comprise dans le loyer…"
+                    toolbarLabel="Mise en forme de la prestation incluse dans le loyer"
                     value={form.supplytimeData[COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY] || ''}
                   />
-                </Field>
+                  </div>
+                </RichField>
               ) : null}
               {!isTowage ? (
               <>
-              <Field label={isBareboat ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
-              {isCommercialOffer ? (
-                <Field label="Description de la prestation incluse dans les frais de mobilisation" wide>
-                  <textarea
-                    onChange={(event) => update('supplytimeData', {
+              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
+                <Field label={isBareboat ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
+              ) : null}
+              {isCommercialOffer && commercialConditionsMode === 'structured' ? (
+                <RichField label="Description de la prestation incluse dans les frais de mobilisation">
+                  <div className="project-service-rich-field">
+                    <ServiceNoteRichTextEditor
+                    ariaLabel="Description de la prestation incluse dans les frais de mobilisation"
+                    onChange={(value) => update('supplytimeData', {
                       ...form.supplytimeData,
-                      [COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]: event.target.value,
+                      [COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]: value,
                     })}
-                    rows={3}
+                    placeholder="Précisez la prestation comprise dans les frais de mobilisation…"
+                    toolbarLabel="Mise en forme de la prestation incluse dans la mobilisation"
                     value={form.supplytimeData[COMMERCIAL_MOBILISATION_DESCRIPTION_KEY] || ''}
                   />
-                </Field>
+                  </div>
+                </RichField>
               ) : null}
-              <Field label={isBareboat ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
-              {isCommercialOffer ? (
-                <Field label="Description de la prestation incluse dans les frais de démobilisation" wide>
-                  <textarea
-                    onChange={(event) => update('supplytimeData', {
+              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
+                <Field label={isBareboat ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
+              ) : null}
+              {isCommercialOffer && commercialConditionsMode === 'structured' ? (
+                <RichField label="Description de la prestation incluse dans les frais de démobilisation">
+                  <div className="project-service-rich-field">
+                    <ServiceNoteRichTextEditor
+                    ariaLabel="Description de la prestation incluse dans les frais de démobilisation"
+                    onChange={(value) => update('supplytimeData', {
                       ...form.supplytimeData,
-                      [COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]: event.target.value,
+                      [COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]: value,
                     })}
-                    rows={3}
+                    placeholder="Précisez la prestation comprise dans les frais de démobilisation…"
+                    toolbarLabel="Mise en forme de la prestation incluse dans la démobilisation"
                     value={form.supplytimeData[COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY] || ''}
                   />
+                  </div>
+                </RichField>
+              ) : null}
+              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
+                <Field label="Devise des frais" wide={isCommercialOffer}>
+                  <select onChange={(event) => update('feeCurrency', event.target.value)} value={form.feeCurrency || 'EUR'}>
+                    {form.feeCurrency && !PROJECT_CURRENCIES.some((currency) => currency.code === form.feeCurrency)
+                      ? <option value={form.feeCurrency}>{form.feeCurrency}</option>
+                      : null}
+                    {PROJECT_CURRENCIES.map((currency) => <option key={currency.code} value={currency.code}>{currency.label}</option>)}
+                  </select>
                 </Field>
               ) : null}
-              <Field label="Devise des frais" wide={isCommercialOffer}>
-                <select onChange={(event) => update('feeCurrency', event.target.value)} value={form.feeCurrency || 'EUR'}>
-                  {form.feeCurrency && !PROJECT_CURRENCIES.some((currency) => currency.code === form.feeCurrency)
-                    ? <option value={form.feeCurrency}>{form.feeCurrency}</option>
-                    : null}
-                  {PROJECT_CURRENCIES.map((currency) => <option key={currency.code} value={currency.code}>{currency.label}</option>)}
-                </select>
-              </Field>
               {!isCommercialOffer && !isBareboat ? (
                 <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               ) : null}

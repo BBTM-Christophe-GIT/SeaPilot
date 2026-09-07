@@ -1,7 +1,7 @@
 {
   "name": "seapilot",
   "private": true,
-  "version": "3.38.0",
+  "version": "3.39.0",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
@@ -44,6 +44,7 @@
     "clsx": "^2.1.1",
     "dompurify": "3.4.13",
     "fast-xml-parser": "^5.10.1",
+    "html2canvas": "1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "jszip": "^3.10.1",
