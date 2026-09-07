@@ -41,6 +41,7 @@ import {
   formatBareboatDate,
   localTodayIso,
 } from './projectBareboatContract';
+import { projectDescriptionToPlainText } from './projectDescription';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -338,7 +339,7 @@ export function buildProjectOfferRows({
     { label: 'Project', value: present(projectReference(project)) },
     { label: 'Contract form', value: present(project.contractType) },
     { label: 'Vessel(s)', value: present([project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' / ')) },
-    { label: 'Duties', value: present(project.description) },
+    { label: 'Duties', value: present(projectDescriptionToPlainText(project.description)) },
     { label: 'Port of Delivery', value: present(formatProjectOfferPort(project.deliveryPort)) },
     { label: 'Date of Delivery', value: formatDate(project.deliveryAt || project.startsOn) },
     { label: 'Mobilization costs HT', value: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') },
@@ -405,7 +406,7 @@ export function buildProjectBimcoP144PdfFields({
     p144_box12_mobilisation: saved.p144_box12_mobilisation || formatMoney(contract?.mobilisationFee, contract?.feeCurrency || ''),
     p144_box15_demobilisation: saved.p144_box15_demobilisation || formatMoney(contract?.demobilisationFee, contract?.feeCurrency || ''),
     p144_box16_operation_area: saved.p144_box16_operation_area || project.operationArea,
-    p144_box17_employment: saved.p144_box17_employment || project.description,
+    p144_box17_employment: saved.p144_box17_employment || projectDescriptionToPlainText(project.description),
     p144_box18_specialist_operations: saved.p144_box18_specialist_operations || specialistOperations,
     p144_box19_fuel: saved.p144_box19_fuel || saved.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS,
     p144_box20_charter_hire: saved.p144_box20_charter_hire || contractHireScheduleLabel(contract),
@@ -568,7 +569,7 @@ export async function generateProjectDocument(
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7.5);
     pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.description || copy.serviceMissing, 105, 5), 18, 75);
+    pdf.text(line(projectDescriptionToPlainText(input.project.description) || copy.serviceMissing, 105, 5), 18, 75);
     detailRow(copy.vessel, input.project.primaryVesselName || '-', 132, 68, 59);
     detailRow(copy.period, [formatDate(input.project.startsOn, language), formatDate(input.project.endsOn, language)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
     if (shouldDisplayCommercialOfferRoute(input.project.deliveryPort, input.project.redeliveryPort)) {

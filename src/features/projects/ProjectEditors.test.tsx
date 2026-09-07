@@ -259,7 +259,10 @@ describe('ProjectEditor contract hire periods', () => {
     );
 
     await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
-    await user.type(screen.getByLabelText('Description'), 'Inspection en mer');
+    const descriptionEditor = screen.getByRole('textbox', { name: 'Description' });
+    descriptionEditor.innerHTML = '<p><strong>Inspection en mer</strong></p><script>alert(1)</script>';
+    fireEvent.input(descriptionEditor);
+    expect(within(screen.getByRole('region', { name: 'Aperçu du document généré' })).getByText('Inspection en mer').tagName).toBe('STRONG');
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
     fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
@@ -282,6 +285,7 @@ describe('ProjectEditor contract hire periods', () => {
       expect(mutationMocks.saveProjectPlanningOccurrence).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
+          description: 'Inspection en mer',
           endsOn: '2026-09-11',
           projectId: 501,
           startsOn: '2026-09-04',
@@ -290,6 +294,10 @@ describe('ProjectEditor contract hire periods', () => {
         }),
       );
     });
+    expect(mutationMocks.saveProject).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ description: '<p><strong>Inspection en mer</strong></p>' }),
+    );
     expect(mutationMocks.saveProjectContractDetails).toHaveBeenCalledWith(
       expect.anything(),
       501,

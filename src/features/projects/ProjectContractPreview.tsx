@@ -48,6 +48,11 @@ import {
   formatBareboatDate,
   localTodayIso,
 } from './projectBareboatContract';
+import {
+  projectDescriptionHasContent,
+  projectDescriptionToPlainText,
+  sanitizeProjectDescriptionHtml,
+} from './projectDescription';
 
 interface ProjectContractPreviewProps {
   client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'postalCode' | 'representedBy' | 'siret'>;
@@ -227,7 +232,7 @@ function buildBimcoValues({ client, form, vessel }: ProjectContractPreviewProps)
     p144_box12_mobilisation: saved.p144_box12_mobilisation || money(form.mobilisationFee, form.feeCurrency),
     p144_box15_demobilisation: saved.p144_box15_demobilisation || money(form.demobilisationFee, form.feeCurrency),
     p144_box16_operation_area: saved.p144_box16_operation_area || form.operationArea,
-    p144_box17_employment: saved.p144_box17_employment || form.description,
+    p144_box17_employment: saved.p144_box17_employment || projectDescriptionToPlainText(form.description),
     p144_box18_specialist_operations: saved.p144_box18_specialist_operations || specialistOperations,
     p144_box19_fuel: saved.p144_box19_fuel || saved.box19_special_fuel || '',
     p144_box20_charter_hire: saved.p144_box20_charter_hire || money(form.charterHire, form.hireCurrency, form.hireUnit),
@@ -364,6 +369,7 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
   const conditionsMode = getCommercialConditionsMode(form.supplytimeData);
   const conditionsDescription = getCommercialConditionsDescription(form.supplytimeData);
   const includedServices = getCommercialIncludedServiceRichDescriptions(form.supplytimeData);
+  const descriptionHtml = sanitizeProjectDescriptionHtml(form.description);
   const emitterName = formatProjectDocumentEmitterName(emitter);
   return (
     <div className="project-offer-document">
@@ -377,7 +383,7 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
         <div><small>PROJET</small><strong>{`${projectCode} - ${form.title || 'NOUVEAU PROJET'}`}</strong><span>{COMMERCIAL_OFFER_CONTRACT_TYPE}</span></div>
       </section>
       <section className="project-offer-summary">
-        <div><small>NOTRE PROPOSITION</small><p>{form.description || 'Décrivez la prestation et le dispositif opérationnel proposé.'}</p></div>
+        <div><small>NOTRE PROPOSITION</small>{descriptionHtml ? <div className="project-offer-rich-copy project-offer-description" dangerouslySetInnerHTML={{ __html: descriptionHtml }} /> : <p>Décrivez la prestation et le dispositif opérationnel proposé.</p>}</div>
         <dl><div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div><div><dt>PÉRIODE</dt><dd>{[compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ') || '—'}</dd></div>{shouldDisplayCommercialOfferRoute(form.deliveryPort, form.redeliveryPort) ? <div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div> : null}</dl>
       </section>
       <div className="project-offer-columns">
@@ -588,7 +594,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
       ? Math.round(((basicCompletion + Object.values(towageValues).filter((value) => String(value).trim()).length) / 27) * 100)
       : contractType === BAREBOAT_CONTRACT_TYPE
         ? Math.round((Object.values(bareboatValues).filter((value) => String(value).trim()).length / Object.keys(bareboatValues).length) * 100)
-      : Math.round(((basicCompletion + [props.form.description, props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
+      : Math.round(((basicCompletion + [projectDescriptionHasContent(props.form.description), props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
   const checklist = contractType === BIMCO_CONTRACT_TYPE
     ? BIMCO_P144_GROUPS.map((group) => ({
@@ -615,7 +621,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           ]
       : [
           { label: 'Identification', complete: Boolean(props.form.title && props.form.clientId) },
-          { label: 'Périmètre', complete: Boolean(props.form.description && props.form.operationArea) },
+          { label: 'Périmètre', complete: projectDescriptionHasContent(props.form.description) && Boolean(props.form.operationArea) },
           { label: 'Planning', complete: Boolean(props.form.deliveryAt && props.form.redeliveryAt) },
           { label: 'Conditions commerciales', complete: Boolean(props.form.charterHire) },
           { label: 'Validation', complete: false },

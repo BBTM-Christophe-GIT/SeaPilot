@@ -42,6 +42,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
 import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
 import {
+  projectDescriptionToPlainText,
+  sanitizeProjectDescriptionHtml,
+} from './projectDescription';
+import {
   cloneDefaultProjectDocumentCategories,
   fetchProjectDocumentCategories,
   newProjectDocumentCategoryKey,
@@ -233,7 +237,7 @@ export function projectToWriteInput(
     primaryVesselId: project.primaryVesselId,
     secondaryVesselId: project.secondaryVesselId,
     status: normalizeProjectStatus(project.status),
-    description: project.description,
+    description: sanitizeProjectDescriptionHtml(project.description),
     startsOn: project.startsOn,
     endsOn: project.endsOn,
     deliveryAt: toLocalDateTime(project.deliveryAt),
@@ -696,7 +700,7 @@ export function ProjectEditor({
     }
     const automaticOperation = !project && initialOperationForm ? {
       ...initialOperationForm,
-      description: initialOperationForm.description.trim() || form.description.trim(),
+      description: initialOperationForm.description.trim() || projectDescriptionToPlainText(form.description),
       endsOn: dateOnly(form.redeliveryAt),
       startsOn: dateOnly(form.deliveryAt),
       status: 'Non validé',
@@ -926,9 +930,17 @@ export function ProjectEditor({
                       {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
                   </Field>
-                  <Field label="Description" wide>
-                    <textarea onChange={(event) => update('description', event.target.value)} value={form.description} />
-                  </Field>
+                  <RichField label="Description">
+                    <div className="project-service-rich-field project-description-rich-field">
+                      <ServiceNoteRichTextEditor
+                        ariaLabel="Description"
+                        onChange={(value) => update('description', sanitizeProjectDescriptionHtml(value))}
+                        placeholder="Décrivez la prestation et le dispositif opérationnel proposé…"
+                        toolbarLabel="Mise en forme de la description"
+                        value={form.description}
+                      />
+                    </div>
+                  </RichField>
                 </>
               ) : null}
               {isTowage ? (
@@ -1779,7 +1791,7 @@ export function ProjectPlanningEditor({
     endsOn: dateOnly(initialEndsOn || occurrence?.endsOn || project.redeliveryAt || project.charterEndsAt || project.endsOn),
     vesselIds: defaultVesselIds.length > 0 ? defaultVesselIds : [0],
     status: normalizeProjectStatus(occurrence?.status),
-    description: occurrence?.description || project.description || '',
+    description: occurrence?.description || projectDescriptionToPlainText(project.description),
     charterHire: canViewCharterHire ? occurrence?.charterHire ?? defaultContractHire?.charterHire ?? null : null,
     hireCurrency: canViewCharterHire ? occurrence?.hireCurrency || defaultContractHire?.hireCurrency || 'EUR' : '',
     hireUnit: canViewCharterHire ? occurrence?.hireUnit || defaultContractHire?.hireUnit || 'jour' : '',

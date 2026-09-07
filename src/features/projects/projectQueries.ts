@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus } from './projectStatus';
+import { projectDescriptionToPlainText } from './projectDescription';
 
 const READ_PAGE_SIZE = 500;
 
@@ -916,7 +917,7 @@ export function mapProjectPlanningOccurrenceRows(
       vesselIds,
       vesselNames,
       status: normalizeProjectStatus(row.status),
-      description: nullableText(row.description),
+      description: projectDescriptionToPlainText(row.description),
       charterHire: nullableNumber(row.charter_hire),
       hireCurrency: nullableText(row.hire_currency),
       hireUnit: nullableText(row.hire_unit),
