@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.39.1` rétablit le chargement de l’historique Planning en ajoutant un index chronologique global sur
+`planning_change_log`. La migration ne modifie ni les données ni les politiques RLS. Appliquer
+`supabase/migrations/20260907200347_optimize_planning_history_read.sql` avant la recette du module. Voir
+[planning-history-performance-v3-39-1.md](./planning-history-performance-v3-39-1.md).
+
 Version `3.39.0` enrichit l’offre commerciale du module Projet : trois descriptions Aptos, choix entre conditions
 détaillées et description libre avec annexes, et modèle anglais des libellés PDF. Appliquer
 `supabase/migrations/20260907062022_project_offer_rich_conditions.sql` avant le client. Voir
