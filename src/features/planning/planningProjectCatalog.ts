@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus } from '../projects/projectStatus';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 import { mapPlanningProjectRows, type PlanningProjectRecord } from './planningQueries';
+import { projectDescriptionToPlainText } from '../projects/projectDescription';
 
 export interface PlanningProjectCatalogRecord {
   id: number;
@@ -54,7 +55,7 @@ function mapCatalogRow(row: Record<string, unknown>): PlanningProjectCatalogReco
     title: String(row.title || ''),
     clientName: String(row.client_name || ''),
     status: normalizeProjectStatus(row.status),
-    description: String(row.description || ''),
+    description: projectDescriptionToPlainText(String(row.description || '')),
     startsOn: String(row.starts_on || ''),
     endsOn: String(row.ends_on || ''),
   };

@@ -6118,6 +6118,8 @@ button:disabled {
 .project-offer-address span { color: #586a80; font-size: 7px; }
 .project-offer-summary { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 14px; padding: 12px; border: 1px solid #dbe4ee; }
 .project-offer-summary p { margin-top: 5px; font-size: 7px; line-height: 1.45; }
+.project-offer-summary .project-offer-description { margin-top: 5px; font-size: 7px; line-height: 1.45; }
+.project-offer-summary .project-offer-description > :last-child { margin-bottom: 0; }
 .project-offer-summary dl, .project-offer-columns dl { display: grid; gap: 5px; margin: 0; }
 .project-offer-summary dl div, .project-offer-columns dl div { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; font-size: 6.5px; }
 .project-offer-summary dt, .project-offer-columns dt { color: #718096; font-weight: 800; }

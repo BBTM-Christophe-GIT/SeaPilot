@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
+import { projectDescriptionToPlainText } from '../projects/projectDescription';
 import { isPlanningDate, planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
 import { isPlanningGridStatus, type PlanningGridStatus } from './planningGrid';
@@ -1017,7 +1018,7 @@ export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProj
       title: row.title,
       startsOn: textOrEmpty(row.starts_on),
       endsOn: textOrEmpty(row.ends_on || row.starts_on),
-      description: textOrEmpty(row.description),
+      description: projectDescriptionToPlainText(row.description),
       clientName: textOrEmpty(row.client_name),
       primaryVesselId: row.primary_vessel_id,
       primaryVesselName: textOrEmpty(row.primary_vessel_name),

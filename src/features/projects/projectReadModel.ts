@@ -4,6 +4,7 @@ import type {
   ProjectRecord,
 } from './projectQueries';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
+import { projectDescriptionToPlainText } from './projectDescription';
 
 export interface ProjectFilterState {
   search: string;
@@ -201,7 +202,7 @@ export function projectMatchesFilters(project: ProjectRecord, filters: ProjectFi
       project.primaryVesselName,
       project.secondaryVesselName,
       project.status,
-      project.description,
+      projectDescriptionToPlainText(project.description),
       project.contractType,
       project.operationArea,
       project.deliveryPort,
