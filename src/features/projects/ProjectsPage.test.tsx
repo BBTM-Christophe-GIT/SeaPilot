@@ -347,7 +347,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent('1 contrats');
   });
 
-  it('replaces direct client commands with the two searchable catalogues', async () => {
+  it('exposes the searchable project catalogues from the command ribbon', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
 
@@ -356,6 +356,7 @@ describe('ProjectsPage', () => {
     await screen.findByRole('heading', { name: 'Projets' });
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
       .toHaveAttribute('href', '/modules/billingElements');
+    expect(screen.getByRole('button', { name: 'Liste des prestations' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Liste des clients' }));
@@ -365,7 +366,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: 'Liste des remorqués' })).toBeInTheDocument();
   });
 
-  it('selects a project and exposes its six read-only sections as accessible tabs', async () => {
+  it('selects a project and exposes contract-aware read-only sections as accessible tabs', async () => {
     const user = userEvent.setup();
     const { client, createSignedUrl, from } = createClient({
       project_generated_documents: {
@@ -399,25 +400,30 @@ describe('ProjectsPage', () => {
     expect(projectButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Identité & contrat',
+      'Identité',
       'Opérations',
       'Facturation',
-      'Conditions commerciales',
-      'Document contractuel',
+      'Offre & contrat',
+      'Cases 1–12',
+      'Cases 13–21',
+      'Cases 22–34',
+      'Signatures',
+      'Annexes',
       'Documents',
     ]);
-    expect(screen.getByRole('tab', { name: 'Identité & contrat' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'Document contractuel' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: 'Opérations' }));
     expect(screen.getByText('Rotation 1')).toBeInTheDocument();
     expect(screen.getAllByText(/12.000 EUR \/ jour/).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('tab', { name: 'Document contractuel' }));
+    await user.click(screen.getByRole('tab', { name: 'Cases 22–34' }));
     expect(screen.getByText('Clauses particulières Atlantique')).toBeInTheDocument();
     expect(screen.queryByText('Données structurées consultées dans Supabase')).not.toBeInTheDocument();
     expect(screen.queryByText('Source structurée · Supabase')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Identité & contrat' }));
+    await user.click(screen.getByRole('tab', { name: 'Identité' }));
     expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
     expect(screen.queryByText('Clauses particulières Atlantique')).not.toBeInTheDocument();
 
@@ -437,7 +443,7 @@ describe('ProjectsPage', () => {
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Inclure les services refacturables dans le PDF')).toBeInTheDocument();
-    expect(screen.getByLabelText('Inclure la prestation BBTM dans le PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure les prestations BBTM dans le PDF')).toBeInTheDocument();
     expect(within(screen.getByText('Prestation BBTM').closest('article')!).getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les loyers dans le PDF')).toBeInTheDocument();
@@ -454,6 +460,7 @@ describe('ProjectsPage', () => {
           'clients',
           'project_billing_periods',
           'project_billing_services',
+          'project_service_catalog',
           'project_chargeable_expenses',
           'project_billing_documents',
           'service_providers',
@@ -563,7 +570,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} />);
 
     expect(await screen.findByText(/Consultation partielle/)).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Identité & contrat' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(/informations contractuelles et BIMCO sont temporairement indisponibles/)).toBeInTheDocument();
   });
 
@@ -594,9 +601,27 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText('URL SharePoint invalide ou non autorisée')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Plan projet Atlantique.pdf/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Document contractuel' }));
     expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
-    expect(screen.getByText(/authentification Microsoft 365/)).toBeInTheDocument();
+    expect(screen.getAllByText(/authentification Microsoft 365/).length).toBeGreaterThan(0);
+  });
+
+  it('changes the contextual navigation when another contract family is selected', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    await user.click(screen.getByRole('radio', { name: 'Contrat de remorquage' }));
+
+    expect(screen.getByRole('tab', { name: 'Parties & convoi' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Itinéraire & délais' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Cases 1–12' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Parties & convoi' }));
+    expect(screen.getByRole('heading', { name: 'Parties & convoi' })).toBeInTheDocument();
+    expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
   });
 
   it('opens a migrated contractual document from private Supabase Storage', async () => {
@@ -823,10 +848,9 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
-    await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    expect(screen.queryByText('Offre commerciale', { selector: 'strong' })).not.toBeInTheDocument();
-    const bimcoCard = screen.getByText('BIMCO', { selector: 'strong' }).closest('article');
-    await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    expect(screen.getByRole('radio', { name: 'BIMCO' })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Émettre le contrat' }));
     expect(screen.getByRole('dialog', { name: 'Émettre : BIMCO' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Document seul/ })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
@@ -869,9 +893,9 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
-    await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const bareboatCard = screen.getByText("Contrat d'affrètement", { selector: 'strong' }).closest('article');
-    await user.click(within(bareboatCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    expect(screen.getByRole('radio', { name: 'Affrètement coque nue' })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Émettre le contrat' }));
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
@@ -915,9 +939,8 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
-    await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const bimcoCard = screen.getByText('BIMCO', { selector: 'strong' }).closest('article');
-    await user.click(within(bimcoCard as HTMLElement).getByRole('button', { name: 'Émettre le document' }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    await user.click(screen.getByRole('button', { name: 'Émettre le contrat' }));
     await user.click(screen.getByRole('radio', { name: /Document \+ pièces jointes/ }));
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 

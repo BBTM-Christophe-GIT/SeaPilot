@@ -6,7 +6,7 @@ import type {
 } from './projectQueries';
 
 export type BillingExpenseCategory = 'fuel' | 'port' | 'water' | 'other';
-export type BillingServiceCategory = 'spread_antipollution';
+export type BillingServiceCategory = string;
 export type BillingPeriodMode = 'calendar-month' | 'custom';
 
 export interface ProjectBillingPeriod {
@@ -62,10 +62,23 @@ export interface ProjectBillingDocument {
 export interface ProjectBillingService {
   id: number;
   billingPeriodId: number;
+  serviceCatalogId: number | null;
   category: BillingServiceCategory;
+  descriptionHtml: string;
   unitAmountHt: number;
   quantity: number;
   includeInPdf?: boolean;
+}
+
+export interface ProjectServiceCatalogEntry {
+  id: number;
+  companyId: number;
+  category: string;
+  unitAmountHt: number;
+  descriptionHtml: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectBillingData {
@@ -108,9 +121,19 @@ export interface BillingExpenseDraft {
 }
 
 export interface BillingServiceDraft {
+  serviceCatalogId: number | null;
   category: BillingServiceCategory;
+  descriptionHtml: string;
   unitAmountHt: number;
   quantity: number;
+}
+
+export interface ProjectServiceCatalogDraft {
+  id?: number;
+  category: string;
+  unitAmountHt: number;
+  descriptionHtml: string;
+  active?: boolean;
 }
 
 function text(value: unknown): string {
@@ -193,11 +216,64 @@ function mapService(row: Record<string, unknown>): ProjectBillingService {
   return {
     id: number(row.id),
     billingPeriodId: number(row.billing_period_id),
+    serviceCatalogId: nullableNumber(row.service_catalog_id),
     category: text(row.category) as BillingServiceCategory,
+    descriptionHtml: text(row.description_html),
     unitAmountHt: number(row.unit_amount_ht),
     quantity: number(row.quantity),
     includeInPdf: row.include_in_pdf !== false,
   };
+}
+
+function mapServiceCatalogEntry(row: Record<string, unknown>): ProjectServiceCatalogEntry {
+  return {
+    id: number(row.id),
+    companyId: number(row.company_id),
+    category: text(row.category),
+    unitAmountHt: number(row.unit_amount_ht),
+    descriptionHtml: text(row.description_html),
+    active: row.active !== false,
+    createdAt: text(row.created_at),
+    updatedAt: text(row.updated_at),
+  };
+}
+
+export async function fetchProjectServiceCatalog(
+  client: SupabaseClient,
+  includeInactive = false,
+): Promise<ProjectServiceCatalogEntry[]> {
+  let query = client.from('project_service_catalog').select('*').order('category');
+  if (!includeInactive) query = query.eq('active', true);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map((row) => mapServiceCatalogEntry(row as Record<string, unknown>));
+}
+
+export async function saveProjectServiceCatalogEntry(
+  client: SupabaseClient,
+  draft: ProjectServiceCatalogDraft,
+): Promise<ProjectServiceCatalogEntry> {
+  const payload = {
+    category: draft.category.trim(),
+    unit_amount_ht: draft.unitAmountHt,
+    description_html: draft.descriptionHtml,
+    active: draft.active !== false,
+    updated_at: new Date().toISOString(),
+  };
+  const query = draft.id
+    ? client.from('project_service_catalog').update(payload).eq('id', draft.id)
+    : client.from('project_service_catalog').insert(payload);
+  const { data, error } = await query.select('*').single();
+  if (error) throw error;
+  return mapServiceCatalogEntry(data as Record<string, unknown>);
+}
+
+export async function archiveProjectServiceCatalogEntry(client: SupabaseClient, id: number): Promise<void> {
+  const { error } = await client
+    .from('project_service_catalog')
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 async function projectCompanyId(client: SupabaseClient, projectId: number): Promise<number> {
@@ -317,23 +393,33 @@ export async function saveProjectBillingService(
   projectId: number,
   billingPeriodId: number,
   draft: BillingServiceDraft,
+  serviceId?: number,
 ): Promise<ProjectBillingService> {
   const companyId = await projectCompanyId(client, projectId);
-  const { data, error } = await client
-    .from('project_billing_services')
-    .upsert({
-      company_id: companyId,
-      project_id: projectId,
-      billing_period_id: billingPeriodId,
-      category: draft.category,
-      unit_amount_ht: draft.unitAmountHt,
-      quantity: draft.quantity,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'billing_period_id,category' })
+  const payload = {
+    company_id: companyId,
+    project_id: projectId,
+    billing_period_id: billingPeriodId,
+    service_catalog_id: draft.serviceCatalogId,
+    category: draft.category.trim(),
+    description_html: draft.descriptionHtml,
+    unit_amount_ht: draft.unitAmountHt,
+    quantity: draft.quantity,
+    updated_at: new Date().toISOString(),
+  };
+  const query = serviceId
+    ? client.from('project_billing_services').update(payload).eq('id', serviceId)
+    : client.from('project_billing_services').insert(payload);
+  const { data, error } = await query
     .select('*')
     .single();
   if (error) throw error;
   return mapService(data as Record<string, unknown>);
+}
+
+export async function deleteProjectBillingService(client: SupabaseClient, serviceId: number): Promise<void> {
+  const { error } = await client.from('project_billing_services').delete().eq('id', serviceId);
+  if (error) throw error;
 }
 
 export async function setProjectBillingServicePdfInclusion(
@@ -1062,19 +1148,18 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     pdf.text('Nombre d’unités', 2180, serviceY + 64, { align: 'center' });
     pdf.text('Montant total HT', 2520, serviceY + 64, { align: 'center' });
     setFont(28);
-    const serviceLabels: Record<BillingServiceCategory, string> = {
-      spread_antipollution: 'Spread Antipollution',
-    };
     const serviceSource = services.length ? services : [{
       id: 0,
       billingPeriodId: input.period.id,
-      category: 'spread_antipollution' as const,
+      serviceCatalogId: null,
+      category: 'Prestation non renseignée',
+      descriptionHtml: '',
       unitAmountHt: 0,
       quantity: 0,
     }];
     serviceSource.forEach((service, index) => {
       const rowY = serviceY + 112 + index * 40;
-      pdf.text(serviceLabels[service.category], 1297, rowY);
+      pdf.text(fitText(service.category || 'Prestation non renseignée', 470), 1297, rowY);
       pdf.text(money(service.unitAmountHt), 1880, rowY, { align: 'center' });
       pdf.text(service.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), 2180, rowY, { align: 'center' });
       pdf.text(money(service.unitAmountHt * service.quantity), 2598, rowY, { align: 'right' });

@@ -461,7 +461,9 @@ describe('monthly billing completion', () => {
     const services = [{
       id: 1,
       billingPeriodId: 1,
-      category: 'spread_antipollution',
+      serviceCatalogId: 7,
+      category: 'Spread Antipollution',
+      descriptionHtml: '<p>Prestation</p>',
       unitAmountHt: 350,
       quantity: 29,
     }] as const;

@@ -59,8 +59,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
   });
 
-  it('lets administrators preview every role profile without changing their real role', async () => {
-    const user = userEvent.setup();
+  it('keeps the administrator role active without exposing profile simulations', async () => {
     const client = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'admin-1' } } }, error: null }),
@@ -82,24 +81,8 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    const selector = await screen.findByRole('combobox', { name: 'Vue de profil' });
-    expect(screen.getByTestId('effective-roles')).toHaveTextContent('admin');
-    expect(screen.getByRole('option', { name: 'Direction' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Armement' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Capitaine' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Marin' })).toBeInTheDocument();
-
-    await user.selectOptions(selector, 'capitaine');
-    expect(screen.getByTestId('effective-roles')).toHaveTextContent('capitaine');
-    expect(screen.getByText('Vue Capitaine')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
-
-    await user.selectOptions(selector, 'marin');
-    expect(screen.getByTestId('effective-roles')).toHaveTextContent('marin');
-    expect(screen.getByText('Vue Marin')).toBeInTheDocument();
-
-    await user.selectOptions(selector, 'actual');
-    expect(screen.getByTestId('effective-roles')).toHaveTextContent('admin');
+    expect(await screen.findByTestId('effective-roles')).toHaveTextContent('admin');
+    expect(screen.queryByRole('combobox', { name: 'Vue de profil' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Administration' })).toBeInTheDocument();
   });
 
@@ -148,7 +131,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: /Visite médicale d’aptitude/ })).toHaveAttribute('href', '/modules/humanResources');
   });
 
-  it('does not expose the profile view selector to non administrators', async () => {
+  it('keeps the assigned role active for non administrators', async () => {
     const client = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'captain-1' } } }, error: null }),

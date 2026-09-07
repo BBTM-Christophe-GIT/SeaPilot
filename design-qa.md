@@ -848,3 +848,72 @@ final result: passed
 - P2 corrigé : les commandes auparavant placées en pied de carte nécessitaient un défilement. Elles sont maintenant dans les en-têtes et mesurées entre `339` et `413` pixels depuis le haut du viewport, avec `scrollY = 0`.
 
 final result: passed
+
+---
+
+# Design QA — Catalogue et lignes de prestations BBTM
+
+## Références et méthode
+
+- Référence « Vue » à supprimer : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-b3b7bf1d-f660-47d8-bbf3-af9500b2aa3c.png`.
+- Référence de la carte : `C:\Users\chris\AppData\Local\Temp\codex-clipboard-f7abd8d8-208c-41d2-99b7-8ac0bed6a269.png`.
+- Implémentation rendue : `http://127.0.0.1:4179/modules/projects?preview=1`, projet P901, onglet Facturation, profil Administrateur.
+- Viewport de vérification : `1440 × 1000` CSS pixels.
+- La référence de carte et l'implémentation ont été affichées ensemble dans une même comparaison visuelle.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; les lignes de prestations restent lisibles dans le panneau étroit de la fiche projet grâce à une grille adaptative sur deux colonnes.
+- P2 : aucun défaut restant ; les boutons, listes, montants et totaux conservent le thème SeaPilot et ne débordent pas de la carte.
+- Le sélecteur « Vue / Réelle » a disparu de la barre supérieure ; le profil réel reste affiché sans simulation.
+- Le catalogue adopte une disposition maître/détail cohérente avec le catalogue clients, avec recherche, ajout, édition et archivage.
+
+## Parcours vérifiés
+
+- ouverture de « Liste des prestations » depuis le groupe Facturation ;
+- affichage des champs catégorie, montant unitaire HT et description enrichie ;
+- sélection d'une catégorie depuis la ligne BBTM ;
+- ouverture directe de la création d'une catégorie avec le bouton `+` ;
+- ajout d'une seconde prestation et affichage simultané de deux lignes distinctes ;
+- présence des commandes Enregistrer et Supprimer sur chaque ligne ;
+- absence du sélecteur « Vue » dans la barre supérieure.
+
+final result: passed
+
+---
+
+# Design QA — Projet, navigation contractuelle dynamique (2026-09-06)
+
+## Cibles et état comparés
+
+- Source visuelle sélectionnée : `C:\Users\chris\.codex\generated_images\01a07279-0615-7752-90bf-d045b7496dea\exec-d4339170-810a-4e31-8a6f-08c5d57b05c4.png` (`1 488 × 1 057` pixels).
+- Implémentation navigateur : `C:\CODEX\SeaPilot\docs\design\project-contract-workspace-implementation.jpg` (`1 905 × 985` CSS pixels, densité 1).
+- Comparaison normalisée inspectée : `C:\CODEX\SeaPilot\docs\design\project-contract-workspace-comparison.jpg` (`1 488 × 1 917` pixels). La partie Projet du rendu a été recadrée hors navigation globale SeaPilot puis ramenée à la largeur de la source.
+- État : profil Administrateur de prévisualisation, projet P901, rubrique `Offre & contrat`, BIMCO sélectionné et données de démonstration enregistrées.
+
+## Résultat visuel
+
+- P0 : aucun défaut bloquant.
+- P1 : aucun défaut majeur ; le résumé horizontal du projet, le portefeuille, la navigation verticale et le parcours Offre/Contrat conservent la hiérarchie de l’option 2.
+- P2 : aucun défaut restant ; les libellés, espacements, bordures, boutons radio, états actifs et actions utilisent le système visuel SeaPilot sans débordement au viewport de contrôle.
+- La rubrique `Document contractuel` n’est plus rendue. `Offre & contrat` distingue clairement l’offre commerciale facultative du type de contrat unique.
+- La comparaison ciblée est incluse dans la moitié basse de l’image combinée ; aucun recadrage supplémentaire n’était nécessaire pour juger la carte, le menu ou les quatre choix de contrat.
+- Écart assumé : l’application réelle conserve la navigation globale SeaPilot, absente de la source centrée sur l’espace Projet.
+
+## Navigation et données vérifiées
+
+- BIMCO sélectionné : rubriques `Cases 1–12`, `Cases 13–21`, `Cases 22–34`, `Signatures` et `Annexes`.
+- Contrat de remorquage sélectionné : rubriques `Parties & convoi`, `Itinéraire & délais`, `Tarifs & conditions` et `Signatures`.
+- Consultation de `Cases 1–12` : les données déjà enregistrées (armateur, affréteur, navire, livraison, période, prolongation et mobilisation) sont visibles dans le panneau.
+- Le changement de choix met immédiatement à jour le menu sans modifier le workflow de sauvegarde définitif, qui reste accessible par `Modifier`.
+- Les actions `Émettre le document` et `Émettre le contrat`, la sélection du projet et la navigation par onglets ont été exercées dans le navigateur.
+- Aucun défaut applicatif n’a été observé. Trois messages anciens provenaient du canal asynchrone d’une extension Chrome, sans exception SeaPilot et sans réapparition pendant la recette finale.
+
+## Historique de comparaison
+
+1. Première proposition : parcours illustré par une carte, une flèche et un embranchement `OU`, supprimé à la demande de l’utilisateur.
+2. Deuxième passe : parcours compact avec quatre choix de contrat, retenu comme source visuelle.
+3. Implémentation finale : navigation contextuelle ajoutée pour chaque type et réaffichage des valeurs contractuelles sauvegardées ; comparaison combinée sans écart P0, P1 ou P2.
+
+final result: passed

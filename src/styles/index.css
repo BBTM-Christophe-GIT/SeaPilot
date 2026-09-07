@@ -664,49 +664,8 @@ button:disabled {
   white-space: nowrap;
 }
 
-.admin-profile-view-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  gap: 6px;
-  margin-left: 6px;
-  border: 1px solid rgba(251, 191, 36, 0.55);
-  border-radius: 999px;
-  padding: 0 10px;
-  color: #fef3c7;
-  background: rgba(180, 83, 9, 0.34);
-  font-size: 0.7rem;
-  font-weight: 780;
-  white-space: nowrap;
-}
-
 .topbar-actions {
   gap: 8px;
-}
-
-.admin-profile-view-selector {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #c8cdd6;
-  font-size: 0.7rem;
-  font-weight: 720;
-}
-
-.admin-profile-view-selector select {
-  min-width: 112px;
-  min-height: 34px;
-  border: 1px solid #3c4656;
-  border-radius: 7px;
-  padding: 0 28px 0 9px;
-  color: #ffffff;
-  background: #171c24;
-  font: inherit;
-}
-
-.admin-profile-view-selector select:focus {
-  border-color: #60a5fa;
-  outline: 2px solid rgba(96, 165, 250, 0.28);
 }
 
 .topbar-menu-button,
@@ -965,13 +924,6 @@ button:disabled {
 .user-menu-popover > .preview-mode-menu-note {
   border-bottom: 0;
   padding-bottom: 4px;
-  white-space: normal;
-}
-
-.user-menu-popover > .admin-profile-view-note {
-  border-bottom: 0;
-  padding-bottom: 4px;
-  color: #92400e;
   white-space: normal;
 }
 
@@ -12473,15 +12425,6 @@ button:disabled {
     display: none;
   }
 
-  .admin-profile-view-badge,
-  .admin-profile-view-selector > span {
-    display: none;
-  }
-
-  .admin-profile-view-selector select {
-    max-width: 128px;
-  }
-
   .user-identity {
     display: none;
   }
@@ -19982,29 +19925,65 @@ button.planning-p12-conflict-card {
 
 .project-contract-sheet .project-detail-tabs-shell {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: 164px minmax(0, 1fr);
   align-items: stretch;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
 }
 
 .project-contract-sheet .project-detail-tabs {
   display: flex;
   flex-direction: column;
   align-content: start;
-  padding: 14px 10px;
+  gap: 2px;
+  padding: 18px 10px;
   overflow: visible;
   border-right: 1px solid #dbe3ed;
   border-bottom: 0;
-  background: #f8fafc;
+  background: #fff;
+}
+
+.project-detail-tab-item {
+  display: grid;
+  gap: 5px;
+}
+
+.project-detail-tab-group {
+  display: block;
+  margin: 12px 8px 3px;
+  color: #7a8798;
+  font-size: 0.56rem;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+  line-height: 1.3;
+  text-transform: uppercase;
 }
 
 .project-contract-sheet .project-detail-tabs button {
+  display: flex;
   min-width: 100%;
-  min-height: 43px;
-  padding: 9px 12px;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 8px;
   white-space: normal;
   border: 0;
   border-radius: 7px;
-  text-align: left;
+  color: #34445b;
+  background: transparent;
+  font-size: 0.68rem;
+  font-weight: 780;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.project-contract-sheet .project-detail-tabs button svg {
+  flex: 0 0 auto;
+  color: #172b4d;
 }
 
 .project-contract-sheet .project-detail-tabs button:nth-child(3n),
@@ -20018,9 +19997,240 @@ button.planning-p12-conflict-card {
   box-shadow: inset 3px 0 #1768df;
 }
 
+.project-contract-sheet .project-detail-tabs button[aria-selected='true'] svg {
+  color: #145abb;
+}
+
 .project-contract-sheet .project-detail-tab-panel {
-  min-height: 430px;
+  min-height: 610px;
   background: #fff;
+}
+
+.project-context-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e3e9f0;
+}
+
+.project-context-heading span {
+  display: block;
+  margin-bottom: 5px;
+  color: #0c62b5;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.project-context-heading h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.42rem;
+  letter-spacing: -0.02em;
+}
+
+.project-context-heading p {
+  max-width: 760px;
+  margin: 7px 0 0;
+  color: #627085;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.project-offer-contract-panel,
+.project-contract-information {
+  padding: 26px 30px;
+}
+
+.project-offer-document-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  background: #fbfcfe;
+  border-block: 1px solid #dbe4ef;
+}
+
+.project-offer-document-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #0c62b5;
+  background: #edf5ff;
+  border-radius: 7px;
+}
+
+.project-offer-document-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-offer-document-row strong {
+  color: #182132;
+  font-size: 0.85rem;
+}
+
+.project-offer-document-row span,
+.project-offer-document-row small {
+  color: #68778d;
+  font-size: 0.7rem;
+}
+
+.project-offer-document-row button,
+.project-contract-next-step > button,
+.project-generated-document-note button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 15px;
+  color: #0b5eb0;
+  background: #fff;
+  border: 1px solid #78a6df;
+  border-radius: 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-contract-selector {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.project-contract-selector legend {
+  padding: 0;
+  color: #0b5eb0;
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.project-contract-selector > p {
+  margin: 7px 0 14px;
+  color: #68778d;
+  font-size: 0.74rem;
+}
+
+.project-contract-selector > div {
+  overflow: hidden;
+  border: 1px solid #d4deea;
+  border-radius: 7px;
+}
+
+.project-contract-selector label {
+  display: grid;
+  grid-template-columns: 22px 28px minmax(0, 1fr);
+  min-height: 58px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  color: #17243a;
+  background: #fff;
+  border-bottom: 1px solid #e3e9f0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.project-contract-selector label:last-child {
+  border-bottom: 0;
+}
+
+.project-contract-selector label:hover {
+  background: #f8fbff;
+}
+
+.project-contract-selector label.is-selected {
+  color: #0c5fb4;
+  background: #f0f6ff;
+  box-shadow: inset 3px 0 #1768df;
+}
+
+.project-contract-selector input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #1768df;
+}
+
+.project-contract-selector label svg {
+  color: #18335a;
+}
+
+.project-contract-next-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 14px 16px;
+  background: #f7faff;
+  border: 1px solid #b9d1ee;
+  border-radius: 7px;
+}
+
+.project-contract-next-step > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  color: #0c62b5;
+}
+
+.project-contract-next-step > div > span {
+  display: grid;
+  gap: 3px;
+}
+
+.project-contract-next-step strong {
+  color: #15345b;
+  font-size: 0.78rem;
+}
+
+.project-contract-next-step small {
+  color: #68778d;
+  font-size: 0.68rem;
+}
+
+.project-contract-next-step > button {
+  color: #fff;
+  background: #0964bd;
+  border-color: #0964bd;
+}
+
+.project-contract-next-step > button:disabled,
+.project-offer-document-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.project-contract-information .project-detail-grid {
+  gap: 10px;
+}
+
+.project-contract-information .project-detail-field {
+  min-height: 72px;
+  padding: 14px 16px;
+  background: #f7f9fc;
+  border: 0;
+  border-radius: 6px;
+}
+
+.project-contract-information .project-detail-field dd {
+  white-space: pre-wrap;
+}
+
+.project-generated-document-note button {
+  flex: 0 0 auto;
 }
 
 .project-operations-section {
@@ -20255,6 +20465,32 @@ button.planning-p12-conflict-card {
     padding: 0;
     border-left: 0;
   }
+
+  .project-contract-sheet .project-detail-tabs-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .project-contract-sheet .project-detail-tabs {
+    flex-direction: row;
+    padding: 8px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #dbe3ed;
+  }
+
+  .project-detail-tab-item {
+    display: flex;
+    flex: 0 0 auto;
+  }
+
+  .project-detail-tab-group {
+    display: none;
+  }
+
+  .project-contract-sheet .project-detail-tabs button {
+    min-width: 118px;
+    min-height: 54px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -20275,6 +20511,24 @@ button.planning-p12-conflict-card {
 
   .project-contract-summary {
     grid-template-columns: 1fr;
+  }
+
+  .project-offer-contract-panel,
+  .project-contract-information {
+    padding: 20px 16px;
+  }
+
+  .project-offer-document-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .project-offer-document-row > button {
+    grid-column: 1 / -1;
+  }
+
+  .project-contract-next-step {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
@@ -21502,6 +21756,13 @@ button.planning-p12-conflict-card {
   aspect-ratio: 4 / 3;
 }
 
+.project-catalog-image.is-service {
+  width: 72px;
+  height: 72px;
+  color: #0c66b7;
+  background: #eaf3ff;
+}
+
 .project-catalog-image img {
   width: 100%;
   height: 100%;
@@ -21553,6 +21814,96 @@ button.planning-p12-conflict-card {
 
 .project-catalog-data-grid a {
   color: #0c66b7;
+}
+
+.project-service-description {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+  border: 1px solid #e0e7ef;
+  border-radius: 8px;
+  padding: 16px;
+  color: #33475f;
+  background: #f8fbff;
+}
+
+.project-service-description > strong {
+  color: #172033;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.project-service-description p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.project-service-rich-field .service-note-rich-editor {
+  overflow: hidden;
+  border: 1px solid #cddae0;
+  border-radius: 8px;
+  min-height: 190px;
+  font-weight: 500;
+}
+
+.project-service-rich-field .service-note-rich-toolbar {
+  display: flex;
+  min-height: 40px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid #d8e2e6;
+  padding: 4px 6px;
+  background: #fbfcfd;
+}
+
+.project-service-rich-field .service-note-rich-toolbar select {
+  width: auto;
+  min-height: 30px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 24px 0 7px;
+  color: #38515e;
+  background: transparent;
+  font: inherit;
+}
+
+.project-service-rich-field .service-note-rich-toolbar button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  color: #38515e;
+  background: transparent;
+}
+
+.project-service-rich-field .service-note-rich-toolbar > i {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: #d9e2e6;
+}
+
+.project-service-rich-field .service-note-rich-content {
+  min-height: 150px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px 14px;
+  outline: 0;
+  color: #173747;
+  font-size: .82rem;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.project-service-rich-field .service-note-rich-content:empty::before {
+  color: #8999a1;
+  content: attr(data-placeholder);
+  pointer-events: none;
 }
 
 .project-catalog-media-editor {
@@ -22081,6 +22432,7 @@ button.planning-p12-conflict-card {
 }
 
 .project-billing-card {
+  container-type: inline-size;
   background: #fff;
   border: 1px solid #d9e2ec;
   border-radius: 10px;
@@ -22310,11 +22662,20 @@ button.planning-p12-conflict-card {
   width: fit-content;
 }
 
+.project-billing-service-list {
+  display: grid;
+}
+
 .project-billing-service-grid {
   display: grid;
+  align-items: end;
   gap: 12px;
-  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: 15px;
+}
+
+.project-billing-service-grid + .project-billing-service-grid {
+  border-top: 1px solid #e6ecf2;
 }
 
 .project-billing-service-grid label {
@@ -22328,6 +22689,42 @@ button.planning-p12-conflict-card {
 .project-billing-service-grid small {
   color: #6d7f91;
   font-weight: 500;
+}
+
+.project-billing-service-category > span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 6px;
+}
+
+.project-billing-service-category > span > button {
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+.project-billing-service-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.project-billing-service-actions button {
+  min-height: 40px;
+}
+
+.project-billing-service-actions button.is-danger {
+  border-color: #fecaca;
+  padding-inline: 10px;
+  color: #c32232;
+  background: #fff;
+}
+
+@container (min-width: 900px) {
+  .project-billing-service-grid {
+    grid-template-columns: minmax(180px, 1.35fr) repeat(3, minmax(120px, 1fr));
+  }
 }
 
 .project-billing-empty {
@@ -22446,6 +22843,10 @@ button.planning-p12-conflict-card {
   }
 
   .project-hire-period-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .project-billing-service-actions {
+    align-self: end;
+  }
 }
 
 @media (max-width: 680px) {

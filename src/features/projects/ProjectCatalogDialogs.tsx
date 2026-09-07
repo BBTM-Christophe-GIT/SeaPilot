@@ -4,6 +4,7 @@ import {
   Camera,
   Globe2,
   ImagePlus,
+  PackageCheck,
   Pencil,
   Plus,
   Search,
@@ -33,6 +34,15 @@ import {
 } from './projectCatalogMedia';
 import { ClientLocationFields } from './ClientLocationFields';
 import { resolveClientCountry } from './clientLocation';
+import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
+import { sanitizeServiceNoteHtml, serviceNoteBodyHasContent } from '../serviceNotes/serviceNoteRichText';
+import {
+  archiveProjectServiceCatalogEntry,
+  fetchProjectServiceCatalog,
+  saveProjectServiceCatalogEntry,
+  type ProjectServiceCatalogDraft,
+  type ProjectServiceCatalogEntry,
+} from './projectBilling';
 
 interface CatalogDialogProps {
   canManage: boolean;
@@ -47,6 +57,11 @@ interface ClientCatalogDialogProps extends CatalogDialogProps {
 
 interface TowedAssetCatalogDialogProps extends CatalogDialogProps {
   towedAssets: ProjectTowedAssetRecord[];
+}
+
+interface ServiceCatalogDialogProps extends Omit<CatalogDialogProps, 'onChanged'> {
+  initialMode?: 'view' | 'create';
+  onChanged?: (entries: ProjectServiceCatalogEntry[]) => void;
 }
 
 type EditorMode = 'view' | 'edit' | 'create';
@@ -793,6 +808,212 @@ export function TowedAssetCatalogDialog({
               </div>
             </form>
           ) : null}
+          {errorMessage ? <p className="project-catalog-message is-error" role="alert">{errorMessage}</p> : null}
+          {successMessage ? <p className="project-catalog-message is-success" role="status">{successMessage}</p> : null}
+        </section>
+      </div>
+    </AppDialog>
+  );
+}
+
+function emptyServiceForm(): ProjectServiceCatalogDraft {
+  return { category: '', unitAmountHt: 0, descriptionHtml: '', active: true };
+}
+
+function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogDraft {
+  return entry ? {
+    id: entry.id,
+    category: entry.category,
+    unitAmountHt: entry.unitAmountHt,
+    descriptionHtml: entry.descriptionHtml,
+    active: entry.active,
+  } : emptyServiceForm();
+}
+
+function serviceAmount(value: number): string {
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value);
+}
+
+export function ServiceCatalogDialog({
+  canManage,
+  client,
+  initialMode = 'view',
+  onChanged,
+  onClose,
+}: ServiceCatalogDialogProps) {
+  const [items, setItems] = useState<ProjectServiceCatalogEntry[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<EditorMode>(initialMode);
+  const [form, setForm] = useState<ProjectServiceCatalogDraft>(emptyServiceForm);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    void fetchProjectServiceCatalog(client)
+      .then((entries) => {
+        if (!active) return;
+        setItems(entries);
+        if (initialMode !== 'create') {
+          setSelectedId(entries[0]?.id ?? null);
+          setForm(serviceForm(entries[0]));
+        }
+      })
+      .catch((error) => {
+        if (active) setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les prestations.');
+      })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, [client, initialMode]);
+
+  const filteredItems = useMemo(
+    () => items.filter((item) => queryMatches([item.category, item.unitAmountHt, item.descriptionHtml], query)),
+    [items, query],
+  );
+  const selected = items.find((item) => item.id === selectedId);
+
+  function selectService(id: number) {
+    const entry = items.find((item) => item.id === id);
+    setSelectedId(id);
+    setForm(serviceForm(entry));
+    setMode('view');
+    setErrorMessage('');
+    setSuccessMessage('');
+  }
+
+  function beginCreate() {
+    setSelectedId(null);
+    setForm(emptyServiceForm());
+    setMode('create');
+    setErrorMessage('');
+    setSuccessMessage('');
+  }
+
+  function beginEdit() {
+    if (!selected) return;
+    setForm(serviceForm(selected));
+    setMode('edit');
+    setErrorMessage('');
+    setSuccessMessage('');
+  }
+
+  function cancelEdit() {
+    setForm(serviceForm(selected));
+    setMode('view');
+    setErrorMessage('');
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const category = form.category.trim();
+    if (!category) {
+      setErrorMessage('La catégorie est obligatoire.');
+      return;
+    }
+    if (form.unitAmountHt < 0) {
+      setErrorMessage('Le montant unitaire doit être positif.');
+      return;
+    }
+    setIsSaving(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const saved = await saveProjectServiceCatalogEntry(client, {
+        ...form,
+        category,
+        descriptionHtml: sanitizeServiceNoteHtml(form.descriptionHtml),
+      });
+      const next = [...items.filter((item) => item.id !== saved.id), saved]
+        .sort((left, right) => left.category.localeCompare(right.category, 'fr'));
+      setItems(next);
+      setSelectedId(saved.id);
+      setForm(serviceForm(saved));
+      setMode('view');
+      setSuccessMessage('Prestation enregistrée dans le catalogue.');
+      onChanged?.(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible d’enregistrer la prestation.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function archiveService() {
+    if (!selected || !window.confirm(`Retirer « ${selected.category} » de la liste des prestations ?`)) return;
+    setIsSaving(true);
+    setErrorMessage('');
+    try {
+      await archiveProjectServiceCatalogEntry(client, selected.id);
+      const next = items.filter((item) => item.id !== selected.id);
+      setItems(next);
+      setSelectedId(next[0]?.id ?? null);
+      setForm(serviceForm(next[0]));
+      setSuccessMessage('Prestation retirée de la liste active.');
+      onChanged?.(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de retirer la prestation.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <AppDialog
+      description={`${items.length} prestation${items.length > 1 ? 's' : ''} active${items.length > 1 ? 's' : ''}`}
+      icon={<PackageCheck aria-hidden="true" size={20} />}
+      isBusy={isSaving || isLoading}
+      onClose={onClose}
+      size="fullscreen"
+      title="Liste des prestations"
+    >
+      <div className="project-catalog-workspace">
+        <aside className="project-catalog-sidebar">
+          <div className="project-catalog-sidebar-actions">
+            <label className="project-catalog-search">
+              <Search aria-hidden="true" size={17} />
+              <span className="sr-only">Rechercher une prestation</span>
+              <input onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher une prestation…" type="search" value={query} />
+            </label>
+            {canManage ? <button className="project-catalog-add" onClick={beginCreate} type="button"><Plus aria-hidden="true" size={17} />Ajouter</button> : null}
+          </div>
+          <div aria-label="Prestations" className="project-catalog-list" role="listbox">
+            {filteredItems.map((item) => (
+              <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} key={item.id} onClick={() => selectService(item.id)} role="option" type="button">
+                <span className="project-catalog-list-avatar"><PackageCheck aria-hidden="true" size={17} /></span>
+                <span><strong>{item.category}</strong><small>{serviceAmount(item.unitAmountHt)} HT</small></span>
+              </button>
+            ))}
+            {!isLoading && filteredItems.length === 0 ? <p className="project-catalog-empty-list">Aucune prestation trouvée.</p> : null}
+          </div>
+        </aside>
+
+        <section aria-label="Données de la prestation" className="project-catalog-detail">
+          <div className="project-catalog-detail-toolbar">
+            <span>{mode === 'create' ? 'Nouvelle prestation' : mode === 'edit' ? 'Modification' : 'Fiche prestation'}</span>
+            {mode === 'view' && selected && canManage ? <div>
+              <button onClick={beginEdit} type="button"><Pencil aria-hidden="true" size={16} />Modifier</button>
+              <button className="is-danger" disabled={isSaving} onClick={() => void archiveService()} type="button"><Trash2 aria-hidden="true" size={16} />Supprimer</button>
+            </div> : null}
+          </div>
+
+          {mode === 'view' && selected ? <div className="project-catalog-view project-service-catalog-view">
+            <div className="project-catalog-identity"><div className="project-catalog-image is-service"><PackageCheck aria-hidden="true" size={26} /></div><div><h3>{selected.category}</h3><p>{serviceAmount(selected.unitAmountHt)} HT par unité</p></div></div>
+            <dl className="project-catalog-data-grid"><div><dt>Catégorie</dt><dd>{selected.category}</dd></div><div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div></dl>
+            <div className="project-service-description"><strong>Description</strong>{serviceNoteBodyHasContent(selected.descriptionHtml) ? <div dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(selected.descriptionHtml) }} /> : <p>Non renseignée</p>}</div>
+          </div> : null}
+          {mode === 'view' && !selected && !isLoading ? <div className="project-catalog-empty-detail"><PackageCheck aria-hidden="true" size={34} /><p>Sélectionnez une prestation ou ajoutez-en une nouvelle.</p></div> : null}
+          {mode !== 'view' ? <form className="project-catalog-form project-service-catalog-form" onSubmit={submit}>
+            <div className="project-catalog-form-grid">
+              <label><span>Catégorie *</span><input autoFocus maxLength={120} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} required value={form.category} /></label>
+              <label><span>Montant unitaire (€ HT) *</span><input min="0" onChange={(event) => setForm((current) => ({ ...current, unitAmountHt: Number(event.target.value) }))} required step="0.01" type="number" value={form.unitAmountHt} /></label>
+              <label className="is-wide project-service-rich-field"><span>Description</span><ServiceNoteRichTextEditor ariaLabel="Description de la prestation" onChange={(descriptionHtml) => setForm((current) => ({ ...current, descriptionHtml }))} placeholder="Décrivez le contenu et les conditions de la prestation…" toolbarLabel="Mise en forme de la description" value={form.descriptionHtml} /></label>
+            </div>
+            <div className="project-catalog-form-actions"><button disabled={isSaving} onClick={cancelEdit} type="button">Annuler</button><button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+          </form> : null}
           {errorMessage ? <p className="project-catalog-message is-error" role="alert">{errorMessage}</p> : null}
           {successMessage ? <p className="project-catalog-message is-success" role="status">{successMessage}</p> : null}
         </section>
