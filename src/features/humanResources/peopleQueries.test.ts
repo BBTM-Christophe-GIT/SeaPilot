@@ -11,9 +11,11 @@ import {
   createHrDocument,
   createPerson,
   deletePerson,
+  deleteHrDocument,
   fetchHumanResourcesData,
   fetchPeople,
   getHrEnimClassification,
+  getHrDocumentDisplayName,
   getHrFunctionVisibilityKey,
   isPersonEmployedOn,
   isPersonFormerOn,
@@ -24,6 +26,7 @@ import {
   renewHrDocument,
   saveHrVisibilityRules,
   updateHrDocumentMedicalDetails,
+  updateHrDocumentDetails,
   updatePersonDetails,
   updatePersonActive,
 } from './peopleQueries';
@@ -325,7 +328,7 @@ describe('HR document naming and catalogue', () => {
 });
 
 describe('createHrDocument', () => {
-  it('uploads the renamed file then inserts its metadata in hr_documents', async () => {
+  it.each(['2030-06-30', ''])('uploads a document with expiry %s (NULL when absent)', async (dueDate) => {
     const person = mapPersonRows([personRow])[0];
     const documentType = mapHrDocumentTypeRows([
       {
@@ -336,16 +339,17 @@ describe('createHrDocument', () => {
       },
     ])[0];
     const file = new File(['certificate'], 'scan original.pdf', { type: 'application/pdf' });
-    const expectedStoragePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
+    const title = dueDate ? 'Jean MARTIN - CFBS - 2030' : 'Jean MARTIN - CFBS';
+    const expectedStoragePath = `people/1/${title}.pdf`;
     const createdRow = {
       ...documentRow,
       id: 42,
       person_id: 1,
       person_name: 'Jean MARTIN',
       category_key: 'safety_training',
-      title: 'Jean MARTIN - CFBS - 2030',
+      title,
       status: 'valid',
-      expires_on: '2030-06-30',
+      expires_on: dueDate || null,
       source_label: 'supabase',
       file_url: null,
       storage_bucket: 'hr-documents',
@@ -369,7 +373,7 @@ describe('createHrDocument', () => {
         } as never,
         {
           documentType,
-          dueDate: '2030-06-30',
+          dueDate,
           file,
           medicalBridgeWatch: null,
           medicalRestriction: '',
@@ -386,14 +390,96 @@ describe('createHrDocument', () => {
     expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
         category_key: 'safety_training',
-        expires_on: '2030-06-30',
+        expires_on: dueDate || null,
         person_id: 1,
         person_name: 'Jean MARTIN',
         storage_path: expectedStoragePath,
-        title: 'Jean MARTIN - CFBS - 2030',
+        title,
       }),
     );
     expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('HR document metadata and deletion', () => {
+  const input = {
+    title: 'Contrat signé', categoryKey: 'administrative', issuedOn: '2026-01-01', expiresOn: '', notes: 'Copie reçue',
+    medicalBridgeWatch: null, medicalRestriction: '', medicalUnfit: false,
+  };
+
+  it('keeps separators inside an edited title and only strips the collaborator prefix', () => {
+    expect(getHrDocumentDisplayName({ title: 'Contrat - avenant signé', personName: 'Jean MARTIN' })).toBe('Contrat - avenant signé');
+    expect(getHrDocumentDisplayName({ title: 'Jean MARTIN - Contrat - 2030.pdf', personName: 'Jean MARTIN' })).toBe('Contrat');
+  });
+
+  it.each([
+    ['expired', '', 'valid'],
+    ['valid', '2020-01-01', 'expired'],
+    ['expired', '2099-01-01', 'valid'],
+    ['pending_validation', '', 'pending_validation'],
+    ['missing', '', 'missing'],
+  ])('updates metadata and changes %s with expiry %s to %s', async (status, expiresOn, expectedStatus) => {
+    const single = vi.fn().mockResolvedValue({ data: { ...documentRow, ...input, status: expectedStatus, expires_on: expiresOn || null }, error: null });
+    const eq = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
+    const update = vi.fn().mockReturnValue({ eq });
+    const storageFrom = vi.fn();
+    const client = { from: vi.fn().mockReturnValue({ update }), storage: { from: storageFrom } };
+    await updateHrDocumentDetails(client as never, mapHrDocumentRows([{ ...documentRow, status }])[0], { ...input, issuedOn: '', expiresOn });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      title: input.title, category_key: 'administrative', issued_on: null, expires_on: expiresOn || null,
+      notes: input.notes, status: expectedStatus, medical_restriction: null, medical_bridge_watch: null, medical_unfit: false,
+    }));
+    expect(update.mock.calls[0][0]).not.toHaveProperty('storage_path');
+    expect(update.mock.calls[0][0]).not.toHaveProperty('file_url');
+    expect(eq).toHaveBeenCalledWith('id', documentRow.id);
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+
+  it('rejects reversed dates and protected annual-review categories before writing', async () => {
+    const from = vi.fn();
+    const document = mapHrDocumentRows([documentRow])[0];
+    await expect(updateHrDocumentDetails({ from } as never, document, { ...input, expiresOn: '2025-12-31' })).rejects.toThrow('date de péremption');
+    await expect(updateHrDocumentDetails({ from } as never, document, { ...input, categoryKey: 'annual_review' })).rejects.toThrow('entretiens annuels');
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  function deletionClient({ stored = true, storageError = false, databaseError = false, readError = false } = {}) {
+    const single = vi.fn().mockResolvedValue({ data: { ...documentRow, storage_bucket: stored ? 'hr-documents' : null, storage_path: stored ? 'people/1/current.pdf' : null }, error: readError ? new Error('Accès refusé') : null });
+    const deletedSingle = vi.fn().mockResolvedValue({ data: databaseError ? null : { id: documentRow.id }, error: databaseError ? { message: 'Erreur SQL' } : null });
+    const deleteEq = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: deletedSingle }) });
+    const deleteRow = vi.fn().mockReturnValue({ eq: deleteEq });
+    const remove = vi.fn().mockResolvedValue({ error: storageError ? { message: 'Stockage indisponible' } : null });
+    const client = {
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single }) }), delete: deleteRow }),
+      storage: { from: vi.fn().mockReturnValue({ remove }) },
+    };
+    return { client, remove, deleteRow, deleteEq };
+  }
+
+  it('removes the current stored file before deleting its row, while Storage RLS can still read it', async () => {
+    const { client, remove, deleteRow, deleteEq } = deletionClient();
+    await deleteHrDocument(client as never, documentRow.id);
+    expect(remove).toHaveBeenCalledWith(['people/1/current.pdf']);
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(deleteRow.mock.invocationCallOrder[0]);
+    expect(deleteEq).toHaveBeenCalledWith('id', documentRow.id);
+  });
+
+  it('only removes the SeaPilot reference for an imported SharePoint document', async () => {
+    const { client, remove, deleteRow } = deletionClient({ stored: false });
+    await deleteHrDocument(client as never, documentRow.id);
+    expect(remove).not.toHaveBeenCalled();
+    expect(deleteRow).toHaveBeenCalledOnce();
+  });
+
+  it.each(['readError', 'storageError'] as const)('keeps metadata after a %s', async (failure) => {
+    const { client, deleteRow } = deletionClient({ [failure]: true });
+    await expect(deleteHrDocument(client as never, documentRow.id)).rejects.toThrow();
+    expect(deleteRow).not.toHaveBeenCalled();
+  });
+
+  it('reports a retryable partial deletion instead of pretending success on a SQL failure', async () => {
+    const { client } = deletionClient({ databaseError: true });
+    await expect(deleteHrDocument(client as never, documentRow.id)).rejects.toThrow('Réessayez la suppression');
   });
 });
 
