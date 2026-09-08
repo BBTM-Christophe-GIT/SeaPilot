@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import {
   WORKING_TIME_XLSM_PARSER_VERSION,
@@ -97,6 +96,7 @@ async function parseWorkbook(buffer: ArrayBuffer | Uint8Array): Promise<{
   fillByStyle: number[];
   macroPresent: boolean;
 }> {
+  const { default: JSZip } = await import('jszip');
   const zip = await JSZip.loadAsync(buffer);
   const workbookXml = await zip.file('xl/workbook.xml')?.async('string');
   const relationshipsXml = await zip.file('xl/_rels/workbook.xml.rels')?.async('string');

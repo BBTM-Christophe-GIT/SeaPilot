@@ -99,6 +99,7 @@ import {
   resolvePlanningGridConflictCells,
   savePlanningHandover,
   savePlanningAssignmentDayState,
+  savePlanningAssignmentDayStates,
   publishPlanningRelease,
   updatePlanningEvent,
   updatePlanningVessel,
@@ -177,8 +178,10 @@ import {
   type PlanningFleetLane,
   type PlanningPerspective,
 } from './planningViews';
-import { usePlanningOverview } from './usePlanningOverview';
+import { usePlanningCoreOverview, usePlanningOverview } from './usePlanningOverview';
 import { usePlanningAssistantAccess } from './usePlanningAssistantAccess';
+
+const EMPTY_VESSEL_VISITS: PlanningVesselVisit[] = [];
 
 interface PlanningPageProps {
   client?: SupabaseClient;
@@ -506,7 +509,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isInitialLoading,
     isRefreshing,
     loadErrorMessage,
+    isHistoryLoading,
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
+  const planningData = usePlanningCoreOverview(overview);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [perspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
@@ -749,16 +754,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
-  const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(overview), [overview]);
+  const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(planningData), [planningData]);
   const fleetLanes = useMemo(
-    () => buildPlanningFleetLanes(overview, range, filters, allPlanningCrewEvents),
-    [allPlanningCrewEvents, filters, overview, range],
+    () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents),
+    [allPlanningCrewEvents, filters, planningData, range],
   );
   const fleetRows = useMemo(
-    () => buildPlanningCrewRows(overview, timelineDays, filters, allPlanningCrewEvents, {
+    () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
     }),
-    [allPlanningCrewEvents, filters, overview, referenceMonthRange, timelineDays],
+    [allPlanningCrewEvents, filters, planningData, referenceMonthRange, timelineDays],
   );
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
@@ -790,49 +795,49 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     return indexed;
   }, [vesselVisits]);
   const crewLanes = useMemo(
-    () => buildPlanningCrewLanes(overview, range, filters, crewGrouping, allPlanningCrewEvents),
-    [allPlanningCrewEvents, crewGrouping, filters, overview, range],
+    () => buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents),
+    [allPlanningCrewEvents, crewGrouping, filters, planningData, range],
   );
-  const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(overview, todayDate), [overview, todayDate]);
-  const hrAlerts = useMemo(() => buildPlanningHrAlerts(overview, todayDate), [overview, todayDate]);
+  const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
+  const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
   const unassignedPeople = useMemo(
-    () => getUnassignedPlanningPeople(overview, range, filters, allPlanningCrewEvents),
-    [allPlanningCrewEvents, filters, overview, range],
+    () => getUnassignedPlanningPeople(planningData, range, filters, allPlanningCrewEvents),
+    [allPlanningCrewEvents, filters, planningData, range],
   );
   const billableProjects = useMemo(
-    () => getBillablePlanningProjects(overview, Number(anchorDate.slice(0, 4))),
-    [anchorDate, overview],
+    () => getBillablePlanningProjects(planningData, Number(anchorDate.slice(0, 4))),
+    [anchorDate, planningData],
   );
   const pendingAbsences = useMemo(
     () => absences.filter((absence) => absence.status === 'requested'),
     [absences],
   );
-  const activePeople = useMemo(() => overview.people.filter((person) => person.active), [overview.people]);
+  const activePeople = useMemo(() => planningData.people.filter((person) => person.active), [planningData.people]);
   const assignmentPeople = useMemo(() => {
     const start = assignmentForm.startsOn || referenceMonthRange.start;
     const end = assignmentForm.endsOn || start;
-    return overview.people
+    return planningData.people
       .filter((person) => isPlanningPersonEmployedDuring(person, { start, end }))
       .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr'));
-  }, [assignmentForm.endsOn, assignmentForm.startsOn, overview.people, referenceMonthRange.start]);
+  }, [assignmentForm.endsOn, assignmentForm.startsOn, planningData.people, referenceMonthRange.start]);
   const eligibleBoardPeople = useMemo(
-    () => overview.people
+    () => planningData.people
       .filter((person) => isPlanningPersonEmployedDuring(person, referenceMonthRange))
       .sort((left, right) => formatPlanningPerson(left).localeCompare(formatPlanningPerson(right), 'fr')),
-    [overview.people, referenceMonthRange],
+    [planningData.people, referenceMonthRange],
   );
   const crewListVessels = useMemo(
-    () => activeVessels.filter((vessel) => availablePlanningCrewListBoards(overview, vessel.id, crewListForm.date).length > 0),
-    [activeVessels, crewListForm.date, overview],
+    () => activeVessels.filter((vessel) => availablePlanningCrewListBoards(planningData, vessel.id, crewListForm.date).length > 0),
+    [activeVessels, crewListForm.date, planningData],
   );
   const crewListBoards = useMemo(() => availablePlanningCrewListBoards(
-    overview,
+    planningData,
     Number(crewListForm.vesselId),
     crewListForm.date,
-  ), [crewListForm.date, crewListForm.vesselId, overview]);
+  ), [crewListForm.date, crewListForm.vesselId, planningData]);
   const conflictDatesByEvent = useMemo(
-    () => getPlanningConflictDatesByEvent(overview, allPlanningCrewEvents),
-    [allPlanningCrewEvents, overview],
+    () => getPlanningConflictDatesByEvent(planningData, allPlanningCrewEvents),
+    [allPlanningCrewEvents, planningData],
   );
   const cutGridCellKeys = useMemo(
     () => new Set(gridClipboard?.mode === 'cut' ? gridClipboard.cells.map((cell) => cell.key) : []),
@@ -840,18 +845,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   );
   const hrDocumentsByPerson = useMemo(() => {
     const indexed = new Map<number, PlanningHrDocumentRecord[]>();
-    overview.hrDocuments.forEach((document) => {
+    planningData.hrDocuments.forEach((document) => {
       if (document.personId === null) return;
       indexed.set(document.personId, [...(indexed.get(document.personId) || []), document]);
     });
     return indexed;
-  }, [overview.hrDocuments]);
-  const planningControls = useMemo(() => buildPlanningControlCenter(overview, allPlanningCrewEvents), [allPlanningCrewEvents, overview]);
+  }, [planningData.hrDocuments]);
+  const planningControls = useMemo(() => buildPlanningControlCenter(planningData, allPlanningCrewEvents), [allPlanningCrewEvents, planningData]);
   const assignmentControls = useMemo(() => {
-    const person = overview.people.find((item) => String(item.id) === assignmentForm.crewPersonId);
-    const vessel = overview.vessels.find((item) => String(item.id) === assignmentForm.vesselId);
+    const person = planningData.people.find((item) => String(item.id) === assignmentForm.crewPersonId);
+    const vessel = planningData.vessels.find((item) => String(item.id) === assignmentForm.vesselId);
     if (!person || !vessel) return [];
-    return evaluatePlanningAssignment(overview, {
+    return evaluatePlanningAssignment(planningData, {
       id: 'new-assignment',
       personId: person.id,
       person: formatPlanningPerson(person),
@@ -863,12 +868,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       startsAt: assignmentForm.startsAt,
       endsAt: assignmentForm.endsAt,
     }, allPlanningCrewEvents);
-  }, [allPlanningCrewEvents, assignmentForm, overview]);
+  }, [allPlanningCrewEvents, assignmentForm, planningData]);
   const selectedEventControls = useMemo(() => {
     if (!selectedEvent || !eventForm) return [];
-    const vessel = overview.vessels.find((item) => String(item.id) === eventForm.vesselId);
+    const vessel = planningData.vessels.find((item) => String(item.id) === eventForm.vesselId);
     if (!vessel) return [];
-    return evaluatePlanningAssignment(overview, {
+    return evaluatePlanningAssignment(planningData, {
       id: selectedEvent.id,
       personId: selectedEvent.personId,
       person: selectedEvent.person,
@@ -880,44 +885,44 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       startsAt: selectedEvent.kind === 'assignment' ? eventForm.startsAt : undefined,
       endsAt: selectedEvent.kind === 'assignment' ? eventForm.endsAt : undefined,
     }, allPlanningCrewEvents);
-  }, [allPlanningCrewEvents, eventForm, overview, selectedEvent]);
+  }, [allPlanningCrewEvents, eventForm, planningData, selectedEvent]);
   const watchGroupOptions = useMemo(
     () => uniqueSorted([
       'Affectation',
       'Armement',
       'Bordée 1',
       'Bordée 2',
-      ...overview.assignments.map((assignment) => assignment.watchGroup),
-      ...overview.periods.map((period) => period.watchGroup),
-      ...overview.days.map((day) => day.watchGroup),
+      ...planningData.assignments.map((assignment) => assignment.watchGroup),
+      ...planningData.periods.map((period) => period.watchGroup),
+      ...planningData.days.map((day) => day.watchGroup),
     ]),
-    [overview.assignments, overview.days, overview.periods],
+    [planningData.assignments, planningData.days, planningData.periods],
   );
   const vesselOptions = useMemo(
     () =>
       uniqueSorted([
-        ...overview.vessels.map((vessel) => vessel.name),
-        ...overview.periods.map((period) => period.vesselName),
-        ...overview.assignments.map((assignment) => assignment.vesselName),
+        ...planningData.vessels.map((vessel) => vessel.name),
+        ...planningData.periods.map((period) => period.vesselName),
+        ...planningData.assignments.map((assignment) => assignment.vesselName),
       ]),
-    [overview],
+    [planningData],
   );
   const personOptions = useMemo(
-    () => uniqueSorted(overview.people.map(formatPlanningPerson).concat(overview.periods.map((period) => period.crewName))),
-    [overview.people, overview.periods],
+    () => uniqueSorted(planningData.people.map(formatPlanningPerson).concat(planningData.periods.map((period) => period.crewName))),
+    [planningData.people, planningData.periods],
   );
   const responsibleOptions = useMemo(
     () => uniqueSorted([
-      ...overview.projects.map((project) => project.responsibleName),
+      ...planningData.projects.map((project) => project.responsibleName),
       ...allPlanningCrewEvents.map((event) => event.responsible),
     ]),
-    [allPlanningCrewEvents, overview.projects],
+    [allPlanningCrewEvents, planningData.projects],
   );
   const statusOptions = useMemo(
     () => perspective === 'fleet'
-      ? uniqueSorted([...PROJECT_STATUSES, ...overview.projects.map((project) => project.status)])
+      ? uniqueSorted([...PROJECT_STATUSES, ...planningData.projects.map((project) => project.status)])
       : uniqueSorted([...PLANNING_STATUSES, 'provisional', 'confirmed', 'cancelled']),
-    [overview.projects, perspective],
+    [planningData.projects, perspective],
   );
 
   const tabCounts: Record<SideTab, number> = {
@@ -1041,12 +1046,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await Promise.all(dates.map((date) => savePlanningAssignmentDayState(effectiveClient, {
+      const input = {
         assignmentId: dayStateForm.event.assignmentId!,
-        workDate: date,
         status: dayStateForm.status,
         note: dayStateForm.note,
-      })));
+      };
+      if (dates.length === 1) await savePlanningAssignmentDayState(effectiveClient, { ...input, workDate: dates[0] });
+      else await savePlanningAssignmentDayStates(effectiveClient, { ...input, startsOn: dates[0], endsOn: dates[dates.length - 1] });
       const daysData = await fetchPlanningDays(effectiveClient);
       updateOverview((current) => ({ ...current, days: daysData }));
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
@@ -2550,7 +2556,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                       pendingId={pendingMutationId}
                       selectedId={selectedTimelineId}
                       touchDropTarget={touchDropTarget}
-                      visits={lane.vesselId === null ? [] : vesselVisitsByVessel.get(lane.vesselId) || []}
+                      visits={lane.vesselId === null ? EMPTY_VESSEL_VISITS : vesselVisitsByVessel.get(lane.vesselId) || EMPTY_VESSEL_VISITS}
                     />
                   );
                 }
@@ -2652,7 +2658,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>
-              <PlanningSideContent billableProjects={billableProjects} certificateAlerts={certificateAlerts} editable={canEditPlanning} hrAlerts={hrAlerts} onChangeProjectStatus={changeProjectStatus} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} onOpenPendingAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id, requestedOnly: true })} overview={overview} pendingAbsences={pendingAbsences} pendingMutationId={pendingMutationId} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} />
+              <PlanningSideContent historyLoading={isHistoryLoading} billableProjects={billableProjects} certificateAlerts={certificateAlerts} editable={canEditPlanning} hrAlerts={hrAlerts} onChangeProjectStatus={changeProjectStatus} onOpenHandover={(handover) => openHandover(handover)} onOpenConflictCenter={() => openP12()} onOpenPendingAbsence={(absence) => openP12({ tab: 'absences', absenceId: absence.id, requestedOnly: true })} overview={overview} pendingAbsences={pendingAbsences} pendingMutationId={pendingMutationId} planningControls={planningControls} sideTab={sideTab} unassignedPeople={unassignedPeople} />
             </>
           ) : (
             <>
@@ -2997,8 +3003,9 @@ function PlanningUnassignedPeopleList({ people, editable, pendingId, onPointerDo
   );
 }
 
-function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, billableProjects, pendingAbsences, editable, pendingMutationId, onChangeProjectStatus, onOpenPendingAbsence, onOpenHandover, onOpenConflictCenter }: {
+function PlanningSideContent({ sideTab, historyLoading, certificateAlerts, hrAlerts, overview, planningControls, unassignedPeople, billableProjects, pendingAbsences, editable, pendingMutationId, onChangeProjectStatus, onOpenPendingAbsence, onOpenHandover, onOpenConflictCenter }: {
   sideTab: SideTab;
+  historyLoading: boolean;
   certificateAlerts: ReturnType<typeof buildPlanningCertificateAlerts>;
   hrAlerts: ReturnType<typeof buildPlanningHrAlerts>;
   overview: ReturnType<typeof usePlanningOverview>['overview'];
@@ -3075,6 +3082,7 @@ function PlanningSideContent({ sideTab, certificateAlerts, hrAlerts, overview, p
     }) : <PlanningEmptySide text="Aucune relève enregistrée." />}</div>;
   }
   if (sideTab === 'history') {
+    if (historyLoading && !overview.history.length) return <div className="admin-state" role="status">Chargement de l’historique…</div>;
     return <PlanningHistoryList overview={overview} />;
   }
   const alerts = sideTab === 'alerts' ? hrAlerts : certificateAlerts;

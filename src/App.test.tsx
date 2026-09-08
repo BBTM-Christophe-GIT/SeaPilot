@@ -99,8 +99,8 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('Préversion · données de démonstration')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Nouveau projet' }, { timeout: 10_000 })).toBeInTheDocument();
     expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
-    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Connexion à BBTM' })).not.toBeInTheDocument();

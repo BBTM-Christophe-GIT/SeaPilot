@@ -39,7 +39,7 @@ const PLANNING_RULE_SELECT =
 const PLANNING_PUBLICATION_SELECT =
   'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, submitted_by, submitted_by_name, validated_at, validated_by, validated_by_name, published_at, published_by, published_by_name, locked_at, locked_by, locked_by_name, updated_at, updated_by, updated_by_name';
 const PLANNING_HISTORY_SELECT =
-  'id, entity_kind, entity_id, action, payload, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
+  'id, entity_kind, entity_id, action, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
 const PLANNING_HANDOVER_SELECT =
   'id, vessel_id, handover_at, location, handover_duration_minutes, responsible_person_id, comments, status, created_by, updated_by, created_at, updated_at';
 const PLANNING_HANDOVER_POSITION_SELECT =
@@ -1303,6 +1303,27 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
   }
 }
 
+// The server rechecks RLS and fingerprints the complete visible result on every
+// read. A cached result is never displayed before that validation, including
+// after a user, company or permission change on the same Supabase client.
+const planningPeriodCache = new WeakMap<SupabaseClient, { revision: string; periods: PlanningPeriodRecord[] }>();
+
+export async function fetchCachedPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {
+  const previous = planningPeriodCache.get(client);
+  const { data, error } = await client.rpc('read_planning_periods', { p_known_revision: previous?.revision || null });
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') return fetchPlanningPeriods(client);
+    throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
+  }
+  const result = data as { revision: string; periods: PlanningPeriodRow[] | null } | null;
+  if (!result || typeof result.revision !== 'string') throw new Error('Réponse des périodes du planning invalide.');
+  if (result.periods === null && previous?.revision === result.revision) return previous.periods;
+  if (!Array.isArray(result.periods)) throw new Error('Les périodes du planning doivent être rechargées.');
+  const periods = mapPlanningPeriodRows(result.periods);
+  planningPeriodCache.set(client, { revision: result.revision, periods });
+  return periods;
+}
+
 export async function fetchPlanningProjects(client: SupabaseClient): Promise<PlanningProjectRecord[]> {
   const { data, error } = await client
     .from('planning_operations_view')
@@ -1479,6 +1500,8 @@ function mapPlanningReleaseSnapshot(snapshot: PlanningReleaseSnapshotRow | null)
 
 export interface FetchPlanningOverviewOptions {
   publishedOnly?: boolean;
+  includeHistory?: boolean;
+  cachedPeriods?: boolean;
 }
 
 export async function fetchPlanningOverview(
@@ -1521,14 +1544,14 @@ export async function fetchPlanningOverview(
     fetchPlanningBoardRows(client),
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
-    fetchPlanningPeriods(client),
+    options.cachedPeriods ? fetchCachedPlanningPeriods(client) : fetchPlanningPeriods(client),
     fetchPlanningProjects(client),
     fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
     fetchPlanningAnnualReviews(client),
     fetchPlanningRules(client),
     fetchPlanningVersions(client),
-    fetchPlanningHistory(client),
+    options.includeHistory === false ? Promise.resolve([]) : fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
   ]);
 
@@ -1713,6 +1736,25 @@ export async function savePlanningAssignmentDayState(
   });
   if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
   return typeof data === 'number' ? data : null;
+}
+
+export async function savePlanningAssignmentDayStates(
+  client: SupabaseClient,
+  input: Omit<SavePlanningAssignmentDayStateInput, 'workDate'> & { startsOn: string; endsOn: string },
+): Promise<void> {
+  const assignmentId = planningEntityId(input.assignmentId, "L'affectation");
+  assertPlanningDateRange(input.startsOn, input.endsOn);
+  const note = input.note.trim();
+  if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
+  if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
+  const { error } = await client.rpc('save_planning_assignment_day_states', {
+    p_assignment_id: assignmentId,
+    p_starts_on: input.startsOn,
+    p_ends_on: input.endsOn,
+    p_status: input.status,
+    p_note: note,
+  });
+  if (error) throwPlanningDataError('save-assignment-day-states', 'Impossible d’enregistrer les statuts quotidiens.', error);
 }
 
 function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {

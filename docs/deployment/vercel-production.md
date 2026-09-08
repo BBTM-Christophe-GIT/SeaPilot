@@ -1,5 +1,20 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.39.5` limite les échéances de l'accueil aux 90 prochains jours inclus, même si le statut importé
+du document est « manquant », « à valider » ou périmé. Les alertes échues ou sans date restent visibles.
+Les lignes rouges et orange sont davantage contrastées, y compris au survol. Aucune migration n'est requise.
+Voir [home-deadline-horizon-v3-39-5.md](./home-deadline-horizon-v3-39-5.md).
+
+Version `3.39.4` accélère le Planning : historique non bloquant, périodes complètes revalidées par le serveur,
+enregistrement groupé des jours et rendu des lignes isolé. Les workflows et les périmètres Marin/Capitaine sont
+conservés. La migration `supabase/migrations/20260908103600_optimize_planning_reads_and_batch_days.sql` doit
+précéder le déploiement du client. Voir [planning-performance-v3-39-4.md](./planning-performance-v3-39-4.md).
+
+Version `3.39.3` sécurise la génération des offres commerciales enrichies sur les postes qui ne disposent pas de
+la police Microsoft Aptos. Aptos reste privilégiée lorsqu'elle est disponible ; sinon le PDF utilise une pile de
+polices système sans interrompre l'émission. Aucune migration Supabase n'est requise. Voir
+[project-offer-font-fallback-v3-39-3.md](./project-offer-font-fallback-v3-39-3.md).
+
 Version `3.39.1` rétablit le chargement de l’historique Planning en ajoutant un index chronologique global sur
 `planning_change_log`. La migration ne modifie ni les données ni les politiques RLS. Appliquer
 `supabase/migrations/20260907200347_optimize_planning_history_read.sql` avant la recette du module. Voir

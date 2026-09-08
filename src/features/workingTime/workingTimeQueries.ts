@@ -155,6 +155,7 @@ interface VesselRow {
   id: number | string;
   name: string;
   acronym: string | null;
+  registration_number?: string | null;
   imo_number?: string | null;
   flag_state?: string | null;
 }
@@ -290,6 +291,7 @@ export interface WorkingTimeVesselOption {
   id: number;
   name: string;
   acronym: string;
+  registrationNumber?: string;
   imoNumber?: string;
   flagState?: string;
 }
@@ -608,7 +610,7 @@ export async function fetchWorkingTimeWorkspace(
     signatureQuery,
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
     dayApprovalQuery,
-    client.from('vessels').select('id,name,acronym,imo_number,flag_state').eq('active', true).order('name'),
+    client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
 
@@ -692,6 +694,7 @@ export async function fetchWorkingTimeWorkspace(
       id: Number(vessel.id),
       name: vessel.name,
       acronym: vessel.acronym || '',
+      registrationNumber: vessel.registration_number || '',
       imoNumber: vessel.imo_number || '',
       flagState: vessel.flag_state || '',
     })),

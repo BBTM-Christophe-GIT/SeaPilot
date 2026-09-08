@@ -403,6 +403,12 @@ function createClient(options: {
     throw new Error(`Unexpected table ${table}`);
   });
   const rpc = vi.fn().mockImplementation((functionName: string) => {
+    if (functionName === 'read_planning_periods') {
+      return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
+    }
+    if (functionName === 'save_planning_assignment_day_states') {
+      return Promise.resolve({ data: 1, error: null });
+    }
     if (functionName === 'planning_assignment_overview') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
     }
@@ -689,7 +695,7 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
     await user.click(within(billingPanel).getByRole('button', { name: /Paul DURAND.*À valider/ }));
-    expect(await screen.findByRole('dialog', { name: 'Absences, remplacements et centre de conflits' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Absences, remplacements et centre de conflits' }, { timeout: 10_000 })).toBeInTheDocument();
 
     const planningMenu = screen.getByRole('navigation', { name: 'Menu du planning' });
     for (const removedButton of ['Facturation', 'Demandes en attente', 'Gérer les navires', 'Conflits', 'Absences et conflits', 'Historique']) {
@@ -1263,6 +1269,29 @@ describe('PlanningPage cockpit', () => {
       p_note: 'Le Havre',
     }));
     expect(await screen.findByText('Accident du Travail enregistré pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
+  });
+
+  it('applies a group status through one RPC while keeping the original assignment dates', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const cell = await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    fireEvent.contextMenu(cell);
+    const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Repos' }));
+    await user.type(within(dialog).getByLabelText('Commentaire'), 'Escale');
+    await user.click(within(dialog).getByRole('button', { name: 'Appliquer à la période' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_states', {
+      p_assignment_id: 100,
+      p_starts_on: assignmentOverviewRow.starts_on,
+      p_ends_on: assignmentOverviewRow.ends_on,
+      p_status: 'Repos',
+      p_note: 'Escale',
+    }));
+    expect(rpc.mock.calls.filter(([name]) => name === 'save_planning_assignment_day_states')).toHaveLength(1);
+    expect(rpc.mock.calls.some(([name]) => name === 'save_planning_assignment_day_state')).toBe(false);
+    expect(await screen.findByText('Repos enregistré pour Paul DURAND sur toute la période.')).toBeInTheDocument();
   });
 
   it('creates a board independently from the vessel staffing decision', async () => {

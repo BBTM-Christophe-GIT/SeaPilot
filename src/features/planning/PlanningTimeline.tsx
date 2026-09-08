@@ -30,6 +30,22 @@ import {
   type PlanningFleetLane,
 } from './planningViews';
 import { planningStaffingBoardKey } from './planningStaffingQueries';
+import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
+
+export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
+export const PlanningFleetBoardTimelineRow = withStablePlanningHandlers(PlanningFleetBoardTimelineRowContent);
+export const PlanningCrewTimelineRow = withStablePlanningHandlers(PlanningCrewTimelineRowContent, (previous, next) => {
+  if (!shallowPlanningEqual(previous.lane, next.lane)) return false;
+  if (!samePlanningLaneSelection(previous.selectedGridCells, next.selectedGridCells, next.lane.key)) return false;
+  const selectionInLane = (id: string | null, lane: PlanningCrewLane) => id && (
+    lane.events.some((event) => event.id === id) || id.startsWith(`empty-${lane.key}-`)
+  ) ? id : null;
+  if (selectionInLane(previous.selectedId, previous.lane) !== selectionInLane(next.selectedId, next.lane)) return false;
+  return shallowPlanningEqual(
+    { ...previous, lane: null, selectedGridCells: null, selectedId: null },
+    { ...next, lane: null, selectedGridCells: null, selectedId: null },
+  );
+});
 
 interface TimelineBaseProps {
   days: PlanningTimelineDay[];
@@ -106,7 +122,7 @@ function buildPlanningVisitStack(
   return { count: stackEnds.length, stackByKey };
 }
 
-export function PlanningFleetTimelineRow({
+function PlanningFleetTimelineRowContent({
   lane,
   days,
   editable,
@@ -501,7 +517,7 @@ export function PlanningFleetTimelineRow({
   );
 }
 
-export function PlanningFleetBoardTimelineRow({
+function PlanningFleetBoardTimelineRowContent({
   board,
   vessel,
   vesselId,
@@ -570,7 +586,7 @@ export function PlanningFleetBoardTimelineRow({
   );
 }
 
-export function PlanningCrewTimelineRow({
+function PlanningCrewTimelineRowContent({
   lane,
   days,
   editable,

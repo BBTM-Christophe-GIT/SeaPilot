@@ -355,6 +355,13 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9398, user_id: null, first_name: 'Nicolas', last_name: 'BOUVILLE', function_label: 'Matelot polyvalent', enim_function_code: 'PA01A', enim_category: 5, grade_label: 'Matelot', role_label: 'Navigant', hired_on: '2019-03-01', departed_on: '2026-06-25', active: false },
     { id: 9399, user_id: null, first_name: 'Ancien', last_name: 'MARIN', function_label: 'Matelot', grade_label: 'Matelot', role_label: 'Navigant', hired_on: '2018-01-01', departed_on: '2025-12-31', active: false },
   ],
+  planning_assignments: [
+    { id: 9351, vessel_id: 9201, captain_person_id: 9301, crew_person_id: 9301, starts_on: '2026-01-01', ends_on: '2030-12-31', watch_group: 'Bordée 1', confirmation_status: 'confirmed', vessels: { name: 'M/V Démonstration' } },
+    { id: 9352, vessel_id: 9201, captain_person_id: 9301, crew_person_id: 9303, starts_on: '2026-01-01', ends_on: '2030-12-31', watch_group: 'Bordée 1', confirmation_status: 'confirmed', vessels: { name: 'M/V Démonstration' } },
+    { id: 9353, vessel_id: 9201, captain_person_id: 9301, crew_person_id: 9304, starts_on: '2026-01-01', ends_on: '2030-12-31', watch_group: 'Bordée 1', confirmation_status: 'confirmed', vessels: { name: 'M/V Démonstration' } },
+    { id: 9354, vessel_id: 9201, captain_person_id: 9302, crew_person_id: 9302, starts_on: '2026-01-01', ends_on: '2030-12-31', watch_group: 'Bordée 2', confirmation_status: 'confirmed', vessels: { name: 'M/V Démonstration' } },
+    { id: 9355, vessel_id: 9202, captain_person_id: 9302, crew_person_id: 9302, starts_on: '2026-01-01', ends_on: '2030-12-31', watch_group: 'Bordée 1', confirmation_status: 'confirmed', vessels: { name: 'Support Démonstration' } },
+  ],
   hr_documents: [
     {
       id: 9401,

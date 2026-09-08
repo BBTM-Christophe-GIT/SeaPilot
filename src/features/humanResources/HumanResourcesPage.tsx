@@ -27,7 +27,6 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import JSZip from 'jszip';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -1083,6 +1082,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
         saveBlob(blob, documentDownloadFileName(documentToDownload));
       } else {
+        const { default: JSZip } = await import('jszip');
         const zip = new JSZip();
         const usedNames = new Map<string, number>();
 

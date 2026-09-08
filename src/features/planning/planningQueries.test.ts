@@ -9,6 +9,7 @@ import {
   deletePlanningBoardRow,
   fetchPlanningPeople,
   fetchPlanningPeriods,
+  fetchCachedPlanningPeriods,
   fetchPlanningOverview,
   fetchVessels,
   mapPlanningDayRows,
@@ -24,6 +25,7 @@ import {
   savePlanningHandover,
   savePlanningAssignmentDayNote,
   savePlanningAssignmentDayState,
+  savePlanningAssignmentDayStates,
   savePlanningVesselDayLocation,
   removePlanningGridCells,
   resolvePlanningGridConflictCells,
@@ -1080,5 +1082,43 @@ describe('planning writes', () => {
 
     await expect(deletePlanningBoardRow({ rpc } as never, 77)).resolves.toBeUndefined();
     expect(rpc).toHaveBeenNthCalledWith(2, 'delete_planning_board_row', { p_row_id: 77 });
+  });
+});
+
+describe('Planning performance contracts', () => {
+  it('reuses complete periods only after the server validates their revision', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { revision: 'scope-a:1', periods: [planningPeriodRow] }, error: null })
+      .mockResolvedValueOnce({ data: { revision: 'scope-a:1', periods: null }, error: null })
+      .mockResolvedValueOnce({ data: { revision: 'scope-b:2', periods: [] }, error: null });
+    const client = { rpc } as never;
+    const first = await fetchCachedPlanningPeriods(client);
+    expect(first).toHaveLength(1);
+    expect(await fetchCachedPlanningPeriods(client)).toBe(first);
+    expect(rpc).toHaveBeenNthCalledWith(2, 'read_planning_periods', { p_known_revision: 'scope-a:1' });
+    expect(await fetchCachedPlanningPeriods(client)).toEqual([]);
+  });
+
+  it('does not return cached periods after a permission error', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { revision: 'allowed', periods: [planningPeriodRow] }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'denied' } });
+    const client = { rpc } as never;
+    await fetchCachedPlanningPeriods(client);
+    await expect(fetchCachedPlanningPeriods(client)).rejects.toThrow();
+  });
+
+  it('submits a complete period as one RPC without changing its boundaries', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 30, error: null });
+    await savePlanningAssignmentDayStates({ rpc } as never, {
+      assignmentId: 100, startsOn: '2026-09-01', endsOn: '2026-09-30', status: 'Vacance', note: ' Repos ',
+    });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('save_planning_assignment_day_states', {
+      p_assignment_id: 100, p_starts_on: '2026-09-01', p_ends_on: '2026-09-30', p_status: 'Vacance', p_note: 'Repos',
+    });
+    await expect(savePlanningAssignmentDayStates({ rpc } as never, {
+      assignmentId: 100, startsOn: '2026-09-30', endsOn: '2026-09-01', status: 'Vacance', note: '',
+    })).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledOnce();
   });
 });

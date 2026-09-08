@@ -2,6 +2,9 @@ const PLANNING_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const PLANNING_LOCAL_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const DAY_IN_MILLISECONDS = 86_400_000;
 const PLANNING_TIME_ZONE = 'Europe/Paris';
+const PLANNING_DATE_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+});
 
 export const PLANNING_DATE_STORAGE_FORMAT = 'YYYY-MM-DD';
 export const PLANNING_DATE_TIME_STORAGE_FORMAT = 'UTC ISO-8601';
@@ -118,12 +121,7 @@ export function rangesOverlap(start: string, end: string, rangeStart: string, ra
 
 export function formatPlanningDate(value: string): string {
   if (!isPlanningDate(value)) return 'Date non renseignée';
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(parsePlanningDate(value));
+  return PLANNING_DATE_FORMATTER.format(parsePlanningDate(value));
 }
 
 function planningZonedParts(date: Date): Record<string, number> {
