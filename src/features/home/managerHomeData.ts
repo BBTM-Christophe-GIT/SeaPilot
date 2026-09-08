@@ -388,6 +388,7 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem
     const expectedDate = row.expected_delivery_on?.slice(0, 10) || '';
     const expectedIsFuture = expectedDate && daysFromToday(expectedDate, today) > 0;
     const dueDate = stage === 'to_process' || !expectedIsFuture ? todayKey : expectedDate;
+    if (daysFromToday(dueDate, today) > UPCOMING_HORIZON_DAYS) return [];
     const requestAge = row.requested_on ? Math.max(0, -daysFromToday(row.requested_on.slice(0, 10), today)) : 0;
     const explicitlyUrgent = Boolean(row.urgent) || (stage === 'to_process' && requestAge >= 2);
     const tone = explicitlyUrgent ? 'danger' : toneForDueDate(dueDate, today);
@@ -438,10 +439,13 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     if (row.is_active_fleet === false) return [];
+    const expiry = row.expires_on?.slice(0, 10) || '';
+    // Imported missing/pending/expired statuses must not turn a distant expiry
+    // into an immediate alarm on the home dashboard.
+    if (expiry && daysFromToday(expiry, today) > UPCOMING_HORIZON_DAYS) return [];
     const status = effectiveFleetStatus(row, today);
     if (status === 'valid' || status === 'valide') return [];
 
-    const expiry = row.expires_on?.slice(0, 10) || '';
     const planned = row.planned_on?.slice(0, 10) || '';
     const plannedIsUpcoming = planned && daysFromToday(planned, today) >= 0;
     const expiryIsUpcoming = expiry && daysFromToday(expiry, today) >= 0;
@@ -521,8 +525,10 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
     const status = normalize(row.status);
     const expiry = row.expires_on?.slice(0, 10) || '';
     const remainingDays = expiry ? daysFromToday(expiry, today) : null;
+    // Declared medical unfitness is an immediate alert, independent of expiry.
+    if (!row.medical_unfit && remainingDays !== null && remainingDays > UPCOMING_HORIZON_DAYS) return [];
     const actionableStatus = ['expired', 'expire', 'renew_due', 'renouvel', 'missing', 'manquant', 'pending'].some((value) => status.includes(value));
-    if (!row.medical_unfit && !actionableStatus && (remainingDays === null || remainingDays > UPCOMING_HORIZON_DAYS)) return [];
+    if (!row.medical_unfit && !actionableStatus && remainingDays === null) return [];
 
     const dueDate = expiry && remainingDays !== null && remainingDays >= 0 ? expiry : todayKey;
     const forceDanger = Boolean(row.medical_unfit) || remainingDays === null || (remainingDays !== null && remainingDays < 0) || status.includes('missing') || status.includes('manquant');
