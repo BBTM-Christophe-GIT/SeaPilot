@@ -89,6 +89,18 @@ const workspace: WorkingTimeWorkspace = {
   policies: [],
 };
 
+const sailorProfile: WorkingTimeWorkspace['signatures'][number] = {
+  id: 10,
+  personId: register.personId,
+  versionNumber: 3,
+  storageBucket: snapshot.storageBucket,
+  storagePath: '1/20/current-signature.png',
+  mimeType: 'image/png',
+  fileSizeBytes: 1234,
+  sha256: 'c'.repeat(64),
+  validFrom: '2026-09-01T00:00:00Z',
+};
+
 describe('working-time PDF', () => {
   it('formats the two compliance columns without NC or T/R prefixes', () => {
     expect(formatWorkingTimeTableHours(48_600)).toBe('13h30');
@@ -96,16 +108,75 @@ describe('working-time PDF', () => {
     expect(`${formatWorkingTimeTableHours(91_800)} / ${formatWorkingTimeTableHours(513_000)}`).toBe('25h30 / 142h30');
   });
 
-  it('loads both frozen audit signatures, never the current profile versions', async () => {
+  it('keeps both frozen audit signatures when a newer profile version exists', async () => {
     const download = vi.fn().mockResolvedValue({ data: new Blob(['png']), error: null });
     const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
 
-    const prepared = await prepareWorkingTimePdf(client, workspace, register);
+    const prepared = await prepareWorkingTimePdf(client, { ...workspace, signatures: [sailorProfile] }, register);
 
     expect(download).toHaveBeenCalledWith(snapshot.storagePath);
     expect(download).toHaveBeenCalledWith(validatorSnapshot.storagePath);
     expect(prepared.signatures[0].snapshot).toEqual(snapshot);
     expect(prepared.signatures[1].snapshot).toEqual(validatorSnapshot);
+    expect(download).not.toHaveBeenCalledWith(sailorProfile.storagePath);
+  });
+
+  it.each([
+    { role: 'marin', currentPersonId: 20 },
+    { role: 'capitaine', currentPersonId: 10 },
+  ])('uses the register holder profile for an approved import exported by a $role', async ({ currentPersonId }) => {
+    const download = vi.fn().mockResolvedValue({ data: new Blob([signaturePng]), error: null });
+    const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
+    const importedWorkspace: WorkingTimeWorkspace = {
+      ...workspace,
+      currentPersonId,
+      signatures: [{ ...sailorProfile, personId: 10, storagePath: '1/10/current-signature.png' }, sailorProfile],
+      validations: workspace.validations.filter((event) => event.eventType !== 'sailor_signed'),
+    };
+
+    const prepared = await prepareWorkingTimePdf(client, importedWorkspace, register);
+    const generated = await buildWorkingTimePdf(prepared);
+    const pageContent = generated.document.internal.pages.flat().join('\n');
+
+    expect(download).toHaveBeenCalledWith(sailorProfile.storagePath);
+    expect(download).not.toHaveBeenCalledWith('1/10/current-signature.png');
+    expect(prepared.signatures[0]).toMatchObject({ snapshot: null, profileSignature: sailorProfile, png: signaturePng });
+    expect(prepared.audit).toEqual(importedWorkspace.validations);
+    expect(pageContent.match(/Alex MARIN/g)).toHaveLength(2);
+    expect(pageContent).toContain('Camille CAPITAINE - capitaine');
+    expect(pageContent).not.toContain('Non requise');
+    expect(pageContent).not.toContain('signature v');
+    expect(pageContent).not.toContain('04/08/2026');
+    expect(generated.document.getNumberOfPages()).toBe(1);
+
+    if (process.env.WORKING_TIME_PDF_IMPORT_QA_PATH) {
+      await import('node:fs/promises').then(({ writeFile }) => writeFile(
+        process.env.WORKING_TIME_PDF_IMPORT_QA_PATH!, new Uint8Array(generated.document.output('arraybuffer')),
+      ));
+    }
+  });
+
+  it('does not apply a profile signature to an unsigned register without an approved import', async () => {
+    const download = vi.fn();
+    const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
+    const prepared = await prepareWorkingTimePdf(client, { ...workspace, signatures: [sailorProfile], validations: [] }, register);
+
+    expect(prepared.signatures[0]).toMatchObject({ snapshot: null, profileSignature: null, png: null });
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('still names the sailor when an approved import has no available signature', async () => {
+    const client = {} as SupabaseClient;
+    const prepared = await prepareWorkingTimePdf(client, {
+      ...workspace,
+      validations: workspace.validations.filter((event) => event.eventType === 'approved_import'),
+    }, register);
+    const generated = await buildWorkingTimePdf(prepared);
+    const pageContent = generated.document.internal.pages.flat().join('\n');
+
+    expect(pageContent.match(/Alex MARIN/g)).toHaveLength(2);
+    expect(pageContent).toContain('Signature non apposée');
+    expect(pageContent).not.toContain('Non requise');
   });
 
   it('refuses to produce a misleading PDF when a frozen signature cannot be loaded', async () => {
@@ -114,7 +185,19 @@ describe('working-time PDF', () => {
     } as unknown as SupabaseClient;
 
     await expect(prepareWorkingTimePdf(client, workspace, register))
-      .rejects.toThrow('Impossible de charger la signature figée de Alex MARIN.');
+      .rejects.toThrow('Impossible de charger la signature de Alex MARIN.');
+  });
+
+  it('reports an inaccessible profile image instead of silently omitting the sailor signature', async () => {
+    const client = {
+      storage: { from: vi.fn(() => ({ download: vi.fn().mockResolvedValue({ data: null, error: { message: 'denied' } }) })) },
+    } as unknown as SupabaseClient;
+
+    await expect(prepareWorkingTimePdf(client, {
+      ...workspace,
+      signatures: [sailorProfile],
+      validations: workspace.validations.filter((event) => event.eventType === 'approved_import'),
+    }, register)).rejects.toThrow('Impossible de charger la signature de Alex MARIN.');
   });
 
   it('generates a single-page French maritime monthly grid with both signatures', async () => {
@@ -137,5 +220,10 @@ describe('working-time PDF', () => {
     expect(bytes.byteLength).toBeGreaterThan(2_000);
     expect(generated.document.getNumberOfPages()).toBe(1);
     expect(generated.filename).toBe('registre-mensuel-temps-travail-Alex-MARIN-2026-08.pdf');
+    const pageContent = generated.document.internal.pages.flat().join('\n');
+    expect(pageContent).toContain('Camille CAPITAINE - capitaine');
+    expect(pageContent).toContain('signature v2');
+    expect(pageContent).not.toContain('signature v4');
+    expect(pageContent).not.toContain('04/08/2026');
   });
 });

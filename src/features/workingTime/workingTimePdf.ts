@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import type {
+  WorkingTimeActiveSignature,
   WorkingTimeSignatureSnapshot,
   WorkingTimeValidationEvent,
   WorkingTimeWorkspace,
@@ -11,6 +12,7 @@ import type {
 export interface WorkingTimePdfSignature {
   label: string;
   snapshot: WorkingTimeSignatureSnapshot | null;
+  profileSignature?: WorkingTimeActiveSignature | null;
   png: Uint8Array | null;
 }
 
@@ -137,10 +139,13 @@ function fitText(document: jsPDF, value: string, width: number): string {
   return `${fitted}…`;
 }
 
-async function downloadSignature(client: SupabaseClient, snapshot: WorkingTimeSignatureSnapshot | null): Promise<Uint8Array | null> {
-  if (!snapshot) return null;
-  const { data, error } = await client.storage.from(snapshot.storageBucket).download(snapshot.storagePath);
-  if (error || !data) throw new Error(`Impossible de charger la signature figée de ${snapshot.signerName}.`);
+async function downloadSignature(
+  client: SupabaseClient,
+  signature: Pick<WorkingTimeSignatureSnapshot, 'storageBucket' | 'storagePath' | 'signerName'> | null,
+): Promise<Uint8Array | null> {
+  if (!signature) return null;
+  const { data, error } = await client.storage.from(signature.storageBucket).download(signature.storagePath);
+  if (error || !data) throw new Error(`Impossible de charger la signature de ${signature.signerName}.`);
   return new Uint8Array(await data.arrayBuffer());
 }
 
@@ -154,15 +159,20 @@ export async function prepareWorkingTimePdf(
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
   const sailor = latestSignatureEvent(audit, 'sailor_signed');
   const validator = latestSignatureEvent(audit, 'captain_validated');
+  // Approved XLSM imports may predate the register signature workflow. Reuse
+  // the holder's authorized profile image without creating a signature event.
+  const sailorProfile = !sailor && audit.some((event) => event.eventType === 'approved_import')
+    ? workspace.signatures.find((signature) => signature.personId === register.personId) || null
+    : null;
   const [sailorPng, validatorPng] = await Promise.all([
-    downloadSignature(client, sailor),
+    downloadSignature(client, sailor || (sailorProfile && { ...sailorProfile, signerName: register.personName })),
     downloadSignature(client, validator),
   ]);
   return {
     register,
     workspace,
     signatures: [
-      { label: 'Marin', snapshot: sailor, png: sailorPng },
+      { label: 'Marin', snapshot: sailor, profileSignature: sailorProfile, png: sailorPng },
       { label: 'Capitaine / validateur', snapshot: validator, png: validatorPng },
     ],
     audit,
@@ -363,18 +373,26 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setFont('helvetica', 'bold');
     document.setFontSize(5.4);
     document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 3);
-    if (signature.snapshot && signature.png) {
+    if ((signature.snapshot || signature.profileSignature) && signature.png) {
       document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 4, 30, 8.5, undefined, 'FAST');
       document.setTextColor(23, 39, 50);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.4);
-      document.text(fitText(document, `${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, 102), signatureX + 34, signatureY + 7.5);
-      document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+      const signerName = index === 0
+        ? signature.snapshot?.signerName || register.personName
+        : `${signature.snapshot?.signerName || ''} - ${signature.snapshot?.signerRoles.join(', ') || ''}`;
+      document.text(fitText(document, signerName, 102), signatureX + 34, signatureY + 7.5);
+      if (index === 0 && signature.snapshot) {
+        document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+      }
     } else {
       document.setTextColor(83, 107, 121);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.8);
-      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 34, signatureY + 8.5);
+      if (index === 0) {
+        document.text(fitText(document, register.personName, 102), signatureX + 34, signatureY + 7.5);
+      }
+      document.text('Signature non apposée', signatureX + 34, signatureY + (index === 0 ? 11 : 8.5));
     }
   });
 
