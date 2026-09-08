@@ -2040,13 +2040,13 @@ button:disabled {
 }
 
 .manager-home-queue-row.is-danger {
-  border-left-color: var(--manager-danger);
-  background: #fff4f3;
+  border-left-color: #be123c;
+  background: #ffe0e6;
 }
 
 .manager-home-queue-row.is-warning {
-  border-left-color: var(--manager-warning);
-  background: #fff8ed;
+  border-left-color: #d97706;
+  background: #fff0c2;
 }
 
 .manager-home-queue-row.is-success {
@@ -2055,6 +2055,16 @@ button:disabled {
 
 .manager-home-queue-row:hover {
   background: #f7faff;
+}
+
+.manager-home-queue-row.is-danger:hover,
+.manager-home-queue-row.is-danger:focus-visible {
+  background: #ffcbd5;
+}
+
+.manager-home-queue-row.is-warning:hover,
+.manager-home-queue-row.is-warning:focus-visible {
+  background: #ffe49a;
 }
 
 .manager-home-queue-copy,
@@ -2100,7 +2110,11 @@ button:disabled {
 }
 
 .manager-home-queue-row.is-danger .manager-home-queue-deadline strong {
-  color: var(--manager-danger);
+  color: #a30e32;
+}
+
+.manager-home-queue-row.is-warning .manager-home-queue-deadline strong {
+  color: #8a4300;
 }
 
 .manager-home-queue-row.is-success .manager-home-queue-deadline strong {
