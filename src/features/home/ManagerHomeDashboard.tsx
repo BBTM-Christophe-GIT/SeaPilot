@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RoleKey } from '../permissions/roles';
 import {
   fetchManagerHomeDashboard,
   toLocalIsoDate,
@@ -27,6 +28,8 @@ import {
 interface ManagerHomeDashboardProps {
   client: SupabaseClient;
   firstName: string;
+  personId: number | null;
+  roles: RoleKey[];
 }
 
 interface CalendarCell {
@@ -228,7 +231,7 @@ function CalendarPanel({
 
 function QueueRow({ item }: { item: ManagerHomeItem }) {
   return (
-    <Link className={`manager-home-queue-row is-${item.tone}`} to={item.to}>
+    <Link className={`manager-home-queue-row is-${item.queueTone}`} to={item.to}>
       <span className="manager-home-queue-copy">
         <strong>{item.title}</strong>
         <small>{item.context}</small>
@@ -242,11 +245,12 @@ function QueueRow({ item }: { item: ManagerHomeItem }) {
   );
 }
 
-export function ManagerHomeDashboard({ client, firstName }: ManagerHomeDashboardProps) {
+export function ManagerHomeDashboard({ client, firstName, personId, roles }: ManagerHomeDashboardProps) {
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toLocalIsoDate(now), [now]);
   const [items, setItems] = useState<ManagerHomeItem[]>([]);
   const [unavailableSources, setUnavailableSources] = useState<string[]>([]);
+  const [scopeLabel, setScopeLabel] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [displayedMonth, setDisplayedMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1, 12));
@@ -255,17 +259,18 @@ export function ManagerHomeDashboard({ client, firstName }: ManagerHomeDashboard
   useEffect(() => {
     let active = true;
     setIsLoading(true);
-    void fetchManagerHomeDashboard(client, now).then((result) => {
+    void fetchManagerHomeDashboard(client, now, { personId, roles }).then((result) => {
       if (!active) return;
       setItems(result.items);
       setUnavailableSources(result.unavailableSources);
+      setScopeLabel(result.scopeLabel);
       setIsLoading(false);
     });
     return () => { active = false; };
-  }, [client, now]);
+  }, [client, now, personId, roles]);
 
   const visibleItems = useMemo(() => items.filter((item) =>
-    item.visibleDates.includes(selectedDate) && itemMatchesFilter(item, selectedFilter),
+    item.queueVisibleDates.includes(selectedDate) && itemMatchesFilter(item, selectedFilter),
   ), [items, selectedDate, selectedFilter]);
   const visibleGroups = useMemo(() => QUEUE_GROUPS.map((group) => ({
     ...group,
@@ -286,6 +291,7 @@ export function ManagerHomeDashboard({ client, firstName }: ManagerHomeDashboard
           <div className="manager-home-summary-title">
             <h2 id="manager-home-title">Priorités & échéances</h2>
             <p>Vue consolidée des décisions et échéances opérationnelles</p>
+            {scopeLabel ? <small className="manager-home-scope">Périmètre : {scopeLabel}</small> : null}
           </div>
           <dl className="manager-home-metrics">
             <div><dt>éléments à traiter</dt><dd>{items.length}</dd></div>
