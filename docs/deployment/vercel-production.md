@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.39.3` sécurise la génération des offres commerciales enrichies sur les postes qui ne disposent pas de
+la police Microsoft Aptos. Aptos reste privilégiée lorsqu'elle est disponible ; sinon le PDF utilise une pile de
+polices système sans interrompre l'émission. Aucune migration Supabase n'est requise. Voir
+[project-offer-font-fallback-v3-39-3.md](./project-offer-font-fallback-v3-39-3.md).
+
 Version `3.39.1` rétablit le chargement de l’historique Planning en ajoutant un index chronologique global sur
 `planning_change_log`. La migration ne modifie ni les données ni les politiques RLS. Appliquer
 `supabase/migrations/20260907200347_optimize_planning_history_read.sql` avant la recette du module. Voir
