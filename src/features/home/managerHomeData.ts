@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RoleKey } from '../permissions/roles';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
 
 export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
@@ -16,7 +17,9 @@ export interface ManagerHomeItem {
   to: string;
   dueDate: string;
   visibleDates: string[];
+  queueVisibleDates: string[];
   tone: ManagerHomeTone;
+  queueTone: ManagerHomeTone;
   urgent: boolean;
   thisWeek: boolean;
 }
@@ -24,6 +27,7 @@ export interface ManagerHomeItem {
 export interface ManagerHomeDashboardResult {
   items: ManagerHomeItem[];
   unavailableSources: string[];
+  scopeLabel: string | null;
 }
 
 interface PurchaseRequestRow {
@@ -33,6 +37,7 @@ interface PurchaseRequestRow {
   requested_on: string | null;
   requester_name: string | null;
   project_code: string | null;
+  vessel_id?: number | null;
   vessel_name: string | null;
   status: string | null;
   urgent: boolean | null;
@@ -44,6 +49,7 @@ interface PurchaseRequestRow {
 
 interface FleetCertificateRow {
   id: number;
+  vessel_id?: number | null;
   vessel_name: string | null;
   document_title: string | null;
   title: string | null;
@@ -96,6 +102,21 @@ interface WorkingTimeCalculationRow {
   calculated_at: string | null;
 }
 
+export interface ManagerHomeAssignmentRow {
+  vessel_id: number;
+  crew_person_id: number;
+  captain_person_id: number | null;
+  watch_group: string | null;
+  vessels: { name?: string | null } | Array<{ name?: string | null }> | null;
+}
+
+export interface ManagerHomeAssignmentScope {
+  vesselIds: number[];
+  vesselNames: string[];
+  personIds: number[];
+  watchGroups: string[];
+}
+
 export interface ManagerHomeSourceRows {
   purchases: PurchaseRequestRow[];
   procedures: ProcedureReviewRow[];
@@ -110,6 +131,13 @@ const UPCOMING_HORIZON_DAYS = 90;
 
 function normalize(value: string | null | undefined): string {
   return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function normalizeVesselName(value: string | null | undefined): string {
+  return normalize(value)
+    .replace(/^(?:m\s*\/?\s*v|mv)\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 export function toLocalIsoDate(date: Date): string {
@@ -158,6 +186,14 @@ function toneForDueDate(dateKey: string, today: Date, forceDanger = false): Mana
   return 'success';
 }
 
+function queueToneForDueDate(dateKey: string, today: Date, forceDanger = false): ManagerHomeTone {
+  if (forceDanger) return 'danger';
+  const remainingDays = daysFromToday(dateKey, today);
+  if (remainingDays < 0) return 'danger';
+  if (remainingDays <= UPCOMING_HORIZON_DAYS) return 'warning';
+  return 'success';
+}
+
 function deadlineForDate(dateKey: string, today: Date, prefix = 'Échéance'): string {
   const remainingDays = daysFromToday(dateKey, today);
   if (remainingDays < 0) return `Expiré depuis ${Math.abs(remainingDays)} j`;
@@ -171,6 +207,13 @@ function visibleDatesFor(dueDate: string, today: Date, urgent: boolean): string[
   const remainingDays = daysFromToday(dueDate, today);
   const dates = new Set([dueDate]);
   if (urgent || remainingDays < 0 || remainingDays <= 7) dates.add(todayKey);
+  return [...dates];
+}
+
+function queueVisibleDatesFor(dueDate: string, alarmDate: string, today: Date, queueTone: ManagerHomeTone): string[] {
+  const dates = new Set([dueDate]);
+  const remainingDays = daysFromToday(alarmDate, today);
+  if (queueTone === 'danger' || remainingDays <= UPCOMING_HORIZON_DAYS) dates.add(toLocalIsoDate(today));
   return [...dates];
 }
 
@@ -209,6 +252,81 @@ function buildPeopleByUniqueAlias(people: PersonRow[]): Map<string, PersonRow> {
   });
 
   return uniquePeople;
+}
+
+function assignmentVesselName(assignment: ManagerHomeAssignmentRow): string {
+  const relation = Array.isArray(assignment.vessels) ? assignment.vessels[0] : assignment.vessels;
+  return relation?.name?.trim() || '';
+}
+
+function assignmentWatchKey(assignment: ManagerHomeAssignmentRow): string {
+  return `${assignment.vessel_id}:${normalize(assignment.watch_group).trim()}`;
+}
+
+export function buildManagerHomeAssignmentScope(
+  assignments: ManagerHomeAssignmentRow[],
+  personId: number,
+): ManagerHomeAssignmentScope {
+  const actorAssignments = assignments.filter((assignment) =>
+    assignment.crew_person_id === personId || assignment.captain_person_id === personId,
+  );
+  const vesselIds = [...new Set(actorAssignments.map((assignment) => assignment.vessel_id))];
+  const actorWatchKeys = new Set(actorAssignments
+    .filter((assignment) => normalize(assignment.watch_group).trim())
+    .map(assignmentWatchKey));
+  const vesselsWithoutWatch = new Set(actorAssignments
+    .filter((assignment) => !normalize(assignment.watch_group).trim())
+    .map((assignment) => assignment.vessel_id));
+  const scopedAssignments = assignments.filter((assignment) =>
+    vesselIds.includes(assignment.vessel_id)
+    && (vesselsWithoutWatch.has(assignment.vessel_id) || actorWatchKeys.has(assignmentWatchKey(assignment))),
+  );
+
+  return {
+    vesselIds,
+    vesselNames: [...new Set(actorAssignments.map(assignmentVesselName).filter(Boolean))],
+    personIds: [...new Set([
+      personId,
+      ...scopedAssignments.flatMap((assignment) => [assignment.crew_person_id, assignment.captain_person_id || 0]),
+    ].filter((id) => id > 0))],
+    watchGroups: [...new Set(actorAssignments.map((assignment) => assignment.watch_group?.trim() || '').filter(Boolean))],
+  };
+}
+
+function rowMatchesVesselScope(
+  vesselId: number | null | undefined,
+  vesselName: string | null,
+  scope: ManagerHomeAssignmentScope,
+): boolean {
+  if (vesselId != null && scope.vesselIds.includes(vesselId)) return true;
+  const normalizedName = normalizeVesselName(vesselName);
+  return Boolean(normalizedName) && scope.vesselNames.some((name) => normalizeVesselName(name) === normalizedName);
+}
+
+export function filterManagerHomeSourcesForScope(
+  sources: ManagerHomeSourceRows,
+  scope: ManagerHomeAssignmentScope,
+): ManagerHomeSourceRows {
+  const personIds = new Set(scope.personIds);
+  const scopedPeople = sources.people.filter((person) => personIds.has(person.id));
+  const scopedPeopleByAlias = buildPeopleByUniqueAlias(scopedPeople);
+
+  return {
+    purchases: sources.purchases.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
+    procedures: sources.procedures.filter((row) => rowMatchesVesselScope(null, row.vessel_name, scope)),
+    fleetCertificates: sources.fleetCertificates.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
+    people: scopedPeople,
+    hrDocuments: sources.hrDocuments.filter((row) => {
+      if (row.person_id !== null) return personIds.has(row.person_id);
+      const personNameAlias = normalizedPersonLabel(row.person_name);
+      if (personNameAlias && scopedPeopleByAlias.has(personNameAlias)) return true;
+      const titleAlias = normalizedPersonLabel(row.title);
+      return Boolean(titleAlias) && [...scopedPeopleByAlias.keys()].some((alias) =>
+        titleAlias === alias || titleAlias.startsWith(`${alias} `),
+      );
+    }),
+    workingTimeCalculations: sources.workingTimeCalculations.filter((row) => personIds.has(row.person_id)),
+  };
 }
 
 function resolveHrDocumentPerson(
@@ -273,7 +391,8 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem
     const requestAge = row.requested_on ? Math.max(0, -daysFromToday(row.requested_on.slice(0, 10), today)) : 0;
     const explicitlyUrgent = Boolean(row.urgent) || (stage === 'to_process' && requestAge >= 2);
     const tone = explicitlyUrgent ? 'danger' : toneForDueDate(dueDate, today);
-    const urgent = tone === 'danger';
+    const queueTone = queueToneForDueDate(dueDate, today, explicitlyUrgent);
+    const urgent = queueTone === 'danger';
     const action = stage === 'to_process'
       ? 'Valider la demande'
       : stage === 'ordered'
@@ -295,7 +414,9 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem
       to: '/modules/purchaseRequests',
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
+      queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, queueTone),
       tone,
+      queueTone,
       urgent,
       thisWeek: daysFromToday(dueDate, today) >= 0 && daysFromToday(dueDate, today) <= 7,
     } satisfies ManagerHomeItem];
@@ -326,8 +447,10 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
     const expiryIsUpcoming = expiry && daysFromToday(expiry, today) >= 0;
     const dueDate = plannedIsUpcoming ? planned : expiryIsUpcoming ? expiry : todayKey;
     const forceDanger = status.includes('expired') || status.includes('missing') || status.includes('manquant') || status.includes('pending');
-    const tone = toneForDueDate(expiry || dueDate, today, forceDanger);
-    const urgent = tone === 'danger';
+    const alarmDate = expiry || dueDate;
+    const tone = toneForDueDate(alarmDate, today, forceDanger);
+    const queueTone = queueToneForDueDate(alarmDate, today, forceDanger);
+    const urgent = queueTone === 'danger';
     const action = status.includes('pending')
       ? 'Valider le document'
       : status.includes('missing') || status.includes('manquant')
@@ -348,7 +471,9 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
       to: '/modules/certificates',
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
+      queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
       tone,
+      queueTone,
       urgent,
       thisWeek: daysFromToday(dueDate, today) >= 0 && daysFromToday(dueDate, today) <= 7,
     } satisfies ManagerHomeItem];
@@ -362,6 +487,7 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
     const alert = getAnnualReviewAlert(Boolean(row.annual_review), row.diffusion_on || '', today);
     if (!alert) return [];
     const scope = row.vessel_name || row.project_name || 'Portée générale';
+    const queueTone = queueToneForDueDate(alert.dueDate, today);
     return [{
       id: `procedure-review-${row.id}`,
       group: 'procedures',
@@ -375,8 +501,10 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
       to: '/modules/procedures',
       dueDate: alert.dueDate,
       visibleDates: [...new Set([todayKey, alert.dueDate])],
+      queueVisibleDates: [...new Set([todayKey, alert.dueDate])],
       tone: alert.tone,
-      urgent: alert.tone === 'danger',
+      queueTone,
+      urgent: queueTone === 'danger',
       thisWeek: alert.daysUntilDue >= 0 && alert.daysUntilDue <= 7,
     } satisfies ManagerHomeItem];
   });
@@ -398,8 +526,10 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
 
     const dueDate = expiry && remainingDays !== null && remainingDays >= 0 ? expiry : todayKey;
     const forceDanger = Boolean(row.medical_unfit) || remainingDays === null || (remainingDays !== null && remainingDays < 0) || status.includes('missing') || status.includes('manquant');
-    const tone = toneForDueDate(expiry || dueDate, today, forceDanger);
-    const urgent = tone === 'danger';
+    const alarmDate = expiry || dueDate;
+    const tone = toneForDueDate(alarmDate, today, forceDanger);
+    const queueTone = queueToneForDueDate(alarmDate, today, forceDanger);
+    const urgent = queueTone === 'danger';
     const name = person ? personName(person) : (row.person_name || personName(undefined));
     const medical = normalize(row.category_key).includes('medical') || normalize(row.title).includes('medical');
     const documentTitle = row.title || (medical ? 'Visite médicale' : 'Document RH');
@@ -417,7 +547,9 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
       to: '/modules/humanResources',
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
+      queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
       tone,
+      queueTone,
       urgent,
       thisWeek: daysFromToday(dueDate, today) >= 0 && daysFromToday(dueDate, today) <= 7,
     } satisfies ManagerHomeItem];
@@ -431,6 +563,7 @@ function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
     const remainingDays = daysFromToday(departedOn, today);
     if (remainingDays < 0 || remainingDays > UPCOMING_HORIZON_DAYS) return [];
     const tone: ManagerHomeTone = remainingDays <= 7 ? 'warning' : 'success';
+    const queueTone = queueToneForDueDate(departedOn, today);
     const name = personName(person);
 
     return [{
@@ -444,7 +577,9 @@ function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
       to: '/modules/humanResources',
       dueDate: departedOn,
       visibleDates: visibleDatesFor(departedOn, today, false),
+      queueVisibleDates: queueVisibleDatesFor(departedOn, departedOn, today, queueTone),
       tone,
+      queueTone,
       urgent: false,
       thisWeek: remainingDays <= 7,
     } satisfies ManagerHomeItem];
@@ -489,7 +624,9 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
       to: '/modules/workingTime',
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, true),
+      queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, 'danger'),
       tone: 'danger',
+      queueTone: 'danger',
       urgent: true,
       thisWeek: daysFromToday(dueDate, today) >= -7 && daysFromToday(dueDate, today) <= 7,
     } satisfies ManagerHomeItem];
@@ -509,7 +646,7 @@ export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = ne
     ...contractItems(sources.people, today),
   ].sort((left, right) =>
     GROUP_ORDER.indexOf(left.group) - GROUP_ORDER.indexOf(right.group)
-    || TONE_ORDER.indexOf(left.tone) - TONE_ORDER.indexOf(right.tone)
+    || TONE_ORDER.indexOf(left.queueTone) - TONE_ORDER.indexOf(right.queueTone)
     || left.dueDate.localeCompare(right.dueDate)
     || left.title.localeCompare(right.title, 'fr'),
   );
@@ -525,50 +662,126 @@ async function loadRows<T>(label: string, loader: () => Promise<{ data: unknown[
   }
 }
 
-export async function fetchManagerHomeDashboard(client: SupabaseClient, today = new Date()): Promise<ManagerHomeDashboardResult> {
+export interface ManagerHomeViewer {
+  roles: RoleKey[];
+  personId: number | null;
+}
+
+function isAssignmentScopedViewer(roles: RoleKey[]): boolean {
+  const hasOfficeRole = roles.some((role) => ['admin', 'direction', 'armement'].includes(role));
+  return !hasOfficeRole && roles.some((role) => role === 'capitaine' || role === 'marin');
+}
+
+function assignmentScopeLabel(scope: ManagerHomeAssignmentScope): string {
+  const vesselLabels = scope.vesselNames.length
+    ? scope.vesselNames
+    : scope.vesselIds.map((vesselId) => `Navire #${vesselId}`);
+  return [...scope.watchGroups, ...vesselLabels].join(' · ') || 'Aucune affectation active';
+}
+
+export async function fetchManagerHomeDashboard(
+  client: SupabaseClient,
+  today = new Date(),
+  viewer: ManagerHomeViewer = { roles: [], personId: null },
+): Promise<ManagerHomeDashboardResult> {
   const todayKey = toLocalIsoDate(today);
   const windowStart = toLocalIsoDate(addDays(today, -31));
   const windowEnd = toLocalIsoDate(addDays(today, UPCOMING_HORIZON_DAYS));
+  const assignmentScoped = isAssignmentScopedViewer(viewer.roles);
+  let scope: ManagerHomeAssignmentScope | null = null;
+
+  if (assignmentScoped) {
+    if (!viewer.personId) {
+      return { items: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
+    }
+
+    const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
+      .from('planning_assignments')
+      .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
+      .lte('starts_on', todayKey)
+      .gte('ends_on', todayKey)
+      .neq('confirmation_status', 'cancelled'));
+    if (assignments.error) {
+      return { items: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
+    }
+
+    scope = buildManagerHomeAssignmentScope(assignments.rows, viewer.personId);
+    if (!scope.vesselIds.length) {
+      return { items: [], unavailableSources: [], scopeLabel: 'Aucune affectation active' };
+    }
+  }
+
+  const assignmentScope = scope;
+  const procedureTable = viewer.roles.some((role) => role === 'admin' || role === 'direction')
+    ? 'procedures'
+    : 'published_procedures';
 
   const [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations] = await Promise.all([
-    loadRows<PurchaseRequestRow>('les achats', async () => client.from('purchase_requests')
-      .select('id,request_number,title,requested_on,requester_name,project_code,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
-      .order('requested_on', { ascending: false })),
-    loadRows<ProcedureReviewRow>('les revues annuelles QHSE', async () => client.from('procedures')
-      .select('id,procedure_code,title,diffusion_on,annual_review,vessel_name,project_name,status')
-      .eq('annual_review', true)
-      .order('diffusion_on', { ascending: true, nullsFirst: false })),
-    loadRows<FleetCertificateRow>('les documents flotte', async () => client.from('fleet_certificates')
-      .select('id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
-      .order('expires_on', { ascending: true, nullsFirst: false })),
-    loadRows<PersonRow>('les ressources humaines', async () => client.from('people')
-      .select('id,first_name,last_name,function_label,departed_on,active')
-      .order('last_name', { ascending: true })),
-    loadRows<HrDocumentRow>('les documents RH', async () => client.from('hr_documents')
-      .select('id,person_id,person_name,category_key,title,status,expires_on,medical_unfit')
-      .order('expires_on', { ascending: true, nullsFirst: false })),
-    loadRows<WorkingTimeCalculationRow>('les alertes de temps de travail', async () => client.from('working_time_calculation_windows')
-      .select('id,person_id,local_window_end_date,rest_24h_seconds,longest_rest_24h_seconds,is_compliant,violation_codes,calculated_at')
-      .eq('is_compliant', false)
-      .gte('local_window_end_date', windowStart)
-      .lte('local_window_end_date', windowEnd)
-      .order('calculated_at', { ascending: false })
-      .limit(500)),
+    loadRows<PurchaseRequestRow>('les achats', async () => {
+      let query = client.from('purchase_requests')
+        .select('id,request_number,title,requested_on,requester_name,project_code,vessel_id,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
+        .order('requested_on', { ascending: false });
+      if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
+      return query;
+    }),
+    loadRows<ProcedureReviewRow>('les revues annuelles QHSE', async () => {
+      if (assignmentScope && !assignmentScope.vesselNames.length) return { data: [], error: null };
+      let query = client.from(procedureTable)
+        .select('id,procedure_code,title,diffusion_on,annual_review,vessel_name,project_name,status')
+        .eq('annual_review', true)
+        .order('diffusion_on', { ascending: true, nullsFirst: false });
+      if (assignmentScope) query = query.in('vessel_name', assignmentScope.vesselNames);
+      return query;
+    }),
+    loadRows<FleetCertificateRow>('les documents flotte', async () => {
+      let query = client.from('fleet_certificates')
+        .select('id,vessel_id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
+        .order('expires_on', { ascending: true, nullsFirst: false });
+      if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
+      return query;
+    }),
+    loadRows<PersonRow>('les ressources humaines', async () => {
+      let query = client.from('people')
+        .select('id,first_name,last_name,function_label,departed_on,active')
+        .order('last_name', { ascending: true });
+      if (assignmentScope) query = query.in('id', assignmentScope.personIds);
+      return query;
+    }),
+    loadRows<HrDocumentRow>('les documents RH', async () => {
+      let query = client.from('hr_documents')
+        .select('id,person_id,person_name,category_key,title,status,expires_on,medical_unfit')
+        .order('expires_on', { ascending: true, nullsFirst: false });
+      if (assignmentScope) query = query.in('person_id', assignmentScope.personIds);
+      return query;
+    }),
+    loadRows<WorkingTimeCalculationRow>('les alertes de temps de travail', async () => {
+      let query = client.from('working_time_calculation_windows')
+        .select('id,person_id,local_window_end_date,rest_24h_seconds,longest_rest_24h_seconds,is_compliant,violation_codes,calculated_at')
+        .eq('is_compliant', false)
+        .gte('local_window_end_date', windowStart)
+        .lte('local_window_end_date', windowEnd)
+        .order('calculated_at', { ascending: false })
+        .limit(500);
+      if (assignmentScope) query = query.in('person_id', assignmentScope.personIds);
+      return query;
+    }),
   ]);
 
-
   const results = [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
-  const items = buildManagerHomeItems({
+  const sources: ManagerHomeSourceRows = {
     purchases: purchases.rows,
     procedures: procedures.rows,
     fleetCertificates: fleetCertificates.rows,
     people: people.rows,
     hrDocuments: hrDocuments.rows,
     workingTimeCalculations: workingTimeCalculations.rows,
-  }, parseIsoDate(todayKey) || today);
+  };
+  const filteredSources = assignmentScope ? filterManagerHomeSourcesForScope(sources, assignmentScope) : sources;
+  const items = buildManagerHomeItems(filteredSources, parseIsoDate(todayKey) || today);
 
   return {
     items,
     unavailableSources: results.filter((result) => result.error).map((result) => result.label),
+    scopeLabel: assignmentScope ? assignmentScopeLabel(assignmentScope) : null,
   };
 }
