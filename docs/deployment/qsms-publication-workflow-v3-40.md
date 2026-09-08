@@ -1,6 +1,6 @@
 # Procédures QSMS — remplacement et publication contrôlée
 
-La migration `20260908044216_procedure_publishing_workflow.sql` introduit le statut `published`, retire `approval_status` des deux tables QSMS, normalise les publications PDF historiques et interdit les doublons `Thème + Numéro`.
+La migration `20260908044216_procedure_publishing_workflow.sql` introduit le statut `published`, retire `approval_status` du contrat QSMS, normalise les publications PDF historiques et interdit les doublons `Thème + Numéro`. La migration `20260908054709_preserve_procedure_approval_status_compatibility.sql` conserve ensuite deux colonnes nullable et dépréciées afin que le client de production antérieur à la fusion ne casse pas ; le nouveau module et les imports ne les lisent ni ne les écrivent.
 
 Les doublons hérités de SharePoint sont traités avant la création de l'index unique. Le plus ancien identifiant de chaque groupe est conservé ; les suivants reçoivent le premier suffixe pointé disponible (`01.1`, `01.2`, etc.). Les instantanés PDF historiques ne sont pas renommés.
 

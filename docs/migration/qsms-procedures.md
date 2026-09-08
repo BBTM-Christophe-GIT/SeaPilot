@@ -4,7 +4,7 @@
 
 Le module SharePoint `Portail-BBTM---Armement.aspx` expose 127 documents de travail et 64 PDF publiés, classés dans les chapitres ISM 01 à 12 et dans « Documents non contrôlés ». Ce décompte provient directement des deux listes SharePoint REST. La recherche Microsoft Graph n’en retournait que 125 et 45 : elle omettait notamment un modèle Word `.dotx`, un fichier `.html` et 19 PDF. L’interface comprend la recherche, les filtres Projet/Navire, la sélection, la création, la modification des métadonnées, le téléchargement, la suppression et la publication d’un PDF dans la bibliothèque `QSMS - PDF`.
 
-Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut, thème, titre, type de document, veille passerelle et version. Le champ historique redondant « Statut d’approbation » a été retiré. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
+Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut, thème, titre, type de document, veille passerelle et version. Le champ historique redondant « Statut d’approbation » a été retiré de l’interface, des imports et du contrat applicatif. Deux colonnes nullable restent provisoirement en base, sans être lues ni écrites, pour préserver la compatibilité du client antérieur à la fusion. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
 
 La fiche information SeaPilot expose uniquement les métadonnées encore utiles à l’exploitation. Les colonnes historiques `type de document`, `catégorie`, `restrictions`, `notes` et `veille passerelle` restent conservées en base pour la traçabilité de la migration, mais ne sont plus éditables dans cette fenêtre. La référence affichée et enregistrée est calculée sous la forme `Thème Numéro-Version`, puis présentée avec le titre sous la forme `Code - Titre`.
 
@@ -63,7 +63,7 @@ Quand un thème est choisi, SeaPilot propose le premier numéro entier directeme
 
 ## Déploiement
 
-1. Appliquer les migrations `20260902051953_qsms_procedure_document_workflow.sql`, `20260902113123_increase_procedure_document_file_limit.sql`, `20260902144500_allow_legacy_procedure_document_mime.sql` et `20260908044216_procedure_publishing_workflow.sql`.
+1. Appliquer les migrations `20260902051953_qsms_procedure_document_workflow.sql`, `20260902113123_increase_procedure_document_file_limit.sql`, `20260902144500_allow_legacy_procedure_document_mime.sql`, `20260908044216_procedure_publishing_workflow.sql` et `20260908054709_preserve_procedure_approval_status_compatibility.sql`.
 2. Exporter puis importer les métadonnées SharePoint avec les sources `library-qsms` et `library-qsms-pdf`.
 3. Résoudre les liens source/publication avec `--resolve-published-procedure-links`.
 4. Contrôler le plan de copie des fichiers :

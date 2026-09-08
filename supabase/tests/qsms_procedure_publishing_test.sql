@@ -2,8 +2,8 @@ begin;
 
 select plan(16);
 
-select hasnt_column('public', 'procedures', 'approval_status', 'procedure approval status is retired');
-select hasnt_column('public', 'published_procedures', 'approval_status', 'publication approval status is retired');
+select has_column('public', 'procedures', 'approval_status', 'legacy procedure clients keep a nullable compatibility column');
+select has_column('public', 'published_procedures', 'approval_status', 'legacy publication clients keep a nullable compatibility column');
 select ok(
   exists (
     select 1
