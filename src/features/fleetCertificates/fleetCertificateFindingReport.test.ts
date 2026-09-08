@@ -166,8 +166,8 @@ describe('fleet certificate action plan report', () => {
   });
 
   it('removes the report brand word regardless of casing', () => {
-    expect(sanitizeFleetReportText('Système SeaPilot - SEAPILOT - seaPilot')).toBe('Système - -');
-    expect(sanitizeFleetReportRichText('<p><strong>Action SeaPilot</strong></p>')).toBe('<p><strong>Action </strong></p>');
+    expect(sanitizeFleetReportText('Système SeaPilot - SEAPILOT - seaPilot')).toBe('Système BBTM - BBTM - BBTM');
+    expect(sanitizeFleetReportRichText('<p><strong>Action SeaPilot</strong></p>')).toBe('<p><strong>Action BBTM</strong></p>');
   });
 
   it('generates the fleet certificate action plan PDF with the canonical filename', async () => {

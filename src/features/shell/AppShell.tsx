@@ -340,7 +340,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     [activeVisibleModules],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
-  const userEmail = previewMode ? 'preview@seapilot.local' : session?.user.email || 'utilisateur@bbtm.fr';
+  const userEmail = previewMode ? 'preview@bbtm.local' : session?.user.email || 'utilisateur@bbtm.fr';
   const sessionDisplayName = [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
   );
@@ -348,7 +348,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     ? `${currentPerson.firstName} ${currentPerson.lastName}`.trim()
     : '';
   const userDisplayName = personDisplayName
-    || (previewMode ? 'Préversion SeaPilot' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
+    || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
   const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length;
@@ -404,7 +404,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       <aside className={`sidebar${isMobileNavigationOpen ? ' is-mobile-open' : ''}`}>
         <div className="brand-block">
           <img alt="BBTM" className="brand-logo" src="/bbtm-logo.png" />
-          <span className="brand-name">SeaPilot</span>
+          <span className="brand-name">BBTM</span>
           <button
             aria-label="Fermer le menu"
             className="sidebar-mobile-close"
@@ -522,7 +522,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             >
               <Menu aria-hidden="true" size={20} />
             </button>
-            <span>{requestedModule?.family || 'SeaPilot'}</span>
+            <span>{requestedModule?.family || 'BBTM'}</span>
             <ChevronRight aria-hidden="true" size={16} />
             <strong>{requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}

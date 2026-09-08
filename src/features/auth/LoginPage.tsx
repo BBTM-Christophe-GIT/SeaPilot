@@ -58,16 +58,15 @@ export function LoginPage() {
   const recoveryTitle = mode === 'activation' ? 'Activer mon compte' : 'Mot de passe oublié';
   const recoveryDescription = mode === 'activation'
     ? "Saisissez l'adresse invitée par votre administrateur. Vous recevrez un lien personnel pour définir votre mot de passe."
-    : "Saisissez votre adresse SeaPilot. Si un compte existe, un lien sécurisé vous permettra de choisir un nouveau mot de passe.";
+    : "Saisissez votre adresse BBTM. Si un compte existe, un lien sécurisé vous permettra de choisir un nouveau mot de passe.";
 
   return (
     <main className="login-page">
       <form className="login-panel" onSubmit={handleSubmit}>
         <div className="login-brand">
           <strong>BBTM</strong>
-          <span>SeaPilot</span>
         </div>
-        <h1>{mode === 'sign-in' ? 'Connexion à SeaPilot' : recoveryTitle}</h1>
+        <h1>{mode === 'sign-in' ? 'Connexion à BBTM' : recoveryTitle}</h1>
         {mode !== 'sign-in' ? <p className="login-description">{recoveryDescription}</p> : null}
         {isEmailSent ? (
           <div className="login-success" role="status">
@@ -106,7 +105,7 @@ export function LoginPage() {
               <button className="login-link-button" onClick={() => switchMode('recovery')} type="button">
                 Mot de passe oublié
               </button>
-              <p>Les comptes sont créés sur invitation d’un administrateur SeaPilot.</p>
+              <p>Les comptes sont créés sur invitation d’un administrateur BBTM.</p>
             </>
           ) : (
             <button className="login-link-button" onClick={() => switchMode('sign-in')} type="button">

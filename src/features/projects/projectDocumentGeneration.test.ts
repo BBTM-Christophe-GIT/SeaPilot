@@ -95,7 +95,7 @@ const contract: ProjectContractRecord = {
 const client = { id: 50, name: 'Ifremer', representedBy: 'Claire MARTIN' } as ClientRecord;
 
 describe('projectDocumentGeneration', () => {
-  it('rebuilds the historical SharePoint offer headings from canonical SeaPilot values', () => {
+  it('rebuilds the historical SharePoint offer headings from canonical BBTM values', () => {
     const rows = Object.fromEntries(buildProjectOfferRows({ client, contract, project }).map((row) => [row.label, row.value]));
     expect(rows).toMatchObject({
       Client: 'Ifremer',

@@ -169,7 +169,7 @@ export async function generateFleetCertificateVisitReport(
         startY: cursorY + 4,
         head: [['Date', 'Émetteur', 'Suivi']],
         body: finding.events.length ? finding.events.map((event) => [
-          formatDateTime(event.createdAt), event.authorName || 'SeaPilot', event.note || event.eventType,
+          formatDateTime(event.createdAt), event.authorName || 'BBTM', event.note || event.eventType,
         ]) : [['-', '-', 'Aucun suivi enregistré']],
         theme: 'grid',
         styles: { fontSize: 7.4, cellPadding: 2.4, valign: 'top' },
@@ -208,7 +208,7 @@ export async function generateFleetCertificateVisitReport(
     doc.setPage(page);
     doc.setDrawColor(220, 226, 234); doc.line(12, pageHeight - 10, pageWidth - 12, pageHeight - 10);
     doc.setTextColor(120); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.text('SeaPilot - BBTM', 12, pageHeight - 6);
+    doc.text('BBTM', 12, pageHeight - 6);
     doc.text(`Page ${page} / ${totalPages}`, pageWidth - 12, pageHeight - 6, { align: 'right' });
   }
 

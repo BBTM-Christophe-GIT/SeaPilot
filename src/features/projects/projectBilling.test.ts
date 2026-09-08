@@ -91,7 +91,7 @@ const input: BillingExportInput = {
     charterHire: 4227.5,
     hireCurrency: 'EUR',
     hireUnit: 'Journalier',
-    sourceLabel: 'SeaPilot',
+    sourceLabel: 'BBTM',
     createdAt: '2026-07-20T00:00:00Z',
   }],
   period: {
@@ -284,7 +284,7 @@ describe('billing operation export', () => {
     expect(rows[0].operation).toBe('03H00 LARGUE 04H00 LARGUE BOIS A. 08H25 AS');
   });
 
-  it('derives SeaPilot DPR operations from port-call reasons instead of the daily description', async () => {
+  it('derives BBTM DPR operations from port-call reasons instead of the daily description', async () => {
     const reportOrder = vi.fn().mockResolvedValue({
       data: [
         {

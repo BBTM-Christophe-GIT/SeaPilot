@@ -276,7 +276,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       setInitialSignature(JSON.stringify(populated)); setModalOpen(true);
     } catch (reason) {
       setReport(null); setPayload(next); setFiles([]); setPendingFiles([]); setStep(0);
-      setIssuerName(dashboard?.currentUserName || 'Utilisateur SeaPilot');
+      setIssuerName(dashboard?.currentUserName || 'Utilisateur BBTM');
       setInitialSignature(JSON.stringify(next)); setModalOpen(true);
       setError(`Préremplissage Planning indisponible : ${(reason as Error).message}`);
     } finally { setBusy(false); }
@@ -301,7 +301,7 @@ export function DprPage({ client, roles }: DprPageProps) {
           planningCrewPersonIds: context.crewPersonIds,
         },
       } : current);
-      setIssuerName(item.issuerName || dashboard?.currentUserName || 'Utilisateur SeaPilot');
+      setIssuerName(item.issuerName || dashboard?.currentUserName || 'Utilisateur BBTM');
       setInitialSignature(JSON.stringify(detail.payload)); setModalOpen(true);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }

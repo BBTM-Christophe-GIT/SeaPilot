@@ -133,7 +133,7 @@ function mapFile(row: Record<string, unknown>): DprFileRecord {
 async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string | null; personId: number | null; name: string; functionLabel: string }> {
   const { data: authData } = await client.auth.getUser();
   const userId = authData.user?.id || null;
-  if (!userId) return { id: null, personId: null, name: 'Utilisateur SeaPilot', functionLabel: '' };
+  if (!userId) return { id: null, personId: null, name: 'Utilisateur BBTM', functionLabel: '' };
   const [profileResult, personResult] = await Promise.all([
     client.from('profiles').select('display_name').eq('id', userId).maybeSingle(),
     client.from('people').select('id,first_name,last_name,function_label,grade_label').eq('user_id', userId).maybeSingle(),
@@ -142,7 +142,7 @@ async function loadCurrentProfile(client: SupabaseClient): Promise<{ id: string 
   return {
     id: userId,
     personId: numberOrNull(personResult.data?.id),
-    name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur SeaPilot',
+    name: personName || text(profileResult.data?.display_name) || authData.user?.email || 'Utilisateur BBTM',
     functionLabel: `${text(personResult.data?.function_label)} ${text(personResult.data?.grade_label)}`.trim(),
   };
 }
@@ -241,7 +241,7 @@ export async function fetchDprEntryContext(client: SupabaseClient, reportDate: s
   const projectId = numberOrNull(projectRow?.id ?? row.projectId);
   return {
     issuerPersonId: numberOrNull(row.issuerPersonId),
-    issuerName: text(row.issuerName) || 'Utilisateur SeaPilot',
+    issuerName: text(row.issuerName) || 'Utilisateur BBTM',
     vesselId: numberOrNull(row.vesselId),
     projectId,
     project: projectId && projectRow ? {

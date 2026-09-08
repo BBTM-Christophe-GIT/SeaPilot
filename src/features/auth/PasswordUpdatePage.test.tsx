@@ -53,7 +53,7 @@ describe('PasswordUpdatePage', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer mon mot de passe' }));
 
     expect(updateUser).toHaveBeenCalledWith({ password: 'mot-de-passe-solide' });
-    expect(await screen.findByRole('status')).toHaveTextContent('Votre compte SeaPilot est prêt.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Votre compte BBTM est prêt.');
   });
 
   it('reports an expired or invalid link', async () => {

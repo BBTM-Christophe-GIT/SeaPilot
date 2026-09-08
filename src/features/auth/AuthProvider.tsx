@@ -37,7 +37,6 @@ function AuthConfigurationError({ error }: { error: Error }) {
       <section className="configuration-panel" aria-label="Configuration application">
         <div className="login-brand">
           <strong>BBTM</strong>
-          <span>SeaPilot</span>
         </div>
         <h1>Configuration Supabase incomplete</h1>
         <p>

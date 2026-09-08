@@ -296,7 +296,7 @@ describe('HR document naming and catalogue', () => {
     );
   });
 
-  it('maps the shared SPFx document catalogue to SeaPilot categories and short file names', () => {
+  it('maps the shared SPFx document catalogue to BBTM categories and short file names', () => {
     expect(
       mapHrDocumentTypeRows([
         {
@@ -464,7 +464,7 @@ describe('HR document metadata and deletion', () => {
     expect(deleteEq).toHaveBeenCalledWith('id', documentRow.id);
   });
 
-  it('only removes the SeaPilot reference for an imported SharePoint document', async () => {
+  it('only removes the BBTM reference for an imported SharePoint document', async () => {
     const { client, remove, deleteRow } = deletionClient({ stored: false });
     await deleteHrDocument(client as never, documentRow.id);
     expect(remove).not.toHaveBeenCalled();

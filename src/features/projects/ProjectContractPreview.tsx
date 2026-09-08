@@ -657,7 +657,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
         <b>Champs obligatoires</b>
         <small>{`${checklist.filter((item) => item.complete).length} / ${checklist.length} sections complétées`}</small>
         <ul>{checklist.map((item) => <li className={item.complete ? 'is-complete' : undefined} key={item.label}>{item.complete ? <CheckCircle2 aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}<span>{item.label}</span></li>)}</ul>
-        <p><FileText aria-hidden="true" size={14} /> Document généré et conservé dans SeaPilot.</p>
+        <p><FileText aria-hidden="true" size={14} /> Document généré et conservé dans BBTM.</p>
       </aside>
     </div>
   );

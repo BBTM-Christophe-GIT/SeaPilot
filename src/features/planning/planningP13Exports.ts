@@ -184,7 +184,7 @@ async function pdfBlob(kind: PlanningExportKind, tables: PlanningExportTable[]):
   const document = new jsPDF({ compress: true, orientation: 'landscape', unit: 'mm', format: 'a4' });
   let cursor = 16;
   document.setFontSize(15);
-  document.text(`SeaPilot · ${EXPORT_LABELS[kind]}`, 14, 10);
+  document.text(`BBTM · ${EXPORT_LABELS[kind]}`, 14, 10);
   for (const table of tables) {
     document.setFontSize(11);
     document.text(table.name, 14, cursor);
@@ -239,7 +239,7 @@ function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob
       events.push({ uid: `rest-${check.id}@seapilot`, title: `${check.ruleLabel} · ${check.personName}`, description: check.detail, start: check.date, end: check.date });
     }
   }
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SeaPilot//Planning P1.3//FR', 'CALSCALE:GREGORIAN'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BBTM//Planning P1.3//FR', 'CALSCALE:GREGORIAN'];
   for (const event of events) {
     lines.push('BEGIN:VEVENT', `UID:${event.uid}`, `DTSTAMP:${icsDate(new Date().toISOString())}`, `DTSTART${event.start.length === 10 ? ';VALUE=DATE' : ''}:${icsDate(event.start)}`, `DTEND${event.end.length === 10 ? ';VALUE=DATE' : ''}:${icsDate(event.end, event.end.length === 10)}`, `SUMMARY:${icsEscape(event.title)}`, `DESCRIPTION:${icsEscape(event.description)}`, 'END:VEVENT');
   }

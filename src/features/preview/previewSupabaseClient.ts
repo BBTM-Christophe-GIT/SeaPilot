@@ -558,7 +558,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       project_code: 'P902',
       client_id: 9102,
       client_sharepoint_item_id: null,
-      client_name: 'Client SeaPilot Démonstration',
+      client_name: 'Client BBTM Démonstration',
       primary_vessel_id: 9202,
       primary_vessel_sharepoint_item_id: null,
       primary_vessel_name: 'Support Démonstration',
@@ -578,7 +578,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       is_rov_support: false,
       is_diving_support: true,
       status: 'Offre transmise',
-      description: 'Projet synthétique créé dans SeaPilot pour tester les filtres.',
+      description: 'Projet synthétique créé dans BBTM pour tester les filtres.',
       source_label: 'seapilot',
       sharepoint_list_title: null,
       sharepoint_item_id: null,
@@ -639,7 +639,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       starts_on: '2026-09-07',
       ends_on: '2026-09-12',
       description: 'Occurrence synthétique.',
-      client_name: 'Client SeaPilot Démonstration',
+      client_name: 'Client BBTM Démonstration',
       primary_vessel_id: 9202,
       primary_vessel_name: 'Support Démonstration',
       secondary_vessel_id: null,
@@ -720,7 +720,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       source_label: 'sharepoint',
       source_sharepoint_id: 'preview-project-document-1',
       file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/Preview-Projet.pdf',
-      notes: 'Référence synthétique de préversion ; aucun fichier n’est copié dans SeaPilot.',
+      notes: 'Référence synthétique de préversion ; aucun fichier n’est copié dans BBTM.',
       sharepoint_list_id: 'preview-project-library',
       sharepoint_list_title: 'Documents Projets',
       sharepoint_item_id: 'preview-project-document-1',
@@ -787,7 +787,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
     {
       id: 9102,
-      name: 'Client SeaPilot Démonstration',
+      name: 'Client BBTM Démonstration',
       represented_by: 'Alex MOREAU',
       code: 'DEMO-SPT',
       email: '',
@@ -1058,7 +1058,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     max_night_work_24h: 8,
     include_handover: true,
     active: true,
-    notes: 'Valeurs synthétiques réservées à la préversion SeaPilot.',
+    notes: 'Valeurs synthétiques réservées à la préversion BBTM.',
     updated_at: '2026-08-01T08:00:00Z',
   }],
   working_time_registers: [
@@ -2515,7 +2515,7 @@ export const previewSupabaseClient = {
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
-    getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@seapilot.local' } }, error: null }),
+    getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@bbtm.local' } }, error: null }),
   },
   functions: {
     invoke: (functionName: string, options?: { body?: Record<string, unknown> }) => {

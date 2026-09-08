@@ -523,7 +523,7 @@ export function ProjectEditor({
     { description: isBimco ? 'Cases du formulaire P144' : 'Champs du document', icon: ReceiptText, id: contractStep, label: normalizedContractType },
     { description: 'Dates, ports et première mission', icon: CalendarDays, id: 'planning', label: 'Opérations' },
     { description: 'Navires et conditions tarifaires', icon: CreditCard, id: 'billing', label: 'Facturation' },
-    { description: 'Pièces classées dans SeaPilot', icon: FileText, id: 'documents', label: 'Documents' },
+    { description: 'Pièces classées dans BBTM', icon: FileText, id: 'documents', label: 'Documents' },
   ];
   const bareboatCertificateFields = useMemo(
     () => vesselCertificates ? deriveBareboatCertificateFields(vesselCertificates) : undefined,
@@ -792,7 +792,7 @@ export function ProjectEditor({
             projectId: result.id,
           });
           if (uploads.failed.length > 0) {
-            throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être enregistrés dans SeaPilot.`);
+            throw new Error(`${uploads.failed.length} document(s) n’ont pas pu être enregistrés dans BBTM.`);
           }
         }
       }
@@ -1307,7 +1307,7 @@ export function ProjectEditor({
                     {commercialConditionAttachments.map((document) => (
                       <div className="project-commercial-condition-attachment" key={document.id}>
                         <FileText aria-hidden="true" size={16} />
-                        <span><strong>{document.fileName}</strong><small>Déjà classé dans SeaPilot</small></span>
+                        <span><strong>{document.fileName}</strong><small>Déjà classé dans BBTM</small></span>
                         <ProjectStoredDocumentLink client={client} document={document} />
                       </div>
                     ))}
@@ -1996,7 +1996,7 @@ export function ProjectPlanningEditor({
           ) : null}
           <p className="project-editor-note">
             {canViewCharterHire ? 'Le barème contractuel suit automatiquement la date de début, sauf lorsqu’un tarif personnalisé est activé. ' : ''}
-            Les documents sont classés dans l’espace privé SeaPilot du projet.
+            Les documents sont classés dans l’espace privé BBTM du projet.
           </p>
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
       </div>

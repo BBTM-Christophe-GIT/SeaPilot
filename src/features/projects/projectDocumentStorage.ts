@@ -84,7 +84,7 @@ export async function createProjectDocumentBundle(
   const attachmentFolder = archive.folder('Pièces jointes');
   const downloadedAttachments = await Promise.all(input.attachments.map(async (attachment) => {
     if (!attachment.storageBucket || !attachment.storagePath) {
-      throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé SeaPilot.`);
+      throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé BBTM.`);
     }
     const { data, error } = await client.storage
       .from(attachment.storageBucket)
@@ -159,7 +159,7 @@ export async function storeGeneratedProjectDocument(
     upsert: false,
   });
   if (uploadError) {
-    throw new Error(uploadError.message || 'Le document n’a pas pu être envoyé vers SeaPilot.');
+    throw new Error(uploadError.message || 'Le document n’a pas pu être envoyé vers BBTM.');
   }
 
   try {
@@ -175,9 +175,9 @@ export async function storeGeneratedProjectDocument(
       target_revision: input.revision || 1,
       target_sha256: bytesToHex(digest),
     });
-    if (error) throw new Error(error.message || 'Le document n’a pas pu être rattaché au projet SeaPilot.');
+    if (error) throw new Error(error.message || 'Le document n’a pas pu être rattaché au projet BBTM.');
     const id = Number(data);
-    if (!Number.isInteger(id) || id <= 0) throw new Error('SeaPilot n’a pas confirmé le classement du document.');
+    if (!Number.isInteger(id) || id <= 0) throw new Error('BBTM n’a pas confirmé le classement du document.');
     return {
       fileName: input.document.fileName,
       folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
@@ -218,7 +218,7 @@ export async function storeOperationDocument(
     upsert: false,
   });
   if (uploadError) {
-    throw new Error(uploadError.message || `Le document ${input.file.name} n’a pas pu être envoyé vers SeaPilot.`);
+    throw new Error(uploadError.message || `Le document ${input.file.name} n’a pas pu être envoyé vers BBTM.`);
   }
 
   try {
@@ -236,7 +236,7 @@ export async function storeOperationDocument(
     });
     if (error) throw new Error(error.message || `Le document ${input.file.name} n’a pas pu être rattaché à l’opération.`);
     const id = Number(data);
-    if (!Number.isInteger(id) || id <= 0) throw new Error(`SeaPilot n’a pas confirmé le classement de ${input.file.name}.`);
+    if (!Number.isInteger(id) || id <= 0) throw new Error(`BBTM n’a pas confirmé le classement de ${input.file.name}.`);
     return {
       fileName: input.file.name,
       folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
@@ -267,7 +267,7 @@ export async function storeOperationDocuments(
     } catch (error) {
       result.failed.push({
         fileName: file.name,
-        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans SeaPilot.',
+        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans BBTM.',
       });
     }
   }

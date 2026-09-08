@@ -1,7 +1,7 @@
 """Build sanitized project document templates from user-owned source files.
 
 The resulting towage DOCX contains visible placeholder tokens consumed by the
-SeaPilot browser generator. The BIMCO PDF contains only the generic Part II
+BBTM browser generator. The BIMCO PDF contains only the generic Part II
 pages from the supplied executed contract; signed/customer-specific pages are
 deliberately excluded. The bareboat-charter DOCX keeps the supplied contract
 layout and clauses while removing every executed value and signature.
@@ -93,7 +93,7 @@ def build_supplytime_part_ii(source: Path, target: Path) -> None:
     writer.add_metadata({
         '/Title': 'SUPPLYTIME 2017 - Part II',
         '/Author': 'BIMCO',
-        '/Subject': 'SeaPilot internal authorized contract template',
+        '/Subject': 'BBTM internal authorized contract template',
     })
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open('wb') as output:

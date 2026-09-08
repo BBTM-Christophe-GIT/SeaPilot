@@ -29,7 +29,7 @@ describe('BBTM planning import rules', () => {
     expect(classifyBbtmValue(source)).toMatchObject({ kind: 'assignment', vesselName: expected });
   });
 
-  it('maps personal statuses with the approved SeaPilot labels and comments', () => {
+  it('maps personal statuses with the approved BBTM labels and comments', () => {
     expect(classifyBbtmValue('CP')).toMatchObject({ kind: 'status', sailorStatus: 'Vacance', comment: '' });
     expect(classifyBbtmValue('Dentiste')).toMatchObject({ kind: 'status', sailorStatus: 'Vacance', comment: 'Dentiste' });
     expect(classifyBbtmValue('Vacances')).toMatchObject({ kind: 'status', sailorStatus: 'Vacance', comment: '' });
@@ -151,7 +151,7 @@ describe('BBTM planning import rules', () => {
           dayCount: 1,
           comment: '',
           importable: false,
-          warning: 'Personne absente de SeaPilot',
+          warning: 'Personne absente de BBTM',
         },
       ],
       boards: [],
