@@ -46,9 +46,13 @@ import {
   deletePublishedProcedure,
   fetchProcedureProjects,
   fetchProceduresData,
+  getProcedurePublicationDate,
   getProcedureFileUrl,
   getProcedureStatusLabel,
+  isProcedureNumberConflict,
+  isProcedureNumberTaken,
   publishProcedure,
+  suggestNextProcedureNumber,
   updateProcedure,
   type ProcedureInput,
   type ProcedureProjectOption,
@@ -116,7 +120,7 @@ const EMPTY_FILTERS: ProcedureFilterState = { search: '', project: '', vessel: '
 const EMPTY_FORM: ProcedureInput = {
   procedureCode: '', title: '', status: 'draft', revisionLabel: '', diffusionOn: '', categoryLabel: '',
   description: '', regulatoryRequirement: '', ismChapter: '01', vesselName: '', projectName: '', documentNumber: '',
-  restrictions: '', annualReview: false, approvalStatus: 'En cours de creation', theme: '', documentType: '',
+  restrictions: '', annualReview: false, theme: '', documentType: '',
   bridgeWatch: false, versionLabel: '', notes: '',
 };
 
@@ -188,7 +192,6 @@ function formFromProcedure(procedure: ProcedureRecord): ProcedureInput {
     documentNumber: procedure.documentNumber,
     restrictions: procedure.restrictions,
     annualReview: procedure.annualReview,
-    approvalStatus: procedure.approvalStatus,
     theme: procedure.theme,
     documentType: procedure.documentType,
     bridgeWatch: procedure.bridgeWatch,
@@ -199,19 +202,22 @@ function formFromProcedure(procedure: ProcedureRecord): ProcedureInput {
 
 interface ProcedureEditorProps {
   procedure: ProcedureRecord | null;
+  procedures: ProcedureRecord[];
   projectOptions: ProcedureProjectOption[];
   onClose: () => void;
   onSave: (input: ProcedureInput, file: File | null) => Promise<void>;
   saving: boolean;
 }
 
-function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }: ProcedureEditorProps) {
-  const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : EMPTY_FORM);
+function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSave, saving }: ProcedureEditorProps) {
+  const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : { ...EMPTY_FORM });
   const [file, setFile] = useState<File | null>(null);
   const projectListId = useId();
   const generatedProcedureCode = buildProcedureCode(form.theme, form.documentNumber, form.versionLabel);
   const annualReviewDueOn = form.annualReview ? getAnnualReviewDueDate(form.diffusionOn) : '';
   const identity = `${generatedProcedureCode || 'Référence à compléter'} - ${form.title.trim() || 'Titre du document'}`;
+  const suggestedNumber = suggestNextProcedureNumber(procedures, form.theme);
+  const numberTaken = isProcedureNumberTaken(procedures, form.theme, form.documentNumber, procedure?.id);
   const availableProjectOptions = useMemo(() => {
     const existingValues = projectNames(form.projectName);
     const knownLabels = new Set(projectOptions.map((option) => option.label));
@@ -225,8 +231,17 @@ function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }:
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function setTheme(theme: string) {
+    setForm((current) => ({
+      ...current,
+      theme,
+      documentNumber: theme ? suggestNextProcedureNumber(procedures, theme) : '',
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (numberTaken) return;
     const versionLabel = form.versionLabel.trim().toUpperCase();
     await onSave({
       ...form,
@@ -253,8 +268,27 @@ function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }:
               <header><FileText aria-hidden="true" size={18} /><div><h3 id="procedure-identification-title">Identification du document</h3><p>Les informations essentielles qui structurent la bibliothèque QSMS.</p></div></header>
               <div className="procedure-form-grid">
                 <label className="procedure-form-wide">Titre<input required value={form.title} onChange={(event) => setValue('title', event.target.value)} /></label>
-                <label>Thème<select value={form.theme} onChange={(event) => setValue('theme', event.target.value)}><option value="">Non renseigné</option>{THEMES.map((theme) => <option key={theme}>{theme}</option>)}</select></label>
-                <label>Numéro<input placeholder="Ex. 04" value={form.documentNumber} onChange={(event) => setValue('documentNumber', event.target.value)} /></label>
+                <label>Thème<select value={form.theme} onChange={(event) => setTheme(event.target.value)}><option value="">Non renseigné</option>{THEMES.map((theme) => <option key={theme}>{theme}</option>)}</select></label>
+                <label>Numéro
+                  <input
+                    aria-label="Numéro"
+                    aria-describedby="procedure-number-help"
+                    aria-invalid={numberTaken || undefined}
+                    inputMode="decimal"
+                    pattern="[0-9]+(?:\.[0-9]+)*"
+                    placeholder="Ex. 04 ou 04.1"
+                    title="Utilisez uniquement des chiffres séparés, si nécessaire, par un point."
+                    value={form.documentNumber}
+                    onChange={(event) => setValue('documentNumber', event.target.value)}
+                  />
+                  <small className={numberTaken ? 'procedure-field-error' : ''} id="procedure-number-help">
+                    {numberTaken
+                      ? `La combinaison ${form.theme} ${form.documentNumber.trim()} existe déjà.`
+                      : form.theme && suggestedNumber
+                        ? `Proposition pour ${form.theme} : ${suggestedNumber}. Le numéro reste modifiable, y compris avec un point.`
+                        : 'Sélectionnez un thème pour obtenir le prochain numéro disponible.'}
+                  </small>
+                </label>
                 <label>Version<input placeholder="Ex. D" value={form.versionLabel} onChange={(event) => setValue('versionLabel', event.target.value)} /></label>
                 <label>Navire<input value={form.vesselName} onChange={(event) => setValue('vesselName', event.target.value)} /></label>
                 <label className="procedure-form-wide">ISM Chapitre<select value={form.ismChapter} onChange={(event) => setValue('ismChapter', event.target.value)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -269,8 +303,7 @@ function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }:
             <section className="procedure-form-section" aria-labelledby="procedure-lifecycle-title">
               <header><CalendarClock aria-hidden="true" size={18} /><div><h3 id="procedure-lifecycle-title">Validation et cycle de vie</h3><p>Statut, diffusion et programmation de la prochaine revue.</p></div></header>
               <div className="procedure-form-grid">
-                <label>Statut<select value={form.status} onChange={(event) => setValue('status', event.target.value as ProcedureStatus)}><option value="draft">Brouillon</option><option value="review">En revue</option><option value="approved">Approuvée</option><option value="archived">Archivée</option></select></label>
-                <label>Statut d'approbation<select value={form.approvalStatus} onChange={(event) => setValue('approvalStatus', event.target.value)}><option>En cours de creation</option><option>En cours de validation</option><option>Document approuve</option><option>Archive</option></select></label>
+                <label>Statut<select value={form.status} onChange={(event) => setValue('status', event.target.value as ProcedureStatus)}><option value="draft">Brouillon</option><option value="review">En revue</option><option value="approved">Approuvée</option><option value="published">Publié</option><option value="archived">Archivée</option></select></label>
                 <label>Date diffusion<input type="date" value={form.diffusionOn} onChange={(event) => setValue('diffusionOn', event.target.value)} /></label>
                 <label className="procedure-review-toggle"><input checked={form.annualReview} type="checkbox" onChange={(event) => setValue('annualReview', event.target.checked)} /><span><strong>Revue annuelle</strong><small>Créer une échéance automatique à un an.</small></span></label>
                 {form.annualReview ? <div className={`procedure-review-schedule procedure-form-wide ${annualReviewDueOn ? 'is-ready' : 'is-missing'}`} role="status"><BellRing aria-hidden="true" size={19} /><div><strong>{annualReviewDueOn ? `Échéance le ${formatDate(annualReviewDueOn)}` : 'Date de diffusion requise'}</strong><span>{annualReviewDueOn ? 'L’alarme apparaîtra 90 jours avant cette date dans la bibliothèque et sur l’accueil.' : 'Renseignez la date de diffusion pour programmer la revue annuelle.'}</span></div></div> : null}
@@ -289,13 +322,13 @@ function ProcedureEditor({ procedure, projectOptions, onClose, onSave, saving }:
               <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Fichier de travail</h3><p>Le fichier source reste privé et accessible uniquement aux profils autorisés.</p></div></header>
               <label className="procedure-file-field">
                 <Upload size={18} />
-                <span>{procedure ? 'Remplacer le fichier source (facultatif)' : 'Fichier source modifiable'}</span>
+                <span>{procedure ? 'Enregistrer une nouvelle version du fichier source (facultatif)' : 'Fichier source modifiable'}</span>
                 <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-                <small>{file?.name || procedure?.fileName || 'Word, Excel, PowerPoint ou OpenDocument · 50 Mo max.'}</small>
+                <small>{file?.name || (procedure ? `${procedure.fileName} · le fichier sélectionné remplacera directement cette version dans Supabase.` : 'Word, Excel, PowerPoint ou OpenDocument · 100 Mo max.')}</small>
               </label>
             </section>
           </div>
-          <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
+          <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving || numberTaken} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
         </form>
       </section>
     </div>
@@ -311,16 +344,17 @@ interface PublishDialogProps {
 
 function PublishDialog({ procedure, onClose, onPublish, saving }: PublishDialogProps) {
   const [file, setFile] = useState<File | null>(null);
+  const diffusionOn = getProcedurePublicationDate();
   return (
     <div className="procedure-dialog-backdrop" role="presentation">
       <section aria-labelledby="procedure-publish-title" aria-modal="true" className="procedure-dialog procedure-publish-dialog" role="dialog">
-        <header><div><span>Diffusion contrôlée</span><h2 id="procedure-publish-title">Publier le PDF</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button></header>
+        <header><div><span>Diffusion contrôlée</span><h2 id="procedure-publish-title">Confirmer la publication</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button></header>
         <div className="procedure-publish-body">
           <ShieldCheck size={30} />
-          <div><strong>{procedure.procedureCode || procedure.documentNumber} · {procedure.title}</strong><p>Le PDF sera accessible aux profils Armement, Capitaine et Marin. Le fichier source reste privé.</p></div>
+          <div><strong>Êtes-vous sûr de vouloir publier ce document ?</strong><p>{procedure.procedureCode || procedure.documentNumber} · {procedure.title}<br />Son statut deviendra « Publié » et sa date de diffusion sera fixée au {formatDate(diffusionOn)}. Seul le PDF sera accessible aux profils Armement, Capitaine et Marin.</p></div>
           <label className="procedure-file-field"><Upload size={18} /><span>PDF à diffuser</span><input accept="application/pdf,.pdf" required type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} /><small>{file?.name || 'Sélectionnez la version PDF approuvée.'}</small></label>
         </div>
-        <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={!file || saving} onClick={() => file && void onPublish(file)} type="button"><Send size={16} />{saving ? 'Publication…' : 'Publier'}</button></footer>
+        <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Non</button><button className="procedure-button-primary" disabled={!file || saving} onClick={() => file && void onPublish(file)} type="button"><Send size={16} />{saving ? 'Publication…' : 'Oui, publier'}</button></footer>
       </section>
     </div>
   );
@@ -401,7 +435,11 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
         flash('Informations mises à jour.');
       }
       setEditorProcedure(null);
-    } catch { fail("L'enregistrement du document a échoué."); }
+    } catch (error) {
+      fail(isProcedureNumberConflict(error)
+        ? 'Cette combinaison Thème + Numéro existe déjà. Choisissez un autre numéro.'
+        : "L'enregistrement du document a échoué.");
+    }
     finally { setIsSaving(false); }
   }
 
@@ -411,7 +449,9 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
     try {
       const publication = await publishProcedure(effectiveClient, publishTarget, file);
       setPublications((current) => sortRecords([publication, ...current]));
-      setProcedures((current) => current.map((item) => item.id === publishTarget.id ? { ...item, status: 'approved', publishedOn: publication.publishedOn, approvalStatus: 'Document approuve' } : item));
+      setProcedures((current) => current.map((item) => item.id === publishTarget.id ? {
+        ...item, status: 'published', publishedOn: publication.publishedOn, diffusionOn: publication.diffusionOn,
+      } : item));
       setPublishTarget(null);
       flash('PDF publié pour les profils Armement, Capitaine et Marin.');
     } catch { fail('La publication du PDF a échoué.'); }
@@ -534,7 +574,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
         </div>
       </section>
 
-      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} projectOptions={procedureProjects} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
       {publishTarget ? <PublishDialog procedure={publishTarget} onClose={() => setPublishTarget(null)} onPublish={handlePublish} saving={isSaving} /> : null}
     </section>
   );

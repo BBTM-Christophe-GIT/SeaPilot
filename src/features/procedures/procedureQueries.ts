@@ -6,7 +6,7 @@ export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 const PROCEDURE_FIELDS = [
   'id', 'procedure_code', 'title', 'status', 'revision_label', 'published_on', 'source_label', 'file_url', 'notes',
   'category_label', 'diffusion_on', 'description', 'regulatory_requirement', 'ism_chapter', 'vessel_name',
-  'project_name', 'document_number', 'restrictions', 'annual_review', 'approval_status', 'theme', 'document_type',
+  'project_name', 'document_number', 'restrictions', 'annual_review', 'theme', 'document_type',
   'bridge_watch', 'version_label',
 ].join(', ');
 
@@ -20,7 +20,7 @@ const PUBLISHED_PROCEDURE_SELECT = [
   'mime_type', 'size_bytes', 'published_by',
 ].join(', ');
 
-export type ProcedureStatus = 'draft' | 'review' | 'approved' | 'archived' | 'unknown';
+export type ProcedureStatus = 'draft' | 'review' | 'approved' | 'published' | 'archived' | 'unknown';
 
 interface ProcedureBaseRow {
   id: number;
@@ -42,7 +42,6 @@ interface ProcedureBaseRow {
   document_number: string | null;
   restrictions: string | null;
   annual_review: boolean | null;
-  approval_status: string | null;
   theme: string | null;
   document_type: string | null;
   bridge_watch: boolean | null;
@@ -88,7 +87,6 @@ export interface ProcedureRecord {
   documentNumber: string;
   restrictions: string;
   annualReview: boolean;
-  approvalStatus: string;
   theme: string;
   documentType: string;
   bridgeWatch: boolean;
@@ -148,7 +146,6 @@ export interface ProcedureInput {
   documentNumber: string;
   restrictions: string;
   annualReview: boolean;
-  approvalStatus: string;
   theme: string;
   documentType: string;
   bridgeWatch: boolean;
@@ -168,7 +165,8 @@ function optionalText(value: string): string | null {
 }
 
 function normalizeStatus(status: string | null): ProcedureStatus {
-  return status === 'draft' || status === 'review' || status === 'approved' || status === 'archived' || status === 'unknown'
+  return status === 'draft' || status === 'review' || status === 'approved' || status === 'published'
+    || status === 'archived' || status === 'unknown'
     ? status
     : 'unknown';
 }
@@ -194,7 +192,6 @@ function mapProcedureBase(row: ProcedureBaseRow) {
     documentNumber: nullableText(row.document_number),
     restrictions: nullableText(row.restrictions),
     annualReview: Boolean(row.annual_review),
-    approvalStatus: nullableText(row.approval_status),
     theme: nullableText(row.theme),
     documentType: nullableText(row.document_type),
     bridgeWatch: Boolean(row.bridge_watch),
@@ -203,7 +200,9 @@ function mapProcedureBase(row: ProcedureBaseRow) {
 }
 
 export function getProcedureStatusLabel(status: ProcedureStatus): string {
-  return { approved: 'Approuvée', archived: 'Archivée', draft: 'Brouillon', review: 'En revue', unknown: 'Non renseigné' }[status];
+  return {
+    approved: 'Approuvée', archived: 'Archivée', draft: 'Brouillon', published: 'Publié', review: 'En revue', unknown: 'Non renseigné',
+  }[status];
 }
 
 export function mapProcedureRows(rows: ProcedureRow[]): ProcedureRecord[] {
@@ -228,7 +227,9 @@ export function mapPublishedProcedureRows(rows: PublishedProcedureRow[]): Publis
     mimeType: nullableText(row.mime_type) || 'application/pdf',
     sizeBytes: row.size_bytes,
     publishedBy: nullableText(row.published_by),
-  }));
+  })).filter((record) => record.status === 'published'
+    && record.mimeType.toLowerCase() === 'application/pdf'
+    && record.fileName.toLowerCase().endsWith('.pdf'));
 }
 
 export function buildProcedureMetrics(data: ProceduresData): ProcedureMetrics {
@@ -252,6 +253,8 @@ export async function fetchProcedures(client: SupabaseClient): Promise<Procedure
 
 export async function fetchPublishedProcedures(client: SupabaseClient): Promise<PublishedProcedureRecord[]> {
   const { data, error } = await client.from('published_procedures').select(PUBLISHED_PROCEDURE_SELECT)
+    .eq('status', 'published')
+    .eq('mime_type', 'application/pdf')
     .order('ism_chapter', { ascending: true, nullsFirst: false })
     .order('procedure_code', { ascending: true, nullsFirst: false })
     .order('published_on', { ascending: false, nullsFirst: false });
@@ -265,6 +268,41 @@ export async function fetchProceduresData(client: SupabaseClient, includeSources
     fetchPublishedProcedures(client),
   ]);
   return { procedures, publications };
+}
+
+function identifierPart(value: string): string {
+  return value.trim().toLocaleUpperCase('fr');
+}
+
+export function isProcedureNumberTaken(
+  procedures: ProcedureRecord[],
+  theme: string,
+  documentNumber: string,
+  excludedProcedureId?: number,
+): boolean {
+  const themeKey = identifierPart(theme);
+  const numberKey = identifierPart(documentNumber);
+  if (!themeKey || !numberKey) return false;
+  return procedures.some((procedure) => procedure.id !== excludedProcedureId
+    && identifierPart(procedure.theme) === themeKey
+    && identifierPart(procedure.documentNumber) === numberKey);
+}
+
+export function suggestNextProcedureNumber(procedures: ProcedureRecord[], theme: string): string {
+  const themeKey = identifierPart(theme);
+  if (!themeKey) return '';
+  const mainNumbers = procedures
+    .filter((procedure) => identifierPart(procedure.theme) === themeKey)
+    .map((procedure) => procedure.documentNumber.trim().match(/^(\d+)/)?.[1] || '')
+    .filter(Boolean);
+  const nextNumber = Math.max(0, ...mainNumbers.map(Number)) + 1;
+  const width = Math.max(2, ...mainNumbers.map((number) => number.length));
+  return String(nextNumber).padStart(width, '0');
+}
+
+export function isProcedureNumberConflict(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error
+    && (error as { code?: string }).code === '23505');
 }
 
 export async function fetchProcedureProjects(client: SupabaseClient): Promise<ProcedureProjectOption[]> {
@@ -303,7 +341,6 @@ function procedurePayload(input: ProcedureInput) {
     document_number: optionalText(input.documentNumber),
     restrictions: optionalText(input.restrictions),
     annual_review: input.annualReview,
-    approval_status: optionalText(input.approvalStatus),
     theme: optionalText(input.theme),
     document_type: optionalText(input.documentType),
     bridge_watch: input.bridgeWatch,
@@ -333,13 +370,13 @@ function sourceMimeType(file: File): string {
   }[extension || ''] || 'text/plain';
 }
 
-async function uploadProcedureFile(client: SupabaseClient, folder: string, file: File): Promise<string> {
+async function uploadProcedureFile(client: SupabaseClient, folder: string, file: File, existingPath = ''): Promise<string> {
   const uniqueId = typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const path = `${folder}/${Date.now()}-${uniqueId}-${sanitizeFileName(file.name)}`;
+  const path = existingPath || `${folder}/${Date.now()}-${uniqueId}-${sanitizeFileName(file.name)}`;
   const { error } = await client.storage.from(PROCEDURE_DOCUMENT_BUCKET).upload(path, file, {
-    cacheControl: '3600', contentType: sourceMimeType(file), upsert: false,
+    cacheControl: folder === 'sources' ? '0' : '3600', contentType: sourceMimeType(file), upsert: Boolean(existingPath),
   });
   if (error) throw error;
   return path;
@@ -377,9 +414,10 @@ export async function updateProcedure(
   replacementFile?: File | null,
 ): Promise<ProcedureRecord> {
   let replacementPath = '';
+  const existingStoragePath = procedure.storageBucket === PROCEDURE_DOCUMENT_BUCKET ? procedure.storagePath : '';
   const storagePayload = replacementFile ? {
     source_storage_bucket: PROCEDURE_DOCUMENT_BUCKET,
-    source_storage_path: (replacementPath = await uploadProcedureFile(client, 'sources', replacementFile)),
+    source_storage_path: (replacementPath = await uploadProcedureFile(client, 'sources', replacementFile, existingStoragePath)),
     source_file_name: replacementFile.name,
     source_mime_type: sourceMimeType(replacementFile),
     source_size_bytes: replacementFile.size,
@@ -387,37 +425,46 @@ export async function updateProcedure(
   const { data, error } = await client.from('procedures').update({ ...procedurePayload(input), ...storagePayload })
     .eq('id', procedure.id).select(PROCEDURE_SELECT).single();
   if (error) {
-    if (replacementPath) await removeStorageObjects(client, [replacementPath]).catch(() => undefined);
+    if (replacementPath && replacementPath !== existingStoragePath) {
+      await removeStorageObjects(client, [replacementPath]).catch(() => undefined);
+    }
     throw error;
   }
-  if (replacementPath && procedure.storagePath) await removeStorageObjects(client, [procedure.storagePath]).catch(() => undefined);
   return mapProcedureRows([data as unknown as ProcedureRow])[0];
+}
+
+export function getProcedurePublicationDate(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit', month: '2-digit', timeZone: 'Europe/Paris', year: 'numeric',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
 export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File): Promise<PublishedProcedureRecord> {
   if (pdfFile.type !== 'application/pdf' && !pdfFile.name.toLowerCase().endsWith('.pdf')) {
     throw new Error('La publication doit être un fichier PDF.');
   }
-  const publishedOn = new Date().toISOString().slice(0, 10);
+  const publishedOn = getProcedurePublicationDate();
   const storagePath = await uploadProcedureFile(client, `published/${procedure.id}`, pdfFile);
   const payload = {
     procedure_id: procedure.id,
     procedure_sharepoint_item_id: null,
     procedure_code: optionalText(procedure.procedureCode),
     title: pdfFile.name,
-    status: 'approved',
+    status: 'published',
     revision_label: optionalText(procedure.revisionLabel),
     published_on: publishedOn,
     source_label: 'seapilot', file_url: null, notes: optionalText(procedure.notes),
     category_label: optionalText(procedure.categoryLabel),
-    diffusion_on: optionalText(procedure.diffusionOn || publishedOn),
+    diffusion_on: publishedOn,
     description: optionalText(procedure.description),
     regulatory_requirement: optionalText(procedure.regulatoryRequirement),
     ism_chapter: optionalText(procedure.ismChapter),
     vessel_name: optionalText(procedure.vesselName), project_name: optionalText(procedure.projectName),
     document_number: optionalText(procedure.documentNumber || procedure.procedureCode),
     restrictions: optionalText(procedure.restrictions), annual_review: procedure.annualReview,
-    approval_status: 'Document approuve', theme: optionalText(procedure.theme),
+    theme: optionalText(procedure.theme),
     document_type: optionalText(procedure.documentType), bridge_watch: procedure.bridgeWatch,
     version_label: optionalText(procedure.versionLabel || procedure.revisionLabel),
     storage_bucket: PROCEDURE_DOCUMENT_BUCKET, storage_path: storagePath, file_name: pdfFile.name,
@@ -431,8 +478,7 @@ export async function publishProcedure(client: SupabaseClient, procedure: Proced
   }
   const publication = mapPublishedProcedureRows([data as unknown as PublishedProcedureRow])[0];
   const { error: procedureError } = await client.from('procedures').update({
-    status: 'approved', approval_status: 'Document approuve', published_on: publishedOn,
-    diffusion_on: procedure.diffusionOn || publishedOn,
+    status: 'published', published_on: publishedOn, diffusion_on: publishedOn,
   }).eq('id', procedure.id);
   if (procedureError) {
     await client.from('published_procedures').delete().eq('id', publication.id);
@@ -486,6 +532,11 @@ export async function getProcedureFileUrl(
   record: ProcedureRecord | PublishedProcedureRecord,
   action: ProcedureFileAction = 'download',
 ): Promise<string> {
+  if ('procedureId' in record && (record.status !== 'published'
+    || record.mimeType.toLowerCase() !== 'application/pdf'
+    || !record.fileName.toLowerCase().endsWith('.pdf'))) {
+    throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
+  }
   if (!record.storageBucket || !record.storagePath) {
     if (record.fileUrl) return action === 'open' ? buildProcedureDesktopUri(record, record.fileUrl) : record.fileUrl;
     throw new Error('Aucun fichier disponible pour ce document.');

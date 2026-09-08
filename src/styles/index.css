@@ -25092,6 +25092,7 @@ button.planning-p12-conflict-card {
 .procedure-document-status .procedure-review-badge.is-danger { color: #b12f2a; background: #fde9e7; }
 .procedure-document-status .procedure-status-draft { color: #8a641d; }
 .procedure-document-status .procedure-status-review { color: #146cb7; }
+.procedure-document-status .procedure-status-published { color: #087c58; }
 .procedure-document-status .procedure-status-archived { color: #8a929d; }
 .procedure-document-status small { color: #98a2ad; font-size: .55rem; }
 
@@ -25160,6 +25161,8 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
 .procedure-form-grid textarea { min-height: 86px; resize: vertical; padding: 10px 11px; font-size: .72rem; line-height: 1.45; }
 .procedure-form-wide { grid-column: 1 / -1; }
 .procedure-form-grid > label > small { color: #8491a0; font-size: .58rem; font-weight: 560; }
+.procedure-form-grid > label > small.procedure-field-error { color: #b12f2a; }
+.procedure-form-grid input[aria-invalid='true'] { border-color: #d94841; box-shadow: 0 0 0 2px rgb(217 72 65 / 10%); }
 .procedure-project-combobox { position: relative; }
 .procedure-project-combobox > svg { position: absolute; z-index: 1; top: 12px; left: 11px; color: #6f8dab; pointer-events: none; }
 .procedure-project-combobox input { padding-left: 35px !important; }
