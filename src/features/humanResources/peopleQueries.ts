@@ -456,6 +456,14 @@ export interface UpdateHrDocumentMedicalInput {
   medicalUnfit: boolean;
 }
 
+export interface UpdateHrDocumentInput extends UpdateHrDocumentMedicalInput {
+  title: string;
+  categoryKey: string;
+  issuedOn: string;
+  expiresOn: string;
+  notes: string;
+}
+
 const HR_DOCUMENT_STORAGE_BUCKET = 'hr-documents';
 
 function nullableText(value: string | number | null | undefined): string {
@@ -643,11 +651,13 @@ function removeYearFromDocumentName(value: string): string {
   return cleanedValue || value.trim();
 }
 
-export function getHrDocumentDisplayName(document: Pick<HrDocumentRecord, 'title'>): string {
+export function getHrDocumentDisplayName(document: Pick<HrDocumentRecord, 'title'> & Partial<Pick<HrDocumentRecord, 'personName'>>): string {
   const nameWithoutExtension = stripFileExtension(document.title);
   const separatorIndex = nameWithoutExtension.indexOf(' - ');
+  const hasPersonPrefix = !document.personName
+    || normalizeSearchValue(nameWithoutExtension.slice(0, separatorIndex).trim()) === normalizeSearchValue(document.personName.trim());
   const displayName =
-    separatorIndex >= 0
+    separatorIndex >= 0 && hasPersonPrefix
       ? nameWithoutExtension.substring(separatorIndex + 3).trim() || nameWithoutExtension
       : nameWithoutExtension;
 
@@ -1432,7 +1442,7 @@ export async function createHrDocument(
     category_key: input.documentType.categoryKey,
     title: stripFileExtension(fileName),
     status: statusFromDueDate(input.dueDate),
-    expires_on: input.dueDate,
+    expires_on: optionalText(input.dueDate),
     requires_captain_validation: false,
     source_label: 'supabase',
     notes: null,
@@ -1475,7 +1485,7 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
   const payload = {
     title: stripFileExtension(fileName),
     status: statusFromDueDate(input.dueDate),
-    expires_on: input.dueDate,
+    expires_on: optionalText(input.dueDate),
     source_label: 'supabase',
     file_url: null,
     storage_bucket: HR_DOCUMENT_STORAGE_BUCKET,
@@ -1510,6 +1520,68 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
   }
 
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
+}
+
+export async function updateHrDocumentDetails(
+  client: SupabaseClient,
+  document: HrDocumentRecord,
+  input: UpdateHrDocumentInput,
+): Promise<HrDocumentRecord> {
+  if (!input.title.trim()) throw new Error('Renseignez le nom du document.');
+  if (document.categoryKey === 'annual_review' || input.categoryKey === 'annual_review') {
+    throw new Error('Les entretiens annuels se modifient dans leur rubrique dédiée.');
+  }
+  if (!HR_DOCUMENT_CATEGORY_LABELS[input.categoryKey] && input.categoryKey !== document.categoryKey) {
+    throw new Error('Sélectionnez une catégorie de document.');
+  }
+  if (input.issuedOn && input.expiresOn && input.expiresOn < input.issuedOn) {
+    throw new Error('La date de péremption doit être postérieure ou égale à la date de délivrance.');
+  }
+
+  const isMedical = input.categoryKey === 'medical_visit';
+  const payload = {
+    title: input.title.trim(),
+    category_key: input.categoryKey,
+    issued_on: optionalText(input.issuedOn),
+    expires_on: optionalText(input.expiresOn),
+    notes: optionalText(input.notes),
+    status: document.status === 'missing' || document.status === 'pending_validation'
+      ? document.status
+      : statusFromDueDate(input.expiresOn),
+    medical_restriction: isMedical ? optionalText(input.medicalRestriction) : null,
+    medical_bridge_watch: isMedical && !input.medicalUnfit ? input.medicalBridgeWatch : null,
+    medical_unfit: isMedical && input.medicalUnfit,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await client.from('hr_documents').update(payload)
+    .eq('id', document.id).select(HR_DOCUMENT_SELECT).single();
+  if (error) throw error;
+  return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
+}
+
+export async function deleteHrDocument(client: SupabaseClient, documentId: number): Promise<void> {
+  // Read the current storage reference, rather than trusting a possibly stale UI row.
+  const { data, error } = await client.from('hr_documents').select(HR_DOCUMENT_SELECT).eq('id', documentId).single();
+  if (error) throw error;
+  const document = mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
+  if (document.categoryKey === 'annual_review') {
+    throw new Error('Les entretiens annuels se gèrent dans leur rubrique dédiée.');
+  }
+
+  const hasStoredFile = document.storageBucket === HR_DOCUMENT_STORAGE_BUCKET && Boolean(document.storagePath);
+  if (hasStoredFile) {
+    // Storage SELECT authorization depends on this row: remove the file before its metadata.
+    // Removing an already absent object is safe, so a failed metadata deletion can be retried.
+    const { error: storageError } = await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([document.storagePath]);
+    if (storageError) throw new Error(storageError.message || 'Impossible de supprimer le fichier.');
+  }
+
+  const { error: deleteError } = await client.from('hr_documents').delete().eq('id', documentId).select('id').single();
+  if (deleteError) {
+    throw new Error(hasStoredFile
+      ? 'Le fichier a été supprimé, mais sa fiche reste présente. Réessayez la suppression pour la terminer.'
+      : deleteError.message || 'Impossible de supprimer le document.');
+  }
 }
 
 export async function updateHrDocumentMedicalDetails(

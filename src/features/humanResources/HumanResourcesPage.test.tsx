@@ -531,7 +531,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByLabelText('Échéance de Entretien Professionnel et d’Evaluation 2026')).not.toBeInTheDocument();
   });
 
-  it('adds a catalog document with an expiry date and the SPFx automatic file name', async () => {
+  it.each([false, true])('adds a catalog document with noExpiry=%s and the automatic file name', async (noExpiry) => {
     const user = userEvent.setup();
     const catalogRows = [
       {
@@ -550,15 +550,17 @@ describe('HumanResourcesPage', () => {
       },
     ];
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
-    const storagePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
+    const title = noExpiry ? 'Jean MARTIN - CFBS' : 'Jean MARTIN - CFBS - 2030';
+    const expiresOn = noExpiry ? null : '2030-06-30';
+    const storagePath = `people/1/${title}.pdf`;
     const createdDocument = {
       ...documents[1],
       id: 42,
       category_key: 'safety_training',
-      title: 'Jean MARTIN - CFBS - 2030',
+      title,
       status: 'valid',
       issued_on: null,
-      expires_on: '2030-06-30',
+      expires_on: expiresOn,
       source_label: 'supabase',
       notes: null,
       file_url: null,
@@ -599,21 +601,102 @@ describe('HumanResourcesPage', () => {
     expect(derogationOption.closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
     await user.selectOptions(within(dialog).getByLabelText('Brevet / document'), '25');
     fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
+    if (noExpiry) {
+      await user.click(within(dialog).getByLabelText('Sans date de péremption'));
+      expect(within(dialog).getByLabelText("Date d'echeance")).toBeDisabled();
+      expect(within(dialog).getByLabelText("Date d'echeance")).toHaveValue('');
+    }
     await user.upload(within(dialog).getByLabelText('Fichier'), file);
 
-    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue('Jean MARTIN - CFBS - 2030.pdf');
+    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue(`${title}.pdf`);
     expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
     fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => expect(upload).toHaveBeenCalledWith(storagePath, file, { contentType: 'application/pdf', upsert: false }));
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       category_key: 'safety_training',
-      expires_on: '2030-06-30',
+      expires_on: expiresOn,
       storage_path: storagePath,
-      title: 'Jean MARTIN - CFBS - 2030',
+      title,
     }));
     expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
     expect(within(profile).getByText('CFBS')).toBeInTheDocument();
+    if (noExpiry) expect(within(profile).getByText('Sans échéance')).toBeInTheDocument();
+  });
+
+  it('edits metadata without a new file and refreshes the category, dates and alert counts', async () => {
+    const user = userEvent.setup();
+    const baseClient = createClient([activePerson]);
+    const update = vi.fn().mockImplementation((payload) => ({
+      eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { ...documents[1], ...payload }, error: null }),
+      }) }),
+    }));
+    const client = { from: vi.fn((table: string) => table === 'hr_documents'
+      ? { ...createDocumentsSelect(), update } : baseClient.from(table)) };
+    render(<HumanResourcesPage client={client as never} roles={['direction']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('button', { name: 'Modifier Capitaine 200' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Capitaine 200' });
+    expect(within(dialog).getByLabelText('Date de délivrance')).toHaveValue('2024-01-15');
+    expect(within(dialog).queryByLabelText('Fichier')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('option', { name: 'Entretien Annuel' })).not.toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText('Nom du document'));
+    await user.type(within(dialog).getByLabelText('Nom du document'), 'Contrat signé');
+    await user.selectOptions(within(dialog).getByLabelText('Catégorie'), 'administrative');
+    await user.click(within(dialog).getByLabelText('Sans date de péremption'));
+    await user.type(within(dialog).getByLabelText('Notes'), 'Original reçu');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Informations du document mises à jour.')).toBeInTheDocument();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ title: 'Contrat signé', category_key: 'administrative', expires_on: null, status: 'valid', notes: 'Original reçu' }));
+    expect(within(profile).getByText('Contrat signé')).toBeInTheDocument();
+    expect(within(profile).getByText('Sans échéance')).toBeInTheDocument();
+    expect(screen.getByLabelText('Documents echus')).toHaveTextContent('0');
+  });
+
+  it.each([false, true])('confirms deletion and keeps the document visible on failure=%s', async (shouldFail) => {
+    const user = userEvent.setup();
+    const baseClient = createClient([activePerson]);
+    const deletedSingle = vi.fn().mockResolvedValue({ data: shouldFail ? null : { id: 11 }, error: shouldFail ? { message: 'Suppression refusée' } : null });
+    const deleteRow = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: deletedSingle }) }) });
+    const select = vi.fn().mockReturnValue({
+      order: vi.fn().mockResolvedValue({ data: documents, error: null }),
+      eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: documents[1], error: null }) }),
+    });
+    const client = { from: vi.fn((table: string) => table === 'hr_documents' ? { select, delete: deleteRow } : baseClient.from(table)) };
+    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('checkbox', { name: 'Sélectionner Capitaine 200' }));
+    await user.click(within(profile).getByRole('button', { name: 'Supprimer Capitaine 200' }));
+    let dialog = screen.getByRole('dialog', { name: 'Supprimer Capitaine 200' });
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(deleteRow).not.toHaveBeenCalled();
+    await user.click(within(profile).getByRole('button', { name: 'Supprimer Capitaine 200' }));
+    dialog = screen.getByRole('dialog', { name: 'Supprimer Capitaine 200' });
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer le document' }));
+    if (shouldFail) {
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Suppression refusée');
+      expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    } else {
+      expect(await screen.findByText('Document supprimé.')).toBeInTheDocument();
+      expect(within(profile).queryByText('Capitaine 200')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Telecharger' })).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Documents echus')).toHaveTextContent('0');
+    }
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps document mutations hidden for a real %s role fixture', async (role) => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson]) as never} currentPersonId={1} roles={[role]} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Modifier Capitaine 200' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Supprimer Capitaine 200' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Renouveler' })).not.toBeInTheDocument();
   });
 
   it('downloads one selected HR document with the stored file extension', async () => {

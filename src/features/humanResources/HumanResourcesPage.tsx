@@ -34,6 +34,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
+import './hrDocumentActions.css';
 import {
   buildStaffEvolution,
   buildMonthlyStaffEvolution,
@@ -46,6 +47,7 @@ import {
   buildWorkforceExitBreakdown,
   compareHrFunctionLabels,
   createHrDocument,
+  deleteHrDocument,
   createPerson,
   deletePerson,
   createHrDocumentSignedUrl,
@@ -58,6 +60,7 @@ import {
   getHrEnimClassification,
   getHrFunctionVisibilityKey,
   HR_PRIMARY_FUNCTIONS,
+  HR_DOCUMENT_CATEGORY_LABELS,
   HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
   isPersonEmployedOn,
@@ -65,6 +68,7 @@ import {
   normalizeHrFunctionLabel,
   renewHrDocument,
   updateHrDocumentMedicalDetails,
+  updateHrDocumentDetails,
   updatePersonDetails,
   type HrDocumentRecord,
   type HrDocumentTypeOption,
@@ -74,6 +78,7 @@ import {
   type HumanResourcesRosterGroup,
   type PersonRecord,
   type UpdateHrDocumentMedicalInput,
+  type UpdateHrDocumentInput,
   type UpdatePersonDetailsInput,
   type WorkforceTurnoverMetric,
   type WorkforceExitBreakdown,
@@ -739,6 +744,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
+  const [documentAction, setDocumentAction] = useState<{ document: HrDocumentRecord; mode: 'edit' | 'delete' } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -1175,6 +1181,34 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     }
   }
 
+  async function handleDocumentAction(input?: UpdateHrDocumentInput) {
+    if (!isManager || !documentAction) return;
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setIsSaving(true);
+    try {
+      const document = documentAction.document;
+      if (documentAction.mode === 'edit' && input) {
+        const updated = await updateHrDocumentDetails(effectiveClient, document, input);
+        setDocuments((current) => current.map((item) => item.id === updated.id ? updated : item));
+        setStatusMessage('Informations du document mises à jour.');
+      } else if (documentAction.mode === 'delete') {
+        await deleteHrDocument(effectiveClient, document.id);
+        setDocuments((current) => current.filter((item) => item.id !== document.id));
+        setSelectedDocumentIds((current) => {
+          const next = new Set(current);
+          next.delete(document.id);
+          return next;
+        });
+        setStatusMessage('Document supprimé.');
+      }
+      notifyHrDocumentsChanged();
+      setDocumentAction(null);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function handleAnnualReviewDueDate(document: HrDocumentRecord, dueOn: string) {
     setStatusMessage(null); setErrorMessage(null); setIsSaving(true);
     try {
@@ -1553,6 +1587,8 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onDocumentCreate={(person) => setDocumentCreationPersonId(person.id)}
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
+          onDocumentEdit={(document) => setDocumentAction({ document, mode: 'edit' })}
+          onDocumentDelete={(document) => setDocumentAction({ document, mode: 'delete' })}
           onAnnualReviewDueDate={handleAnnualReviewDueDate}
           onDocumentSelect={toggleDocumentSelection}
           onDelete={handleDeletePerson}
@@ -1570,6 +1606,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreatePerson}
           onUpdate={updateFormValue}
+        />
+      ) : null}
+
+      {documentAction && isManager ? (
+        <DocumentDetailsDialog
+          document={documentAction.document}
+          isSaving={isSaving}
+          mode={documentAction.mode}
+          onClose={() => setDocumentAction(null)}
+          onSubmit={handleDocumentAction}
         />
       ) : null}
 
@@ -1978,6 +2024,8 @@ function PersonProfileCard({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
@@ -1999,6 +2047,8 @@ function PersonProfileCard({
   onDocumentCreate: (person: PersonRecord) => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: (person: PersonRecord) => Promise<void>;
@@ -2044,6 +2094,8 @@ function PersonProfileCard({
         onDocumentCreate={() => onDocumentCreate(person)}
         onDocumentOpen={onDocumentOpen}
         onDocumentRenew={onDocumentRenew}
+        onDocumentEdit={onDocumentEdit}
+        onDocumentDelete={onDocumentDelete}
         onAnnualReviewDueDate={onAnnualReviewDueDate}
         onDocumentSelect={onDocumentSelect}
         onDelete={() => onDelete(person)}
@@ -2143,6 +2195,122 @@ function groupHrDocumentTypeOptions(documentTypes: HrDocumentTypeOption[]) {
   ).map(([label, options]) => ({ label, options }));
 }
 
+function DocumentExpiryFields({ disabled, label, noExpiry, onNoExpiryChange, onChange, value }: {
+  disabled: boolean;
+  label: string;
+  noExpiry: boolean;
+  onNoExpiryChange: (value: boolean) => void;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <div className="hr-document-expiry-fields">
+      <label className="hr-edit-field">
+        {label}
+        <input disabled={disabled || noExpiry} onChange={(event) => onChange(event.target.value)}
+          required={!noExpiry} type="date" value={value} />
+      </label>
+      <label className="hr-document-no-expiry">
+        <input checked={noExpiry} disabled={disabled} onChange={(event) => onNoExpiryChange(event.target.checked)} type="checkbox" />
+        Sans date de péremption
+      </label>
+    </div>
+  );
+}
+
+function DocumentDetailsDialog({ document, isSaving, mode, onClose, onSubmit }: {
+  document: HrDocumentRecord;
+  isSaving: boolean;
+  mode: 'edit' | 'delete';
+  onClose: () => void;
+  onSubmit: (input?: UpdateHrDocumentInput) => Promise<void>;
+}) {
+  const [form, setForm] = useState(() => ({
+    title: document.title,
+    categoryKey: document.categoryKey,
+    issuedOn: document.issuedOn,
+    expiresOn: document.expiresOn,
+    notes: document.notes,
+  }));
+  const [noExpiry, setNoExpiry] = useState(!document.expiresOn);
+  const [medicalForm, setMedicalForm] = useState(() => buildMedicalDetailsForm(document));
+  const [formError, setFormError] = useState('');
+  const isDeleting = mode === 'delete';
+  const categories = Object.entries(HR_DOCUMENT_CATEGORY_LABELS).filter(([key]) => key !== 'annual_review');
+  if (!HR_DOCUMENT_CATEGORY_LABELS[document.categoryKey]) categories.push([document.categoryKey, document.categoryKey]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isSaving) return;
+    setFormError('');
+    try {
+      await onSubmit(isDeleting ? undefined : { ...form, ...medicalDetailsInput(medicalForm) });
+    } catch (error) {
+      setFormError(error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : 'Impossible d’enregistrer les changements. Réessayez.');
+    }
+  }
+
+  return (
+    <div aria-label={`${isDeleting ? 'Supprimer' : 'Modifier'} ${getHrDocumentDisplayName(document)}`}
+      aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <form className="hr-dialog hr-renewal-dialog" onSubmit={handleSubmit}>
+        <div className="hr-dialog-header">
+          <div>
+            <p>Documents</p>
+            <h2>{isDeleting ? 'Supprimer le document' : 'Modifier les informations'}</h2>
+            <span>{getHrDocumentDisplayName(document)}</span>
+          </div>
+          <button aria-label="Fermer" className="hr-icon-button" disabled={isSaving} onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="hr-renewal-body">
+          {isDeleting ? (
+            <div className="hr-document-delete-explanation">
+              <p>Le document « {getHrDocumentDisplayName(document)} » sera retiré du dossier de {document.personName || 'ce collaborateur'}.</p>
+              <p>{document.storageBucket === 'hr-documents' && document.storagePath
+                ? 'Le fichier sera également supprimé. Cette action est définitive.'
+                : 'Seul le lien dans SeaPilot sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
+            </div>
+          ) : (
+            <>
+              <label className="hr-edit-field">Nom du document
+                <input disabled={isSaving} onChange={(event) => setForm({ ...form, title: event.target.value })} required value={form.title} />
+              </label>
+              <label className="hr-edit-field">Catégorie
+                <select disabled={isSaving} onChange={(event) => setForm({ ...form, categoryKey: event.target.value })} value={form.categoryKey}>
+                  {categories.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <label className="hr-edit-field">Date de délivrance
+                <input disabled={isSaving} onChange={(event) => setForm({ ...form, issuedOn: event.target.value })} type="date" value={form.issuedOn} />
+              </label>
+              <DocumentExpiryFields disabled={isSaving} label="Date de péremption" noExpiry={noExpiry}
+                onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setForm({ ...form, expiresOn: '' }); }}
+                onChange={(value) => setForm({ ...form, expiresOn: value })} value={form.expiresOn} />
+              <label className="hr-edit-field">Notes
+                <textarea disabled={isSaving} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={3} value={form.notes} />
+              </label>
+              {form.categoryKey === 'medical_visit' ? (
+                <MedicalOptionsFields disabled={isSaving} idPrefix={`edit-document-${document.id}`} onChange={setMedicalForm} value={medicalForm} />
+              ) : null}
+            </>
+          )}
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+        </div>
+        <footer className="hr-dialog-footer">
+          <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
+          <button className={isDeleting ? 'hr-document-delete-confirm' : undefined} disabled={isSaving} type="submit">
+            {isSaving ? 'Enregistrement…' : isDeleting ? 'Supprimer le document' : 'Enregistrer'}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
 function DocumentCreationDialog({
   documentTypes,
   isSaving,
@@ -2166,6 +2334,7 @@ function DocumentCreationDialog({
 }) {
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState(() => String(documentTypes[0]?.id || ''));
   const [dueDate, setDueDate] = useState('');
+  const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [medicalForm, setMedicalForm] = useState<MedicalDetailsForm>({ condition: '', restriction: '', unfit: false });
@@ -2186,8 +2355,8 @@ function DocumentCreationDialog({
     event.preventDefault();
     setFormError('');
 
-    if (!selectedDocumentType || !file || !dueDate || !generatedFileName) {
-      setFormError("Selectionnez le type de document, la date d'echeance et le fichier.");
+    if (!selectedDocumentType || !file || (!dueDate && !noExpiry) || !generatedFileName) {
+      setFormError('Choisissez un document, un fichier et une échéance, ou cochez « Sans date de péremption ».');
       return;
     }
 
@@ -2243,10 +2412,9 @@ function DocumentCreationDialog({
               ))}
             </select>
           </label>
-          <label className="hr-edit-field">
-            Date d'echeance
-            <input disabled={isSaving} onChange={(event) => setDueDate(event.target.value)} required type="date" value={dueDate} />
-          </label>
+          <DocumentExpiryFields disabled={isSaving} label="Date d'echeance" noExpiry={noExpiry}
+            onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setDueDate(''); }}
+            onChange={setDueDate} value={dueDate} />
           <label className="hr-edit-field">
             Fichier
             <input
@@ -2281,7 +2449,7 @@ function DocumentCreationDialog({
           <button disabled={isSaving} onClick={onClose} type="button">
             Annuler
           </button>
-          <button disabled={isSaving || !selectedDocumentType || !file || !dueDate} type="submit">
+          <button disabled={isSaving || !selectedDocumentType || !file || (!dueDate && !noExpiry)} type="submit">
             <Upload aria-hidden="true" size={16} />
             {isSaving ? 'Chargement...' : 'Creer le document'}
           </button>
@@ -2313,6 +2481,7 @@ function DocumentRenewalDialog({
   person: PersonRecord;
 }) {
   const [dueDate, setDueDate] = useState('');
+  const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [medicalForm, setMedicalForm] = useState<MedicalDetailsForm>(() => buildMedicalDetailsForm(document));
@@ -2323,8 +2492,8 @@ function DocumentRenewalDialog({
     event.preventDefault();
     setFormError('');
 
-    if (!file || !dueDate || !generatedFileName) {
-      setFormError('Depose le nouveau document et renseigne la nouvelle date d echeance.');
+    if (!file || (!dueDate && !noExpiry) || !generatedFileName) {
+      setFormError('Ajoutez le nouveau fichier et une échéance, ou cochez « Sans date de péremption ».');
       return;
     }
 
@@ -2369,10 +2538,9 @@ function DocumentRenewalDialog({
               type="file"
             />
           </label>
-          <label className="hr-edit-field">
-            Nouvelle date d'echeance
-            <input disabled={isSaving} onChange={(event) => setDueDate(event.target.value)} type="date" value={dueDate} />
-          </label>
+          <DocumentExpiryFields disabled={isSaving} label="Nouvelle date d'echeance" noExpiry={noExpiry}
+            onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setDueDate(''); }}
+            onChange={setDueDate} value={dueDate} />
           <label className="hr-edit-field">
             Nom genere
             <input readOnly value={generatedFileName} />
@@ -2674,6 +2842,8 @@ function PersonDetailsPanel({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
@@ -2698,6 +2868,8 @@ function PersonDetailsPanel({
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: () => Promise<void>;
@@ -3085,6 +3257,8 @@ function PersonDetailsPanel({
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
             onDocumentRenew={onDocumentRenew}
+            onDocumentEdit={onDocumentEdit}
+            onDocumentDelete={onDocumentDelete}
             onDueDateChange={onAnnualReviewDueDate}
             onDocumentSelect={onDocumentSelect}
             selectedDocumentIds={selectedDocumentIds}
@@ -3100,6 +3274,8 @@ function PersonDetailsPanel({
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
             onDocumentRenew={onDocumentRenew}
+            onDocumentEdit={onDocumentEdit}
+            onDocumentDelete={onDocumentDelete}
             onDocumentSelect={onDocumentSelect}
             selectedDocumentIds={selectedDocumentIds}
           />
@@ -3248,6 +3424,8 @@ function ProfileDocumentsSection({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onDueDateChange,
   onDocumentSelect,
   selectedDocumentIds,
@@ -3260,6 +3438,8 @@ function ProfileDocumentsSection({
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onDueDateChange?: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   selectedDocumentIds: Set<number>;
@@ -3352,6 +3532,19 @@ function ProfileDocumentsSection({
                           </button>
                         ) : null}
                       </div>
+                      {isManager ? (
+                        <div className="hr-document-management-actions">
+                          <button aria-label={`Modifier ${getHrDocumentDisplayName(document)}`} disabled={isSaving}
+                            onClick={() => onDocumentEdit(document)} title="Modifier les informations" type="button">
+                            <Pencil aria-hidden="true" size={15} />
+                            <span>Modifier</span>
+                          </button>
+                          <button aria-label={`Supprimer ${getHrDocumentDisplayName(document)}`} disabled={isSaving}
+                            onClick={() => onDocumentDelete(document)} title="Supprimer le document" type="button">
+                            <Trash2 aria-hidden="true" size={15} />
+                          </button>
+                        </div>
+                      ) : null}
                     </article>
                   ))}
                 </div>
