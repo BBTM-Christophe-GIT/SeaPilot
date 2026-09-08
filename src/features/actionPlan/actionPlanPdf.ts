@@ -418,7 +418,7 @@ export async function buildActionSheetPdf(data: ActionSheetData): Promise<Blob> 
     doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
     doc.setTextColor(...MUTED);
     doc.setFontSize(6.8);
-    doc.text("BBTM · Rapport d'évènement généré depuis SeaPilot", margin, pageHeight - 7);
+    doc.text("BBTM · Rapport d'évènement", margin, pageHeight - 7);
     doc.text(`Page ${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
   }
 

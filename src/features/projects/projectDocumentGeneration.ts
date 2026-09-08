@@ -441,7 +441,7 @@ export function buildGeneratedDocumentFileName(
 
 async function loadAssetBytes(url: string): Promise<Uint8Array> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Le modèle SeaPilot n'a pas pu être chargé (${response.status}).`);
+  if (!response.ok) throw new Error(`Le modèle BBTM n'a pas pu être chargé (${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -468,7 +468,7 @@ export async function generateProjectDocument(
   pdf.setProperties({
     title: buildGeneratedDocumentFileName(kind, input.project, language),
     subject: title,
-    creator: 'SeaPilot',
+    creator: 'BBTM',
   });
 
   if (kind === 'offer') {
@@ -1148,7 +1148,7 @@ async function generateTowageContract(input: ProjectDocumentGenerationInput): Pr
 
   document.setTitle(buildGeneratedDocumentFileName('towage_contract', input.project));
   document.setSubject(projectReference(input.project));
-  document.setCreator('SeaPilot');
+  document.setCreator('BBTM');
   const bytes = await document.save({ useObjectStreams: false });
   return {
     blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
@@ -1232,7 +1232,7 @@ async function generateBareboatCharter(input: ProjectDocumentGenerationInput): P
 
   document.setTitle(buildGeneratedDocumentFileName('bareboat_charter', input.project));
   document.setSubject(projectReference(input.project));
-  document.setCreator('SeaPilot');
+  document.setCreator('BBTM');
   const bytes = await document.save({ useObjectStreams: false });
   return {
     blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),

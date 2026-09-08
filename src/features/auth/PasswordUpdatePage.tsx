@@ -49,7 +49,6 @@ export function PasswordUpdatePage() {
       <section className="login-panel">
         <div className="login-brand">
           <strong>BBTM</strong>
-          <span>SeaPilot</span>
         </div>
         <h1>Choisir mon mot de passe</h1>
 
@@ -62,9 +61,9 @@ export function PasswordUpdatePage() {
           <>
             <div className="login-success" role="status">
               <strong>Mot de passe enregistré.</strong>
-              <span>Votre compte SeaPilot est prêt.</span>
+              <span>Votre compte BBTM est prêt.</span>
             </div>
-            <button onClick={() => navigate('/', { replace: true })} type="button">Accéder à SeaPilot</button>
+            <button onClick={() => navigate('/', { replace: true })} type="button">Accéder à BBTM</button>
           </>
         ) : (
           <form className="password-update-form" onSubmit={handleSubmit}>

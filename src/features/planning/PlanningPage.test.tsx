@@ -841,7 +841,7 @@ describe('PlanningPage cockpit', () => {
     expect(container.querySelector('.planning-command-layout + .planning-layout')).toBeInTheDocument();
   });
 
-  it('creates a native SeaPilot assignment for administrators', async () => {
+  it('creates a native BBTM assignment for administrators', async () => {
     const user = userEvent.setup();
     const createdAssignment = { ...assignmentRow, id: 101, starts_on: '2026-07-20', ends_on: '2026-07-26' };
     const { client, insertAssignment } = createClient({ assignments: [], createdAssignment });

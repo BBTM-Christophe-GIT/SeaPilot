@@ -215,7 +215,7 @@ const atlantiquePlanningOccurrenceRows = [
     id: 1201,
     primary_vessel_id: 12,
     primary_vessel_name: 'COTENTIN',
-    source_label: 'SeaPilot',
+    source_label: 'BBTM',
     starts_on: '2026-07-01',
     status: 'Planifié',
   },
@@ -230,7 +230,7 @@ const atlantiquePlanningOccurrenceRows = [
     id: 1202,
     primary_vessel_id: 12,
     primary_vessel_name: 'COTENTIN',
-    source_label: 'SeaPilot',
+    source_label: 'BBTM',
     starts_on: '2026-07-08',
     status: 'À planifier',
   },
@@ -244,7 +244,7 @@ interface MockSource {
 function createClient(
   overrides: Partial<Record<string, MockSource>> = {},
   rpcResult: { data: unknown; error: unknown } = {
-    data: { id: 990, project_code: 'P1196', title: 'Projet SeaPilot', updated_at: '2026-07-16T08:00:00Z' },
+    data: { id: 990, project_code: 'P1196', title: 'Projet BBTM', updated_at: '2026-07-16T08:00:00Z' },
     error: null,
   },
 ) {
@@ -693,7 +693,7 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
     expect(screen.getByRole('group', { name: /Identification/ })).toBeVisible();
     expect(screen.getByLabelText('Début du projet')).not.toBeVisible();
-    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet SeaPilot');
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet BBTM');
     await user.selectOptions(screen.getByLabelText('Client / affréteur'), '50');
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
@@ -721,7 +721,7 @@ describe('ProjectsPage', () => {
     expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
       target_delivery_port: 'Port de Brest',
       target_project_id: null,
-      target_title: 'Projet SeaPilot',
+      target_title: 'Projet BBTM',
       target_client_id: 50,
       target_primary_vessel_id: 12,
       target_redelivery_port: 'Port de Cherbourg',
@@ -742,7 +742,7 @@ describe('ProjectsPage', () => {
       if (functionName === 'clients_save') return { data: { id: 77 }, error: null };
       if (functionName === 'projects_peek_next_code') return { data: 'P1196', error: null };
       return {
-        data: { id: 990, project_code: 'P1196', title: 'Projet SeaPilot', updated_at: '2026-07-16T08:00:00Z' },
+        data: { id: 990, project_code: 'P1196', title: 'Projet BBTM', updated_at: '2026-07-16T08:00:00Z' },
         error: null,
       };
     });
@@ -811,7 +811,7 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText('Opération ajoutée au Planning.')).toBeInTheDocument();
   });
 
-  it('confirms and removes a planning operation while preserving its SeaPilot documents', async () => {
+  it('confirms and removes a planning operation while preserving its BBTM documents', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient();
     rpc.mockImplementation(async (functionName: string) => {
@@ -832,7 +832,7 @@ describe('ProjectsPage', () => {
     const operationRow = screen.getByText('Rotation 1').closest('tr');
     await user.click(within(operationRow as HTMLElement).getByRole('button', { name: /Supprimer l’opération Rotation 1/ }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Les documents déjà classés resteront conservés dans SeaPilot'));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Les documents déjà classés resteront conservés dans BBTM'));
     expect(rpc).toHaveBeenCalledWith('projects_delete_planning_occurrence', {
       target_occurrence_id: 1201,
       target_project_id: 880,
@@ -842,7 +842,7 @@ describe('ProjectsPage', () => {
     confirm.mockRestore();
   });
 
-  it('offers the document-only download for the contract type and stores the issued file in SeaPilot', async () => {
+  it('offers the document-only download for the contract type and stores the issued file in BBTM', async () => {
     const user = userEvent.setup();
     const { client, from, rpc } = createClient();
     render(<ProjectsPage client={client as never} roles={['admin']} />);

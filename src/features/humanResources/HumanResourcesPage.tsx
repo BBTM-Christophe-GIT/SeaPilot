@@ -2272,7 +2272,7 @@ function DocumentDetailsDialog({ document, isSaving, mode, onClose, onSubmit }: 
               <p>Le document « {getHrDocumentDisplayName(document)} » sera retiré du dossier de {document.personName || 'ce collaborateur'}.</p>
               <p>{document.storageBucket === 'hr-documents' && document.storagePath
                 ? 'Le fichier sera également supprimé. Cette action est définitive.'
-                : 'Seul le lien dans SeaPilot sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
+                : 'Seul le lien dans BBTM sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
             </div>
           ) : (
             <>

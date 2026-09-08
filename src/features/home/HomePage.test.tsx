@@ -54,7 +54,7 @@ describe('HomePage', () => {
     expect(screen.getByRole('link', { name: 'Consulter les indicateurs' })).toHaveAttribute('href', '/modules/kpi');
     expect(screen.queryByRole('link', { name: 'Ouvrir le planning' })).not.toBeInTheDocument();
     expect(screen.queryByText('Accès rapides')).not.toBeInTheDocument();
-    expect(screen.queryByText('Supervision SeaPilot')).not.toBeInTheDocument();
+    expect(screen.queryByText('Supervision BBTM')).not.toBeInTheDocument();
     expect(screen.queryByText('Contrôles recommandés')).not.toBeInTheDocument();
     expect(await screen.findByText(/DA-\d{4}-086/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Achats' })).toBeInTheDocument();

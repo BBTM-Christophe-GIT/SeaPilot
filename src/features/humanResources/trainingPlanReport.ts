@@ -573,8 +573,8 @@ export async function generateTrainingPlanPdf(report: TrainingPlanReport): Promi
   const currentIndicator = report.headlineIndicator;
   const metricPeriodLabel = report.indicatorYear === null ? '12 mois' : String(currentIndicator.year);
   doc.setProperties({
-    author: 'SeaPilot - BBTM',
-    creator: 'SeaPilot',
+    author: 'BBTM',
+    creator: 'BBTM',
     subject: `Plan de formation et indicateurs RH ${report.targetYear}`,
     title,
   });

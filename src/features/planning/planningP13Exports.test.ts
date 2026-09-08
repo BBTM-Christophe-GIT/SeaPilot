@@ -39,7 +39,7 @@ describe('Planning P1.3 exports', () => {
     await expect(archive.file('xl/worksheets/sheet1.xml')!.async('string')).resolves.toContain('Pierre DURAND');
   });
 
-  it('creates calendar events with stable SeaPilot UIDs', async () => {
+  it('creates calendar events with stable BBTM UIDs', async () => {
     const result = await generatePlanningExport('crew_list', 'ics', context);
     const content = await result.blob.text();
     expect(content).toContain('BEGIN:VCALENDAR');

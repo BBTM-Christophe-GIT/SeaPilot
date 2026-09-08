@@ -266,7 +266,7 @@ function TreatmentFollowup({ action, canComment, canDirectlyClose, canReviewClos
           {item.attachmentFileName && (item.attachmentUrl
             ? <a href={item.attachmentUrl} rel="noreferrer" target="_blank"><Paperclip size={14} />{item.attachmentFileName}<small>{formatFileSize(item.attachmentSizeBytes)}</small></a>
             : <p className="action-control-followup-file"><Paperclip size={14} />{item.attachmentFileName}</p>)}
-          <small><b>{item.authorName || 'Utilisateur SeaPilot'}</b><time dateTime={item.createdAt}>{formatDate(item.createdAt, true)}</time></small>
+          <small><b>{item.authorName || 'Utilisateur BBTM'}</b><time dateTime={item.createdAt}>{formatDate(item.createdAt, true)}</time></small>
           <span className="action-control-event-signature">{item.signatureUrl ? <img alt={`Signature de ${item.authorName}`} src={item.signatureUrl} /> : <FileSignature aria-hidden="true" size={14} />}<em>{item.signatureUrl ? 'Signature enregistrée' : 'Signature historique non disponible'}</em></span>
         </div>
       </li>)}

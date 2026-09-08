@@ -72,7 +72,7 @@ const PROFILE_PRIORITY: RoleKey[] = ['admin', 'direction', 'armement', 'capitain
 
 const HOME_PROFILES: Record<RoleKey, HomeProfile> = {
   admin: {
-    intro: 'Voici les points de contrôle de votre espace SeaPilot.',
+    intro: 'Voici les points de contrôle de votre espace BBTM.',
     primaryAction: { label: 'Gérer les utilisateurs', to: '/modules/admin', icon: UserCog },
     secondaryAction: { label: 'Consulter les indicateurs', to: '/modules/kpi', icon: BarChart3 },
     priorities: [
@@ -81,7 +81,7 @@ const HOME_PROFILES: Record<RoleKey, HomeProfile> = {
       { label: "Plan d'action QHSE", description: 'Suivre les actions ouvertes et leurs responsables.', status: 'Suivi', tone: 'green', to: '/modules/actionPlan', icon: ClipboardCheck },
     ],
     prioritiesLink: { label: 'Voir les contrôles', to: '/modules/admin', icon: ArrowRight },
-    contextLabel: 'Supervision SeaPilot',
+    contextLabel: 'Supervision BBTM',
     contextTitle: 'Espace de travail BBTM',
     contextDescription: 'Pilotez les accès, la qualité des référentiels et les modules métiers depuis un même point.',
     contextIcon: Settings,

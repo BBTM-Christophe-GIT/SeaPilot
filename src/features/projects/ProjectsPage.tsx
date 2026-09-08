@@ -465,7 +465,7 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        SeaPilot ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
+        BBTM ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
         d’origine et peuvent demander une authentification Microsoft 365.
       </p>
       <ul className="project-document-list">
@@ -602,7 +602,7 @@ function ProjectDocumentEmissionDialog({
 }) {
   return (
     <AppDialog
-      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
+      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé BBTM.`}
       eyebrow="Projet · Émission documentaire"
       footer={(
         <div className="app-dialog__actions">
@@ -1505,7 +1505,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
     const confirmed = window.confirm(
       `Supprimer définitivement l’opération « ${operationLabel} » du Planning ?\n\n`
-      + 'Les documents déjà classés resteront conservés dans SeaPilot au niveau du projet.',
+      + 'Les documents déjà classés resteront conservés dans BBTM au niveau du projet.',
     );
     if (!confirmed) return;
 
@@ -1529,7 +1529,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setEditingOccurrence(undefined);
       }
       setMutationMessage(
-        'Opération supprimée du Planning. Ses documents restent conservés dans SeaPilot.',
+        'Opération supprimée du Planning. Ses documents restent conservés dans BBTM.',
       );
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Impossible de supprimer l’opération.");
@@ -1587,7 +1587,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setLastStoredDocument(storedDocument);
         setLoadAttempt((attempt) => attempt + 1);
       } catch (storageError) {
-        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
+        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement BBTM a échoué.');
       }
 
       let bundled = false;
@@ -1611,7 +1611,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       }
 
       const storageLabel = storedDocument
-        ? 'généré et classé dans l’espace privé SeaPilot'
+        ? 'généré et classé dans l’espace privé BBTM'
         : 'généré';
       const downloadLabel = bundled
         ? `téléchargé avec ${selectedProjectAttachments.length} pièce${selectedProjectAttachments.length > 1 ? 's' : ''} jointe${selectedProjectAttachments.length > 1 ? 's' : ''}`
@@ -1981,10 +1981,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 : 'Opération ajoutée au Planning.',
             );
             if (uploads.stored.length > 0) {
-              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SeaPilot.`);
+              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans BBTM.`);
             }
             if (uploads.failed.length > 0) {
-              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SeaPilot.`);
+              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans BBTM.`);
             }
             setLoadAttempt((attempt) => attempt + 1);
           }}

@@ -337,7 +337,7 @@ function scopeCalendarDays(scope: QhseReportScope): number { return scopeYears(s
 function metric(label: string, value: string | number, detail = '', tone: QhseReportMetric['tone'] = 'blue'): QhseReportMetric {
   return { label, value: typeof value === 'number' ? formatNumber(value) : value, detail, tone };
 }
-function sourceNote(): string { return 'Données SeaPilot accessibles à l’utilisateur au moment de la génération.'; }
+function sourceNote(): string { return 'Données BBTM accessibles à l’utilisateur au moment de la génération.'; }
 function unavailable(title: string, textValue: string): QhseReportNote { return { title, text: textValue, tone: 'warning' }; }
 // Legacy call sites pass a former row cap. Pagination now preserves every row.
 function rowsLimited(rows: string[][], formerLimit = 48): string[][] { void formerLimit; return rows; }
@@ -642,7 +642,7 @@ function hseNotes(snapshot: QhseReportSnapshot): QhseReportNote[] {
   const notes: QhseReportNote[] = [{
     title: 'Méthodologie',
     text: snapshot.hseDashboard
-      ? `Calcul SeaPilot ${snapshot.hseDashboard.methodologyVersion || 'versionné'} : heures réelles lorsqu’elles existent, sinon repli planifié configuré.`
+      ? `Calcul BBTM ${snapshot.hseDashboard.methodologyVersion || 'versionné'} : heures réelles lorsqu’elles existent, sinon repli planifié configuré.`
       : 'Aucune méthodologie HSE disponible pour la période sélectionnée.',
     tone: snapshot.hseDashboard ? 'info' : 'warning',
   }];
@@ -658,7 +658,7 @@ function reportPeriodLabel(snapshot: QhseReportSnapshot): string {
 
 function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
   return {
-    summary: `Catalogue des ${QHSE_REPORT_CATALOG.length} rapports QHSE retenus, reconstruits à partir des seules données SeaPilot — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Catalogue des ${QHSE_REPORT_CATALOG.length} rapports QHSE retenus, reconstruits à partir des seules données BBTM — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Rapports disponibles', QHSE_REPORT_CATALOG.length, 'Un PDF distinct par page', 'blue'),
       metric('Période', scopeYears(snapshot.scope).join(', '), [snapshot.scope.vesselNames?.join(', ') || snapshot.scope.vesselName || 'Tous les navires', snapshot.scope.projectNames?.join(', ') || snapshot.scope.projectName || 'Tous les projets'].join(' · '), 'green'),
@@ -668,12 +668,12 @@ function buildMenuContent(snapshot: QhseReportSnapshot): QhseReportContent {
     charts: [],
     tables: [{
       title: 'Correspondance des pages',
-      columns: ['Page', 'Rapport SeaPilot', 'Famille', 'Couverture'],
+      columns: ['Page', 'Rapport BBTM', 'Famille', 'Couverture'],
       rows: QHSE_REPORT_CATALOG.slice(1).map((report) => [String(report.pageNumber), report.title, report.family, report.coverage === 'complete' ? 'Complète' : 'Partielle']),
     }],
     notes: [
-      { title: 'Principe de reprise', text: 'La structure métier du fichier Power BI est conservée. Les calculs s’appuient sur le modèle SeaPilot et non sur les valeurs embarquées dans le PBIX.' },
-      unavailable('Données non inventées', 'Les pages partielles restent générables et signalent précisément les champs non structurés dans SeaPilot.'),
+      { title: 'Principe de reprise', text: 'La structure métier du fichier Power BI est conservée. Les calculs s’appuient sur le modèle BBTM et non sur les valeurs embarquées dans le PBIX.' },
+      unavailable('Données non inventées', 'Les pages partielles restent générables et signalent précisément les champs non structurés dans BBTM.'),
     ],
     sources: [sourceNote()],
   };
@@ -822,7 +822,7 @@ function buildSocialSafetyContent(snapshot: QhseReportSnapshot, variant: 1 | 2):
   return {
     summary: `Lecture préventive selon la pyramide de Bird — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
-      metric('Événements classifiés', actions.length, 'Enregistrements SeaPilot de la période', 'blue'),
+      metric('Événements classifiés', actions.length, 'Enregistrements BBTM de la période', 'blue'),
       metric('Accidents enregistrables', totals.FAT + totals.LTI + totals.RWC + totals.MTC, 'FAT + LTI + RWC + MTC', 'red'),
       metric('Premiers soins', totals.FAC, 'FAC', 'orange'),
       metric('Précurseurs', totals.nearMiss + totals.safetyObservation, 'Near miss + observations', 'green'),
@@ -863,7 +863,7 @@ function buildVesselSafetyContent(snapshot: QhseReportSnapshot): QhseReportConte
       ? [String(row.year), String(row.LTI), String(row.lostDays), String(row.RWC), String(row.MTC), String(row.FAC), String(row.nearMiss), String(row.commuting)]
       : [String(row.year), ...Array.from({ length: 7 }, () => '—')]) }],
     notes: annual.some((row) => !row.dataAvailable) ? [unavailable('Historique accidentologique incomplet', `Données absentes pour ${annual.filter((row) => !row.dataAvailable).map((row) => row.year).join(', ')}.`)] : [],
-    sources: ['DPR soumis/validés · actions HSE et exercices d’urgence', 'Événements HSE SeaPilot', sourceNote()],
+    sources: ['DPR soumis/validés · actions HSE et exercices d’urgence', 'Événements HSE BBTM', sourceNote()],
   };
 }
 
@@ -989,17 +989,17 @@ function buildMaintenanceContent(snapshot: QhseReportSnapshot): QhseReportConten
   const stops = technicalStops(snapshot);
   const allVisits = visitsInYear(snapshot);
   return {
-    summary: `Maintenance et visites planifiées dans SeaPilot — ${reportPeriodLabel(snapshot)}.`,
+    summary: `Maintenance et visites planifiées dans BBTM — ${reportPeriodLabel(snapshot)}.`,
     metrics: [
       metric('Arrêts techniques', stops.length, 'Occurrences planifiées', 'orange'),
       metric('Visites et audits', allVisits.length, 'Toutes catégories planifiées', 'blue'),
       metric('Prestataires', new Set(allVisits.map((item) => item.visit.provider.name).filter(Boolean)).size, 'Prestataires distincts', 'green'),
-      metric('Heures moteur', '—', 'Non structurées dans SeaPilot', 'orange'),
+      metric('Heures moteur', '—', 'Non structurées dans BBTM', 'orange'),
     ],
     charts: [categoricalChart('Visites par type', countBy(allVisits, (item) => planningVisitTypeLabel(item.visit.visitType)), BLUE), categoricalChart('Visites par mois', MONTHS.map((label, month) => [label, allVisits.filter((item) => monthOf(item.occurrence.scheduledOn) === month).length]), TEAL)],
     tables: [{ title: 'Planning maintenance et visites', columns: ['Date', 'Type', 'Prestataire', 'Commentaire'], rows: rowsLimited(allVisits.map((item) => [formatDate(item.occurrence.scheduledOn), planningVisitTypeLabel(item.visit.visitType), item.visit.provider.name || '—', item.visit.comments || '—']), 44) }],
-    notes: [unavailable('Heures de fonctionnement', 'Les heures des moteurs principaux présentes dans le rapport de référence ne sont pas stockées sous forme structurée dans SeaPilot.')],
-    sources: ['Planning SeaPilot · visites et arrêts techniques', sourceNote()],
+    notes: [unavailable('Heures de fonctionnement', 'Les heures des moteurs principaux présentes dans le rapport de référence ne sont pas stockées sous forme structurée dans BBTM.')],
+    sources: ['Planning BBTM · visites et arrêts techniques', sourceNote()],
   };
 }
 
@@ -1022,7 +1022,7 @@ function buildAvailabilityContent(snapshot: QhseReportSnapshot, operations: bool
       ['Avaries en escale', `${formatNumber(snapshot.portCalls.filter((call) => call.reasons.includes('breakdown')).reduce((sum, call) => sum + hoursBetween(call.arrivalAt, call.departureAt), 0), 1)} h`, 'Escales avec motif breakdown'],
       ['Arrêts techniques', String(technicalStops(snapshot).length), 'Occurrences du planning'],
     ] }],
-    notes: [{ title: 'Périmètre du taux', text: 'Ce taux mesure uniquement les indisponibilités structurées dans SeaPilot. Une période non saisie ne peut pas être considérée comme une disponibilité prouvée ; la couverture DPR est donc affichée séparément.', tone: 'warning' }],
+    notes: [{ title: 'Périmètre du taux', text: 'Ce taux mesure uniquement les indisponibilités structurées dans BBTM. Une période non saisie ne peut pas être considérée comme une disponibilité prouvée ; la couverture DPR est donc affichée séparément.', tone: 'warning' }],
     sources: ['Planning des arrêts techniques', 'DPR soumis/validés · escales, motifs et incidents', sourceNote()],
   };
 }
@@ -1043,7 +1043,7 @@ function buildActionPlanContent(snapshot: QhseReportSnapshot, policyOnly: boolea
     charts: [categoricalChart('Actions par statut', countBy(actions, (action) => action.status), BLUE), categoricalChart('Actions par type d’écart', byDeviation, ORANGE)],
     tables: [{ title: 'Liste des actions', columns: ['Ouverture', 'Échéance', 'Action', 'Responsable', 'Statut'], rows: rowsLimited(actions.map((action) => [formatDate(action.openedOn), formatDate(action.dueOn), action.title, action.ownerName || '—', action.status || '—']), 54) }],
     notes: policyOnly && !actions.length ? [unavailable('Aucune action qualifiée', 'Aucune action de la période ne porte une qualification explicite politique, objectif, RSE ou amélioration.')] : [],
-    sources: ['Plan d’action QHSE SeaPilot', sourceNote()],
+    sources: ['Plan d’action QHSE BBTM', sourceNote()],
   };
 }
 
@@ -1066,7 +1066,7 @@ function buildVisitPlanningContent(snapshot: QhseReportSnapshot, clientVersion: 
         : [formatDate(item.occurrence.scheduledOn), planningVisitTypeLabel(item.visit.visitType), item.visit.provider.name || 'À définir', item.visit.comments || '—']), 56),
     }],
     notes: items.length ? [] : [unavailable('Planning vide', 'Aucune occurrence de visite ne correspond à la période et au périmètre sélectionnés.')],
-    sources: ['Planning SeaPilot · visites de navire', sourceNote()],
+    sources: ['Planning BBTM · visites de navire', sourceNote()],
   };
 }
 
@@ -1086,7 +1086,7 @@ function buildCertificateContent(snapshot: QhseReportSnapshot, validity: boolean
     metrics: [
       metric('Certificats', items.length, `${new Set(items.map((item) => item.vesselName)).size} navire(s)`, 'blue'),
       metric('Échéances sur la période', expiring.length, scopeYears(snapshot.scope).join(', '), 'orange'),
-      metric('Manquants', missing.length, 'Statut SeaPilot', missing.length ? 'red' : 'green'),
+      metric('Manquants', missing.length, 'Statut BBTM', missing.length ? 'red' : 'green'),
       metric('Renouvellements planifiés', items.filter((item) => Boolean(item.plannedOn)).length, 'Date planifiée renseignée', 'green'),
     ],
     charts: [categoricalChart(validity ? 'Statut à l’échelle de la période' : 'Certificats par catégorie', statusEntries, validity ? ORANGE : BLUE)],
@@ -1098,7 +1098,7 @@ function buildCertificateContent(snapshot: QhseReportSnapshot, validity: boolean
         : [item.vesselName || '—', item.categoryLabel || '—', item.documentTitle || item.title, formatDate(item.issuedOn), formatDate(item.expiresOn)]), 60),
     }],
     notes: [],
-    sources: ['Référentiel Certificats flotte SeaPilot', sourceNote()],
+    sources: ['Référentiel Certificats flotte BBTM', sourceNote()],
   };
 }
 
@@ -1147,7 +1147,7 @@ function buildAgeContent(snapshot: QhseReportSnapshot): QhseReportContent {
       return [group.label, ...values.map(String), String(values.reduce((sum, value) => sum + value, 0))];
     }) }],
     notes: known.length < people.length ? [unavailable('Données incomplètes', `${people.length - known.length} personne(s) sans date de naissance exploitable.`)] : [],
-    sources: ['Référentiel RH SeaPilot', sourceNote()],
+    sources: ['Référentiel RH BBTM', sourceNote()],
   };
 }
 
@@ -1170,7 +1170,7 @@ function buildManagementContent(snapshot: QhseReportSnapshot): QhseReportContent
       return [`${person.firstName} ${person.lastName}`.trim(), person.functionLabel || '—', person.gradeLabel || '—', person.contractType || '—', years === null ? '—' : `${years} an(s)`];
     }), 56) }],
     notes: [],
-    sources: ['Référentiel RH SeaPilot', sourceNote()],
+    sources: ['Référentiel RH BBTM', sourceNote()],
   };
 }
 
@@ -1201,7 +1201,7 @@ function buildHseKpiContent(snapshot: QhseReportSnapshot): QhseReportContent {
       String(hse.reduce((sum, item) => sum + item.stopWork, 0)), String(totals.safetyObservation),
     ]] }],
     notes: hseNotes(snapshot),
-    sources: ['Registre HSE SeaPilot', 'DPR soumis/validés · prévention et exercices', sourceNote()],
+    sources: ['Registre HSE BBTM', 'DPR soumis/validés · prévention et exercices', sourceNote()],
   };
 }
 
@@ -1219,7 +1219,7 @@ function buildAuditDeviationsContent(snapshot: QhseReportSnapshot): QhseReportCo
     charts: [categoricalChart('Écarts par type', countBy(actions, (action) => action.deviationType), ORANGE), categoricalChart('Écarts par audit', countBy(actions, (action) => action.auditType || action.actionType), BLUE)],
     tables: [{ title: 'Registre des écarts', columns: ['Date', 'Type', 'Écart', 'Échéance', 'Statut'], rows: rowsLimited(actions.map((action) => [formatDate(action.openedOn), action.deviationType || '—', action.title, formatDate(action.dueOn), action.status || '—']), 56) }],
     notes: actions.length ? [] : [unavailable('Aucun écart', 'Aucune action explicitement liée à un audit n’est disponible sur la période.')],
-    sources: ['Plan d’action QHSE SeaPilot', sourceNote()],
+    sources: ['Plan d’action QHSE BBTM', sourceNote()],
   };
 }
 
@@ -1237,7 +1237,7 @@ function buildDocumentsContent(snapshot: QhseReportSnapshot): QhseReportContent 
     charts: [categoricalChart('Documents par statut', countBy(sources, (item) => item.status), BLUE), categoricalChart('Documents par chapitre ISM', countBy(publications, (item) => item.ismChapter), TEAL)],
     tables: [{ title: 'Documents publiés', columns: ['Code', 'Titre', 'Révision', 'Publication', 'Chapitre ISM'], rows: rowsLimited(publications.map((item) => [item.procedureCode || item.documentNumber || '—', item.title, item.versionLabel || item.revisionLabel || '—', formatDate(item.publishedOn), item.ismChapter || '—']), 58) }],
     notes: [],
-    sources: ['Bibliothèque QSMS SeaPilot · procédures et publications', sourceNote()],
+    sources: ['Bibliothèque QSMS BBTM · procédures et publications', sourceNote()],
   };
 }
 

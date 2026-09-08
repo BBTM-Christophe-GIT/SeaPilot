@@ -279,7 +279,7 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
         action: 'created',
         payload: {},
         changedBy: 'preview',
-        changedByName: 'Préversion SeaPilot',
+        changedByName: 'Préversion BBTM',
         changedAt: `${anchorDate}T08:00:00Z`,
         vesselId: 1,
         startsOn: firstWatchStart,

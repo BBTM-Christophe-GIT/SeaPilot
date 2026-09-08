@@ -200,8 +200,8 @@ function ServiceNoteLinkPicker({ options, onClose, onSelect }: { options: Servic
   const groups = buildServiceNoteLinkGroups(filtered);
   return (
     <div className="service-note-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section aria-label="Lier un élément SeaPilot" aria-modal="true" className="service-note-link-picker" onMouseDown={(event) => event.stopPropagation()} role="dialog">
-        <header><div><span>RÉFÉRENCE INTERNE</span><h2>Lier un élément SeaPilot</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button></header>
+      <section aria-label="Lier un élément BBTM" aria-modal="true" className="service-note-link-picker" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <header><div><span>RÉFÉRENCE INTERNE</span><h2>Lier un élément BBTM</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button></header>
         <div className="service-note-link-filters">
           <label><Search size={16} /><input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher par titre, code ou navire…" value={query} /></label>
           <select aria-label="Type de référence" onChange={(event) => setKind(event.target.value as typeof kind)} value={kind}>
@@ -450,7 +450,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
             <header><span>04</span><div><h2>Pièces jointes et liens</h2><p>Le nom sans extension sera inventorié dans la note.</p></div></header>
             <div className="service-note-attachment-actions">
               <label className="service-note-upload-button"><Upload size={17} />{isUploading ? 'Dépôt en cours…' : 'Ajouter des fichiers'}<input disabled={isUploading} multiple onChange={(event) => void handleFiles(event.target.files)} type="file" /></label>
-              <button onClick={() => void openLinkPicker()} type="button"><Link2 size={17} /> Lier un élément SeaPilot</button>
+              <button onClick={() => void openLinkPicker()} type="button"><Link2 size={17} /> Lier un élément BBTM</button>
             </div>
             <div className="service-note-editor-attachments">
               {note.attachments.map((attachment) => <article key={attachment.id}><span><Paperclip size={16} /><span><strong>{attachment.displayName}</strong><small>{attachmentKindLabel(attachment.kind)}</small></span></span><button aria-label={`Retirer ${attachment.displayName}`} onClick={() => void handleDeleteAttachment(attachment)} type="button"><Trash2 size={16} /></button></article>)}

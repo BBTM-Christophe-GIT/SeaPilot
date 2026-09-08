@@ -1209,7 +1209,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
 
   pdf.setProperties({
     title: `${input.project.projectCode} - Éléments de facturation - ${input.period.periodMonth.slice(0, 7)}`,
-    subject: 'Export SeaPilot des éléments de facturation',
+    subject: 'Export BBTM des éléments de facturation',
   });
   return pdf.output('blob');
 }

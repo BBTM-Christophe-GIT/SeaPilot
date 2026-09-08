@@ -133,7 +133,7 @@ function mapEvent(row: Record<string, unknown>): FleetFindingEvent {
   return {
     id: Number(row.id), findingId: Number(row.finding_id), eventType: String(row.event_type || ''),
     fromStatus: String(row.from_status || ''), toStatus: String(row.to_status || ''), note: String(row.note || ''),
-    authorName: String(author?.display_name || author?.email || row.created_by_name || 'Système SeaPilot'),
+    authorName: String(author?.display_name || author?.email || row.created_by_name || 'Système BBTM'),
     createdAt: String(row.created_at || ''),
   };
 }
