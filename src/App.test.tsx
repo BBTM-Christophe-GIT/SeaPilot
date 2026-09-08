@@ -270,34 +270,44 @@ describe('App', () => {
       }
 
       if (table === 'published_procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id: 32,
-                      procedure_id: 12,
-                      procedure_sharepoint_item_id: '12',
-                      procedure_code: 'QSMS-OPS-01',
-                      title: 'Procedure embarquement ROZEL.pdf',
-                      status: 'approved',
-                      revision_label: 'Rev. 4',
-                      published_on: '2026-03-20',
-                      source_label: 'SharePoint PDF',
-                      file_url: 'https://sharepoint.test/procedure.pdf',
-                      notes: 'Publication signee',
-                      ism_chapter: '08',
-                      project_name: 'P144',
-                      vessel_name: 'LE ROZEL',
-                    },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
+        const orderedPublicationResult = {
+          order: vi.fn(),
+        };
+        orderedPublicationResult.order.mockReturnValueOnce(orderedPublicationResult)
+          .mockReturnValueOnce(orderedPublicationResult)
+          .mockResolvedValueOnce({
+            data: [
+              {
+                id: 32,
+                procedure_id: 12,
+                procedure_sharepoint_item_id: '12',
+                procedure_code: 'QSMS-OPS-01',
+                title: 'Procedure embarquement ROZEL.pdf',
+                status: 'published',
+                revision_label: 'Rev. 4',
+                published_on: '2026-03-20',
+                source_label: 'SeaPilot',
+                file_url: null,
+                notes: 'Publication signee',
+                ism_chapter: '08',
+                project_name: 'P144',
+                vessel_name: 'LE ROZEL',
+                storage_bucket: 'procedure-documents',
+                storage_path: 'published/12/procedure.pdf',
+                file_name: 'procedure.pdf',
+                mime_type: 'application/pdf',
+                size_bytes: 4096,
+              },
+            ],
+            error: null,
+          });
+        const filteredPublicationResult = {
+          eq: vi.fn().mockReturnValueOnce({
+            eq: vi.fn().mockReturnValue(orderedPublicationResult),
           }),
+        };
+        return {
+          select: vi.fn().mockReturnValue(filteredPublicationResult),
         };
       }
 

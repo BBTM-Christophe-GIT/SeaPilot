@@ -14,7 +14,6 @@ const baseMetadata = {
   document_number: 'QSMS-OPS-01',
   restrictions: '',
   annual_review: true,
-  approval_status: 'Document approuve',
   theme: 'URG',
   document_type: 'PRO',
   bridge_watch: true,
@@ -25,7 +24,7 @@ const approvedProcedureRow = {
   id: 12,
   procedure_code: 'QSMS-OPS-01',
   title: 'Procédure embarquement ROZEL',
-  status: 'approved',
+  status: 'published',
   revision_label: 'Rev. 4',
   published_on: '2026-03-20',
   source_label: 'seapilot',
@@ -58,7 +57,7 @@ const publishedProcedureRow = {
   procedure_sharepoint_item_id: '12',
   procedure_code: 'QSMS-OPS-01',
   title: 'Procédure embarquement ROZEL.pdf',
-  status: 'approved',
+  status: 'published',
   revision_label: 'Rev. 4',
   published_on: '2026-03-20',
   source_label: 'seapilot',
@@ -81,6 +80,7 @@ const projectRows = [
 
 function orderedResult(data: unknown[]) {
   const result = {
+    eq: vi.fn(() => result),
     order: vi.fn(() => result),
     then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
   };
@@ -245,6 +245,7 @@ describe('ProceduresPage', () => {
     expect(within(dialog).queryByLabelText('Restrictions')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Notes')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Veille Passerelle')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Statut d'approbation")).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Plan de préparation aux urgences' } });
     await user.selectOptions(within(dialog).getByLabelText('Thème'), 'URG');
     fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
@@ -282,10 +283,11 @@ describe('ProceduresPage', () => {
     await screen.findByText('Procédure embarquement ROZEL');
 
     await user.click(screen.getByLabelText('Publier Procédure embarquement ROZEL'));
-    const dialog = screen.getByRole('dialog', { name: 'Publier le PDF' });
+    const dialog = screen.getByRole('dialog', { name: 'Confirmer la publication' });
+    expect(within(dialog).getByText(/Êtes-vous sûr de vouloir publier ce document/i)).toBeInTheDocument();
     const pdf = new File(['pdf'], 'procedure-approuvee.pdf', { type: 'application/pdf' });
     await user.upload(within(dialog).getByLabelText(/PDF à diffuser/i), pdf);
-    await user.click(within(dialog).getByRole('button', { name: 'Publier' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Oui, publier' }));
 
     expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^published\/12\//), pdf, expect.any(Object));
     expect(publicationInsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -293,8 +295,33 @@ describe('ProceduresPage', () => {
       storage_bucket: 'procedure-documents',
       file_name: 'procedure-approuvee.pdf',
       mime_type: 'application/pdf',
+      status: 'published',
+      diffusion_on: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     }));
     expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
+  });
+
+  it('proposes the next number for a theme and blocks an existing combination', async () => {
+    const user = userEvent.setup();
+    const procedures = [
+      { ...approvedProcedureRow, id: 51, theme: 'OPE', document_number: '18', procedure_code: 'OPE 18-A' },
+      { ...approvedProcedureRow, id: 52, theme: 'OPE', document_number: '07.1', procedure_code: 'OPE 07.1-A' },
+    ];
+    const { client } = createClient({ procedures, publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Procédures QHSE' });
+    await user.click(screen.getByRole('button', { name: /Nouveau document/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText('Thème'), 'OPE');
+
+    expect(within(dialog).getByLabelText('Numéro')).toHaveValue('19');
+    expect(within(dialog).getByText(/Proposition pour OPE : 19/i)).toBeInTheDocument();
+
+    await user.clear(within(dialog).getByLabelText('Numéro'));
+    await user.type(within(dialog).getByLabelText('Numéro'), '07.1');
+    expect(within(dialog).getByText(/La combinaison OPE 07.1 existe déjà/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   });
 
   it('opens a document when its name is clicked', async () => {
