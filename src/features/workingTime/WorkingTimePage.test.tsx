@@ -62,6 +62,7 @@ describe('WorkingTimePage', () => {
       isInitialLoading: false,
       isRefreshing: false,
       loadErrorMessage: null,
+      isHistoryLoading: false,
     });
   });
 

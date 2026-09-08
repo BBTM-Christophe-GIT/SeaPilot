@@ -11,7 +11,6 @@ import { FleetPage } from './features/fleet/FleetPage';
 import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
-import { PlanningPage } from './features/planning/PlanningPage';
 import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
 import { previewSupabaseClient } from './features/preview/previewSupabaseClient';
 import { ProceduresPage } from './features/procedures/ProceduresPage';
@@ -24,6 +23,7 @@ import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
+const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
@@ -71,7 +71,7 @@ export default function App({ previewModeOverride }: AppProps) {
                 ) : module.key === 'certificates' ? (
                   <FleetCertificatesPage />
                 ) : module.key === 'planning' ? (
-                  <PlanningPage />
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du planning…</div>}><PlanningPage /></Suspense>
                 ) : module.key === 'fleet' ? (
                   <FleetPage />
                 ) : module.key === 'humanResources' ? (
