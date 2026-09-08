@@ -85,7 +85,7 @@ const workspace: WorkingTimeWorkspace = {
     actorName: 'Alex MARIN', actorRoles: ['marin'], signatureSnapshot: snapshot, intervalSnapshot: [],
     nonComplianceSnapshot: [], comment: 'Signature explicite', occurredAt: '2026-08-03T18:00:00Z',
   }],
-  vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT', imoNumber: '9213870', flagState: 'France' }],
+  vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT', registrationNumber: 'CH 1234', imoNumber: '9213870', flagState: 'France' }],
   policies: [],
 };
 
@@ -143,7 +143,10 @@ describe('working-time PDF', () => {
     expect(prepared.signatures[0]).toMatchObject({ snapshot: null, profileSignature: sailorProfile, png: signaturePng });
     expect(prepared.audit).toEqual(importedWorkspace.validations);
     expect(pageContent.match(/Alex MARIN/g)).toHaveLength(2);
-    expect(pageContent).toContain('Camille CAPITAINE - capitaine');
+    expect(pageContent).toContain('Camille CAPITAINE');
+    expect(pageContent).toContain('Navire Test - OMI 9213870');
+    expect(pageContent.match(/CAPITAINE \/ VALIDATEUR/g)).toHaveLength(1);
+    expect(pageContent).not.toContain('STATUT');
     expect(pageContent).not.toContain('Non requise');
     expect(pageContent).not.toContain('signature v');
     expect(pageContent).not.toContain('04/08/2026');
@@ -177,6 +180,22 @@ describe('working-time PDF', () => {
     expect(pageContent.match(/Alex MARIN/g)).toHaveLength(2);
     expect(pageContent).toContain('Signature non apposée');
     expect(pageContent).not.toContain('Non requise');
+  });
+
+  it('uses the vessel registration in comments when its OMI number is missing', async () => {
+    const generated = await buildWorkingTimePdf({
+      register,
+      workspace: {
+        ...workspace,
+        vessels: [{ ...workspace.vessels[0], imoNumber: '' }],
+      },
+      signatures: [],
+      audit: [],
+    });
+    const pageContent = generated.document.internal.pages.flat().join('\n');
+
+    expect(pageContent).toContain('Navire Test - CH 1234');
+    expect(pageContent).not.toContain('OMI 9213870');
   });
 
   it('refuses to produce a misleading PDF when a frozen signature cannot be loaded', async () => {
@@ -221,7 +240,13 @@ describe('working-time PDF', () => {
     expect(generated.document.getNumberOfPages()).toBe(1);
     expect(generated.filename).toBe('registre-mensuel-temps-travail-Alex-MARIN-2026-08.pdf');
     const pageContent = generated.document.internal.pages.flat().join('\n');
-    expect(pageContent).toContain('Camille CAPITAINE - capitaine');
+    expect(pageContent).toContain('Camille CAPITAINE');
+    expect(pageContent).not.toContain('Camille CAPITAINE - capitaine');
+    expect(pageContent).toContain('Navire Test - OMI 9213870');
+    expect(pageContent).not.toContain('NAVIRE');
+    expect(pageContent.match(/OMI/g)).toHaveLength(1);
+    expect(pageContent).not.toContain('PAVILLON');
+    expect(pageContent).not.toContain('STATUT');
     expect(pageContent).toContain('signature v2');
     expect(pageContent).not.toContain('signature v4');
     expect(pageContent).not.toContain('04/08/2026');
