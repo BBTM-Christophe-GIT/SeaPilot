@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import {
   addPlanningDays,
@@ -204,6 +203,7 @@ function periodLabel(period: BoardingCertificatePeriod): string {
 }
 
 async function buildDocx(template: ArrayBuffer, data: BoardingCertificateData): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
   const archive = await JSZip.loadAsync(template);
   const documentPart = archive.file('word/document.xml');
   if (!documentPart) throw new Error('Le modèle Word ne contient pas word/document.xml.');
