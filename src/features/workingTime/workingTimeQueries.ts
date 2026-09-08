@@ -922,7 +922,7 @@ export async function submitWorkingTimeDay(
     p_register_id: input.registerId,
     p_local_work_date: input.localWorkDate,
   });
-  assertResult(error, 'Impossible de soumettre la journée au capitaine.');
+  assertResult(error, 'Impossible de soumettre la journée pour approbation.');
   return Number(data);
 }
 

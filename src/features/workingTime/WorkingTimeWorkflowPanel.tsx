@@ -307,7 +307,7 @@ export function WorkingTimeWorkflowPanel({
   const isExactHrCaptain = currentPerson?.functionLabel === 'Capitaine';
   const isSailorOnlyView = roles.includes('marin')
     && !isExactHrCaptain
-    && !roles.some((role) => role === 'admin' || role === 'armement');
+    && !roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const visibleRegisters = useMemo(
     () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.registers],
@@ -400,6 +400,10 @@ export function WorkingTimeWorkflowPanel({
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = isExactHrCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
+  const hasDirectionRole = roles.includes('direction');
+  const canManageApproval = (approval: WorkingTimeDayApproval) => currentPersonId > 0
+    && currentPersonId !== approval.personId
+    && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null));
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
@@ -413,14 +417,16 @@ export function WorkingTimeWorkflowPanel({
   );
   const pendingApprovals = useMemo(() => workspace?.dayApprovals
     .filter((approval) => approval.status === 'submitted'
-      && (approval.approverPersonId === currentPersonId || hasManagementValidationRole))
+      && ((hasCaptainRole && approval.approverPersonId === currentPersonId)
+        || (currentPersonId > 0 && currentPersonId !== approval.personId
+          && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null)))))
     .sort((left, right) => left.localWorkDate.localeCompare(right.localWorkDate)) || [],
-  [currentPersonId, hasManagementValidationRole, workspace?.dayApprovals]);
+  [currentPersonId, hasCaptainRole, hasDirectionRole, hasManagementValidationRole, workspace?.dayApprovals]);
   const canEdit = Boolean(selectedRegister
     && selectedDayApproval?.status !== 'validated'
     && (
       (selectedDayApproval?.status === 'submitted'
-        && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole))
+        && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval)))
       || (!selectedDayApproval
         && entryWindowOpen
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
@@ -459,7 +465,7 @@ export function WorkingTimeWorkflowPanel({
   ));
   const canValidate = Boolean(
     selectedDayApproval?.status === 'submitted'
-      && ((hasManagementValidationRole && currentPersonId !== selectedDayApproval.personId)
+      && (canManageApproval(selectedDayApproval)
         || (hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId))
       && currentSignature
       && missingCaptainComments.length === 0,
@@ -691,7 +697,9 @@ export function WorkingTimeWorkflowPanel({
       : intent === 'save-draft'
         ? 'Le brouillon a été enregistré sans validation.'
       : intent === 'submit-day'
-        ? isExactHrCaptain
+        ? !activeDayContext?.approverPersonId
+          ? 'La journée a été signée et transmise pour approbation à un Administrateur, à la Direction ou à l’Armement.'
+          : isExactHrCaptain
           ? 'La journée est signée : elle est validée si elle est conforme, sinon sa justification reste à compléter.'
           : 'La journée a été signée et transmise au capitaine de la bordée.'
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';
@@ -878,7 +886,7 @@ export function WorkingTimeWorkflowPanel({
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
-                      && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole)}
+                      && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval))}
                     submitDisabled={!currentSignature
                       || (isAssignedCaptainForSelectedDay && !subjectSignature)}
                     validateDisabled={!canValidate}
@@ -918,7 +926,7 @@ export function WorkingTimeWorkflowPanel({
                       const violationDetails = workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
-                        && (hasManagementValidationRole
+                        && (canManageApproval(dateApproval)
                           || (hasCaptainRole && dateApproval.approverPersonId === currentPersonId)));
                       const disabled = !canRespond;
                       const update = (field: keyof NonComplianceDraft, value: string) => setDayResponses((current) => ({
@@ -967,7 +975,7 @@ export function WorkingTimeWorkflowPanel({
                 {!currentSignature && isOwnRegister && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
                 {!subjectSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
                 {!currentSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
-                {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || hasManagementValidationRole) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
+                {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || canManageApproval(selectedDayApproval)) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
                 {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
               </article>
             ) : (

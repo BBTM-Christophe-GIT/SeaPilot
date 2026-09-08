@@ -316,6 +316,60 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
   });
 
+  it.each([7, null])('lets a real Marin profile submit recorded hours without a captain (vessel %s)', async (vesselId) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.currentPersonId = 20;
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
+      assignmentId: vesselId ? 1 : null, vesselId, watchGroup: null, statusLabel: null,
+      approverPersonId: null, captainCandidates: [],
+    });
+    renderPanel(['marin'], data, { id: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', gradeLabel: '' });
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, { registerId: 100, localWorkDate: '2026-08-03' });
+    expect(await screen.findByText(/transmise pour approbation à un Administrateur/)).toBeInTheDocument();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it.each(['admin', 'direction', 'armement'] as const)('lets %s find and approve a submitted day with no captain', async (role) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    data.dayApprovals = [{
+      id: 510, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: null,
+      vesselId: null, watchGroup: null, approverPersonId: null,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel([role], data, { ...currentPerson, functionLabel: 'Direction' });
+
+    await user.click(screen.getByRole('tab', { name: /Approbation1/ }));
+    await user.click(screen.getAllByRole('button', { name: /Alex MARIN/ }).at(-1)!);
+    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 510);
+  });
+
+  it.each(['direction', 'capitaine', 'marin'] as const)('does not let %s take an approval assigned to another captain', async (role) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    data.dayApprovals = [{
+      id: 511, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 11,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel([role], data);
+    await user.click(screen.getByRole('tab', { name: /Approbation/ }));
+    expect(screen.getByText('Aucune journée en attente d’approbation.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Valider la journée' })).not.toBeInTheDocument();
+  });
+
   it('shows one catalogue card per sailor even when legacy weekly and monthly registers overlap', () => {
     const data = workspace('draft', 20);
     data.registers.push({
