@@ -24,7 +24,7 @@ pour remplacer les éléments figés.
 
 ## Livraison
 
-1. Appliquer `20260908205345_working_time_management_approval_fallback.sql`.
+1. Appliquer `20260908211213_working_time_management_approval_fallback.sql`.
 2. Déployer le client `3.39.6` depuis le commit publié sur GitHub.
 3. Vérifier le déploiement Vercel et l'alias `https://sea-pilot-ten.vercel.app`.
 
@@ -46,6 +46,10 @@ la migration. Aucune donnée métier existante n'est réécrite.
 - Validation locale : 46 tests React ciblés, 122 assertions SQL sur six suites
   (relais, capitaine affecté, approbation quotidienne, fenêtre de saisie, calculs
   serveur et cycle de repos), ESLint des fichiers concernés et build de production.
+- La suite applicative complète (149 fichiers) et le build ont réussi sur GitHub.
+  Les 44 assertions du relais ont aussi réussi sur Supabase en production, dans
+  une transaction entièrement annulée, y compris l'installation temporaire de pgTAP.
+  La migration est alignée sur la version Supabase `20260908211213`.
 - La suite historique `working_time_workflow_permissions_test.sql` conserve
   30 échecs reproduits avant cette migration : elle appelle notamment les anciens
   RPC de validation mensuelle désormais révoqués. Son assertion concernant le

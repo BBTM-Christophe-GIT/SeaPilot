@@ -3,7 +3,7 @@
 Version `3.39.6` permet à un Marin de saisir et signer ses heures sans capitaine pour la journée,
 y compris sans affectation Planning. L'approbation revient alors à un Administrateur, à la Direction
 ou à l'Armement de la même société. Appliquer
-`supabase/migrations/20260908205345_working_time_management_approval_fallback.sql` avant le client.
+`supabase/migrations/20260908211213_working_time_management_approval_fallback.sql` avant le client.
 Voir [working-time-management-fallback-v3-39-6.md](./working-time-management-fallback-v3-39-6.md).
 
 Version `3.39.5` limite les échéances de l'accueil aux 90 prochains jours inclus, même si le statut importé
