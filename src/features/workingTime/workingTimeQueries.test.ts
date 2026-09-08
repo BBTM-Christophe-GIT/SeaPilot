@@ -76,7 +76,7 @@ function workspaceClient() {
       signature_snapshot: { signature_id: 50, signer_person_id: 42, signer_name: 'Alex MARIN', signer_roles: ['marin'], signed_at: '2026-08-03T18:00:00Z', version_number: 2, storage_bucket: 'working-time-signatures', storage_path: '1/42/signature.png', mime_type: 'image/png', file_size_bytes: 1234, sha256: 'a'.repeat(64) },
       interval_snapshot: [], non_compliance_snapshot: [], comment: 'Signature explicite', occurred_at: '2026-08-03T18:00:00Z',
     }],
-    vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT' }],
+    vessels: [{ id: 7, name: 'Navire Test', acronym: 'NT', registration_number: 'CH 1234', imo_number: '9213870' }],
   };
   const client = {
     from: vi.fn((table: string) => queryResult(rows[table] || [], (method, args) => {
@@ -118,6 +118,7 @@ describe('working-time workflow queries', () => {
     expect(workspace.dayComments[0].causeCategory).toBe('unexpected_operation');
     expect(workspace.signatures[0]).toMatchObject({ personId: 42, versionNumber: 2 });
     expect(workspace.validations[0].signatureSnapshot).toMatchObject({ signerName: 'Alex MARIN', versionNumber: 2 });
+    expect(workspace.vessels[0]).toMatchObject({ registrationNumber: 'CH 1234', imoNumber: '9213870' });
     expect(queryCalls.filter(({ method }) => method === 'in')).toEqual(expect.arrayContaining([
       { table: 'working_time_registers', method: 'in', args: ['person_id', [42]] },
       { table: 'working_time_intervals', method: 'in', args: ['person_id', [42]] },
