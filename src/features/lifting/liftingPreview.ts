@@ -1,15 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { emptyChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
+import { accessoryDefinition } from './liftingControls';
+import { defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
 // Independent demonstration data. No customer inventory or signature is bundled into public previews.
 export const demoVessel: LiftingVessel = { id: 90001, company_id: 1, name: 'NAVIRE DÉMONSTRATION', acronym: 'DEMO', registration_number: 'Démonstration', call_sign: 'DEMO', registration_port: 'Marseille' };
 export function createLiftingPreviewClient(): SupabaseClient {
   const items: LiftingItem[] = [
-    ['D-101','lifting','Élingue','ÉLINGUE TEXTILE RONDE — 3 M',3],
-    ['D-102','lifting','Manille','MANILLE LYRE — 6,5 T',6.5],
-    ['D-103','lifting','Croc','CROCHET À LINGUET — 2 T',2],
-    ['D-201','towing','Remorque','REMORQUE TEXTILE — 200 M',null],
-  ].map(([reference,kind,type,description,swl],index) => ({ id: index+1,company_id:1,vessel_id:demoVessel.id,kind,reference,material_type:type,description,swl_tonnes:swl,serial_number:'',location:'Pont principal',notes:'Matériel de démonstration',active:true,source_label:'Démonstration',updated_at:'' } as LiftingItem));
+    ['1','lifting','Élingue','ÉLINGUE TEXTILE RONDE — 3 M',3],
+    ['2','lifting','Manille','MANILLE LYRE — 6,5 T',6.5],
+    ['3','lifting','Croc','CROCHET À LINGUET — 2 T',2],
+    ['1','towing','Remorque','REMORQUE TEXTILE — 200 M',null],
+  ].map(([reference,kind,type,description,swl],index) => ({ id: index+1,company_id:1,vessel_id:demoVessel.id,kind,reference,material_type:accessoryDefinition(String(type))?.fr || type,towing_type:kind === 'towing' ? 'textile_line' : null,description,swl_tonnes:swl,serial_number:'',location:'Pont principal',notes:'Matériel de démonstration',active:true,source_label:'Démonstration',updated_at:'' } as LiftingItem));
+  const counters: Record<string, number> = { lifting: 3, towing: 1 };
   const reports: LiftingInspection[] = [];
   const entries: InspectionEntry[] = [];
   const tables = { lifting_inventory: items, lifting_inspections: reports, lifting_inspection_entries: entries };
@@ -30,8 +32,10 @@ export function createLiftingPreviewClient(): SupabaseClient {
       if (name === 'save_lifting_item') {
         const draft = args.p_item as Partial<LiftingItem>;
         const old = items.find((i) => i.id === args.p_id);
-        if (old) Object.assign(old, draft);
-        else items.push({ ...items[0], ...draft, id: items.length+1, vessel_id: Number(args.p_vessel_id), kind: args.p_kind } as LiftingItem);
+        const kind = String(args.p_kind);
+        const reference = old && old.kind === kind ? old.reference : String(counters[kind] = (counters[kind] || 0) + 1);
+        if (old) Object.assign(old, draft, { reference, kind });
+        else items.push({ ...items[0], ...draft, reference, id: items.length+1, vessel_id: Number(args.p_vessel_id), kind } as LiftingItem);
         return { data: old?.id || items.at(-1)?.id, error: null };
       }
       if (name === 'set_lifting_item_active') { const item = items.find((i) => i.id === args.p_id); if (item) item.active = Boolean(args.p_active); return { data: null, error: null }; }
@@ -40,8 +44,17 @@ export function createLiftingPreviewClient(): SupabaseClient {
         if (reports.some((r) => r.kind === args.p_kind && r.inspection_year === year)) return { data: null,error:{ message:'Un contrôle existe déjà pour cette année.' } };
         const report: LiftingInspection = { id: reports.length+1,company_id:1,vessel_id:demoVessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:demoVessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
         reports.push(report);
-        items.filter((i) => i.kind === report.kind && i.active).forEach((i) => entries.push({ id:entries.length+1,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:emptyChecks(),observations:'' }));
+        items.filter((i) => i.kind === report.kind && i.active).forEach((i) => entries.push({ id:entries.length+1,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:defaultChecks(i),checklist_version:2,observations:'' }));
         return { data:report.id,error:null };
+      }
+      if (name === 'save_lifting_inspection_entries') {
+        const report = reports.find((r) => r.id === args.p_inspection_id);
+        if (!report || report.revision !== args.p_revision) return {data:null,error:{message:'Ce contrôle a été modifié depuis un autre appareil.'}};
+        const rows = args.p_entries as InspectionEntry[];
+        if (rows.some((row) => !entries.some((e) => e.id === row.id && e.inspection_id === report.id))) return {data:null,error:{message:'Matériel absent de ce contrôle.'}};
+        if (rows.some((row) => row.condition === 'good' && Object.values(row.checks).includes('defect'))) return {data:null,error:{message:'Un matériel présentant un défaut ne peut pas être maintenu en service sans réserve.'}};
+        rows.forEach((row) => Object.assign(entries.find((e) => e.id === row.id)!, row)); report.revision += rows.length;
+        return {data:report.revision,error:null};
       }
       if (name === 'save_lifting_inspection_entry') {
         const report = reports.find((r) => r.id === args.p_inspection_id); const entry = entries.find((e) => e.id === args.p_entry_id);

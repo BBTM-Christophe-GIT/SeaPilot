@@ -6,7 +6,7 @@ declare
   c bigint; other_c bigint; vessel bigint; other_vessel bigint; item bigint; towing bigint;
   inspection bigint; entry bigint; revision integer; certificate bigint; captain bigint; sailor bigint;
   uid uuid; role_name text; path text; result integer;
-  good_checks jsonb := '{"EG":"ok","NID":"ok","V1":"na","V2":"na","V3":"na","V4":"na","V5":"na"}';
+  good_checks jsonb := '{"EG":"ok","ID":"ok","NID":"na","V1":"ok","V2":"ok","V3":"ok","V4":"ok","V5":"ok"}';
 begin
   select id into c from public.companies where code='bbtm';
   insert into public.companies(code,name) values('lifting-test-other','Lifting other tenant') returning id into other_c;
@@ -37,7 +37,9 @@ begin
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
   item := public.save_lifting_item(vessel,'lifting','{"reference":"L1","material_type":"Élingue","description":"Original sling","swl_tonnes":2}');
-  towing := public.save_lifting_item(vessel,'towing','{"reference":"T1","material_type":"Remorque","description":"Maritime towing line"}');
+  towing := public.save_lifting_item(vessel,'towing','{"reference":"T1","material_type":"Remorque","towing_type":"textile_line","description":"Maritime towing line"}');
+  assert (select reference from public.lifting_inventory where id=item)='1', 'First lifting number';
+  assert (select reference from public.lifting_inventory where id=towing)='1', 'Independent towing number';
   assert not public.lifting_can_access(other_c,other_vessel), 'Tenant isolation';
   begin
     perform public.save_lifting_item(other_vessel,'lifting','{"reference":"X","material_type":"Manille","description":"Cross tenant"}');
@@ -51,6 +53,9 @@ begin
   assert (select count(*) from public.lifting_inspection_entries where inspection_id=inspection)=1, 'Towing excluded from lifting inspection';
   select id into entry from public.lifting_inspection_entries where inspection_id=inspection;
   perform public.save_lifting_item(vessel,'lifting','{"reference":"L1","material_type":"Élingue","description":"Edited sling","swl_tonnes":3}',item);
+  assert (select reference from public.lifting_inventory where id=item)='1', 'Identifier cannot be edited';
+  assert (select condition from public.lifting_inspection_entries where id=entry)='pending', 'Prechecked is not inspected';
+  assert (select checks->>'ID' from public.lifting_inspection_entries where id=entry)='ok', 'Applicable boxes prechecked';
   assert (select item_snapshot->>'description' from public.lifting_inspection_entries where id=entry)='Original sling', 'Inventory edits must not change report snapshots';
   perform public.set_lifting_item_active(item,false);
   assert exists(select 1 from public.lifting_inspection_entries where id=entry), 'Archiving must preserve history';
@@ -97,6 +102,31 @@ begin
     if sqlerrm='Good condition with defect accepted' then raise; end if;
     assert sqlerrm like 'Un matériel présentant un défaut%',sqlerrm;
   end;
+
+  -- Completeness and every towing subtype use the verifier's precise applicability.
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"chain_bridle"}')=array['EG','NID','V1','V2'];
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"textile_line"}')=array['EG','NID'];
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"towing_wire"}')=array['EG','NID'];
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"winch_wire"}')=array['EG','NID'];
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"textile_bridle"}')=array['EG','V1','V2','V3','V4','V5'];
+  assert not public.lifting_entry_ready('{"material_type":"Manilles"}','good','{"EG":"ok","ID":"ok","V1":"na"}',''), 'Applicable point cannot be omitted';
+  assert not public.lifting_entry_ready('{"material_type":"Remorque"}','good','{}',''), 'Unknown subtype cannot be finalized';
+  -- Bulk edits are atomic even when the last submitted row belongs to another inspection.
+  select r.revision into revision from public.lifting_inspections r where id=inspection;
+  begin
+    perform public.save_lifting_inspection_entries(inspection,revision,jsonb_build_array(
+      jsonb_build_object('id',entry,'condition','repair','checks',jsonb_set(good_checks,'{EG}','"defect"'),'observations','Must roll back'),
+      jsonb_build_object('id',-99999,'condition','good','checks',good_checks,'observations','')));
+    raise exception 'Invalid batch accepted';
+  exception when raise_exception then
+    if sqlerrm='Invalid batch accepted' then raise; end if;
+    assert sqlerrm like 'Matériel absent%',sqlerrm;
+  end;
+  assert (select r.revision from public.lifting_inspections r where id=inspection)=revision,'Failed batch keeps revision';
+  assert (select condition from public.lifting_inspection_entries where id=entry)='good','Failed batch rolls back first row';
+  result:=public.save_lifting_inspection_entries(inspection,revision,jsonb_build_array(jsonb_build_object('id',entry,'condition','good','checks',good_checks,'observations','')));
+  assert result=revision+1,'Valid batch updates revision';
+  select r.revision into revision from public.lifting_inspections r where id=inspection;
   path := c||'/LVT/lifting/'||inspection||'/'||revision||'-fixture.pdf';
   execute 'reset role';
   insert into storage.objects(bucket_id,name,metadata) values('fleet-certificates',path,'{"mimetype":"application/pdf","size":100}');

@@ -13,7 +13,8 @@ export async function fetchLiftingRegister(client: SupabaseClient, vesselId: num
   ]);
   if (items.error) throw items.error;
   if (inspections.error) throw inspections.error;
-  return { items: (items.data || []) as LiftingItem[], inspections: (inspections.data || []) as LiftingInspection[] };
+  const orderedItems = [...(items.data || []) as LiftingItem[]].sort((a, b) => a.reference.localeCompare(b.reference, 'fr', { numeric: true }));
+  return { items: orderedItems, inspections: (inspections.data || []) as LiftingInspection[] };
 }
 export async function fetchInspectionEntries(client: SupabaseClient, id: number): Promise<InspectionEntry[]> {
   const { data, error } = await client.from('lifting_inspection_entries').select('*').eq('inspection_id', id).order('id');
@@ -38,6 +39,14 @@ export async function saveInspectionEntry(client: SupabaseClient, inspection: Li
   const { data, error } = await client.rpc('save_lifting_inspection_entry', {
     p_inspection_id: inspection.id, p_entry_id: entry.id, p_revision: inspection.revision,
     p_condition: entry.condition, p_checks: entry.checks, p_observations: entry.observations,
+  });
+  if (error) throw error;
+  return data as number;
+}
+export async function saveInspectionEntries(client: SupabaseClient, inspection: LiftingInspection, entries: InspectionEntry[]): Promise<number> {
+  const { data, error } = await client.rpc('save_lifting_inspection_entries', {
+    p_inspection_id: inspection.id, p_revision: inspection.revision,
+    p_entries: entries.map((entry) => ({ id: entry.id, condition: entry.condition, checks: entry.checks, observations: entry.observations })),
   });
   if (error) throw error;
   return data as number;

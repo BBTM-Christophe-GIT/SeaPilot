@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { CircleX } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
-import { CHECK_KEYS, CHECK_LABELS, CONDITION_LABELS, annualExpiry, entryComplete, todayLocal, type CheckValue, type InspectionEntry, type ItemCondition, type ItemDraft, type LiftingKind } from './liftingModel';
+import { CONDITION_LABELS, DECISIONS, annualExpiry, editableEntry, entryComplete, entryUnsatisfactory, todayLocal, type InspectionEntry, type ItemCondition, type ItemDraft, type LiftingKind } from './liftingModel';
+import { ACCESSORIES, TOWING_TYPES, accessoryDefinition, applicableCodes, groupByAccessory, type ControlCode } from './liftingControls';
 
 export function LiftingItemForm({ initial, kind, busy, error, onClose, onSave }: {
   initial: ItemDraft; kind: LiftingKind; busy: boolean; error: string; onClose: () => void; onSave: (draft: ItemDraft) => void;
@@ -11,9 +13,12 @@ export function LiftingItemForm({ initial, kind, busy, error, onClose, onSave }:
     onSubmit={(event) => { event.preventDefault(); onSave(draft); }}
     footer={<><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Annuler</button><button className="primary-button" disabled={busy}>Enregistrer le matériel</button></>}>
     <div className="lifting-form-grid">
-      <label>Identifiant du matériel<input required maxLength={100} value={draft.reference} onChange={(e) => change('reference', e.target.value)} /></label>
-      <label>Type de matériel<input required maxLength={100} readOnly={kind === 'towing'} value={draft.material_type} onChange={(e) => change('material_type', e.target.value)} list="lifting-material-types" /></label>
-      <datalist id="lifting-material-types">{['Élingue', 'Manille', 'Croc', 'Sangle', 'Palan', 'Autre'].map((type) => <option key={type}>{type}</option>)}</datalist>
+      <label>Identifiant du matériel<input readOnly value={draft.reference} placeholder="Attribué automatiquement à l’enregistrement" /><small className="lifting-muted">Numérotation chronologique automatique à partir de 1.</small></label>
+      <label>Type d’accessoire<select required value={accessoryDefinition(draft.material_type)?.fr || draft.material_type} onChange={(e) => setDraft({ ...draft, material_type: e.target.value, towing_type: e.target.value === 'Remorque' ? draft.towing_type || 'textile_line' : null })}>
+        {ACCESSORIES.map((type) => <option key={type.code} value={type.fr}>{type.fr} ({type.code})</option>)}
+      </select></label>
+      {draft.material_type === 'Remorque' && <label className="lifting-span">Type de remorque<select required value={draft.towing_type || ''} onChange={(e) => change('towing_type', e.target.value)}><option disabled value="">Choisir le type de remorque</option>{TOWING_TYPES.map((type) => <option key={type.key} value={type.key}>{type.fr}</option>)}</select></label>}
+      {draft.material_type === 'Remorque' && kind !== 'towing' && <p className="lifting-muted lifting-span">Ce matériel sera enregistré dans la section Remorques.</p>}
       <label className="lifting-span">Description<textarea required maxLength={2000} value={draft.description} onChange={(e) => change('description', e.target.value)} /></label>
       <label>CMU (tonnes)<input type="number" min="0.001" step="any" inputMode="decimal" value={draft.swl_tonnes ?? ''} onChange={(e) => change('swl_tonnes', e.target.value ? Number(e.target.value) : null)} placeholder="Non renseignée" /></label>
       <label>Numéro de série<input value={draft.serial_number} onChange={(e) => change('serial_number', e.target.value)} /></label>
@@ -41,27 +46,44 @@ export function LiftingStartForm({ busy, error, onClose, onSave }: { busy: boole
   </AppDialog>;
 }
 
-export function LiftingEntryForm({ entry, busy, error, onClose, onSave }: {
-  entry: InspectionEntry; busy: boolean; error: string; onClose: () => void; onSave: (entry: InspectionEntry) => void;
+export function LiftingControlForm({ entries, busy, error, onSave, onDirtyChange }: {
+  entries: InspectionEntry[]; busy: boolean; error: string; onSave: (entries: InspectionEntry[]) => Promise<boolean>; onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [draft, setDraft] = useState(entry);
-  return <AppDialog title={`Contrôler le matériel ${entry.item_snapshot.reference}`} description={entry.item_snapshot.description} onClose={onClose} isBusy={busy} size="lg"
-    onSubmit={(e) => { e.preventDefault(); onSave(draft); }}
-    footer={<><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Annuler</button><button className="primary-button" disabled={busy}>Enregistrer le contrôle</button></>}>
-    <div className="lifting-entry-form">
-      <label>Décision pour ce matériel<select value={draft.condition} onChange={(e) => setDraft({ ...draft, condition: e.target.value as ItemCondition })}>
-        {Object.entries(CONDITION_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-      </select></label>
-      {draft.condition !== 'not_present' && <fieldset><legend>Points de contrôle</legend>
-        <p className="lifting-muted">EG, NID et V1 à V5 reprennent les repères du registre source. Choisissez « Sans objet » pour les points non applicables.</p>
-        <div className="lifting-checks">{CHECK_KEYS.map((key) => <label key={key}>{key}<select value={draft.checks[key]} onChange={(e) => setDraft({ ...draft, checks: { ...draft.checks, [key]: e.target.value as CheckValue } })}>
-          {Object.entries(CHECK_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-        </select></label>)}</div>
-      </fieldset>}
-      <label>Observations et actions à réaliser<textarea rows={4} value={draft.observations} onChange={(e) => setDraft({ ...draft, observations: e.target.value })} placeholder="Défaut constaté, réparation à prévoir, motif d’absence…" /></label>
-      <p className="lifting-muted">{entryComplete(draft) ? 'Ce matériel est prêt pour le rapport.' : 'Vous pouvez enregistrer une saisie partielle et la compléter plus tard.'}</p>
-      {draft.condition === 'repair' && <p className="lifting-warning">La réparation doit être réalisée avant la remise en service.</p>}
-      {error && <p className="lifting-error" role="alert">{error}</p>}
-    </div>
-  </AppDialog>;
+  const [changes, setChanges] = useState<Record<number, InspectionEntry>>({});
+  const groups = useMemo(() => groupByAccessory(entries, (entry) => entry.item_snapshot), [entries]);
+  const pending = entries.filter((entry) => changes[entry.id] || entry.condition === 'pending');
+  const update = (entry: InspectionEntry) => { setChanges((previous) => ({ ...previous, [entry.id]: entry })); onDirtyChange(true); };
+  async function save(rows: InspectionEntry[]) {
+    if (await onSave(rows)) {
+      const remaining = { ...changes }; rows.forEach((entry) => { delete remaining[entry.id]; });
+      setChanges(remaining); onDirtyChange(Object.keys(remaining).length > 0);
+    }
+  }
+  return <form className="lifting-control-form" onSubmit={(e) => { e.preventDefault(); void save(pending.map((entry) => changes[entry.id] || editableEntry(entry))); }}>
+    <p className="lifting-control-instructions">Les cases sont précochées. Décochez un code si le point est non conforme, puis indiquez la décision et vos observations. Enregistrez les matériels examinés.</p>
+    {groups.map((group) => <section className="lifting-accessory-group" key={group.label} aria-label={group.label}>
+      <header><div><h3>{group.label} <span>{group.definition?.code}</span></h3><i lang="en">{group.definition?.en}</i></div><strong>{group.rows.length} matériel{group.rows.length > 1 ? 's' : ''}</strong></header>
+      <details className="lifting-control-help"><summary>Détail des points de contrôle</summary>
+        {group.definition && applicableCodes(group.rows[0].item_snapshot).length ? <dl>{applicableCodes(group.rows[0].item_snapshot).map((code) => <div key={code}><dt>{code}</dt><dd>{group.definition!.checks[code]!.fr}<i lang="en">{group.definition!.checks[code]!.en}</i></dd></div>)}</dl> : <p>Le détail des contrôles de ce type d’accessoire reste à renseigner à partir de la notice du vérificateur.</p>}
+      </details>
+      {group.rows.map((entry) => {
+        const draft = changes[entry.id] || editableEntry(entry);
+        const item = entry.item_snapshot; const codes = applicableCodes(item);
+        function toggle(code: ControlCode, checked: boolean) { update({ ...draft, checks: { ...draft.checks, [code]: checked ? 'ok' : 'defect' }, condition: !checked && draft.condition === 'good' ? 'repair' : draft.condition }); }
+        const unsatisfactory = entryUnsatisfactory(draft);
+        return <article className={`lifting-control-item${unsatisfactory ? ' is-unsatisfactory' : ''}`} key={entry.id} aria-label={`Matériel ${item.reference}`}>
+          <div className="lifting-control-item-heading"><span className="lifting-id">{item.reference}</span><div><h4>{item.description}</h4><p>{item.swl_tonnes === null ? 'CMU non renseignée' : `CMU ${item.swl_tonnes} t`}{item.legacy_reference && ` · Ancien identifiant ${item.legacy_reference}`}{item.serial_number && ` · N° ${item.serial_number}`}</p></div>{unsatisfactory && <span className="lifting-unsatisfactory"><CircleX size={19} aria-hidden="true" /> Résultat insatisfaisant</span>}<span className={`lifting-status ${changes[entry.id] || entry.condition === 'pending' ? 'draft' : entry.condition}`}>{changes[entry.id] || entry.condition === 'pending' ? 'À enregistrer' : entryComplete(entry) ? 'Enregistré' : 'À compléter'}</span></div>
+          <div className="lifting-control-item-fields">
+            <fieldset disabled={busy}><legend>Points de contrôle</legend><div className="lifting-code-checkboxes">{codes.map((code) => <label key={code} title={group.definition?.checks[code]?.fr} className={draft.checks[code] === 'defect' ? 'is-defect' : ''}><input type="checkbox" aria-label={code} checked={draft.checks[code] === 'ok'} onChange={(e) => toggle(code, e.target.checked)} />{code}{draft.checks[code] === 'defect' && <CircleX size={16} aria-label={`${code} : insatisfaisant`} />}</label>)}</div>{!codes.length && <p className="lifting-muted">Notice de contrôle à compléter.</p>}</fieldset>
+            <label>Décision pour ce matériel<select disabled={busy} value={draft.condition} onChange={(e) => update({ ...draft, condition: e.target.value as ItemCondition })}>{DECISIONS.map((decision) => <option key={decision} value={decision}>{CONDITION_LABELS[decision]}</option>)}</select></label>
+            <label className="lifting-control-observation">Observation<textarea disabled={busy} rows={2} value={draft.observations} onChange={(e) => update({ ...draft, observations: e.target.value })} placeholder="Défaut constaté, réparation à réaliser…" /></label>
+          </div>
+          {unsatisfactory && draft.condition === 'good' && <p className="lifting-error">Le résultat est insatisfaisant. Choisissez le maintien après réparation ou la mise au rebut.</p>}
+          <div className="lifting-control-item-footer"><span className="lifting-muted">{draft.condition === 'repair' ? 'Réparation à réaliser avant la remise en service.' : draft.condition === 'withdrawn' ? 'Matériel à retirer du service et à mettre au rebut.' : 'Les observations seront reprises dans le rapport.'}</span><button type="button" className="secondary-button" disabled={busy || !codes.length} onClick={() => void save([draft])}>Enregistrer le matériel {item.reference}</button></div>
+        </article>;
+      })}
+    </section>)}
+    {error && <p role="alert" className="lifting-error">{error}</p>}
+    <div className="lifting-save-controls"><span>{pending.length ? `${pending.length} matériel${pending.length > 1 ? 's' : ''} à enregistrer` : 'Tous les changements sont enregistrés.'}</span><button type="submit" className="primary-button" disabled={busy || !pending.length || pending.some((entry) => !applicableCodes(entry.item_snapshot).length)}>{busy ? 'Enregistrement…' : 'Enregistrer tous les contrôles'}</button></div>
+  </form>;
 }
