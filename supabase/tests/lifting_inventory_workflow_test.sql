@@ -1,0 +1,125 @@
+-- Runs against real database roles and profile/planning fixtures, never simulated UI roles.
+-- All fixtures, PDFs metadata, certificates and changes are rolled back.
+begin;
+do $test$
+declare
+  c bigint; other_c bigint; vessel bigint; other_vessel bigint; item bigint; towing bigint;
+  inspection bigint; entry bigint; revision integer; certificate bigint; captain bigint; sailor bigint;
+  uid uuid; role_name text; path text; result integer;
+  good_checks jsonb := '{"EG":"ok","NID":"ok","V1":"na","V2":"na","V3":"na","V4":"na","V5":"na"}';
+begin
+  select id into c from public.companies where code='bbtm';
+  insert into public.companies(code,name) values('lifting-test-other','Lifting other tenant') returning id into other_c;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING TEST VESSEL','LVT',true,'vessel') returning id into vessel;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_c,'LIFTING OTHER VESSEL','LVO',true,'vessel') returning id into other_vessel;
+  for uid,role_name in select * from (values
+    ('9e090000-0000-0000-0000-000000000001'::uuid,'admin'),
+    ('9e090000-0000-0000-0000-000000000002'::uuid,'direction'),
+    ('9e090000-0000-0000-0000-000000000003'::uuid,'armement'),
+    ('9e090000-0000-0000-0000-000000000004'::uuid,'capitaine'),
+    ('9e090000-0000-0000-0000-000000000005'::uuid,'marin')) f(id,role_key)
+  loop
+    insert into auth.users(id,email) values(uid,'lifting-'||role_name||'@example.invalid');
+    insert into public.profiles(id,email,display_name,active_company_id) values(uid,'lifting-'||role_name||'@example.invalid','Lifting '||role_name,c);
+    insert into public.company_memberships(company_id,user_id,active) values(c,uid,true) on conflict(company_id,user_id) do update set active=true;
+    insert into public.user_roles(user_id,company_id,role_key) values(uid,c,role_name);
+  end loop;
+  insert into public.people(company_id,user_id,first_name,last_name,function_label,sailor_number,active)
+    values(c,'9e090000-0000-0000-0000-000000000004','Lifting','Captain','Capitaine','LVT-CAP',true) returning id into captain;
+  insert into public.people(company_id,user_id,first_name,last_name,function_label,sailor_number,active)
+    values(c,'9e090000-0000-0000-0000-000000000005','Lifting','Sailor','Matelot','LVT-MAR',true) returning id into sailor;
+  insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,assignment_role,confirmation_status)
+    values(c,vessel,captain,current_date-1,current_date+1,'Capitaine','confirmed'),(c,vessel,sailor,current_date-1,current_date+1,'Matelot','confirmed');
+  assert not has_table_privilege('anon','public.lifting_inventory','SELECT'), 'Anonymous inventory access must be denied';
+  assert not has_table_privilege('authenticated','public.lifting_inspections','UPDATE'), 'Inspection writes must use RPCs';
+  assert not has_table_privilege('authenticated','public.lifting_inventory','DELETE'), 'No physical inventory deletion';
+  assert not has_function_privilege('anon','public.start_lifting_inspection(bigint,text,date,date)','EXECUTE'), 'Anonymous RPC access';
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  item := public.save_lifting_item(vessel,'lifting','{"reference":"L1","material_type":"Élingue","description":"Original sling","swl_tonnes":2}');
+  towing := public.save_lifting_item(vessel,'towing','{"reference":"T1","material_type":"Remorque","description":"Maritime towing line"}');
+  assert not public.lifting_can_access(other_c,other_vessel), 'Tenant isolation';
+  begin
+    perform public.save_lifting_item(other_vessel,'lifting','{"reference":"X","material_type":"Manille","description":"Cross tenant"}');
+    raise exception 'Cross-tenant item creation was allowed';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.save_lifting_item(vessel,'lifting','{"reference":"INVALID","material_type":"Remorque","description":"Wrong section"}');
+    raise exception 'Towing line accepted in lifting section';
+  exception when check_violation then null; end;
+  inspection := public.start_lifting_inspection(vessel,'lifting','2031-03-05','2032-03-05');
+  assert (select count(*) from public.lifting_inspection_entries where inspection_id=inspection)=1, 'Towing excluded from lifting inspection';
+  select id into entry from public.lifting_inspection_entries where inspection_id=inspection;
+  perform public.save_lifting_item(vessel,'lifting','{"reference":"L1","material_type":"Élingue","description":"Edited sling","swl_tonnes":3}',item);
+  assert (select item_snapshot->>'description' from public.lifting_inspection_entries where id=entry)='Original sling', 'Inventory edits must not change report snapshots';
+  perform public.set_lifting_item_active(item,false);
+  assert exists(select 1 from public.lifting_inspection_entries where id=entry), 'Archiving must preserve history';
+  perform public.set_lifting_item_active(item,true);
+  assert (select active from public.lifting_inventory where id=item), 'Restore inventory';
+  begin
+    perform public.publish_lifting_inspection(inspection,1,'invalid','invalid.pdf',10);
+    raise exception 'Incomplete report published';
+  exception when raise_exception then
+    if sqlerrm='Incomplete report published' then raise; end if;
+    assert sqlerrm like 'Terminez tous les contrôles%',sqlerrm;
+  end;
+  -- Captain and Marin fixtures have actual HR links and active assignments.
+  foreach uid in array array['9e090000-0000-0000-0000-000000000004'::uuid,'9e090000-0000-0000-0000-000000000005'::uuid] loop
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    assert public.lifting_can_access(c,vessel), 'Assigned onboard profile can inspect vessel';
+    assert not public.lifting_can_access(other_c,other_vessel), 'Onboard cross-tenant access denied';
+    assert exists(select 1 from public.lifting_inspection_entries where id=entry), 'Onboard RLS permits assigned vessel';
+    begin
+      perform public.set_lifting_item_active(item,false);
+      raise exception 'Onboard profile administered inventory';
+    exception when insufficient_privilege then null; end;
+    select r.revision into revision from public.lifting_inspections r where id=inspection;
+    result := public.save_lifting_inspection_entry(inspection,entry,revision,'good',good_checks,'');
+    assert result=revision+1,'Onboard save increments revision';
+    begin
+      perform public.publish_lifting_inspection(inspection,result,'invalid','invalid.pdf',10);
+      raise exception 'Onboard profile published';
+    exception when insufficient_privilege then null; end;
+  end loop;
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  select r.revision into revision from public.lifting_inspections r where id=inspection;
+  begin
+    perform public.save_lifting_inspection_entry(inspection,entry,revision-1,'good',good_checks,'');
+    raise exception 'Stale edit accepted';
+  exception when raise_exception then
+    if sqlerrm='Stale edit accepted' then raise; end if;
+    assert sqlerrm like 'Ce contrôle a été modifié%',sqlerrm;
+  end;
+  begin
+    perform public.save_lifting_inspection_entry(inspection,entry,revision,'good',jsonb_set(good_checks,'{EG}','"defect"'),'');
+    raise exception 'Good condition with defect accepted';
+  exception when raise_exception then
+    if sqlerrm='Good condition with defect accepted' then raise; end if;
+    assert sqlerrm like 'Un matériel présentant un défaut%',sqlerrm;
+  end;
+  path := c||'/LVT/lifting/'||inspection||'/'||revision||'-fixture.pdf';
+  execute 'reset role';
+  insert into storage.objects(bucket_id,name,metadata) values('fleet-certificates',path,'{"mimetype":"application/pdf","size":100}');
+  execute 'set local role authenticated';
+  certificate := public.publish_lifting_inspection(inspection,revision,path,'LVT - Lifting fixture - 2031.pdf',100);
+  assert certificate=public.publish_lifting_inspection(inspection,revision,path,'LVT - Lifting fixture - 2031.pdf',100), 'Retry must reuse the certificate';
+  assert (select count(*) from public.fleet_certificates where id=certificate and vessel_id=vessel and issued_on=date '2031-03-05' and expires_on=date '2032-03-05' and category_key='08-3-accessoires-levage')=1, 'Fleet certificate vessel, dates and category';
+  assert (select count(*) from public.fleet_certificate_versions where certificate_id=certificate and storage_path=path and is_current)=1, 'Fleet document version created';
+  begin
+    perform public.save_lifting_inspection_entry(inspection,entry,revision,'good',good_checks,'Edited after publication');
+    raise exception 'Final report editable';
+  exception when raise_exception then
+    if sqlerrm='Final report editable' then raise; end if;
+    assert sqlerrm like 'Ce rapport est finalisé%',sqlerrm;
+  end;
+  -- Direction and Armement retain inventory administration rights.
+  foreach uid in array array['9e090000-0000-0000-0000-000000000002'::uuid,'9e090000-0000-0000-0000-000000000003'::uuid] loop
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    perform public.set_lifting_item_active(item,false);
+    perform public.set_lifting_item_active(item,true);
+    assert (select active from public.lifting_inventory where id=item),'Office inventory administration';
+  end loop;
+  execute 'reset role';
+end $test$;
+select 'PASS: lifting inventory, snapshots, real profile/RLS scopes, revision guard, atomic fleet certificate publication and retry' as result;
+rollback;
