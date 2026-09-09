@@ -3,13 +3,78 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { LiftingPage } from './LiftingPage';
-import { createLiftingPreviewClient, demoVessel } from './liftingPreview';
+import { createLiftingPreviewClient, demoVessel, secondDemoVessel } from './liftingPreview';
+import { matchesLiftingItem } from './liftingSearch';
 import { annualExpiry, canManageLifting, defaultChecks, emptyChecks, entryComplete, entryUnsatisfactory, INSPECTOR, type InspectionEntry, type LiftingInspection } from './liftingModel';
 import { fetchInspectionEntries, fetchLiftingRegister, publishLiftingInspection, saveLiftingItem, startLiftingInspection } from './liftingQueries';
 import { ACCESSORIES, TOWING_TYPES, applicableCodes } from './liftingControls';
 import { buildLiftingPdf, liftingReportFilename } from './liftingPdf';
 
 describe('lifting annual workflow', () => {
+  it('starts on the vessel selected inside the dialog and opens only that vessel’s equipment', async () => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    await user.click(screen.getByRole('button', { name: 'Nouveau contrôle annuel' }));
+    await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('Navire / site à contrôler'), String(secondDemoVessel.id));
+    await user.click(screen.getByRole('button', { name: 'Démarrer le contrôle' }));
+    await screen.findByRole('heading', { name: /Contrôle annuel/ });
+    expect(screen.getByLabelText('Navire')).toHaveValue(String(secondDemoVessel.id));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByText('MANILLE DU SECOND NAVIRE')).toBeInTheDocument();
+    expect((await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections).toHaveLength(0);
+    const register = await fetchLiftingRegister(client, secondDemoVessel.id, 'lifting');
+    expect(register.inspections).toHaveLength(1);
+    expect((await fetchInspectionEntries(client, register.inspections[0].id))[0].item_snapshot.vessel_id).toBe(secondDemoVessel.id);
+  });
+  it('groups and filters the inventory by accessory, with accent-insensitive keyword matching', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={['admin']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    expect(screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))).toEqual(['Crocs', 'Élingues / Sangles textiles', 'Manilles']);
+    await user.selectOptions(screen.getByLabelText('Type d’accessoire — inventaire'), 'Manilles');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    await user.type(screen.getByLabelText('Rechercher un matériel'), 'ELINGUE ronde');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByText('ÉLINGUE TEXTILE RONDE — 3 M')).toBeInTheDocument();
+  });
+  it('saves only visible controls, preserves hidden edits and leaves hidden pending equipment unapproved', async () => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    await user.click(screen.getByRole('button', { name: 'Nouveau contrôle annuel' }));
+    await user.click(screen.getByRole('button', { name: 'Démarrer le contrôle' }));
+    const sling = await screen.findByRole('article', { name: 'Matériel 1' });
+    await user.type(within(sling).getByLabelText('Observation'), 'Repère à conserver');
+    await user.selectOptions(screen.getByLabelText('Type d’accessoire — contrôle'), 'Manilles');
+    expect(screen.getByText(/modifications non enregistrées/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les contrôles affichés' }));
+    await waitFor(() => expect(screen.getByText('1 / 3 matériels contrôlés')).toBeInTheDocument());
+    const rows = await fetchInspectionEntries(client, 1);
+    expect(rows.find((row) => row.item_snapshot.reference === '2')?.condition).toBe('good');
+    expect(rows.filter((row) => row.condition === 'pending')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Finaliser et classer le rapport' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    expect(within(screen.getByRole('article', { name: 'Matériel 1' })).getByLabelText('Observation')).toHaveValue('Repère à conserver');
+    await user.type(screen.getByLabelText('Rechercher dans le contrôle'), 'repere');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    await user.keyboard('{Enter}');
+    expect((await fetchInspectionEntries(client, 1)).filter((row) => row.condition === 'pending')).toHaveLength(2);
+  });
+  it('searches historical identity and serial, location, notes and observations', async () => {
+    const item = (await fetchLiftingRegister(createLiftingPreviewClient(), demoVessel.id, 'lifting')).items[0];
+    const enriched = { ...item, legacy_reference: 'SRC-41', serial_number: 'ABC-123', location: 'Atelier', notes: 'À examiner' };
+    expect(matchesLiftingItem(enriched, 'src-41 ABC atelier examiner', '', 'Réparation')).toBe(true);
+    expect(matchesLiftingItem(enriched, 'reparation', '', 'Réparation')).toBe(true);
+    expect(matchesLiftingItem(enriched, 'introuvable')).toBe(false);
+    expect(matchesLiftingItem(enriched, 'atelier', 'Manilles')).toBe(false);
+  });
+  it('uses the supplied ring and plate-clamp guidance and leaves grapples awaiting their notice', () => {
+    expect(applicableCodes({ material_type: 'Anneau' })).toEqual(['EG', 'ID']);
+    expect(applicableCodes({ material_type: 'Pinces à tôles' })).toEqual(['EG', 'ID', 'V1', 'V2', 'V3']);
+    expect(applicableCodes({ material_type: 'Grappins' })).toEqual([]);
+  });
   it('preserves the day and handles a leap-year expiry', () => {
     expect(annualExpiry('2024-02-29')).toBe('2025-02-28');
     expect(annualExpiry('2026-11-26')).toBe('2027-11-26');

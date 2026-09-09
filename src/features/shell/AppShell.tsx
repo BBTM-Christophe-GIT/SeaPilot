@@ -1,3 +1,4 @@
+import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BarChart3,
@@ -11,7 +12,6 @@ import {
   ChevronUp,
   Clock3,
   ClipboardCheck,
-  Construction,
   FileCheck2,
   FileText,
   FolderKanban,
@@ -90,7 +90,7 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Planning: CalendarDays,
   'Ressources Humaines': Users,
   Maintenance: Wrench,
-  Levage: Construction,
+  Levage: LiftingOperationsIcon,
   Administration: Settings,
 };
 
@@ -127,7 +127,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   projects: FolderKanban,
   marad: Wrench,
   technicalDocuments: BookOpenCheck,
-  lifting: Construction,
+  lifting: LiftingOperationsIcon,
   admin: Settings,
 };
 
