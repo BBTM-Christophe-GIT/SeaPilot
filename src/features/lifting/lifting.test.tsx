@@ -74,10 +74,17 @@ describe('lifting annual workflow', () => {
     expect(within(sling).queryByText('Résultat insatisfaisant')).not.toBeInTheDocument();
     expect(screen.getByRole('button',{name:'Finaliser et classer le rapport'})).toBeDisabled();
   });
-  it('uses the supplied towing codes, deduplicates V2 and does not add identification to textile bridles', () => {
+  it('uses the supplied towing codes including identification for textile bridles', () => {
     expect(applicableCodes({material_type:'Remorque',towing_type:'chain_bridle'})).toEqual(['EG','NID','V1','V2']);
     for (const towing_type of ['textile_line','towing_wire','winch_wire'] as const) expect(applicableCodes({material_type:'Remorque',towing_type})).toEqual(['EG','NID']);
-    expect(applicableCodes({material_type:'Remorque',towing_type:'textile_bridle'})).toEqual(['EG','V1','V2','V3','V4','V5']);
+    const item = {material_type:'Remorque',towing_type:'textile_bridle'} as const;
+    expect(applicableCodes(item)).toEqual(['EG','NID','V1','V2','V3','V4','V5']);
+    const entry = {item_snapshot:item,checks:defaultChecks(item),condition:'good',checklist_version:2,observations:''} as InspectionEntry;
+    expect(entry.checks.NID).toBe('ok');
+    expect(entryComplete(entry)).toBe(true);
+    entry.checks.NID='na'; expect(entryComplete(entry)).toBe(false);
+    entry.checks.NID='defect'; expect(entryUnsatisfactory(entry)).toBe(true);
+    expect(entryComplete(entry)).toBe(false);
     for (const type of [...ACCESSORIES,...TOWING_TYPES]) for (const point of Object.values(type.checks)) { expect(point.fr).toBeTruthy(); expect(point.en).toBeTruthy(); }
   });
   it('derives an unsatisfactory result from any one applicable failed code, independently of the decision', () => {

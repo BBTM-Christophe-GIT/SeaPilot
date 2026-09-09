@@ -70,7 +70,7 @@ export const TOWING_TYPES: { key: TowingType; fr: string; en: string; checks: Ac
   } },
   { key: 'towing_wire', fr: 'Câble de remorquage', en: 'Towing wire', checks: { EG: wire.EG, NID: wire.ID } },
   { key: 'winch_wire', fr: 'Câble de treuil', en: 'Winch wire', checks: { EG: wire.EG, NID: wire.ID } },
-  { key: 'textile_bridle', fr: 'Patte d’oie textile', en: 'Textile towing bridle', checks: { EG: textile.EG, V1: textile.V1, V2: textile.V2, V3: textile.V3, V4: textile.V4, V5: textile.V5 } },
+  { key: 'textile_bridle', fr: 'Patte d’oie textile', en: 'Textile towing bridle', checks: { EG: textile.EG, NID: textile.ID, V1: textile.V1, V2: textile.V2, V3: textile.V3, V4: textile.V4, V5: textile.V5 } },
 ];
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 export function accessoryDefinition(materialType: string): AccessoryDefinition | undefined {

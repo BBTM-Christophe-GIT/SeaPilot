@@ -77,7 +77,9 @@ Documentation technique consultée : [Supabase RLS](https://supabase.com/docs/gu
 | Remorque textile | EG, NID |
 | Câble de remorquage | EG, NID |
 | Câble de treuil | EG, NID |
-| Patte d’oie textile | EG, V1, V2, V3, V4, V5 |
+| Patte d’oie textile | EG, NID, V1, V2, V3, V4, V5 |
+
+Le contrôle NID de la patte d’oie textile vérifie la présence de la plaque / étiquette constructeur, du numéro d’identification et de la CMU. Il figure dans le formulaire, le tableau PDF et la notice bilingue. Tout brouillon existant auquel ce point est ajouté doit être enregistré à nouveau avant finalisation ; les rapports déjà publiés sont conservés.
 
 Le V2 saisi deux fois pour la patte d’oie textile est dédupliqué. La phrase « Fils porteurs non visibles » collée à la fin du contrôle de l’axe des manilles dans la capture est un report manifeste du paragraphe textiles : elle reste dans le contrôle V1 textile et n’est pas transposée à un axe métallique. Les seuils chaînes (< 10 % d’usure, < 5 % d’allongement) et câbles (< 10 % standard, < 3 % antigiratoire) sont transcrits de la notice fournie ; ce module n’ajoute pas d’exigence réglementaire indépendante.
 

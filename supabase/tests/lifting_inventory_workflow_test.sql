@@ -108,7 +108,11 @@ begin
   assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"textile_line"}')=array['EG','NID'];
   assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"towing_wire"}')=array['EG','NID'];
   assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"winch_wire"}')=array['EG','NID'];
-  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"textile_bridle"}')=array['EG','V1','V2','V3','V4','V5'];
+  assert public.lifting_control_codes('{"material_type":"Remorque","towing_type":"textile_bridle"}')=array['EG','NID','V1','V2','V3','V4','V5'];
+  assert public.lifting_default_checks('{"material_type":"Remorque","towing_type":"textile_bridle"}')->>'NID'='ok';
+  assert not public.lifting_entry_ready('{"material_type":"Remorque","towing_type":"textile_bridle"}','good',good_checks,''), 'Textile bridle requires NID';
+  assert public.lifting_entry_ready('{"material_type":"Remorque","towing_type":"textile_bridle"}','good',jsonb_set(good_checks,'{NID}','"ok"'),''), 'Textile bridle NID accepted';
+  assert not public.lifting_entry_ready('{"material_type":"Remorque","towing_type":"textile_bridle"}','good',jsonb_set(good_checks,'{NID}','"defect"'),''), 'Failed textile bridle NID rejects fit for use';
   assert not public.lifting_entry_ready('{"material_type":"Manilles"}','good','{"EG":"ok","ID":"ok","V1":"na"}',''), 'Applicable point cannot be omitted';
   assert not public.lifting_entry_ready('{"material_type":"Remorque"}','good','{}',''), 'Unknown subtype cannot be finalized';
   -- Bulk edits are atomic even when the last submitted row belongs to another inspection.
