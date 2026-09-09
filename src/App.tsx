@@ -28,6 +28,7 @@ const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ 
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
+const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -92,6 +93,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <PurchaseRequestsPage />
                 ) : module.key === 'serviceProviders' ? (
                   <ServiceProvidersPage />
+                ) : module.key === 'lifting' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage /></Suspense>
                 ) : module.key === 'qhse' ? (
                   <QhseDocumentsPage />
                 ) : (
