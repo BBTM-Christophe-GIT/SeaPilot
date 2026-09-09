@@ -41,7 +41,7 @@ export function LiftingStartForm({ busy, error, onClose, onSave }: { busy: boole
       <label>Date d’échéance<input type="date" required min={issued} value={expires} onChange={(e) => setExpires(e.target.value)} /></label>
     </div>
     <p>Vérificateur : <strong>Antoine MONCEAUX</strong></p>
-    <p className="lifting-muted">Une échéance d’un an est proposée et reste ajustable. Le PDF final sera classé dans « Certificats flotte ».</p>
+    <p className="lifting-muted">Vous pouvez démarrer un nouveau contrôle avant l’échéance du précédent, y compris la même année. Une échéance d’un an est proposée et reste ajustable. Le PDF final sera classé dans « Certificats flotte ».</p>
     {error && <p className="lifting-error" role="alert">{error}</p>}
   </AppDialog>;
 }

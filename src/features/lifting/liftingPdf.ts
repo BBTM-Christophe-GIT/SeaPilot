@@ -9,7 +9,7 @@ const GREEN: [number, number, number] = [35, 110, 77];
 const clean = (s: string | null | undefined) => (s || '').replace(/[’‘]/g, "'").replace(/[–—]/g, '-').replace(/\u00a0/g, ' ');
 const decisionEn = { pending: 'Not inspected', good: 'Remain in service', repair: 'Remain in service after repair', withdrawn: 'Scrap', not_present: 'Not presented' };
 export function liftingReportFilename(report: LiftingInspection, draft = false): string {
-  return `${report.vessel_snapshot.acronym || report.vessel_snapshot.name} - ${report.kind === 'towing' ? 'Registre des remorques' : 'Registre des Apparaux de Levage'} - ${report.inspection_year}${draft ? ' - BROUILLON' : ''}.pdf`;
+  return `${report.vessel_snapshot.acronym || report.vessel_snapshot.name} - ${report.kind === 'towing' ? 'Registre des remorques' : 'Registre des Apparaux de Levage'} - ${report.issued_on} - LEV-${report.id}${draft ? ' - BROUILLON' : ''}.pdf`;
 }
 function resultIcon(pdf: PdfDocument, x: number, y: number, defect: boolean, size = 1.7) {
   pdf.setDrawColor(...(defect ? RED : GREEN)); pdf.setLineWidth(0.35); pdf.circle(x, y, size);

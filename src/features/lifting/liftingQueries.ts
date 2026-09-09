@@ -9,7 +9,7 @@ export async function fetchLiftingVessels(client: SupabaseClient): Promise<Lifti
 export async function fetchLiftingRegister(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
   const [items, inspections] = await Promise.all([
     client.from('lifting_inventory').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('reference'),
-    client.from('lifting_inspections').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('issued_on', { ascending: false }),
+    client.from('lifting_inspections').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('issued_on', { ascending: false }).order('id', { ascending: false }),
   ]);
   if (items.error) throw items.error;
   if (inspections.error) throw inspections.error;

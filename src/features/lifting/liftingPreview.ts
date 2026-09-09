@@ -41,7 +41,6 @@ export function createLiftingPreviewClient(): SupabaseClient {
       if (name === 'set_lifting_item_active') { const item = items.find((i) => i.id === args.p_id); if (item) item.active = Boolean(args.p_active); return { data: null, error: null }; }
       if (name === 'start_lifting_inspection') {
         const year = Number(String(args.p_issued_on).slice(0,4));
-        if (reports.some((r) => r.kind === args.p_kind && r.inspection_year === year)) return { data: null,error:{ message:'Un contrôle existe déjà pour cette année.' } };
         const report: LiftingInspection = { id: reports.length+1,company_id:1,vessel_id:demoVessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:demoVessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
         reports.push(report);
         items.filter((i) => i.kind === report.kind && i.active).forEach((i) => entries.push({ id:entries.length+1,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:defaultChecks(i),checklist_version:2,observations:'' }));
