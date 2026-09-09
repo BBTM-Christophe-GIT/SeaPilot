@@ -31,10 +31,49 @@ function drawBilingual(pdf: PdfDocument, content: ControlText, x: number, y: num
   pdf.setTextColor(82, 103, 115); pdf.setFont('helvetica', 'italic');
   pdf.text(layout.en, x, y + layout.fr.length * layout.line + 1, { lineHeightFactor: 1.13 });
 }
+function appendLiftingNotice(pdf: PdfDocument) {
+  const types = ACCESSORIES.filter((type) => type.code !== 'TL' && Object.keys(type.checks).length);
+  const width = 126; const textWidth = width - 16;
+  let fontSize = 9;
+  const layout = () => {
+    const columns: { height: number; blocks: { type: AccessoryDefinition; height: number; rows: { code: string; text: ControlText; height: number }[] }[] }[] = Array.from({ length: 3 }, () => ({ height: 0, blocks: [] }));
+    const blocks = types.map((type) => {
+      const points = Object.entries(type.checks);
+      const rows = points.map(([code, text]) => ({ code, text, height: bilingualLayout(pdf, text, textWidth, fontSize).height + 1 }));
+      return { type, rows, height: 13 + rows.reduce((sum, row) => sum + row.height, 0) };
+    }).sort((a, b) => b.height - a.height);
+    for (const block of blocks) {
+      const column = columns.reduce((shortest, candidate) => candidate.height < shortest.height ? candidate : shortest);
+      column.blocks.push(block); column.height += block.height + 4;
+    }
+    return columns;
+  };
+  let columns = layout();
+  while (Math.max(...columns.map((column) => column.height)) > 212 && fontSize > 7.5) { fontSize -= .25; columns = layout(); }
+  if (Math.max(...columns.map((column) => column.height)) > 212) throw new Error('La notice dépasse la dernière page. Adaptez sa mise en page.');
+  pdf.addPage('a3', 'landscape');
+  pdf.setTextColor(...NAVY); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(15); pdf.text('NOTICE EXPLICATIVE DES CONTRÔLES', 14, 40);
+  pdf.setFont('helvetica', 'italic'); pdf.setFontSize(9); pdf.text('Inspection guide - control codes by accessory type', 14, 46);
+  columns.forEach((column, index) => {
+    const x = 14 + index * 133; let y = 51;
+    for (const block of column.blocks) {
+      pdf.setFillColor(231, 240, 244); pdf.setDrawColor(197, 212, 219); pdf.setLineWidth(.15); pdf.rect(x, y, width, 13, 'FD');
+      drawBilingual(pdf, { fr: `${block.type.code} - ${block.type.fr}`, en: block.type.en }, x + 2, y + 4, width - 4, fontSize);
+      y += 13;
+      for (const row of block.rows) {
+        pdf.setDrawColor(197, 212, 219); pdf.rect(x, y, width, row.height); pdf.line(x + 12, y, x + 12, y + row.height);
+        pdf.setTextColor(...NAVY); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(fontSize); pdf.text(clean(row.code), x + 2, y + 4);
+        drawBilingual(pdf, row.text, x + 14, y + 4, textWidth, fontSize);
+        y += row.height;
+      }
+      y += 4;
+    }
+  });
+  drawBilingual(pdf, { fr: 'ID : identification. CMU : charge maximale d’utilisation. Points transcrits de la notice du vérificateur ; limites spécifiques selon le fabricant. RO / GP : notices des aussières et grappins à compléter.', en: 'ID: identification. SWL: safe working load. Checks transcribed from the inspector’s guidance; equipment-specific limits follow the manufacturer. RO / GP: rope and grapple guidance to be supplied.' }, 14, 267, 392, 8);
+}
 function appendNotice(pdf: PdfDocument, autoTable: (doc: PdfDocument, options: UserOptions) => void, report: LiftingInspection) {
-  const types: AccessoryDefinition[] = report.kind === 'towing'
-    ? TOWING_TYPES.map((type) => ({ ...type, code: 'TL', aliases: [] }))
-    : ACCESSORIES.filter((type) => !['TL', 'RO'].includes(type.code));
+  if (report.kind === 'lifting') { appendLiftingNotice(pdf); return; }
+  const types: AccessoryDefinition[] = TOWING_TYPES.map((type) => ({ ...type, code: 'TL', aliases: [] }));
   const codes = CONTROL_CODES.filter((code) => types.some((type) => type.checks[code]));
   pdf.addPage('a3', 'landscape');
   const noticePage = pdf.getNumberOfPages();
@@ -52,14 +91,14 @@ function appendNotice(pdf: PdfDocument, autoTable: (doc: PdfDocument, options: U
     startY: 51, margin: { left: margin, right: margin, top: 51, bottom: 30 }, theme: 'grid',
     styles: { cellPadding: 2, fontSize, textColor: NAVY, lineColor: [197, 212, 219], lineWidth: .15 },
     headStyles: { fillColor: [231, 240, 244], textColor: NAVY, fontStyle: 'bold' },
-    head: [['Code', ...types.map((type) => `${report.kind === 'lifting' ? `${type.code} - ` : ''}${clean(type.fr)}\n${type.en}`)]],
+    head: [['Code', ...types.map((type) => `${clean(type.fr)}\n${type.en}`)]],
     body: codes.map((code, index) => [{ content: code, styles: { fontStyle: 'bold', minCellHeight: heights[index], valign: 'middle', halign: 'center' } }, ...types.map(() => '')]),
     columnStyles: Object.fromEntries([0, ...types.map((_, i) => i + 1)].map((i) => [i, { cellWidth: i === 0 ? codeWidth : colWidth }])),
     didParseCell: (data) => { if (data.section === 'head' && data.column.index > 0) { data.cell.text = []; data.cell.styles.minCellHeight = 17; } },
     didDrawCell: (data) => {
       if (data.column.index === 0) return;
       const type = types[data.column.index - 1];
-      if (data.section === 'head') drawBilingual(pdf, { fr: `${report.kind === 'lifting' ? `${type.code} - ` : ''}${type.fr}`, en: type.en }, data.cell.x + 2, data.cell.y + 4, colWidth - 4, fontSize);
+      if (data.section === 'head') drawBilingual(pdf, { fr: type.fr, en: type.en }, data.cell.x + 2, data.cell.y + 4, colWidth - 4, fontSize);
       else {
         const content = type.checks[codes[data.row.index]];
         if (content) drawBilingual(pdf, content, data.cell.x + 2, data.cell.y + 4, colWidth - 4, fontSize);
@@ -69,9 +108,7 @@ function appendNotice(pdf: PdfDocument, autoTable: (doc: PdfDocument, options: U
   });
   if (pdf.getNumberOfPages() !== noticePage) throw new Error('La notice doit tenir sur la dernière page du rapport.');
   const y = (pdf as PdfDocument & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
-  const footnote = report.kind === 'towing'
-    ? { fr: 'Codes des remorques définis par le vérificateur ; descriptions adaptées aux chaînes, câbles et textiles de la notice fournie. NID : identification.', en: 'Towing-line codes defined by the inspector; descriptions follow the supplied chain, wire-rope and textile guidance. NID: identification.' }
-    : { fr: 'ID : identification. CMU : charge maximale d’utilisation. RO : aussières textiles ; détail des contrôles non fourni dans la notice source.', en: 'ID: identification. SWL: safe working load. RO: ropes; detailed checks are not specified in the source notice.' };
+  const footnote = { fr: 'Codes des remorques définis par le vérificateur ; descriptions adaptées aux chaînes, câbles et textiles de la notice fournie. NID : identification.', en: 'Towing-line codes defined by the inspector; descriptions follow the supplied chain, wire-rope and textile guidance. NID: identification.' };
   drawBilingual(pdf, footnote, margin, y, width, 8);
 }
 export async function buildLiftingPdf(report: LiftingInspection, entries: InspectionEntry[], stamp?: Uint8Array, options: { specimen?: boolean } = {}) {

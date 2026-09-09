@@ -24,6 +24,8 @@ export interface LiftingItem {
   location: string; notes: string; active: boolean; source_label: string; updated_at: string;
   legacy_reference?: string;
   towing_type?: TowingType | null;
+  source_key?: string | null;
+  source_data?: { source_id: string; commissioned_on?: string | null; last_inspected_on?: string | null; valid_until?: string | null; inspection_frequency?: string | null; action?: string | null; control_accredited?: boolean | null; emergency_towing?: boolean | null };
 }
 export type ItemDraft = Pick<LiftingItem, 'reference' | 'material_type' | 'description' | 'swl_tonnes' | 'serial_number' | 'location' | 'notes' | 'towing_type'>;
 export interface InspectionEntry {

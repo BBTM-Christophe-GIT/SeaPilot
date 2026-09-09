@@ -4,9 +4,9 @@ Le module `/modules/lifting` comporte trois sections avec leurs icônes : **Exam
 
 ## Utilisation
 
-1. Choisir un navire puis la section Apparaux ou Remorques.
+1. Choisir un navire (ou le site YARD) puis la section Apparaux ou Remorques. L’inventaire est regroupé par type d’accessoire, puis par numéro ; le filtre de type et la recherche par mots-clés peuvent être combinés.
 2. Ajouter ou modifier le matériel : type d’accessoire, sous-type pour les remorques, description, CMU facultative, numéro de série, emplacement, notes. L’identifiant est un nombre automatique et non modifiable, à partir de 1 par navire et registre. Les numéros ne sont pas réutilisés après suppression. La suppression retire le matériel de l’inventaire actif ; le filtre des matériels supprimés permet sa restauration.
-3. Démarrer un contrôle avec sa date d’émission et son échéance. Un an est proposé, ajustable avant création. Plusieurs contrôles sont possibles pour le même navire et la même section, y compris la même année ou le même jour, sans attendre l’échéance du précédent. Chaque démarrage crée un nouveau contrôle indépendant avec les matériels actifs et leurs caractéristiques à cet instant ; tous les rapports précédents sont conservés.
+3. Cliquer sur **Nouveau contrôle annuel**, puis choisir le navire dans la fenêtre, sa date d’émission et son échéance. La fenêtre propose les navires et sites accessibles au compte ; elle peut cibler un autre navire que celui affiché initialement. Un an est proposé, ajustable avant création. Plusieurs contrôles sont possibles pour le même navire et la même section, y compris la même année ou le même jour, sans attendre l’échéance du précédent. Chaque démarrage ouvre le nouveau contrôle avec les matériels actifs du navire choisi et leurs caractéristiques à cet instant ; tous les rapports précédents sont conservés.
 4. Le formulaire présente tous les matériels regroupés par type d’accessoire. Seuls les codes applicables sont affichés, avec leurs cases précochées. Une case décochée signifie un point insatisfaisant : son code et le matériel affichent une icône rouge. Le résultat du matériel est insatisfaisant dès qu’un seul point applicable échoue, indépendamment de la décision. Enregistrer un matériel ou tous les contrôles en une seule transaction. Les valeurs proposées ne comptent pas comme un contrôle réalisé tant qu’elles ne sont pas enregistrées.
 5. Télécharger le PDF brouillon pour vérifier le contenu. Les trois décisions sont **Maintien en service**, **Maintien en service après réparation**, **Mise au rebut**. Les deux dernières nécessitent une observation avant finalisation. Les observations sont reprises dans le rapport. Décocher une case propose automatiquement la réparation si le maintien simple était sélectionné. Un défaut ne peut pas être associé à un maintien en service sans réserve.
 6. Finaliser : le PDF porte le nom et le tampon fourni d’**Antoine MONCEAUX**. La finalisation est explicite dans l’interface. Le contrôle devient non modifiable.
@@ -30,7 +30,7 @@ Chargement initial limité au **SUROIT** : **56 apparaux et 8 remorques**, renum
 | SUR - Registre des remorques - 2026.pdf, fourni | 26/11/2025 | 26/11/2026 | 8 remorques |
 | SUR - Examen à fond - Apparaux de levage - 2025.pdf, fourni | 18/12/2025 | Non indiquée dans ce PDF | Rapport de grue, consulté pour préparer la troisième section |
 
-Le `.iqy` fourni contient la connexion à la liste SharePoint `87fd9c1e-1f76-4ee2-93c2-a0399a6f3e9b`, pas ses lignes. La session CLI Microsoft 365 n’étant pas connectée, la transcription s’appuie sur les PDF accessibles. Ce chargement ne représente pas l’ensemble de la liste ni de la flotte et ne met pas en place de synchronisation SharePoint.
+Le `.iqy` fourni contient la connexion à la liste SharePoint `87fd9c1e-1f76-4ee2-93c2-a0399a6f3e9b`, pas ses lignes. Le premier chargement s’appuyait sur les PDF accessibles. L’import Excel décrit ci-dessous complète désormais cet inventaire ; il ne met pas en place de synchronisation SharePoint.
 
 Les PDF historiques restent les originaux déjà stockés dans Certificats flotte : ils ne sont pas régénérés ni signés à nouveau. Leurs dates d’émission et catégories ont été complétées dans les métadonnées. Le rapport de remorques figure sous l’année d’émission **2025**, même si son nom de fichier indique 2026. Les décisions avec réparation des IDs **260, 282 et 283** et les cases vides des sources sont conservées ; une case vide n’est interprétée ni comme conforme ni comme sans objet.
 
@@ -71,6 +71,9 @@ Documentation technique consultée : [Supabase RLS](https://supabase.com/docs/gu
 | Moufles et poulies de retour | PU | EG, ID, V1, V2 |
 | Palans à chaîne et tireforts manuels | HC | EG, ID, V1, V2, V3, V4 |
 | Aussières textiles | RO | Notice détaillée non fournie : finalisation bloquée pour ce type |
+| Anneaux de levage | AN | EG, ID |
+| Pinces à tôles | PN | EG, ID, V1, V2, V3 |
+| Grappins | GP | Notice détaillée non fournie : finalisation bloquée pour ce type |
 
 **Remorque (TL, Towing line)** est un type d’accessoire distinct avec cinq sous-types. L’applicabilité a été donnée explicitement par le vérificateur ; les explications reprennent les contrôles de la matière correspondante dans les captures.
 
@@ -97,3 +100,40 @@ Vérification des accès après migration : compteur sans droit de lecture ou é
 Validation du formulaire révisé : contrôles automatiques React/modèle/PDF ; parcours dans le navigateur intégré à 390 × 844 et 412 × 915 (cases précochées, V1 décoché, icônes rouges du code et du matériel, observation, sauvegarde de la liste, persistance du résultat et formulaire Remorque avec EG/NID). Absence de débordement horizontal aux largeurs 390, 412 et 1440 px. La capture complète d’ordinateur est limitée par le recadrage du navigateur intégré ; le contrôle visuel mobile a été réalisé. Aucun test natif Safari iOS/Android.
 
 Les deux exemples SUROIT ont été rendus et inspectés : 56 apparaux sur 7 pages et 8 remorques sur 3 pages, dont une seule dernière page A3 pour la notice. Des résultats simulés illustrent les trois décisions et les codes rouges. Après ajustement demandé, les numéros sont rouges uniquement pour la mise au rebut et la colonne Résultat est retirée. Ces fichiers restent des exemples locaux, non versés aux certificats et non inclus dans Git.
+
+## Complément Excel et filtres — 9 septembre 2026
+
+La migration `20260909210104_lifting_inventory_source_metadata.sql` ajoute une identité de source unique par société et des métadonnées historiques. Elle rend le site de type `quay` accessible aux mêmes RPC, sans changer les règles de société et d’affectation. Les bureaux et les navires inactifs restent exclus. Les mutations de fiche ne peuvent pas écrire les colonnes de provenance.
+
+Le fichier **Registre des Apparaux de Levage.xlsx**, feuille du même nom, contient 212 lignes avec identifiants uniques. SHA-256 : `791d46d27bdcbbee34893db626330727caad659cb62f75328013694cf5fab587`. Résultat appliqué à Supabase : 64 fiches SUROIT rapprochées par ancien identifiant, 148 fiches ajoutées, aucun doublon. La sangle source 281 du ROZEL, marquée « Mise au Rebus », est conservée inactive.
+
+| Navire / site | Apparaux | Remorques | Total |
+| --- | ---: | ---: | ---: |
+| SUROIT | 56 | 8 | 64 |
+| LE ROZEL | 86 (85 actifs) | 5 | 91 |
+| GOURY | 27 | 0 | 27 |
+| HOLENN EUSA | 11 | 0 | 11 |
+| KROKDUR | 7 | 0 | 7 |
+| YARD - Le Havre | 7 | 0 | 7 |
+| BBTM TENDER 1 | 4 | 0 | 4 |
+| LANDEMER | 0 | 1 | 1 |
+| **Total** | **198** | **14** | **212** |
+
+Les numéros de série, CMU, descriptions et anciennes références sont conservés. Les dates de mise en service, dernière visite et validité, la périodicité littérale, l’action, l’accréditation et le remorquage d’urgence sont consultables dans « Données du registre source ». Les anciennes cases de contrôle restent des métadonnées historiques : elles ne créent aucun contrôle validé. « Biannuelle » n’est pas réinterprété en nouvelle échéance. Les 120 entrées de contrôle et les rapports existants sont restés inchangés lors de l’import. Les élingues chaîne sont classées Chaînes ; les sous-types de remorques sont déduits uniquement des descriptions explicites. Les deux descriptions « GRAPPIN (PETIT MODÈLE) » sans type source sont classées Grappins, en attente de notice.
+
+Préparation reproductible (Python avec `openpyxl`) :
+
+```sh
+python scripts/prepare-lifting-inventory.py "chemin/Registre des Apparaux de Levage.xlsx" --output .data/lifting-inventory-import
+python -m unittest discover -s scripts -p test_prepare_lifting_inventory.py
+```
+
+Le script prépare des fichiers JSON/SQL privés, sans se connecter à la base. Réviser la classification et le rapprochement avant exécution administrative du SQL. L’import est transactionnel ; un ancien identifiant ambigu ou un conflit de navire l’interrompt. Il complète uniquement les numéros de série manquants et la provenance des fiches existantes, sans écraser leurs caractéristiques, leur état, leurs notes ou leurs rapports. La répétition d’un import identique ne consomme aucun numéro et ne modifie aucune ligne. Le classeur et les sorties contenant les données ne sont pas versionnés.
+
+L’inventaire, les contrôles en cours et les rapports consultés proposent un filtre de type d’accessoire et une recherche insensible aux accents et à la casse : référence, ancien identifiant, description, type, série, emplacement, notes et observations des contrôles. Dans un contrôle filtré, **Enregistrer les contrôles affichés** ne valide que les éléments visibles ; les saisies masquées sont conservées avec un rappel. La progression et la finalisation portent toujours sur la totalité du contrôle.
+
+La notice des anneaux reprend EG (état, absence de fissures, rayures profondes, corrosion excessive et déformation) et ID (identification et CMU). Pour les pinces à tôles, les points fournis sont organisés en EG (corps et œillet), ID (marquage et ouverture), V1 (mâchoires), V2 (mécanisme) et V3 (adéquation à la charge). Les exemples 0,5 mm et 10 % restent conditionnés aux limites du fabricant. Les liens du texte fourni ne sont pas repris. La dernière page A3 des apparaux présente désormais une matrice par type, répartie sur trois colonnes, avec français puis anglais en italique ; le moteur contrôle qu’elle tient sur cette seule page.
+
+Validation de cette livraison : tests React du choix d’un autre navire, filtres et conservation des saisies masquées ; tests Python du parseur et des valeurs historiques ; import simulé avec rollback puis appliqué, comparaison des instantanés et répétition sans changement ; fixtures SQL réelles Admin/Direction/Armement/Capitaine/Marin incluant le site, ses refus d’accès et les codes AN/PN ; ESLint ciblé et build de production. Le PDF de démonstration a été rendu et sa dernière page inspectée visuellement.
+
+Parcours navigateur vérifié sur la préversion locale : sélection d’un autre navire dans le dialogue, recherche sans résultat puis réinitialisation, filtre de type, enregistrement d’un défaut et d’une observation à 390 × 844 ; inventaire et icône de grue à 1440 × 1000. Aucun débordement horizontal ni erreur console relevé. Les contrôles mobiles utilisent une fenêtre redimensionnée ; aucune exécution native Safari iOS/Android n’est revendiquée.

@@ -179,5 +179,37 @@ begin
   end loop;
   execute 'reset role';
 end $test$;
+do $source_test$
+declare c bigint; site bigint; office bigint; inactive_vessel bigint; ring bigint; clamp bigint; inspection bigint; uid uuid;
+begin
+  select id into c from public.companies where code='bbtm';
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING TEST QUAY','LTQ',true,'quay') returning id into site;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING TEST OFFICE','LTO',true,'office') returning id into office;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING INACTIVE','LTI',false,'vessel') returning id into inactive_vessel;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  assert exists(select 1 from public.lifting_available_vessels() where id=site),'Inventory site available to admin';
+  assert not exists(select 1 from public.lifting_available_vessels() where id in (office,inactive_vessel)),'Office and inactive vessel excluded';
+  ring:=public.save_lifting_item(site,'lifting','{"material_type":"Anneau","description":"Ring","source_key":"forged","source_data":{"source_id":"forged"}}');
+  clamp:=public.save_lifting_item(site,'lifting','{"material_type":"Pinces à tôles","description":"Plate clamp"}');
+  assert (select reference from public.lifting_inventory where id=ring)='1','Site has its own sequence';
+  assert (select source_key is null and source_data='{}' from public.lifting_inventory where id=ring),'RPC cannot forge imported provenance';
+  inspection:=public.start_lifting_inspection(site,'lifting','2031-03-05','2032-03-05');
+  assert (select count(*) from public.lifting_inspection_entries where inspection_id=inspection)=2,'Selected site only';
+  assert public.lifting_control_codes('{"material_type":"Anneaux de levage"}')=array['EG','ID'],'Ring checklist';
+  assert public.lifting_control_codes('{"material_type":"Pinces à tôles"}')=array['EG','ID','V1','V2','V3'],'Plate clamp checklist';
+  assert public.lifting_control_codes('{"material_type":"Grappins"}')=array[]::text[],'No invented grapple controls';
+  assert (select bool_and(condition='pending') from public.lifting_inspection_entries where inspection_id=inspection),'New source inventory needs actual inspection';
+  foreach uid in array array['9e090000-0000-0000-0000-000000000004'::uuid,'9e090000-0000-0000-0000-000000000005'::uuid] loop
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    assert not exists(select 1 from public.lifting_available_vessels() where id=site),'Unassigned onboard profile cannot select site';
+    assert not exists(select 1 from public.lifting_inventory where id in (ring,clamp)),'Unassigned site inventory hidden by RLS';
+    begin
+      perform public.start_lifting_inspection(site,'lifting','2031-03-05','2032-03-05');
+      raise exception 'Unassigned profile started a site inspection';
+    exception when insufficient_privilege then null; end;
+  end loop;
+  execute 'reset role';
+end $source_test$;
 select 'PASS: lifting inventory, snapshots, real profile/RLS scopes, revision guard, atomic fleet certificate publication and retry' as result;
 rollback;
