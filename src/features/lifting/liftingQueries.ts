@@ -6,6 +6,19 @@ export async function fetchLiftingVessels(client: SupabaseClient): Promise<Lifti
   if (error) throw error;
   return data || [];
 }
+// Paper forms always read current inventory, independently of UI filters and report snapshots.
+export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
+  const [vessels, result] = await Promise.all([
+    fetchLiftingVessels(client),
+    client.from('lifting_inventory').select('*').eq('vessel_id', vesselId).eq('kind', kind).eq('active', true).order('reference'),
+  ]);
+  if (result.error) throw result.error;
+  const vessel = vessels.find((candidate) => candidate.id === vesselId);
+  if (!vessel) throw new Error('Ce navire ou site n’est plus accessible. Rechargez le registre.');
+  const items = (result.data || []) as LiftingItem[];
+  if (!items.length) throw new Error('Aucun matériel actif dans ce registre pour le navire ou site choisi.');
+  return { vessel, items };
+}
 export async function fetchLiftingRegister(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
   const [items, inspections] = await Promise.all([
     client.from('lifting_inventory').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('reference'),
