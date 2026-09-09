@@ -1,6 +1,6 @@
 import type { jsPDF as PdfDocument } from 'jspdf';
 import type { CellInput, UserOptions } from 'jspdf-autotable';
-import { CONDITION_LABELS, INSPECTOR, entryControlKeys, entryUnsatisfactory, formatLiftingDate, type InspectionEntry, type LiftingInspection } from './liftingModel';
+import { CONDITION_LABELS, INSPECTOR, entryControlKeys, entryUnsatisfactory, formatLiftingDate, type InspectionEntry, type LiftingInspection, type LiftingKind } from './liftingModel';
 import { ACCESSORIES, TOWING_TYPES, CONTROL_CODES, groupByAccessory, type AccessoryDefinition, type ControlText } from './liftingControls';
 
 const NAVY: [number, number, number] = [19, 51, 66];
@@ -71,8 +71,8 @@ function appendLiftingNotice(pdf: PdfDocument) {
   });
   drawBilingual(pdf, { fr: 'ID : identification. CMU : charge maximale d’utilisation. Points transcrits de la notice du vérificateur ; limites spécifiques selon le fabricant. RO / GP : notices des aussières et grappins à compléter.', en: 'ID: identification. SWL: safe working load. Checks transcribed from the inspector’s guidance; equipment-specific limits follow the manufacturer. RO / GP: rope and grapple guidance to be supplied.' }, 14, 267, 392, 8);
 }
-function appendNotice(pdf: PdfDocument, autoTable: (doc: PdfDocument, options: UserOptions) => void, report: LiftingInspection) {
-  if (report.kind === 'lifting') { appendLiftingNotice(pdf); return; }
+export function appendLiftingControlNotice(pdf: PdfDocument, autoTable: (doc: PdfDocument, options: UserOptions) => void, kind: LiftingKind) {
+  if (kind === 'lifting') { appendLiftingNotice(pdf); return; }
   const types: AccessoryDefinition[] = TOWING_TYPES.map((type) => ({ ...type, code: 'TL', aliases: [] }));
   const codes = CONTROL_CODES.filter((code) => types.some((type) => type.checks[code]));
   pdf.addPage('a3', 'landscape');
@@ -173,7 +173,7 @@ export async function buildLiftingPdf(report: LiftingInspection, entries: Inspec
   pdf.text(`Examen réalisé par : ${INSPECTOR}`, 14, y); pdf.text(`Date : ${formatLiftingDate(report.issued_on)}`, 14, y + 7);
   if (stamp) pdf.addImage(stamp, 'PNG', 218, y - 3, 57, 32);
   else pdf.text('BROUILLON - non signé - ne vaut pas rapport finalisé', 14, y + 16);
-  appendNotice(pdf, autoTable, report);
+  appendLiftingControlNotice(pdf, autoTable, report.kind);
   const pageCount = pdf.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {
     pdf.setPage(page); const right = pdf.internal.pageSize.getWidth() - 14; const bottom = pdf.internal.pageSize.getHeight() - 14;

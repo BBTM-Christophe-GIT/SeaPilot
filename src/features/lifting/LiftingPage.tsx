@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Link, useOutletContext } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Download, FileCheck2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Download, FileCheck2, Pencil, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { LiftingPaperForm } from './LiftingPaperForm';
+import { buildLiftingPaperPdf } from './liftingPaperPdf';
 import { LiftingIcon } from './LiftingIcons';
 import { LiftingControlForm, LiftingItemForm, LiftingStartForm } from './LiftingForms';
 import { INSPECTOR, KIND_LABELS, blankItem, canManageLifting, entryComplete, entryUnsatisfactory, formatLiftingDate, type InspectionEntry, type ItemDraft, type LiftingInspection, type LiftingItem, type LiftingKind, type LiftingVessel } from './liftingModel';
-import { downloadLiftingReport, fetchInspectionEntries, fetchLiftingRegister, fetchLiftingVessels, loadLiftingStamp, publishLiftingInspection, saveInspectionEntries, saveLiftingItem, setLiftingItemActive, startLiftingInspection } from './liftingQueries';
+import { downloadLiftingReport, fetchInspectionEntries, fetchLiftingRegister, fetchLiftingPaperInventory, fetchLiftingVessels, loadLiftingStamp, publishLiftingInspection, saveInspectionEntries, saveLiftingItem, setLiftingItemActive, startLiftingInspection } from './liftingQueries';
 import { buildLiftingPdf, liftingReportFilename, saveLiftingBlob } from './liftingPdf';
 import { accessoryDefinition, groupByAccessory } from './liftingControls';
 import { LiftingFilters } from './LiftingFilters';
@@ -51,6 +53,7 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
   const [dirty, setDirty] = useState(false);
   const [formEpoch, setFormEpoch] = useState(0);
   const [startOpen, setStartOpen] = useState(false);
+  const [paperOpen, setPaperOpen] = useState(false);
   const [removeItem, setRemoveItem] = useState<LiftingItem | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const requestId = useRef(0);
@@ -137,10 +140,10 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
     <nav className="lifting-sections" aria-label="Sections du module Levage">{SECTIONS.map((s) => <button disabled={busy || dirty} key={s.key} aria-label={s.title} className={section === s.key ? 'is-selected' : ''} aria-pressed={section === s.key} onClick={() => setSection(s.key)}><span className={`lifting-section-icon ${s.key}`}><LiftingIcon kind={s.key} /></span><span><strong>{s.title}</strong><small>{s.subtitle}</small></span></button>)}</nav>
     {section === 'crane' ? <div className="lifting-crane"><LiftingIcon kind="crane" /><div><h2>Examen à fond - Grue</h2><p>Cette section est réservée au contrôle de la grue. Les rapports existants restent disponibles dans les certificats du navire.</p><p>La première version du module couvre le registre des apparaux et les remorques.</p><Link to="/modules/certificates">Consulter les certificats flotte</Link></div></div> : <>
       <div className="lifting-toolbar"><label>Navire<select aria-label="Navire" value={vesselId} disabled={busy || dirty || !vessels.length} onChange={(e) => setVesselId(Number(e.target.value))}>{!vessels.length && <option value={0}>Aucun navire accessible</option>}{vessels.map((v) => <option value={v.id} key={v.id}>{v.name}</option>)}</select></label><div className="lifting-verifier"><span>Vérificateur</span><strong>{INSPECTOR}</strong></div></div>
-      {error && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
+      {error && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
       {notice && <p className="lifting-notice" role="status"><CheckCircle2 size={18} />{notice}</p>}
       {!report ? <>
-        <div className="lifting-summary"><div><strong>{activeItems.length}</strong><span>matériels en inventaire</span></div><div><strong>{inspections.filter((r) => r.status === 'draft').length}</strong><span>contrôles en cours</span></div><div><strong>{inspections.filter((r) => r.status === 'published').length}</strong><span>rapports finalisés</span></div><button className="primary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setStartOpen(true); }}><Plus size={18} /> Nouveau contrôle annuel</button></div>
+        <div className="lifting-summary"><div><strong>{activeItems.length}</strong><span>matériels en inventaire</span></div><div><strong>{inspections.filter((r) => r.status === 'draft').length}</strong><span>contrôles en cours</span></div><div><strong>{inspections.filter((r) => r.status === 'published').length}</strong><span>rapports finalisés</span></div><div className="lifting-summary-actions"><button className="secondary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setPaperOpen(true); }}><Printer size={18} /> Fiche de contrôle papier</button><button className="primary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setStartOpen(true); }}><Plus size={18} /> Nouveau contrôle annuel</button></div></div>
         <div className="lifting-content"><div className="lifting-content-heading"><div className="lifting-tabs" role="group" aria-label="Vue du registre"><button aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}>Inventaire</button><button aria-pressed={view === 'reports'} onClick={() => setView('reports')}>Contrôles et rapports</button></div>{manager && view === 'inventory' && <button className="secondary-button" disabled={busy || !vesselId} onClick={() => { setError(''); setEditor({ draft: blankItem(section) }); }}><Plus size={17} /> Ajouter un matériel</button>}</div>
           {loading ? <p className="lifting-empty" role="status">Chargement du registre…</p> : view === 'inventory' ? <>
             <LiftingFilters items={inventoryItems} query={query} type={accessoryType} onQuery={setQuery} onType={setAccessoryType} count={filtered.length} context="inventaire" />
@@ -158,6 +161,12 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
       </div>}
     </>}
     {editor && section !== 'crane' && <LiftingItemForm initial={editor.draft} kind={section} busy={busy} error={error} onClose={() => { setEditor(null); setError(''); }} onSave={(draft) => void act(async () => { const targetKind = accessoryDefinition(draft.material_type)?.code === 'TL' ? 'towing' : 'lifting'; await saveLiftingItem(db, vesselId, targetKind, draft, editor.id); setEditor(null); if (targetKind !== section) setSection(targetKind); await reload(); setNotice('Matériel enregistré.'); })} />}
+    {paperOpen && section !== 'crane' && <LiftingPaperForm vessels={vessels} initialVesselId={vesselId} initialKind={section} busy={busy} error={error} onClose={() => { setPaperOpen(false); setError(''); }} onDownload={(selectedVesselId, kind, includeNotice) => void act(async () => {
+      const current = await fetchLiftingPaperInventory(db, selectedVesselId, kind);
+      const pdf = await buildLiftingPaperPdf(current.vessel, kind, current.items, { includeNotice });
+      saveLiftingBlob(pdf.blob, pdf.filename); setPaperOpen(false);
+      setNotice(`Fiche papier de ${pdf.itemCount} ${pdf.itemCount === 1 ? 'matériel' : 'matériels'} téléchargée pour ${current.vessel.name}.`);
+    })} />}
     {startOpen && section !== 'crane' && <LiftingStartForm vessels={vessels} initialVesselId={vesselId} busy={busy} error={error} onClose={() => { setStartOpen(false); setError(''); }} onSave={(selectedVesselId, issued, expires) => void act(async () => {
       const id = await startLiftingInspection(db, selectedVesselId, section, issued, expires);
       pendingInspection.current = { id, vesselId: selectedVesselId, kind: section };

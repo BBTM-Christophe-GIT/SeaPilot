@@ -20,6 +20,16 @@ Le PDF final est automatiquement enregistré dans le compartiment privé `fleet-
 
 Les alertes d’échéance existantes des certificats s’appliquent. Le statut de validité documentaire ne remplace pas les réserves et décisions de chaque matériel dans le PDF.
 
+## Préparer un contrôle sur papier
+
+Dans Apparaux ou Remorques, cliquer sur **Fiche de contrôle papier**, choisir le navire / site et le registre, puis **Télécharger la fiche PDF**. Le téléchargement relit tous les matériels actifs de ce registre dans Supabase à cet instant, même si un filtre est affiché ou si un rapport antérieur existe. Un registre vide ou un navire devenu inaccessible affiche une erreur ; aucun ancien inventaire n’est utilisé en remplacement.
+
+Les pages de saisie sont au format A4 paysage, classées par type d’accessoire puis par numéro. Elles indiquent les caractéristiques actuelles, le numéro de série et l’ancienne référence, la CMU, les codes applicables et des cases vierges **S : satisfaisant / I : insatisfaisant**, les trois décisions et des lignes pour les observations manuscrites. La date et le lieu du contrôle restent à compléter. La date d’extraction est imprimée sur chaque page. Les points non applicables sont marqués « - » ; un type dont la notice manque reste signalé « ? / points à définir ».
+
+La notice bilingue des codes peut être jointe en dernière page A3 paysage (option cochée par défaut). Le téléchargement est une lecture de l’inventaire sous les droits existants du compte, disponible aussi aux profils Capitaine et Marin sur leurs navires accessibles. Il ne crée ni contrôle, ni résultat, ni certificat, et n’ajoute aucune signature. Après la visite, démarrer un contrôle numérique et reporter les résultats du papier sur ordinateur ou téléphone ; la finalisation et le classement dans Certificats flotte suivent le parcours habituel. Si l’inventaire a changé entre les deux étapes, le nouveau contrôle reprend les matériels actifs au moment de son démarrage.
+
+Validation : tests du rechargement après ajout, modification et retrait de matériel, indépendance des rapports et filtres, choix du navire et registre, refus d’accès, profils en lecture ; génération PDF réelle, ordre des types et numéros, cases vierges, pagination sans perte de ligne, format de la notice. Vérification visuelle des fiches issues de l’inventaire courant du ROZEL (85 apparaux actifs) et du SUROIT (8 remorques). Parcours de téléchargement vérifié en préversion à 390 × 844 et 1440 × 1000, sans erreur console ni débordement horizontal ; fixtures SQL des profils réels et RLS exécutées avec rollback. Aucune migration ni configuration supplémentaire.
+
 ## Données initiales et traçabilité
 
 Chargement initial limité au **SUROIT** : **56 apparaux et 8 remorques**, renumérotés de 1 à 56 et de 1 à 8. Les identifiants d’origine sont conservés dans `legacy_reference`, affichés dans les fiches, recherchables et repris dans les nouveaux PDF, sans inventer de CMU manquante.
