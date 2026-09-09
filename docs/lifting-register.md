@@ -6,7 +6,7 @@ Le module `/modules/lifting` comporte trois sections avec leurs icônes : **Exam
 
 1. Choisir un navire puis la section Apparaux ou Remorques.
 2. Ajouter ou modifier le matériel : type d’accessoire, sous-type pour les remorques, description, CMU facultative, numéro de série, emplacement, notes. L’identifiant est un nombre automatique et non modifiable, à partir de 1 par navire et registre. Les numéros ne sont pas réutilisés après suppression. La suppression retire le matériel de l’inventaire actif ; le filtre des matériels supprimés permet sa restauration.
-3. Démarrer un contrôle annuel avec sa date d’émission et son échéance. Un an est proposé, ajustable avant création. Un contrôle est conservé par navire, section et année d’émission.
+3. Démarrer un contrôle avec sa date d’émission et son échéance. Un an est proposé, ajustable avant création. Plusieurs contrôles sont possibles pour le même navire et la même section, y compris la même année ou le même jour, sans attendre l’échéance du précédent. Chaque démarrage crée un nouveau contrôle indépendant avec les matériels actifs et leurs caractéristiques à cet instant ; tous les rapports précédents sont conservés.
 4. Le formulaire présente tous les matériels regroupés par type d’accessoire. Seuls les codes applicables sont affichés, avec leurs cases précochées. Une case décochée signifie un point insatisfaisant : son code et le matériel affichent une icône rouge. Le résultat du matériel est insatisfaisant dès qu’un seul point applicable échoue, indépendamment de la décision. Enregistrer un matériel ou tous les contrôles en une seule transaction. Les valeurs proposées ne comptent pas comme un contrôle réalisé tant qu’elles ne sont pas enregistrées.
 5. Télécharger le PDF brouillon pour vérifier le contenu. Les trois décisions sont **Maintien en service**, **Maintien en service après réparation**, **Mise au rebut**. Les deux dernières nécessitent une observation avant finalisation. Les observations sont reprises dans le rapport. Décocher une case propose automatiquement la réparation si le maintien simple était sélectionné. Un défaut ne peut pas être associé à un maintien en service sans réserve.
 6. Finaliser : le PDF porte le nom et le tampon fourni d’**Antoine MONCEAUX**. La finalisation est explicite dans l’interface. Le contrôle devient non modifiable.
@@ -44,8 +44,11 @@ Les tables `lifting_inventory`, `lifting_inspections`, `lifting_inspection_entri
 
 La révision du contrôle protège contre l’écrasement par un deuxième appareil et contre la publication d’un PDF devenu obsolète. La création du certificat, de sa version et la finalisation du contrôle sont atomiques et idempotentes. En cas de réponse réseau incertaine, un fichier temporaire peut rester stocké ; le client ne supprime jamais un PDF qui pourrait déjà être rattaché à un rapport finalisé.
 
+La liste distingue les contrôles par leur référence `LEV-<id>` et leur date d’émission. Les noms des nouveaux PDF contiennent la date et cette référence afin de permettre plusieurs classements dans Certificats flotte, même le même jour. L’année reste un filtre ; elle ne limite plus le nombre de contrôles. Un nouveau contrôle ne prolonge ni ne modifie la validité du précédent.
+
 ## Exploitation et validation
 
+- Migration autorisant plusieurs contrôles dans une année : `20260909203059_lifting_multiple_inspections_per_year.sql`. Les tests couvrent la création le même jour, avant échéance, les instantanés indépendants et la publication de deux certificats sans écrasement.
 - Migration des formulaires et de la numérotation : `20260909191741_lifting_accessory_checklists.sql`.
 - Migrations initiales : `20260909070600_lifting_inventory_and_annual_inspections.sql`, `20260909070844_lifting_suroit_verified_pdf_import.sql`, `20260909071308_lifting_publication_revision_guards.sql`.
 - Provisionner le tampon PNG fourni dans `lifting-assets/<company_id>/antoine-monceaux.png` via un accès d’administration, sans exposer de clé serveur au navigateur. Le fichier n’est pas versionné dans Git. Aucun nouveau paramètre d’environnement client n’est nécessaire.

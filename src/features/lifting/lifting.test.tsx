@@ -7,7 +7,7 @@ import { createLiftingPreviewClient, demoVessel } from './liftingPreview';
 import { annualExpiry, canManageLifting, defaultChecks, emptyChecks, entryComplete, entryUnsatisfactory, INSPECTOR, type InspectionEntry, type LiftingInspection } from './liftingModel';
 import { fetchInspectionEntries, fetchLiftingRegister, publishLiftingInspection, saveLiftingItem, startLiftingInspection } from './liftingQueries';
 import { ACCESSORIES, TOWING_TYPES, applicableCodes } from './liftingControls';
-import { buildLiftingPdf } from './liftingPdf';
+import { buildLiftingPdf, liftingReportFilename } from './liftingPdf';
 
 describe('lifting annual workflow', () => {
   it('preserves the day and handles a leap-year expiry', () => {
@@ -39,6 +39,27 @@ describe('lifting annual workflow', () => {
     const entries = await fetchInspectionEntries(client,id);
     expect(entries[0].item_snapshot.description).toBe(old.description);
   });
+  it.each(['lifting','towing'] as const)('creates independent %s inspections in the same year and on the same day', async (kind) => {
+    const client = createLiftingPreviewClient();
+    const first = await startLiftingInspection(client,demoVessel.id,kind,'2026-09-09','2027-09-09');
+    const original = await fetchInspectionEntries(client,first);
+    const item = (await fetchLiftingRegister(client,demoVessel.id,kind)).items[0];
+    await saveLiftingItem(client,demoVessel.id,kind,{...item,description:'Updated before repeat inspection'},item.id);
+    const second = await startLiftingInspection(client,demoVessel.id,kind,'2026-09-09','2027-09-09');
+    const third = await startLiftingInspection(client,demoVessel.id,kind,'2026-10-01','2027-10-01');
+    expect(new Set([first,second,third]).size).toBe(3);
+    expect(await fetchInspectionEntries(client,first)).toEqual(original);
+    const latest = await fetchInspectionEntries(client,second);
+    expect(latest[0].item_snapshot.description).toBe('Updated before repeat inspection');
+    expect(latest.every((entry) => entry.condition==='pending')).toBe(true);
+    const {inspections} = await fetchLiftingRegister(client,demoVessel.id,kind);
+    expect(inspections).toHaveLength(3);
+    expect(new Set(inspections.map((report) => liftingReportFilename(report))).size).toBe(3);
+    expect(inspections.map((report) => liftingReportFilename(report))).toEqual(expect.arrayContaining([
+      expect.stringContaining(`2026-09-09 - LEV-${first}.pdf`),
+      expect.stringContaining(`2026-09-09 - LEV-${second}.pdf`),
+    ]));
+  });
   it('groups all items, prechecks only applicable codes, and marks the code and item red when unchecked', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={['admin']} /></MemoryRouter>);
@@ -50,7 +71,7 @@ describe('lifting annual workflow', () => {
     await user.clear(within(start).getByLabelText('Date d’émission'));
     await user.type(within(start).getByLabelText('Date d’émission'),'2026-09-09');
     await user.click(within(start).getByRole('button',{name:'Démarrer le contrôle'}));
-    await screen.findByRole('heading',{name:'Contrôle annuel 2026'});
+    await screen.findByRole('heading',{name:/Contrôle annuel 2026 · LEV-\d+/});
     expect(screen.getByRole('button',{name:'Finaliser et classer le rapport'})).toBeDisabled();
     const shackle = screen.getByRole('article',{name:'Matériel 2'});
     expect(within(shackle).getAllByRole('checkbox').map((box) => box.getAttribute('aria-label'))).toEqual(['EG','ID','V1']);

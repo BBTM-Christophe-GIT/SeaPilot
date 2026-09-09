@@ -6,6 +6,7 @@ declare
   c bigint; other_c bigint; vessel bigint; other_vessel bigint; item bigint; towing bigint;
   inspection bigint; entry bigint; revision integer; certificate bigint; captain bigint; sailor bigint;
   uid uuid; role_name text; path text; result integer;
+  repeat_inspection bigint; repeat_entry bigint; repeat_certificate bigint; repeat_path text; later_inspection bigint; first_towing bigint;
   good_checks jsonb := '{"EG":"ok","ID":"ok","NID":"na","V1":"ok","V2":"ok","V3":"ok","V4":"ok","V5":"ok"}';
 begin
   select id into c from public.companies where code='bbtm';
@@ -146,6 +147,29 @@ begin
     if sqlerrm='Final report editable' then raise; end if;
     assert sqlerrm like 'Ce rapport est finalisé%',sqlerrm;
   end;
+  -- Repeat a published inspection without waiting for expiry, including the exact same issue date.
+  repeat_inspection := public.start_lifting_inspection(vessel,'lifting','2031-03-05','2032-03-05');
+  assert repeat_inspection<>inspection,'Same-day inspection gets a distinct identifier';
+  select id into repeat_entry from public.lifting_inspection_entries where inspection_id=repeat_inspection;
+  assert (select condition from public.lifting_inspection_entries where id=repeat_entry)='pending','Repeat requires a fresh inspection';
+  assert (select item_snapshot->>'description' from public.lifting_inspection_entries where id=repeat_entry)='Edited sling','Repeat snapshots current inventory';
+  result:=public.save_lifting_inspection_entry(repeat_inspection,repeat_entry,1,'good',good_checks,'');
+  repeat_path:=c||'/LVT/lifting/'||repeat_inspection||'/'||result||'-repeat.pdf';
+  execute 'reset role';
+  insert into storage.objects(bucket_id,name,metadata) values('fleet-certificates',repeat_path,'{"mimetype":"application/pdf","size":100}');
+  execute 'set local role authenticated';
+  repeat_certificate:=public.publish_lifting_inspection(repeat_inspection,result,repeat_path,'LVT - 2031-03-05 - LEV-'||repeat_inspection||'.pdf',100);
+  assert repeat_certificate<>certificate,'Repeat creates its own fleet certificate';
+  assert (select certificate_id from public.lifting_inspections where id=inspection)=certificate,'Original report remains published';
+  assert (select storage_path from public.fleet_certificates where id=certificate)=path,'Original document preserved';
+  assert (select item_snapshot->>'description' from public.lifting_inspection_entries where id=entry)='Original sling','Original inspection snapshot preserved';
+  assert (select count(*) from public.fleet_certificates where id in (certificate,repeat_certificate))=2,'Both certificates remain available';
+  later_inspection:=public.start_lifting_inspection(vessel,'lifting','2031-04-05','2032-04-05');
+  assert later_inspection not in (inspection,repeat_inspection),'Another inspection before expiry is allowed';
+  first_towing:=public.start_lifting_inspection(vessel,'towing','2031-03-05','2032-03-05');
+  repeat_inspection:=public.start_lifting_inspection(vessel,'towing','2031-03-05','2032-03-05');
+  assert repeat_inspection<>first_towing,'Repeated towing inspections are allowed too';
+  assert (select count(*) from public.lifting_inspection_entries where inspection_id=repeat_inspection and item_id=towing)=1,'Repeat towing register stays separate';
   -- Direction and Armement retain inventory administration rights.
   foreach uid in array array['9e090000-0000-0000-0000-000000000002'::uuid,'9e090000-0000-0000-0000-000000000003'::uuid] loop
     perform set_config('request.jwt.claim.sub',uid::text,true);
