@@ -49,6 +49,7 @@ import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from '../permissions/roles';
 import { fetchCurrentPersonSummary, fetchCurrentUserRoles, type CurrentPersonSummary } from '../profiles/profileQueries';
 import { fetchUnsignedServiceNoteNotifications, formatServiceNoteDate, type ServiceNoteNotification } from '../serviceNotes/serviceNoteQueries';
 import { fetchAnnualReviewNotifications, type AnnualReviewNotification } from '../annualReviews/annualReviewQueries';
+import { fetchPlanningLeaveNotifications, markPlanningLeaveNotificationRead, PLANNING_NOTIFICATIONS_CHANGED, type PlanningLeaveNotification } from '../planning/planningLeaveNotifications';
 import {
   fetchActionPlanNotifications,
   markActionPlanNotificationRead,
@@ -179,6 +180,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
   const [actionPlanNotifications, setActionPlanNotifications] = useState<ActionPlanNotification[]>([]);
+  const [leaveNotifications, setLeaveNotifications] = useState<PlanningLeaveNotification[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
     () => new Set(NAVIGATION_FAMILIES),
   );
@@ -324,6 +326,39 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     };
   }, [client, currentPerson?.id, previewMode, sessionUserId]);
 
+  useEffect(() => {
+    if (previewMode) {
+      setLeaveNotifications([
+        { id: 99001, absenceId: 99001, title: 'Congés acceptés', body: 'Votre demande de congés du 14/09/2026 au 18/09/2026 a été acceptée.', createdAt: new Date().toISOString() },
+        { id: 99002, absenceId: 99002, title: 'Congés refusés', body: 'Votre demande de congés du 21/09/2026 au 25/09/2026 a été refusée. Commentaire : effectif insuffisant sur cette période.', createdAt: new Date().toISOString() },
+      ]);
+      return;
+    }
+    setLeaveNotifications([]);
+    if (!sessionUserId) return;
+    let mounted = true;
+    let requestVersion = 0;
+    const refresh = () => {
+      const version = ++requestVersion;
+      void fetchPlanningLeaveNotifications(client)
+        .then((items) => { if (mounted && version === requestVersion) setLeaveNotifications(items); })
+        .catch(() => undefined);
+    };
+    const refreshVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const interval = window.setInterval(refreshVisible, 30_000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener(PLANNING_NOTIFICATIONS_CHANGED, refresh);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener(PLANNING_NOTIFICATIONS_CHANGED, refresh);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
+  }, [client, previewMode, sessionUserId]);
+
   const requestedModule = getRequestedModule(location.pathname);
   const activeVisibleModules = visibleModules;
   const isRequestedModuleDenied = requestedModule
@@ -351,7 +386,18 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length;
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length;
+
+  function openLeaveNotification(notification: PlanningLeaveNotification) {
+    setIsNotificationsOpen(false);
+    if (previewMode) {
+      setLeaveNotifications((items) => items.filter((item) => item.id !== notification.id));
+      return;
+    }
+    void markPlanningLeaveNotificationRead(client, notification.id)
+      .then(() => setLeaveNotifications((items) => items.filter((item) => item.id !== notification.id)))
+      .catch(() => undefined);
+  }
 
   function openActionPlanNotification(notification: ActionPlanNotification) {
     setActionPlanNotifications((items) => items.filter((item) => item.id !== notification.id));
@@ -530,13 +576,14 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
 
           <div className="topbar-actions">
             <div className="topbar-notifications">
-              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
+              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { if (!isNotificationsOpen) window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED)); setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
                 <Bell aria-hidden="true" size={19} />
                 {notificationCount ? <span className="topbar-notification-badge">{notificationCount > 9 ? '9+' : notificationCount}</span> : null}
               </button>
               {isNotificationsOpen ? <div className="topbar-notification-popover">
                 <header><div><strong>Notifications</strong><span>{notificationCount} élément{notificationCount > 1 ? 's' : ''} à traiter</span></div><Bell aria-hidden="true" size={18} /></header>
                 <div className="topbar-notification-list">
+                  {leaveNotifications.length ? <section aria-label="Demandes de congés" className="topbar-notification-group"><h4>Demandes de congés</h4>{leaveNotifications.map((notification) => <Link key={notification.id} onClick={() => openLeaveNotification(notification)} to="/modules/planning"><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.createdAt)}</small></span><p>{notification.body}</p><em>Voir le planning <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {hrDocumentNotifications.length ? <section aria-label="Documents RH et brevets" className="topbar-notification-group"><h4>RH / Brevets · échéance à 40 jours</h4>{hrDocumentNotifications.map((notification) => <Link key={notification.documentId} to="/modules/humanResources"><span><strong>Document personnel</strong><small>{formatHrDocumentExpiryDate(notification.expiresOn)}</small></span><p>{notification.title}</p><em>{notification.daysUntilExpiry === 0 ? 'Expire aujourd’hui' : notification.daysUntilExpiry === 1 ? 'Expire demain' : `Expire dans ${notification.daysUntilExpiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {annualReviewNotifications.length ? <section aria-label="Entretiens professionnels et d’évaluation" className="topbar-notification-group"><h4>Entretien Professionnel et d’Evaluation</h4>{annualReviewNotifications.map((notification) => <Link key={`${notification.reviewId}-${notification.kind}`} to={`/annual-review/${notification.reviewId}`}><span><strong>{notification.title}</strong></span><p>{notification.detail}</p><em>{notification.kind === 'invitation' ? 'Répondre à l’invitation' : notification.kind === 'counter_proposal' ? 'Traiter le nouveau créneau' : 'Lire et signer'} <ChevronRight size={14} /></em></Link>)}</section> : null}
