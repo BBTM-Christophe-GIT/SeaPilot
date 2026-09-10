@@ -193,3 +193,7 @@ Compilation de production et ESLint ciblé réussis. Dialogue vérifié à 390 �
 ## Hauteur des fiches d’inventaire
 
 Les fiches des apparaux et des remorques regroupent le type et le titre sur une ligne, puis l’emplacement, les dates et l’échéance sur une ligne commune. Les marges verticales sont réduites à 4 px : une fiche fermée passe de 146 à 74 px environ à 1440 px de largeur. Les textes longs et les petits écrans reviennent automatiquement à la ligne ; aucune hauteur fixe ne masque les informations. Les volets Certificat et historique peuvent toujours se déployer et les actions conservent une cible tactile de 44 px.
+
+## CMU dans la description de la fiche papier
+
+La fiche de contrôle papier PDF indique également la CMU sous la description de chaque matériel, en tonnes avec une virgule décimale (par exemple « CMU : 6,5 t »). Une valeur absente dans l’inventaire est indiquée « CMU : non renseignée ». Cette présentation s’applique aux apparaux et aux remorques.

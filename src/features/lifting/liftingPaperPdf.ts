@@ -47,7 +47,7 @@ export async function buildLiftingPaperPdf(vessel: LiftingVessel, kind: LiftingK
       ],
       body: group.rows.map((item) => [
         { content: item.reference, styles: { fontStyle: 'bold', halign: 'center', minCellHeight: 28 } },
-        clean([item.description, item.serial_number && `N° série : ${item.serial_number}`, item.location, !applicableCodes(item).length && 'Notice de contrôle à compléter.'].filter(Boolean).join('\n')),
+        clean([item.description, `CMU : ${item.swl_tonnes === null ? 'non renseignée' : `${String(item.swl_tonnes).replace('.', ',')} t`}`, item.serial_number && `N° série : ${item.serial_number}`, item.location, !applicableCodes(item).length && 'Notice de contrôle à compléter.'].filter(Boolean).join('\n')),
         item.swl_tonnes === null ? '-' : String(item.swl_tonnes).replace('.', ','),
         ...codes.map(() => ''), '', '',
       ]),
