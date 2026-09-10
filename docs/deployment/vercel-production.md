@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Les acceptations et refus de congés sont notifiés à l'émetteur dans la cloche.
+La migration `20260910182329_planning_leave_decision_notifications.sql` précède le
+client et est appliquée à SeaPilot. Voir
+[planning-leave-decision-notifications.md](./planning-leave-decision-notifications.md).
+
 « Demander des congés » ouvre un formulaire dédié avec le profil connecté présélectionné.
 Indisponibilité est remplacée par Congés dans les demandes, et les libellés Vacance(s)
 du Planning deviennent Congés. Appliquer la migration

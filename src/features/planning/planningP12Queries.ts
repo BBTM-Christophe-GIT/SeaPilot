@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planningDateFromTimestamp, planningLocalDateTimeToUtc } from './planningDates';
 import { throwPlanningDataError } from './planningErrors';
+import { PLANNING_NOTIFICATIONS_CHANGED } from './planningLeaveNotifications';
 import { fetchPlanningManningMatrices } from './planningP11Queries';
 import type {
   PlanningAbsenceRecord,
@@ -237,10 +238,13 @@ export function reviewPlanningAbsence(
   if (action !== 'approve' && normalizedComment.length < 3) {
     throw new Error('Un commentaire d’au moins 3 caractères est obligatoire pour refuser ou annuler.');
   }
-  return callRpc(client, 'review-absence', 'Impossible de mettre à jour la demande d’absence.', 'review_planning_absence', {
+  return callRpc<number>(client, 'review-absence', 'Impossible de mettre à jour la demande d’absence.', 'review_planning_absence', {
     p_absence_id: planningEntityId(absenceId, 'La demande'),
     p_action: action,
     p_comment: normalizedComment || null,
+  }).then((id) => {
+    window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED));
+    return id;
   });
 }
 
