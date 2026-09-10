@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Le centre « Absences et conflits » s'ouvre dans une modale centrée avec des boutons
+contrastés et adaptés au mobile. Aucune migration n'est requise. Voir
+[planning-absence-modal.md](./planning-absence-modal.md).
+
 Version `3.39.6` permet à un Marin de saisir et signer ses heures sans capitaine pour la journée,
 y compris sans affectation Planning. L'approbation revient alors à un Administrateur, à la Direction
 ou à l'Armement de la même société. Appliquer

@@ -76,6 +76,39 @@ describe('Planning P1.2 panel', () => {
     vi.mocked(updatePlanningConflictCase).mockResolvedValue(40);
   });
 
+  it('keeps keyboard focus in the absence dialog and closes with Escape', async () => {
+    const user = userEvent.setup();
+    const props = renderPanel({ initialTab: 'absences' });
+    await screen.findByText('Formation sécurité');
+    const dialog = screen.getByRole('dialog', { name: 'Absences et conflits' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = within(dialog).getByRole('button', { name: 'Fermer' });
+    close.focus();
+    await user.tab({ shift: true });
+    expect(within(dialog).getByRole('button', { name: 'Supprimer la demande de Paul DURAND' })).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it('prevents dismissal and duplicate actions while an absence decision is saving', async () => {
+    const user = userEvent.setup();
+    let finishReview!: (id: number) => void;
+    vi.mocked(reviewPlanningAbsence).mockReturnValue(new Promise((resolve) => { finishReview = resolve; }));
+    const props = renderPanel({ initialTab: 'absences' });
+    await screen.findByText('Formation sécurité');
+    await user.click(screen.getByRole('button', { name: 'Refuser' }));
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Actualiser les absences et conflits' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(props.onClose).not.toHaveBeenCalled();
+    finishReview(31);
+    expect(await screen.findByText('Demande refusée.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeEnabled();
+  });
+
   it('creates and approves absence requests while showing assignment impacts', async () => {
     const user = userEvent.setup();
     renderPanel();
