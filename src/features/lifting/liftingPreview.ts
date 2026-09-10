@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
-import type { LiftingCertificate } from './liftingCertificateQueries';
+import type { LiftingCertificate, UploadedLiftingCertificate } from './liftingCertificateQueries';
 import { accessoryDefinition } from './liftingControls';
 import { annualExpiry, canManageLifting, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
@@ -45,16 +45,21 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
       if (name === 'add_lifting_item_certificate') {
         const item = items.find((row) => row.id === args.p_item_id);
         const path = String(args.p_storage_path);
-        if (!item || !path.startsWith(`${item.company_id}/${item.vessel_id}/${item.id}/`) || !files.has(path)) return denied();
+        if (!item || !path.startsWith(`${item.company_id}/${item.vessel_id}/${item.id}/${item.service_version}/`) || !files.has(path)) return denied();
         const id = crypto.randomUUID();
-        certificates.push({ id, item_id: item.id, storage_path: path, file_name: String(args.p_file_name), mime_type: String(args.p_mime_type), file_size: Number(args.p_file_size), created_at: new Date().toISOString() });
+        certificates.push({ id, item_id: item.id, service_version: item.service_version || 1, storage_path: path, file_name: String(args.p_file_name), mime_type: String(args.p_mime_type), file_size: Number(args.p_file_size), created_at: new Date().toISOString() });
         return { data: id, error: null };
       }
       if (name === 'replace_lifting_item') {
         const item = items.find((row) => row.id === args.p_id);
         const date = String(args.p_commissioned_on);
         if (!item?.active || item.service_version !== args.p_service_version || !date || date > todayLocal() || date < (item.commissioned_on || '')) return denied();
+        const uploaded = (args.p_certificates || []) as UploadedLiftingCertificate[];
+        if (!uploaded.length && certificates.some((file) => file.item_id === item.id && file.service_version === item.service_version)) return { data: null, error: { message: 'Joignez un nouveau certificat pour remplacer les pièces jointes existantes.' } };
+        const version = (item.service_version || 1) + 1;
+        if (uploaded.some((file) => !file.storage_path.startsWith(`${item.company_id}/${item.vessel_id}/${item.id}/${version}/`) || !files.has(file.storage_path))) return denied();
         Object.assign(item, { commissioned_on: date, replaced_on: date, last_control_on: null, service_version: (item.service_version || 1) + 1, inspection_due_on: annualExpiry(date) });
+        certificates.push(...uploaded.map((file) => ({ ...file, id: crypto.randomUUID(), item_id: item.id, service_version: version, created_at: new Date().toISOString() })));
         return { data: null, error: null };
       }
       if (name === 'lifting_available_vessels') return { data: [demoVessel, secondDemoVessel], error: null };

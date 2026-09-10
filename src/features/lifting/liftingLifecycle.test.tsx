@@ -40,7 +40,7 @@ describe('inventory lifecycle and equipment certificates', () => {
     expect(screen.getByText('Échu le 09/09/2026')).toHaveClass('expired');
     expect(screen.getByText('Échu le 09/09/2026').querySelector('svg')).not.toBeNull();
   });
-  it.each(['lifting', 'towing'] as const)('preserves %s identity, characteristics and certificates on replacement and rejects stale replacement', async (kind) => {
+  it.each(['lifting', 'towing'] as const)('replaces %s certificates while preserving identity and document history', async (kind) => {
     const client = createLiftingPreviewClient(); const user = userEvent.setup();
     const original = (await fetchLiftingRegister(client, demoVessel.id, kind)).items[0];
     await addLiftingCertificate(client, original, new File(['%PDF-1.7 fixture'], 'Certificat origine.pdf', { type: 'application/pdf' }));
@@ -48,12 +48,18 @@ describe('inventory lifecycle and equipment certificates', () => {
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
     if (kind === 'towing') { await user.click(screen.getByRole('button', { name: 'Remorques' })); await screen.findByText(original.description); }
     await user.click(screen.getByRole('button', { name: `Remplacer ${original.reference}` }));
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remplacer le matériel' }));
+    const dialog = within(screen.getByRole('dialog'));
+    await dialog.findByText(/Un nouveau certificat est requis/);
+    expect(dialog.getByRole('button', { name: 'Remplacer le matériel' })).toBeDisabled();
+    await user.upload(dialog.getByLabelText('Nouveaux certificats'), new File(['%PDF new fixture'], 'Nouveau certificat.pdf', { type: 'application/pdf' }));
+    await user.click(dialog.getByRole('button', { name: 'Remplacer le matériel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const current = (await fetchLiftingRegister(client, demoVessel.id, kind)).items.find((item) => item.id === original.id)!;
     expect(current).toMatchObject({ reference: original.reference, description: original.description, serial_number: original.serial_number, notes: original.notes, swl_tonnes: original.swl_tonnes, service_version: 2, commissioned_on: todayLocal(), inspection_due_on: annualExpiry(todayLocal()), last_control_on: null });
     const certificates = await fetchLiftingCertificates(client, current.id);
-    expect(certificates).toHaveLength(1);
+    expect(certificates).toHaveLength(2);
+    expect(certificates.find((file) => file.file_name === 'Certificat origine.pdf')?.service_version).toBe(1);
+    expect(certificates.find((file) => file.file_name === 'Nouveau certificat.pdf')?.service_version).toBe(2);
     expect((await downloadLiftingCertificate(client, certificates[0])).size).toBe(16);
     await expect(replaceLiftingItem(client, original, todayLocal())).rejects.toMatchObject({ message: 'Accès refusé.' });
   });
