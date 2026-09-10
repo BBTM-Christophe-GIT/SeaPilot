@@ -8,7 +8,8 @@ const FLEET_VESSEL_SELECT = [
   'mmsi', 'gross_tonnage', 'max_people', 'crew_members', 'medical_dotation', 'length_overall',
   'flag_state', 'active', 'sharepoint_list_id', 'sharepoint_item_id', 'source_modified_at',
   'source_guid', 'source_etag', 'source_active_label', 'source_fleet_exit_at', 'photo_url',
-  'photo_storage_bucket', 'photo_storage_path', 'brochure_subtitle', 'brochure_summary',
+  'photo_storage_bucket', 'photo_storage_path', 'illustration_storage_bucket',
+  'illustration_storage_path', 'illustration_thumbnail_url', 'brochure_subtitle', 'brochure_summary',
   'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
   'beam_overall_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
@@ -47,6 +48,9 @@ interface FleetVesselRow {
   photo_url: string | null;
   photo_storage_bucket: string | null;
   photo_storage_path: string | null;
+  illustration_storage_bucket: string | null;
+  illustration_storage_path: string | null;
+  illustration_thumbnail_url: string | null;
   brochure_subtitle: string | null;
   brochure_summary: string | null;
   brochure_operations: string[] | null;
@@ -102,6 +106,9 @@ export interface FleetVessel {
   photoUrl: string;
   photoStorageBucket: string;
   photoStoragePath: string;
+  illustrationStorageBucket?: string;
+  illustrationStoragePath?: string;
+  illustrationThumbnailUrl?: string;
   brochureSubtitle: string;
   brochureSummary: string;
   brochureOperations: string[];
@@ -188,6 +195,8 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     sourceModifiedAt: row.source_modified_at || '', sourceGuid: row.source_guid || '', sourceEtag: row.source_etag || '',
     sourceActiveLabel: row.source_active_label || '', sourceFleetExitAt: row.source_fleet_exit_at || '', photoUrl: row.photo_url || '',
     photoStorageBucket: row.photo_storage_bucket || '', photoStoragePath: row.photo_storage_path || '',
+    illustrationStorageBucket: row.illustration_storage_bucket || '', illustrationStoragePath: row.illustration_storage_path || '',
+    illustrationThumbnailUrl: row.illustration_thumbnail_url || '',
     brochureSubtitle: row.brochure_subtitle || '', brochureSummary: row.brochure_summary || '',
     brochureOperations: row.brochure_operations || [], builtYear: numberOrNull(row.built_year),
     classificationLabel: row.classification_label || '', navigationCategory: row.navigation_category || '',
@@ -265,7 +274,7 @@ export async function uploadFleetVesselPhoto(client: SupabaseClient, vessel: Fle
   return mapFleetVessel(data as unknown as FleetVesselRow);
 }
 
-export async function resolveFleetVesselPhotoUrl(client: SupabaseClient, vessel: FleetVessel): Promise<string> {
+export async function resolveFleetVesselPhotoUrl(client: SupabaseClient, vessel: Pick<FleetVessel, 'photoStorageBucket' | 'photoStoragePath' | 'photoUrl'>): Promise<string> {
   if (vessel.photoStorageBucket && vessel.photoStoragePath) {
     const { data, error } = await client.storage.from(vessel.photoStorageBucket).createSignedUrl(vessel.photoStoragePath, 3600);
     if (error || !data?.signedUrl) throw error || new Error('Impossible de charger la photo du navire.');

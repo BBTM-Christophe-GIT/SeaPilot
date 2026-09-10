@@ -16,7 +16,7 @@ describe('draft-only inspection deletion', () => {
     render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
     if (kind === 'towing') await user.click(screen.getByRole('button', { name: 'Remorques' }));
-    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.click(screen.getByRole('button', { name: 'Rapports de contrôle' }));
     await user.selectOptions(await screen.findByLabelText('Année'), '2028');
     await user.click(screen.getByRole('button', { name: `Supprimer le brouillon LEV-${first}` }));
     expect(within(screen.getByRole('dialog')).getByText(demoVessel.name)).toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('draft-only inspection deletion', () => {
     const id = await startLiftingInspection(client, demoVessel.id, 'lifting', '2026-09-09', '2027-09-09');
     render(<MemoryRouter><LiftingPage client={client} roles={['direction']} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.click(screen.getByRole('button', { name: 'Rapports de contrôle' }));
     await user.click(screen.getByRole('button', { name: `Supprimer le brouillon LEV-${id}` }));
     const report = (await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections[0];
     const entry = (await fetchInspectionEntries(client, id))[0];
@@ -71,7 +71,7 @@ describe('draft-only inspection deletion', () => {
     });
     render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.click(screen.getByRole('button', { name: 'Rapports de contrôle' }));
     expect(await screen.findByText('Finalisé')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Supprimer le brouillon/ })).not.toBeInTheDocument();
     const report = (await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections[0];
@@ -84,7 +84,7 @@ describe('draft-only inspection deletion', () => {
     await startLiftingInspection(client, demoVessel.id, 'lifting', '2026-09-09', '2027-09-09');
     render(<MemoryRouter><LiftingPage client={client} roles={[role]} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.click(screen.getByRole('button', { name: 'Rapports de contrôle' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reprendre' })).toBeEnabled());
     expect(screen.queryByRole('button', { name: /Supprimer le brouillon/ })).not.toBeInTheDocument();
   });

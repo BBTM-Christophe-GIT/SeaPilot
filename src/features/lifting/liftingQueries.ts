@@ -18,7 +18,9 @@ export async function replaceLiftingItem(client: SupabaseClient, item: LiftingIt
 export async function fetchLiftingVessels(client: SupabaseClient): Promise<LiftingVessel[]> {
   const { data, error } = await client.rpc('lifting_available_vessels');
   if (error) throw error;
-  return data || [];
+  // The role-scoped RPC supplies the small, cacheable thumbnail URL directly.
+  // Opening an inventory never waits for signed URLs or original photographs.
+  return (data || []) as LiftingVessel[];
 }
 // Paper forms always read current inventory, independently of UI filters and report snapshots.
 export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
