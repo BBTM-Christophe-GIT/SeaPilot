@@ -189,3 +189,7 @@ L’ajout courant et le remplacement verrouillent la même fiche d’inventaire.
 Validation : 47 tests du module, dont deux registres, obligation de nouvelle pièce, historique consultable, retrait d’une sélection et échec de transfert ; fixtures SQL réelles avec rollback vérifiant les droits, la séparation des générations, le refus de réutilisation d’un ancien document, les ajouts périmés et l’annulation complète lorsqu’un deuxième fichier est manquant.
 
 Compilation de production et ESLint ciblé réussis. Dialogue vérifié à 390 × 844 et 1440 × 1000, avec sélection des nouveaux fichiers et commandes accessibles ; aucune erreur console relevée. Les tests de profils utilisent les fixtures SQL réelles, pas la simulation de session.
+
+## Hauteur des fiches d’inventaire
+
+Les fiches des apparaux et des remorques regroupent le type et le titre sur une ligne, puis l’emplacement, les dates et l’échéance sur une ligne commune. Les marges verticales sont réduites à 4 px : une fiche fermée passe de 146 à 74 px environ à 1440 px de largeur. Les textes longs et les petits écrans reviennent automatiquement à la ligne ; aucune hauteur fixe ne masque les informations. Les volets Certificat et historique peuvent toujours se déployer et les actions conservent une cible tactile de 44 px.
