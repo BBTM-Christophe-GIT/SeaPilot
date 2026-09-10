@@ -4,8 +4,9 @@ import type { LiftingVessel } from './liftingModel';
 
 function VesselImage({ vessel }: { vessel: LiftingVessel }) {
   const [failedUrl, setFailedUrl] = useState('');
-  return vessel.photoUrl && failedUrl !== vessel.photoUrl
-    ? <img src={vessel.photoUrl} alt="" width={1536} height={1024} decoding="async" onError={() => setFailedUrl(vessel.photoUrl || '')} />
+  const thumbnailUrl = vessel.illustration_thumbnail_url;
+  return thumbnailUrl && failedUrl !== thumbnailUrl
+    ? <img src={thumbnailUrl} alt="" width={256} height={171} loading="lazy" decoding="async" onError={() => setFailedUrl(thumbnailUrl)} />
     : <span className="lifting-vessel-placeholder"><Ship size={34} aria-hidden="true" /><small>Photo à venir</small></span>;
 }
 

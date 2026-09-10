@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
 import type { LiftingCertificate, UploadedLiftingCertificate } from './liftingCertificateQueries';
 import { accessoryDefinition } from './liftingControls';
-import { BBTM_FLEET_PHOTOS, fleetCatalogPhotoPath } from '../fleet/fleetPhotoCatalog';
+import { BBTM_FLEET_PHOTOS, fleetCatalogThumbnailPath } from '../fleet/fleetPhotoCatalog';
 import { annualExpiry, canManageLifting, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
 // Independent demonstration data. No customer inventory or signature is bundled into public previews.
@@ -10,7 +10,7 @@ export const demoVessel: LiftingVessel = { id: 90001, company_id: 1, name: 'NAVI
 export const secondDemoVessel: LiftingVessel = { ...demoVessel, id: 90002, name: 'SECOND NAVIRE DÉMONSTRATION', acronym: 'DEMO2' };
 export const demoFleetVessels: LiftingVessel[] = BBTM_FLEET_PHOTOS.map((photo, index) => ({
   ...demoVessel, id: 91001 + index, name: photo.name, acronym: photo.acronym,
-  photo_url: fleetCatalogPhotoPath(photo.slug),
+  illustration_thumbnail_url: fleetCatalogThumbnailPath(photo),
 }));
 
 export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspectorGrant?: boolean; fleet?: boolean } = {}): SupabaseClient {

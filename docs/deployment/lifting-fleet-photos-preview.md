@@ -1,39 +1,63 @@
-# Photos de flotte et sélection du module Levage
+# Illustrations de flotte et sélection du module Levage
 
-Les neuf PNG fournis sont conservés sans retouche. Les huit navires et le Yard du Havre sont associés par nom, acronyme, société et statut actif : GOURY, HIRONDELLE DE LA MANCHE, HOLENN EUSA, KROKDUR, LANDEMER, LE ROZEL, BBTM TENDER 1, SUROIT et YARD - Le Havre. Le doublon archivé HIRONDELLE n'est pas modifié.
+Les neuf illustrations sont ajoutées à Flotte BBTM sans remplacer les photos principales. Elles correspondent aux huit navires fournis et au Yard du Havre. Le doublon archivé HIRONDELLE reste inchangé.
 
 ## Référentiel partagé
 
-Les originaux sont dans le bucket privé existant `fleet-media`. La table `public.vessels` (Flotte BBTM) porte leurs références dans `photo_storage_bucket` et `photo_storage_path`; `photo_url` est remis à `null`. Le chemin inclut l'identifiant de société, celui de l'unité et une empreinte SHA-256 du contenu. Aucun changement de schéma ou de politique RLS n'est nécessaire.
+La table `public.vessels` conserve deux médias indépendants :
 
-Levage utilise le même résolveur d'URL signée que le module Navires. Il résout uniquement les photos des unités renvoyées par `lifting_available_vessels()`. Une photo absente ou indisponible affiche une icône de navire sans bloquer la sélection. Écrehouel reste donc accessible selon les droits existants, même sans photo fournie. Les anciennes images ne sont pas supprimées du stockage.
+| Usage | Colonnes |
+| --- | --- |
+| Photo principale existante | `photo_url`, `photo_storage_bucket`, `photo_storage_path` |
+| Illustration originale supplémentaire | `illustration_storage_bucket`, `illustration_storage_path` |
+| Vignette de cette illustration | `illustration_thumbnail_url` |
 
-## Import reproductible
+Les originaux restent dans le bucket privé `fleet-media`, avec un chemin contenant société, navire et empreinte SHA-256. Leur contenu est vérifié par téléchargement et comparaison d'empreinte. Le modèle partagé `FleetVessel` expose les nouvelles références pour de futurs usages.
 
-Exécuter avec pnpm 10.34.5. Fournir `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` dans l'environnement du processus, sans les enregistrer dans Git.
+La migration `20260910222711_fleet_illustrations_and_lightweight_thumbnails.sql` ajoute ces champs et corrige le premier import. Elle déplace ses références dans les champs d'illustration et restaure les anciennes photos depuis la sauvegarde antérieure. Elle compare société, nom, acronyme et chemin exact du PNG importé : une photo modifiée depuis par un utilisateur n'est pas remplacée. Aucun objet de stockage n'est supprimé.
+
+## Performance
+
+- Neuf WebP de **256 × 171 pixels**, entre **3 468 et 6 374 octets**.
+- **39 928 octets au total**, contre **16 417 114 octets** : réduction de **99,76 %**.
+- Seules les vignettes sont livrées dans `public/vessels/bbtm/`; aucun original PNG de ce catalogue n'est déployé.
+- Noms contenant l'empreinte du contenu; cache Vercel public d'un an avec `immutable`.
+- Levage utilise directement `illustration_thumbnail_url` du RPC existant `lifting_available_vessels()`. Aucun appel de signature ni téléchargement d'original ou de photo principale.
+- Chargement différé, décodage asynchrone et dimensions intrinsèques. Une vignette absente laisse le filtre utilisable avec une icône nommée.
+
+Un test impose 20 Ko maximum par vignette, 120 Ko pour la flotte, vérifie les empreintes et interdit des fichiers supplémentaires dans ce répertoire.
+
+## Préparation et import
+
+Générer les vignettes avec Python et Pillow 12.3.0, sans modifier les sources :
+
+```powershell
+python scripts/prepare-bbtm-fleet-thumbnails.py --source-dir '<dossier des PNG>'
+```
+
+Le script lit `scripts/bbtm-fleet-photo-sources.json` et génère les WebP et le catalogue TypeScript. Ces fichiers sont commités; Python et Pillow ne sont pas nécessaires au build Vercel. Lors d'une future mise à jour, coordonner le déploiement de la nouvelle vignette avec sa référence en base et conserver l'ancienne jusqu'à cette bascule.
+
+Appliquer d'abord la migration. Utiliser pnpm 10.34.5 et fournir `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` dans l'environnement du processus, sans les enregistrer dans Git :
 
 ```powershell
 corepack pnpm exec node --experimental-strip-types scripts/import-bbtm-fleet-photos.ts --source-dir '<dossier des PNG>'
-corepack pnpm exec node --experimental-strip-types scripts/import-bbtm-fleet-photos.ts --source-dir '<dossier des PNG>' --backup-file '<sauvegarde JSON hors dépôt>' --apply
+corepack pnpm exec node --experimental-strip-types scripts/import-bbtm-fleet-photos.ts --source-dir '<dossier des PNG>' --backup-file '<nouvelle sauvegarde JSON hors dépôt>' --apply
 ```
 
-La première commande vérifie les correspondances et les fichiers. L'application exige un nouveau fichier de sauvegarde des anciennes références, charge les images puis vérifie leur contenu par téléchargement et comparaison SHA-256 avant de mettre à jour les fiches. Une reprise réutilise les objets déjà chargés avec la même empreinte. Pour revenir aux anciennes photos, restaurer uniquement les trois champs photo depuis la sauvegarde pour les identifiants concernés.
+Le mode sans `--apply` valide les correspondances actives par société, nom et acronyme, les originaux et leurs vignettes. L'import exige une nouvelle sauvegarde, vérifie le contenu stocké puis met à jour uniquement les champs `illustration_*`. Les objets existants de même empreinte sont réutilisés. Les vignettes référencées doivent être déployées avec ce commit.
 
-L'option `--copy-preview` copie les originaux dans `public/vessels/bbtm/`, pour une préversion autonome. Le catalogue commun est `src/features/fleet/fleetPhotoCatalog.ts`. Aucun inventaire, rapport client ou signature n'est incorporé dans les données de démonstration.
+## Interface et droits
 
-## Interface et préversion
+La rangée de photos nommées remplace la liste déroulante. Bordure dorée et coche indiquent la sélection; défilement au toucher, au clavier et avec les flèches. Le filtre est commun à l'inventaire et aux rapports, et la vue choisie est conservée au changement de navire. Les modifications non enregistrées empêchent le changement de contexte.
 
-- Une rangée de photos nommées remplace la liste déroulante; bordure dorée et coche identifient la sélection. La rangée défile au toucher, au clavier ou avec les flèches.
-- La sélection reste commune à l'inventaire et aux rapports. Le choix de vue est conservé lorsque l'utilisateur change de navire; recherche et année sont réinitialisées.
-- Les boutons Inventaire et Rapports de contrôle affichent leurs icônes et compteurs. Les modifications de contrôle non enregistrées empêchent le changement de navire.
-- La route locale `/modules/lifting?preview=1` et les déploiements Vercel de préversion utilisent neuf unités avec données fictives séparées par navire. La route connectée conserve le filtrage RPC/RLS existant.
+La route locale `/modules/lifting?preview=1` et les déploiements de préversion proposent neuf unités avec données fictives distinctes. La route connectée conserve les droits RPC/RLS existants. Écrehouel reste accessible selon ces droits avec une icône de remplacement.
 
-## Vérification
+## Vérifications
 
-- `corepack pnpm test src/features/lifting src/features/fleet/fleetQueries.test.ts --maxWorkers=2` : 53 tests réussis sur les huit suites Levage et Flotte.
-- ESLint sur les fichiers modifiés : réussi. Compilation de production : réussie.
-- `supabase/tests/lifting_inventory_workflow_test.sql` : réussi sur les véritables rôles PostgreSQL avec fixtures Marin/Capitaine et affectations RH, puis annulation de la transaction. Vérifie les références photo accessibles, l'exclusion des unités sans affectation et hors société, les inventaires, les contrôles et leur publication.
-- Import distant : neuf associations et neuf fichiers vérifiés, originaux strictement identiques.
-- Chromium : sélection du navire, conservation de la vue Rapports, photos chargées et défilement mobile, aux formats 1536 × 1080 et 390 × 844. Aucune erreur applicative après rechargement; une première requête locale au favicon absent a retourné 404.
+- 55 tests ciblés réussis : Levage, requêtes Flotte et budget des vignettes.
+- ESLint ciblé et compilation de production réussis.
+- `supabase/tests/lifting_inventory_workflow_test.sql` réussi avec véritables rôles PostgreSQL et affectations RH Marin/Capitaine, puis transaction annulée. Vérifie les références supplémentaires indépendantes des photos principales et les périmètres de navire et stockage.
+- Neuf originaux présents et anciennes références principales restaurées vérifiés dans la base.
+- Navigateur : décodage des WebP en 256 × 171, sélection Inventaire/Rapports conservée, rendu desktop/mobile et contrôle des téléchargements.
 
-Les captures et la sauvegarde des anciennes références restent hors du dépôt. La préversion ne remplace pas les tests de profils réels.
+Les captures et sauvegardes restent hors du dépôt. La préversion ne sert pas de preuve des droits des profils réels.

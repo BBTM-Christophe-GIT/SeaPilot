@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { resolveFleetVesselPhotoUrl } from '../fleet/fleetQueries';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
 import { uploadLiftingCertificate, validateLiftingCertificate, type UploadedLiftingCertificate } from './liftingCertificateQueries';
 
@@ -19,21 +18,9 @@ export async function replaceLiftingItem(client: SupabaseClient, item: LiftingIt
 export async function fetchLiftingVessels(client: SupabaseClient): Promise<LiftingVessel[]> {
   const { data, error } = await client.rpc('lifting_available_vessels');
   if (error) throw error;
-  // Only resolve photos for vessels returned by the role-scoped RPC. A missing
-  // image must never hide a vessel or prevent access to its register.
-  return Promise.all(((data || []) as LiftingVessel[]).map(async (vessel) => {
-    if (!vessel.photo_url && !vessel.photo_storage_path) return vessel;
-    try {
-      const photoUrl = await resolveFleetVesselPhotoUrl(client, {
-        photoUrl: vessel.photo_url || '',
-        photoStorageBucket: vessel.photo_storage_bucket || '',
-        photoStoragePath: vessel.photo_storage_path || '',
-      });
-      return { ...vessel, photoUrl };
-    } catch {
-      return { ...vessel, photoUrl: vessel.photo_url || '' };
-    }
-  }));
+  // The role-scoped RPC supplies the small, cacheable thumbnail URL directly.
+  // Opening an inventory never waits for signed URLs or original photographs.
+  return (data || []) as LiftingVessel[];
 }
 // Paper forms always read current inventory, independently of UI filters and report snapshots.
 export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {

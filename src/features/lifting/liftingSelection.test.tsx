@@ -9,21 +9,25 @@ import { createLiftingPreviewClient, demoFleetVessels, demoVessel } from './lift
 import { fetchInspectionEntries, fetchLiftingRegister, fetchLiftingVessels, startLiftingInspection } from './liftingQueries';
 
 describe('lifting vessel photo selection', () => {
-  it('resolves only role-scoped RPC photos and tolerates an unavailable image', async () => {
-    const createSignedUrl = vi.fn()
-      .mockResolvedValueOnce({ data: { signedUrl: 'https://storage.test/signed/goury' }, error: null })
-      .mockResolvedValueOnce({ data: null, error: { message: 'Unavailable' } });
+  it('uses only role-scoped thumbnails without signing or loading original photos', async () => {
+    const storageFrom = vi.fn();
     const rpc = vi.fn().mockResolvedValue({ data: [
-      { ...demoVessel, id: 1, photo_storage_bucket: 'fleet-media', photo_storage_path: '1/1/goury.png' },
-      { ...demoVessel, id: 2, photo_storage_bucket: 'fleet-media', photo_storage_path: '1/2/missing.png' },
+      { ...demoVessel, id: 1, photo_url: '/old-goury.jpg', illustration_storage_bucket: 'fleet-media', illustration_storage_path: '1/1/original.png', illustration_thumbnail_url: '/vessels/bbtm/goury.webp' },
+      { ...demoVessel, id: 2, photo_storage_bucket: 'fleet-media', photo_storage_path: '1/2/large.png', illustration_thumbnail_url: null },
     ], error: null });
     const from = vi.fn();
-    const result = await fetchLiftingVessels({ rpc, from, storage: { from: () => ({ createSignedUrl }) } } as unknown as SupabaseClient);
+    const result = await fetchLiftingVessels({ rpc, from, storage: { from: storageFrom } } as unknown as SupabaseClient);
     expect(rpc).toHaveBeenCalledExactlyOnceWith('lifting_available_vessels');
     expect(from).not.toHaveBeenCalled();
     expect(result.map((v) => v.id)).toEqual([1, 2]);
-    expect(result.map((v) => v.photoUrl)).toEqual(['https://storage.test/signed/goury', '']);
-    expect(createSignedUrl).toHaveBeenCalledWith('1/1/goury.png', 3600);
+    expect(storageFrom).not.toHaveBeenCalled();
+    render(<LiftingVesselFilter vessels={result} value={1} disabled={false} onChange={vi.fn()} />);
+    const images = document.querySelectorAll('.lifting-vessel-photo img');
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', '/vessels/bbtm/goury.webp');
+    expect(images[0]).toHaveAttribute('loading', 'lazy');
+    expect(images[0]).toHaveAttribute('width', '256');
+    expect(screen.getByText('Photo à venir')).toBeInTheDocument();
   });
 
   it('changes inventory and report context with the photo filter while keeping the selected view', async () => {
@@ -60,7 +64,7 @@ describe('lifting vessel photo selection', () => {
   it('keeps a named keyboard-operable filter when an image fails', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
-    render(<LiftingVesselFilter vessels={[{ ...demoVessel, photoUrl: '/missing.png' }]} value={0} disabled={false} onChange={onChange} />);
+    render(<LiftingVesselFilter vessels={[{ ...demoVessel, illustration_thumbnail_url: '/missing.webp' }]} value={0} disabled={false} onChange={onChange} />);
     const button = screen.getByRole('button', { name: demoVessel.name });
     fireEvent.error(button.querySelector('img')!);
     expect(within(button).getByText('Photo à venir')).toBeInTheDocument();
