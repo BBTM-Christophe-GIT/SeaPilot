@@ -62,9 +62,9 @@ describe('paper inspection preparation', () => {
     await expect(fetchLiftingPaperInventory(createLiftingPreviewClient(), 999999, 'lifting')).rejects.toThrow('n’est plus accessible');
   });
   it.each(['marin', 'capitaine'] as const)('exposes the read-only download to the %s profile fixture', async (role) => {
-    render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={[role]} /></MemoryRouter>);
+    render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient({ roles: [role] })} roles={[role]} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
     expect(screen.getByRole('button', { name: 'Fiche de contrôle papier' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: 'Ajouter un matériel' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ajouter un matériel' })).toBeEnabled();
   });
 });

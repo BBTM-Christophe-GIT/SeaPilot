@@ -32,8 +32,10 @@ describe('blank paper PDFs', () => {
     expect(text).toContain('MATERIEL ACTUEL');
     expect(text).not.toContain('MATERIEL SUPPRIME');
     expect(text).not.toContain('ANCIEN RESULTAT');
-    expect(text).toContain('(S)'); expect(text).toContain('(I)');
-    expect(text).not.toContain('(OK)'); expect(text).not.toContain('(NC)');
+    expect(text).toContain('(C)'); expect(text).toContain('(NC)');
+    expect(text).not.toContain('(S)'); expect(text).not.toContain('(I)');
+    expect(text).not.toContain('SeaPilot |');
+    expect(text).not.toContain('Ancien ID');
     expect(text).toContain(kind === 'towing' ? '(NID)' : '(ID)');
     expect(text).not.toContain('Rapport LEV-');
     for (const page of pdf.getPages()) { expect(page.getWidth()).toBeCloseTo(841.89, 0); expect(page.getHeight()).toBeCloseTo(595.28, 0); }

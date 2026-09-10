@@ -291,5 +291,109 @@ begin
   assert certificates_before=(select jsonb_agg(to_jsonb(c) order by id) from public.fleet_certificates c where vessel_id=vessel),'Certificates unchanged';
   assert versions_before=(select jsonb_agg(to_jsonb(v) order by v.id) from public.fleet_certificate_versions v join public.fleet_certificates c on c.id=v.certificate_id where c.vessel_id=vessel),'Certificate versions unchanged';
 end $delete_draft_test$;
-select 'PASS: lifting inventory, snapshots, real profiles/RLS, revisions, publication and draft-only deletion' as result;
+do $lifecycle_test$
+declare
+  c bigint; vessel bigint; other_vessel bigint; item bigint; old_item bigint; uid uuid; role_name text; kind text;
+  path text; cert_path text; cert uuid; prior jsonb; before_snapshot jsonb; report bigint; entry bigint; revision integer;
+  today date := (now() at time zone 'Europe/Paris')::date;
+begin
+  select id into c from public.companies where code='bbtm';
+  select id into vessel from public.vessels where name='LIFTING TEST VESSEL';
+  select id into other_vessel from public.vessels where name='LIFTING OTHER VESSEL';
+  assert not has_function_privilege('anon','public.add_lifting_item_certificate(bigint,text,text,text,bigint)','EXECUTE');
+  assert not has_table_privilege('authenticated','public.lifting_inspector_grants','SELECT');
+  assert not has_table_privilege('authenticated','public.lifting_item_certificates','INSERT');
+  assert not has_table_privilege('anon','public.lifting_item_certificates','SELECT');
+  for uid,role_name in select * from (values
+    ('9e090000-0000-0000-0000-000000000001'::uuid,'admin'),
+    ('9e090000-0000-0000-0000-000000000002'::uuid,'direction'),
+    ('9e090000-0000-0000-0000-000000000003'::uuid,'armement'),
+    ('9e090000-0000-0000-0000-000000000004'::uuid,'capitaine'),
+    ('9e090000-0000-0000-0000-000000000005'::uuid,'marin')) f(id,role_key)
+  loop
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    assert public.lifting_can_start_inspection()=(role_name in ('admin','direction','armement')),'Role creation capability';
+    foreach kind in array array['lifting','towing'] loop
+      item:=public.save_lifting_item(vessel,kind,jsonb_build_object('material_type',case when kind='towing' then 'Remorque' else 'Manilles' end,
+        'towing_type','textile_line','description','Lifecycle role fixture','commissioned_on','2020-01-01','added_on','1990-01-01','last_control_on','2099-01-01','service_version',42));
+      assert (select added_on=today and last_control_on is null and service_version=1 and inspection_due_on=(today+interval '1 year')::date from public.lifting_inventory where id=item),'Only server controls annual lifecycle';
+      path:=c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf';
+      assert public.lifting_certificate_path_access(path),'All profiles and registers may attach';
+      insert into storage.objects(bucket_id,name,metadata) values('lifting-certificates',path,'{"mimetype":"application/pdf","size":100}');
+      cert:=public.add_lifting_item_certificate(item,path,'Certificat fixture.pdf','application/pdf',100);
+      assert cert=public.add_lifting_item_certificate(item,path,'Certificat fixture.pdf','application/pdf',100),'Certificate retry is idempotent';
+      assert exists(select 1 from public.lifting_item_certificates where id=cert and item_id=item),'Accessible certificate metadata';
+      assert exists(select 1 from storage.objects where bucket_id='lifting-certificates' and name=path),'Accessible file';
+      begin
+        perform public.add_lifting_item_certificate(item,path,'Bad.pdf','application/pdf',101);
+        raise exception 'Wrong size accepted';
+      exception when raise_exception then assert sqlerrm like 'Joignez un PDF%',sqlerrm; end;
+      if role_name in ('capitaine','marin') then
+        begin perform public.start_lifting_inspection(vessel,kind,today,today+365); raise exception 'Onboard creation allowed'; exception when insufficient_privilege then null; end;
+        begin perform public.save_lifting_item(vessel,kind,'{"material_type":"Manilles","description":"Forbidden edit"}',item); raise exception 'Onboard edit allowed'; exception when insufficient_privilege then null; end;
+        begin perform public.replace_lifting_item(item,1,today); raise exception 'Onboard replacement allowed'; exception when insufficient_privilege then null; end;
+      end if;
+    end loop;
+    begin perform public.save_lifting_item(other_vessel,'lifting','{"material_type":"Manilles","description":"Other tenant"}'); raise exception 'Foreign creation allowed'; exception when insufficient_privilege then null; end;
+    execute 'reset role';
+  end loop;
+  -- The exception is bound to auth.uid, never to a user-editable name.
+  update public.profiles set display_name='Antoine MONCEAUX' where id='9e090000-0000-0000-0000-000000000004';
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000004',true);
+  execute 'set local role authenticated';
+  assert not public.lifting_can_start_inspection(),'Forged display name grants nothing';
+  execute 'reset role';
+  insert into public.lifting_inspector_grants(company_id,user_id) values(c,'9e090000-0000-0000-0000-000000000004');
+  execute 'set local role authenticated';
+  assert public.lifting_can_start_inspection(),'Explicit captain inspector grant';
+  perform public.start_lifting_inspection(vessel,'lifting',today,today+365);
+  execute 'reset role';
+
+  -- A separate vessel gives publication exactly one item, with two equipment generations.
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFECYCLE PUBLICATION FIXTURE','LCY',true,'vessel') returning id into vessel;
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  execute 'set local role authenticated';
+  item:=public.save_lifting_item(vessel,'lifting','{"material_type":"Manilles","description":"Replacement fixture","commissioned_on":"2020-01-01","serial_number":"SERIAL","swl_tonnes":2,"notes":"Keep me"}');
+  report:=public.start_lifting_inspection(vessel,'lifting',today,today+365);
+  select id,item_snapshot into entry,before_snapshot from public.lifting_inspection_entries where inspection_id=report;
+  select to_jsonb(i) into prior from public.lifting_inventory i where id=item;
+  path:=c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.png';
+  insert into storage.objects(bucket_id,name,metadata) values('lifting-certificates',path,'{"mimetype":"image/png","size":100}');
+  cert:=public.add_lifting_item_certificate(item,path,'Origin.png','image/png',100);
+  cert_path:=path;
+  perform public.replace_lifting_item(item,1,today-7);
+  assert (select reference=prior->>'reference' and description=prior->>'description' and serial_number='SERIAL' and swl_tonnes=2 and notes='Keep me'
+    and service_version=2 and commissioned_on=today-7 and last_control_on is null and inspection_due_on=((today-7)+interval '1 year')::date and jsonb_array_length(replacement_history)=1 from public.lifting_inventory where id=item),'Replacement preserves identity and data; resets date';
+  assert exists(select 1 from public.lifting_item_certificates where id=cert and item_id=item),'Replacement retains certificates';
+  begin perform public.replace_lifting_item(item,1,today); raise exception 'Stale replacement accepted'; exception when raise_exception then assert sqlerrm like 'Ce matériel a déjà%',sqlerrm; end;
+  begin perform public.replace_lifting_item(item,2,today+1); raise exception 'Future replacement accepted'; exception when raise_exception then assert sqlerrm like 'Date de mise%',sqlerrm; end;
+  begin perform public.replace_lifting_item(item,2,today-8); raise exception 'Earlier replacement accepted'; exception when raise_exception then assert sqlerrm like 'Date de mise%',sqlerrm; end;
+  revision:=public.save_lifting_inspection_entry(report,entry,1,'good',public.lifting_default_checks(before_snapshot),'');
+  path:=c||'/LCY/lifting/'||report||'/'||revision||'-old.pdf';
+  execute 'reset role';
+  insert into storage.objects(bucket_id,name,metadata) values('fleet-certificates',path,'{"mimetype":"application/pdf","size":100}');
+  execute 'set local role authenticated';
+  perform public.publish_lifting_inspection(report,revision,path,'Old generation.pdf',100);
+  assert (select last_control_on is null from public.lifting_inventory where id=item),'Old generation draft does not renew replacement';
+  assert (select item_snapshot=before_snapshot from public.lifting_inspection_entries where id=entry),'Old snapshot unchanged';
+  report:=public.start_lifting_inspection(vessel,'lifting',today,today+365);
+  select id,item_snapshot into entry,before_snapshot from public.lifting_inspection_entries where inspection_id=report;
+  revision:=public.save_lifting_inspection_entry(report,entry,1,'good',public.lifting_default_checks(before_snapshot),'');
+  path:=c||'/LCY/lifting/'||report||'/'||revision||'-new.pdf';
+  execute 'reset role';
+  insert into storage.objects(bucket_id,name,metadata) values('fleet-certificates',path,'{"mimetype":"application/pdf","size":100}');
+  execute 'set local role authenticated';
+  perform public.publish_lifting_inspection(report,revision,path,'New generation.pdf',100);
+  assert (select last_control_on=today and inspection_due_on=(today+interval '1 year')::date from public.lifting_inventory where id=item),'Publication renews current equipment';
+  -- Onboard profiles cannot read or attach to a vessel with no assignment.
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000005',true);
+  assert not exists(select 1 from public.lifting_item_certificates where id=cert),'Unassigned certificate metadata denied';
+  assert not exists(select 1 from storage.objects where bucket_id='lifting-certificates' and name=cert_path),'No unassigned storage read';
+  assert not public.lifting_certificate_path_access(c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf'),'Unassigned file denied';
+  begin perform public.add_lifting_item_certificate(item,c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf','Foreign.pdf','application/pdf',100); raise exception 'Unassigned attachment accepted'; exception when insufficient_privilege then null; end;
+  execute 'reset role';
+end $lifecycle_test$;
+
+select 'PASS: lifting inventory, snapshots, real profiles/RLS, publication, draft deletion, annual lifecycle and equipment certificates' as result;
 rollback;
