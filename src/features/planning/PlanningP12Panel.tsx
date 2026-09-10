@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
+import { PlanningAbsenceFormFields, type PlanningAbsenceFormValue } from './PlanningAbsenceForm';
 import { formatPlanningDate, formatPlanningDateTime, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { formatPlanningPerson, normalizePlanningText } from './planningModel';
@@ -25,7 +26,6 @@ import {
   planningAbsenceTypeLabel,
   planningConflictTypeLabel,
   type PlanningAbsenceRecord,
-  type PlanningAbsenceType,
   type PlanningConflictCaseRecord,
   type PlanningConflictPriority,
   type PlanningConflictStatus,
@@ -45,15 +45,6 @@ import {
 
 export type P12Tab = 'absences' | 'conflicts' | 'replacements';
 
-interface AbsenceFormState {
-  id?: number;
-  personId: string;
-  absenceType: PlanningAbsenceType;
-  startsAt: string;
-  endsAt: string;
-  reason: string;
-}
-
 interface TreatmentFormState {
   assignToMe: boolean;
   priority: PlanningConflictPriority;
@@ -62,7 +53,6 @@ interface TreatmentFormState {
 }
 
 const EMPTY_DATA: PlanningP12Data = { absences: [], conflictCases: [], conflictHistory: [], matrices: [] };
-const ABSENCE_TYPES: PlanningAbsenceType[] = ['leave', 'illness', 'training', 'medical_visit', 'unavailability', 'recovery'];
 const CONFLICT_PRIORITIES: PlanningConflictPriority[] = ['low', 'normal', 'high', 'critical'];
 const CONFLICT_STATUSES: PlanningConflictStatus[] = ['open', 'in_progress', 'resolved', 'dismissed'];
 
@@ -83,10 +73,10 @@ function localDateTime(date: string, time: string): string {
   return `${date}T${time}`;
 }
 
-function emptyAbsence(range: PlanningDateRange, people: PlanningPerson[]): AbsenceFormState {
+function emptyAbsence(range: PlanningDateRange, personalPersonId?: number | null): PlanningAbsenceFormValue {
   const date = range.start || todayPlanningDate();
   return {
-    personId: people[0] ? String(people[0].id) : '',
+    personId: String(personalPersonId ?? ''),
     absenceType: 'leave',
     startsAt: localDateTime(date, '08:00'),
     endsAt: localDateTime(date, '18:00'),
@@ -130,7 +120,6 @@ export function PlanningP12Panel({
   onAuditChange,
   initialTab = 'conflicts',
   initialAbsenceId = null,
-  openAbsenceFormOnMount = false,
   requestedOnly = false,
   personalPersonId,
   personalOnly = false,
@@ -149,7 +138,6 @@ export function PlanningP12Panel({
   onAuditChange: () => Promise<void>;
   initialTab?: P12Tab;
   initialAbsenceId?: number | null;
-  openAbsenceFormOnMount?: boolean;
   requestedOnly?: boolean;
   personalPersonId?: number | null;
   personalOnly?: boolean;
@@ -163,8 +151,8 @@ export function PlanningP12Panel({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null);
-  const [absenceForm, setAbsenceForm] = useState<AbsenceFormState>(() => emptyAbsence(range, people));
-  const [isAbsenceFormOpen, setIsAbsenceFormOpen] = useState(openAbsenceFormOnMount);
+  const [absenceForm, setAbsenceForm] = useState<PlanningAbsenceFormValue>(() => emptyAbsence(range, personalPersonId));
+  const [isAbsenceFormOpen, setIsAbsenceFormOpen] = useState(false);
   const [reviewComments, setReviewComments] = useState<Record<number, string>>({});
   const [selectedConflictKey, setSelectedConflictKey] = useState('');
   const [conflictTypeFilter, setConflictTypeFilter] = useState('');
@@ -260,7 +248,7 @@ export function PlanningP12Panel({
         reason: absenceForm.reason,
       });
       await Promise.all([load(), onAuditChange()]);
-      setAbsenceForm(emptyAbsence(range, people));
+      setAbsenceForm(emptyAbsence(range, personalPersonId));
       setIsAbsenceFormOpen(false);
       setFeedback({ message: 'Demande d’absence enregistrée. Les impacts sont recalculés.', error: false });
     } catch (error) {
@@ -390,13 +378,9 @@ export function PlanningP12Panel({
             {isLoading ? <div className="admin-state" role="status">Chargement des absences, conflits et matrices…</div> : null}
             {!isLoading && tab === 'absences' ? (
               <section className="planning-p12-section">
-                <div className="planning-p12-section-heading"><div><h3>Demandes et indisponibilités</h3><p>Les dates sont affichées en heure locale et conservées en UTC.</p></div>{canRequestAbsences ? <button onClick={() => { setAbsenceForm(emptyAbsence(range, people)); setIsAbsenceFormOpen((value) => !value); }} type="button"><Plus size={16} />Nouvelle demande</button> : null}</div>
+                <div className="planning-p12-section-heading"><div><h3>Demandes et indisponibilités</h3><p>Les dates sont affichées en heure locale et conservées en UTC.</p></div>{canRequestAbsences ? <button onClick={() => { setAbsenceForm(emptyAbsence(range, personalPersonId)); setIsAbsenceFormOpen((value) => !value); }} type="button"><Plus size={16} />Nouvelle demande</button> : null}</div>
                 {isAbsenceFormOpen ? <form className="planning-p12-form" onSubmit={submitAbsence}>
-                  <label>Marin<select disabled={personalOnly} required value={absenceForm.personId} onChange={(event) => setAbsenceForm({ ...absenceForm, personId: event.target.value })}><option value="">Choisir</option>{people.map((person) => <option key={person.id} value={person.id}>{formatPlanningPerson(person)} · {person.functionLabel || 'Marin'}</option>)}</select></label>
-                  <label>Type<select value={absenceForm.absenceType} onChange={(event) => setAbsenceForm({ ...absenceForm, absenceType: event.target.value as PlanningAbsenceType })}>{ABSENCE_TYPES.map((type) => <option key={type} value={type}>{planningAbsenceTypeLabel(type)}</option>)}</select></label>
-                  <label>Début<input required type="datetime-local" value={absenceForm.startsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, startsAt: event.target.value })} /></label>
-                  <label>Fin<input required type="datetime-local" value={absenceForm.endsAt} onChange={(event) => setAbsenceForm({ ...absenceForm, endsAt: event.target.value })} /></label>
-                  <label className="is-wide">Motif (facultatif)<textarea aria-label="Motif" maxLength={1000} rows={3} value={absenceForm.reason} onChange={(event) => setAbsenceForm({ ...absenceForm, reason: event.target.value })} /></label>
+                  <PlanningAbsenceFormFields isSaving={isSaving} onChange={setAbsenceForm} people={people} personalOnly={personalOnly} value={absenceForm} />
                   <footer><button className="is-secondary" onClick={() => setIsAbsenceFormOpen(false)} type="button">Annuler</button><button disabled={isSaving} type="submit">{absenceForm.id ? 'Mettre à jour' : 'Envoyer la demande'}</button></footer>
                 </form> : null}
                 <div className="planning-p12-absence-list">{displayedAbsences.length ? displayedAbsences.map((absence) => {

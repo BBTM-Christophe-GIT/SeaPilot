@@ -1252,7 +1252,7 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: 'Vacances' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Congés' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();

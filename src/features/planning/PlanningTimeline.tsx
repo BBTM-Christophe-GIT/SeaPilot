@@ -974,7 +974,7 @@ function PlanningCrewTimelineRowContent({
               className="planning-fleet-assignment-label"
               style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
             >
-              {continuousDailyStatus === 'En Mer' ? event.vessel : continuousDailyStatus}
+              {continuousDailyStatus === 'En Mer' ? event.vessel : planningStatusDisplayLabel(continuousDailyStatus)}
             </span>
           ) : null}
           </Fragment>
@@ -1018,11 +1018,11 @@ function PlanningCrewTimelineRowContent({
               dragEvent.dataTransfer.setData('application/x-seapilot-approved-absence', String(absence.id));
             }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces vacances validées.' : ''}`}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces congés validés.' : ''}`}
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />
-            <span>{absence.status === 'approved' && absence.absenceType === 'leave' ? 'Vacances' : planningAbsenceTypeLabel(absence.absenceType)}</span>
+            <span>{planningAbsenceTypeLabel(absence.absenceType)}</span>
           </button>
         );
       })}

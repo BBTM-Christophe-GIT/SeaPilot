@@ -13483,7 +13483,8 @@ button:disabled {
   background: var(--p12-button-hover, #0d52ad);
 }
 
-.planning-p12-modal button:focus-visible {
+.planning-p12-modal button:focus-visible,
+.planning-absence-request button:focus-visible {
   outline: 3px solid #1267d5;
   outline-offset: 3px;
 }
@@ -13504,6 +13505,20 @@ button:disabled {
 .planning-p12-refresh {
   flex: 0 0 40px;
   padding: 9px;
+}
+
+.planning-absence-request .app-dialog-backdrop {
+  place-items: center;
+  padding: 16px;
+}
+
+.planning-absence-request .app-dialog {
+  max-height: calc(100dvh - 32px);
+  border-radius: 18px;
+}
+
+.planning-absence-request .app-dialog__identity h2 {
+  white-space: normal;
 }
 
 .planning-p12-feedback {

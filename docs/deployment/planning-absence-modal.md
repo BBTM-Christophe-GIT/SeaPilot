@@ -1,5 +1,9 @@
 # Planning — fenêtre Absences et conflits
 
+Le bouton « Demander des congés » utilise désormais un formulaire dédié décrit dans
+[planning-leave-request.md](./planning-leave-request.md). La modale ci-dessous reste
+le centre de consultation et de traitement des demandes et conflits.
+
 La surface « Planification opérationnelle · P1.2 — Absences et conflits » utilise
 la modale centrée commune (`AppDialog`, taille XL). Le titre, les indicateurs et
 les onglets restent visibles pendant le défilement des demandes. Sur mobile,

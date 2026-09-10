@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+« Demander des congés » ouvre un formulaire dédié avec le profil connecté présélectionné.
+Indisponibilité est remplacée par Congés dans les demandes, et les libellés Vacance(s)
+du Planning deviennent Congés. Appliquer la migration
+`20260910132240_normalize_planning_unavailability_to_leave.sql` avant le client
+(déjà appliquée à SeaPilot le 10 septembre). Voir
+[planning-leave-request.md](./planning-leave-request.md).
+
 Le centre « Absences et conflits » s'ouvre dans une modale centrée avec des boutons
 contrastés et adaptés au mobile. Aucune migration n'est requise. Voir
 [planning-absence-modal.md](./planning-absence-modal.md).
