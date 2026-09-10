@@ -56,6 +56,11 @@ export async function saveInspectionEntry(client: SupabaseClient, inspection: Li
   if (error) throw error;
   return data as number;
 }
+export async function deleteLiftingInspectionDraft(client: SupabaseClient, inspection: LiftingInspection) {
+  if (inspection.status !== 'draft') throw new Error('Seul un brouillon peut être supprimé.');
+  const { error } = await client.rpc('delete_lifting_inspection_draft', { p_id: inspection.id, p_revision: inspection.revision });
+  if (error) throw error;
+}
 export async function saveInspectionEntries(client: SupabaseClient, inspection: LiftingInspection, entries: InspectionEntry[]): Promise<number> {
   const { data, error } = await client.rpc('save_lifting_inspection_entries', {
     p_inspection_id: inspection.id, p_revision: inspection.revision,

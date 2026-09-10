@@ -1,0 +1,91 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { describe, expect, it, vi } from 'vitest';
+import { LiftingPage } from './LiftingPage';
+import { createLiftingPreviewClient, demoVessel } from './liftingPreview';
+import { deleteLiftingInspectionDraft, fetchInspectionEntries, fetchLiftingRegister, saveInspectionEntry, startLiftingInspection } from './liftingQueries';
+
+describe('draft-only inspection deletion', () => {
+  it.each(['lifting', 'towing'] as const)('confirms deletion of only the selected %s draft and preserves the inventory and other reports', async (kind) => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    const first = await startLiftingInspection(client, demoVessel.id, kind, '2028-04-09', '2029-04-09');
+    const second = await startLiftingInspection(client, demoVessel.id, kind, '2026-01-22', '2027-01-22');
+    const original = await fetchLiftingRegister(client, demoVessel.id, kind);
+    const otherEntries = await fetchInspectionEntries(client, second);
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    if (kind === 'towing') await user.click(screen.getByRole('button', { name: 'Remorques' }));
+    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.selectOptions(await screen.findByLabelText('Année'), '2028');
+    await user.click(screen.getByRole('button', { name: `Supprimer le brouillon LEV-${first}` }));
+    expect(within(screen.getByRole('dialog')).getByText(demoVessel.name)).toBeInTheDocument();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler' }));
+    expect((await fetchLiftingRegister(client, demoVessel.id, kind)).inspections).toHaveLength(2);
+    await user.click(await screen.findByRole('button', { name: `Supprimer le brouillon LEV-${first}` }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer le brouillon' }));
+    await screen.findByText(`Brouillon LEV-${first} supprimé.`);
+    expect(screen.queryByRole('button', { name: `Supprimer le brouillon LEV-${first}` })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Année')).toHaveValue('');
+    const remaining = await fetchLiftingRegister(client, demoVessel.id, kind);
+    expect(remaining.inspections).toEqual(original.inspections.filter((r) => r.id === second));
+    expect(remaining.items).toEqual(original.items);
+    expect(await fetchInspectionEntries(client, first)).toEqual([]);
+    expect(await fetchInspectionEntries(client, second)).toEqual(otherEntries);
+    const third = await startLiftingInspection(client, demoVessel.id, kind, '2028-04-09', '2029-04-09');
+    expect(third).toBeGreaterThan(second);
+    expect((await fetchInspectionEntries(client, third)).every((entry) => !otherEntries.some((e) => e.id === entry.id))).toBe(true);
+  });
+  it('keeps the draft and displays an error if another device changed it during confirmation', async () => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    const id = await startLiftingInspection(client, demoVessel.id, 'lifting', '2026-09-09', '2027-09-09');
+    render(<MemoryRouter><LiftingPage client={client} roles={['direction']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await user.click(screen.getByRole('button', { name: `Supprimer le brouillon LEV-${id}` }));
+    const report = (await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections[0];
+    const entry = (await fetchInspectionEntries(client, id))[0];
+    await saveInspectionEntry(client, report, { ...entry, condition: 'good', observations: 'Saisie depuis un autre appareil' });
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer le brouillon' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('modifié depuis un autre appareil');
+    expect(await fetchInspectionEntries(client, id)).toHaveLength(3);
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler' }));
+    await user.click(await screen.findByRole('button', { name: `Supprimer le brouillon LEV-${id}` }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer le brouillon' }));
+    await screen.findByText(`Brouillon LEV-${id} supprimé.`);
+  });
+  it('never offers deletion for a published report and rejects it before calling the server', async () => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    await startLiftingInspection(client, demoVessel.id, 'lifting', '2026-09-09', '2027-09-09');
+    const original = client.from.bind(client);
+    vi.spyOn(client, 'from').mockImplementation((...args: Parameters<typeof client.from>) => {
+      const query = original(...args);
+      if (args[0] !== 'lifting_inspections') return query;
+      const select = query.select.bind(query);
+      query.select = ((...fields: Parameters<typeof query.select>) => {
+        const result = select(...fields); const then = result.then.bind(result);
+        result.then = ((resolve: (value: unknown) => unknown) => then((value) => resolve({ ...value, data: value.data?.map((row) => ({ ...(row as unknown as Record<string, unknown>), status: 'published', certificate_id: 42, storage_path: 'fixture.pdf', published_at: '2026-09-09' })) }))) as typeof result.then;
+        return result;
+      }) as typeof query.select;
+      return query;
+    });
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    expect(await screen.findByText('Finalisé')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Supprimer le brouillon/ })).not.toBeInTheDocument();
+    const report = (await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections[0];
+    const rpc = vi.spyOn(client, 'rpc');
+    await expect(deleteLiftingInspectionDraft(client, report)).rejects.toThrow('Seul un brouillon');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it.each(['marin', 'capitaine'] as const)('hides deletion from the %s profile fixture', async (role) => {
+    const client = createLiftingPreviewClient(); const user = userEvent.setup();
+    await startLiftingInspection(client, demoVessel.id, 'lifting', '2026-09-09', '2027-09-09');
+    render(<MemoryRouter><LiftingPage client={client} roles={[role]} /></MemoryRouter>);
+    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
+    await user.click(screen.getByRole('button', { name: 'Contrôles et rapports' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reprendre' })).toBeEnabled());
+    expect(screen.queryByRole('button', { name: /Supprimer le brouillon/ })).not.toBeInTheDocument();
+  });
+});
