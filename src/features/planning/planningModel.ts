@@ -258,6 +258,15 @@ export function isPlanningPersonEmployedDuring(
   );
 }
 
+export function isPlanningPersonEmployedOn(
+  person: Pick<PlanningPerson, 'active' | 'hiredOn' | 'departedOn'>,
+  date: string,
+): boolean {
+  return person.active
+    && (!person.hiredOn || person.hiredOn <= date)
+    && (!person.departedOn || person.departedOn > date);
+}
+
 export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningViewMode): string {
   if (!days.length) return '';
   if (mode === 'year') return String(days[0].year);
