@@ -23,7 +23,7 @@ describe('AnnualReviewsPage', () => {
     const user = userEvent.setup();
     renderPage({
       roles: ['admin'], client: {} as never, previewMode: true,
-      currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Administrateur', gradeLabel: '' },
+      currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Administrateur', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' },
     });
 
     expect(await screen.findByRole('heading', { name: 'Entretien Professionnel et d’Evaluation' })).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe('AnnualReviewsPage', () => {
   it('gives the collaborator a permanent guide, personal exports and an explicit sharing choice', async () => {
     renderPage({
       roles: ['marin'], client: {} as never, previewMode: true,
-      currentPerson: { id: 9303, firstName: 'Luc', lastName: 'MARTIN', functionLabel: 'Matelot polyvalent', gradeLabel: '' },
+      currentPerson: { id: 9303, firstName: 'Luc', lastName: 'MARTIN', functionLabel: 'Matelot polyvalent', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' },
     }, true);
 
     expect(await screen.findByRole('heading', { name: 'Entretien Professionnel et d’Evaluation' })).toBeInTheDocument();

@@ -5,6 +5,7 @@ import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import { PlanningAbsenceFormFields, type PlanningAbsenceFormValue } from './PlanningAbsenceForm';
 import { todayPlanningDate } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
+import { isPlanningPersonEmployedOn } from './planningModel';
 import type { PlanningDateRange } from './planningP12';
 import { savePlanningAbsence } from './planningP12Queries';
 import type { PlanningPerson } from './planningQueries';
@@ -26,13 +27,15 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const today = todayPlanningDate();
   const options = useMemo(() => {
     const available: Pick<PlanningPerson, 'id' | 'firstName' | 'lastName' | 'functionLabel'>[] = people
-      .filter((person) => person.active && (!personalOnly || person.id === currentPerson?.id));
-    if (currentPerson && !available.some((person) => person.id === currentPerson.id)) return [currentPerson, ...available];
+      .filter((person) => isPlanningPersonEmployedOn(person, today) && (!personalOnly || person.id === currentPerson?.id));
+    if (currentPerson && isPlanningPersonEmployedOn(currentPerson, today) && !people.some((person) => person.id === currentPerson.id)) return [currentPerson, ...available];
     return available;
-  }, [people, currentPerson, personalOnly]);
-  const effectiveForm = { ...form, personId: personalOnly ? String(currentPerson?.id ?? '') : form.personId || String(currentPerson?.id ?? '') };
+  }, [people, currentPerson, personalOnly, today]);
+  const selectedPersonId = personalOnly ? String(currentPerson?.id ?? '') : form.personId || String(currentPerson?.id ?? '');
+  const effectiveForm = { ...form, personId: options.some((person) => String(person.id) === selectedPersonId) ? selectedPersonId : '' };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

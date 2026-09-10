@@ -11,6 +11,9 @@ export interface CurrentPersonSummary {
   lastName: string;
   functionLabel: string;
   gradeLabel: string;
+  active: boolean;
+  hiredOn: string;
+  departedOn: string;
 }
 
 export function mapRoleRows(rows: RoleRow[]): RoleKey[] {
@@ -37,7 +40,7 @@ export async function fetchCurrentPersonSummary(client: SupabaseClient): Promise
 
   const { data, error } = await client
     .from('people')
-    .select('id,first_name,last_name,function_label,grade_label')
+    .select('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -49,5 +52,8 @@ export async function fetchCurrentPersonSummary(client: SupabaseClient): Promise
     lastName: String(data.last_name || ''),
     functionLabel: String(data.function_label || ''),
     gradeLabel: String(data.grade_label || ''),
+    active: data.active === true,
+    hiredOn: String(data.hired_on || ''),
+    departedOn: String(data.departed_on || ''),
   };
 }

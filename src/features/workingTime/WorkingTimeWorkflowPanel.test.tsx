@@ -41,7 +41,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
 });
 
 const client = {} as SupabaseClient;
-const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '' };
+const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' };
 const reload = vi.fn().mockResolvedValue(true);
 const onOpenHse = vi.fn();
 const onOpenImport = vi.fn();
@@ -225,6 +225,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     data.editablePeople[0].functionLabel = 'Matelot';
     data.registers[0].functionLabel = 'Matelot';
     renderPanel(['marin'], data, {
+      ...currentPerson,
       id: 10,
       firstName: 'Camille',
       lastName: 'MARIN',
@@ -306,6 +307,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const data = workspace('draft', 20);
     data.editablePeople = [];
     renderPanel(['direction'], data, {
+      ...currentPerson,
       id: 10,
       firstName: 'Diane',
       lastName: 'DIRECTION',
@@ -324,7 +326,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       assignmentId: vesselId ? 1 : null, vesselId, watchGroup: null, statusLabel: null,
       approverPersonId: null, captainCandidates: [],
     });
-    renderPanel(['marin'], data, { id: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', gradeLabel: '' });
+    renderPanel(['marin'], data, { ...currentPerson, id: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', gradeLabel: '' });
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());

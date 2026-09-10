@@ -9,7 +9,7 @@ import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
 function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
   const context: AppShellOutletContext = {
     roles, client: previewSupabaseClient, previewMode: true,
-    currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', gradeLabel: 'Capitaine 500' },
+    currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', gradeLabel: 'Capitaine 500', active: true, hiredOn: '2020-01-01', departedOn: '' },
   };
   render(<MemoryRouter initialEntries={['/modules/serviceNotes']}><Routes><Route element={<Outlet context={context} />}><Route path="modules/serviceNotes" element={<ServiceNotesPage />} /></Route></Routes></MemoryRouter>);
 }
