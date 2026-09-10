@@ -21,7 +21,7 @@ async function readPdf(blob: Blob) {
 describe('blank paper PDFs', () => {
   it.each(['lifting', 'towing'] as const)('prints only the current %s inventory with blank results, decisions and observations', async (kind) => {
     const current = await fetchLiftingPaperInventory(createLiftingPreviewClient(), demoVessel.id, kind);
-    const rows = current.items.map((item) => ({ ...item, description: 'MATERIEL ACTUEL', notes: 'ANCIEN RESULTAT A NE PAS REPRENDRE' }));
+    const rows = current.items.map((item) => ({ ...item, description: 'MATERIEL ACTUEL', swl_tonnes: kind === 'lifting' ? 6.5 : null, notes: 'ANCIEN RESULTAT A NE PAS REPRENDRE' }));
     const excluded = { ...rows[0], id: 999, active: false, description: 'MATERIEL SUPPRIME' };
     const result = await buildLiftingPaperPdf(demoVessel, kind, [...rows, excluded], { includeNotice: false, generatedAt: new Date('2026-09-09T12:30:00Z') });
     const { pdf, text } = await readPdf(result.blob);
@@ -30,6 +30,7 @@ describe('blank paper PDFs', () => {
     expect(result.itemCount).toBe(current.items.length);
     expect(pdf.getTitle()).toContain(demoVessel.name);
     expect(text).toContain('MATERIEL ACTUEL');
+    expect(text).toContain(kind === 'lifting' ? '(CMU : 6,5 t)' : '(CMU : non renseignée)');
     expect(text).not.toContain('MATERIEL SUPPRIME');
     expect(text).not.toContain('ANCIEN RESULTAT');
     expect(text).toContain('(C)'); expect(text).toContain('(NC)');
