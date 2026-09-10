@@ -3,7 +3,7 @@
 begin;
 do $test$
 declare
-  c bigint; other_c bigint; vessel bigint; other_vessel bigint; item bigint; towing bigint;
+  c bigint; other_c bigint; vessel bigint; other_vessel bigint; unassigned_vessel bigint; item bigint; towing bigint;
   inspection bigint; entry bigint; revision integer; certificate bigint; captain bigint; sailor bigint;
   uid uuid; role_name text; path text; result integer;
   repeat_inspection bigint; repeat_entry bigint; repeat_certificate bigint; repeat_path text; later_inspection bigint; first_towing bigint;
@@ -13,6 +13,9 @@ begin
   insert into public.companies(code,name) values('lifting-test-other','Lifting other tenant') returning id into other_c;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING TEST VESSEL','LVT',true,'vessel') returning id into vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_c,'LIFTING OTHER VESSEL','LVO',true,'vessel') returning id into other_vessel;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING UNASSIGNED VESSEL','LVU',true,'vessel') returning id into unassigned_vessel;
+  update public.vessels set photo_storage_bucket='fleet-media',photo_storage_path=c||'/'||vessel||'/fixture.png' where id=vessel;
+  insert into storage.objects(bucket_id,name,metadata) values('fleet-media',c||'/'||vessel||'/fixture.png','{"mimetype":"image/png","size":100}');
   for uid,role_name in select * from (values
     ('9e090000-0000-0000-0000-000000000001'::uuid,'admin'),
     ('9e090000-0000-0000-0000-000000000002'::uuid,'direction'),
@@ -74,6 +77,9 @@ begin
     perform set_config('request.jwt.claim.sub',uid::text,true);
     assert public.lifting_can_access(c,vessel), 'Assigned onboard profile can inspect vessel';
     assert not public.lifting_can_access(other_c,other_vessel), 'Onboard cross-tenant access denied';
+    assert exists(select 1 from public.lifting_available_vessels() v where v.id=vessel and v.photo_storage_bucket='fleet-media' and v.photo_storage_path=c||'/'||vessel||'/fixture.png'), 'Assigned profile receives reusable fleet photo metadata';
+    assert not exists(select 1 from public.lifting_available_vessels() v where v.id in (other_vessel,unassigned_vessel)), 'Photo filter excludes unassigned and cross-tenant vessels';
+    assert exists(select 1 from storage.objects where bucket_id='fleet-media' and name=c||'/'||vessel||'/fixture.png'), 'Real onboard role can read assigned vessel photo';
     assert exists(select 1 from public.lifting_inspection_entries where id=entry), 'Onboard RLS permits assigned vessel';
     begin
       perform public.set_lifting_item_active(item,false);

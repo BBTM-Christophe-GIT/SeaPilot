@@ -19,7 +19,7 @@ describe('lifting annual workflow', () => {
     await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('Navire / site à contrôler'), String(secondDemoVessel.id));
     await user.click(screen.getByRole('button', { name: 'Démarrer le contrôle' }));
     await screen.findByRole('heading', { name: /Contrôle annuel/ });
-    expect(screen.getByLabelText('Navire')).toHaveValue(String(secondDemoVessel.id));
+    expect(screen.getByRole('button', { name: secondDemoVessel.name })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByRole('article')).toHaveLength(1);
     expect(screen.getByText('MANILLE DU SECOND NAVIRE')).toBeInTheDocument();
     expect((await fetchLiftingRegister(client, demoVessel.id, 'lifting')).inspections).toHaveLength(0);
@@ -31,7 +31,7 @@ describe('lifting annual workflow', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={['admin']} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    expect(screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))).toEqual(['Crocs', 'Élingues / Sangles textiles', 'Manilles']);
+    expect(screen.getAllByRole('region', { name: /^(Crocs|Élingues \/ Sangles textiles|Manilles)$/ }).map((region) => region.getAttribute('aria-label'))).toEqual(['Crocs', 'Élingues / Sangles textiles', 'Manilles']);
     await user.selectOptions(screen.getByLabelText('Type d’accessoire — inventaire'), 'Manilles');
     expect(screen.getAllByRole('article')).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));

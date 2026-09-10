@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Link, useOutletContext } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Download, FileCheck2, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Download, FileCheck2, Package, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -22,6 +22,8 @@ import { LiftingPublishedControls } from './LiftingPublishedControls';
 import { matchesLiftingItem, accessoryLabel } from './liftingSearch';
 import './lifting.css';
 import { createLiftingPreviewClient } from './liftingPreview';
+import { LiftingVesselFilter } from './LiftingVesselFilter';
+import './liftingNavigation.css';
 
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
 const SECTIONS = [
@@ -32,7 +34,7 @@ const SECTIONS = [
 
 export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?: RoleKey[] }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
-  const [previewClient] = useState(() => createLiftingPreviewClient({ roles: roles || context?.roles || ['admin'] }));
+  const [previewClient] = useState(() => createLiftingPreviewClient({ roles: roles || context?.roles || ['admin'], fleet: true }));
   const db = client || (context?.previewMode ? previewClient : context?.client) || supabase;
   const manager = canManageLifting(roles || context?.roles || []);
   const [section, setSection] = useState<LiftingKind | 'crane'>('lifting');
@@ -147,12 +149,12 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
     <header className="lifting-heading"><div><p className="lifting-eyebrow">SÉCURITÉ DES ÉQUIPEMENTS</p><h1>Levage</h1><p>Les équipements à bord, leur état et leurs contrôles.</p></div><Link className="secondary-button" to="/modules/certificates"><FileCheck2 size={17} /> Certificats flotte</Link></header>
     <nav className="lifting-sections" aria-label="Sections du module Levage">{SECTIONS.map((s) => <button disabled={busy || dirty} key={s.key} aria-label={s.title} className={section === s.key ? 'is-selected' : ''} aria-pressed={section === s.key} onClick={() => setSection(s.key)}><span className={`lifting-section-icon ${s.key}`}><LiftingIcon kind={s.key} /></span><span><strong>{s.title}</strong><small>{s.subtitle}</small></span></button>)}</nav>
     {section === 'crane' ? <div className="lifting-crane"><LiftingIcon kind="crane" /><div><h2>Examen à fond - Grue</h2><p>Cette section est réservée au contrôle de la grue. Les rapports existants restent disponibles dans les certificats du navire.</p><p>La première version du module couvre le registre des apparaux et les remorques.</p><Link to="/modules/certificates">Consulter les certificats flotte</Link></div></div> : <>
-      <div className="lifting-toolbar"><label>Navire<select aria-label="Navire" value={vesselId} disabled={busy || dirty || !vessels.length} onChange={(e) => setVesselId(Number(e.target.value))}>{!vessels.length && <option value={0}>Aucun navire accessible</option>}{vessels.map((v) => <option value={v.id} key={v.id}>{v.name}</option>)}</select></label><div className="lifting-verifier"><span>Vérificateur</span><strong>{INSPECTOR}</strong></div></div>
+      <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={busy || dirty} onChange={setVesselId} />
       {error && !replacement && !removeDraft && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
       {notice && <p className="lifting-notice" role="status"><CheckCircle2 size={18} />{notice}</p>}
       {!report ? <>
         <div className="lifting-summary"><div><strong>{activeItems.length}</strong><span>matériels en inventaire</span></div><div><strong>{inspections.filter((r) => r.status === 'draft').length}</strong><span>contrôles en cours</span></div><div><strong>{inspections.filter((r) => r.status === 'published').length}</strong><span>rapports finalisés</span></div><div className="lifting-summary-actions"><button className="secondary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setPaperOpen(true); }}><Printer size={18} /> Fiche de contrôle papier</button>{canStart && <button className="primary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setStartOpen(true); }}><Plus size={18} /> Nouveau contrôle annuel</button>}</div></div>
-        <div className="lifting-content"><div className="lifting-content-heading"><div className="lifting-tabs" role="group" aria-label="Vue du registre"><button aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}>Inventaire</button><button aria-pressed={view === 'reports'} onClick={() => setView('reports')}>Contrôles et rapports</button></div>{view === 'inventory' && <button className="secondary-button" disabled={busy || !vesselId} onClick={() => { setError(''); setEditor({ draft: blankItem(section) }); }}><Plus size={17} /> Ajouter un matériel</button>}</div>
+        <div className="lifting-content"><div className="lifting-content-heading"><div className="lifting-view-switch" role="group" aria-label="Vue du registre"><button type="button" aria-label="Inventaire" aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}><Package size={22} aria-hidden="true" /><span><strong>Inventaire</strong><small>Matériels et équipements</small></span><b>{loading ? '…' : activeItems.length}</b></button><button type="button" aria-label="Rapports de contrôle" aria-pressed={view === 'reports'} onClick={() => setView('reports')}><FileCheck2 size={22} aria-hidden="true" /><span><strong>Rapports de contrôle</strong><small>Suivi annuel et historique</small></span><b>{loading ? '…' : inspections.length}</b></button></div>{view === 'inventory' ? <button className="secondary-button" disabled={busy || loading || !vesselId} onClick={() => { setError(''); setEditor({ draft: blankItem(section) }); }}><Plus size={17} /> Ajouter un matériel</button> : <div className="lifting-verifier"><span>Vérificateur</span><strong>{INSPECTOR}</strong></div>}</div>
           {loading ? <p className="lifting-empty" role="status">Chargement du registre…</p> : view === 'inventory' ? <>
             <LiftingFilters items={inventoryItems} query={query} type={accessoryType} onQuery={setQuery} onType={setAccessoryType} count={filtered.length} context="inventaire" />
             <div className="lifting-filter"><label className="lifting-toggle"><input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setAccessoryType(''); }} /> Inclure les matériels supprimés</label></div>

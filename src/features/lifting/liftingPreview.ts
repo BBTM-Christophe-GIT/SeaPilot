@@ -2,12 +2,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
 import type { LiftingCertificate, UploadedLiftingCertificate } from './liftingCertificateQueries';
 import { accessoryDefinition } from './liftingControls';
+import { BBTM_FLEET_PHOTOS, fleetCatalogPhotoPath } from '../fleet/fleetPhotoCatalog';
 import { annualExpiry, canManageLifting, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
 // Independent demonstration data. No customer inventory or signature is bundled into public previews.
 export const demoVessel: LiftingVessel = { id: 90001, company_id: 1, name: 'NAVIRE DÉMONSTRATION', acronym: 'DEMO', registration_number: 'Démonstration', call_sign: 'DEMO', registration_port: 'Marseille' };
 export const secondDemoVessel: LiftingVessel = { ...demoVessel, id: 90002, name: 'SECOND NAVIRE DÉMONSTRATION', acronym: 'DEMO2' };
-export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspectorGrant?: boolean } = {}): SupabaseClient {
+export const demoFleetVessels: LiftingVessel[] = BBTM_FLEET_PHOTOS.map((photo, index) => ({
+  ...demoVessel, id: 91001 + index, name: photo.name, acronym: photo.acronym,
+  photo_url: fleetCatalogPhotoPath(photo.slug),
+}));
+
+export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspectorGrant?: boolean; fleet?: boolean } = {}): SupabaseClient {
+  const vessels = options.fleet ? demoFleetVessels : [demoVessel, secondDemoVessel];
   const roles = options.roles || ['admin'];
   const manager = canManageLifting(roles);
   const canStart = manager || (roles.includes('capitaine') && Boolean(options.inspectorGrant));
@@ -18,12 +25,32 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
     ['3','lifting','Croc','CROCHET À LINGUET — 2 T',2],
     ['1','towing','Remorque','REMORQUE TEXTILE — 200 M',null],
   ].map(([reference,kind,type,description,swl],index) => ({ id: index+1,company_id:1,vessel_id:demoVessel.id,kind,reference,material_type:accessoryDefinition(String(type))?.fr || type,towing_type:kind === 'towing' ? 'textile_line' : null,description,swl_tonnes:swl,serial_number:'',location:'Pont principal',notes:'Matériel de démonstration',active:true,source_label:'Démonstration',updated_at:'' } as LiftingItem));
-  items.push({ ...items[1], id: 5, vessel_id: secondDemoVessel.id, reference: '1', description: 'MANILLE DU SECOND NAVIRE' });
+  if (options.fleet) {
+    const samples = structuredClone(items);
+    items.splice(0, items.length, ...vessels.flatMap((vessel, index) => samples
+      .filter((item) => item.kind === 'towing' || item.id <= 3 - (index % 3))
+      .map((item) => ({ ...item, id: index * 10 + item.id, vessel_id: vessel.id }))));
+  } else items.push({ ...items[1], id: 5, vessel_id: secondDemoVessel.id, reference: '1', description: 'MANILLE DU SECOND NAVIRE' });
   items.forEach((item) => Object.assign(item, { added_on: todayLocal(), commissioned_on: todayLocal(), service_version: 1, inspection_due_on: annualExpiry(todayLocal()) }));
-  const counters: Record<string, number> = { [`${demoVessel.id}:lifting`]: 3, [`${demoVessel.id}:towing`]: 1, [`${secondDemoVessel.id}:lifting`]: 1 };
+  const counters: Record<string, number> = {};
+  items.forEach((item) => { const key = `${item.vessel_id}:${item.kind}`; counters[key] = Math.max(counters[key] || 0, Number(item.reference)); });
   const reports: LiftingInspection[] = [];
   const entries: InspectionEntry[] = [];
   let nextReportId = 1; let nextEntryId = 1;
+  if (options.fleet) for (const vessel of vessels) for (const year of [2025, 2026]) {
+    const report: LiftingInspection = {
+      id: nextReportId++, company_id: 1, vessel_id: vessel.id, kind: 'lifting', inspection_year: year,
+      issued_on: `${year}-09-09`, expires_on: `${year + 1}-09-09`, inspector_name: INSPECTOR,
+      status: year === 2025 ? 'published' : 'draft', revision: 1, vessel_snapshot: vessel,
+      notes: 'Rapport de démonstration', certificate_id: null, storage_path: null,
+      published_at: year === 2025 ? '2025-09-09T12:00:00Z' : null,
+    };
+    reports.push(report);
+    items.filter((item) => item.vessel_id === vessel.id && item.kind === 'lifting').forEach((item) => entries.push({
+      id: nextEntryId++, inspection_id: report.id, item_id: item.id, item_snapshot: structuredClone(item),
+      condition: year === 2025 ? 'good' : 'pending', checks: defaultChecks(item), checklist_version: 2, observations: '',
+    }));
+  }
   const certificates: LiftingCertificate[] = [];
   const files = new Map<string, Blob>();
   const tables = { lifting_inventory: items, lifting_inspections: reports, lifting_inspection_entries: entries, lifting_item_certificates: certificates };
@@ -62,7 +89,7 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
         certificates.push(...uploaded.map((file) => ({ ...file, id: crypto.randomUUID(), item_id: item.id, service_version: version, created_at: new Date().toISOString() })));
         return { data: null, error: null };
       }
-      if (name === 'lifting_available_vessels') return { data: [demoVessel, secondDemoVessel], error: null };
+      if (name === 'lifting_available_vessels') return { data: vessels, error: null };
       if (name === 'save_lifting_item') {
         if (args.p_id && !manager) return denied();
         const draft = args.p_item as Partial<LiftingItem>;
@@ -71,7 +98,7 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
         const counterKey = `${args.p_vessel_id}:${kind}`;
         const reference = old && old.kind === kind ? old.reference : String(counters[counterKey] = (counters[counterKey] || 0) + 1);
         if (old) Object.assign(old, draft, { reference, kind });
-        else items.push({ ...items[0], ...draft, reference, id: items.length+1, vessel_id: Number(args.p_vessel_id), kind,
+        else items.push({ ...items[0], ...draft, reference, id: Math.max(0, ...items.map((item) => item.id))+1, vessel_id: Number(args.p_vessel_id), kind,
           added_on: todayLocal(), commissioned_on: draft.commissioned_on || todayLocal(), last_control_on: null,
           replaced_on: null, service_version: 1, inspection_due_on: annualExpiry(todayLocal()),
         } as LiftingItem);
@@ -89,7 +116,7 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
       if (name === 'start_lifting_inspection') {
         if (!canStart) return denied();
         const year = Number(String(args.p_issued_on).slice(0,4));
-        const vessel = [demoVessel, secondDemoVessel].find((v) => v.id === args.p_vessel_id);
+        const vessel = vessels.find((v) => v.id === args.p_vessel_id);
         if (!vessel || !items.some((item) => item.vessel_id === vessel.id && item.kind === args.p_kind && item.active)) return { data: null, error: { message: 'Ajoutez du matériel avant de démarrer un contrôle.' } };
         const report: LiftingInspection = { id: nextReportId++,company_id:1,vessel_id:vessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:vessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
         reports.push(report);

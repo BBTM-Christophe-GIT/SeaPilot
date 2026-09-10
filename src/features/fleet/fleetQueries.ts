@@ -265,7 +265,7 @@ export async function uploadFleetVesselPhoto(client: SupabaseClient, vessel: Fle
   return mapFleetVessel(data as unknown as FleetVesselRow);
 }
 
-export async function resolveFleetVesselPhotoUrl(client: SupabaseClient, vessel: FleetVessel): Promise<string> {
+export async function resolveFleetVesselPhotoUrl(client: SupabaseClient, vessel: Pick<FleetVessel, 'photoStorageBucket' | 'photoStoragePath' | 'photoUrl'>): Promise<string> {
   if (vessel.photoStorageBucket && vessel.photoStoragePath) {
     const { data, error } = await client.storage.from(vessel.photoStorageBucket).createSignedUrl(vessel.photoStoragePath, 3600);
     if (error || !data?.signedUrl) throw error || new Error('Impossible de charger la photo du navire.');
