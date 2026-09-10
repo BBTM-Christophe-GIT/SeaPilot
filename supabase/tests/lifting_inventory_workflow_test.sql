@@ -211,5 +211,85 @@ begin
   end loop;
   execute 'reset role';
 end $source_test$;
-select 'PASS: lifting inventory, snapshots, real profile/RLS scopes, revision guard, atomic fleet certificate publication and retry' as result;
+do $delete_draft_test$
+declare
+  vessel bigint; foreign_vessel bigint; draft bigint; foreign_draft bigint; published bigint;
+  entry bigint; revision integer; uid uuid; kind text;
+  inventory_before jsonb; reports_before jsonb; entries_before jsonb; certificates_before jsonb; versions_before jsonb;
+begin
+  select id into vessel from public.vessels where name='LIFTING TEST VESSEL';
+  select id into foreign_vessel from public.vessels where name='LIFTING OTHER VESSEL';
+  select id into published from public.lifting_inspections where vessel_id=vessel and status='published' order by id limit 1;
+  select jsonb_agg(to_jsonb(i) order by id) into inventory_before from public.lifting_inventory i where vessel_id=vessel;
+  select jsonb_agg(to_jsonb(r) order by id) into reports_before from public.lifting_inspections r where vessel_id=vessel;
+  select jsonb_agg(to_jsonb(e) order by e.id) into entries_before from public.lifting_inspection_entries e join public.lifting_inspections r on r.id=e.inspection_id where r.vessel_id=vessel;
+  select jsonb_agg(to_jsonb(c) order by id) into certificates_before from public.fleet_certificates c where vessel_id=vessel;
+  select jsonb_agg(to_jsonb(v) order by v.id) into versions_before from public.fleet_certificate_versions v join public.fleet_certificates c on c.id=v.certificate_id where c.vessel_id=vessel;
+  insert into public.lifting_inspections(company_id,vessel_id,kind,inspection_year,issued_on,expires_on,vessel_snapshot)
+    select company_id,id,'lifting',2031,'2031-03-05','2032-03-05',to_jsonb(v) from public.vessels v where id=foreign_vessel returning id into foreign_draft;
+  assert not has_function_privilege('anon','public.delete_lifting_inspection_draft(bigint,integer)','EXECUTE'),'No anonymous deletion';
+  assert not has_table_privilege('authenticated','public.lifting_inspections','DELETE'),'No direct inspection deletion';
+  assert not has_table_privilege('authenticated','public.lifting_inspection_entries','DELETE'),'No direct entry deletion';
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  draft:=public.start_lifting_inspection(vessel,'lifting','2031-03-05','2032-03-05');
+  select id into entry from public.lifting_inspection_entries where inspection_id=draft order by id limit 1;
+  revision:=public.save_lifting_inspection_entry(draft,entry,1,'repair',public.lifting_default_checks((select item_snapshot from public.lifting_inspection_entries where id=entry)),'Saved before deletion');
+  foreach uid in array array['9e090000-0000-0000-0000-000000000004'::uuid,'9e090000-0000-0000-0000-000000000005'::uuid] loop
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    assert exists(select 1 from public.lifting_inspections where id=draft),'Assigned onboard profile can see draft';
+    begin
+      perform public.delete_lifting_inspection_draft(draft,revision);
+      raise exception 'Onboard profile deleted draft';
+    exception when insufficient_privilege then null; end;
+  end loop;
+  perform set_config('request.jwt.claim.sub','',true);
+  begin
+    perform public.delete_lifting_inspection_draft(draft,revision);
+    raise exception 'Missing authentication deleted draft';
+  exception when insufficient_privilege then null; end;
+  perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  begin
+    perform public.delete_lifting_inspection_draft(foreign_draft,1);
+    raise exception 'Cross-company deletion accepted';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.delete_lifting_inspection_draft(published,1);
+    raise exception 'Published report deleted';
+  exception when raise_exception then
+    assert sqlerrm like 'Seul un brouillon%',sqlerrm;
+  end;
+  foreach revision in array array[1,null] loop
+    begin
+      perform public.delete_lifting_inspection_draft(draft,revision);
+      raise exception 'Stale or null revision accepted';
+    exception when raise_exception then
+      assert sqlerrm like 'Ce brouillon a été modifié%',sqlerrm;
+    end;
+  end loop;
+  assert exists(select 1 from public.lifting_inspection_entries where id=entry and observations='Saved before deletion'),'Rejected deletion preserves saved work';
+  perform public.delete_lifting_inspection_draft(draft,(select r.revision from public.lifting_inspections r where id=draft));
+  assert not exists(select 1 from public.lifting_inspection_entries where inspection_id=draft),'Saved draft entries deleted';
+  begin
+    perform public.delete_lifting_inspection_draft(draft,2);
+    raise exception 'Missing draft accepted';
+  exception when insufficient_privilege then null; end;
+  foreach uid in array array['9e090000-0000-0000-0000-000000000001'::uuid,'9e090000-0000-0000-0000-000000000002'::uuid,'9e090000-0000-0000-0000-000000000003'::uuid] loop
+    perform set_config('request.jwt.claim.sub',uid::text,true);
+    foreach kind in array array['lifting','towing'] loop
+      draft:=public.start_lifting_inspection(vessel,kind,'2031-03-05','2032-03-05');
+      perform public.delete_lifting_inspection_draft(draft,1);
+      assert not exists(select 1 from public.lifting_inspections where id=draft),'Manager draft removed';
+      assert not exists(select 1 from public.lifting_inspection_entries where inspection_id=draft),'Manager draft entries removed';
+    end loop;
+  end loop;
+  execute 'reset role';
+  assert exists(select 1 from public.lifting_inspections where id=foreign_draft),'Foreign draft preserved';
+  assert inventory_before=(select jsonb_agg(to_jsonb(i) order by id) from public.lifting_inventory i where vessel_id=vessel),'Inventory unchanged';
+  assert reports_before=(select jsonb_agg(to_jsonb(r) order by id) from public.lifting_inspections r where vessel_id=vessel),'Other reports unchanged';
+  assert entries_before=(select jsonb_agg(to_jsonb(e) order by e.id) from public.lifting_inspection_entries e join public.lifting_inspections r on r.id=e.inspection_id where r.vessel_id=vessel),'Other inspection entries unchanged';
+  assert certificates_before=(select jsonb_agg(to_jsonb(c) order by id) from public.fleet_certificates c where vessel_id=vessel),'Certificates unchanged';
+  assert versions_before=(select jsonb_agg(to_jsonb(v) order by v.id) from public.fleet_certificate_versions v join public.fleet_certificates c on c.id=v.certificate_id where c.vessel_id=vessel),'Certificate versions unchanged';
+end $delete_draft_test$;
+select 'PASS: lifting inventory, snapshots, real profiles/RLS, revisions, publication and draft-only deletion' as result;
 rollback;

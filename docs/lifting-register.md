@@ -56,6 +56,14 @@ La révision du contrôle protège contre l’écrasement par un deuxième appar
 
 La liste distingue les contrôles par leur référence `LEV-<id>` et leur date d’émission. Les noms des nouveaux PDF contiennent la date et cette référence afin de permettre plusieurs classements dans Certificats flotte, même le même jour. L’année reste un filtre ; elle ne limite plus le nombre de contrôles. Un nouveau contrôle ne prolonge ni ne modifie la validité du précédent.
 
+## Supprimer un brouillon
+
+Dans **Contrôles et rapports**, les profils Admin, Direction et Armement disposent d’une corbeille **Supprimer le brouillon** sur chaque ligne au statut Brouillon. Une confirmation précise le navire, la référence LEV et les dates. La suppression définitive retire ce brouillon et ses saisies, puis actualise la liste et les compteurs ; l’inventaire et les autres contrôles sont conservés. Si la dernière ligne de l’année filtrée est supprimée, la liste revient à toutes les années.
+
+La RPC `delete_lifting_inspection_draft(id, revision)`, ajoutée par `20260910044241_lifting_delete_draft.sql`, vérifie l’identité, le rôle, la société, l’accès au navire, le statut et la révision. Elle verrouille le contrôle comme les RPC de saisie et de publication : une modification depuis un autre appareil ou une finalisation rend la confirmation obsolète et bloque la suppression. Annuler ferme la confirmation et recharge les rapports. Aucun droit DELETE direct n’est accordé au navigateur. Les rapports finalisés, leur PDF et les certificats sont exclus de cette action, y compris si la RPC est appelée directement. Le parcours création d’un brouillon de démonstration → liste → annulation → suppression est vérifié en navigateur, avec confirmation à 390 × 844, sans débordement horizontal ni erreur console.
+
+Validation : tests React de confirmation/annulation, deux registres, conservation de l’inventaire et des autres saisies, filtre d’année, conflits de révision, rapports publiés et profils ; fixtures SQL réelles Admin/Direction/Armement/Capitaine/Marin, accès anonyme/inter-sociétés, révision absente, préservation exacte des autres rapports et versions de certificats, avec rollback. L’avis Supabase sur cette RPC `SECURITY DEFINER` authentifiée correspond au point d’entrée de mutation volontairement contrôlé ([détail de l’avis](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)) ; identité, rôles, périmètre et statut sont vérifiés dans la fonction.
+
 ## Exploitation et validation
 
 - Migration autorisant plusieurs contrôles dans une année : `20260909203059_lifting_multiple_inspections_per_year.sql`. Les tests couvrent la création le même jour, avant échéance, les instantanés indépendants et la publication de deux certificats sans écrasement.

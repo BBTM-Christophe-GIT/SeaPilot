@@ -16,6 +16,7 @@ export function createLiftingPreviewClient(): SupabaseClient {
   const counters: Record<string, number> = { [`${demoVessel.id}:lifting`]: 3, [`${demoVessel.id}:towing`]: 1, [`${secondDemoVessel.id}:lifting`]: 1 };
   const reports: LiftingInspection[] = [];
   const entries: InspectionEntry[] = [];
+  let nextReportId = 1; let nextEntryId = 1;
   const tables = { lifting_inventory: items, lifting_inspections: reports, lifting_inspection_entries: entries };
   function query(rows: unknown[]) {
     let selected = [...rows] as Record<string, unknown>[];
@@ -42,13 +43,21 @@ export function createLiftingPreviewClient(): SupabaseClient {
         return { data: old?.id || items.at(-1)?.id, error: null };
       }
       if (name === 'set_lifting_item_active') { const item = items.find((i) => i.id === args.p_id); if (item) item.active = Boolean(args.p_active); return { data: null, error: null }; }
+      if (name === 'delete_lifting_inspection_draft') {
+        const index = reports.findIndex((r) => r.id === args.p_id); const report = reports[index];
+        if (!report) return { data: null, error: { message: 'Brouillon introuvable ou accès refusé.' } };
+        if (report.status !== 'draft' || report.certificate_id || report.storage_path || report.published_at) return { data: null, error: { message: 'Seul un brouillon peut être supprimé. Ce rapport est déjà finalisé ou classé.' } };
+        if (report.revision !== args.p_revision) return { data: null, error: { message: 'Ce brouillon a été modifié depuis un autre appareil. Rechargez les rapports avant de le supprimer.' } };
+        for (let i = entries.length - 1; i >= 0; i--) if (entries[i].inspection_id === report.id) entries.splice(i, 1);
+        reports.splice(index, 1); return { data: null, error: null };
+      }
       if (name === 'start_lifting_inspection') {
         const year = Number(String(args.p_issued_on).slice(0,4));
         const vessel = [demoVessel, secondDemoVessel].find((v) => v.id === args.p_vessel_id);
         if (!vessel || !items.some((item) => item.vessel_id === vessel.id && item.kind === args.p_kind && item.active)) return { data: null, error: { message: 'Ajoutez du matériel avant de démarrer un contrôle.' } };
-        const report: LiftingInspection = { id: reports.length+1,company_id:1,vessel_id:vessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:vessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
+        const report: LiftingInspection = { id: nextReportId++,company_id:1,vessel_id:vessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:vessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
         reports.push(report);
-        items.filter((i) => i.vessel_id === report.vessel_id && i.kind === report.kind && i.active).forEach((i) => entries.push({ id:entries.length+1,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:defaultChecks(i),checklist_version:2,observations:'' }));
+        items.filter((i) => i.vessel_id === report.vessel_id && i.kind === report.kind && i.active).forEach((i) => entries.push({ id:nextEntryId++,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:defaultChecks(i),checklist_version:2,observations:'' }));
         return { data:report.id,error:null };
       }
       if (name === 'save_lifting_inspection_entries') {
