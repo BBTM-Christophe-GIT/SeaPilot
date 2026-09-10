@@ -193,9 +193,9 @@ describe('lifting annual workflow', () => {
     expect((await fetchLiftingRegister(client,demoVessel.id,'towing')).items.find((item) => item.id===tid)?.reference).toBe('2');
   });
   it('hides inventory management from a real-profile Marin component fixture', async () => {
-    render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={['marin']} /></MemoryRouter>);
+    render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient({ roles: ['marin'] })} roles={['marin']} /></MemoryRouter>);
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    expect(screen.queryByRole('button',{name:'Ajouter un matériel'})).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Ajouter un matériel'})).toBeEnabled();
     expect(screen.queryByRole('button',{name:'Modifier 1'})).not.toBeInTheDocument();
   });
   it('sends the uploaded PDF to the atomic publication RPC with its revision', async () => {

@@ -138,7 +138,7 @@ export async function buildLiftingPdf(report: LiftingInspection, entries: Inspec
       rowEntries.set(body.length, entry);
       body.push([
         { content: clean(item.reference), styles: { fontStyle: 'bold', textColor: entry.condition === 'withdrawn' ? RED : NAVY, valign: 'middle', halign: 'center' } },
-        clean(item.description) + (item.legacy_reference ? `\nAncien ID / Previous ID: ${clean(item.legacy_reference)}` : '') + (item.serial_number ? `\nN° ${clean(item.serial_number)}` : ''),
+        clean(item.description) + (item.serial_number ? `\nN° ${clean(item.serial_number)}` : ''),
         item.swl_tonnes === null ? '-' : String(item.swl_tonnes).replace('.', ','),
         ...codes.map((code) => ({ content: entry.condition === 'pending' ? '?' : applicable.includes(code) ? entry.checks[code] === 'ok' ? 'OK' : entry.checks[code] === 'defect' ? 'NC' : '?' : '-', styles: { halign: 'center' as const, cellPadding: { top: 7, bottom: 2, left: 1, right: 1 }, textColor: entry.checks[code] === 'defect' ? RED : NAVY } })),
         `${CONDITION_LABELS[entry.condition]}\n${decisionEn[entry.condition]}${entry.observations ? `\n\nObservation : ${clean(entry.observations)}` : ''}`,

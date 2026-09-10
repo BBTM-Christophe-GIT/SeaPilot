@@ -32,7 +32,7 @@ export async function buildLiftingPaperPdf(vessel: LiftingVessel, kind: LiftingK
   });
   let y = lastY() + 6;
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...INK);
-  pdf.text('Pour chaque code, cocher S : satisfaisant ou I : insatisfaisant. Cases vides : non contrôlé. - : non applicable. ? : points à définir.', 12, y);
+  pdf.text('Pour chaque code, cocher C : conforme ou NC : non conforme. Cases vides : non contrôlé. - : non applicable. ? : points à définir.', 12, y);
   pdf.text('Cocher une décision et noter les observations. Reporter ensuite ces résultats dans le contrôle numérique SeaPilot.', 12, y + 4.5);
   y += 9;
   for (const group of groupByAccessory(items, (item) => item)) {
@@ -47,7 +47,7 @@ export async function buildLiftingPaperPdf(vessel: LiftingVessel, kind: LiftingK
       ],
       body: group.rows.map((item) => [
         { content: item.reference, styles: { fontStyle: 'bold', halign: 'center', minCellHeight: 28 } },
-        clean([item.description, item.serial_number && `N° série : ${item.serial_number}`, item.legacy_reference && `Ancien ID : ${item.legacy_reference}`, item.location, !applicableCodes(item).length && 'Notice de contrôle à compléter.'].filter(Boolean).join('\n')),
+        clean([item.description, item.serial_number && `N° série : ${item.serial_number}`, item.location, !applicableCodes(item).length && 'Notice de contrôle à compléter.'].filter(Boolean).join('\n')),
         item.swl_tonnes === null ? '-' : String(item.swl_tonnes).replace('.', ','),
         ...codes.map(() => ''), '', '',
       ]),
@@ -62,7 +62,7 @@ export async function buildLiftingPaperPdf(vessel: LiftingVessel, kind: LiftingK
         if (data.column.index >= 3 && data.column.index <= 9) {
           const applicable = applicableCodes(item);
           if (applicable.includes(codes[data.column.index - 3])) {
-            emptyBox(pdf, cell.x + 1.6, cell.y + 9, 'S'); emptyBox(pdf, cell.x + 1.6, cell.y + 20, 'I');
+            emptyBox(pdf, cell.x + 1.6, cell.y + 9, 'C'); emptyBox(pdf, cell.x + 1.6, cell.y + 20, 'NC');
           } else {
             pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(110, 120, 125);
             pdf.text(applicable.length ? '-' : '?', cell.x + cell.width / 2, cell.y + 15, { align: 'center' });
@@ -90,7 +90,7 @@ export async function buildLiftingPaperPdf(vessel: LiftingVessel, kind: LiftingK
     pdf.setFontSize(10); pdf.setFont('helvetica', 'normal'); pdf.text(clean(`${vessel.name} - ${register}`), 12, 21);
     pdf.setFontSize(8); pdf.text(`${items.length} ${items.length === 1 ? 'matériel actif' : 'matériels actifs'} | Extrait le ${generatedLabel}`, right, 27, { align: 'right' });
     pdf.setDrawColor(175, 185, 190); pdf.line(12, 29, right, 29); pdf.line(12, bottom, right, bottom);
-    pdf.setFontSize(8); pdf.text('SeaPilot | Fiche de saisie avant contrôle | Résultats à reporter dans le contrôle numérique', 12, bottom + 5);
+    pdf.setFontSize(8); pdf.text('Fiche de saisie avant contrôle | Résultats à reporter dans le contrôle numérique', 12, bottom + 5);
     pdf.text(`${page} / ${pages}`, right, bottom + 5, { align: 'right' });
   }
   return { blob: pdf.output('blob'), filename: `${vessel.acronym || vessel.name} - Fiche de contrôle papier - ${register} - ${generatedDate}.pdf`, itemCount: items.length };

@@ -23,11 +23,17 @@ export interface LiftingItem {
   material_type: string; description: string; swl_tonnes: number | null; serial_number: string;
   location: string; notes: string; active: boolean; source_label: string; updated_at: string;
   legacy_reference?: string;
+  added_on?: string;
+  commissioned_on?: string;
+  last_control_on?: string | null;
+  replaced_on?: string | null;
+  service_version?: number;
+  inspection_due_on?: string | null;
   towing_type?: TowingType | null;
   source_key?: string | null;
   source_data?: { source_id: string; commissioned_on?: string | null; last_inspected_on?: string | null; valid_until?: string | null; inspection_frequency?: string | null; action?: string | null; control_accredited?: boolean | null; emergency_towing?: boolean | null };
 }
-export type ItemDraft = Pick<LiftingItem, 'reference' | 'material_type' | 'description' | 'swl_tonnes' | 'serial_number' | 'location' | 'notes' | 'towing_type'>;
+export type ItemDraft = Pick<LiftingItem, 'reference' | 'material_type' | 'description' | 'swl_tonnes' | 'serial_number' | 'location' | 'notes' | 'towing_type' | 'commissioned_on'>;
 export interface InspectionEntry {
   id: number; inspection_id: number; item_id: number; item_snapshot: LiftingItem;
   condition: ItemCondition; checks: Partial<Record<CheckKey, CheckValue>>; observations: string;
@@ -74,6 +80,11 @@ export function todayLocal(): string {
 }
 export function formatLiftingDate(date: string): string {
   return date ? date.split('-').reverse().join('/') : '—';
+}
+export function liftingDeadline(date?: string | null, today = todayLocal()): 'expired' | 'soon' | '' {
+  if (!date) return '';
+  const days = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000;
+  return days < 0 ? 'expired' : days <= 60 ? 'soon' : '';
 }
 export function entryComplete(entry: InspectionEntry): boolean {
   if (entry.condition === 'pending') return false;

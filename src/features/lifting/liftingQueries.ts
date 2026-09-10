@@ -1,6 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
 
+export async function fetchLiftingCanStart(client: SupabaseClient): Promise<boolean> {
+  const { data, error } = await client.rpc('lifting_can_start_inspection');
+  if (error) throw error;
+  return data === true;
+}
+export async function replaceLiftingItem(client: SupabaseClient, item: LiftingItem, date: string) {
+  const { error } = await client.rpc('replace_lifting_item', { p_id: item.id, p_service_version: item.service_version ?? 1, p_commissioned_on: date });
+  if (error) throw error;
+}
+
 export async function fetchLiftingVessels(client: SupabaseClient): Promise<LiftingVessel[]> {
   const { data, error } = await client.rpc('lifting_available_vessels');
   if (error) throw error;
