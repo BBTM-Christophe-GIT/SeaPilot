@@ -25,7 +25,8 @@
 .lifting-icon-button.is-danger{color:#b23b32}.lifting-icon-button.is-danger:hover{background:#fff0ed;color:#922b23}.lifting-delete-button{background:#a9322a!important;border-color:#a9322a!important;color:#fff!important}.lifting-delete-button:hover{background:#88271f!important}
 
 /* Compact inventory cards; action targets remain usable on a phone. */
-.lifting-item{padding:8px 11px;gap:10px}.lifting-id{padding:5px 4px;min-width:28px;border-radius:4px}.lifting-status{padding:3px 5px}.lifting-icon-button{width:44px;height:44px;flex-shrink:0}
+.lifting-item{padding:4px 11px;gap:10px}.lifting-id{padding:5px 4px;min-width:28px;border-radius:4px}.lifting-status{padding:3px 5px}.lifting-icon-button{width:44px;height:44px;flex-shrink:0}
+.lifting-item-title,.lifting-item-metadata{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:12px;row-gap:2px}.lifting-item-title h3{margin:0;line-height:1.5}.lifting-item-metadata p{margin:0;line-height:1.6}.lifting-item-main{display:grid}.lifting-item-title small{line-height:1.5}
 .lifting-item .lifting-item-details{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}.lifting-source-details{margin-top:0}.lifting-source-details summary{min-height:24px;padding-top:2px}.lifting-source-details[open]{flex-basis:100%}
 .lifting-due{display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:1.6;color:var(--lev-muted)}.lifting-due.soon{color:#985300;font-weight:650}.lifting-due.expired{color:#b02c25;font-weight:650}.lifting-due svg{flex:none}
 .lifting-item.soon,.lifting-report-row.soon,.lifting-report-heading.soon{background:#fff7e5;box-shadow:inset 3px 0 #e5a025}.lifting-item.expired,.lifting-report-row.expired,.lifting-report-heading.expired{background:#fff0ee;box-shadow:inset 3px 0 #ce443a}
