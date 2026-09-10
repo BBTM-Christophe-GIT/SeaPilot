@@ -276,7 +276,7 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(bar.querySelector('.planning-resize-handle')).not.toBeInTheDocument();
   });
 
-  it('renders approved leave as a black Vacances bar and lets an administrator move it', () => {
+  it('renders approved leave as a black Congés bar and lets an administrator move it', () => {
     const onMoveAbsence = vi.fn();
     const { container } = render(<PlanningCrewTimelineRow
       absences={[{
@@ -312,7 +312,7 @@ describe('Planning timeline visit and leave rendering', () => {
       selectedId={null}
     />);
 
-    expect(screen.getByText('Vacances')).toBeInTheDocument();
+    expect(screen.getByText('Congés')).toBeInTheDocument();
     const vacation = container.querySelector<HTMLButtonElement>('.planning-absence-bar.is-approved.is-leave')!;
     expect(vacation).toHaveAttribute('draggable', 'true');
 

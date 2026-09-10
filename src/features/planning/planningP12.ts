@@ -7,7 +7,7 @@ import type {
 } from './planningQueries';
 import type { PlanningManningMatrix, PlanningManningRequirement } from './planningP11';
 
-export type PlanningAbsenceType = 'leave' | 'illness' | 'training' | 'medical_visit' | 'unavailability' | 'recovery';
+export type PlanningAbsenceType = 'leave' | 'illness' | 'training' | 'medical_visit' | 'recovery';
 export type PlanningAbsenceStatus = 'requested' | 'approved' | 'rejected' | 'cancelled';
 export type PlanningConflictType =
   | 'double_assignment'
@@ -126,7 +126,6 @@ const ABSENCE_TYPE_LABELS: Record<PlanningAbsenceType, string> = {
   illness: 'Maladie',
   training: 'Formation',
   medical_visit: 'Visite médicale',
-  unavailability: 'Indisponibilité',
   recovery: 'Récupération',
 };
 
@@ -304,10 +303,9 @@ export function buildPlanningP12Conflicts(
         { start: absence.startsOn, end: absence.endsOn },
       );
       if (!overlap) continue;
-      const absenceType = absence.absenceType === 'unavailability' ? 'unavailability' : 'absence';
       pushUnique(detected, conflict({
-        key: `${absenceType}:${absence.id}:assignment:${assignment.id}`,
-        type: absenceType,
+        key: `absence:${absence.id}:assignment:${assignment.id}`,
+        type: 'absence',
         severity: absence.status === 'approved' ? 'blocking' : 'warning',
         title: absenceDecisionLabel(absence.absenceType, absence.status === 'approved'),
         detail: `${assignmentPersonName(overview, assignment)} est planifié sur ${vesselName(overview, assignment.vesselId)} pendant cette période.`,

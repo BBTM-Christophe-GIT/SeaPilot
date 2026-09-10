@@ -109,7 +109,10 @@ describe('planning timeline rules', () => {
 
   it('normalizes imported crew and project statuses', () => {
     expect(normalizePlanningStatus('Embarqué')).toBe('En Mer');
-    expect(planningStatusDisplayLabel('Vacance')).toBe('Vacances');
+    expect(planningStatusDisplayLabel('Vacance')).toBe('Congés');
+    expect(planningStatusDisplayLabel('Vacances')).toBe('Congés');
+    expect(normalizePlanningStatus('Congés')).toBe('Vacance');
+    expect(planningStatusTone('Congés')).toBe('vacation');
     expect(planningStatusDisplayLabel('Repos')).toBe('Repos');
     expect(normalizePlanningStatus('arrêt maladie')).toBe('Arrêt Maladie');
     expect(normalizePlanningStatus('accident du travail')).toBe('Accident du Travail');

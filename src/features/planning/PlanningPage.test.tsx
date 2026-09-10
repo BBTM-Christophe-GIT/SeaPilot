@@ -695,7 +695,7 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
     await user.click(within(billingPanel).getByRole('button', { name: /Paul DURAND.*À valider/ }));
-    expect(await screen.findByRole('dialog', { name: 'Absences, remplacements et centre de conflits' }, { timeout: 10_000 })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Absences et conflits' }, { timeout: 10_000 })).toBeInTheDocument();
 
     const planningMenu = screen.getByRole('navigation', { name: 'Menu du planning' });
     for (const removedButton of ['Facturation', 'Demandes en attente', 'Gérer les navires', 'Conflits', 'Absences et conflits', 'Historique']) {
@@ -1252,7 +1252,7 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: 'Vacances' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Congés' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();

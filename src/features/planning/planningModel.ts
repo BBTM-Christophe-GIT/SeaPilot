@@ -298,7 +298,7 @@ export function normalizePlanningStatus(value: string): string {
   if (key.includes('EMBAR') || key === 'ENMER' || key === 'TRAVAILLE') return 'En Mer';
   if (key === 'ATERRE') return 'A Terre';
   if (key.includes('REPOS') || key.includes('DEBAR')) return 'Repos';
-  if (key.includes('VACAN')) return 'Vacance';
+  if (key.includes('VACAN') || key === 'CONGE' || key === 'CONGES') return 'Vacance';
   if (key.includes('ACCIDENT') && key.includes('TRAVAIL')) return 'Accident du Travail';
   if (key.includes('ARRET') && key.includes('MALADIE')) return 'Arrêt Maladie';
   if (key.includes('ARRET')) return 'Arrêt de travail';
@@ -307,7 +307,7 @@ export function normalizePlanningStatus(value: string): string {
 }
 
 export function planningStatusDisplayLabel(value: string): string {
-  return normalizePlanningStatus(value) === 'Vacance' ? 'Vacances' : value;
+  return normalizePlanningStatus(value) === 'Vacance' ? 'Congés' : value;
 }
 
 export function planningStatusTone(value: string): string {
@@ -674,7 +674,7 @@ export function buildPlanningCrewRows(
   return rows;
 }
 
-export function formatPlanningPerson(person: PlanningPerson): string {
+export function formatPlanningPerson(person: Pick<PlanningPerson, 'firstName' | 'lastName'>): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
 }
 

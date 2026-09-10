@@ -21,7 +21,7 @@ const CONFLICT_HISTORY_SELECT = 'id, case_id, action, comment, payload, changed_
 interface AbsenceRow {
   id: number;
   person_id: number;
-  absence_type: PlanningAbsenceRecord['absenceType'];
+  absence_type: PlanningAbsenceRecord['absenceType'] | 'unavailability';
   starts_at: string;
   ends_at: string;
   reason: string;
@@ -106,7 +106,7 @@ export function mapPlanningAbsenceRows(rows: AbsenceRow[]): PlanningAbsenceRecor
   return rows.map((row) => ({
     id: row.id,
     personId: row.person_id,
-    absenceType: row.absence_type,
+    absenceType: row.absence_type === 'unavailability' ? 'leave' : row.absence_type,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     startsOn: planningDateFromTimestamp(row.starts_at),
@@ -255,7 +255,7 @@ export function movePlanningApprovedAbsence(
   input: MovePlanningApprovedAbsenceInput,
 ): Promise<number> {
   assertPlanningDateTimeRange(input.startsAt, input.endsAt);
-  return callRpc(client, 'move-approved-absence', 'Impossible de déplacer ces vacances validées.', 'move_planning_approved_absence', {
+  return callRpc(client, 'move-approved-absence', 'Impossible de déplacer ces congés validés.', 'move_planning_approved_absence', {
     p_absence_id: planningEntityId(input.absenceId, 'La demande d’absence'),
     p_starts_at: planningLocalDateTimeToUtc(input.startsAt),
     p_ends_at: planningLocalDateTimeToUtc(input.endsAt),
