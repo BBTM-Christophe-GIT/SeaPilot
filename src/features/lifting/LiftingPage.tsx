@@ -182,7 +182,7 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
       if (selectedVesselId !== vesselId) setVesselId(selectedVesselId);
       else await reload();
     })} />}
-    {replacement && manager && <LiftingReplaceForm item={replacement} busy={busy} error={error} onClose={() => { setReplacement(null); setError(''); }} onSave={(date) => void act(async () => { await replaceLiftingItem(db, replacement, date); setReplacement(null); await reload(); setNotice('Matériel remplacé. La visite annuelle repart de la nouvelle mise en service.'); })} />}
+    {replacement && manager && <LiftingReplaceForm client={db} item={replacement} busy={busy} error={error} onClose={() => { setReplacement(null); setError(''); }} onSave={(date, files) => void act(async () => { await replaceLiftingItem(db, replacement, date, files); setReplacement(null); await reload(); setNotice('Matériel remplacé. La visite annuelle repart de la nouvelle mise en service.'); })} />}
     {removeDraft && manager && <AppDialog title="Supprimer le brouillon ?" icon={<Trash2 size={22} />} isBusy={busy} onClose={() => { setRemoveDraft(null); setError(''); void reload(); }} footer={<><button type="button" className="secondary-button" disabled={busy} onClick={() => { setRemoveDraft(null); setError(''); void reload(); }}>Annuler</button><button type="button" className="primary-button lifting-delete-button" disabled={busy} onClick={() => void act(async () => {
       await deleteLiftingInspectionDraft(db, removeDraft);
       const remaining = inspections.filter((inspection) => inspection.id !== removeDraft.id);

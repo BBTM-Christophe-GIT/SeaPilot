@@ -20,23 +20,25 @@ export function LiftingCertificates({ client, item }: { client: SupabaseClient; 
       .catch((e: unknown) => { if (!cancelled) setError(errorMessage(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [client, item.id, open]);
+  }, [client, item.id, item.service_version, open]);
+  const current = files.filter((file) => file.service_version === (item.service_version ?? 1));
+  const archived = files.filter((file) => file.service_version < (item.service_version ?? 1));
   async function act(action: () => Promise<void>) {
     if (busy) return;
     setBusy(true); setError(''); setNotice('');
     try { await action(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
+  const fileRow = (file: LiftingCertificate) => <li key={file.id}><span>{file.file_name}</span><button type="button" className="lifting-icon-button" disabled={busy} aria-label={`Télécharger ${file.file_name}`} onClick={() => void act(async () => saveLiftingBlob(await downloadLiftingCertificate(client, file), file.file_name))}><Download size={17} /></button></li>;
   return <details className="lifting-certificates" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary><Paperclip size={14} aria-hidden="true" /> Certificat</summary>
     {open && <div role="region" aria-label={`Certificats du matériel ${item.reference}`}>
-      {loading ? <p role="status">Chargement des certificats…</p> : files.length ? <ul>{files.map((file) => <li key={file.id}>
-        <span>{file.file_name}</span><button type="button" className="lifting-icon-button" disabled={busy} aria-label={`Télécharger ${file.file_name}`} onClick={() => void act(async () => saveLiftingBlob(await downloadLiftingCertificate(client, file), file.file_name))}><Download size={17} /></button>
-      </li>)}</ul> : <p>Aucun certificat joint.</p>}
+      {loading ? <p role="status">Chargement des certificats…</p> : <div role="group" aria-label="Certificats du matériel actuel">{current.length ? <ul>{current.map(fileRow)}</ul> : <p>Aucun certificat joint au matériel actuel.</p>}</div>}
       <label>Ajouter un certificat<input type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy || loading} onChange={(event) => {
         const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
         if (file) void act(async () => { await addLiftingCertificate(client, item, file); setFiles(await fetchLiftingCertificates(client, item.id)); setNotice('Certificat ajouté.'); });
       }} /></label>
       <p>PDF, JPG ou PNG · 20 Mo maximum par fichier.</p>
+      {!loading && archived.length > 0 && <details className="lifting-certificate-history"><summary>Certificats des matériels remplacés ({archived.length})</summary><p>Documents historiques : ils ne s’appliquent pas au matériel actuel.</p><ul>{archived.map(fileRow)}</ul></details>}
       {busy && <p role="status">Transfert en cours…</p>}{notice && <p role="status">{notice}</p>}
       {error && <p className="lifting-error" role="alert">{error}</p>}
     </div>}

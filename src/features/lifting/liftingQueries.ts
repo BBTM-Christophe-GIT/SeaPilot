@@ -1,13 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
+import { uploadLiftingCertificate, validateLiftingCertificate, type UploadedLiftingCertificate } from './liftingCertificateQueries';
 
 export async function fetchLiftingCanStart(client: SupabaseClient): Promise<boolean> {
   const { data, error } = await client.rpc('lifting_can_start_inspection');
   if (error) throw error;
   return data === true;
 }
-export async function replaceLiftingItem(client: SupabaseClient, item: LiftingItem, date: string) {
-  const { error } = await client.rpc('replace_lifting_item', { p_id: item.id, p_service_version: item.service_version ?? 1, p_commissioned_on: date });
+export async function replaceLiftingItem(client: SupabaseClient, item: LiftingItem, date: string, files: File[] = []) {
+  files.forEach(validateLiftingCertificate);
+  const certificates: UploadedLiftingCertificate[] = [];
+  for (const file of files) certificates.push(await uploadLiftingCertificate(client, item, file, (item.service_version ?? 1) + 1));
+  const { error } = await client.rpc('replace_lifting_item', { p_id: item.id, p_service_version: item.service_version ?? 1, p_commissioned_on: date, p_certificates: certificates });
   if (error) throw error;
 }
 

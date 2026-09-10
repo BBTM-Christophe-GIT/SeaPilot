@@ -294,7 +294,7 @@ end $delete_draft_test$;
 do $lifecycle_test$
 declare
   c bigint; vessel bigint; other_vessel bigint; item bigint; old_item bigint; uid uuid; role_name text; kind text;
-  path text; cert_path text; cert uuid; prior jsonb; before_snapshot jsonb; report bigint; entry bigint; revision integer;
+  path text; cert_path text; new_path text; new_attachment jsonb; cert uuid; prior jsonb; before_snapshot jsonb; report bigint; entry bigint; revision integer;
   today date := (now() at time zone 'Europe/Paris')::date;
 begin
   select id into c from public.companies where code='bbtm';
@@ -318,7 +318,7 @@ begin
       item:=public.save_lifting_item(vessel,kind,jsonb_build_object('material_type',case when kind='towing' then 'Remorque' else 'Manilles' end,
         'towing_type','textile_line','description','Lifecycle role fixture','commissioned_on','2020-01-01','added_on','1990-01-01','last_control_on','2099-01-01','service_version',42));
       assert (select added_on=today and last_control_on is null and service_version=1 and inspection_due_on=(today+interval '1 year')::date from public.lifting_inventory where id=item),'Only server controls annual lifecycle';
-      path:=c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf';
+      path:=c||'/'||vessel||'/'||item||'/1/'||gen_random_uuid()||'.pdf';
       assert public.lifting_certificate_path_access(path),'All profiles and registers may attach';
       insert into storage.objects(bucket_id,name,metadata) values('lifting-certificates',path,'{"mimetype":"application/pdf","size":100}');
       cert:=public.add_lifting_item_certificate(item,path,'Certificat fixture.pdf','application/pdf',100);
@@ -330,6 +330,7 @@ begin
         raise exception 'Wrong size accepted';
       exception when raise_exception then assert sqlerrm like 'Joignez un PDF%',sqlerrm; end;
       if role_name in ('capitaine','marin') then
+        assert not public.lifting_certificate_path_upload(c||'/'||vessel||'/'||item||'/2/'||gen_random_uuid()||'.pdf'),'Onboard profiles cannot stage replacement files';
         begin perform public.start_lifting_inspection(vessel,kind,today,today+365); raise exception 'Onboard creation allowed'; exception when insufficient_privilege then null; end;
         begin perform public.save_lifting_item(vessel,kind,'{"material_type":"Manilles","description":"Forbidden edit"}',item); raise exception 'Onboard edit allowed'; exception when insufficient_privilege then null; end;
         begin perform public.replace_lifting_item(item,1,today); raise exception 'Onboard replacement allowed'; exception when insufficient_privilege then null; end;
@@ -358,14 +359,44 @@ begin
   report:=public.start_lifting_inspection(vessel,'lifting',today,today+365);
   select id,item_snapshot into entry,before_snapshot from public.lifting_inspection_entries where inspection_id=report;
   select to_jsonb(i) into prior from public.lifting_inventory i where id=item;
-  path:=c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.png';
+  path:=c||'/'||vessel||'/'||item||'/1/'||gen_random_uuid()||'.png';
   insert into storage.objects(bucket_id,name,metadata) values('lifting-certificates',path,'{"mimetype":"image/png","size":100}');
   cert:=public.add_lifting_item_certificate(item,path,'Origin.png','image/png',100);
   cert_path:=path;
-  perform public.replace_lifting_item(item,1,today-7);
+  begin
+    perform public.replace_lifting_item(item,1,today-7);
+    raise exception 'Replacement retained old certificates';
+  exception when raise_exception then assert sqlerrm like 'Joignez un nouveau certificat%',sqlerrm; end;
+  new_path:=c||'/'||vessel||'/'||item||'/2/'||gen_random_uuid()||'.pdf';
+  assert public.lifting_certificate_path_upload(new_path),'Manager can stage next-generation certificates';
+  insert into storage.objects(bucket_id,name,metadata) values('lifting-certificates',new_path,'{"mimetype":"application/pdf","size":100}');
+  new_attachment:=jsonb_build_object('storage_path',new_path,'file_name','Nouveau certificat.pdf','mime_type','application/pdf','file_size',100);
+  begin
+    perform public.add_lifting_item_certificate(item,new_path,'Nouveau.pdf','application/pdf',100);
+    raise exception 'Staged file registered before replacement';
+  exception when raise_exception then assert sqlerrm like 'Ce matériel a été remplacé%',sqlerrm; end;
+  begin
+    perform public.replace_lifting_item(item,1,today-7,jsonb_build_array(jsonb_build_object('storage_path',cert_path,'file_name','Origin.png','mime_type','image/png','file_size',100)));
+    raise exception 'Old certificate reused';
+  exception when raise_exception then assert sqlerrm like 'Ce matériel a été remplacé%',sqlerrm; end;
+  begin
+    perform public.replace_lifting_item(item,1,today-7,jsonb_build_array(new_attachment,jsonb_set(new_attachment,'{storage_path}',to_jsonb(c||'/'||vessel||'/'||item||'/2/'||gen_random_uuid()||'.pdf'))));
+    raise exception 'Missing second file accepted';
+  exception when raise_exception then assert sqlerrm like 'Joignez un PDF%',sqlerrm; end;
+  assert (select to_jsonb(i)=prior from public.lifting_inventory i where id=item),'Failed attachment rolls back all replacement fields';
+  assert not exists(select 1 from public.lifting_item_certificates where storage_path=new_path),'Failed batch rolls back first registered attachment';
+  perform public.replace_lifting_item(item,1,today-7,jsonb_build_array(new_attachment));
+  assert exists(select 1 from public.lifting_item_certificates where id=cert and service_version=1),'Old certificate archived with old generation';
+  assert exists(select 1 from public.lifting_item_certificates where storage_path=new_path and service_version=2),'Replacement certificate is current';
+  assert not public.lifting_certificate_path_upload(cert_path),'Old generation upload denied';
+  assert public.lifting_certificate_path_access(cert_path),'Historical file remains readable';
+  begin
+    perform public.add_lifting_item_certificate(item,cert_path,'Origin.png','image/png',100);
+    raise exception 'Stale certificate attached after replacement';
+  exception when raise_exception then assert sqlerrm like 'Ce matériel a été remplacé%',sqlerrm; end;
   assert (select reference=prior->>'reference' and description=prior->>'description' and serial_number='SERIAL' and swl_tonnes=2 and notes='Keep me'
     and service_version=2 and commissioned_on=today-7 and last_control_on is null and inspection_due_on=((today-7)+interval '1 year')::date and jsonb_array_length(replacement_history)=1 from public.lifting_inventory where id=item),'Replacement preserves identity and data; resets date';
-  assert exists(select 1 from public.lifting_item_certificates where id=cert and item_id=item),'Replacement retains certificates';
+  assert exists(select 1 from public.lifting_item_certificates where id=cert and item_id=item),'Replacement preserves historical files';
   begin perform public.replace_lifting_item(item,1,today); raise exception 'Stale replacement accepted'; exception when raise_exception then assert sqlerrm like 'Ce matériel a déjà%',sqlerrm; end;
   begin perform public.replace_lifting_item(item,2,today+1); raise exception 'Future replacement accepted'; exception when raise_exception then assert sqlerrm like 'Date de mise%',sqlerrm; end;
   begin perform public.replace_lifting_item(item,2,today-8); raise exception 'Earlier replacement accepted'; exception when raise_exception then assert sqlerrm like 'Date de mise%',sqlerrm; end;
@@ -390,10 +421,10 @@ begin
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000005',true);
   assert not exists(select 1 from public.lifting_item_certificates where id=cert),'Unassigned certificate metadata denied';
   assert not exists(select 1 from storage.objects where bucket_id='lifting-certificates' and name=cert_path),'No unassigned storage read';
-  assert not public.lifting_certificate_path_access(c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf'),'Unassigned file denied';
-  begin perform public.add_lifting_item_certificate(item,c||'/'||vessel||'/'||item||'/'||gen_random_uuid()||'.pdf','Foreign.pdf','application/pdf',100); raise exception 'Unassigned attachment accepted'; exception when insufficient_privilege then null; end;
+  assert not public.lifting_certificate_path_access(c||'/'||vessel||'/'||item||'/1/'||gen_random_uuid()||'.pdf'),'Unassigned file denied';
+  begin perform public.add_lifting_item_certificate(item,c||'/'||vessel||'/'||item||'/1/'||gen_random_uuid()||'.pdf','Foreign.pdf','application/pdf',100); raise exception 'Unassigned attachment accepted'; exception when insufficient_privilege then null; end;
   execute 'reset role';
 end $lifecycle_test$;
 
-select 'PASS: lifting inventory, snapshots, real profiles/RLS, publication, draft deletion, annual lifecycle and equipment certificates' as result;
+select 'PASS: lifting inventory, snapshots, real profiles/RLS, publication, draft deletion, annual lifecycle, equipment certificates and replacement document history' as result;
 rollback;
