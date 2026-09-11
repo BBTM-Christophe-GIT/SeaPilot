@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningSilaeExportDialog } from './PlanningSilaeExportDialog';
@@ -91,5 +91,20 @@ describe('SILAE export confirmation', () => {
     expect(await screen.findByRole('checkbox', { name: /AUGUIN Pierre.*DEMO-1/ })).toBeInTheDocument();
     expect(fetchPlanningSilaeData).not.toHaveBeenCalled();
     expect(screen.getByText(/Ce fichier ne doit pas être importé dans SILAE/)).toBeInTheDocument();
+  });
+
+  it('previews employment boundaries, empty rest JrsMer and dated functions before downloading', async () => {
+    const user = userEvent.setup();
+    const boris = { ...person, firstName: 'Boris', lastName: 'BROT', functionLabel: '2nd Capitaine', enimFunctionCode: 'CA01A', enimCategory: '12', hiredOn: '2026-09-10', departedOn: '2026-09-29' };
+    vi.mocked(fetchPlanningSilaeData).mockResolvedValue({ ...fixture, people: [boris], sources: [{ personId: 1, startsOn: '2026-09-22', endsOn: '2026-10-06', status: 'En Mer', vesselId: 10, priority: 2, functionLabel: 'Capitaine' }] });
+    render(<PlanningSilaeExportDialog client={client} onClose={vi.fn()} />);
+    await user.click(await screen.findByText('Vérifier les périodes'));
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(rows[1]).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['10/09/2026', '21/09/2026', 'En repos', '001234', '2nd Capitaine', 'CA01A', '12', '', '12']);
+    expect(within(rows[2]).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['22/09/2026', '29/09/2026', 'En mer', '001234', 'Capitaine', 'AA01A', '15', '8', '8']);
+    expect(screen.getByText(/Embauche : 10\/09\/2026.*Départ : 29\/09\/2026/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /Je confirme/ }));
+    await user.click(screen.getByRole('button', { name: 'Télécharger l’export SILAE' }));
+    await waitFor(() => expect(generateSilaeWorkbook).toHaveBeenCalledWith([expect.objectContaining({ periods: [expect.objectContaining({ startsOn: '2026-09-10' }), expect.objectContaining({ endsOn: '2026-09-29', enimFunctionCode: 'AA01A', enimCategory: '15' })], issues: [] })]));
   });
 });

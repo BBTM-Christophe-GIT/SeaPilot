@@ -29,9 +29,9 @@ export async function fetchPlanningSilaeData(client: SupabaseClient, month: stri
   const [peopleRows, vesselRows, periods, assignments, days, absences] = await Promise.all([
     readRows(client, 'people', 'id,first_name,last_name,employee_number,enim_function_code,enim_category,function_label,grade_label,role_label,hired_on,departed_on,active'),
     readRows(client, 'vessels', 'id,name,registration_number'),
-    readRows(client, 'planning_periods', 'id,person_id,crew_name,vessel_id,starts_on,ends_on,sailor_status', 'starts_on', range.end),
-    readRows(client, 'planning_assignments', 'id,crew_person_id,vessel_id,starts_on,ends_on,status_label,confirmation_status', 'starts_on', range.end),
-    readRows(client, 'planning_days', 'id,person_id,crew_name,vessel_id,work_date,sailor_status,day_status,source_label,slot365', 'work_date', range.end),
+    readRows(client, 'planning_periods', 'id,person_id,crew_name,vessel_id,starts_on,ends_on,sailor_status,function_label', 'starts_on', range.end),
+    readRows(client, 'planning_assignments', 'id,crew_person_id,vessel_id,starts_on,ends_on,status_label,confirmation_status,assignment_role', 'starts_on', range.end),
+    readRows(client, 'planning_days', 'id,person_id,crew_name,vessel_id,work_date,sailor_status,day_status,source_label,slot365,function_label', 'work_date', range.end),
     readRows(client, 'planning_absences', 'id,person_id,absence_type,starts_at,ends_at,status', 'starts_at', `${addPlanningDays(range.end, 1)}T00:00:00Z`),
   ]);
   const people: SilaePerson[] = peopleRows.map((row) => ({
@@ -49,10 +49,10 @@ export async function fetchPlanningSilaeData(client: SupabaseClient, month: stri
   const validAssignments = assignments.filter((row) => row.confirmation_status !== 'cancelled');
   const assignmentById = new Map(validAssignments.map((row) => [Number(row.id), row]));
   const sources: SilaeSource[] = periods.map((row) => ({
-    personId: sourcePerson(row), vesselId: id(row.vessel_id), startsOn: text(row.starts_on), endsOn: text(row.ends_on), status: text(row.sailor_status), priority: 1,
+    personId: sourcePerson(row), vesselId: id(row.vessel_id), startsOn: text(row.starts_on), endsOn: text(row.ends_on), status: text(row.sailor_status), functionLabel: text(row.function_label), priority: 1,
   }));
   sources.push(...validAssignments.map((row) => ({
-    personId: id(row.crew_person_id), vesselId: id(row.vessel_id), startsOn: text(row.starts_on), endsOn: text(row.ends_on), status: text(row.status_label), priority: 2,
+    personId: id(row.crew_person_id), vesselId: id(row.vessel_id), startsOn: text(row.starts_on), endsOn: text(row.ends_on), status: text(row.status_label), functionLabel: text(row.assignment_role), priority: 2,
   })));
   days.forEach((row) => {
     if (row.source_label === PLANNING_VESSEL_LOCATION_SOURCE) return;
@@ -60,7 +60,7 @@ export async function fetchPlanningSilaeData(client: SupabaseClient, month: stri
     const assignment = assignmentById.get(Number(text(row.slot365).replace('assignment:', '')));
     if (row.source_label === PLANNING_ASSIGNMENT_NOTE_SOURCE
       && (!assignment || date < text(assignment.starts_on) || date > text(assignment.ends_on))) return;
-    sources.push({ personId: sourcePerson(row), vesselId: id(row.vessel_id), startsOn: date, endsOn: date, status: text(row.sailor_status) || text(row.day_status), priority: 3 });
+    sources.push({ personId: sourcePerson(row), vesselId: id(row.vessel_id), startsOn: date, endsOn: date, status: text(row.sailor_status) || text(row.day_status), functionLabel: text(row.function_label), priority: 3 });
   });
   absences.filter((row) => row.status === 'approved').forEach((row) => {
     sources.push({
