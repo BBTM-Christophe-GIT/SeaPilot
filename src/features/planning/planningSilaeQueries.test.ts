@@ -61,4 +61,22 @@ describe('SILAE authenticated data reads', () => {
     const { client } = mockClient({}, 'people');
     await expect(fetchPlanningSilaeData(client, '2026-09')).rejects.toThrow('Impossible de charger les données SILAE (people)');
   });
+
+  it('reads the dated function from assignments, periods and days without confusing it with RH or grade', async () => {
+    const { client, calls } = mockClient({
+      people: [{ id: 1, function_label: '2nd Capitaine', grade_label: 'Capitaine', enim_function_code: 'CA01A', enim_category: 12 }],
+      planning_assignments: [
+        { id: 1, crew_person_id: 1, starts_on: '2026-09-22', ends_on: '2026-10-06', assignment_role: 'Capitaine' },
+        { id: 2, crew_person_id: 1, starts_on: '2026-09-01', ends_on: '2026-09-30', assignment_role: 'Chef Mécanicien', confirmation_status: 'cancelled' },
+      ],
+      planning_periods: [{ id: 1, person_id: 1, starts_on: '2026-09-01', ends_on: '2026-09-08', function_label: '2nd Capitaine' }],
+      planning_days: [{ id: 1, person_id: 1, work_date: '2026-09-23', function_label: 'Capitaine' }],
+    });
+    const result = await fetchPlanningSilaeData(client, '2026-09');
+    expect(result.sources.map((s) => [s.priority, s.functionLabel])).toEqual([[1, '2nd Capitaine'], [2, 'Capitaine'], [3, 'Capitaine']]);
+    expect(result.people[0]).toMatchObject({ functionLabel: '2nd Capitaine', enimFunctionCode: 'CA01A', enimCategory: '12' });
+    expect(calls.find((c) => c.table === 'planning_assignments')?.columns).toContain('assignment_role');
+    expect(calls.find((c) => c.table === 'planning_periods')?.columns).toContain('function_label');
+    expect(calls.find((c) => c.table === 'planning_days')?.columns).toContain('function_label');
+  });
 });

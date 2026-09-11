@@ -14,6 +14,6 @@ export function buildPlanningSilaePreviewData(overview: PlanningOverview): Silae
     vessels: overview.vessels.map((vessel) => ({ ...vessel, registrationNumber: vessel.registrationNumber || '' })),
     sources: getAllPlanningCrewEvents(overview)
       .filter((event) => event.kind !== 'annualReview' && event.confirmationStatus !== 'cancelled')
-      .map((event) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1 })),
+      .map((event) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, functionLabel: event.functionLabel, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1 })),
   };
 }
