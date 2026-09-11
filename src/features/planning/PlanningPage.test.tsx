@@ -833,6 +833,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(menu).getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Demandes en attente' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('button', { name: 'Exports' })).toBeInTheDocument();
+    expect(within(menu).getByRole('group', { name: 'Documents' })).toContainElement(within(menu).getByRole('button', { name: 'Export SILAE' }));
     expect(within(menu).getByRole('button', { name: "Attestation d'armement" })).toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Exporter un marin' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
@@ -1086,6 +1087,7 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['marin']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.queryByRole('button', { name: 'Export SILAE' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
@@ -1147,6 +1149,7 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Absences et conflits' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exports' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export SILAE' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diffuser le Planning' })).not.toBeInTheDocument();
     const projectButton = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
