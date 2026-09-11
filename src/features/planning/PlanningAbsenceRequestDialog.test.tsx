@@ -113,7 +113,11 @@ describe('dedicated leave request dialog', () => {
     const input = props();
     vi.mocked(savePlanningAbsence).mockRejectedValue(new Error('Connexion interrompue'));
     render(<PlanningAbsenceRequestDialog {...input} />);
+    // AppDialog focuses its close button on the next animation frame. Wait
+    // for that mount effect before typing so it cannot steal the test's focus.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fermer' })).toHaveFocus());
     await user.type(screen.getByLabelText('Motif'), 'Congés familiaux');
+    expect(screen.getByLabelText('Motif')).toHaveValue('Congés familiaux');
     await user.click(screen.getByRole('button', { name: 'Envoyer la demande' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Connexion interrompue');
     expect(screen.getByLabelText('Motif')).toHaveValue('Congés familiaux');
