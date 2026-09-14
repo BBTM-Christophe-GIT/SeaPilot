@@ -13,6 +13,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Copy,
   Expand,
   ExternalLink,
@@ -791,6 +793,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
     [fleetLanes],
   );
+  const fleetNodeKeys = useMemo(() => fleetRows.filter((row) => row.type !== 'person').map((row) => row.key), [fleetRows]);
+  const isFleetFullyExpanded = fleetNodeKeys.length > 0 && fleetNodeKeys.every((key) => !collapsedFleetNodes.has(key));
   const fleetTreeCounts = useMemo(() => {
     const peopleByNode = new Map<string, Set<string>>();
     fleetRows.forEach((row) => {
@@ -2343,6 +2347,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
   }
 
+  function toggleFleetTree() {
+    setCollapsedFleetNodes((current) => {
+      const shouldCollapse = fleetNodeKeys.every((key) => !current.has(key));
+      const next = new Set(current);
+      fleetNodeKeys.forEach((key) => {
+        if (shouldCollapse) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  }
+
   function openLaneAssignment(targetLane: PlanningCrewLane, date: string) {
     const person = overview.people.find((item) => item.id === targetLane.personId);
     const currentVessel = activeVessels.find((item) => item.id === targetLane.events[0]?.vesselId || item.name === targetLane.events[0]?.vessel);
@@ -2478,6 +2494,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
                 <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button>
               </div>
+              {perspective === 'fleet' ? (
+                <button aria-expanded={isFleetFullyExpanded} className="planning-filter-toggle" disabled={!fleetNodeKeys.length} onClick={toggleFleetTree} title="Déplier ou replier tous les navires et toutes les bordées affichés" type="button">
+                  {isFleetFullyExpanded ? <ChevronsDownUp aria-hidden="true" size={17} /> : <ChevronsUpDown aria-hidden="true" size={17} />}
+                  {isFleetFullyExpanded ? 'Tout replier' : 'Tout déplier'}
+                </button>
+              ) : null}
               {canEditPlanning && perspective === 'crew' ? (
                 <button className="planning-primary-action" onClick={() => openAssignment()} type="button">
                   <Plus aria-hidden="true" size={17} />Créer une affectation
