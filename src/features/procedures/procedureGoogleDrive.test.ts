@@ -16,14 +16,14 @@ describe('Google Drive source links', () => {
 
   it.each(['https://evil.test/file/d/1234567890/view', `https://drive.google.com.evil.test/file/d/${id}/view`,
     `http://drive.google.com/file/d/${id}/view`, `https://user@drive.google.com/file/d/${id}/view`,
-    `https://drive.google.com:444/file/d/${id}/view`, `https://drive.google.com/drive/folders/${id}`])
-  ('rejects an invalid file URL: %s', (value) => {
+    `https://drive.google.com:444/file/d/${id}/view`, `https://drive.google.com/drive/folders/${id}`])(
+    'rejects an invalid file URL: %s', (value) => {
     expect(() => parseProcedureDriveLink(value, 'file.docx')).toThrow();
   });
 
   it.each(['../file.docx', 'URG/../../file.docx', 'C:\\file.docx', '\\\\server\\file.docx', '/file.docx',
-    'file.docx:evil.exe', 'URG//file.docx', 'URG./file.docx', 'NUL.docx', 'file.exe', 'file.docm', 'x\n.docx'])
-  ('rejects an unsafe native path: %s', (path) => {
+    'file.docx:evil.exe', 'URG//file.docx', 'URG./file.docx', 'NUL.docx', 'file.exe', 'file.docm', 'x\n.docx'])(
+    'rejects an unsafe native path: %s', (path) => {
     expect(() => validateDriveRelativePath(path)).toThrow();
   });
 

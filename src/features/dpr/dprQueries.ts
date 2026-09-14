@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CrewFunction,
@@ -184,7 +185,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
   const projects = entryContext.project && !catalogProjects.some((project) => project.id === entryContext.project?.id)
     ? [...catalogProjects, entryContext.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
     : catalogProjects;
-  const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) }));
+  const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) })).sort(compareFleetAssets);
   const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
   const incidents = new Map<number, number>();
   (incidentResult.data || []).forEach((row) => {

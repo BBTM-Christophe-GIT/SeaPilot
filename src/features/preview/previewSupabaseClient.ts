@@ -1,3 +1,4 @@
+import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const PREVIEW_WRITE_ERROR = {
@@ -813,7 +814,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       updated_at: '2026-07-15T11:00:00Z',
     },
   ],
-  vessels: [
+  vessels: [...ACTION_PLAN_PREVIEW_VESSELS,
     {
       id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', asset_kind: 'vessel', active: true,
       type_label: 'Navire de charge', unit_type_label: 'Navire', fleet_exit_on: null,
@@ -1239,11 +1240,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { type_key: 'environmental_event', label: 'Événement environnemental', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 330, active: true },
     { type_key: 'discrimination_human_rights', label: 'Discrimination et atteintes aux droits humains', family: 'event', hse_classification: null, tracks_exposure_rate: false, requires_deviation_type: false, sort_order: 340, active: true },
   ],
-  action_items: [
+  action_items: [...ACTION_PLAN_FLEET_PREVIEW,
     {
       id: 9861, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
-      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
-      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'audit',
+      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 1,
+      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'GOURY', category_key: 'audit',
       action_type_key: 'audit_internal', action_type: 'Audit Interne - BBTM', audit_type: 'Audit interne',
       title: 'Contrôler la protection du poste de manœuvre', status: 'Non soldé', priority_label: 'Haute',
       deviation_type: 'Non Conformité Majeure', opened_on: '2026-07-28', due_on: '2026-08-14', closed_on: null,
@@ -1261,7 +1262,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
     {
       id: 9862, company_id: 1, project_id: null, project_sharepoint_item_id: null, project_code: null,
-      project_title: null, vessel_id: 9201, vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration',
+      project_title: null, vessel_id: 3, vessel_sharepoint_item_id: '8', vessel_name: 'Yard - LE HAVRE',
       category_key: 'event', action_type_key: 'first_aid_case', action_type: 'Accident sans arrêt de travail (FAC)',
       audit_type: 'Indicateur QHSE', title: 'Coupure superficielle pendant une manutention', status: 'Soldé',
       priority_label: 'Normale', deviation_type: 'Remarque', opened_on: '2026-07-19', due_on: '2026-07-19',
@@ -1278,8 +1279,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
     {
       id: 9863, company_id: 1, project_id: 9001, project_sharepoint_item_id: 'preview-project-1',
-      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 9201,
-      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'M/V Démonstration', category_key: 'action',
+      project_code: 'P901', project_title: 'Campagne Atlantique — démonstration', vessel_id: 1,
+      vessel_sharepoint_item_id: 'preview-vessel-1', vessel_name: 'GOURY', category_key: 'action',
       action_type_key: 'action_progress', action_type: 'Action de Progrès - BBTM', audit_type: 'Ronde QHSE',
       title: 'Mettre à jour le balisage de la zone grue', status: "En attente d'approbation", priority_label: 'Normale',
       deviation_type: null, opened_on: '2026-08-02', occurred_at: '2026-08-02T14:10:00+02:00', due_on: '2026-08-21', closed_on: null,

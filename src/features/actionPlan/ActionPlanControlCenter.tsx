@@ -2,13 +2,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3,
   FileDown, FileImage, FileSignature, FileText, Filter, History, Info, LockKeyhole, MoreVertical, Paperclip, Pencil, Plus,
-  RefreshCw, Search, ShieldCheck, Ship, Upload, UserRound, UsersRound, X,
+  RefreshCw, Search, ShieldCheck, Upload, UserRound, UsersRound, X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { ACTION_CATEGORIES, actionCategory, buildActionAssetGroups } from './actionPlanNavigation';
+import { ActionCategoryIcon, ActionPlanFleetNavigator } from './ActionPlanFleetNavigator';
 import {
   addActionTreatmentFollowup, fetchActionEvidenceUrls, isActionClosed, reviewActionClosure, saveActionTypeAsAdmin, updateActionItemAsAdmin,
   type ActionFindingPhotoChanges, type ActionItemAdminUpdateInput, type ActionItemRecord,
-  type ActionPlanData, type ActionPlanMetrics, type ActionTreatmentEventRecord,
+  type ActionPlanData, type ActionTreatmentEventRecord,
   type ActionTypeAdminInput, type ActionTypeCatalogRecord,
 } from './actionPlanQueries';
 
@@ -16,6 +18,7 @@ export interface ActionPlanFilters {
   search: string;
   status: string;
   vessel: string;
+  category: string;
   actionType: string;
   deviationType: string;
 }
@@ -24,9 +27,8 @@ interface ControlCenterProps {
   client: SupabaseClient;
   data: ActionPlanData;
   actions: ActionItemRecord[];
-  metrics: ActionPlanMetrics;
   filters: ActionPlanFilters;
-  filterOptions: { vessels: string[]; actionTypes: string[]; deviationTypes: string[] };
+  filterOptions: { actionTypes: string[]; deviationTypes: string[] };
   canManage: boolean;
   canEdit: boolean;
   canCreate: boolean;
@@ -34,6 +36,8 @@ interface ControlCenterProps {
   requestedActionId?: number | null;
   pdfActionId: number | null;
   onFilterChange(key: keyof ActionPlanFilters, value: string): void;
+  onScopeChange(asset: string, category: string): void;
+  onShowAll(): void;
   onCreate(): void;
   onReload(): void;
   onApprove(action: ActionItemRecord): void;
@@ -96,46 +100,41 @@ function toLocalDateTime(value: string): string {
   return local.toISOString().slice(0, 16);
 }
 
-function Metric({ icon, label, value, detail, tone }: {
-  icon: ReactNode; label: string; value: string | number; detail: string; tone: string;
-}) {
-  return <div className={`action-control-metric ${tone}`} aria-label={label}>
-    <span>{icon}</span><div><small>{label}</small><strong>{value}</strong><em>{detail}</em></div>
-  </div>;
-}
-
 function ActionQueueRow({ action, selected, onSelect }: {
   action: ActionItemRecord; selected: boolean; onSelect(): void;
 }) {
   const tone = actionTone(action);
   return <button
+    aria-label={`${action.title} · ${action.vesselName || 'Sans navire / lieu'} · ${action.actionType || action.auditType || 'Autre action'} · ${formatDate(action.dueOn)} · ${actionStatus(action)}`}
     aria-pressed={selected}
     className={`action-control-queue-row is-${tone}${selected ? ' is-selected' : ''}`}
     onClick={onSelect}
     type="button"
   >
-    <span className="action-control-row-icon">{tone === 'overdue' ? <AlertTriangle size={18} /> : tone === 'closed' ? <CheckCircle2 size={18} /> : <Clock3 size={18} />}</span>
-    <span className="action-control-row-copy"><strong>{action.vesselName || 'Sans navire'}</strong><small>{action.actionType || action.auditType || 'Autre action'}</small><time dateTime={action.dueOn || undefined}>{formatDate(action.dueOn)}</time></span>
+    <span className="action-control-row-copy"><strong title={action.title}>{action.title}</strong><small>{action.actionType || action.auditType || 'Autre action'}</small><time dateTime={action.dueOn || undefined}>{formatDate(action.dueOn)}</time></span>
     <em>{actionStatus(action)}</em><ChevronRight size={17} />
   </button>;
 }
 
-function ActionQueue({ actions, selectedId, onSelect }: {
-  actions: ActionItemRecord[]; selectedId: number | null; onSelect(id: number): void;
+function ActionQueue({ actions, selectedId, onSelect, data, showAssets }: {
+  actions: ActionItemRecord[]; selectedId: number | null; onSelect(id: number): void; data: ActionPlanData; showAssets: boolean;
 }) {
-  const groups = useMemo(() => [
-    { key: 'pending', label: 'À approuver', actions: actions.filter((action) => actionTone(action) === 'pending') },
-    { key: 'overdue', label: 'En retard', actions: actions.filter((action) => actionTone(action) === 'overdue') },
-    { key: 'open', label: 'À suivre', actions: actions.filter((action) => actionTone(action) === 'open') },
-    { key: 'closed', label: 'Soldé', actions: actions.filter((action) => actionTone(action) === 'closed') },
-  ].filter((group) => group.actions.length), [actions]);
+  const assets = useMemo(() => buildActionAssetGroups(actions, data.vessels), [actions, data.vessels]);
 
   if (!actions.length) return <div className="action-control-empty">Aucun rapport ne correspond aux filtres.</div>;
   return <div className="action-control-queue-groups">
-    {groups.map((group) => <details key={group.key} open>
-      <summary><span>{group.label}</span><small>{group.actions.length}</small><ChevronDown size={16} /></summary>
-      <div>{group.actions.map((action) => <ActionQueueRow action={action} key={action.id} onSelect={() => onSelect(action.id)} selected={selectedId === action.id} />)}</div>
-    </details>)}
+    {assets.map((asset) => <section className="action-queue-asset" key={asset.key}>
+      {showAssets && <h3>{asset.name}<span>{asset.actions.length}</span></h3>}
+      {ACTION_CATEGORIES.map((category) => {
+        const ranks = { pending: 0, overdue: 1, open: 2, closed: 3 };
+        const items = asset.actions.filter((action) => actionCategory(action, data.actionTypes) === category.key)
+          .sort((a, b) => ranks[actionTone(a)] - ranks[actionTone(b)] || (a.dueOn || '9999').localeCompare(b.dueOn || '9999') || a.id - b.id);
+        return items.length ? <details className={`action-queue-category is-${category.key}`} key={category.key} open>
+          <summary><ActionCategoryIcon category={category.key} size={22} /><span>{category.label}</span><small>{items.length}</small><ChevronDown size={14} /></summary>
+          <div>{items.map((action) => <ActionQueueRow action={action} key={action.id} onSelect={() => onSelect(action.id)} selected={selectedId === action.id} />)}</div>
+        </details> : null;
+      })}
+    </section>)}
   </div>;
 }
 
@@ -218,12 +217,13 @@ function TreatmentFollowup({ action, canComment, canDirectlyClose, canReviewClos
       {isActionClosed(action) && <span><CheckCircle2 size={15} />Action clôturée</span>}
       {!isActionClosed(action) && closurePending && <span className="is-pending"><Clock3 size={15} />Clôture à valider</span>}
     </header>
+    <WorkflowHistory action={action} />
     {canComment && !isActionClosed(action) && <form onSubmit={submit}>
       <textarea
         aria-label="Commentaire de suivi"
         maxLength={5000}
         onChange={(event) => setNote(event.target.value)}
-        placeholder="Ajouter une note de suivi…"
+        placeholder="Ajouter un suivi…"
         rows={2}
         value={note}
       />
@@ -245,7 +245,7 @@ function TreatmentFollowup({ action, canComment, canDirectlyClose, canReviewClos
         </label> : null}
         <button disabled={saving || (!note.trim() && !attachment && !closeAction)} type="submit">
           {closeAction ? <CheckCircle2 size={17} /> : <Plus size={17} />}
-          {saving ? 'Enregistrement…' : closeAction ? (canDirectlyClose ? 'Clôturer' : 'Demander la clôture') : 'Ajouter'}
+          {saving ? 'Enregistrement…' : closeAction ? (canDirectlyClose ? 'Clôturer' : 'Demander la clôture') : 'Enregistrer le suivi'}
         </button>
       </div>
       <p className="action-control-signature-note"><FileSignature size={14} />Votre identité, la date et votre signature RH active seront archivées avec cet ajout.</p>
@@ -305,11 +305,11 @@ function ActionDetail({ client, action, data, canEdit, canManage, pdfActionId, o
           <button className="is-secondary" disabled={pdfActionId === action.id} onClick={onExport} type="button"><FileDown size={16} />{pdfActionId === action.id ? 'Génération…' : 'Télécharger le PDF'}</button>
         </div>
       </div>
-      <time>Créé le {formatDate(action.openedOn || action.occurredAt)}</time>
+      <p className="action-detail-breadcrumb">{action.vesselName || 'Sans navire / lieu'}<ChevronRight size={13} />{ACTION_CATEGORIES.find((category) => category.key === actionCategory(action, data.actionTypes))?.label}</p>
       <div className="action-control-detail-title">
-        {action.thumbnailUrl ? <img alt="Photo du constat" src={action.thumbnailUrl} /> : <span aria-hidden="true"><Ship size={24} /></span>}
-        <div><strong>{action.vesselName || 'Sans navire'}</strong><h2>{action.title}</h2><p>{action.actionType || action.auditType}</p></div>
-        <dl><dt>Échéance</dt><dd className={tone === 'overdue' ? 'is-overdue' : ''}>{formatDate(action.dueOn)}</dd><dt>Statut actuel</dt><dd><span className={`action-control-status is-${tone}`}>{actionStatus(action)}</span></dd></dl>
+        {action.thumbnailUrl ? <img alt="Photo du constat" src={action.thumbnailUrl} /> : null}
+        <div><h2>{action.title}</h2><p>{action.actionType || action.auditType}</p></div>
+
       </div>
     </header>
 
@@ -317,20 +317,19 @@ function ActionDetail({ client, action, data, canEdit, canManage, pdfActionId, o
       <div className="action-control-facts">
         <section>
           <header><h3><Info size={17} />Informations factuelles</h3>{canEdit && <button className="is-secondary" onClick={onEdit} type="button"><Pencil size={15} />Modifier la fiche</button>}</header>
-          <dl>
-            <dt>Date et heure</dt><dd>{formatDate(action.occurredAt || action.openedOn, true)}</dd>
-            <dt>Lieu</dt><dd>{display(action.locationDetail, action.vesselName)}</dd>
-            <dt>Manœuvre</dt><dd>{display(action.vesselManeuver)}</dd>
-            <dt>Météo</dt><dd>{display(action.weatherConditions)}</dd>
-            <dt>Type d’évènement</dt><dd>{display(action.actionType)}</dd>
-            {action.deviationType && <><dt>Type d’écart</dt><dd>{action.deviationType}</dd></>}
-            <dt>Constat</dt><dd>{display(action.description, action.title)}</dd>
+          <dl className="action-detail-fact-grid">
+            <div><dt>Date et heure</dt><dd>{formatDate(action.occurredAt || action.openedOn, true)}</dd></div>
+            <div><dt>Lieu</dt><dd>{display(action.locationDetail, action.vesselName)}</dd></div>
+            <div><dt>Échéance</dt><dd>{formatDate(action.dueOn)}</dd></div>
+            {action.deviationType && <div><dt>Type d’écart</dt><dd>{action.deviationType}</dd></div>}
           </dl>
+          <details className="action-detail-context"><summary>Contexte du constat<ChevronDown size={14} /></summary><dl><dt>Manœuvre</dt><dd>{display(action.vesselManeuver)}</dd><dt>Météo</dt><dd>{display(action.weatherConditions)}</dd><dt>Type d’évènement</dt><dd>{display(action.actionType)}</dd></dl></details>
         </section>
+        <section><h3><FileText size={18} />Constat</h3><p>{display(action.description, action.title)}</p></section>
         <section>
           <h3><ShieldCheck size={17} />Action corrective proposée</h3>
           <p>{display(action.correctiveAction, 'Aucune action proposée.')}</p>
-          <dl><dt>Responsable</dt><dd>{display(action.ownerName, action.workflowStatus === 'pending_approval' ? 'À définir après approbation' : 'Non renseigné')}</dd><dt>Échéance</dt><dd>{formatDate(action.dueOn)}</dd><dt>Priorité</dt><dd>{display(action.priorityLabel, 'Normale')}</dd></dl>
+          <p className="action-detail-priority">Priorité : {display(action.priorityLabel, 'Normale')}</p>
         </section>
         <section>
           <h3><UsersRound size={17} />Personnes responsables</h3>
@@ -340,14 +339,13 @@ function ActionDetail({ client, action, data, canEdit, canManage, pdfActionId, o
             <li><ShieldCheck size={17} /><span><small>Approbateur</small><strong>Christophe MINASSIAN</strong></span></li>
           </ul>
         </section>
+        <TreatmentFollowup action={action} canComment={canComment} canDirectlyClose={canManage} canReviewClosure={canManage && action.closureReviewStatus === 'pending'} client={client} events={treatmentEvents} onSaved={onTreatmentFollowupSaved} />
         <section>
           <h3><FileImage size={17} />Preuves et pièces jointes</h3>
           {evidence.length ? <div className="action-control-evidence">{evidence.map((url, index) => <a href={url} key={url} rel="noreferrer" target="_blank"><img alt={`Preuve ${index + 1}`} src={url} /></a>)}</div> : <p className="action-control-no-evidence">Aucune photo jointe.</p>}
           {documents.length > 0 && <div className="action-control-documents">{documents.map((document) => <a aria-label={`Ouvrir le fichier ${document.title}`} href={document.fileUrl} key={document.id} rel="noreferrer" target="_blank"><FileText size={18} /><span><strong>{document.title}</strong><small>Fiche de progrès</small></span><ChevronRight size={16} /></a>)}</div>}
         </section>
-        <TreatmentFollowup action={action} canComment={canComment} canDirectlyClose={canManage} canReviewClosure={canManage && action.closureReviewStatus === 'pending'} client={client} events={treatmentEvents} onSaved={onTreatmentFollowupSaved} />
       </div>
-      <WorkflowHistory action={action} />
     </div>
 
   </article>;
@@ -468,36 +466,38 @@ function ActionEditDialog({ client, action, data, onClose, onSaved }: {
 
 export function ActionPlanControlCenter(props: ControlCenterProps) {
   const [selectedId, setSelectedId] = useState<number | null>(props.requestedActionId || null);
-  const [typesOpen, setTypesOpen] = useState(props.previewMode && props.canManage);
+  const [typesOpen, setTypesOpen] = useState(false);
   const [editAction, setEditAction] = useState<ActionItemRecord | null>(null);
+  const detailPane = useRef<HTMLDivElement>(null);
+  const assets = useMemo(() => buildActionAssetGroups(props.data.actions, props.data.vessels), [props.data.actions, props.data.vessels]);
+  const activeAsset = assets.find((asset) => asset.key === props.filters.vessel);
   const selected = props.actions.find((action) => action.id === selectedId) || props.actions[0] || null;
-  useEffect(() => {
-    if (props.requestedActionId && props.actions.some((action) => action.id === props.requestedActionId)) setSelectedId(props.requestedActionId);
-    else if (!props.actions.length) setSelectedId(null);
-    else if (!props.actions.some((action) => action.id === selectedId)) setSelectedId(props.actions[0].id);
-  }, [props.actions, props.requestedActionId, selectedId]);
-  const openCount = props.actions.filter((action) => !isActionClosed(action)).length;
-  const pendingCount = props.actions.filter((action) => action.workflowStatus === 'pending_approval').length;
+  useEffect(() => { setSelectedId(props.requestedActionId || null); }, [props.requestedActionId]);
+
+  function selectAction(id: number) {
+    setSelectedId(id);
+    if (window.matchMedia?.('(max-width: 1100px)').matches) detailPane.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   return <>
-    <header className="action-control-page-header"><div><h1>Plan d'action</h1><p>Centre de contrôle QHSE — priorisez ce qui compte aujourd’hui.</p></div>{props.canCreate && <button onClick={props.onCreate} type="button"><Plus size={18} />Nouveau rapport</button>}</header>
-    <section className="action-control-metrics">
-      <Metric detail={`${pendingCount} rapport(s)`} icon={<Clock3 size={22} />} label="À approuver" tone="is-orange" value={pendingCount} />
-      <Metric detail="Échéance dépassée" icon={<AlertTriangle size={22} />} label="En retard" tone="is-red" value={props.metrics.overdueActionCount} />
-      <Metric detail="Rapports à suivre" icon={<CheckCircle2 size={22} />} label="Actions ouvertes" tone="is-green" value={openCount} />
-      <Metric detail={`Période ${new Date().getFullYear()}`} icon={<History size={22} />} label="Heures travaillées" tone="is-blue" value={`${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(props.metrics.exposureHours)} h`} />
-    </section>
-    <div className={`action-control-layout${typesOpen ? ' has-types' : ''}`}>
-      <aside className="action-control-queue">
+    <header className="action-control-page-header"><div><h1>Plan d'action</h1><p>Vos éléments, par navire et par catégorie.</p></div>{props.canCreate && <button onClick={props.onCreate} type="button"><Plus size={18} />Nouveau rapport</button>}</header>
+    <div className={`action-control-layout action-fleet-layout${typesOpen ? ' has-types' : ''}`}>
+      <ActionPlanFleetNavigator assets={assets} onSelect={props.onScopeChange} onShowAll={props.onShowAll} selectedAsset={props.filters.vessel} selectedCategory={props.filters.category} types={props.data.actionTypes} />
+      <aside className="action-control-queue" aria-label="Éléments du plan d’action">
         <header className="action-control-queue-header">
-          <div className="action-control-queue-topbar"><span>{props.actions.length} rapport(s)</span>{props.canManage && <button onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button>}</div>
-          <div className="action-control-queue-search"><label><Search size={17} /><span className="sr-only">Rechercher</span><input aria-label="Rechercher une action" placeholder="Rechercher par titre, navire, type…" value={props.filters.search} onChange={(event) => props.onFilterChange('search', event.target.value)} /></label><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></div>
+          <div className="action-control-queue-topbar"><div><h2>{activeAsset?.name || 'Toute la flotte'}</h2><span role="status">{props.actions.length} élément{props.actions.length === 1 ? '' : 's'}</span></div><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></div>
+          <div className="action-control-queue-search"><label><Search size={17} /><input aria-label="Rechercher une action" placeholder="Rechercher un élément…" value={props.filters.search} onChange={(event) => props.onFilterChange('search', event.target.value)} /></label><select aria-label="Statut" value={props.filters.status} onChange={(event) => props.onFilterChange('status', event.target.value)}><option value="">Tous les statuts</option><option value="open">Non soldé</option><option value="overdue">En retard</option><option value="pending">À approuver</option><option value="closed">Soldé</option></select></div>
+          {props.filters.category && <button className="action-category-reset" onClick={() => props.onScopeChange(props.filters.vessel, '')} type="button">Toutes les catégories<X size={13} /></button>}
         </header>
-        <details className="action-control-filters"><summary><Filter size={15} />Filtres actifs<ChevronDown size={15} /></summary><div><label>Navire<select aria-label="Navire / lieu" value={props.filters.vessel} onChange={(event) => props.onFilterChange('vessel', event.target.value)}><option value="">Tous</option>{props.filterOptions.vessels.map((value) => <option key={value}>{value}</option>)}</select></label><label>Type<select aria-label="Type d'évènement" value={props.filters.actionType} onChange={(event) => props.onFilterChange('actionType', event.target.value)}><option value="">Tous</option>{props.filterOptions.actionTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Statut<select aria-label="Statut" value={props.filters.status} onChange={(event) => props.onFilterChange('status', event.target.value)}><option value="">Tous</option><option value="open">Non soldé</option><option value="closed">Soldé</option></select></label><label>Écart<select aria-label="Type d'écart" value={props.filters.deviationType} onChange={(event) => props.onFilterChange('deviationType', event.target.value)}><option value="">Tous</option>{props.filterOptions.deviationTypes.map((value) => <option key={value}>{value}</option>)}</select></label></div></details>
-        <ActionQueue actions={props.actions} onSelect={setSelectedId} selectedId={selected?.id || null} />
+        <details className="action-control-filters"><summary><Filter size={15} />Filtres complémentaires<ChevronDown size={15} /></summary><div><label>Type<select aria-label="Type d'évènement" value={props.filters.actionType} onChange={(event) => props.onFilterChange('actionType', event.target.value)}><option value="">Tous</option>{props.filterOptions.actionTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Écart<select aria-label="Type d'écart" value={props.filters.deviationType} onChange={(event) => props.onFilterChange('deviationType', event.target.value)}><option value="">Tous</option>{props.filterOptions.deviationTypes.map((value) => <option key={value}>{value}</option>)}</select></label></div></details>
+        <ActionQueue actions={props.actions} data={props.data} onSelect={selectAction} selectedId={selected?.id || null} showAssets={!props.filters.vessel} />
+        {props.canManage && <footer className="action-queue-management"><button className="is-secondary" onClick={() => setTypesOpen(true)} type="button"><ShieldCheck size={15} />Gérer les types</button></footer>}
       </aside>
-      {selected ? <ActionDetail action={selected} canApprove={props.canApprove(selected)} canComment={props.canTreat(selected)} canEdit={props.canEdit} canManage={props.canManage} client={props.client} data={props.data} onApprove={() => props.onApprove(selected)} onEdit={() => setEditAction(selected)} onExport={() => props.onExport(selected)} onTreatmentFollowupSaved={(outcome) => props.onTreatmentFollowupSaved(selected, outcome)} onTreat={() => props.onTreat(selected)} pdfActionId={props.pdfActionId} /> : <div className="action-control-detail action-control-empty"><FileImage size={30} />Sélectionnez un rapport pour afficher sa fiche.</div>}
+      <div className="action-fleet-detail-pane" ref={detailPane}>
+        {selected ? <ActionDetail key={selected.id} action={selected} canApprove={props.canApprove(selected)} canComment={props.canTreat(selected)} canEdit={props.canEdit} canManage={props.canManage} client={props.client} data={props.data} onApprove={() => props.onApprove(selected)} onEdit={() => setEditAction(selected)} onExport={() => props.onExport(selected)} onTreatmentFollowupSaved={(outcome) => props.onTreatmentFollowupSaved(selected, outcome)} onTreat={() => props.onTreat(selected)} pdfActionId={props.pdfActionId} /> : <div className="action-control-detail action-control-empty"><FileImage size={30} />Sélectionnez un rapport pour afficher sa fiche.</div>}
+      </div>
       {typesOpen && props.canManage && <TypeCatalogPanel client={props.client} onClose={() => setTypesOpen(false)} onSaved={props.onTypeSaved} types={props.data.actionTypes} />}
     </div>
+    <p className="action-fleet-footnote">Seuls les navires et lieux ayant des éléments sont affichés.</p>
     {editAction && <ActionEditDialog action={editAction} client={props.client} data={props.data} onClose={() => setEditAction(null)} onSaved={(action) => { props.onActionSaved(action); setEditAction(null); setSelectedId(action.id); }} />}
   </>;
 }

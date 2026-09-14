@@ -1,3 +1,4 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
 import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
@@ -934,7 +935,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         ...planningData.vessels.map((vessel) => vessel.name),
         ...planningData.periods.map((period) => period.vesselName),
         ...planningData.assignments.map((assignment) => assignment.vesselName),
-      ]),
+      ]).sort(compareFleetNames),
     [planningData],
   );
   const personOptions = useMemo(

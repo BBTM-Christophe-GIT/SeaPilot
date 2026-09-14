@@ -1,3 +1,63 @@
+# Design QA — Plan d’action vertical, v3.39.13
+
+final result: passed
+
+## Cibles et comparaison
+
+- Source visuelle : `docs/design/action-plan-vertical-reference.png`, proposition 2 choisie par l’utilisateur (1 586 × 992 px).
+- Implémentation finale : `docs/design/action-plan-vertical-desktop.png`, URL locale `/modules/actionPlan?preview=1`, capture navigateur de 1 570 × 982 px pour un viewport CSS 1 585 × 992 ; la capture Chrome exclut les barres de défilement. Pas de changement de densité ni de mise à l’échelle des images.
+- État comparable : préversion Admin, GOURY sélectionné, 9 rapports, catégories Audits/Actions/Visites. Les titres, dates, responsables et statuts sont des données de démonstration distinctes de celles de la maquette.
+- Source et rendu ont été ouverts ensemble dans le même résultat de comparaison, en résolution originale, avant et après corrections. Inspection de la vue entière, puis lecture des zones navigation, catégories et fiche dans ces mêmes captures à leur résolution native.
+- Mobile : `docs/design/action-plan-vertical-mobile-navigation.png` et `docs/design/action-plan-vertical-mobile.png`, viewport CSS 390 × 844, capture de fiche 375 × 812 px. Tablette également inspectée à 1 024 × 900.
+
+## Constats corrigés
+
+1. [P1] Illustration déplacée au survol : le filtre de luminosité hérité du bouton créait un nouveau contenant pour l’image positionnée. Désactivation de ce filtre sur les boutons de navire. Recontrôle : illustration alignée à gauche et catégories dégagées, y compris lors de la sélection.
+2. [P2] Rotation involontaire de l’icône de catégorie : le style des accordéons retournait aussi la flèche Actions. Rotation limitée au chevron final ; les quatre pictogrammes conservent leur orientation.
+3. [P2] Liste trop haute : réduction des espacements, titres et sous-titres sur deux lignes, échéance conservée dans le libellé accessible et la fiche. Les groupes deviennent plus proches de la densité de la maquette.
+4. [P2] Fiche trop chargée : faits répartis sur deux colonnes, météo/manœuvre regroupées dans un contexte dépliable, suppression des répétitions responsable/échéance ; historique replacé dans le suivi. Les fonctions existantes restent disponibles.
+5. [P2] Petites cibles mobiles : hauteur minimale des boutons de catégorie portée à 32 px, espacement et retour à la ligne préservés. Recontrôle mobile : sélection catégorie puis rapport, fiche amenée à 75 px du haut, sans débordement horizontal.
+
+L’itération finale reprend les captures citées ci-dessus après ces corrections. Aucun P0/P1/P2 restant dans le périmètre de cette intégration.
+
+## Surfaces de fidélité
+
+| Surface | Vérification |
+| --- | --- |
+| Police | Inter et pile système du produit conservées. Titre 30 px, titre fiche 26 px, catégories colorées, corps plus léger, titre complet accessible lorsque la ligne est tronquée. |
+| Espacements | Trois panneaux blancs, rayons de 8 px, gouttières de 10 px, navigation verticale avec images à gauche et catégories sous le nom. Panneaux défilants pour les volumes réels. |
+| Couleurs | Bleu marine, sélection bleu pâle avec bordure gauche bleue ; violet audit, bleu action, turquoise visite, orange événement ; rouge retard et vert soldé. |
+| Images | Illustrations BBTM existantes pour les quatre navires et le Yard, chargement des six images confirmé. Bureaux illustrés par une image générée dédiée ; proportions conservées, pas d’étirement ni de substitut en CSS. |
+| Texte | « Yard - LE HAVRE » remplace explicitement « QUAI ». Noms réels des implantations conservés. Aucun chiffre fictif injecté dans la production. |
+
+## Écarts intentionnels
+
+- Le menu et l’en-tête globaux existants restent ceux de SeaPilot ; leur largeur et leurs groupes ouverts diffèrent de la maquette. Le changement porte sur le module Plan d’action.
+- La maquette simplifie le workflow. La fiche réelle conserve les commandes de traitement, les intervenants, les signatures et les pièces jointes ; son suivi complet est accessible par défilement.
+- La représentation du Yard utilise l’illustration BBTM du Yard du Havre conformément à la précision utilisateur, plutôt que la borne de quai générique de la maquette. Chaque bureau reste nommé afin de distinguer les implantations.
+- Aucun ajustement arbitraire des catégories ni des données réelles pour reproduire les nombres d’exemple.
+
+## Vérification fonctionnelle et technique
+
+- Navire, catégorie, recherche/statut, zéro résultat, réinitialisation « Tout afficher », Yard et bureaux vérifiés dans le navigateur.
+- Les six illustrations chargent correctement. Aucun débordement horizontal à 390, 1 024 et 1 585 px.
+- Création, correction, approbation, suivi et clôture contrôlés par tests de composants ; aucune écriture de test dans les rapports de production.
+- Profils Marin/Capitaine vérifiés avec leurs fixtures et le code des permissions, pas par simulation du profil Administrateur.
+- Console examinée : aucun diagnostic React ou ressource d’image manquante. Chrome a produit des messages de canal d’extension fermé, distingués des erreurs applicatives.
+- 97 tests ciblés passent ; validation complète GitHub et build suivis dans la pull request.
+
+## Checklist de livraison
+
+- [x] Source et rendu ouverts ensemble, puis nouvelle comparaison après corrections.
+- [x] Ordre de flotte, catégories, compteurs et cas sans données.
+- [x] Dispositions ordinateur, tablette et téléphone.
+- [x] Conservation des fonctions et des autorisations existantes.
+- [x] Preuves visuelles et documentation de déploiement enregistrées.
+
+Le précédent rapport reste disponible dans `docs/design/client-postal-location-qa.md`.
+
+---
+
 # Design QA — Création client assistée v3.23.2 (2026-08-30)
 
 ## Cibles et état comparés
