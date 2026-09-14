@@ -339,7 +339,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   description: '',
 };
 
-const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt de travail', 'Formation'];
+const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -1205,7 +1205,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   async function colorPlanningGridCell(cell: PlanningGridCell) {
     if (!canEditPlanning || isSaving || cell.isConflict) return;
-    const coloredCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
+    const coloredCell = cell;
     setSelectedGridCells(new Map([[coloredCell.key, coloredCell]]));
     const saved = await persistPlanningGridCells([coloredCell], '1 case enregistrée.');
     if (!saved) setSelectedGridCells(new Map());
@@ -2660,6 +2660,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <PlanningCrewTimelineRow
                   balances={lane.personId === null ? undefined : crewBalances.get(lane.personId)}
                   balanceLoading={!previewMode && !balancesLoaded}
+                  onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                   onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}
                   onEditDayState={openDayState}
                   onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
