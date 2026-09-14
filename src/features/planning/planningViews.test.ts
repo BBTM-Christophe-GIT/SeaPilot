@@ -49,7 +49,7 @@ describe('planning P0.2 views', () => {
     const people = buildPlanningCrewLanes(overview, range, emptyFilters, 'people');
     const teams = buildPlanningCrewLanes(overview, range, emptyFilters, 'teams');
     expect(people).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, watchGroup: 'Bordée 1' })]);
-    expect(teams).toEqual([expect.objectContaining({ label: 'Bordée 1' })]);
+    expect(teams).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, detail: 'Bordée 1 · COTENTIN' })]);
     expect(getAllPlanningCrewEvents(overview).some((event) => event.id === 'day-400')).toBe(false);
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
   });

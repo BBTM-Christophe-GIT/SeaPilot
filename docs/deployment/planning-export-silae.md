@@ -27,7 +27,7 @@ Chaque groupe contient : ID_Ligne vide ; DtDeb/DtFin réelles et inclusives ; Jr
 - Février de 28 jours avec travail : ajouter une seule fois deux jours à JrsMer sur la dernière période travaillée, sans modifier les dates ni JrsEmbarque.
 - Navire pendant le repos : conserver le navire explicitement indiqué ; sinon le dernier navire connu, ou le premier du mois si aucun navire précédent n’est connu. Règle confirmée par l’utilisateur.
 
-Les règles complémentaires de février seront précisées ultérieurement par l’utilisateur. Février de 29 jours, février sans travail, mois de 31 jours sans repos, maladie/accident/autre statut non défini, contradiction à priorité égale et données RH/navire manquantes empêchent l’export du marin concerné. L’utilisateur peut corriger le planning/la fiche ou décocher ce marin ; aucun calcul de remplacement n’est inventé.
+Les règles complémentaires de février seront précisées ultérieurement par l’utilisateur. Février de 29 jours, février sans travail, mois de 31 jours sans repos, maladie/accident/autre statut non défini, contradiction non résolue entre navires/états et données RH/navire manquantes empêchent l’export du marin concerné. L’utilisateur peut corriger le planning/la fiche ou décocher ce marin ; aucun calcul de remplacement n’est inventé.
 
 ## Fonctions temporaires
 
@@ -54,3 +54,8 @@ Validation initiale : 101 tests ciblés (SILAE, PlanningPage, permissions), revu
 Validation des corrections : 114 tests ciblés réussis, ESLint et build de production réussis dans un worktree isolé. Parcours navigateur Edge avec Playwright (skill Browser non disponible) : Planning → Documents → Export SILAE, sélection nominative et confirmation, changement de mois invalidant la confirmation, téléchargement d’août/septembre/octobre. Contrôle de la fenêtre sur ordinateur 1440×1000 et mobile 390×844, sans débordement horizontal de la page. Un jeu de vérification local reprend les données réellement lues pour BINET et BROT, sans écriture en base ni simulation d’un profil Marin/Capitaine. Les trois classeurs téléchargés ont été relus indépendamment en XML : 482 en-têtes, 964 cellules texte par fichier, zéros initiaux conservés, JrsMer vide au repos, dates d’emploi et codes/catégories temporaires vérifiés.
 
 Commande de tests : `corepack pnpm test src/features/planning/planningSilae.test.ts src/features/planning/planningSilaeQueries.test.ts src/features/planning/PlanningSilaeExportDialog.test.tsx src/features/planning/PlanningPage.test.tsx src/features/planning/planningPermissions.test.ts --pool=forks --maxWorkers=1`. Gestionnaire : pnpm 10.34.5 exclusivement.
+
+
+## Correction du 14 septembre 2026
+
+Les fonctions différentes dans un mois ne constituent pas une erreur. Les périodes successives gardent leur code ENIM et leur catégorie respectifs. En présence de doublons sur le même navire, la dernière affectation enregistrée détermine la fonction : le 3 août de ROUPSARD est ainsi conservé avec CA01A / catégorie 12. Les notes liées à une affectation remplacée sont écartées. Extra est traité comme du travail (durée calendaire inclusive) ; les pondérations du compteur équipage ne changent pas les durées SILAE. Voir [les compteurs équipage](planning-crew-balances.md).

@@ -1,6 +1,7 @@
 import { getHrEnimClassification, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import { addPlanningDays, inclusivePlanningDayCount, isPlanningDate, todayPlanningDate } from './planningDates';
 import { isSedentaryPlanningFunction, normalizePlanningText } from './planningModel';
+import { latestPlanningSources } from './planningSourcePriority';
 
 export interface SilaePerson {
   id: number;
@@ -25,6 +26,9 @@ export interface SilaeSource {
   vesselId: number | null;
   priority: number;
   functionLabel?: string;
+  updatedAt?: string;
+  sourceId?: number;
+  parentAssignmentId?: number;
 }
 
 export interface SilaeData {
@@ -82,7 +86,7 @@ export function silaeMonthRange(month: string): { start: string; end: string; da
 
 function silaeState(status: string): SilaePeriod['state'] | null {
   const key = normalizePlanningText(status);
-  if (['ENMER', 'ATERRE', 'EMBARQUE', 'EMBARQUEMENT', 'TRAVAILLE'].includes(key)) return 'sea';
+  if (['ENMER', 'ATERRE', 'EXTRA', 'EMBARQUE', 'EMBARQUEMENT', 'TRAVAILLE'].includes(key)) return 'sea';
   if (['REPOS', 'ENREPOS', 'CONGE', 'CONGES', 'CONGEPAYE', 'CONGESPAYES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return 'rest';
   return null;
 }
@@ -116,14 +120,17 @@ export function buildSilaeEmployee(data: SilaeData, person: SilaePerson, month: 
     return ids.size === 1 ? best.vesselId : null;
   }
   for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
-    const candidates = sources.filter((source) => source.startsOn <= date && source.endsOn >= date);
+    const matching = sources.filter((source) => source.startsOn <= date && source.endsOn >= date);
+    const assignments = latestPlanningSources(matching.filter((source) => source.priority === 2));
+    const candidates = latestPlanningSources(matching.filter((source) => !source.parentAssignmentId
+      || assignments.some((assignment) => assignment.sourceId === source.parentAssignmentId)));
     // A dated planning function overrides the RH function only on its dates.
     // Blank / legacy Équipage values and absences carry no function override.
     const functions = candidates.filter((source) => source.functionLabel?.trim() && normalizePlanningText(source.functionLabel) !== 'EQUIPAGE');
     const functionPriority = Math.max(...functions.map((source) => source.priority));
     const labels = new Set(functions.filter((source) => source.priority === functionPriority).map((source) => normalizeHrFunctionLabel(source.functionLabel!)));
     if (labels.size > 1) {
-      issues.add(`Fonctions contradictoires le ${date.split('-').reverse().join('/')}.`);
+      issues.add(`Affectations sur plusieurs navires à résoudre le ${date.split('-').reverse().join('/')}.`);
       continue;
     }
     const plannedFunction = [...labels][0];

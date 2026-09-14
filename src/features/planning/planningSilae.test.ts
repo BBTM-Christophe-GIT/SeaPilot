@@ -154,9 +154,10 @@ describe('SILAE monthly service lines', () => {
     expect(result.periods.find((p) => p.state === 'rest')).toMatchObject({ enimFunctionCode: 'CA01A', enimCategory: '12' });
   });
 
-  it('blocks conflicting or unknown planned functions instead of silently using the RH code', () => {
+  it('accepts successive roles on one ship and still blocks unknown ENIM functions', () => {
     const inputs = data([source('2026-09-01', '2026-09-30', 'En Mer', { functionLabel: 'Capitaine' }), source('2026-09-15', '2026-09-16', 'En Mer', { functionLabel: '2nd Capitaine' })]);
-    expect(buildSilaeEmployee(inputs, person, '2026-09').issues.join()).toContain('Fonctions contradictoires');
+    expect(buildSilaeEmployee(inputs, person, '2026-09').issues).toEqual([]);
+    expect(buildSilaeEmployee(inputs, person, '2026-09').periods.map((period) => period.enimCategory)).toEqual(['15', '12', '15']);
     inputs.sources[1].functionLabel = 'second capitaine';
     inputs.sources[0].functionLabel = '2nd Capitaine';
     expect(buildSilaeEmployee(inputs, person, '2026-09').periods).toHaveLength(1);
@@ -194,3 +195,13 @@ describe('SILAE monthly service lines', () => {
     expect(styles.match(/numFmtId="49"/g)).toHaveLength(2);
   });
 });
+
+ it('exports the latest saved role for ROUPSARD on August 3 without omitting the day', () => {
+   const input = data([
+     source('2026-08-03', '2026-08-10', 'En Mer', { priority: 2, sourceId: 122, updatedAt: '2026-07-31T11:17:16Z', functionLabel: '2nd Capitaine' }),
+     source('2026-08-03', '2026-08-03', 'En Mer', { priority: 2, sourceId: 125, updatedAt: '2026-07-16T14:13:25Z', functionLabel: 'Matelot Polyvalent' }),
+   ]);
+   const result = buildSilaeEmployee(input, person, '2026-08');
+   expect(result.issues).toEqual([]);
+   expect(result.periods.find((period) => period.startsOn === '2026-08-03')).toMatchObject({ endsOn: '2026-08-10', seaDays: 8, enimFunctionCode: 'CA01A', enimCategory: '12' });
+ });

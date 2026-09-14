@@ -319,8 +319,11 @@ function createClient(options: {
         }),
       };
     }
+    if (table === 'planning_crew_balance_checkpoints') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+    }
     if (table === 'planning_days') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) };
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) }) }) };
     }
     if (table === 'planning_periods') {
       return {
@@ -406,10 +409,11 @@ function createClient(options: {
     if (functionName === 'read_planning_periods') {
       return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
     }
+    if (functionName === 'save_planning_crew_balance') return Promise.resolve({ data: null, error: null });
     if (functionName === 'save_planning_assignment_day_states') {
       return Promise.resolve({ data: 1, error: null });
     }
-    if (functionName === 'planning_assignment_overview') {
+    if (functionName === 'planning_assignment_overview_with_revisions') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
     }
     if (functionName === 'planning_release_history') {
@@ -634,6 +638,24 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('tab', { name: 'Navire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
   }, 30_000);
+
+  it('saves an EOD crew balance and displays the next day cumulative value', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' }));
+    const dialog = screen.getByRole('dialog', { name: 'Solde de Paul DURAND' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Fermer' })).toHaveFocus());
+    fireEvent.change(within(dialog).getByLabelText('Date du solde'), { target: { value: '2026-07-13' } });
+    await user.type(within(dialog).getByLabelText('Solde en fin de journée'), '10,00');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le solde' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(rpc).toHaveBeenCalledWith('save_planning_crew_balance', { p_person_id: 11, p_as_of: '2026-07-13', p_balance: 10 });
+    expect(screen.getByLabelText('Paul DURAND, solde au 13/07/2026 : 10,00')).toHaveTextContent('10,00');
+    expect(screen.getByLabelText('Paul DURAND, solde au 14/07/2026 : 11,05')).toHaveTextContent('11,05');
+  });
 
   it('keeps fleet project selection and double-click editing after the compact visual redesign', async () => {
     const user = userEvent.setup();

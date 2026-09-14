@@ -2,7 +2,7 @@ import { addPlanningDays, daysBetween } from './planningDates';
 
 export const PLANNING_GRID_STATUSES = [
   'En Mer',
-  'A Terre',
+  'A Terre', 'Extra', 'Formation',
   'Vacance',
   'Repos',
   'Arrêt Maladie',
