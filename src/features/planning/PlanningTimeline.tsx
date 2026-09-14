@@ -1,3 +1,4 @@
+import { formatPlanningCrewBalance, type PlanningCrewBalanceDays } from './planningCrewBalance';
 import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
@@ -615,6 +616,9 @@ function PlanningCrewTimelineRowContent({
   onRequestAbsence,
   onDeleteEmptyRow,
   isDeletingEmptyRow = false,
+  balances,
+  balanceLoading = false,
+  onInitializeBalance,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
@@ -642,6 +646,9 @@ function PlanningCrewTimelineRowContent({
   onRequestAbsence?: () => void;
   onDeleteEmptyRow?: () => void;
   isDeletingEmptyRow?: boolean;
+  balances?: PlanningCrewBalanceDays;
+  balanceLoading?: boolean;
+  onInitializeBalance?: () => void;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -720,12 +727,13 @@ function PlanningCrewTimelineRowContent({
   };
 
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
           <strong>{lane.label}</strong>
           <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
         </span>
+        {onInitializeBalance ? <button className="planning-balance-open" aria-label={`Saisir le solde de ${lane.label}`} onClick={onInitializeBalance} type="button">Solde</button> : null}
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
       {days.map((day, index) => {
@@ -806,6 +814,14 @@ function PlanningCrewTimelineRowContent({
         const placement = dateGridPlacement(movePreview.startsOn, movePreview.endsOn, days);
         return placement ? <span aria-hidden="true" className="planning-move-preview is-crew" style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }} /> : null;
       })() : null}
+      {balances ? days.map((day, index) => {
+        const balance = balances.get(day.date);
+        const label = balanceLoading ? 'Chargement du solde' : balance?.explanation || 'Solde à initialiser';
+        return <span key={`balance-${day.date}`} className={`planning-crew-balance${balance?.value !== null && (balance?.value || 0) < 0 ? ' is-negative' : ''}`}
+          style={{ gridColumn: index + 2, gridRow: 1 }} title={label} aria-label={`${lane.label}, solde au ${formatPlanningDate(day.date)} : ${balance?.value == null ? label : formatPlanningCrewBalance(balance.value)}`}>
+          {balanceLoading ? '…' : balance?.value == null ? '—' : formatPlanningCrewBalance(balance.value)}
+        </span>;
+      }) : null}
       {lane.events.map((event) => {
         const preview = resizePreview?.id === event.id ? resizePreview : null;
         const startsOn = preview?.startsOn || event.startsOn;
@@ -816,7 +832,7 @@ function PlanningCrewTimelineRowContent({
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
         const eventEditable = editable && event.kind !== 'annualReview';
-        const hasDailyGrid = hierarchy && Boolean(event.assignmentId);
+        const hasDailyGrid = Boolean(event.assignmentId);
         const visibleDailyStates = hasDailyGrid
           ? days.flatMap((day) => {
               if (day.date < event.startsOn || day.date > event.endsOn) return [];

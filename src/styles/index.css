@@ -25393,3 +25393,24 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
   .fcx-corrective-rich-toolbar { align-items: stretch; }
   .fcx-corrective-rich-toolbar > i { display: none; }
 }
+.planning-timeline-row.has-crew-balances { min-height: 74px; contain-intrinsic-size: auto 74px; }
+.has-crew-balances > .planning-crew-bar,
+.has-crew-balances > .planning-assignment-note-cell { align-self: start; margin-top: 8px; }
+.planning-crew-balance { align-self: end; z-index: 4; padding: 3px 1px; margin-bottom: 3px; text-align: center; font-size: 10px; line-height: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: #154d5c; background: #edf6f7; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.planning-crew-balance.is-negative { color: #9d3333; background: #fff0f0; }
+.planning-balance-open { flex: 0 0 auto; padding: 4px 6px; border: 1px solid #cfdee8; border-radius: 5px; background: #fff; color: #165f87; font-size: 11px; cursor: pointer; }
+.planning-balance-form { display: grid; gap: 16px; }
+.planning-balance-form label { display: grid; gap: 6px; }
+.planning-balance-form input { min-width: 0; padding: 10px; border: 1px solid #c4d2df; border-radius: 6px; }
+.planning-balance-form p { margin: 0; line-height: 1.6; color: #526479; }
+.planning-crew-bar.is-extra, .planning-day-status-options .is-extra span,
+.planning-assignment-note-cell.is-extra, .planning-empty-cell-marker.is-extra,
+.planning-crew-bar.has-daily-grid.is-daily-base-extra { background: #087f8c; color: #fff; }
+
+.planning-day-status-options .is-training span { background: #276be8; }
+
+.has-crew-balances .planning-row-label > span { flex: 1; min-width: 0; }
+.has-crew-balances .planning-row-label { gap: 8px; }
+.has-crew-balances > .planning-fleet-assignment-label { align-self: start; margin-top: 12px; }
+
+.planning-balance-form li button { border: 1px solid #cfdee8; border-radius: 6px; background: #f5f9fc; color: #165f87; padding: 6px 10px; cursor: pointer; }

@@ -1,3 +1,6 @@
+import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
+import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
+import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { displayBrandName } from '../../lib/branding';
 import {
@@ -336,7 +339,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   description: '',
 };
 
-const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Repos', 'Vacance', 'Arrêt de travail', 'Formation'];
+const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -550,6 +553,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBoardingCertificateOpen, setIsBoardingCertificateOpen] = useState(false);
   const [isSilaeExportOpen, setIsSilaeExportOpen] = useState(false);
+  const [balancePerson, setBalancePerson] = useState<{ id: number; name: string } | null>(null);
+  const [balanceCheckpoints, setBalanceCheckpoints] = useState<PlanningCrewBalanceCheckpoint[]>([]);
+  const [balanceLoad, setBalanceLoad] = useState<{ client: typeof effectiveClient; revision: number; error: string } | null>(null);
+  const [balanceRevision, setBalanceRevision] = useState(0);
+  const currentBalanceLoad = balanceLoad?.client === effectiveClient && balanceLoad.revision === balanceRevision ? balanceLoad : null;
+  const balancesLoaded = Boolean(readPermissions.canRead && currentBalanceLoad && !currentBalanceLoad.error);
+  const balanceLoadError = currentBalanceLoad?.error || '';
+  useEffect(() => {
+    if (!readPermissions.canRead || previewMode) return;
+    let active = true;
+    void fetchPlanningCrewBalances(effectiveClient).then((rows) => {
+      if (active) { setBalanceCheckpoints(rows); setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' }); }
+    }).catch((error: unknown) => { if (active) setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: error instanceof Error ? error.message : 'Soldes indisponibles.' }); });
+    return () => { active = false; };
+  }, [effectiveClient, previewMode, readPermissions.canRead, balanceRevision]);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
   const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
@@ -798,6 +816,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return indexed;
   }, [vesselVisits]);
+  const crewBalances = useMemo(() => new Map(planningData.people.map((person) => [person.id,
+    buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
+  ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range]);
   const crewLanes = useMemo(
     () => buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents),
     [allPlanningCrewEvents, crewGrouping, filters, planningData, range],
@@ -2465,10 +2486,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
                 <SlidersHorizontal aria-hidden="true" size={17} />Filtres{activeFilterCount ? <span>{activeFilterCount}</span> : null}
               </button>
-              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => void Promise.all([loadPlanning(), loadAbsences()])} type="button">
+              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
               <div className="planning-toolbar-spacer" />
+              {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
             </div>
 
@@ -2636,6 +2658,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
+                  balances={lane.personId === null ? undefined : crewBalances.get(lane.personId)}
+                  balanceLoading={!previewMode && !balancesLoaded}
+                  onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}
+                  onEditDayState={openDayState}
+                  onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
+                  onGridCellClick={selectPlanningGridCell}
+                  selectedGridCells={selectedGridCells}
                   absences={absences}
                   conflictDatesByEvent={conflictDatesByEvent}
                   dayWidth={effectiveDayWidth}
@@ -2680,6 +2709,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       </div>
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
+      {balancePerson ? <PlanningCrewBalanceDialog personId={balancePerson.id} personName={balancePerson.name} initialDate={anchorDate}
+        checkpoints={balanceCheckpoints} onClose={() => setBalancePerson(null)} onSave={async (checkpoint) => {
+          if (!previewMode) await savePlanningCrewBalance(effectiveClient, checkpoint);
+          setBalanceCheckpoints((rows) => [...rows.filter((row) => row.personId !== checkpoint.personId || row.asOf !== checkpoint.asOf), checkpoint]);
+          setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' });
+          setStatusMessage('Solde enregistré en fin de journée. Le calcul commence le lendemain.');
+        }} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
       {eligiblePeopleDialog ? <PlanningEligiblePeopleDialog isSaving={isSaving} onAdd={(person) => void addEligiblePersonToBoard(person)} onClose={() => setEligiblePeopleDialog(null)} pendingId={pendingMutationId} people={eligibleBoardPeople} referenceMonthLabel={referenceMonthLabel} state={eligiblePeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
@@ -2896,6 +2932,8 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   const options = [
     ['En Mer', 'En mer', 'sea'],
     ['A Terre', 'À terre', 'shore'],
+    ['Extra', 'Extra', 'extra'],
+    ['Formation', 'Formation', 'training'],
     ['Vacance', 'Congés', 'vacation'],
     ['Repos', 'Repos', 'rest'],
     ['Arrêt Maladie', 'Arrêt Maladie', 'sick-leave'],
