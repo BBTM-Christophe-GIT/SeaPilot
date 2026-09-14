@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildProcedureCode } from './procedureReview';
+import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -12,7 +13,7 @@ const PROCEDURE_FIELDS = [
 
 const PROCEDURE_SELECT = [
   PROCEDURE_FIELDS, 'source_storage_bucket', 'source_storage_path', 'source_file_name', 'source_mime_type',
-  'source_size_bytes',
+  'source_size_bytes', 'source_google_drive_file_id', 'source_google_drive_path',
 ].join(', ');
 
 const PUBLISHED_PROCEDURE_SELECT = [
@@ -49,6 +50,8 @@ interface ProcedureBaseRow {
 }
 
 interface ProcedureRow extends ProcedureBaseRow {
+  source_google_drive_file_id?: string | null;
+  source_google_drive_path?: string | null;
   source_storage_bucket: string | null;
   source_storage_path: string | null;
   source_file_name: string | null;
@@ -68,6 +71,8 @@ interface PublishedProcedureRow extends ProcedureBaseRow {
 }
 
 export interface ProcedureRecord {
+  googleDriveFileId?: string;
+  googleDrivePath?: string;
   id: number;
   procedureCode: string;
   title: string;
@@ -132,6 +137,8 @@ export interface ProcedureMetrics {
 }
 
 export interface ProcedureInput {
+  googleDriveUrl?: string;
+  googleDrivePath?: string;
   procedureCode: string;
   title: string;
   status: ProcedureStatus;
@@ -208,6 +215,8 @@ export function getProcedureStatusLabel(status: ProcedureStatus): string {
 export function mapProcedureRows(rows: ProcedureRow[]): ProcedureRecord[] {
   return rows.map((row) => ({
     ...mapProcedureBase(row),
+    googleDriveFileId: nullableText(row.source_google_drive_file_id),
+    googleDrivePath: nullableText(row.source_google_drive_path),
     storageBucket: nullableText(row.source_storage_bucket),
     storagePath: nullableText(row.source_storage_path),
     fileName: nullableText(row.source_file_name) || row.title,
@@ -388,7 +397,26 @@ async function removeStorageObjects(client: SupabaseClient, paths: string[]) {
   if (error) throw error;
 }
 
-export async function createProcedure(client: SupabaseClient, input: CreateProcedureInput, sourceFile: File): Promise<ProcedureRecord> {
+function driveSourcePayload(input: ProcedureInput) {
+  const link = parseProcedureDriveLink(input.googleDriveUrl || '', input.googleDrivePath || '');
+  const fileName = link.relativePath.split('/').pop()!;
+  return {
+    source_google_drive_file_id: link.fileId,
+    source_google_drive_path: link.relativePath,
+    source_file_name: fileName,
+    source_mime_type: sourceMimeType(new File([], fileName)),
+    source_size_bytes: null,
+  };
+}
+
+export async function createProcedure(client: SupabaseClient, input: CreateProcedureInput, sourceFile: File | null): Promise<ProcedureRecord> {
+  if (input.googleDriveUrl) {
+    if (sourceFile) throw new Error('Enregistrez le fichier dans Google Drive avant de le lier.');
+    const payload = { ...procedurePayload(input), ...driveSourcePayload(input) };
+    const { data, error } = await client.from('procedures').insert(payload).select(PROCEDURE_SELECT).single();
+    if (error) throw error;
+    return mapProcedureRows([data as unknown as ProcedureRow])[0];
+  }
   if (!sourceFile || sourceFile.size <= 0) throw new Error('Le fichier source modifiable est obligatoire.');
   const sourcePath = await uploadProcedureFile(client, 'sources', sourceFile);
   const payload = {
@@ -413,8 +441,17 @@ export async function updateProcedure(
   input: ProcedureInput,
   replacementFile?: File | null,
 ): Promise<ProcedureRecord> {
+  const keepsDrive = input.googleDriveUrl === undefined ? Boolean(procedure.googleDriveFileId) : Boolean(input.googleDriveUrl);
+  if (keepsDrive && replacementFile) throw new Error('Remplacez le fichier dans le dossier Google Drive synchronisé.');
+  if (procedure.googleDriveFileId && !keepsDrive && !replacementFile) {
+    throw new Error('Sélectionnez le fichier à importer pour quitter Google Drive.');
+  }
+  const drivePayload = input.googleDriveUrl === undefined ? {}
+    : input.googleDriveUrl ? driveSourcePayload(input)
+      : { source_google_drive_file_id: null, source_google_drive_path: null };
   let replacementPath = '';
-  const existingStoragePath = procedure.storageBucket === PROCEDURE_DOCUMENT_BUCKET ? procedure.storagePath : '';
+  const existingStoragePath = !procedure.googleDriveFileId && procedure.storageBucket === PROCEDURE_DOCUMENT_BUCKET
+    ? procedure.storagePath : '';
   const storagePayload = replacementFile ? {
     source_storage_bucket: PROCEDURE_DOCUMENT_BUCKET,
     source_storage_path: (replacementPath = await uploadProcedureFile(client, 'sources', replacementFile, existingStoragePath)),
@@ -422,7 +459,7 @@ export async function updateProcedure(
     source_mime_type: sourceMimeType(replacementFile),
     source_size_bytes: replacementFile.size,
   } : {};
-  const { data, error } = await client.from('procedures').update({ ...procedurePayload(input), ...storagePayload })
+  const { data, error } = await client.from('procedures').update({ ...procedurePayload(input), ...storagePayload, ...drivePayload })
     .eq('id', procedure.id).select(PROCEDURE_SELECT).single();
   if (error) {
     if (replacementPath && replacementPath !== existingStoragePath) {
@@ -536,6 +573,11 @@ export async function getProcedureFileUrl(
     || record.mimeType.toLowerCase() !== 'application/pdf'
     || !record.fileName.toLowerCase().endsWith('.pdf'))) {
     throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
+  }
+  if (!('procedureId' in record) && record.googleDriveFileId) {
+    return action === 'open'
+      ? buildGoogleDriveDesktopUri(record.googleDrivePath || '')
+      : googleDriveFileUrl(record.googleDriveFileId);
   }
   if (!record.storageBucket || !record.storagePath) {
     if (record.fileUrl) return action === 'open' ? buildProcedureDesktopUri(record, record.fileUrl) : record.fileUrl;

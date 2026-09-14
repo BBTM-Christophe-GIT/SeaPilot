@@ -61,6 +61,8 @@ import {
   type PublishedProcedureRecord,
 } from './procedureQueries';
 import { buildProcedureCode, getAnnualReviewAlert, getAnnualReviewDueDate } from './procedureReview';
+import { googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
+import './procedureGoogleDrive.css';
 
 interface ProceduresPageProps {
   client?: SupabaseClient;
@@ -212,6 +214,10 @@ interface ProcedureEditorProps {
 function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSave, saving }: ProcedureEditorProps) {
   const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : { ...EMPTY_FORM });
   const [file, setFile] = useState<File | null>(null);
+  const [usesDrive, setUsesDrive] = useState(procedure ? Boolean(procedure.googleDriveFileId) : true);
+  const [driveUrl, setDriveUrl] = useState(procedure?.googleDriveFileId ? googleDriveFileUrl(procedure.googleDriveFileId) : '');
+  const [drivePath, setDrivePath] = useState(procedure?.googleDrivePath || '');
+  const [fileError, setFileError] = useState('');
   const projectListId = useId();
   const generatedProcedureCode = buildProcedureCode(form.theme, form.documentNumber, form.versionLabel);
   const annualReviewDueOn = form.annualReview ? getAnnualReviewDueDate(form.diffusionOn) : '';
@@ -242,9 +248,16 @@ function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSav
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (numberTaken) return;
+    if (usesDrive) {
+      try { parseProcedureDriveLink(driveUrl, drivePath); }
+      catch (error) { setFileError((error as Error).message); return; }
+    }
+    setFileError('');
     const versionLabel = form.versionLabel.trim().toUpperCase();
     await onSave({
       ...form,
+      googleDriveUrl: usesDrive ? driveUrl : '',
+      googleDrivePath: usesDrive ? drivePath : '',
       procedureCode: buildProcedureCode(form.theme, form.documentNumber, versionLabel),
       revisionLabel: versionLabel,
       versionLabel,
@@ -320,12 +333,19 @@ function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSav
 
             <section className="procedure-form-section procedure-file-section" aria-labelledby="procedure-file-title">
               <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Fichier de travail</h3><p>Le fichier source reste privé et accessible uniquement aux profils autorisés.</p></div></header>
-              <label className="procedure-file-field">
+              <div className="procedure-form-grid"><label className="procedure-form-wide">Stockage du fichier<select aria-label="Stockage du fichier" value={usesDrive ? 'google-drive' : 'supabase'} onChange={(event) => { setUsesDrive(event.target.value === 'google-drive'); setFile(null); setFileError(''); }}><option value="supabase">SeaPilot</option><option value="google-drive">Google Drive synchronisé</option></select></label></div>
+              {usesDrive ? <div className="procedure-form-grid procedure-drive-form">
+                <p className="procedure-form-wide">Enregistrez le fichier Word ou Excel dans le dossier Google Drive synchronisé, puis liez-le ici. Les modifications enregistrées dans Office seront synchronisées par Drive pour ordinateur.</p>
+                <label className="procedure-form-wide">Lien du fichier Google Drive<input required type="url" placeholder="https://drive.google.com/file/d/…/view" value={driveUrl} onChange={(event) => setDriveUrl(event.target.value)} /></label>
+                <label className="procedure-form-wide">Chemin dans le dossier synchronisé<input aria-label="Chemin dans le dossier synchronisé" required placeholder="URG/Procedure.docx" value={drivePath} onChange={(event) => setDrivePath(event.target.value)} /><small>Chemin relatif au dossier configuré dans le lanceur SeaPilot. Après un déplacement ou un renommage, mettez ce chemin à jour.</small></label>
+                <p className="procedure-form-wide">Réservez l’accès au dossier Google Drive source aux gestionnaires autorisés.</p>
+              </div> : <label className="procedure-file-field">
                 <Upload size={18} />
                 <span>{procedure ? 'Enregistrer une nouvelle version du fichier source (facultatif)' : 'Fichier source modifiable'}</span>
-                <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure || Boolean(procedure.googleDriveFileId)} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
                 <small>{file?.name || (procedure ? `${procedure.fileName} · le fichier sélectionné remplacera directement cette version dans Supabase.` : 'Word, Excel, PowerPoint ou OpenDocument · 100 Mo max.')}</small>
-              </label>
+              </label>}
+              {fileError ? <p className="form-error" role="alert">{fileError}</p> : null}
             </section>
           </div>
           <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving || numberTaken} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
@@ -425,7 +445,6 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
     setIsSaving(true);
     try {
       if (editorProcedure === 'new') {
-        if (!file) throw new Error('Fichier source manquant');
         const created = await createProcedure(effectiveClient, input, file);
         setProcedures((current) => sortRecords([...current, created]));
         flash('Document QSMS ajouté.');
@@ -461,7 +480,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   async function handleOpen(record: ProcedureRecord | PublishedProcedureRecord) {
     try {
       const fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');
-      const opensDesktopApp = /^ms-(word|excel|powerpoint):/.test(fileUrl);
+      const opensDesktopApp = /^(ms-(word|excel|powerpoint):|seapilot-drive:)/.test(fileUrl);
       window.open(fileUrl, opensDesktopApp ? '_self' : '_blank', opensDesktopApp ? undefined : 'noopener,noreferrer');
     }
     catch { fail("Le fichier n'est pas disponible."); }
@@ -473,7 +492,9 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   }
 
   async function handleDeleteSource(procedure: ProcedureRecord) {
-    if (!window.confirm(`Supprimer « ${procedure.title} » et ses publications ?`)) return;
+    if (!window.confirm(procedure.googleDriveFileId
+      ? `Supprimer la fiche « ${procedure.title} » et ses publications ? Le fichier Google Drive sera conservé.`
+      : `Supprimer « ${procedure.title} » et ses publications ?`)) return;
     try {
       const linked = publications.filter((item) => item.procedureId === procedure.id);
       await deleteProcedure(effectiveClient, procedure, linked);
@@ -524,10 +545,12 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
             <button className="procedure-primary-action" onClick={() => setEditorProcedure('new')} type="button"><FilePlus2 size={17} />Nouveau document</button>
             <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && setEditorProcedure(selectedProcedure)} type="button"><Edit3 size={16} />Modifier</button>
             <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && setPublishTarget(selectedProcedure)} type="button"><Send size={16} />Publier PDF</button>
-            <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && void handleDownload(selectedProcedure)} type="button"><Download size={16} />Télécharger</button>
+            <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && void handleDownload(selectedProcedure)} type="button"><Download size={16} />{selectedProcedure?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'}</button>
             <button className="procedure-danger-action" disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && void handleDeleteSource(selectedProcedure)} type="button"><Trash2 size={16} />Supprimer</button>
           </div>
         ) : <div className="procedure-public-notice"><ShieldCheck size={17} /><span>Vous consultez uniquement les versions PDF approuvées et publiées.</span></div>}
+
+        {isManager && view === 'sources' ? <div className="procedure-public-notice"><FolderKanban size={17} /><span>Google Drive : <a href="/connectors/seapilot-drive-windows.zip" download>installer le lanceur Windows</a>, puis <a href="seapilot-drive://configure">configurer le dossier synchronisé sur ce PC</a>. Un clic sur un document lié ouvre son fichier local dans Office.</span></div> : null}
 
         <div className="procedure-chapters">
           {CHAPTERS.map(([key, label]) => {
@@ -560,7 +583,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
                       </div>
                       <div className="procedure-document-status">{reviewAlert ? <strong className={`procedure-review-badge is-${reviewAlert.tone}`}><BellRing aria-hidden="true" size={12} />{reviewAlert.label}</strong> : null}{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
-                        <button aria-label={`Télécharger ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
+                        <button aria-label={`${source?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'} ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
                         {source && isManager ? <><button aria-label={`Modifier ${record.title}`} onClick={() => setEditorProcedure(source)} type="button"><Edit3 size={16} /></button><button aria-label={`Publier ${record.title}`} onClick={() => setPublishTarget(source)} type="button"><Send size={16} /></button><button aria-label={`Supprimer ${record.title}`} className="danger" onClick={() => void handleDeleteSource(source)} type="button"><Trash2 size={16} /></button></> : null}
                         {publication && isManager ? <button aria-label={`Retirer ${record.title}`} className="danger" onClick={() => void handleDeletePublication(publication)} type="button"><Trash2 size={16} /></button> : null}
                       </div>

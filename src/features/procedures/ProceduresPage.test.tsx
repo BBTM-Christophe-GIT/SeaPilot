@@ -259,6 +259,7 @@ describe('ProceduresPage', () => {
     expect(projectValues).toContain('P254 - NIVELAGE QUAI BOUGAINVILLE');
     expect(projectValues).not.toContain('P264 - PROJET ARCHIVÉ');
     const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    await user.selectOptions(within(dialog).getByLabelText('Stockage du fichier'), 'supabase');
     await user.upload(within(dialog).getByLabelText(/Fichier source modifiable/i), sourceFile);
     fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form') as HTMLFormElement);
 
@@ -340,6 +341,39 @@ describe('ProceduresPage', () => {
       '_self',
       undefined,
     );
+    open.mockRestore();
+  });
+
+  it('creates a private Google Drive source without uploading a stale copy to Supabase', async () => {
+    const user = userEvent.setup();
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Stockage du fichier')).toHaveValue('google-drive');
+    fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Source Drive' } });
+    fireEvent.change(within(dialog).getByLabelText('Lien du fichier Google Drive'), { target: { value: 'https://drive.google.com/file/d/1234567890abcdef/view' } });
+    fireEvent.change(within(dialog).getByLabelText('Chemin dans le dossier synchronisé'), { target: { value: 'URG/source.docx' } });
+    fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form')!);
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
+      source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'URG/source.docx',
+      source_file_name: 'source.docx', source_size_bytes: null,
+    }));
+  });
+
+  it('launches the native Drive source and provides the authenticated Drive web link', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, createSignedUrl } = createClient({ procedures: [{ ...approvedProcedureRow,
+      source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'source.docx' }], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^seapilot-drive:\/\/open\//), '_self', undefined);
+    await user.click(screen.getByLabelText('Voir dans Drive Procédure embarquement ROZEL'));
+    expect(open).toHaveBeenLastCalledWith('https://drive.google.com/file/d/1234567890abcdef/view', '_blank', 'noopener,noreferrer');
+    expect(createSignedUrl).not.toHaveBeenCalled();
     open.mockRestore();
   });
 });
