@@ -26,7 +26,7 @@ export function PlanningCrewBalanceDialog({ personId, personName, initialDate, c
       <label>Date du solde<input type="date" required value={date} onChange={(event) => setDate(event.target.value)} /></label>
       <label>Solde en fin de journée<input inputMode="decimal" placeholder="Ex. 12,50 ou -3" required value={balance} onChange={(event) => setBalance(event.target.value)} /></label>
       {refs.some((item) => item.asOf === date) ? <p>Le solde déjà saisi à cette date sera remplacé.</p> : null}
-      <p>En mer +1,05 · À terre et formation +0,50 · Extra +2,05 · Repos, congés et case vide −1 · Maladie et accident du travail 0.</p>
+      <p>En mer +1,05 · À terre et formation +0,50 · Extra, repos, congés et case vide −1 · Maladie et accident du travail 0.</p>
       {refs.length ? <><strong>Soldes de référence enregistrés</strong><ul>{refs.map((item) => <li key={item.asOf}><button type="button" onClick={() => { setDate(item.asOf); setBalance(String(item.balance).replace('.', ',')); }}>{formatPlanningDate(item.asOf)} : {formatPlanningCrewBalance(item.balance)}</button></li>)}</ul></> : <p>Aucun solde de référence enregistré.</p>}
     </div>
   </AppDialog>;

@@ -5,6 +5,7 @@ describe('planning permissions', () => {
   it('lets direction edit and distribute without a validation circuit', () => {
     expect(getPlanningPermissions(['direction'], false)).toMatchObject({
       canRead: true,
+      canViewCrewPlanning: true,
       canEditEvents: true,
       canSubmitPublication: false,
       canValidatePublication: false,
@@ -34,6 +35,7 @@ describe('planning permissions', () => {
 
   it('lets armement edit, handle handovers and distribute', () => {
     expect(getPlanningPermissions(['armement'], false)).toMatchObject({
+      canViewCrewPlanning: true,
       canEditEvents: true,
       canSubmitPublication: false,
       canValidatePublication: false,
@@ -61,6 +63,7 @@ describe('planning permissions', () => {
   it('limits a captain to the latest distributed planning and leave requests', () => {
     expect(getPlanningPermissions(['capitaine'], false)).toMatchObject({
       canRead: true,
+      canViewCrewPlanning: false,
       canEditEvents: false,
       canGenerateCrewList: true,
       canValidatePublication: false,
@@ -87,6 +90,7 @@ describe('planning permissions', () => {
   it('keeps a sailor in read-only mode without governance history', () => {
     expect(getPlanningPermissions(['marin'], false)).toMatchObject({
       canRead: true,
+      canViewCrewPlanning: false,
       canEditEvents: false,
       canManagePublication: false,
       canViewHistory: false,
@@ -113,6 +117,7 @@ describe('planning permissions', () => {
   it('allows an administrator to edit and distribute without legacy workflow actions', () => {
     expect(getPlanningPermissions(['admin'], false)).toMatchObject({
       canRead: true,
+      canViewCrewPlanning: true,
       canEditEvents: true,
       canSubmitPublication: false,
       canValidatePublication: false,
@@ -162,6 +167,8 @@ describe('planning permissions', () => {
 
   it('denies Planning access when no Planning role is present', () => {
     expect(getPlanningPermissions([], false).canRead).toBe(false);
+    expect(getPlanningPermissions([], false).canViewCrewPlanning).toBe(false);
+    expect(getPlanningPermissions(['capitaine', 'marin']).canViewCrewPlanning).toBe(false);
   });
 
   it('limits assistant pilot eligibility to administrators and office roles', () => {

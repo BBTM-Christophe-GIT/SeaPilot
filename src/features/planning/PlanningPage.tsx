@@ -520,7 +520,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const planningData = usePlanningCoreOverview(overview);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
-  const [perspective, setPerspective] = useState<PlanningPerspective>('fleet');
+  const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
+  const perspective = readPermissions.canViewCrewPlanning ? requestedPerspective : 'fleet';
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -560,16 +561,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [balanceLoad, setBalanceLoad] = useState<{ client: typeof effectiveClient; revision: number; error: string } | null>(null);
   const [balanceRevision, setBalanceRevision] = useState(0);
   const currentBalanceLoad = balanceLoad?.client === effectiveClient && balanceLoad.revision === balanceRevision ? balanceLoad : null;
-  const balancesLoaded = Boolean(readPermissions.canRead && currentBalanceLoad && !currentBalanceLoad.error);
+  const balancesLoaded = Boolean(readPermissions.canViewCrewPlanning && currentBalanceLoad && !currentBalanceLoad.error);
   const balanceLoadError = currentBalanceLoad?.error || '';
   useEffect(() => {
-    if (!readPermissions.canRead || previewMode) return;
+    if (!readPermissions.canViewCrewPlanning || previewMode) return;
     let active = true;
     void fetchPlanningCrewBalances(effectiveClient).then((rows) => {
       if (active) { setBalanceCheckpoints(rows); setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' }); }
     }).catch((error: unknown) => { if (active) setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: error instanceof Error ? error.message : 'Soldes indisponibles.' }); });
     return () => { active = false; };
-  }, [effectiveClient, previewMode, readPermissions.canRead, balanceRevision]);
+  }, [effectiveClient, previewMode, readPermissions.canViewCrewPlanning, balanceRevision]);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
   const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
@@ -820,12 +821,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return indexed;
   }, [vesselVisits]);
-  const crewBalances = useMemo(() => new Map(planningData.people.map((person) => [person.id,
+  const crewBalances = useMemo(() => new Map((readPermissions.canViewCrewPlanning ? planningData.people : []).map((person) => [person.id,
     buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
-  ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range]);
+  ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents),
-    [allPlanningCrewEvents, crewGrouping, filters, planningData, range],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents) : [],
+    [allPlanningCrewEvents, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -998,6 +999,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function changePerspective(next: PlanningPerspective) {
+    if (next === 'crew' && !readPermissions.canViewCrewPlanning) return;
     setPerspective(next);
     setFilters((current) => ({
       ...current,
@@ -2492,7 +2494,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
-                <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button>
+                {readPermissions.canViewCrewPlanning ? <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button> : null}
               </div>
               {perspective === 'fleet' ? (
                 <button aria-expanded={isFleetFullyExpanded} className="planning-filter-toggle" disabled={!fleetNodeKeys.length} onClick={toggleFleetTree} title="Déplier ou replier tous les navires et toutes les bordées affichés" type="button">
@@ -2732,8 +2734,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       </div>
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
-      {balancePerson ? <PlanningCrewBalanceDialog personId={balancePerson.id} personName={balancePerson.name} initialDate={anchorDate}
+      {readPermissions.canViewCrewPlanning && balancePerson ? <PlanningCrewBalanceDialog personId={balancePerson.id} personName={balancePerson.name} initialDate={anchorDate}
         checkpoints={balanceCheckpoints} onClose={() => setBalancePerson(null)} onSave={async (checkpoint) => {
+          if (!canEditPlanning) throw new Error('Votre profil ne peut pas modifier les soldes équipage.');
           if (!previewMode) await savePlanningCrewBalance(effectiveClient, checkpoint);
           setBalanceCheckpoints((rows) => [...rows.filter((row) => row.personId !== checkpoint.personId || row.asOf !== checkpoint.asOf), checkpoint]);
           setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' });
