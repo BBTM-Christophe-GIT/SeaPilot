@@ -25414,3 +25414,27 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
 .has-crew-balances > .planning-fleet-assignment-label { align-self: start; margin-top: 12px; }
 
 .planning-balance-form li button { border: 1px solid #cfdee8; border-radius: 6px; background: #f5f9fc; color: #165f87; padding: 6px 10px; cursor: pointer; }
+
+/* Crew periods use one height for the resize caps and every daily state. */
+.planning-timeline-row.is-crew:not(.is-fleet-person) {
+  --crew-state-sea: #15ab73;
+  --crew-state-shore: #f4c847;
+  --crew-state-extra: #087f8c;
+  --crew-state-training: #276be8;
+  --crew-state-vacation: #172033;
+  --crew-state-rest: #d94242;
+  --crew-state-sick: #d94242;
+  --crew-state-sick-leave: #7c3aed;
+  --crew-state-accident: #ea580c;
+  --crew-state-neutral: #4b647e;
+}
+.planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-crew-bar,
+.planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-assignment-note-cell {
+  box-sizing: border-box;
+  height: 28px;
+}
+.planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-crew-bar.has-daily-grid {
+  border: 0;
+  background-color: transparent;
+  box-shadow: none;
+}

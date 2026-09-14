@@ -1024,42 +1024,39 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalled());
   });
 
-  it('adds a one-day sea assignment by double-clicking an empty sailor cell', async () => {
+  it('adds a crew day only on double-click without a green marker or full form', async () => {
     const user = userEvent.setup();
-    const createdAssignment = { ...assignmentRow, id: 102, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'En Mer' };
-    const { client, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow], createdAssignment });
+    const { client, rpc, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
-
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire complet');
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
-
-    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
-      crew_person_id: 11,
-      vessel_id: 1,
-      starts_on: '2026-07-20',
-      ends_on: '2026-07-20',
-      status_label: 'En Mer',
-      watch_group: 'Bordée 1',
-    })));
+    const cell = screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ });
+    await user.click(cell);
+    expect(cell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('apply_planning_grid_cells', expect.anything());
+    expect(insertAssignment).not.toHaveBeenCalled();
+    await user.dblClick(cell);
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ personId: 11, vesselId: 1, workDate: '2026-07-20', status: 'En Mer', watchGroup: 'Bordée 1' })],
+    }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(cell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
   });
 
-  it('defaults sedentary collaborators to the yellow shore status', async () => {
+  it('defaults sedentary collaborators to shore when adding a crew day', async () => {
     const user = userEvent.setup();
     const sedentaryPerson = { ...crewRow, function_label: 'Directeur QHSE / Chef de Projet' };
     const sedentaryPeriod = { ...planningPeriodRow, function_label: 'Directeur QHSE / Chef de Projet' };
-    const createdAssignment = { ...assignmentRow, id: 103, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'A Terre' };
-    const { client, insertAssignment } = createClient({ people: [captainRow, sedentaryPerson], assignments: [], periods: [sedentaryPeriod], createdAssignment });
+    const { client, rpc } = createClient({ people: [captainRow, sedentaryPerson], assignments: [], periods: [sedentaryPeriod] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
-
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
-    expect(screen.getByLabelText('Statut')).toHaveValue('A Terre');
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
-    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({ status_label: 'A Terre' })));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ status: 'A Terre' })],
+    }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('renders cross-vessel conflicts in red and exposes watch groups as a select', async () => {
@@ -1949,6 +1946,9 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
+    const statusSelect = within(dialog).getByLabelText('Statut');
+    await user.selectOptions(statusSelect, 'Arrêt Maladie');
+    expect(statusSelect).toHaveValue('Arrêt Maladie');
     const functionSelect = within(dialog).getByLabelText<HTMLSelectElement>('Fonction');
     expect(functionSelect.tagName).toBe('SELECT');
     expect(functionSelect).toHaveValue('2nd Capitaine');

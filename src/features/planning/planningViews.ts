@@ -205,8 +205,11 @@ export function buildPlanningCrewLanes(
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningCrewLane[] {
+  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
-    && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters));
+    && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters))
+    .map((event) => event.vesselId === null && vesselsByName.has(event.vessel)
+      ? { ...event, vesselId: vesselsByName.get(event.vessel)! } : event);
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
   const groups = new Map<string, PlanningCrewLane>();
   events.forEach((event) => {
