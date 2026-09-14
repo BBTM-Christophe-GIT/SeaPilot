@@ -8,6 +8,8 @@ La liste est construite depuis les fiches RH actuellement en poste, même pour u
 
 Tous les marins éligibles sont initialement cochés. L’utilisateur peut modifier la sélection, inspecter les périodes et les anomalies puis cocher la confirmation nominative avant le téléchargement. Tout changement du mois, rechargement ou changement de sélection invalide cette confirmation. Les personnes ayant des anomalies restent visibles et sélectionnées : aucune suppression silencieuse.
 
+Depuis la version 3.39.11, trois personnes sont explicitement incluses malgré leur grade RH Sédentaire, tant qu’elles sont en poste : Benjamin BON (matricule 00001) et Antoine MONCEAUX (00019), Capitaine / AA01A / catégorie 15 ; Julien LECOCQ (00002), Chef Mécanicien / CB01A / catégorie 15. Ces classifications sont propres à l’export ; les fiches RH restent inchangées. Une fonction maritime temporaire planifiée continue à s’appliquer à ses dates. Pour ces exceptions, une fonction de bureau comme Président ne remplace pas la classification SILAE. Les autres sédentaires, dont Adam DEBORDEAUX, restent exclus.
+
 ## Structure du classeur
 
 La structure reprend les en-têtes et leur ordre dans `SILAE LIGNES SERVICES.xlsx` fourni par l’utilisateur : feuille `Feuil1`, Matricule, Salarié puis 30 groupes de 16 colonnes. Un 31e groupe est ajouté si nécessaire pour conserver tout le mois. Une ligne par marin, sans ligne de totaux. Le fichier exemple nominatif n’est pas livré dans les ressources publiques.

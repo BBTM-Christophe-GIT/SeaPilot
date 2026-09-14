@@ -65,6 +65,33 @@ describe('SILAE export confirmation', () => {
     expect(screen.getByRole('checkbox', { name: /Je confirme/ })).not.toBeChecked();
   });
 
+  it('adds BON, MONCEAUX and LECOCQ to the editable confirmed selection with their export classifications', async () => {
+    const user = userEvent.setup();
+    const people = [
+      { ...person, id: 7, firstName: 'Benjamin', lastName: 'BON', employeeNumber: '00001', functionLabel: 'Président', gradeLabel: 'Sédentaire', enimFunctionCode: '', enimCategory: '' },
+      { ...person, id: 16, firstName: 'Antoine', lastName: 'MONCEAUX', employeeNumber: '00019', gradeLabel: 'Sédentaire' },
+      { ...person, id: 13, firstName: 'Julien', lastName: 'LECOCQ', employeeNumber: '00002', functionLabel: 'Chef Mécanicien', gradeLabel: 'Sédentaire', enimFunctionCode: 'CB01A' },
+    ];
+    vi.mocked(fetchPlanningSilaeData).mockResolvedValue({ ...fixture, people: [...fixture.people, ...people], sources: [
+      ...fixture.sources, ...people.map((additional) => ({ personId: additional.id, startsOn: '2026-09-01', endsOn: '2026-09-30', status: 'A Terre', vesselId: 10, priority: 2, functionLabel: additional.functionLabel })),
+    ] });
+    render(<PlanningSilaeExportDialog client={client} onClose={vi.fn()} />);
+    for (const name of ['BON Benjamin', 'MONCEAUX Antoine', 'LECOCQ Julien']) {
+      expect(await screen.findByRole('checkbox', { name: new RegExp(name) })).toBeChecked();
+    }
+    expect(screen.queryByRole('checkbox', { name: /DEBORDEAUX|ANCIEN|SEDENTAIRE/ })).not.toBeInTheDocument();
+    const download = screen.getByRole('button', { name: 'Télécharger l’export SILAE' });
+    expect(download).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /AUGUIN/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Je confirme cette liste de 3 marins/ }));
+    await user.click(download);
+    await waitFor(() => expect(generateSilaeWorkbook).toHaveBeenCalledWith([
+      expect.objectContaining({ person: expect.objectContaining({ employeeNumber: '00001' }), periods: [expect.objectContaining({ enimFunctionCode: 'AA01A', enimCategory: '15' })] }),
+      expect.objectContaining({ person: expect.objectContaining({ employeeNumber: '00002' }), periods: [expect.objectContaining({ enimFunctionCode: 'CB01A', enimCategory: '15' })] }),
+      expect.objectContaining({ person: expect.objectContaining({ employeeNumber: '00019' }), periods: [expect.objectContaining({ enimFunctionCode: 'AA01A', enimCategory: '15' })] }),
+    ]));
+  });
+
   it('shows incomplete sailors without silently dropping them and allows explicit deselection', async () => {
     const user = userEvent.setup();
     vi.mocked(fetchPlanningSilaeData).mockResolvedValue({ ...fixture, people: [...fixture.people, { ...person, id: 5, lastName: 'INCOMPLET', employeeNumber: '00005' }] });
