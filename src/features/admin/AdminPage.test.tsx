@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import { AdminPage } from './AdminPage';
 
 function createProfilesQuery(data: unknown[]) {
@@ -72,7 +74,67 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
   };
 }
 
+function renderAdminPage(client: unknown, section = 'users') {
+  return render(
+    <MemoryRouter initialEntries={[`/modules/admin?preview=1&section=${section}`]}>
+      <AdminPage client={client as never} />
+    </MemoryRouter>,
+  );
+}
+
 describe('AdminPage', () => {
+  it('loads administration with the isolated preview fixtures', async () => {
+    const user = userEvent.setup();
+    renderAdminPage(previewSupabaseClient);
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeVisible();
+    expect(screen.getByText('admin@example.invalid')).toBeVisible();
+    expect(screen.queryByText('Impossible de charger les utilisateurs.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Imports et migration' }));
+    expect(screen.getByText('Procédures — démonstration')).toBeVisible();
+  });
+
+  it('opens Drive setup from the section menu and preserves the other URL parameters', async () => {
+    const user = userEvent.setup();
+    renderAdminPage(createAdminClient());
+
+    await screen.findByRole('heading', { name: 'Gestion des utilisateurs' });
+    const documentsLink = screen.getByRole('link', { name: 'Documents et Google Drive' });
+    expect(documentsLink).toHaveAttribute('href', '/modules/admin?preview=1&section=documents');
+    await user.click(documentsLink);
+
+    expect(documentsLink).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { name: 'Ouvrir les documents dans Word ou Excel' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Gestion des utilisateurs' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip');
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
+    expect(screen.getByRole('link', { name: 'Configurer le dossier sur ce PC' })).toHaveAttribute('href', 'seapilot-drive://configure');
+
+    await user.click(screen.getByRole('link', { name: 'Utilisateurs' }));
+    expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
+    expect(screen.queryByRole('heading', { name: 'Ouvrir les documents dans Word ou Excel' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the bookmarked Drive instructions available while administrative data is loading', () => {
+    const baseClient = createAdminClient();
+    const client = {
+      from: vi.fn().mockImplementation((table: string) => table === 'profiles'
+        ? { select: () => ({ order: () => new Promise(() => {}) }) }
+        : baseClient.from(table)),
+    };
+    renderAdminPage(client, 'documents');
+
+    expect(screen.getByRole('link', { name: 'Configurer le dossier sur ce PC' })).toBeVisible();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the users section for an unknown section URL', async () => {
+    renderAdminPage(createAdminClient(), 'unknown');
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Utilisateurs' })).toHaveAttribute('aria-current', 'page');
+  });
+
   it('invites a new user with a role and optional sailor link', async () => {
     const user = userEvent.setup();
     const invoke = vi.fn().mockResolvedValue({ data: { invitation: { invitationId: 7 } }, error: null });
@@ -120,7 +182,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Inviter un utilisateur' }));
     expect(screen.getByRole('dialog', { name: 'Inviter un utilisateur' })).toBeInTheDocument();
@@ -144,9 +206,10 @@ describe('AdminPage', () => {
   });
 
   it('renders users and their assigned roles', async () => {
+    const user = userEvent.setup();
     const client = createAdminClient();
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument();
     expect(screen.getByText('admin@example.test')).toBeInTheDocument();
@@ -155,6 +218,7 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Marin pour admin@example.test' })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Renvoyer le lien à admin@example.test' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Supprimer admin@example.test' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Accès et rôles' }));
     expect(screen.getByRole('checkbox', { name: 'Suivi du Temps de travail visible pour Marin' })).toBeChecked();
   });
 
@@ -169,7 +233,7 @@ describe('AdminPage', () => {
       functions: { invoke },
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Renvoyer le lien à admin@example.test' }));
 
@@ -191,7 +255,7 @@ describe('AdminPage', () => {
       functions: { invoke },
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Supprimer admin@example.test' }));
 
@@ -207,10 +271,9 @@ describe('AdminPage', () => {
   it('renders SharePoint import monitoring sources', async () => {
     const client = createAdminClient();
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'imports');
 
-    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Suivi import SharePoint' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Suivi import SharePoint' })).toBeInTheDocument();
     expect(screen.getByLabelText('Sources SharePoint')).toHaveTextContent('1');
     expect(screen.getByText('RH - Personnel BBTM')).toBeInTheDocument();
     expect(screen.getByText('humanResources')).toBeInTheDocument();
@@ -251,7 +314,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     const directionCheckbox = await screen.findByRole('checkbox', { name: 'Direction pour admin@example.test' });
     await user.click(directionCheckbox);
@@ -297,7 +360,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     const marinCheckbox = await screen.findByRole('checkbox', { name: 'Marin pour marin@example.test' });
     await user.click(marinCheckbox);
@@ -329,7 +392,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'access');
 
     const projectsForSailor = await screen.findByRole('checkbox', { name: 'Projets visible pour Marin' });
     expect(screen.getByRole('checkbox', { name: 'Navires visible pour Admin' })).toBeChecked();
@@ -363,7 +426,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'action-plan');
     const toggle = await screen.findByRole('checkbox', { name: 'Afficher Modifier la fiche' });
     expect(toggle).toBeChecked();
     await user.click(toggle);
