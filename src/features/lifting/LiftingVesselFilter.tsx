@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Ship } from 'lucide-react';
 import type { LiftingVessel } from './liftingModel';
@@ -25,7 +26,7 @@ export function LiftingVesselFilter({ vessels, value, disabled, onChange }: {
       </div>
     </div>
     <div className="lifting-vessel-strip" ref={row} role="group" aria-label="Filtrer par navire">
-      {vessels.map((vessel) => <button type="button" className="lifting-vessel-card" key={vessel.id} aria-label={vessel.name} aria-pressed={vessel.id === value} disabled={disabled} onClick={() => onChange(vessel.id)}>
+      {[...vessels].sort(compareFleetAssets).map((vessel) => <button type="button" className="lifting-vessel-card" key={vessel.id} aria-label={vessel.name} aria-pressed={vessel.id === value} disabled={disabled} onClick={() => onChange(vessel.id)}>
         <span className="lifting-vessel-photo"><VesselImage vessel={vessel} />{vessel.id === value && <span className="lifting-vessel-check"><Check size={12} strokeWidth={3} /></span>}</span>
         <strong>{vessel.name}</strong>
       </button>)}

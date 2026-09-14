@@ -1,3 +1,4 @@
+import { compareFleetAssets } from './fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type FleetAssetKind = 'vessel' | 'office' | 'quay';
@@ -215,7 +216,7 @@ export async function fetchFleetVessels(client: SupabaseClient): Promise<FleetVe
   const { data, error } = await client.from('vessels').select(FLEET_VESSEL_SELECT)
     .order('active', { ascending: false }).order('name', { ascending: true });
   if (error) throw error;
-  return ((data || []) as unknown as FleetVesselRow[]).map(mapFleetVessel);
+  return ((data || []) as unknown as FleetVesselRow[]).map(mapFleetVessel).sort((a, b) => Number(b.active) - Number(a.active) || compareFleetAssets(a, b));
 }
 
 export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVesselInput): Promise<FleetVessel> {

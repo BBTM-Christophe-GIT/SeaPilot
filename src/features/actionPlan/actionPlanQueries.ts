@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets, fleetDisplayName, type FleetAssetKind } from '../fleet/fleetDisplay';
 
 const ACTION_ITEM_SELECT = [
   'id', 'company_id', 'project_id', 'project_sharepoint_item_id', 'project_code', 'project_title',
@@ -115,6 +116,9 @@ export interface ActionTypeCatalogRecord {
 export interface VesselOption {
   id: number;
   name: string;
+  assetKind?: FleetAssetKind;
+  lengthOverall?: string;
+  illustrationThumbnailUrl?: string;
 }
 
 export interface PersonOption {
@@ -478,9 +482,12 @@ async function fetchActionTypes(client: SupabaseClient): Promise<ActionTypeCatal
 }
 
 async function fetchVessels(client: SupabaseClient): Promise<VesselOption[]> {
-  const { data, error } = await client.from('vessels').select('id,name').eq('active', true).order('name', { ascending: true });
+  const { data, error } = await client.from('vessels').select('id,name,asset_kind,length_overall,illustration_thumbnail_url').eq('active', true).order('name', { ascending: true });
   if (error) throw error;
-  return (data || []).map((row) => ({ id: Number(row.id), name: String(row.name || '') })).filter((row) => row.name);
+  return (data || []).map((row) => ({ id: Number(row.id), name: fleetDisplayName({ name: String(row.name || '') }),
+    assetKind: row.asset_kind as FleetAssetKind | undefined, lengthOverall: nullableText(row.length_overall),
+    illustrationThumbnailUrl: nullableText(row.illustration_thumbnail_url),
+  })).filter((row) => row.name).sort(compareFleetAssets);
 }
 
 async function fetchPeople(client: SupabaseClient): Promise<PersonOption[]> {

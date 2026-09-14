@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
@@ -854,7 +855,7 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     acronym: row.acronym || '',
     registrationNumber: row.registration_number || '',
     active: row.active,
-  }));
+  })).sort(compareFleetAssets);
 }
 
 export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson[] {

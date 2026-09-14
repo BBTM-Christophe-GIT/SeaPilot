@@ -1,3 +1,4 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -237,7 +238,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   useEffect(() => { void loadData(true); }, [loadData]);
 
   const categories = useMemo(() => Array.from(new Set(requests.map((request) => request.categoryLabel).filter(Boolean))).sort(), [requests]);
-  const vesselNames = useMemo(() => Array.from(new Set(requests.map((request) => request.vesselName).filter(Boolean))).sort(), [requests]);
+  const vesselNames = useMemo(() => Array.from(new Set(requests.map((request) => request.vesselName).filter(Boolean))).sort(compareFleetNames), [requests]);
   const baseRequests = useMemo(() => requests.filter((request) => {
     if (filters.vesselName && request.vesselName !== filters.vesselName) return false;
     if (filters.category && request.categoryLabel !== filters.category) return false;

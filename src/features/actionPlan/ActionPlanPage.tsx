@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
-  approveActionItem, buildActionPlanMetrics, createActionItem, fetchActionEvidenceUrls, fetchActionPlanData, isActionClosed, normalizeActionLabel,
+  approveActionItem, createActionItem, fetchActionEvidenceUrls, fetchActionPlanData, isActionClosed, normalizeActionLabel,
   updateActionItemTreatment, type ActionItemRecord, type ActionPlanData, type ActionTreatmentInput,
   type CreateActionItemInput,
 } from './actionPlanQueries';
@@ -20,6 +20,8 @@ import {
 } from './actionPlanPdf';
 import { ActionPlanControlCenter, type ActionPlanFilters } from './ActionPlanControlCenter';
 import './actionPlan.css';
+import './actionPlanNavigation.css';
+import { actionAssetKey, actionCategory } from './actionPlanNavigation';
 
 interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 
@@ -29,7 +31,7 @@ const EMPTY_DATA: ActionPlanData = {
   exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
-const EMPTY_FILTERS: ActionPlanFilters = { search: '', status: '', vessel: '', actionType: '', deviationType: '' };
+const EMPTY_FILTERS: ActionPlanFilters = { search: '', status: '', vessel: '', category: '', actionType: '', deviationType: '' };
 const DEVIATION_TYPES = [
   'Non Conformité Majeure', 'Non Conformité Mineure', 'Prescription', "Proposition d'Amélioration",
   'Recommandation', 'Remarque', 'Remarque Positive',
@@ -76,10 +78,13 @@ function actionTypeLabel(action: ActionItemRecord): string {
   return action.actionType || action.auditType || 'Autre action';
 }
 
-function actionMatches(action: ActionItemRecord, filters: ActionPlanFilters): boolean {
+function actionMatches(action: ActionItemRecord, filters: ActionPlanFilters, data: ActionPlanData): boolean {
   if (filters.status === 'open' && isActionClosed(action)) return false;
   if (filters.status === 'closed' && !isActionClosed(action)) return false;
-  if (filters.vessel && action.vesselName !== filters.vessel) return false;
+  if (filters.vessel && actionAssetKey(action, data.vessels) !== filters.vessel) return false;
+  if (filters.category && actionCategory(action, data.actionTypes) !== filters.category) return false;
+  if (filters.status === 'pending' && action.workflowStatus !== 'pending_approval') return false;
+  if (filters.status === 'overdue' && (isActionClosed(action) || !action.dueOn || action.dueOn >= new Date().toISOString().slice(0, 10))) return false;
   if (filters.actionType && actionTypeLabel(action) !== filters.actionType) return false;
   if (filters.deviationType && action.deviationType !== filters.deviationType) return false;
   if (!filters.search) return true;
@@ -415,9 +420,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   }
   useEffect(() => { void load(); }, [effectiveClient]);
 
-  const filtered = useMemo(() => data.actions.filter((action) => actionMatches(action, filters)), [data.actions, filters]);
-  const metrics = useMemo(() => buildActionPlanMetrics(filtered, data.exposureHours), [filtered, data.exposureHours]);
-  const vesselOptions = useMemo(() => unique(data.actions.map((a) => a.vesselName)), [data.actions]);
+  const filtered = useMemo(() => data.actions.filter((action) => actionMatches(action, filters, data)), [data, filters]);
   const typeOptions = useMemo(() => unique(data.actions.map(actionTypeLabel)), [data.actions]);
   const deviationOptions = useMemo(() => unique([...DEVIATION_TYPES, ...data.actions.map((a) => a.deviationType)]), [data.actions]);
 
@@ -463,9 +466,10 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
       canTreat={actionCanBeTreated}
       client={effectiveClient}
       data={data}
-      filterOptions={{ vessels: vesselOptions, actionTypes: typeOptions, deviationTypes: deviationOptions }}
+      filterOptions={{ actionTypes: typeOptions, deviationTypes: deviationOptions }}
       filters={filters}
-      metrics={metrics}
+      onScopeChange={(vessel, category) => setFilters((current) => ({ ...current, vessel, category, actionType: '' }))}
+      onShowAll={() => setFilters(EMPTY_FILTERS)}
       onActionSaved={(action) => { replaceAction(action); setMessage('Fiche corrigée sans modification du workflow.'); }}
       onApprove={setApprovalAction}
       onCreate={() => setCreateOpen(true)}

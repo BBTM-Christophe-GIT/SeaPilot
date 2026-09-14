@@ -1,3 +1,4 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BadgeCheck,
@@ -432,7 +433,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const activeRecords = view === 'sources' ? procedures : publications;
   const filteredRecords = useMemo(() => activeRecords.filter((record) => matchesFilters(record, filters)), [activeRecords, filters]);
   const projects = useMemo(() => [...new Set(activeRecords.flatMap((record) => projectNames(record.projectName)))].sort(), [activeRecords]);
-  const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(), [activeRecords]);
+  const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(compareFleetNames), [activeRecords]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
   const metrics = useMemo(() => buildProcedureMetrics({ procedures, publications }), [procedures, publications]);
 

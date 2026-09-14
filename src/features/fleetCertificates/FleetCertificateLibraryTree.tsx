@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import {
   CalendarPlus, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, Folder, RefreshCw, Ship, Trash2,
 } from 'lucide-react';
@@ -133,7 +134,7 @@ export function buildFleetCertificateLibraryTree(
         0,
       ),
     };
-  }).sort((left, right) => frenchSort.compare(left.name, right.name));
+  }).sort(compareFleetAssets);
 }
 
 function toggleKey(current: Set<string>, key: string): Set<string> {

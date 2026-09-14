@@ -36,6 +36,8 @@ const openAction = {
 const closedAction = {
   ...openAction,
   id: 811,
+  vessel_id: 13,
+  category_key: 'hse_visit',
   vessel_name: 'SUROIT',
   action_type_key: 'visit_hse',
   action_type: 'Visite HSE/Exploitation',
@@ -59,7 +61,7 @@ function ordered(data: unknown[]) {
   return chain;
 }
 
-function createClient(actions: unknown[] = [openAction, closedAction], editButtonEnabled = true) {
+function createClient(actions: unknown[] = [openAction, closedAction], editButtonEnabled = true, vessels = [{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }, { id: 14, name: 'YARD - Le Havre' }, { id: 15, name: 'Bureau - LE HAVRE' }, { id: 16, name: 'ECREHOUEL' }]) {
   const treatmentEvents: Record<string, unknown>[] = [{
     id: 8801, company_id: 1, action_item_id: 810, event_type: 'commented',
     note: 'Commande validée auprès du fournisseur.', attachment_file_name: null,
@@ -195,7 +197,7 @@ function createClient(actions: unknown[] = [openAction, closedAction], editButto
         return { select: vi.fn().mockReturnValue(ordered(actionTypes)) };
       }
       if (table === 'vessels') {
-        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }])) }) };
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered(vessels)) }) };
       }
       if (table === 'people') {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(ordered([
@@ -239,14 +241,72 @@ function renderWithProfile(client: unknown, roles = ['armement']) {
 }
 
 describe('ActionPlanPage', () => {
+  it('opens a notification target and allows another report without carrying its draft followup', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction, { ...openAction, id: 812, title: 'Deuxième contrôle' }]);
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, '', '?action=812');
+    try {
+      renderWithProfile(client, ['admin']);
+      await screen.findByRole('heading', { name: 'Deuxième contrôle' });
+      await user.type(screen.getByLabelText('Commentaire de suivi'), 'Brouillon réservé au deuxième contrôle');
+      await user.click(screen.getByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
+      expect(screen.getByRole('heading', { name: "Réaliser une analyse d'eau" })).toBeInTheDocument();
+      expect(screen.getByLabelText('Commentaire de suivi')).toHaveValue('');
+      expect(client.rpc).not.toHaveBeenCalledWith('action_item_add_treatment_event', expect.anything());
+    } finally {
+      window.history.replaceState(null, '', previousUrl);
+    }
+  });
+  it('filters vessel then category, hides unused vessels and resets all filters across ships, Yard and offices', async () => {
+    const user = userEvent.setup();
+    const progress = { ...openAction, id: 812, title: 'Ranger le pont', category_key: 'action', action_type_key: 'action_progress', action_type: 'Action de Progrès - BBTM' };
+    const yard = { ...progress, id: 813, vessel_id: 14, vessel_name: 'YARD - Le Havre', title: 'Contrôler le Yard' };
+    const office = { ...progress, id: 814, vessel_id: 15, vessel_name: 'Bureau - LE HAVRE', title: 'Vérifier les bureaux' };
+    const { client } = createClient([openAction, progress, closedAction, yard, office]);
+    render(<ActionPlanPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('button', { name: 'Tout afficher · 5' });
+    const nav = within(screen.getByRole('navigation', { name: 'Navires et lieux du plan d’action' }));
+    expect(nav.getAllByRole('button', { name: /^Afficher / }).map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Afficher GOURY · 2 éléments', 'Afficher SUROIT · 1 élément', 'Afficher Yard - LE HAVRE · 1 élément', 'Afficher Bureau - LE HAVRE · 1 élément',
+    ]);
+    expect(nav.queryByText('ECREHOUEL')).not.toBeInTheDocument();
+    await user.click(nav.getByRole('button', { name: 'Afficher GOURY · 2 éléments' }));
+    const queue = within(screen.getByRole('complementary', { name: 'Éléments du plan d’action' }));
+    expect(queue.getByRole('status')).toHaveTextContent('2 éléments');
+    expect(queue.queryByText('Contrôler le Yard')).not.toBeInTheDocument();
+    await user.click(nav.getByRole('button', { name: 'GOURY · Actions · 1 élément' }));
+    expect(queue.getByRole('status')).toHaveTextContent('1 élément');
+    expect(queue.getByText('Ranger le pont')).toBeInTheDocument();
+    expect(queue.queryByText(openAction.title)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Statut'), 'closed');
+    expect(queue.getByText('Aucun rapport ne correspond aux filtres.')).toBeInTheDocument();
+    expect(nav.getByRole('button', { name: 'Afficher GOURY · 2 éléments' })).toBeInTheDocument();
+    await user.click(nav.getByRole('button', { name: 'Tout afficher · 5' }));
+    expect(queue.getByRole('status')).toHaveTextContent('5 éléments');
+    expect(screen.getByLabelText('Statut')).toHaveValue('');
+    await user.click(nav.getByRole('button', { name: 'Afficher Yard - LE HAVRE · 1 élément' }));
+    expect(screen.getByRole('heading', { name: 'Contrôler le Yard' })).toBeInTheDocument();
+    await user.click(nav.getByRole('button', { name: 'Afficher Bureau - LE HAVRE · 1 élément' }));
+    expect(screen.getByRole('heading', { name: 'Vérifier les bureaux' })).toBeInTheDocument();
+  });
+
+  it('does not leak empty fleet entries or reports into an empty Marin fixture', async () => {
+    const { client } = createClient([]);
+    render(<ActionPlanPage client={client as never} roles={['marin']} />);
+    await screen.findByText('Aucun élément accessible.');
+    expect(screen.queryByRole('button', { name: /^Afficher GOURY/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les types' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tout afficher · 0' })).toBeInTheDocument();
+  });
+
   it('shows the prioritized control center and filters without an HSE indicators tab', async () => {
     const { client } = createClient();
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
 
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
-    expect(screen.getByLabelText('Actions ouvertes')).toHaveTextContent('1');
-    expect(screen.getByLabelText('En retard')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Heures travaillées')).toHaveTextContent('124 500 h');
+    expect(screen.getByRole('button', { name: 'Tout afficher · 2' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByLabelText('Heures travaillées')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sources importées' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Indicateurs HSE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Date - titre')).not.toBeInTheDocument();
@@ -298,7 +358,7 @@ describe('ActionPlanPage', () => {
     expect(screen.getByRole('button', { name: 'Nouveau rapport' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Traiter l’action' })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Commentaire de suivi'), 'Contrôle terminé à bord.');
-    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le suivi' }));
     expect(client.rpc).toHaveBeenCalledWith('action_item_add_treatment_followup', expect.objectContaining({
       p_action_id: openAction.id, p_note: 'Contrôle terminé à bord.', p_close_action: false,
     }));
@@ -426,7 +486,7 @@ describe('ActionPlanPage', () => {
     renderWithProfile(client, ['admin']);
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     const manageTypesButton = screen.getByRole('button', { name: 'Gérer les types' });
-    expect(manageTypesButton.closest('.action-control-queue-header')).not.toBeNull();
+    expect(manageTypesButton.closest('.action-queue-management')).not.toBeNull();
     await user.click(manageTypesButton);
     await user.click(screen.getByRole('button', { name: 'Modifier Audit Interne - BBTM' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Modifier le type d’évènement' }));
