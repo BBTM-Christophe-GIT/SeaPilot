@@ -62,6 +62,16 @@ export function silaePersonName(person: SilaePerson): string {
   return `${person.lastName.trim().toLocaleUpperCase('fr-FR')} ${person.firstName.trim()}`.trim();
 }
 
+const SILAE_PERSON_OVERRIDES = new Map([
+  ['BENJAMIN:BON', { functionLabel: 'Capitaine', enimFunctionCode: 'AA01A', enimCategory: '15' }],
+  ['ANTOINE:MONCEAUX', { functionLabel: 'Capitaine', enimFunctionCode: 'AA01A', enimCategory: '15' }],
+  ['JULIEN:LECOCQ', { functionLabel: 'Chef Mécanicien', enimFunctionCode: 'CB01A', enimCategory: '15' }],
+]);
+
+export function getSilaePersonOverride(person: Pick<SilaePerson, 'firstName' | 'lastName'>) {
+  return SILAE_PERSON_OVERRIDES.get(`${normalizePlanningText(person.firstName)}:${normalizePlanningText(person.lastName)}`);
+}
+
 export function isSilaeEligible(person: SilaePerson, today = todayPlanningDate()): boolean {
   const labels = `${person.functionLabel} ${person.gradeLabel} ${person.roleLabel}`;
   const normalized = normalizePlanningText(labels);
@@ -72,8 +82,8 @@ export function isSilaeEligible(person: SilaePerson, today = todayPlanningDate()
   const employed = person.active || Boolean(person.hiredOn && person.departedOn >= today);
   return employed && (!person.hiredOn || person.hiredOn <= today)
     && (!person.departedOn || person.departedOn >= today)
-    && !adam && !isSedentaryPlanningFunction(labels)
-    && !['SEDENTAIRE', 'DIRECTION', 'YARDMANAGER'].some((key) => normalized.includes(key));
+    && !adam && (Boolean(getSilaePersonOverride(person)) || (!isSedentaryPlanningFunction(labels)
+      && !['SEDENTAIRE', 'DIRECTION', 'YARDMANAGER'].some((key) => normalized.includes(key))));
 }
 
 export function silaeMonthRange(month: string): { start: string; end: string; days: number } {
@@ -95,6 +105,7 @@ export function buildSilaeEmployee(data: SilaeData, person: SilaePerson, month: 
   const range = silaeMonthRange(month);
   const issues = new Set<string>();
   const periods: SilaePeriod[] = [];
+  const personOverride = getSilaePersonOverride(person);
   const start = person.hiredOn > range.start ? person.hiredOn : range.start;
   const end = person.departedOn && person.departedOn < range.end ? person.departedOn : range.end;
   if ((person.hiredOn && !isPlanningDate(person.hiredOn)) || (person.departedOn && !isPlanningDate(person.departedOn))) {
@@ -126,7 +137,9 @@ export function buildSilaeEmployee(data: SilaeData, person: SilaePerson, month: 
       || assignments.some((assignment) => assignment.sourceId === source.parentAssignmentId)));
     // A dated planning function overrides the RH function only on its dates.
     // Blank / legacy Équipage values and absences carry no function override.
-    const functions = candidates.filter((source) => source.functionLabel?.trim() && normalizePlanningText(source.functionLabel) !== 'EQUIPAGE');
+    const functions = candidates.filter((source) => source.functionLabel?.trim()
+      && !['EQUIPAGE', 'CREW'].includes(normalizePlanningText(source.functionLabel))
+      && !(personOverride && isSedentaryPlanningFunction(source.functionLabel)));
     const functionPriority = Math.max(...functions.map((source) => source.priority));
     const labels = new Set(functions.filter((source) => source.priority === functionPriority).map((source) => normalizeHrFunctionLabel(source.functionLabel!)));
     if (labels.size > 1) {
@@ -134,10 +147,10 @@ export function buildSilaeEmployee(data: SilaeData, person: SilaePerson, month: 
       continue;
     }
     const plannedFunction = [...labels][0];
-    const functionLabel = plannedFunction || normalizeHrFunctionLabel(person.functionLabel);
+    const functionLabel = plannedFunction || personOverride?.functionLabel || normalizeHrFunctionLabel(person.functionLabel);
     const classification = plannedFunction ? getHrEnimClassification(plannedFunction) : null;
-    const enimFunctionCode = classification ? classification.functionCode : person.enimFunctionCode;
-    const enimCategory = classification ? classification.category === null ? '' : String(classification.category) : person.enimCategory;
+    const enimFunctionCode = classification ? classification.functionCode : personOverride?.enimFunctionCode || person.enimFunctionCode;
+    const enimCategory = classification ? classification.category === null ? '' : String(classification.category) : personOverride?.enimCategory || person.enimCategory;
     if (plannedFunction && !enimFunctionCode) issues.add(`Code Fonction ENIM inconnu pour la fonction planifiée « ${plannedFunction} ».`);
     else if (!enimFunctionCode.trim()) issues.add('Code Fonction ENIM manquant.');
     if (!enimCategory.trim()) issues.add('Catégorie ENIM manquante.');

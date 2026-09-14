@@ -103,10 +103,11 @@ export function PlanningSilaeExportDialog({ client, onClose, previewOverview }: 
         <div className="planning-export-intro"><Download aria-hidden="true" size={30} /><div><h2 id="silae-title">Export SILAE</h2><p>Lignes de services mensuelles · Excel au format texte</p></div></div>
         {previewOverview ? <p className="planning-silae-note">Démonstration : les matricules DEMO sont fictifs. Ce fichier ne doit pas être importé dans SILAE.</p> : null}
         <label className="planning-silae-month">Mois et année de l’export<input disabled={saving} onChange={(event) => { setMonth(event.target.value); setConfirmed(false); setSuccess(''); setActionError(''); }} required type="month" value={month} /></label>
-        <p className="planning-silae-note">Marins actuellement en poste uniquement. Les anciens et les sédentaires, dont Adam DEBORDEAUX, sont exclus. La sélection est indépendante des filtres du planning.</p>
+        <p className="planning-silae-note">Personnel actuellement en poste uniquement. Les sédentaires sont exclus, sauf Benjamin BON, Antoine MONCEAUX et Julien LECOCQ. Adam DEBORDEAUX reste exclu. La sélection est indépendante des filtres du planning.</p>
+        <p className="planning-silae-note">Classification SILAE : Benjamin BON et Antoine MONCEAUX, Capitaine · AA01A · catégorie 15 ; Julien LECOCQ, Chef Mécanicien · CB01A · catégorie 15.</p>
         <p className="planning-silae-note">Les jours sans affectation sont comptés en repos. Vérifiez les périodes avant de confirmer.</p>
         <p className="planning-silae-note">Les périodes commencent à la date d’embauche et s’arrêtent à la date de départ, dates incluses. JrsMer reste vide au repos.</p>
-        <p className="planning-silae-note">Une fonction temporaire se renseigne dans le champ Fonction de la période du planning. Son code ENIM s’applique sur ces dates ; la fonction RH est utilisée en l’absence de fonction planifiée.</p>
+        <p className="planning-silae-note">Une fonction temporaire se renseigne dans le champ Fonction de la période du planning. Son code ENIM s’applique sur ces dates ; sinon la classification SILAE indiquée ci-dessus ou la fonction RH est utilisée.</p>
         <p className="planning-silae-note">NbjPos15 et ValPos15 restent vides dans l’attente de vos règles de calcul.</p>
         {loading ? <p role="status"><RefreshCw aria-hidden="true" className="is-spinning" size={16} /> Chargement des fiches RH et du planning…</p> : null}
         {error ? <div className="planning-export-feedback is-error" role="alert">{error} <button disabled={saving || loading} onClick={() => { setRetry((value) => value + 1); setConfirmed(false); setSuccess(''); setActionError(''); }} type="button">Réessayer</button></div> : null}

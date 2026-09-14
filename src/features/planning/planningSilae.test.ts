@@ -10,8 +10,69 @@ const data = (sources: SilaeSource[]): SilaeData => ({ people: [person], vessels
 // Actual planning has only these two assignments; the example's rest periods
 // are the gaps before, between and after them.
 const august = data([source('2026-08-03', '2026-08-10', 'En Mer'), source('2026-08-19', '2026-08-28', 'En Mer')]);
+const additionalPeople: SilaePerson[] = [
+  { ...person, id: 7, firstName: 'Benjamin', lastName: 'BON', employeeNumber: '00001', functionLabel: 'Président', gradeLabel: 'Sédentaire', enimFunctionCode: '', enimCategory: '' },
+  { ...person, id: 16, firstName: 'Antoine', lastName: 'MONCEAUX', employeeNumber: '00019', gradeLabel: 'Sédentaire' },
+  { ...person, id: 13, firstName: 'Julien', lastName: 'LECOCQ', employeeNumber: '00002', functionLabel: 'Chef Mécanicien', gradeLabel: 'Sédentaire', enimFunctionCode: 'CB01A' },
+];
 
 describe('SILAE monthly service lines', () => {
+  it.each(additionalPeople)('includes $firstName $lastName with the requested export classification while preserving the RH record', (additional) => {
+    expect(isSilaeEligible(additional, '2026-09-14')).toBe(true);
+    const input = data([source('2026-09-01', '2026-09-10', 'A Terre', { personId: additional.id, functionLabel: additional.functionLabel })]);
+    const result = buildSilaeEmployee(input, additional, '2026-09');
+    const chef = additional.lastName === 'LECOCQ';
+    expect(result.issues).toEqual([]);
+    expect(result.person).toBe(additional);
+    expect(result.periods).toEqual([
+      expect.objectContaining({ state: 'sea', seaDays: 10, functionLabel: chef ? 'Chef Mécanicien' : 'Capitaine', enimFunctionCode: chef ? 'CB01A' : 'AA01A', enimCategory: '15' }),
+      expect.objectContaining({ state: 'rest', seaDays: 0, functionLabel: chef ? 'Chef Mécanicien' : 'Capitaine', enimFunctionCode: chef ? 'CB01A' : 'AA01A', enimCategory: '15' }),
+    ]);
+    expect(buildSilaeRows([result])[1][0]).toBe(additional.employeeNumber);
+    expect(isSilaeEligible({ ...additional, active: false }, '2026-09-14')).toBe(false);
+    expect(isSilaeEligible({ ...additional, departedOn: '2026-09-13' }, '2026-09-14')).toBe(false);
+    expect(isSilaeEligible({ ...additional, hiredOn: '2026-10-01' }, '2026-09-14')).toBe(false);
+  });
+
+  it('matches only the three authorized names and still honors a dated maritime function', () => {
+    const benjamin = additionalPeople[0];
+    expect(isSilaeEligible({ ...benjamin, firstName: ' benjamin ', lastName: 'Bon ' })).toBe(true);
+    expect(isSilaeEligible({ ...benjamin, firstName: 'Autre' })).toBe(false);
+    const result = buildSilaeEmployee(data([
+      source('2026-09-01', '2026-09-02', 'A Terre', { personId: benjamin.id, functionLabel: 'crew' }),
+      source('2026-09-03', '2026-09-10', 'A Terre', { personId: benjamin.id, functionLabel: 'Président' }),
+      source('2026-09-11', '2026-09-12', 'En Mer', { personId: benjamin.id, functionLabel: '2nd Capitaine' }),
+    ]), benjamin, '2026-09');
+    expect(result.issues).toEqual([]);
+    expect(result.periods.map((period) => [period.startsOn, period.endsOn, period.enimFunctionCode, period.enimCategory])).toEqual([
+      ['2026-09-01', '2026-09-10', 'AA01A', '15'], ['2026-09-11', '2026-09-12', 'CA01A', '12'], ['2026-09-13', '2026-09-30', 'AA01A', '15'],
+    ]);
+  });
+
+  it('does not invent an Armement registration for the additional staff', () => {
+    const benjamin = additionalPeople[0];
+    const result = buildSilaeEmployee({ ...data([source('2026-09-01', '2026-09-30', 'A Terre', { personId: benjamin.id, functionLabel: 'Président' })]), vessels: [{ id: 10, name: 'Armement - Cherbourg', registrationNumber: '' }] }, benjamin, '2026-09');
+    expect(result.issues).toEqual(['Navire ou immatriculation manquant pour une période.']);
+    expect(result.periods[0]).toMatchObject({ enimFunctionCode: 'AA01A', enimCategory: '15', registrationNumber: '' });
+    expect(() => buildSilaeRows([result])).toThrow();
+  });
+
+  it('writes the three additional employees with text matricules, codes and categories', async () => {
+    const employees = additionalPeople.map((additional) => buildSilaeEmployee(data([
+      source('2026-09-01', '2026-09-30', 'En Mer', { personId: additional.id }),
+    ]), additional, '2026-09'));
+    const zip = await JSZip.loadAsync(await generateSilaeWorkbook(employees));
+    const doc = new DOMParser().parseFromString(await zip.file('xl/worksheets/sheet1.xml')!.async('string'), 'application/xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    additionalPeople.forEach((additional, i) => {
+      const row = i + 2;
+      expect(doc.querySelector(`c[r="A${row}"] t`)?.textContent).toBe(additional.employeeNumber);
+      expect(doc.querySelector(`c[r="J${row}"] t`)?.textContent).toBe(additional.lastName === 'LECOCQ' ? 'CB01A' : 'AA01A');
+      expect(doc.querySelector(`c[r="N${row}"] t`)?.textContent).toBe('15');
+    });
+    expect([...doc.querySelectorAll('c')].every((cell) => cell.getAttribute('t') === 'inlineStr')).toBe(true);
+  });
+
   it('retains the AUGUIN example with the requested blank JrsMer for rest', () => {
     const employee = buildSilaeEmployee(august, person, '2026-08');
     expect(employee.issues).toEqual([]);
