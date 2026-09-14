@@ -16,7 +16,7 @@ const range = { start: '2026-09-30', end: '2026-10-08' };
 const ref = { personId: person.id, asOf: range.start, balance: 10 };
 
 describe('crew cumulative balance', () => {
-  it.each([['En Mer', 105], ['A Terre', 50], ['Extra', 205], ['Formation', 50], ['Arrêt Maladie', 0], ['Accident du Travail', 0], ['Repos', -100], ['Congés', -100], ['', -100]])('%s has the agreed weight in cents', (status, cents) => expect(planningCrewDayCents(status)).toBe(cents));
+  it.each([['En Mer', 105], ['A Terre', 50], ['Extra', -100], ['Formation', 50], ['Arrêt Maladie', 0], ['Accident du Travail', 0], ['Repos', -100], ['Congés', -100], ['', -100]])('%s has the agreed weight in cents', (status, cents) => expect(planningCrewDayCents(status)).toBe(cents));
   it('starts the day after the EOD checkpoint and carries the sum across months and empty days', () => {
     const data = overview([
       assignment(1, '2026-09-30', '2026-10-01'), assignment(2, '2026-10-02', '2026-10-02', 'A Terre'),
@@ -25,8 +25,9 @@ describe('crew cumulative balance', () => {
       assignment(7, '2026-10-08', '2026-10-08', 'Formation'),
     ]);
     const result = buildPlanningCrewBalanceDays(person, data, [], [ref], range);
-    expect([...result.values()].map((day) => day.value)).toEqual([10, 11.05, 11.55, 13.6, 12.6, 11.6, 11.6, 11.6, 12.1]);
-    expect(buildPlanningCrewBalanceDays(person, data, [], [ref], { start: '2026-10-08', end: '2026-10-08' }).get('2026-10-08')?.value).toBe(12.1);
+    expect([...result.values()].map((day) => day.value)).toEqual([10, 11.05, 11.55, 10.55, 9.55, 8.55, 8.55, 8.55, 9.05]);
+    expect(result.get('2026-10-03')?.explanation).toContain('Extra : -1,00');
+    expect(buildPlanningCrewBalanceDays(person, data, [], [ref], { start: '2026-10-08', end: '2026-10-08' }).get('2026-10-08')?.value).toBe(9.05);
   });
   it('requires a reference, permits negative balances and resets at a later EOD checkpoint', () => {
     expect(buildPlanningCrewBalanceDays(person, overview([]), [], [], range).get(range.end)?.value).toBeNull();

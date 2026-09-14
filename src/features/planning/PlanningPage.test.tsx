@@ -1107,7 +1107,10 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.queryByRole('button', { name: 'Export SILAE' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
+    expect(screen.queryByRole('button', { name: /Saisir le solde/ })).not.toBeInTheDocument();
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
@@ -1162,6 +1165,10 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['capitaine']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
+    expect(screen.queryByRole('button', { name: /Saisir le solde/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Générer une crew list' })).toBeInTheDocument();
     expect(screen.queryByText('Affectation rapide')).not.toBeInTheDocument();
@@ -1175,6 +1182,24 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(projectButton);
     expect(await screen.findByRole('menuitem', { name: 'Voir les détails' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['capitaine', 'marin'] as const)('closes an already open crew view and balance dialog when the actual roles change to %s', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient({ periods: [planningPeriodRow] });
+    const { container, rerender } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' }));
+    expect(screen.getByRole('dialog', { name: 'Solde de Paul DURAND' })).toBeInTheDocument();
+    client.from.mockClear();
+
+    rerender(<PlanningPage client={client as never} roles={[role]} />);
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('dialog', { name: 'Solde de Paul DURAND' })).not.toBeInTheDocument();
+    expect(container.querySelector('.has-crew-balances')).not.toBeInTheDocument();
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
   });
 
   it('allows office direction to edit while keeping vessel administration restricted', async () => {

@@ -12,9 +12,8 @@ export function planningCrewDayCents(status: string): number | null {
   const key = normalizePlanningText(status);
   if (['ENMER', 'EMBARQUE', 'EMBARQUEMENT'].includes(key)) return 105;
   if (['ATERRE', 'FORMATION'].includes(key)) return 50;
-  if (key === 'EXTRA') return 205;
   if (['ARRETMALADIE', 'ACCIDENTDUTRAVAIL'].includes(key)) return 0;
-  if (['', 'REPOS', 'ENREPOS', 'CONGE', 'CONGES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return -100;
+  if (['', 'EXTRA', 'REPOS', 'ENREPOS', 'CONGE', 'CONGES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return -100;
   return null;
 }
 
