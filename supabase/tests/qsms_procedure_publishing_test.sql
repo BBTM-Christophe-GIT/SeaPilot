@@ -1,6 +1,9 @@
 begin;
 
-select plan(16);
+select plan(20);
+
+select has_column('public', 'procedures', 'source_google_drive_file_id', 'Drive IDs belong to private source metadata');
+select has_column('public', 'procedures', 'source_google_drive_path', 'Sources retain a per-workstation relative path');
 
 select has_column('public', 'procedures', 'approval_status', 'legacy procedure clients keep a nullable compatibility column');
 select has_column('public', 'published_procedures', 'approval_status', 'legacy publication clients keep a nullable compatibility column');
@@ -120,6 +123,16 @@ select lives_ok(
   $$update storage.objects set metadata = metadata || '{"cacheControl":"0"}'::jsonb
     where name = 'sources/test/qsms-private-source.docx'$$,
   'admin can replace an existing private source object'
+);
+
+select lives_ok(
+  $$update public.procedures set source_google_drive_file_id = '1234567890abcdef', source_google_drive_path = 'URG/source.docx'
+    where procedure_code = 'TST 9001-A'$$,
+  'admin can link the private source to Drive before real-profile visibility checks'
+);
+select throws_ok(
+  $$update public.procedures set source_google_drive_path = '../outside.docx' where procedure_code = 'TST 9001-A'$$,
+  '23514', null, 'Drive paths cannot escape the configured folder'
 );
 
 select set_config('request.jwt.claim.sub', '7a000000-0000-0000-0000-000000000002', true);

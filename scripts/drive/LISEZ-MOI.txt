@@ -1,0 +1,16 @@
+SEAPILOT - GOOGLE DRIVE POUR WINDOWS
+
+1. Installez Google Drive pour ordinateur et connectez votre compte.
+2. Verifiez que le dossier SeaPilot / Procedures est visible dans le lecteur Google Drive.
+3. Extrayez entierement cette archive, puis double-cliquez sur Installer.cmd.
+4. Choisissez ce dossier synchronise. Word et Excel doivent etre installes.
+5. Dans SeaPilot, ouvrez un document lie a Drive et acceptez l'ouverture du lanceur si le navigateur le demande.
+
+Le lanceur ouvre seulement les documents Office ou texte du dossier configure.
+Il ne telecharge aucun programme, ne change pas les permissions Drive, et ne stocke aucun mot de passe.
+Google Drive assure la synchronisation apres l'enregistrement dans Office.
+Un fichier deplace ou renomme necessite de mettre a jour son chemin dans SeaPilot.
+Les droits SeaPilot et Google Drive sont independants : partagez les sources uniquement avec les gestionnaires autorises.
+Les PDF publies dans SeaPilot restent des versions distinctes et ne sont pas mis a jour par une sauvegarde dans Office.
+
+Desinstallation : supprimer la cle HKCU\Software\Classes\seapilot-drive et le dossier %LOCALAPPDATA%\SeaPilotDrive.
