@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -Path @((Join-Path $PSScriptRoot 'SeaPilotDrive.cs'), (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')) -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions
-$testRoot = Join-Path $env:TEMP ('seapilot-drive-test-' + [guid]::NewGuid())
+# Hosted Windows runners can expose TEMP using an 8.3 short username. Compare
+# canonical full paths, as the launcher does, instead of short/long spellings.
+$testRoot = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('seapilot-drive-test-' + [guid]::NewGuid())))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 $testPath = Join-Path $testRoot 'procedure.docx'
 Set-Content -LiteralPath $testPath -Value 'fixture'
