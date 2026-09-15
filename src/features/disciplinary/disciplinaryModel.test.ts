@@ -28,6 +28,37 @@ describe('disciplinary legal calendar', () => {
   });
 });
 describe('disciplinary templates', () => {
+  it.each(['convocation', 'conservatoire'] as const)('inserts rich facts as complete blocks in a %s', (kind) => {
+    const form = { ...initialForm(person), facts: '<h2>Observations</h2><ul><li>Fait daté</li></ul>', sanctionDetails: '<p><b>Modalités précises</b></p>' };
+    const letter = generateLetter(form, kind, { name: 'Marie', function: 'Direction' });
+    expect(letter.body).toContain('<h2>Observations</h2><ul><li>Fait daté</li></ul>');
+    expect(letter.body).not.toMatch(/[\uE000\uE001]/);
+    if (kind === 'conservatoire') expect(letter.body).toContain('<b>Modalités précises</b>');
+  });
+  it.each(['avertissement', 'mise_a_pied', 'licenciement'] as const)('preserves all four rich fields in a %s letter and escapes plain template inputs', (sanction) => {
+    const form = { ...initialForm(person), sanction, facts: '<p><b>Fait précis</b></p><ul><li>Observation</li></ul>', evidence: '<p><i>Témoin</i></p>', rules: '<p><u>Consigne</u></p>', sanctionDetails: '<ol><li>Première modalité</li><li>Deuxième modalité</li></ol>', vessel: '<strong>Lieu littéral</strong>' };
+    const letter = generateLetter(form, 'notification', { name: 'Marie', function: 'Direction' });
+    const template = document.createElement('template'); template.innerHTML = letter.body;
+    expect(template.content.querySelector('b')?.textContent).toBe('Fait précis');
+    expect(template.content.querySelector('i')?.textContent).toBe('Témoin');
+    expect(template.content.querySelector('u')?.textContent).toBe('Consigne');
+    expect(template.content.querySelectorAll('ol li')).toHaveLength(2);
+    expect(letter.body).toContain('&lt;strong&gt;Lieu littéral&lt;/strong&gt;');
+    expect(letter.body).not.toMatch(/[\uE000\uE001]/);
+  });
+  it('rejects visually empty rich fields and placeholders split by formatting', () => {
+    const form = { ...initialForm(person), facts: '<p><br></p>', evidence: '<p>&nbsp;</p>', rules: '<div><b> </b></div>' };
+    const letter = generateLetter(form, 'notification', { name: 'Marie', function: 'Direction' });
+    expect(letterIssues(form, letter).join(' ')).toContain('Préciser les faits');
+    expect(letterIssues(form, { ...letter, body: '<p><br></p>' }).join(' ')).toContain('corps du courrier');
+    expect(letterIssues(form, { ...letter, body: '<p>[<strong>À compléter</strong>]</p>' }).join(' ')).toContain('entre crochets');
+  });
+  it('sanitizes pasted content before composing the letter', () => {
+    const form = { ...initialForm(person), facts: '<p onclick="alert(1)"><b>Fait</b><script>alert(1)</script><img src=x onerror="alert(2)"><a href="javascript:alert(1)">Lien</a></p>' };
+    const letter = generateLetter(form, 'notification', { name: 'Marie', function: 'Direction' });
+    expect(letter.body).toContain('<b>Fait</b>');
+    expect(letter.body).not.toMatch(/onclick|onerror|javascript:|<script|<img/);
+  });
   it('requires a fresh review after preparation changes and validates the actual sending date', () => {
     const form = { ...initialForm(person), optionalInterview: true, interviewAt: '2026-09-07T10:00', notificationOn: '2026-10-09' };
     const letter = generateLetter(form, 'notification', { name: 'Marie', function: 'Direction' });

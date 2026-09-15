@@ -1,11 +1,8 @@
 import JSZip from 'jszip';
 import { frenchDate, type DisciplinaryLetter } from './disciplinaryModel';
+import { disciplinaryWordBody, xmlText } from './disciplinaryWordBody';
 
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-export function xmlText(value: string): string {
-  // eslint-disable-next-line no-control-regex -- XML 1.0 forbids these control characters.
-  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-}
 function paragraph(text: string, align = 'left', bold = false, keepNext = false): string {
   const runs = text.split('\n').map((line, index) => `${index ? '<w:r><w:br/></w:r>' : ''}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>${bold ? '<w:b/>' : ''}</w:rPr><w:t xml:space="preserve">${xmlText(line)}</w:t></w:r>`).join('');
   return `<w:p><w:pPr><w:jc w:val="${align}"/>${keepNext ? '<w:keepNext/>' : ''}<w:spacing w:after="160" w:line="260" w:lineRule="auto"/></w:pPr>${runs}</w:p>`;
@@ -24,10 +21,23 @@ export async function buildDisciplinaryDocx(letter: DisciplinaryLetter, template
   if (!original) throw new Error('Le modèle Word est invalide.');
   const section = original.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
   if (!section) throw new Error('La mise en page du modèle est introuvable.');
+  const body = disciplinaryWordBody(letter.body);
+  const relPath = 'word/_rels/document.xml.rels';
+  const rels = await zip.file(relPath)!.async('string');
+  zip.file(relPath, rels.replace('</Relationships>', `${body.relationships}</Relationships>`));
+  if (body.numbering) {
+    const numberingPath = 'word/disciplinary-numbering.xml';
+    zip.file(numberingPath, `<?xml version="1.0" encoding="UTF-8"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body.numbering}</w:numbering>`);
+    const updatedRels = await zip.file(relPath)!.async('string');
+    // The replaced body uses only the generated list definitions.
+    zip.file(relPath, updatedRels.replace(/<Relationship\b[^>]*Type="[^"]*\/numbering"[^>]*\/>/g, '').replace('</Relationships>', '<Relationship Id="rIdDisciplinaryNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="disciplinary-numbering.xml"/></Relationships>'));
+    const types = await zip.file('[Content_Types].xml')!.async('string');
+    zip.file('[Content_Types].xml', types.replace('</Types>', '<Override PartName="/word/disciplinary-numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>'));
+  }
   let content = paragraph(`${letter.employeeName}\n${letter.address}`, 'right')
     + paragraph(`Cherbourg-en-Cotentin, le ${frenchDate(letter.date)}`, 'right')
     + paragraph(`Objet : ${letter.subject}`, 'left', true)
-    + letter.body.split(/\n\n+/).map((text) => paragraph(text)).join('')
+    + body.xml
     + paragraph(`${letter.emitterName}\n${letter.emitterFunction}`, 'right', false, Boolean(letter.signatureDataUrl));
   if (letter.signatureDataUrl) {
     const match = letter.signatureDataUrl.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);

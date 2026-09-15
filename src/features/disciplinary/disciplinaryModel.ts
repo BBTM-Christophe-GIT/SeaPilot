@@ -1,3 +1,5 @@
+import { disciplinaryBodyHasContent, disciplinaryBodyToHtml, disciplinaryBodyToPlainText, disciplinaryTextToHtml } from './disciplinaryRichText';
+
 export const LEGAL_REVIEWED_ON = '2026-09-15';
 export const LEGAL_SOURCES = [
   { label: 'Service Public · sanctions disciplinaires', url: 'https://www.service-public.gouv.fr/particuliers/vosdroits/F2234' },
@@ -181,8 +183,14 @@ export function procedureNotes(form: DisciplinaryForm): { title: string; text: s
 
 export function generateLetter(form: DisciplinaryForm, kind: LetterKind, emitter: { name: string; function: string; signature?: string }): DisciplinaryLetter {
   const dismissal = form.sanction === 'licenciement';
-  const detail = form.sanctionDetails.trim() || '[Préciser les modalités, dates et conséquences de la sanction]';
-  const facts = `Le ${frenchDate(form.factsOn)}, ${form.vessel ? `à bord / sur le site ${form.vessel}, ` : ''}les faits suivants ont été relevés :\n${form.facts.trim() || '[Décrire des faits précis, datés et personnellement imputables]'}\n\n${REASONS[form.reason].paragraph}\n${form.evidence || '[Préciser les constats, témoignages et preuves licitement recueillis]'}\n\nObligations professionnelles concernées : ${form.rules || '[Identifier les obligations, le règlement intérieur ou les consignes applicables]'}.`;
+  const fragments: string[] = [];
+  // Insert rich fields as complete paragraphs after escaping all plain template values.
+  const rich = (value: string, fallback: string) => {
+    fragments.push(disciplinaryBodyHasContent(value) ? disciplinaryBodyToHtml(value) : disciplinaryTextToHtml(fallback));
+    return `\n\n\uE000${fragments.length - 1}\uE001\n\n`;
+  };
+  const detail = rich(form.sanctionDetails, '[Préciser les modalités, dates et conséquences de la sanction]');
+  const facts = `Le ${frenchDate(form.factsOn)}, ${form.vessel ? `à bord / sur le site ${form.vessel}, ` : ''}les faits suivants ont été relevés :${rich(form.facts, '[Décrire des faits précis, datés et personnellement imputables]')}${REASONS[form.reason].paragraph}${rich(form.evidence, '[Préciser les constats, témoignages et preuves licitement recueillis]')}Obligations professionnelles concernées :${rich(form.rules, '[Identifier les obligations, le règlement intérieur ou les consignes applicables]')}`;
   let subject: string, body: string;
   if (kind === 'convocation') {
     subject = `Convocation à un entretien préalable à une éventuelle ${dismissal ? 'mesure de licenciement' : 'sanction disciplinaire'}`;
@@ -192,31 +200,33 @@ export function generateLetter(form: DisciplinaryForm, kind: LetterKind, emitter
     body = `Nous envisageons à votre égard une éventuelle ${dismissal ? 'mesure de licenciement pour motif disciplinaire' : 'sanction disciplinaire'}. Aucune décision n’est prise à ce stade.\n\nNous vous invitons à un entretien le ${frenchDate(form.interviewAt)} à ${form.interviewAt.slice(11, 16) || '[heure]'}, à ${form.interviewPlace || '[lieu de l’entretien]'}. Nous vous exposerons les motifs envisagés et recueillerons vos explications.\n\n${assistance}\n\nLes éléments à examiner sont les suivants :\n${facts}`;
   } else if (kind === 'conservatoire') {
     subject = 'Notification d’une mise à pied à titre conservatoire';
-    body = `Au regard des faits ci-dessous et dans l’attente de la décision à intervenir, nous vous informons de votre mise à pied à titre conservatoire, prenant effet selon les modalités suivantes : ${detail}.\n\nCette mesure provisoire ne constitue pas une sanction disciplinaire et ne préjuge pas de la décision finale. Une procédure disciplinaire est engagée sans délai ; les modalités de votre entretien vous sont communiquées par convocation distincte. Le traitement de la rémunération sera régularisé selon l’issue de la procédure et les règles applicables.\n\n${facts}`;
+    body = `Au regard des faits ci-dessous et dans l’attente de la décision à intervenir, nous vous informons de votre mise à pied à titre conservatoire, prenant effet selon les modalités suivantes : ${detail}\n\nCette mesure provisoire ne constitue pas une sanction disciplinaire et ne préjuge pas de la décision finale. Une procédure disciplinaire est engagée sans délai ; les modalités de votre entretien vous sont communiquées par convocation distincte. Le traitement de la rémunération sera régularisé selon l’issue de la procédure et les règles applicables.\n\n${facts}`;
   } else {
     const sanctionSubjects = { avertissement: 'Notification d’un avertissement', blame: 'Notification d’un blâme', mise_a_pied: 'Notification d’une mise à pied disciplinaire', mutation: 'Proposition de mutation disciplinaire', retrogradation: 'Proposition de rétrogradation', licenciement: `Notification de licenciement pour ${FAULTS[form.fault].label.toLowerCase()}` };
     subject = sanctionSubjects[form.sanction];
     const hearing = requiresInterview(form) ? `À la suite de l’entretien préalable du ${frenchDate(form.interviewAt)}, nous avons examiné vos explications : ${form.explanations || '[Restituer les explications ou constater l’absence à l’entretien]'}.\n\n` : '';
     const decision = dismissal
-      ? `Nous vous notifions votre licenciement pour ${FAULTS[form.fault].label.toLowerCase()}. ${form.fault === 'simple' ? `Les modalités du préavis et les indemnités applicables sont les suivantes : ${detail}.` : `Les circonstances qui rendent votre maintien impossible, même pendant le préavis, sont les suivantes : ${detail}. La rupture intervient sans préavis ni indemnité légale de licenciement, sous réserve des dispositions plus favorables applicables. Les congés payés acquis non pris restent indemnisables.`}${form.fault === 'lourde' ? `\nL’intention de nuire à l’employeur est caractérisée par les éléments distincts suivants : ${form.harmfulIntent || '[Établir l’intention de nuire]'}.` : ''}\nLes documents de fin de contrat vous seront remis selon les modalités convenues.`
-      : ['mutation', 'retrogradation'].includes(form.sanction) ? `Nous vous proposons une ${SANCTIONS[form.sanction].label.toLowerCase()} selon les modalités suivantes : ${detail}. Si cette mesure modifie votre contrat, elle ne sera appliquée qu’après votre accord exprès. Nous vous invitons à nous faire connaître votre réponse écrite dans le délai indiqué ci-dessus.`
-        : form.sanction === 'mise_a_pied' ? `Nous vous notifions une mise à pied disciplinaire selon les modalités suivantes : ${detail}. La suspension du contrat et de la rémunération est limitée à cette période et respecte la durée maximale autorisée par le règlement intérieur.`
-          : `Nous vous notifions un ${SANCTIONS[form.sanction].label.toLowerCase()}. Nous vous demandons de respecter les obligations et consignes rappelées ci-dessus et de ne pas réitérer les manquements établis.`;
+      ? `Nous vous notifions votre licenciement pour ${FAULTS[form.fault].label.toLowerCase()}. ${form.fault === 'simple' ? `Les modalités du préavis et les indemnités applicables sont les suivantes : ${detail}` : `Les circonstances qui rendent votre maintien impossible, même pendant le préavis, sont les suivantes : ${detail} La rupture intervient sans préavis ni indemnité légale de licenciement, sous réserve des dispositions plus favorables applicables. Les congés payés acquis non pris restent indemnisables.`}${form.fault === 'lourde' ? `\nL’intention de nuire à l’employeur est caractérisée par les éléments distincts suivants : ${form.harmfulIntent || '[Établir l’intention de nuire]'}.` : ''}\nLes documents de fin de contrat vous seront remis selon les modalités convenues.`
+      : ['mutation', 'retrogradation'].includes(form.sanction) ? `Nous vous proposons une ${SANCTIONS[form.sanction].label.toLowerCase()} selon les modalités suivantes : ${detail} Si cette mesure modifie votre contrat, elle ne sera appliquée qu’après votre accord exprès. Nous vous invitons à nous faire connaître votre réponse écrite dans le délai indiqué ci-dessus.`
+        : form.sanction === 'mise_a_pied' ? `Nous vous notifions une mise à pied disciplinaire selon les modalités suivantes : ${detail} La suspension du contrat et de la rémunération est limitée à cette période et respecte la durée maximale autorisée par le règlement intérieur.`
+          : `Nous vous notifions un ${SANCTIONS[form.sanction].label.toLowerCase()}.${disciplinaryBodyHasContent(form.sanctionDetails) ? ` Modalités de la sanction : ${detail}` : ' '}Nous vous demandons de respecter les obligations et consignes rappelées ci-dessus et de ne pas réitérer les manquements établis.`;
     body = `${hearing}${facts}\n\nAprès examen des faits établis, de leur contexte et de leur proportionnalité, ${decision[0].toLowerCase()}${decision.slice(1)}`;
   }
-  return { kind, date: todayParis(), subject, body: `Madame, Monsieur,\n\n${body}\n\nVeuillez agréer, Madame, Monsieur, l’expression de nos salutations distinguées.`, employeeName: form.employeeName, address: form.address, emitterName: emitter.name, emitterFunction: emitter.function, signatureDataUrl: emitter.signature || '', reviewedForm: JSON.stringify(form) };
+  const bodyHtml = disciplinaryTextToHtml(`Madame, Monsieur,\n\n${body}\n\nVeuillez agréer, Madame, Monsieur, l’expression de nos salutations distinguées.`)
+    .replace(/<p>\uE000(\d+)\uE001<\/p>/g, (_, index: string) => fragments[Number(index)] || '');
+  return { kind, date: todayParis(), subject, body: bodyHtml, employeeName: form.employeeName, address: form.address, emitterName: emitter.name, emitterFunction: emitter.function, signatureDataUrl: emitter.signature || '', reviewedForm: JSON.stringify(form) };
 }
 
 export function letterIssues(form: DisciplinaryForm, letter: DisciplinaryLetter): string[] {
   const errors: string[] = [];
   if (letter.reviewedForm !== JSON.stringify(form)) errors.push('La préparation a changé : relire et adapter le courrier, puis confirmer sa relecture ou régénérer le modèle.');
-  if (!letter.subject.trim() || !letter.body.trim()) errors.push('Renseigner l’objet et le corps du courrier.');
+  if (!letter.subject.trim() || !disciplinaryBodyHasContent(letter.body)) errors.push('Renseigner l’objet et le corps du courrier.');
   if (!letter.employeeName.trim() || !letter.address.trim()) errors.push('Renseigner le nom et l’adresse du collaborateur.');
   if (!letter.emitterName.trim() || !letter.emitterFunction.trim()) errors.push('Renseigner le nom et la fonction de l’émetteur.');
   if (!letter.signatureDataUrl) errors.push('Ajouter la signature de l’émetteur avant de classer le courrier final.');
-  if (!form.facts.trim() || !form.evidence.trim() || !form.rules.trim()) errors.push('Préciser les faits, leurs éléments justificatifs et les obligations applicables.');
+  if (!disciplinaryBodyHasContent(form.facts) || !disciplinaryBodyHasContent(form.evidence) || !disciplinaryBodyHasContent(form.rules)) errors.push('Préciser les faits, leurs éléments justificatifs et les obligations applicables.');
   if (!form.factsOn || !form.knownOn || !letter.date) errors.push('Renseigner les dates des faits, de leur connaissance et du courrier.');
-  if (/\[[^\]]+\]/.test(letter.body)) errors.push('Compléter les passages entre crochets du modèle.');
+  if (/\[[^\]]+\]/.test(disciplinaryBodyToPlainText(letter.body))) errors.push('Compléter les passages entre crochets du modèle.');
   if (form.sanction === 'licenciement' && !/^cdi$/i.test(form.contractType.trim())) errors.push('Le modèle de licenciement nécessite un CDI confirmé ; faire adapter la procédure pour un autre contrat.');
   if (form.protectedEmployee && form.sanction === 'licenciement' && letter.kind === 'notification') errors.push('Salarié protégé : adapter le courrier après la procédure spéciale et l’autorisation administrative ; ce modèle générique ne suffit pas.');
   if (form.fault === 'lourde' && !form.harmfulIntent.trim()) errors.push('Documenter séparément l’intention de nuire pour une faute lourde.');
