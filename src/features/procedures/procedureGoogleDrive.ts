@@ -1,3 +1,4 @@
+import { launcherOpenUri } from '../documents/localDriveLauncher';
 const DRIVE_ID = /^[a-zA-Z0-9_-]{10,200}$/;
 const OFFICE_FILE = /\.(docx?|xlsx?|pptx?|odt|ods|odp|txt)$/i;
 
@@ -39,8 +40,5 @@ export function validateDriveRelativePath(path: string): string {
 }
 
 export function buildGoogleDriveDesktopUri(relativePath: string): string {
-  const bytes = new TextEncoder().encode(validateDriveRelativePath(relativePath));
-  const payload = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  return `seapilot-drive://open/${payload}`;
+  return launcherOpenUri('procedures', validateDriveRelativePath(relativePath));
 }

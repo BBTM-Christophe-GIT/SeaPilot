@@ -25,23 +25,27 @@ Même mécanisme que les procédures : **Google Drive pour ordinateur**, dossier
 
 Dossier créé et synchronisé : [SeaPilot / Sanctions Disciplinaires](https://drive.google.com/drive/folders/1Z9-8yKz114uGZYqAF-LB-vPlD1DbwdDa).
 
-Sur le poste de préparation, le lanceur a été mis à jour et configuré avec :
+Depuis la version **3.41.0**, la configuration est centralisée dans **Administration → Documents et Google Drive**. Un seul lanceur Windows 2.0.0 ouvre et enregistre les fichiers de tous les modules. La racine locale unique est mémorisée par utilisateur Windows :
 
 ```text
-Root              = G:\Mon Drive\SeaPilot\Procedures
-DisciplinaryRoot  = G:\Mon Drive\SeaPilot\Sanctions Disciplinaires
+SeaPilotRoot = G:\Mon Drive\SeaPilot
 ```
 
 Sur chaque poste :
 
-1. Installer Google Drive pour ordinateur et synchroniser le dossier confidentiel.
-2. Installer la nouvelle archive `/connectors/seapilot-drive-windows.zip`. Configurer `DisciplinaryRoot` via le lien « configurer ce même dossier » du module. Le réglage des procédures reste indépendant.
-3. Dans Chrome ou Edge, onglet « Dossier et pièces », choisir ce même dossier synchronisé. Le navigateur demande cette sélection explicite ; l’autorisation en mémoire est à redonner après rechargement. Le lanceur sert à l’ouverture Office, la sélection navigateur à l’écriture.
-4. Classer le courrier ou ajouter les pièces ; attendre la fin de la synchronisation Drive avant de les consulter sur un autre poste.
+1. Installer Google Drive pour ordinateur. Le sous-dossier confidentiel **Sanctions Disciplinaires** doit déjà être partagé avec les seuls comptes autorisés et synchronisé.
+2. Extraire `/connectors/seapilot-drive-windows.zip` et exécuter `Installer.cmd` une fois (mise à jour nécessaire pour les anciens lanceurs).
+3. Dans Administration, renseigner uniquement le chemin du dossier **SeaPilot** puis « Enregistrer la racine SeaPilot ». Les dossiers des collaborateurs en poste de l’entreprise active sont préparés automatiquement. « Vérifier ce PC » relit le réglage déjà enregistré.
+4. Dans le module, classer le courrier ou ajouter une pièce : le lanceur retrouve ou crée le dossier du collaborateur, puis le sous-dossier de date. Aucune sélection de dossier dans chaque profil ni après rechargement.
+5. Autoriser l’ouverture du lanceur et, si le navigateur le demande, la connexion locale. Attendre la fin de la synchronisation Drive avant une consultation sur un autre poste.
 
-Arborescence : `entreprise / Prénom NOM - identifiant / AAAA-MM-JJ / identifiant-document - nom.ext`. Le préfixe évite les collisions de versions. Formats autorisés : DOCX, XLSX, PPTX, PDF, PNG/JPEG, TXT, ODT/ODS/ODP ; 25 Mo maximum par fichier. Macros, exécutables, traversées de chemins et jonctions sortantes sont refusés.
+Arborescence : `SeaPilot / Sanctions Disciplinaires / Prénom NOM - c<entreprise>-p<collaborateur> / AAAA-MM-JJ / identifiant-document - nom.ext`. Le suffixe stable évite les homonymes et retrouve un dossier existant si le nom RH change. Les collaborateurs ajoutés après la configuration obtiennent leur dossier au premier classement. Un brouillon sauvegardé seul reste dans SeaPilot.
 
-Le bouton « Ouvrir le fichier » utilise `seapilot-drive://disciplinary/open/...`. Un lien Google Drive privé peut aussi être enregistré. Les navigateurs sans sélection de dossier peuvent télécharger le Word, l’enregistrer manuellement dans Drive puis utiliser « Lier un fichier déjà enregistré ». En cas d’échec d’enregistrement de la référence après l’écriture du fichier, son chemin est conservé pour cette récupération.
+Formats autorisés : DOCX, XLSX, PPTX, PDF, PNG/JPEG, TXT, ODT/ODS/ODP ; 25 Mo maximum par fichier. Chaque classement crée un fichier distinct, sans écraser un document déjà modifié dans Word.
+
+Le bouton « Ouvrir le fichier » utilise le protocole commun `seapilot-drive://root/open/...` avec un chemin relatif à SeaPilot. Les anciennes références et URI restent lisibles. Les postes sans lanceur Windows peuvent télécharger le Word, l’enregistrer manuellement puis utiliser « Lier un fichier déjà enregistré ». En cas de résultat d’écriture incertain ou d’échec d’enregistrement de la référence, le chemin est conservé pour cette récupération.
+
+Voir [le lanceur commun](./shared-windows-drive-launcher.md) pour le transport local, la vérification des droits et l’ajout de modules.
 
 **Droits Drive :** vérification du dossier réel le 15/09/2026 : quatre comptes individuels autorisés, tous de profil Administration dans SeaPilot ; aucun partage public ou de domaine retourné. Les autorisations Google Drive sont indépendantes des rôles SeaPilot. Lors d’un changement de rôle, d’un départ ou d’une désactivation du module, retirer aussi les autorisations Drive devenues injustifiées et maîtriser les copies synchronisées sur les postes. L’application ne révoque pas les droits Google automatiquement. Aucun accès à ce dossier ne doit être accordé à Armement, Capitaine ou Marin, y compris via un dossier parent ou un groupe.
 

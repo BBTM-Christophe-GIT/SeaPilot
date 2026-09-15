@@ -39,6 +39,10 @@ describe('disciplinary role and UI workflows', () => {
     expect(screen.getByText(`Cherbourg-en-Cotentin, le ${new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris' }).format(new Date())}`)).toBeInTheDocument();
     await user.clear(body); await user.type(body, 'Texte modifié par la direction.');
     await user.click(screen.getByRole('tab', { name: 'Dossier et pièces' }));
+    expect(screen.queryByText('Google Drive synchronisé')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Choisir le dossier Google Drive' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /installer le lanceur/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Classement automatique : SeaPilot/)).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Courrier modifiable' }));
     expect(screen.getByLabelText('Corps du courrier modifiable')).toHaveTextContent('Texte modifié par la direction.');
   });

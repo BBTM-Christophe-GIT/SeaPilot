@@ -44,10 +44,15 @@ begin
     execute 'set local role authenticated';
     if role_name in ('admin','direction') then
       assert public.disciplinary_has_access(company), 'Allowed role denied';
+      assert public.desktop_drive_scope('disciplinary',company,target_person)->>'directory' = 'Sanctions Disciplinaires', 'Launcher scope denied';
       assert (select count(*)=1 from public.disciplinary_documents where disciplinary_documents.case_id=test_case_id), 'Allowed role cannot read attachment metadata';
       update public.disciplinary_cases set data=data || '{"facts":"Updated by authorized fixture"}'::jsonb where id=test_case_id;
     else
       assert not public.disciplinary_has_access(company), 'Forbidden role access';
+      begin
+        perform public.desktop_drive_scope('disciplinary',company,target_person);
+        raise exception 'Launcher scope leaked';
+      exception when insufficient_privilege then null; end;
       assert (select count(*)=0 from public.disciplinary_cases where id=test_case_id), 'Confidential case leaked';
       assert (select count(*)=0 from public.disciplinary_documents where disciplinary_documents.case_id=test_case_id), 'Confidential attachment leaked';
       begin
@@ -58,12 +63,15 @@ begin
       end;
     end if;
     assert not public.disciplinary_has_access(-987654), 'Cross-company permission leaked';
+    begin perform public.desktop_drive_scope('disciplinary',-987654,target_person); raise exception 'Cross-company launcher scope leaked'; exception when insufficient_privilege then null; end;
+    begin perform public.desktop_drive_scope('unknown',company,target_person); raise exception 'Unknown module allowed'; exception when insufficient_privilege then null; end;
     execute 'reset role';
   end loop;
   update public.role_module_permissions set is_visible=false where module_key='disciplinary' and role_key='direction';
   perform set_config('request.jwt.claim.sub','db540000-0000-4000-8000-000000000102',true);
   execute 'set local role authenticated';
   assert not public.disciplinary_has_access(company), 'Revoked permission still grants access';
+  begin perform public.desktop_drive_scope('disciplinary',company,target_person); raise exception 'Revoked launcher scope leaked'; exception when insufficient_privilege then null; end;
   assert (select count(*)=0 from public.disciplinary_documents where disciplinary_documents.case_id=test_case_id), 'Revoked permission still reads files';
   execute 'reset role';
   begin
@@ -72,6 +80,7 @@ begin
   exception when check_violation then null;
   end;
   execute 'set local role anon';
+  begin perform public.desktop_drive_scope('disciplinary',company,target_person); raise exception 'Anonymous launcher scope leaked'; exception when insufficient_privilege then null; end;
   begin
     perform 1 from public.disciplinary_documents;
     raise exception 'Anonymous table access allowed';

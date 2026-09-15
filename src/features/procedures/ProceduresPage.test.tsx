@@ -372,7 +372,7 @@ describe('ProceduresPage', () => {
       source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'source.docx' }], publications: [] });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
-    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^seapilot-drive:\/\/open\//), '_self', undefined);
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^seapilot-drive:\/\/root\/open\//), '_self', undefined);
     await user.click(screen.getByLabelText('Voir dans Drive Procédure embarquement ROZEL'));
     expect(open).toHaveBeenLastCalledWith('https://drive.google.com/file/d/1234567890abcdef/view', '_blank', 'noopener,noreferrer');
     expect(createSignedUrl).not.toHaveBeenCalled();

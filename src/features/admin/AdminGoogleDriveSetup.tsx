@@ -1,63 +1,38 @@
-import { ArrowRight, Download, ExternalLink, FolderSync, Monitor } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Download, ExternalLink, FolderSync, Monitor } from 'lucide-react';
+import { useState } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { connectLocalDrive, DRIVE_MODULES, localDriveRequest, type LocalDriveStatus } from '../documents/localDriveLauncher';
 
-export function AdminGoogleDriveSetup() {
-  return (
-    <section className="admin-panel admin-drive-setup" aria-labelledby="admin-drive-title">
-      <div className="admin-header">
-        <div>
-          <p className="module-family">Documents et Google Drive</p>
-          <h2 id="admin-drive-title">Ouvrir les documents dans Word ou Excel</h2>
-          <p className="admin-section-description">Configurez ce PC pour ouvrir les fichiers de travail depuis le module Procédures.</p>
-        </div>
-        <span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span>
-      </div>
-
-      <ol className="admin-setup-steps">
-        <li>
-          <div>
-            <h3>Connecter Google Drive</h3>
-            <p>Installez Google Drive pour ordinateur et connectez le compte qui a accès au dossier des procédures. Vérifiez que ce dossier apparaît dans l’Explorateur de fichiers.</p>
-            <a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer">
-              <ExternalLink aria-hidden="true" size={16} />Installer Google Drive
-            </a>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Installer le lanceur SeaPilot</h3>
-            <p>Téléchargez l’archive, extrayez tout son contenu, puis lancez <strong>Installer.cmd</strong>. Cette installation est à effectuer sur chaque PC utilisé pour modifier les documents.</p>
-            <a className="admin-primary-button" href="/connectors/seapilot-drive-windows.zip" download>
-              <Download aria-hidden="true" size={16} />Installer le lanceur Windows
-            </a>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Choisir le dossier synchronisé</h3>
-            <p>Sélectionnez le dossier qui contient les fichiers des procédures. Son emplacement peut varier selon le poste.</p>
-            <p className="admin-drive-path">Exemple : <code>G:\Mon Drive\SeaPilot\Procedures</code></p>
-            <a className="admin-secondary-button" href="seapilot-drive://configure">
-              <FolderSync aria-hidden="true" size={16} />Configurer le dossier sur ce PC
-            </a>
-          </div>
-        </li>
-      </ol>
-
-      <div className="admin-drive-usage">
-        <h3>Travailler sur un document</h3>
-        <p>Dans Procédures, cliquez sur un document lié à Drive et acceptez « Ouvrir SeaPilot Drive » si le navigateur le demande. Enregistrez vos modifications dans Word ou Excel, puis attendez la fin de la synchronisation Drive avant d’éteindre le PC.</p>
-        <p>Les PDF publiés restent des versions distinctes : une modification du fichier de travail ne les remplace pas automatiquement.</p>
-        <Link to="/modules/procedures">Ouvrir le module Procédures<ArrowRight aria-hidden="true" size={16} /></Link>
-      </div>
-      <div className="admin-drive-usage">
-        <h3>Sanctions Disciplinaires : dossier confidentiel</h3>
-        <p>Utilisez un dossier distinct, partagé exclusivement avec les comptes Administration et Direction autorisés. Ce réglage est indépendant de celui des procédures.</p>
-        <p className="admin-drive-path">Exemple : <code>G:\Mon Drive\SeaPilot\Sanctions Disciplinaires</code></p>
-        <a className="admin-secondary-button" href="seapilot-drive://disciplinary/configure"><FolderSync aria-hidden="true" size={16} />Configurer le dossier disciplinaire sur ce PC</a>
-        <p>Dans le module, choisissez ce même dossier pour enregistrer les courriers Word et les pièces jointes. Les droits Google Drive doivent être mis à jour séparément lors d’un changement de profil.</p>
-        <Link to="/modules/disciplinary">Ouvrir les Sanctions Disciplinaires<ArrowRight aria-hidden="true" size={16} /></Link>
-      </div>
-    </section>
-  );
+export function AdminGoogleDriveSetup({ client, previewMode = false }: { client: SupabaseClient; previewMode?: boolean }) {
+  const [root, setRoot] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<LocalDriveStatus | null>(null);
+  const [error, setError] = useState('');
+  async function configure(action: 'configure' | 'status') {
+    if (previewMode) return;
+    const connection = connectLocalDrive();
+    setBusy(true); setError(''); setStatus(null);
+    try {
+      const result = await localDriveRequest<LocalDriveStatus>(client, await connection, { action, root: root.trim() });
+      setStatus(result); setRoot(result.root || '');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Configuration impossible.'); }
+    finally { setBusy(false); }
+  }
+  return <section className="admin-panel admin-drive-setup" aria-labelledby="admin-drive-title">
+    <div className="admin-header"><div><p className="module-family">Documents et Google Drive</p><h2 id="admin-drive-title">Un seul dossier SeaPilot pour ce PC</h2><p className="admin-section-description">Configurez une fois la racine synchronisée. Tous les modules utilisent ensuite le même lanceur Windows.</p></div><span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span></div>
+    <ol className="admin-setup-steps">
+      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a></div></li>
+      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong>, une seule fois sur chaque PC. Ce lanceur commun ouvre les documents dans Office et classe les fichiers dans Drive.</p><a className="admin-primary-button" href="/connectors/seapilot-drive-windows.zip" download><Download size={16} />Installer le lanceur Windows</a></div></li>
+      <li><div><h3>Renseigner uniquement la racine SeaPilot</h3><p>Le chemin est mémorisé sur ce PC. Les sous-dossiers des modules et des collaborateurs sont déduits automatiquement.</p>
+        <label className="admin-root-label">Chemin du dossier SeaPilot sur ce PC<input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="G:\Mon Drive\SeaPilot" disabled={busy || previewMode} spellCheck={false} /></label>
+        <div className="admin-root-actions"><button className="admin-primary-button" disabled={busy || previewMode || !root.trim()} onClick={() => void configure('configure')}><FolderSync size={16} />Enregistrer la racine SeaPilot</button><button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status')}>Vérifier ce PC</button></div>
+        <p>À la première utilisation, autorisez l’ouverture du lanceur et la connexion locale demandée par le navigateur.</p>
+      </div></li>
+    </ol>
+    {previewMode ? <p className="admin-section-description">Préversion : la configuration du PC est désactivée.</p> : null}
+    {busy ? <p role="status">Connexion au lanceur SeaPilot…</p> : null}
+    {error ? <p role="alert" className="admin-root-error">{error}</p> : null}
+    {status ? <div role="status" className="admin-drive-usage"><h3>{status.root ? 'Ce PC est configuré' : 'Racine à renseigner'}</h3><p className="admin-drive-path">{status.root || 'Le lanceur est installé. Renseignez maintenant le chemin SeaPilot.'}</p>{status.collaborators !== undefined ? <p>{status.collaborators} dossier(s) de collaborateurs en poste préparé(s).</p> : null}</div> : null}
+    <div className="admin-drive-usage"><h3>Classement automatique</h3><ul>{Object.entries(DRIVE_MODULES).map(([key, folder]) => <li key={key}><strong>{folder}</strong> : {key === 'disciplinary' ? 'un dossier par collaborateur, puis un sous-dossier par date.' : 'les fichiers de travail des procédures.'}</li>)}</ul><p>Les futurs modules utiliseront cette même racine. Enregistrez dans Word ou Excel puis laissez Google Drive terminer sa synchronisation.</p><p>Le dossier Sanctions Disciplinaires doit être partagé uniquement avec Administration et Direction. Les droits de partage Google Drive restent à gérer dans Google Drive.</p></div>
+  </section>;
 }

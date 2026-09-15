@@ -338,7 +338,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSav
               {usesDrive ? <div className="procedure-form-grid procedure-drive-form">
                 <p className="procedure-form-wide">Enregistrez le fichier Word ou Excel dans le dossier Google Drive synchronisé, puis liez-le ici. Les modifications enregistrées dans Office seront synchronisées par Drive pour ordinateur.</p>
                 <label className="procedure-form-wide">Lien du fichier Google Drive<input required type="url" placeholder="https://drive.google.com/file/d/…/view" value={driveUrl} onChange={(event) => setDriveUrl(event.target.value)} /></label>
-                <label className="procedure-form-wide">Chemin dans le dossier synchronisé<input aria-label="Chemin dans le dossier synchronisé" required placeholder="URG/Procedure.docx" value={drivePath} onChange={(event) => setDrivePath(event.target.value)} /><small>Chemin relatif au dossier configuré dans le lanceur SeaPilot. Après un déplacement ou un renommage, mettez ce chemin à jour.</small></label>
+                <label className="procedure-form-wide">Chemin dans le dossier synchronisé<input aria-label="Chemin dans le dossier synchronisé" required placeholder="URG/Procedure.docx" value={drivePath} onChange={(event) => setDrivePath(event.target.value)} /><small>Chemin relatif au sous-dossier Procedures de SeaPilot. Après un déplacement ou un renommage, mettez ce chemin à jour.</small></label>
                 <p className="procedure-form-wide">Réservez l’accès au dossier Google Drive source aux gestionnaires autorisés.</p>
               </div> : <label className="procedure-file-field">
                 <Upload size={18} />

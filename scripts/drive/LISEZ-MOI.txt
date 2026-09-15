@@ -1,22 +1,23 @@
-SEAPILOT - GOOGLE DRIVE POUR WINDOWS
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.0.0
 
-1. Installez Google Drive pour ordinateur et connectez votre compte.
-2. Verifiez que le dossier SeaPilot / Procedures est visible dans le lecteur Google Drive.
-3. Extrayez entierement cette archive, puis double-cliquez sur Installer.cmd.
-4. Choisissez ce dossier synchronise. Word et Excel doivent etre installes.
-5. Dans SeaPilot, ouvrez un document lie a Drive et acceptez l'ouverture du lanceur si le navigateur le demande.
+Une installation pour Procedures, Sanctions Disciplinaires et les futurs modules.
 
-Le lanceur ouvre seulement les documents Office ou texte du dossier configure.
-Il ne telecharge aucun programme, ne change pas les permissions Drive, et ne stocke aucun mot de passe.
-Google Drive assure la synchronisation apres l'enregistrement dans Office.
-Un fichier deplace ou renomme necessite de mettre a jour son chemin dans SeaPilot.
-Les droits SeaPilot et Google Drive sont independants : partagez les sources uniquement avec les gestionnaires autorises.
-Les PDF publies dans SeaPilot restent des versions distinctes et ne sont pas mis a jour par une sauvegarde dans Office.
+1. Installez Google Drive pour ordinateur et connectez votre compte autorise.
+2. Verifiez que SeaPilot est visible dans l'Explorateur. Le dossier Sanctions Disciplinaires doit deja etre synchronise et partage uniquement avec Administration et Direction.
+3. Extrayez entierement cette archive puis executez Installer.cmd une fois. Word et Excel doivent etre installes pour modifier leurs documents.
+4. Ouvrez Administration > Documents et Google Drive dans SeaPilot. Renseignez la racine (exemple G:\Mon Drive\SeaPilot) et enregistrez-la : les dossiers des collaborateurs en poste sont prepares.
+5. Autorisez l'ouverture du lanceur et la connexion locale si le navigateur le demande.
 
-Desinstallation : supprimer la cle HKCU\Software\Classes\seapilot-drive et le dossier %LOCALAPPDATA%\SeaPilotDrive.
+Le chemin est memorise par utilisateur Windows sur ce PC. Aucun chemin par module n'est a configurer. Une nouvelle installation est inutile pour ajouter un sous-dossier de module.
+Les anciens reglages de modules sont conserves pendant la mise a jour. Le reglage commun SeaPilotRoot devient prioritaire.
 
-SANCTIONS DISCIPLINAIRES
-Le module utilise un dossier Google Drive confidentiel distinct, partage uniquement avec Administration et Direction.
-Dans le module, configurez ce dossier via le lien dedie puis choisissez le meme dossier dans le navigateur.
-Word, PDF et images s'ouvrent dans leur application Windows. Les executables et documents a macros sont refuses.
-Le dossier des Procedures reste configure separement. La fin de la synchronisation doit etre verifiee dans Google Drive.
+Classement : SeaPilot / Sanctions Disciplinaires / Prenom NOM - c<entreprise>-p<collaborateur> / AAAA-MM-JJ / fichier.
+Le dossier est retrouve par son identifiant stable si le nom RH change. Aucun fichier existant n'est ecrase. Taille maximale : 25 Mo. Executables, documents a macros, traversees de chemins et jonctions sortantes refuses.
+
+Le lanceur ouvre les documents autorises dans leur application Windows et peut enregistrer les documents des modules autorises par SeaPilot. La connexion locale est temporaire (3 minutes), limitee a ce PC et aux origines SeaPilot prevues. Chaque ecriture verifie le compte SeaPilot et ses droits aupres du serveur. Aucun mot de passe ni jeton de connexion n'est memorise dans le lanceur. Aucun service ni demarrage automatique n'est installe.
+
+Google Drive assure la synchronisation apres ecriture ou sauvegarde dans Office. Attendez qu'elle soit terminee avant d'utiliser les fichiers sur un autre PC.
+Les droits SeaPilot et les partages Google Drive sont independants. Retirez les partages Drive devenus injustifies et gerez les copies locales lors d'un changement d'habilitation. Le lanceur ne change pas les permissions Drive.
+Un fichier deplace ou renomme necessite de mettre a jour sa reference dans SeaPilot. Les PDF publies restent des versions distinctes des fichiers de travail.
+
+Desinstallation : supprimer HKCU\Software\Classes\seapilot-drive et le dossier %LOCALAPPDATA%\SeaPilotDrive. Le reglage est dans HKCU\Software\SeaPilot\Drive (SeaPilotRoot). Les documents Drive ne sont pas supprimes.

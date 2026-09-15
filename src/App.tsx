@@ -63,7 +63,7 @@ export default function App({ previewModeOverride }: AppProps) {
               path={`modules/${module.key}`}
               element={
                 module.key === 'admin' ? (
-                  <AdminPage client={previewMode ? previewSupabaseClient : undefined} />
+                  <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />
                 ) : module.key === 'kpi' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (
