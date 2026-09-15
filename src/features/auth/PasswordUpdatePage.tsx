@@ -1,3 +1,4 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -48,7 +49,7 @@ export function PasswordUpdatePage() {
     <main className="login-page">
       <section className="login-panel">
         <div className="login-brand">
-          <strong>BBTM</strong>
+          <SeaPilotLogo />
         </div>
         <h1>Choisir mon mot de passe</h1>
 

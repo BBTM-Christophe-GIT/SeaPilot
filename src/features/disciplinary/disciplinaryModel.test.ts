@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { afterClearWorkingDays, deadlines, FAULTS, frenchDate, frenchHolidays, generateLetter, initialForm, isEmployed, letterIssues, monthDeadline, REASONS, SANCTIONS, todayParis, type FaultKey, type ReasonKey, type SanctionKey } from './disciplinaryModel';
+import { afterClearWorkingDays, deadlines, FAULTS, frenchDate, frenchHolidays, generateLetter, initialForm, isLetterReviewed, isEmployed, letterIssues, monthDeadline, REASONS, SANCTIONS, todayParis, type FaultKey, type ReasonKey, type SanctionKey } from './disciplinaryModel';
 
 const person = { id: 1, companyId: 1, firstName: 'Élodie', lastName: 'durand', functionLabel: 'Matelot', postalAddress: '1 rue du Port\n50100 Cherbourg', hiredOn: '2025-01-01', departedOn: '', contractType: 'CDI' };
 describe('disciplinary legal calendar', () => {
@@ -85,4 +85,15 @@ describe('disciplinary templates', () => {
     const issues = letterIssues(f, { ...letter, kind: 'notification' });
     expect(issues.join(' ')).toContain('CDI'); expect(issues.join(' ')).toContain('protégé'); expect(issues.join(' ')).toContain('signature');
   });
+});
+
+
+it('keeps review confirmation across JSONB key ordering and rejects changed preparation', () => {
+  const form = initialForm(person);
+  const letter = generateLetter(form, 'notification', { name: 'Marie', function: 'Direction' });
+  const reordered = Object.fromEntries(Object.entries(form).reverse()) as typeof form;
+  expect(isLetterReviewed(reordered, letter)).toBe(true);
+  expect(isLetterReviewed(reordered, { ...letter, reviewedForm: JSON.stringify(form) })).toBe(true);
+  expect(isLetterReviewed({ ...form, facts: 'Changement réel' }, letter)).toBe(false);
+  expect(isLetterReviewed(form, { ...letter, reviewedForm: 'invalid' })).toBe(false);
 });

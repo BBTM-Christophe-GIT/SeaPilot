@@ -38,9 +38,9 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByText('BBTM')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'SeaPilot by BBTM' })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(/seapilot/i);
-    expect(screen.getByRole('img', { name: 'BBTM' })).toHaveAttribute('src', '/bbtm-logo.png');
+    expect(screen.getByRole('img', { name: 'SeaPilot by BBTM' })).toHaveAttribute('src', '/seapilot-logo.png');
     expect(screen.getByText('Projets')).toBeInTheDocument();
     const qhseButton = screen.getByRole('button', { name: 'QHSE' });
     expect(qhseButton).toBeInTheDocument();

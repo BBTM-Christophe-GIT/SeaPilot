@@ -1,3 +1,4 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -64,9 +65,9 @@ export function LoginPage() {
     <main className="login-page">
       <form className="login-panel" onSubmit={handleSubmit}>
         <div className="login-brand">
-          <strong>BBTM</strong>
+          <SeaPilotLogo />
         </div>
-        <h1>{mode === 'sign-in' ? 'Connexion à BBTM' : recoveryTitle}</h1>
+        <h1>{mode === 'sign-in' ? 'Connexion à SeaPilot' : recoveryTitle}</h1>
         {mode !== 'sign-in' ? <p className="login-description">{recoveryDescription}</p> : null}
         {isEmailSent ? (
           <div className="login-success" role="status">

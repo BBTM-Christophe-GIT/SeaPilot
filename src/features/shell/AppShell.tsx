@@ -1,3 +1,5 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
+import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -181,6 +183,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
   const [actionPlanNotifications, setActionPlanNotifications] = useState<ActionPlanNotification[]>([]);
+  const [disciplinaryNotifications, setDisciplinaryNotifications] = useState<DisciplinaryNotification[]>([]);
   const [leaveNotifications, setLeaveNotifications] = useState<PlanningLeaveNotification[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
     () => new Set(NAVIGATION_FAMILIES),
@@ -360,6 +363,31 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     };
   }, [client, previewMode, sessionUserId]);
 
+  const canReceiveDisciplinary = roles.some((r) => r === 'admin' || r === 'direction') && visibleModules.some((m) => m.key === 'disciplinary');
+  useEffect(() => {
+    setDisciplinaryNotifications([]);
+    if (previewMode || !sessionUserId || !canReceiveDisciplinary) return;
+    let live = true;
+    let version = 0;
+    const refresh = () => {
+      const request = ++version;
+      void fetchDisciplinaryNotifications(client).then((rows) => { if (live && request === version) setDisciplinaryNotifications(rows); })
+        .catch(() => { if (live && request === version) setDisciplinaryNotifications([]); });
+    };
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const timer = window.setInterval(visible, 30_000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener(DISCIPLINARY_NOTIFICATIONS_CHANGED, refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => { live = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener(DISCIPLINARY_NOTIFICATIONS_CHANGED, refresh); document.removeEventListener('visibilitychange', visible); };
+  }, [client, previewMode, sessionUserId, canReceiveDisciplinary]);
+  function openDisciplinaryNotification(notification: DisciplinaryNotification) {
+    setIsNotificationsOpen(false);
+    void markDisciplinaryNotificationRead(client, notification.id)
+      .then(() => setDisciplinaryNotifications((items) => items.filter((item) => item.id !== notification.id))).catch(() => undefined);
+  }
+
   const requestedModule = getRequestedModule(location.pathname);
   const activeVisibleModules = visibleModules;
   const isRequestedModuleDenied = requestedModule
@@ -387,7 +415,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length;
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length + disciplinaryNotifications.length;
 
   function openLeaveNotification(notification: PlanningLeaveNotification) {
     setIsNotificationsOpen(false);
@@ -450,8 +478,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       />
       <aside className={`sidebar${isMobileNavigationOpen ? ' is-mobile-open' : ''}`}>
         <div className="brand-block">
-          <img alt="BBTM" className="brand-logo" src="/bbtm-logo.png" />
-          <span className="brand-name">BBTM</span>
+          <SeaPilotLogo />
           <button
             aria-label="Fermer le menu"
             className="sidebar-mobile-close"
@@ -577,13 +604,14 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
 
           <div className="topbar-actions">
             <div className="topbar-notifications">
-              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { if (!isNotificationsOpen) window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED)); setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
+              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { if (!isNotificationsOpen) { window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED)); window.dispatchEvent(new Event(DISCIPLINARY_NOTIFICATIONS_CHANGED)); } setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
                 <Bell aria-hidden="true" size={19} />
                 {notificationCount ? <span className="topbar-notification-badge">{notificationCount > 9 ? '9+' : notificationCount}</span> : null}
               </button>
               {isNotificationsOpen ? <div className="topbar-notification-popover">
                 <header><div><strong>Notifications</strong><span>{notificationCount} élément{notificationCount > 1 ? 's' : ''} à traiter</span></div><Bell aria-hidden="true" size={18} /></header>
                 <div className="topbar-notification-list">
+                  {canReceiveDisciplinary && disciplinaryNotifications.length ? <section aria-label="Sanctions disciplinaires" className="topbar-notification-group"><h4>Sanctions disciplinaires</h4>{disciplinaryNotifications.map((notification) => <Link key={notification.id} onClick={() => openDisciplinaryNotification(notification)} to={`/modules/disciplinary?case=${notification.case_id}&tab=review`}><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.created_at)}</small></span><em>Ouvrir la relecture <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {leaveNotifications.length ? <section aria-label="Demandes de congés" className="topbar-notification-group"><h4>Demandes de congés</h4>{leaveNotifications.map((notification) => <Link key={notification.id} onClick={() => openLeaveNotification(notification)} to="/modules/planning"><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.createdAt)}</small></span><p>{notification.body}</p><em>Voir le planning <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {hrDocumentNotifications.length ? <section aria-label="Documents RH et brevets" className="topbar-notification-group"><h4>RH / Brevets · échéance à 40 jours</h4>{hrDocumentNotifications.map((notification) => <Link key={notification.documentId} to="/modules/humanResources"><span><strong>Document personnel</strong><small>{formatHrDocumentExpiryDate(notification.expiresOn)}</small></span><p>{notification.title}</p><em>{notification.daysUntilExpiry === 0 ? 'Expire aujourd’hui' : notification.daysUntilExpiry === 1 ? 'Expire demain' : `Expire dans ${notification.daysUntilExpiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
