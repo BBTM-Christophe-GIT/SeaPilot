@@ -1,0 +1,67 @@
+# Sanctions Disciplinaires
+
+## Fonctionnement
+
+Route : `/modules/disciplinary`, famille Ressources Humaines.
+
+- Sélection des collaborateurs en poste (dates d’embauche/départ). Les dossiers existants restent consultables après le départ.
+- Six sanctions : avertissement, blâme, mise à pied disciplinaire, mutation, rétrogradation, licenciement en CDI. Trois qualifications de faute et cinq motifs alcool/stupéfiants avec définitions contextualisées.
+- Convocation, notification/proposition de sanction et mise à pied conservatoire distincte. L’application ne décide pas automatiquement de la qualification et n’envoie aucun courrier.
+- Courrier entièrement modifiable, adresse et identité préremplies. Date de Paris, mention « Cherbourg-en-Cotentin », nom/fonction de l’émetteur et signature alignés à droite. Signature active du profil récupérée lorsqu’elle existe, ou image PNG/JPEG ajoutée dans l’éditeur.
+- Export Word natif utilisant le package du papier à en-tête BBTM fourni : en-têtes, pieds de page, images et paramètres de page conservés. Le brouillon incomplet est marqué PROJET à l’export. Après une modification de la préparation, une nouvelle relecture ou régénération est requise pour classer le courrier final.
+- Brouillons enregistrés avec contrôle de concurrence ; chaque classement crée un fichier distinct et une référence immuable. « Reprendre le modèle initial » recharge le texte du classement ; les modifications ultérieures dans Word sont dans le fichier Drive.
+
+## Accès et données
+
+Migration : `20260915085025_disciplinary_sanctions.sql`, appliquée au projet Supabase lié le 15/09/2026. Tables `disciplinary_cases`, `disciplinary_documents` et RPC `disciplinary_has_access`.
+
+L’accès exige l’appartenance à l’entreprise, le rôle `admin` ou `direction` et la permission de module active. Administration peut activer/désactiver ces deux profils. Les cases Armement, Capitaine et Marin sont désactivées ; une contrainte SQL interdit également leur activation par API. RLS contrôle dossiers et métadonnées des pièces, y compris sur accès direct. Les pièces ne sont pas ajoutées aux bibliothèques RH générales.
+
+Les tables conservent le brouillon, l’original du courrier lors de son classement et les références des fichiers. Les fichiers Word/PDF et pièces vivent dans Google Drive, sans bucket public ni jeton Google embarqué dans le navigateur.
+
+## Google Drive et ouverture Office
+
+Même mécanisme que les procédures : **Google Drive pour ordinateur**, dossier synchronisé et lanceur Windows `seapilot-drive`.
+
+Dossier créé et synchronisé : [SeaPilot / Sanctions Disciplinaires](https://drive.google.com/drive/folders/1Z9-8yKz114uGZYqAF-LB-vPlD1DbwdDa).
+
+Sur le poste de préparation, le lanceur a été mis à jour et configuré avec :
+
+```text
+Root              = G:\Mon Drive\SeaPilot\Procedures
+DisciplinaryRoot  = G:\Mon Drive\SeaPilot\Sanctions Disciplinaires
+```
+
+Sur chaque poste :
+
+1. Installer Google Drive pour ordinateur et synchroniser le dossier confidentiel.
+2. Installer la nouvelle archive `/connectors/seapilot-drive-windows.zip`. Configurer `DisciplinaryRoot` via le lien « configurer ce même dossier » du module. Le réglage des procédures reste indépendant.
+3. Dans Chrome ou Edge, onglet « Dossier et pièces », choisir ce même dossier synchronisé. Le navigateur demande cette sélection explicite ; l’autorisation en mémoire est à redonner après rechargement. Le lanceur sert à l’ouverture Office, la sélection navigateur à l’écriture.
+4. Classer le courrier ou ajouter les pièces ; attendre la fin de la synchronisation Drive avant de les consulter sur un autre poste.
+
+Arborescence : `entreprise / Prénom NOM - identifiant / AAAA-MM-JJ / identifiant-document - nom.ext`. Le préfixe évite les collisions de versions. Formats autorisés : DOCX, XLSX, PPTX, PDF, PNG/JPEG, TXT, ODT/ODS/ODP ; 25 Mo maximum par fichier. Macros, exécutables, traversées de chemins et jonctions sortantes sont refusés.
+
+Le bouton « Ouvrir le fichier » utilise `seapilot-drive://disciplinary/open/...`. Un lien Google Drive privé peut aussi être enregistré. Les navigateurs sans sélection de dossier peuvent télécharger le Word, l’enregistrer manuellement dans Drive puis utiliser « Lier un fichier déjà enregistré ». En cas d’échec d’enregistrement de la référence après l’écriture du fichier, son chemin est conservé pour cette récupération.
+
+**Droits Drive :** vérification du dossier réel le 15/09/2026 : quatre comptes individuels autorisés, tous de profil Administration dans SeaPilot ; aucun partage public ou de domaine retourné. Les autorisations Google Drive sont indépendantes des rôles SeaPilot. Lors d’un changement de rôle, d’un départ ou d’une désactivation du module, retirer aussi les autorisations Drive devenues injustifiées et maîtriser les copies synchronisées sur les postes. L’application ne révoque pas les droits Google automatiquement. Aucun accès à ce dossier ne doit être accordé à Armement, Capitaine ou Marin, y compris via un dossier parent ou un groupe.
+
+## Rappels juridiques
+
+Sources vérifiées le 15/09/2026 :
+
+- [Service Public : sanctions](https://www.service-public.gouv.fr/particuliers/vosdroits/F2234), [qualification de la faute](https://www.service-public.gouv.fr/particuliers/vosdroits/F1137), [licenciement](https://www.service-public.gouv.fr/particuliers/vosdroits/F2839), [indemnité](https://www.service-public.gouv.fr/particuliers/vosdroits/F987).
+- [Modification du contrat](https://www.service-public.gouv.fr/particuliers/vosdroits/F2339) et [délais de recours](https://www.service-public.gouv.fr/particuliers/vosdroits/F2360).
+- Code des transports : [L5531-22](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033555230), [L5531-31](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033555250).
+- [Guide Indeed fourni](https://fr.indeed.com/recrutement/c/info/sanction-disciplinaire-procedure-et-modele-de-lettre), utilisé comme complément rédactionnel. Son indication générale de deux mois pour contester n’est pas reprise : le module affiche deux ans pour l’exécution du contrat et douze mois pour la rupture, avec mention des exceptions.
+
+Le calendrier applique les jours ouvrables, les reports des échéances et les jours chômés supplémentaires saisis. Il reste indicatif : vérifier les dispositions maritimes, la convention collective et le règlement intérieur. Les articles cités sur l’alcoolémie ne sont pas présentés comme une base de dépistage des stupéfiants. La faute lourde exige une intention de nuire distinctement établie. Le classement final d’un licenciement générique est bloqué pour un CDD ou un salarié protégé.
+
+## Validation
+
+- Tests du modèle : 90 combinaisons faute/sanction/motif, assistance à l’entretien, distinction conservatoire/disciplinaires, exemples officiels de délais, fêtes et fins de mois, relecture après changement et date réelle d’envoi.
+- Tests interface avec contextes de rôles réels : interdiction avant chargement pour Marin, Capitaine et Armement ; génération et modification pour Direction.
+- `supabase/tests/disciplinary_access_test.sql` exécuté en transaction annulée : droits des cinq profils, pièces jointes, isolation entreprise, désactivation de Direction, interdiction d’octroi à Marin, anonymes et immutabilité du dossier.
+- Tests Drive : chemins, liens, limites et non-écrasement. Lanceur Windows : ouverture DOCX/PDF et rejet des traversées, macros, exécutables et jonctions.
+- Word généré ouvert et rendu en PDF par Microsoft Word, contrôle visuel du document et de l’en-tête ; bureau et mobile contrôlés dans le navigateur.
+
+Maquette validée enregistrée dans [Superdesign](https://superdesign.dev/teams/72b387e8-4c5d-44bd-8ae5-97dbc2f1181c/projects/f9960330-f385-426d-9e3c-dedc8ae59b48?node=draft-variant-b5a55e78-3769-45aa-a5ae-8ede7142a252).

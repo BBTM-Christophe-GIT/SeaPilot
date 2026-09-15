@@ -16,6 +16,7 @@ export type ModuleKey =
   | 'fleet'
   | 'humanResources'
   | 'annualReviews'
+  | 'disciplinary'
   | 'workingTime'
   | 'projects'
   | 'marad'
@@ -140,6 +141,10 @@ export const APP_MODULES: AppModule[] = [
     family: 'Ressources Humaines',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'disciplinary', label: 'Sanctions Disciplinaires', family: 'Ressources Humaines',
+    navigationKind: 'submenu', allowedRoles: ['admin', 'direction'],
   },
   {
     key: 'marad',

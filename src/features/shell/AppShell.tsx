@@ -123,6 +123,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   fleet: Ship,
   humanResources: Users,
   annualReviews: ClipboardCheck,
+  disciplinary: ShieldCheck,
   workingTime: Clock3,
   projects: FolderKanban,
   marad: Wrench,
