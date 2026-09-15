@@ -1,8 +1,10 @@
+import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
+import { disciplinaryBodyToHtml } from './disciplinaryRichText';
 import { Field } from './DisciplinaryForm';
 import { frenchDate, type DisciplinaryLetter } from './disciplinaryModel';
 import { imageFileDataUrl } from './disciplinaryDocx';
 
-export function DisciplinaryLetterEditor({ letter, onChange, onError }: { letter: DisciplinaryLetter; onChange: (letter: DisciplinaryLetter) => void; onError: (error: string) => void }) {
+export function DisciplinaryLetterEditor({ letter, onChange, onError, disabled = false }: { letter: DisciplinaryLetter; onChange: (letter: DisciplinaryLetter) => void; onError: (error: string) => void; disabled?: boolean }) {
   const update = (key: keyof DisciplinaryLetter, value: string) => onChange({ ...letter, [key]: value });
   return <div className="disciplinary-letter-editor">
     <div className="disciplinary-form">
@@ -16,7 +18,7 @@ export function DisciplinaryLetterEditor({ letter, onChange, onError }: { letter
       <div className="disciplinary-recipient">{letter.employeeName}<br />{letter.address}</div>
       <p className="disciplinary-place">Cherbourg-en-Cotentin, le {frenchDate(letter.date)}</p>
       <strong>Objet : {letter.subject}</strong>
-      <textarea aria-label="Corps du courrier modifiable" className="disciplinary-letter-body" value={letter.body} onChange={(e) => update('body', e.target.value)} rows={24} />
+      <div className="disciplinary-letter-body"><ServiceNoteRichTextEditor ariaLabel="Corps du courrier modifiable" toolbarLabel="Mise en forme du courrier" disabled={disabled} value={disciplinaryBodyToHtml(letter.body)} onChange={(value) => update('body', value)} /></div>
       <div className="disciplinary-signature"><Field label="Prénom et NOM de l’émetteur"><input value={letter.emitterName} onChange={(e) => update('emitterName', e.target.value)} /></Field><Field label="Fonction de l’émetteur"><input value={letter.emitterFunction} onChange={(e) => update('emitterFunction', e.target.value)} /></Field>
         {letter.signatureDataUrl ? <img src={letter.signatureDataUrl} alt="Signature de l’émetteur" /> : <small>Signature à ajouter</small>}
         <label className="disciplinary-signature-upload">{letter.signatureDataUrl ? 'Remplacer la signature' : 'Ajouter ma signature'}<input aria-label="Signature de l’émetteur" type="file" accept="image/png,image/jpeg" onChange={(e) => { const file = e.target.files?.[0]; if (file) void imageFileDataUrl(file).then((url) => update('signatureDataUrl', url)).catch((error) => onError(error.message)); }} /></label>

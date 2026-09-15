@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.40.1` ajoute le texte enrichi aux quatre champs de préparation des sanctions disciplinaires et au courrier modifiable. La mise en forme est conservée dans les brouillons et les fichiers Word classés dans Drive. Aucune migration supplémentaire n’est requise.
+
 Version `3.40.0` ajoute **Ressources Humaines → Sanctions Disciplinaires** pour Administration et Direction :
 modèles Word BBTM modifiables, rappels juridiques et classement dans un dossier Google Drive confidentiel.
 La migration `20260915085025_disciplinary_sanctions.sql` a été appliquée avant le client.

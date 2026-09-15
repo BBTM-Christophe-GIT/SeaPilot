@@ -58,6 +58,16 @@ Le calendrier applique les jours ouvrables, les reports des échéances et les j
 
 ## Validation
 
+### Texte enrichi — v3.40.1
+
+Les champs **Faits observés**, **Éléments justificatifs**, **Obligations et consignes applicables** et **Modalités de la sanction** utilisent l’éditeur partagé de SeaPilot : gras, italique, souligné, titres, citations, polices, listes, alignements et liens. Le corps du courrier dispose du même éditeur pour les retouches avant export.
+
+Les chaînes HTML nettoyées restent stockées dans les propriétés JSON existantes des brouillons et des instantanés de courrier. Aucune migration ni modification des droits d’accès ou du classement Drive n’est nécessaire. Les anciens contenus en texte simple sont toujours lisibles et modifiables. La validation considère le texte visible, pour éviter qu’un champ ne contenant que des balises vides soit accepté.
+
+L’export convertit la mise en forme en paragraphes, styles de caractères, listes et liens Word natifs ; le document reste modifiable dans Office. Les modalités renseignées pour un avertissement ou un blâme sont également reprises. Les valeurs de texte simple (lieu, noms, explications) sont échappées à l’assemblage ; le contenu enrichi est nettoyé avant affichage et export. Les zones de saisie sont verrouillées pendant un enregistrement.
+
+Contrôles : génération des trois types de courrier, conservation des quatre champs, anciens textes simples, listes imbriquées, liens, rejet du HTML exécutable et des champs vides ; interaction dans le navigateur à 390 et 1 440 pixels ; document généré ouvert dans Microsoft Word et rendu en PDF.
+
 - Tests du modèle : 90 combinaisons faute/sanction/motif, assistance à l’entretien, distinction conservatoire/disciplinaires, exemples officiels de délais, fêtes et fins de mois, relecture après changement et date réelle d’envoi.
 - Tests interface avec contextes de rôles réels : interdiction avant chargement pour Marin, Capitaine et Armement ; génération et modification pour Direction.
 - `supabase/tests/disciplinary_access_test.sql` exécuté en transaction annulée : droits des cinq profils, pièces jointes, isolation entreprise, désactivation de Direction, interdiction d’octroi à Marin, anonymes et immutabilité du dossier.

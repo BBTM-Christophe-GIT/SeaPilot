@@ -71,7 +71,24 @@
 .disciplinary-paper header small { display: block; margin-top: 6px; font-size: 10px; color: #536276; }
 .disciplinary-recipient { white-space: pre-line; text-align: right; margin-top: 28px; }
 .disciplinary-place { text-align: right; margin: 20px 0; }
-.disciplinary-letter-body { display: block; width: 100%; border: 1px solid #d8e0ea; border-radius: 4px; padding: 12px; font: inherit; line-height: 1.65; resize: vertical; margin: 20px 0; min-height: 420px; }
+.disciplinary-letter-body { margin: 20px 0; }
+.disciplinary-page .service-note-rich-editor { overflow: hidden; border: 1px solid #c7d2df; border-radius: 6px; background: white; }
+.disciplinary-page .service-note-rich-editor:focus-within { border-color: #0c5598; box-shadow: 0 0 0 2px #e2f0fd; }
+.disciplinary-page .service-note-rich-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 5px; border-bottom: 1px solid #d8e0ea; background: #f6f9fc; }
+.disciplinary-page .service-note-rich-toolbar select { width: auto; max-width: 110px; min-height: 30px; padding: 4px; font-size: 12px; border: 0; background: transparent; }
+.disciplinary-page .service-note-rich-toolbar button { width: 30px; min-height: 30px; height: 30px; padding: 0; flex-shrink: 0; border: 0; background: transparent; }
+.disciplinary-page .service-note-rich-toolbar > i { width: 1px; height: 20px; margin: 0 3px; background: #d8e0ea; }
+.disciplinary-page .service-note-rich-content { min-height: 110px; max-height: 440px; overflow: auto; overflow-wrap: anywhere; padding: 12px; outline: 0; font-size: 13px; font-weight: 400; color: #182132; line-height: 1.6; }
+.disciplinary-page .service-note-rich-content:empty::before { content: attr(data-placeholder); color: #667085; pointer-events: none; }
+.disciplinary-page .service-note-rich-content :is(p,div) { margin: 0 0 .75em; }
+.disciplinary-page .service-note-rich-content h2 { font-size: 18px; margin: .9em 0 .4em; }
+.disciplinary-page .service-note-rich-content h3 { font-size: 15px; margin: .8em 0 .35em; }
+.disciplinary-page .service-note-rich-content blockquote { border-left: 3px solid #80b8ed; margin: .65em 0; padding: .3em .75em; color: #536276; }
+.disciplinary-page .service-note-rich-content :is(ul,ol) { margin: .5em 0; padding-left: 1.6em; }
+.disciplinary-page .service-note-rich-content a { text-decoration: underline; }
+.disciplinary-page .service-note-rich-content > :first-child { margin-top: 0; }
+.disciplinary-page .service-note-rich-content > :last-child { margin-bottom: 0; }
+.disciplinary-page .disciplinary-letter-body .service-note-rich-content { min-height: 420px; max-height: none; }
 .disciplinary-signature { width: min(100%,260px); margin-left: auto; text-align: right; display: grid; gap: 10px; }
 .disciplinary-signature img { width: 170px; height: 65px; object-fit: contain; margin-left: auto; }
 .disciplinary-signature-upload { font-size: 11px; color: #0c5598; cursor: pointer; }
