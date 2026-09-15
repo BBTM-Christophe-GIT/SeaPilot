@@ -38,6 +38,8 @@ interface DprPdfPreview extends GeneratedDprDocument { report: DprReportRecord; 
 const EMPTY_FILTERS: DprFilters = { vesselId: '', projectId: '', dateFrom: '', dateTo: '', search: '', status: '' };
 const DOCK_PROJECT_NAME = 'Navire à quai';
 const DOCK_PROJECT_VALUE = '__dock_project__';
+const TRANSIT_PROJECT_NAME = 'Navire en transit';
+const TRANSIT_PROJECT_VALUE = '__transit_project__';
 const UNLISTED_PROJECT_VALUE = '__unlisted_project__';
 const STEPS = [
   ['Informations Projet', 'Informations projet'],
@@ -661,10 +663,13 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
   return <div className="dpr-cards">
     <section className="dpr-card"><h4><b>1</b> Projet</h4><div className="dpr-form-grid">
       <Field label="DATE"><input type="date" disabled={!editable} value={payload.reportDate} onChange={(event) => onDateChange(event.target.value)}/></Field>
-      <Field label="PROJET"><select disabled={!editable} value={payload.projectId !== null ? String(payload.projectId) : payload.unlistedProjectName === DOCK_PROJECT_NAME ? DOCK_PROJECT_VALUE : payload.unlistedProjectName ? UNLISTED_PROJECT_VALUE : ''} onChange={(event) => update((current) => {
+      <Field label="PROJET"><select disabled={!editable} value={payload.projectId !== null ? String(payload.projectId) : payload.unlistedProjectName === DOCK_PROJECT_NAME ? DOCK_PROJECT_VALUE : payload.unlistedProjectName === TRANSIT_PROJECT_NAME ? TRANSIT_PROJECT_VALUE : payload.unlistedProjectName ? UNLISTED_PROJECT_VALUE : ''} onChange={(event) => update((current) => {
         if (event.target.value === DOCK_PROJECT_VALUE) {
           current.projectId = null;
           current.unlistedProjectName = DOCK_PROJECT_NAME;
+        } else if (event.target.value === TRANSIT_PROJECT_VALUE) {
+          current.projectId = null;
+          current.unlistedProjectName = TRANSIT_PROJECT_NAME;
         } else if (event.target.value === UNLISTED_PROJECT_VALUE) {
           current.projectId = null;
         } else {
@@ -675,7 +680,7 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
         if (project?.code.trim().toUpperCase() !== 'P144') {
           current.portCalls[0].reasons = current.portCalls[0].reasons.filter((reason) => !DPR_PORT_CALL_CATEGORIES.some((item) => item.key === reason));
         }
-      })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
+      })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option><option value={TRANSIT_PROJECT_VALUE}>{TRANSIT_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME && payload.unlistedProjectName !== TRANSIT_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => void onVesselChange(event.target.value ? Number(event.target.value) : null)}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>
