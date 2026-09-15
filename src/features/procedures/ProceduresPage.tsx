@@ -1,3 +1,4 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BadgeCheck,
@@ -432,7 +433,7 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const activeRecords = view === 'sources' ? procedures : publications;
   const filteredRecords = useMemo(() => activeRecords.filter((record) => matchesFilters(record, filters)), [activeRecords, filters]);
   const projects = useMemo(() => [...new Set(activeRecords.flatMap((record) => projectNames(record.projectName)))].sort(), [activeRecords]);
-  const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(), [activeRecords]);
+  const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(compareFleetNames), [activeRecords]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
   const metrics = useMemo(() => buildProcedureMetrics({ procedures, publications }), [procedures, publications]);
 
@@ -550,7 +551,6 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
           </div>
         ) : <div className="procedure-public-notice"><ShieldCheck size={17} /><span>Vous consultez uniquement les versions PDF approuvées et publiées.</span></div>}
 
-        {isManager && view === 'sources' ? <div className="procedure-public-notice"><FolderKanban size={17} /><span>Google Drive : <a href="/connectors/seapilot-drive-windows.zip" download>installer le lanceur Windows</a>, puis <a href="seapilot-drive://configure">configurer le dossier synchronisé sur ce PC</a>. Un clic sur un document lié ouvre son fichier local dans Office.</span></div> : null}
 
         <div className="procedure-chapters">
           {CHAPTERS.map(([key, label]) => {

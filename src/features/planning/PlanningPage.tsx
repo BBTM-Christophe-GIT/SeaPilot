@@ -1,3 +1,7 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
+import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
+import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
+import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { displayBrandName } from '../../lib/branding';
 import {
@@ -10,6 +14,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Copy,
   Expand,
   ExternalLink,
@@ -336,7 +342,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   description: '',
 };
 
-const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Repos', 'Vacance', 'Arrêt de travail', 'Formation'];
+const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -351,6 +357,7 @@ const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
 ];
 
 const PlanningP12Panel = lazy(() => import('./PlanningP12Panel').then((module) => ({ default: module.PlanningP12Panel })));
+const PlanningAbsenceRequestDialog = lazy(() => import('./PlanningAbsenceRequestDialog').then((module) => ({ default: module.PlanningAbsenceRequestDialog })));
 const PlanningP13Panel = lazy(() => import('./PlanningP13Panel').then((module) => ({ default: module.PlanningP13Panel })));
 const PlanningExportDialog = lazy(() => import('./PlanningExportDialog').then((module) => ({ default: module.PlanningExportDialog })));
 const PlanningSilaeExportDialog = lazy(() => import('./PlanningSilaeExportDialog').then((module) => ({ default: module.PlanningSilaeExportDialog })));
@@ -514,7 +521,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const planningData = usePlanningCoreOverview(overview);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
-  const [perspective, setPerspective] = useState<PlanningPerspective>('fleet');
+  const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
+  const perspective = readPermissions.canViewCrewPlanning ? requestedPerspective : 'fleet';
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -549,6 +557,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBoardingCertificateOpen, setIsBoardingCertificateOpen] = useState(false);
   const [isSilaeExportOpen, setIsSilaeExportOpen] = useState(false);
+  const [balancePerson, setBalancePerson] = useState<{ id: number; name: string } | null>(null);
+  const [balanceCheckpoints, setBalanceCheckpoints] = useState<PlanningCrewBalanceCheckpoint[]>([]);
+  const [balanceLoad, setBalanceLoad] = useState<{ client: typeof effectiveClient; revision: number; error: string } | null>(null);
+  const [balanceRevision, setBalanceRevision] = useState(0);
+  const currentBalanceLoad = balanceLoad?.client === effectiveClient && balanceLoad.revision === balanceRevision ? balanceLoad : null;
+  const balancesLoaded = Boolean(readPermissions.canViewCrewPlanning && currentBalanceLoad && !currentBalanceLoad.error);
+  const balanceLoadError = currentBalanceLoad?.error || '';
+  useEffect(() => {
+    if (!readPermissions.canViewCrewPlanning || previewMode) return;
+    let active = true;
+    void fetchPlanningCrewBalances(effectiveClient).then((rows) => {
+      if (active) { setBalanceCheckpoints(rows); setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' }); }
+    }).catch((error: unknown) => { if (active) setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: error instanceof Error ? error.message : 'Soldes indisponibles.' }); });
+    return () => { active = false; };
+  }, [effectiveClient, previewMode, readPermissions.canViewCrewPlanning, balanceRevision]);
   const [isCrewListOpen, setIsCrewListOpen] = useState(false);
   const [newVessel, setNewVessel] = useState({ name: '', acronym: '' });
   const [crewListForm, setCrewListForm] = useState<CrewListFormState>({ vesselId: '', date: initialAnchorDate, watchGroup: '', format: 'xlsx' });
@@ -560,6 +583,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isHandoverOpen, setIsHandoverOpen] = useState(false);
   const [isP11Open, setIsP11Open] = useState(false);
   const [isP12Open, setIsP12Open] = useState(false);
+  const [isAbsenceRequestOpen, setIsAbsenceRequestOpen] = useState(false);
   const [p12Launch, setP12Launch] = useState<{
     tab: 'absences' | 'conflicts' | 'replacements';
     absenceId: number | null;
@@ -771,6 +795,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
     [fleetLanes],
   );
+  const fleetNodeKeys = useMemo(() => fleetRows.filter((row) => row.type !== 'person').map((row) => row.key), [fleetRows]);
+  const isFleetFullyExpanded = fleetNodeKeys.length > 0 && fleetNodeKeys.every((key) => !collapsedFleetNodes.has(key));
   const fleetTreeCounts = useMemo(() => {
     const peopleByNode = new Map<string, Set<string>>();
     fleetRows.forEach((row) => {
@@ -796,9 +822,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return indexed;
   }, [vesselVisits]);
+  const crewBalances = useMemo(() => new Map((readPermissions.canViewCrewPlanning ? planningData.people : []).map((person) => [person.id,
+    buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
+  ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents),
-    [allPlanningCrewEvents, crewGrouping, filters, planningData, range],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents) : [],
+    [allPlanningCrewEvents, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -906,7 +935,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         ...planningData.vessels.map((vessel) => vessel.name),
         ...planningData.periods.map((period) => period.vesselName),
         ...planningData.assignments.map((assignment) => assignment.vesselName),
-      ]),
+      ]).sort(compareFleetNames),
     [planningData],
   );
   const personOptions = useMemo(
@@ -952,6 +981,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function openP12(options: Partial<typeof p12Launch> = {}) {
+    if (options.openAbsenceForm) {
+      setIsAbsenceRequestOpen(true);
+      return;
+    }
     setP12Launch({
       tab: options.tab || 'conflicts',
       absenceId: options.absenceId ?? null,
@@ -967,6 +1000,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function changePerspective(next: PlanningPerspective) {
+    if (next === 'crew' && !readPermissions.canViewCrewPlanning) return;
     setPerspective(next);
     setFilters((current) => ({
       ...current,
@@ -1058,7 +1092,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       const daysData = await fetchPlanningDays(effectiveClient);
       updateOverview((current) => ({ ...current, days: daysData }));
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
-      setStatusMessage(`${displayStatus} ${displayStatus === 'Vacances' ? 'enregistrées' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
+      setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
       setDayStateForm(null);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut et le commentaire.'));
@@ -1178,7 +1212,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   async function colorPlanningGridCell(cell: PlanningGridCell) {
     if (!canEditPlanning || isSaving || cell.isConflict) return;
-    const coloredCell = { ...cell, status: planningGridDefaultStatus(cell.vessel) };
+    const coloredCell = cell;
     setSelectedGridCells(new Map([[coloredCell.key, coloredCell]]));
     const saved = await persistPlanningGridCells([coloredCell], '1 case enregistrée.');
     if (!saved) setSelectedGridCells(new Map());
@@ -1809,7 +1843,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         endsAt: localDateTime(endsOn, utcToPlanningLocalDateTime(absence.endsAt).slice(11)),
       });
       await loadAbsences();
-      setStatusMessage(`Vacances validées déplacées du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
+      setStatusMessage(`Congés validés déplacés du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible de déplacer ces vacances validées.'));
     } finally {
@@ -2316,6 +2350,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
   }
 
+  function toggleFleetTree() {
+    setCollapsedFleetNodes((current) => {
+      const shouldCollapse = fleetNodeKeys.every((key) => !current.has(key));
+      const next = new Set(current);
+      fleetNodeKeys.forEach((key) => {
+        if (shouldCollapse) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  }
+
   function openLaneAssignment(targetLane: PlanningCrewLane, date: string) {
     const person = overview.people.find((item) => item.id === targetLane.personId);
     const currentVessel = activeVessels.find((item) => item.id === targetLane.events[0]?.vesselId || item.name === targetLane.events[0]?.vessel);
@@ -2449,8 +2495,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
-                <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button>
+                {readPermissions.canViewCrewPlanning ? <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button> : null}
               </div>
+              {perspective === 'fleet' ? (
+                <button aria-expanded={isFleetFullyExpanded} className="planning-filter-toggle" disabled={!fleetNodeKeys.length} onClick={toggleFleetTree} title="Déplier ou replier tous les navires et toutes les bordées affichés" type="button">
+                  {isFleetFullyExpanded ? <ChevronsDownUp aria-hidden="true" size={17} /> : <ChevronsUpDown aria-hidden="true" size={17} />}
+                  {isFleetFullyExpanded ? 'Tout replier' : 'Tout déplier'}
+                </button>
+              ) : null}
               {canEditPlanning && perspective === 'crew' ? (
                 <button className="planning-primary-action" onClick={() => openAssignment()} type="button">
                   <Plus aria-hidden="true" size={17} />Créer une affectation
@@ -2459,10 +2511,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
                 <SlidersHorizontal aria-hidden="true" size={17} />Filtres{activeFilterCount ? <span>{activeFilterCount}</span> : null}
               </button>
-              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => void Promise.all([loadPlanning(), loadAbsences()])} type="button">
+              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
               <div className="planning-toolbar-spacer" />
+              {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
             </div>
 
@@ -2630,6 +2683,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
+                  balances={lane.personId === null ? undefined : crewBalances.get(lane.personId)}
+                  balanceLoading={!previewMode && !balancesLoaded}
+                  onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
+                  onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}
+                  onEditDayState={openDayState}
+                  onConflictCellClick={!isSaving ? openPlanningGridConflict : undefined}
+                  onGridCellClick={selectPlanningGridCell}
+                  selectedGridCells={selectedGridCells}
                   absences={absences}
                   conflictDatesByEvent={conflictDatesByEvent}
                   dayWidth={effectiveDayWidth}
@@ -2674,6 +2735,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       </div>
 
       {dayStateForm ? <PlanningDayStateDialog form={dayStateForm} isSaving={isSaving} onChange={setDayStateForm} onClose={() => setDayStateForm(null)} onDelete={() => void deleteDayState()} onSave={saveDayState} /> : null}
+      {readPermissions.canViewCrewPlanning && balancePerson ? <PlanningCrewBalanceDialog personId={balancePerson.id} personName={balancePerson.name} initialDate={anchorDate}
+        checkpoints={balanceCheckpoints} onClose={() => setBalancePerson(null)} onSave={async (checkpoint) => {
+          if (!canEditPlanning) throw new Error('Votre profil ne peut pas modifier les soldes équipage.');
+          if (!previewMode) await savePlanningCrewBalance(effectiveClient, checkpoint);
+          setBalanceCheckpoints((rows) => [...rows.filter((row) => row.personId !== checkpoint.personId || row.asOf !== checkpoint.asOf), checkpoint]);
+          setBalanceLoad({ client: effectiveClient, revision: balanceRevision, error: '' });
+          setStatusMessage('Solde enregistré en fin de journée. Le calcul commence le lendemain.');
+        }} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
       {eligiblePeopleDialog ? <PlanningEligiblePeopleDialog isSaving={isSaving} onAdd={(person) => void addEligiblePersonToBoard(person)} onClose={() => setEligiblePeopleDialog(null)} pendingId={pendingMutationId} people={eligibleBoardPeople} referenceMonthLabel={referenceMonthLabel} state={eligiblePeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
@@ -2700,7 +2769,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={PLANNING_ASSIGNMENT_FUNCTIONS} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} /> : null}
-      {isP12Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} openAbsenceFormOnMount={p12Launch.openAbsenceForm} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={range} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} canManageProviders={effectiveRoles.includes('admin') || effectiveRoles.includes('direction')} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
@@ -2889,7 +2959,9 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   const options = [
     ['En Mer', 'En mer', 'sea'],
     ['A Terre', 'À terre', 'shore'],
-    ['Vacance', 'Vacances', 'vacation'],
+    ['Extra', 'Extra', 'extra'],
+    ['Formation', 'Formation', 'training'],
+    ['Vacance', 'Congés', 'vacation'],
     ['Repos', 'Repos', 'rest'],
     ['Arrêt Maladie', 'Arrêt Maladie', 'sick-leave'],
     ['Accident du Travail', 'Accident du Travail', 'accident'],

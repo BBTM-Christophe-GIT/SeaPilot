@@ -1,4 +1,9 @@
+import { createLucideIcon } from 'lucide-react';
 import type { LiftingKind } from './liftingModel';
+
+export const LiftingOperationsIcon = createLucideIcon('LiftingOperations', [
+  ['path', { d: 'M3 22h18M7 22V7h3v15M3 7h18L10 2 7 7M10 2v5M19 7v7m-2 0v2a2 2 0 0 0 4 0M7 11l3 4-3 4', key: 'crane' }],
+]);
 
 export function LiftingIcon({ kind }: { kind: LiftingKind | 'crane' }) {
   return <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -1,3 +1,4 @@
+import { comparePlanningRevision } from './planningSourcePriority';
 import {
   PLANNING_ASSIGNMENT_NOTE_SOURCE,
   PLANNING_VESSEL_LOCATION_SOURCE,
@@ -64,6 +65,7 @@ export interface PlanningCrewEvent {
   comments: string;
   sourceLabel: string;
   assignmentId?: number;
+  updatedAt?: string;
   dailyNotes?: Record<string, string>;
   dailyStatuses?: Record<string, string>;
 }
@@ -258,6 +260,15 @@ export function isPlanningPersonEmployedDuring(
   );
 }
 
+export function isPlanningPersonEmployedOn(
+  person: Pick<PlanningPerson, 'active' | 'hiredOn' | 'departedOn'>,
+  date: string,
+): boolean {
+  return person.active
+    && (!person.hiredOn || person.hiredOn <= date)
+    && (!person.departedOn || person.departedOn > date);
+}
+
 export function planningPeriodTitle(days: PlanningTimelineDay[], mode: PlanningViewMode): string {
   if (!days.length) return '';
   if (mode === 'year') return String(days[0].year);
@@ -298,7 +309,7 @@ export function normalizePlanningStatus(value: string): string {
   if (key.includes('EMBAR') || key === 'ENMER' || key === 'TRAVAILLE') return 'En Mer';
   if (key === 'ATERRE') return 'A Terre';
   if (key.includes('REPOS') || key.includes('DEBAR')) return 'Repos';
-  if (key.includes('VACAN')) return 'Vacance';
+  if (key.includes('VACAN') || key === 'CONGE' || key === 'CONGES') return 'Vacance';
   if (key.includes('ACCIDENT') && key.includes('TRAVAIL')) return 'Accident du Travail';
   if (key.includes('ARRET') && key.includes('MALADIE')) return 'Arrêt Maladie';
   if (key.includes('ARRET')) return 'Arrêt de travail';
@@ -307,13 +318,14 @@ export function normalizePlanningStatus(value: string): string {
 }
 
 export function planningStatusDisplayLabel(value: string): string {
-  return normalizePlanningStatus(value) === 'Vacance' ? 'Vacances' : value;
+  return normalizePlanningStatus(value) === 'Vacance' ? 'Congés' : value;
 }
 
 export function planningStatusTone(value: string): string {
   const key = normalizePlanningText(normalizePlanningStatus(value));
   if (key === 'ENMER') return 'sea';
   if (key === 'ATERRE') return 'shore';
+  if (key === 'EXTRA') return 'extra';
   if (key === 'REPOS') return 'rest';
   if (key === 'VACANCE') return 'vacation';
   if (key === 'ARRETMALADIE') return 'sick-leave';
@@ -384,6 +396,7 @@ function crewEventFromPeriod(period: PlanningPeriodRecord, vesselName = period.v
 function crewEventFromAssignment(assignment: PlanningAssignmentRecord, vesselName = assignment.vesselName): PlanningCrewEvent {
   return {
     id: `assignment-${assignment.id}`,
+    updatedAt: assignment.updatedAt,
     kind: 'assignment',
     personId: assignment.crewPersonId,
     vesselId: assignment.vesselId,
@@ -457,7 +470,8 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     statuses[day.workDate] = normalizePlanningStatus(day.sailorStatus);
     statusesByAssignment.set(assignmentId, statuses);
   });
-  overview.assignments.map((assignment) => crewEventFromAssignment(
+  overview.assignments.filter((assignment) => assignment.confirmationStatus !== 'cancelled')
+    .sort((a, b) => comparePlanningRevision({ ...a, sourceId: a.id }, { ...b, sourceId: b.id })).map((assignment) => crewEventFromAssignment(
     assignment,
     canonicalVesselName(assignment.vesselId, assignment.vesselName),
   )).forEach((event) => {
@@ -472,12 +486,7 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
       eventIndexesByKey.set(key, events.length);
       events.push(enriched);
     } else {
-      events[existingIndex] = {
-        ...events[existingIndex],
-        assignmentId: event.assignmentId,
-        dailyNotes: enriched.dailyNotes,
-        dailyStatuses: enriched.dailyStatuses,
-      };
+      events[existingIndex] = enriched;
     }
   });
   const eventsByPersonVessel = new Map<string, PlanningCrewEvent[]>();
@@ -507,7 +516,13 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
         else eventsByPersonVessel.set(key, [event]);
       }
     });
-  return events;
+  // A later saved assignment can supersede an old role on the same ship.
+  // Preserve unresolved cross-ship conflicts and all successive date ranges.
+  return events.filter((event) => event.kind !== 'assignment' || !events.some((other) => (
+    other !== event && other.kind === 'assignment' && other.personId === event.personId
+    && other.vesselId === event.vesselId && other.startsOn <= event.startsOn && other.endsOn >= event.endsOn
+    && comparePlanningRevision({ ...other, sourceId: other.assignmentId }, { ...event, sourceId: event.assignmentId }) > 0
+  )));
 }
 
 function safeKey(value: string): string {
@@ -674,7 +689,7 @@ export function buildPlanningCrewRows(
   return rows;
 }
 
-export function formatPlanningPerson(person: PlanningPerson): string {
+export function formatPlanningPerson(person: Pick<PlanningPerson, 'firstName' | 'lastName'>): string {
   return [person.firstName, person.lastName].filter(Boolean).join(' ');
 }
 

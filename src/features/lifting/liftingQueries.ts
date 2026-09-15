@@ -1,15 +1,44 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
+import { uploadLiftingCertificate, validateLiftingCertificate, type UploadedLiftingCertificate } from './liftingCertificateQueries';
+
+export async function fetchLiftingCanStart(client: SupabaseClient): Promise<boolean> {
+  const { data, error } = await client.rpc('lifting_can_start_inspection');
+  if (error) throw error;
+  return data === true;
+}
+export async function replaceLiftingItem(client: SupabaseClient, item: LiftingItem, date: string, files: File[] = []) {
+  files.forEach(validateLiftingCertificate);
+  const certificates: UploadedLiftingCertificate[] = [];
+  for (const file of files) certificates.push(await uploadLiftingCertificate(client, item, file, (item.service_version ?? 1) + 1));
+  const { error } = await client.rpc('replace_lifting_item', { p_id: item.id, p_service_version: item.service_version ?? 1, p_commissioned_on: date, p_certificates: certificates });
+  if (error) throw error;
+}
 
 export async function fetchLiftingVessels(client: SupabaseClient): Promise<LiftingVessel[]> {
   const { data, error } = await client.rpc('lifting_available_vessels');
   if (error) throw error;
-  return data || [];
+  // The role-scoped RPC supplies the small, cacheable thumbnail URL directly.
+  // Opening an inventory never waits for signed URLs or original photographs.
+  return (data || []) as LiftingVessel[];
+}
+// Paper forms always read current inventory, independently of UI filters and report snapshots.
+export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
+  const [vessels, result] = await Promise.all([
+    fetchLiftingVessels(client),
+    client.from('lifting_inventory').select('*').eq('vessel_id', vesselId).eq('kind', kind).eq('active', true).order('reference'),
+  ]);
+  if (result.error) throw result.error;
+  const vessel = vessels.find((candidate) => candidate.id === vesselId);
+  if (!vessel) throw new Error('Ce navire ou site n’est plus accessible. Rechargez le registre.');
+  const items = (result.data || []) as LiftingItem[];
+  if (!items.length) throw new Error('Aucun matériel actif dans ce registre pour le navire ou site choisi.');
+  return { vessel, items };
 }
 export async function fetchLiftingRegister(client: SupabaseClient, vesselId: number, kind: LiftingKind) {
   const [items, inspections] = await Promise.all([
     client.from('lifting_inventory').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('reference'),
-    client.from('lifting_inspections').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('issued_on', { ascending: false }),
+    client.from('lifting_inspections').select('*').eq('vessel_id', vesselId).eq('kind', kind).order('issued_on', { ascending: false }).order('id', { ascending: false }),
   ]);
   if (items.error) throw items.error;
   if (inspections.error) throw inspections.error;
@@ -42,6 +71,11 @@ export async function saveInspectionEntry(client: SupabaseClient, inspection: Li
   });
   if (error) throw error;
   return data as number;
+}
+export async function deleteLiftingInspectionDraft(client: SupabaseClient, inspection: LiftingInspection) {
+  if (inspection.status !== 'draft') throw new Error('Seul un brouillon peut être supprimé.');
+  const { error } = await client.rpc('delete_lifting_inspection_draft', { p_id: inspection.id, p_revision: inspection.revision });
+  if (error) throw error;
 }
 export async function saveInspectionEntries(client: SupabaseClient, inspection: LiftingInspection, entries: InspectionEntry[]): Promise<number> {
   const { data, error } = await client.rpc('save_lifting_inspection_entries', {

@@ -4,7 +4,8 @@ import type { PlanningOverview } from './planningQueries';
 import type { SilaeData } from './planningSilae';
 
 // Demonstration data only. The authenticated export always reads RH values
-// through planningSilaeQueries and never synthesizes an employee number/code.
+// through planningSilaeQueries and never synthesizes an employee number.
+// Explicit SILAE classification overrides apply in the shared export model.
 export function buildPlanningSilaePreviewData(overview: PlanningOverview): SilaeData {
   return {
     people: overview.people.map((person) => {
@@ -14,6 +15,6 @@ export function buildPlanningSilaePreviewData(overview: PlanningOverview): Silae
     vessels: overview.vessels.map((vessel) => ({ ...vessel, registrationNumber: vessel.registrationNumber || '' })),
     sources: getAllPlanningCrewEvents(overview)
       .filter((event) => event.kind !== 'annualReview' && event.confirmationStatus !== 'cancelled')
-      .map((event) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1 })),
+      .map((event) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, functionLabel: event.functionLabel, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1 })),
   };
 }

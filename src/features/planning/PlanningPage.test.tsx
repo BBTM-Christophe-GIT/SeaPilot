@@ -319,8 +319,11 @@ function createClient(options: {
         }),
       };
     }
+    if (table === 'planning_crew_balance_checkpoints') {
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
+    }
     if (table === 'planning_days') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) };
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) }) }) };
     }
     if (table === 'planning_periods') {
       return {
@@ -406,10 +409,11 @@ function createClient(options: {
     if (functionName === 'read_planning_periods') {
       return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
     }
+    if (functionName === 'save_planning_crew_balance') return Promise.resolve({ data: null, error: null });
     if (functionName === 'save_planning_assignment_day_states') {
       return Promise.resolve({ data: 1, error: null });
     }
-    if (functionName === 'planning_assignment_overview') {
+    if (functionName === 'planning_assignment_overview_with_revisions') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
     }
     if (functionName === 'planning_release_history') {
@@ -635,6 +639,24 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('tab', { name: 'Marin' })).not.toBeInTheDocument();
   }, 30_000);
 
+  it('saves an EOD crew balance and displays the next day cumulative value', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' }));
+    const dialog = screen.getByRole('dialog', { name: 'Solde de Paul DURAND' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Fermer' })).toHaveFocus());
+    fireEvent.change(within(dialog).getByLabelText('Date du solde'), { target: { value: '2026-07-13' } });
+    await user.type(within(dialog).getByLabelText('Solde en fin de journée'), '10,00');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le solde' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(rpc).toHaveBeenCalledWith('save_planning_crew_balance', { p_person_id: 11, p_as_of: '2026-07-13', p_balance: 10 });
+    expect(screen.getByLabelText('Paul DURAND, solde au 13/07/2026 : 10,00')).toHaveTextContent('10,00');
+    expect(screen.getByLabelText('Paul DURAND, solde au 14/07/2026 : 11,05')).toHaveTextContent('11,05');
+  });
+
   it('keeps fleet project selection and double-click editing after the compact visual redesign', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
@@ -695,7 +717,7 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(within(billingPanel).getByRole('tab', { name: 'Demandes en attente, 1 demande' }));
     await user.click(within(billingPanel).getByRole('button', { name: /Paul DURAND.*À valider/ }));
-    expect(await screen.findByRole('dialog', { name: 'Absences, remplacements et centre de conflits' }, { timeout: 10_000 })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Absences et conflits' }, { timeout: 10_000 })).toBeInTheDocument();
 
     const planningMenu = screen.getByRole('navigation', { name: 'Menu du planning' });
     for (const removedButton of ['Facturation', 'Demandes en attente', 'Gérer les navires', 'Conflits', 'Absences et conflits', 'Historique']) {
@@ -1002,42 +1024,39 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalled());
   });
 
-  it('adds a one-day sea assignment by double-clicking an empty sailor cell', async () => {
+  it('adds a crew day only on double-click without a green marker or full form', async () => {
     const user = userEvent.setup();
-    const createdAssignment = { ...assignmentRow, id: 102, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'En Mer' };
-    const { client, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow], createdAssignment });
+    const { client, rpc, insertAssignment } = createClient({ assignments: [], periods: [planningPeriodRow] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
-
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
-    await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Formulaire complet');
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
-
-    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
-      crew_person_id: 11,
-      vessel_id: 1,
-      starts_on: '2026-07-20',
-      ends_on: '2026-07-20',
-      status_label: 'En Mer',
-      watch_group: 'Bordée 1',
-    })));
+    const cell = screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ });
+    await user.click(cell);
+    expect(cell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('apply_planning_grid_cells', expect.anything());
+    expect(insertAssignment).not.toHaveBeenCalled();
+    await user.dblClick(cell);
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ personId: 11, vesselId: 1, workDate: '2026-07-20', status: 'En Mer', watchGroup: 'Bordée 1' })],
+    }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(cell.querySelector('.planning-empty-cell-marker')).not.toBeInTheDocument();
   });
 
-  it('defaults sedentary collaborators to the yellow shore status', async () => {
+  it('defaults sedentary collaborators to shore when adding a crew day', async () => {
     const user = userEvent.setup();
     const sedentaryPerson = { ...crewRow, function_label: 'Directeur QHSE / Chef de Projet' };
     const sedentaryPeriod = { ...planningPeriodRow, function_label: 'Directeur QHSE / Chef de Projet' };
-    const createdAssignment = { ...assignmentRow, id: 103, starts_on: '2026-07-20', ends_on: '2026-07-20', watch_group: 'Bordée 1', status_label: 'A Terre' };
-    const { client, insertAssignment } = createClient({ people: [captainRow, sedentaryPerson], assignments: [], periods: [sedentaryPeriod], createdAssignment });
+    const { client, rpc } = createClient({ people: [captainRow, sedentaryPerson], assignments: [], periods: [sedentaryPeriod] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
-
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.dblClick(screen.getByRole('button', { name: /Case vide de Paul DURAND le 20\/07\/2026/ }));
-    expect(screen.getByLabelText('Statut')).toHaveValue('A Terre');
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Ajouter' }));
-    await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({ status_label: 'A Terre' })));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ status: 'A Terre' })],
+    }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('renders cross-vessel conflicts in red and exposes watch groups as a select', async () => {
@@ -1088,7 +1107,10 @@ describe('PlanningPage cockpit', () => {
 
     await screen.findByRole('heading', { name: 'Planning' });
     expect(screen.queryByRole('button', { name: 'Export SILAE' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
+    expect(screen.queryByRole('button', { name: /Saisir le solde/ })).not.toBeInTheDocument();
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.queryByText('Dernière version diffusée')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
@@ -1143,6 +1165,10 @@ describe('PlanningPage cockpit', () => {
     render(<PlanningPage client={client as never} roles={['capitaine']} />);
 
     await screen.findByRole('heading', { name: 'Planning' });
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
+    expect(screen.queryByRole('button', { name: /Saisir le solde/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Générer une crew list' })).toBeInTheDocument();
     expect(screen.queryByText('Affectation rapide')).not.toBeInTheDocument();
@@ -1156,6 +1182,24 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(projectButton);
     expect(await screen.findByRole('menuitem', { name: 'Voir les détails' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['capitaine', 'marin'] as const)('closes an already open crew view and balance dialog when the actual roles change to %s', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient({ periods: [planningPeriodRow] });
+    const { container, rerender } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' }));
+    expect(screen.getByRole('dialog', { name: 'Solde de Paul DURAND' })).toBeInTheDocument();
+    client.from.mockClear();
+
+    rerender(<PlanningPage client={client as never} roles={[role]} />);
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flotte' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('dialog', { name: 'Solde de Paul DURAND' })).not.toBeInTheDocument();
+    expect(container.querySelector('.has-crew-balances')).not.toBeInTheDocument();
+    expect(client.from).not.toHaveBeenCalledWith('planning_crew_balance_checkpoints');
   });
 
   it('allows office direction to edit while keeping vessel administration restricted', async () => {
@@ -1255,7 +1299,7 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(dayCell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: 'Vacances' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Congés' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();
@@ -1927,6 +1971,9 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
+    const statusSelect = within(dialog).getByLabelText('Statut');
+    await user.selectOptions(statusSelect, 'Arrêt Maladie');
+    expect(statusSelect).toHaveValue('Arrêt Maladie');
     const functionSelect = within(dialog).getByLabelText<HTMLSelectElement>('Fonction');
     expect(functionSelect.tagName).toBe('SELECT');
     expect(functionSelect).toHaveValue('2nd Capitaine');

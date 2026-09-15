@@ -43,7 +43,7 @@ function renderPage(roles: Array<'admin' | 'marin'> = ['admin']) {
     <MemoryRouter>
       <WorkingTimePage
         client={client}
-        currentPerson={{ id: 42, firstName: 'Alex', lastName: 'Marin', functionLabel: 'Matelot', gradeLabel: '' }}
+        currentPerson={{ id: 42, firstName: 'Alex', lastName: 'Marin', functionLabel: 'Matelot', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' }}
         initialRange={{ start: '2026-08-01', end: '2026-08-31' }}
         roles={roles}
       />

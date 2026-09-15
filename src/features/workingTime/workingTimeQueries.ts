@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   WorkingTimeCalculationWindow,
@@ -697,7 +698,7 @@ export async function fetchWorkingTimeWorkspace(
       registrationNumber: vessel.registration_number || '',
       imoNumber: vessel.imo_number || '',
       flagState: vessel.flag_state || '',
-    })),
+    })).sort(compareFleetAssets),
     policies: ((policyResult.data || []) as PolicyRow[]).map(mapPolicy),
   };
 }
@@ -922,7 +923,7 @@ export async function submitWorkingTimeDay(
     p_register_id: input.registerId,
     p_local_work_date: input.localWorkDate,
   });
-  assertResult(error, 'Impossible de soumettre la journée au capitaine.');
+  assertResult(error, 'Impossible de soumettre la journée pour approbation.');
   return Number(data);
 }
 

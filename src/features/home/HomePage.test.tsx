@@ -17,6 +17,7 @@ function renderHome(role: RoleKey) {
       lastName: 'DEMO',
       functionLabel: role === 'capitaine' ? 'Capitaine' : '',
       gradeLabel: '',
+      active: true, hiredOn: '2020-01-01', departedOn: '',
     },
   };
 

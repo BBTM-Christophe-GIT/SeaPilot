@@ -120,10 +120,13 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    const notificationButton = await screen.findByRole('button', { name: /Notifications, 3 élément/ });
+    const notificationButton = await screen.findByRole('button', { name: /Notifications, 5 élément/ });
     await user.click(notificationButton);
 
     expect(screen.getByRole('heading', { name: 'Notes de service' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Demandes de congés' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Congés acceptés/ })).toHaveAttribute('href', '/modules/planning');
+    expect(screen.getByRole('link', { name: /Congés refusés/ })).toHaveTextContent('effectif insuffisant');
     expect(screen.getByRole('heading', { name: 'RH / Brevets · échéance à 40 jours' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clôture à contre-valider/ })).toHaveAttribute('href', '/modules/actionPlan?action=9861');

@@ -1,3 +1,4 @@
+import { formatPlanningCrewBalance, type PlanningCrewBalanceDays } from './planningCrewBalance';
 import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
@@ -9,6 +10,8 @@ import {
   planningExpiredDocumentsForDate,
   planningStatusDisplayLabel,
   planningStatusTone,
+  normalizePlanningStatus,
+  isSedentaryPlanningFunction,
   projectStatusTone,
   type PlanningCrewEvent,
   type PlanningTimelineDay,
@@ -615,6 +618,9 @@ function PlanningCrewTimelineRowContent({
   onRequestAbsence,
   onDeleteEmptyRow,
   isDeletingEmptyRow = false,
+  balances,
+  balanceLoading = false,
+  onInitializeBalance,
   hierarchy = false,
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
@@ -642,6 +648,9 @@ function PlanningCrewTimelineRowContent({
   onRequestAbsence?: () => void;
   onDeleteEmptyRow?: () => void;
   isDeletingEmptyRow?: boolean;
+  balances?: PlanningCrewBalanceDays;
+  balanceLoading?: boolean;
+  onInitializeBalance?: () => void;
   hierarchy?: boolean;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: string; startsOn: string; endsOn: string } | null>(null);
@@ -720,23 +729,28 @@ function PlanningCrewTimelineRowContent({
   };
 
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}`}>
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
           <strong>{lane.label}</strong>
           <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
         </span>
+        {onInitializeBalance ? <button className="planning-balance-open" aria-label={`Saisir le solde de ${lane.label}`} onClick={onInitializeBalance} type="button">Solde</button> : null}
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
       {days.map((day, index) => {
         const occupied = laneCoverage.occupiedDates.has(day.date);
-        const vesselId = laneCoverage.vesselId;
+        const contextEvents = hierarchy ? [] : lane.events.filter((event) => event.kind !== 'annualReview' && event.vesselId !== null);
+        const context = contextEvents.filter((event) => event.endsOn < day.date).sort((a, b) => b.endsOn.localeCompare(a.endsOn))[0]
+          || contextEvents.filter((event) => event.startsOn > day.date).sort((a, b) => a.startsOn.localeCompare(b.startsOn))[0];
+        const vesselId = context?.vesselId ?? laneCoverage.vesselId;
+        const vessel = context?.vessel || lane.vessel;
         const showEmptyButton = editable && !occupied;
-        const canColorEmpty = hierarchy && lane.personId !== null && vesselId !== null && Boolean(onEmptyGridCellDoubleClick);
+        const canColorEmpty = lane.personId !== null && vesselId !== null && Boolean(onEmptyGridCellDoubleClick);
         const emptySelectionId = `empty-${lane.key}-${day.date}`;
         const emptyKey = planningGridCellKey(lane.key, day.date);
         const emptySelectedCell = selectedGridCells.get(emptyKey);
-        const emptySelected = Boolean(emptySelectedCell) || (!canColorEmpty && selectedId === emptySelectionId);
+        const emptySelected = hierarchy && (Boolean(emptySelectedCell) || (!canColorEmpty && selectedId === emptySelectionId));
         const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR').includes('ARMEMENT');
         const emptyCell: PlanningGridCell | null = lane.personId !== null && vesselId !== null ? {
           key: emptyKey,
@@ -745,12 +759,12 @@ function PlanningCrewTimelineRowContent({
           personId: lane.personId,
           person: lane.label,
           vesselId,
-          vessel: lane.vessel,
-          watchGroup: lane.watchGroup,
-          functionLabel: laneCoverage.functionLabel,
+          vessel,
+          watchGroup: context?.board || lane.watchGroup,
+          functionLabel: context?.functionLabel || laneCoverage.functionLabel,
           assignmentId: null,
           eventId: null,
-          status: planningGridDefaultStatus(lane.vessel),
+          status: !hierarchy && isSedentaryPlanningFunction(laneCoverage.functionLabel) ? 'A Terre' : planningGridDefaultStatus(vessel),
           note: '',
           isConflict: false,
         } : null;
@@ -790,7 +804,7 @@ function PlanningCrewTimelineRowContent({
                 event.preventDefault();
                 event.stopPropagation();
                 if (canColorEmpty && emptyCell) onGridCellClick?.(emptyCell, event);
-                else onSelect(emptySelectionId);
+                else if (hierarchy) onSelect(emptySelectionId);
               }}
               onDoubleClick={(event) => {
                 event.preventDefault();
@@ -806,6 +820,14 @@ function PlanningCrewTimelineRowContent({
         const placement = dateGridPlacement(movePreview.startsOn, movePreview.endsOn, days);
         return placement ? <span aria-hidden="true" className="planning-move-preview is-crew" style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }} /> : null;
       })() : null}
+      {balances ? days.map((day, index) => {
+        const balance = balances.get(day.date);
+        const label = balanceLoading ? 'Chargement du solde' : balance?.explanation || 'Solde à initialiser';
+        return <span key={`balance-${day.date}`} className={`planning-crew-balance${balance?.value !== null && (balance?.value || 0) < 0 ? ' is-negative' : ''}`}
+          style={{ gridColumn: index + 2, gridRow: 1 }} title={label} aria-label={`${lane.label}, solde au ${formatPlanningDate(day.date)} : ${balance?.value == null ? label : formatPlanningCrewBalance(balance.value)}`}>
+          {balanceLoading ? '…' : balance?.value == null ? '—' : formatPlanningCrewBalance(balance.value)}
+        </span>;
+      }) : null}
       {lane.events.map((event) => {
         const preview = resizePreview?.id === event.id ? resizePreview : null;
         const startsOn = preview?.startsOn || event.startsOn;
@@ -816,14 +838,14 @@ function PlanningCrewTimelineRowContent({
         const isConflict = conflictDates.size > 0;
         const isPending = pendingId === event.id;
         const eventEditable = editable && event.kind !== 'annualReview';
-        const hasDailyGrid = hierarchy && Boolean(event.assignmentId);
+        const hasDailyGrid = Boolean(event.assignmentId);
         const visibleDailyStates = hasDailyGrid
           ? days.flatMap((day) => {
               if (day.date < event.startsOn || day.date > event.endsOn) return [];
               const selectedCell = selectedGridCells.get(planningGridCellKey(lane.key, day.date));
               return [{
                 note: selectedCell?.note ?? event.dailyNotes?.[day.date] ?? '',
-                status: normalizePlanningGridStatus(selectedCell?.status ?? event.dailyStatuses?.[day.date] ?? event.status, event.vessel),
+                status: normalizePlanningStatus(selectedCell?.status ?? event.dailyStatuses?.[day.date] ?? event.status),
               }];
             })
           : [];
@@ -833,12 +855,18 @@ function PlanningCrewTimelineRowContent({
           ? visibleDailyStates[0].status
           : null;
         const dailyBaseTone = planningStatusTone(continuousDailyStatus || event.status);
+        const displayStatus = hasDailyGrid ? continuousDailyStatus || 'Statuts journaliers' : event.status;
+        // Daily cells cover the middle. The exposed resize caps must use the
+        // first/last daily colors, never the superseded assignment status.
+        const dailyEdgeBackground = !hierarchy && hasDailyGrid && !isConflict
+          ? `linear-gradient(to right, var(--crew-state-${planningStatusTone(visibleDailyStates[0]?.status || event.status)}) 50%, var(--crew-state-${planningStatusTone(visibleDailyStates.at(-1)?.status || event.status)}) 50%)`
+          : undefined;
         return (
           <Fragment key={event.id}>
           <button
             aria-busy={isPending}
-            aria-label={`${event.person}, ${planningStatusDisplayLabel(event.status)}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-crew-bar is-${planningStatusTone(event.status)} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${eventEditable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
+            aria-label={`${event.person}, ${planningStatusDisplayLabel(displayStatus)}, ${planningConfirmationLabel(event.confirmationStatus)}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
+            className={`planning-crew-bar is-${dailyBaseTone} is-${event.confirmationStatus}${hierarchy ? ' is-fleet-tree' : ''}${hasDailyGrid ? ` has-daily-grid is-daily-base-${dailyBaseTone}` : ''}${eventEditable ? ' is-editable' : ''}${isConflict ? ' has-conflict' : ''}${preview ? ' is-resize-preview' : ''}${draggingId === event.id ? ' is-dragging' : ''}${selectedId === event.id ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}`}
             draggable={eventEditable && !preview && !isPending}
             onClick={(clickEvent) => {
               if (suppressClickRef.current) {
@@ -875,12 +903,12 @@ function PlanningCrewTimelineRowContent({
               dragEvent.dataTransfer.effectAllowed = 'move';
               dragEvent.dataTransfer.setData('application/x-seapilot-event', event.id);
             }}
-            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${event.person}\n${event.vessel} · ${planningStatusDisplayLabel(event.status)} · ${planningConfirmationLabel(event.confirmationStatus)}\n${formatPlanningDate(startsOn)} → ${formatPlanningDate(endsOn)}`}
+            style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1, backgroundImage: dailyEdgeBackground }}
+            title={`${event.person}\n${event.vessel} · ${planningStatusDisplayLabel(displayStatus)} · ${planningConfirmationLabel(event.confirmationStatus)}\n${formatPlanningDate(startsOn)} → ${formatPlanningDate(endsOn)}`}
             type="button"
           >
             {eventEditable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'start')} /> : null}
-            {placement.span >= 2 && !hierarchy ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
+            {placement.span >= 2 && !hierarchy && !hasDailyGrid ? <span>{event.status === 'En Mer' ? event.vessel : planningStatusDisplayLabel(event.status)}</span> : null}
             {event.confirmationStatus === 'provisional' ? <span className="planning-provisional-mark">P</span> : null}
             {event.comments ? <span aria-label="Cette période contient une annotation" className="planning-annotation-dot" /> : null}
             {eventEditable && event.kind !== 'day' ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(pointerEvent) => beginResize(pointerEvent, event, 'end')} /> : null}
@@ -926,7 +954,7 @@ function PlanningCrewTimelineRowContent({
             return (
               <button
                 aria-label={`${hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif. ' : ''}${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
-                className={`planning-assignment-note-cell is-${planningStatusTone(cell.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${hasStaffingAlert ? ' has-staffing-alert' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
+                className={`planning-assignment-note-cell is-${planningStatusTone(selectedGridCells.get(cellKey)?.status ?? event.dailyStatuses?.[day.date] ?? event.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${hasStaffingAlert ? ' has-staffing-alert' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
                 data-planning-grid-cell={cellKey}
                 disabled={!editable}
                 key={`${event.id}-${day.date}`}
@@ -974,7 +1002,7 @@ function PlanningCrewTimelineRowContent({
               className="planning-fleet-assignment-label"
               style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
             >
-              {continuousDailyStatus === 'En Mer' ? event.vessel : continuousDailyStatus}
+              {continuousDailyStatus === 'En Mer' ? event.vessel : planningStatusDisplayLabel(continuousDailyStatus)}
             </span>
           ) : null}
           </Fragment>
@@ -1018,11 +1046,11 @@ function PlanningCrewTimelineRowContent({
               dragEvent.dataTransfer.setData('application/x-seapilot-approved-absence', String(absence.id));
             }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces vacances validées.' : ''}`}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces congés validés.' : ''}`}
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />
-            <span>{absence.status === 'approved' && absence.absenceType === 'leave' ? 'Vacances' : planningAbsenceTypeLabel(absence.absenceType)}</span>
+            <span>{planningAbsenceTypeLabel(absence.absenceType)}</span>
           </button>
         );
       })}

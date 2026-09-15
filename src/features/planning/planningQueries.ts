@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
@@ -87,6 +88,7 @@ interface PlanningBoardRowRow {
 }
 
 export interface PlanningAssignmentRow {
+  updated_at?: string;
   id: number;
   vessel_id: number;
   captain_person_id: number | null;
@@ -379,6 +381,7 @@ export interface PlanningBoardRowRecord {
 }
 
 export interface PlanningAssignmentRecord {
+  updatedAt?: string;
   id: number;
   vesselId: number;
   vesselName: string;
@@ -852,7 +855,7 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     acronym: row.acronym || '',
     registrationNumber: row.registration_number || '',
     active: row.active,
-  }));
+  })).sort(compareFleetAssets);
 }
 
 export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson[] {
@@ -929,6 +932,7 @@ export function mapPlanningAssignmentRows(
 
 export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOverviewRow[]): PlanningAssignmentRecord[] {
   return rows.map((row) => ({
+    updatedAt: row.updated_at,
     id: row.id,
     vesselId: row.vessel_id,
     vesselName: row.vessel_name || `Navire #${row.vessel_id}`,
@@ -1261,7 +1265,7 @@ export async function fetchPlanningBoardRows(client: SupabaseClient): Promise<Pl
 export async function fetchPlanningAssignmentOverviewRows(
   client: SupabaseClient,
 ): Promise<PlanningAssignmentOverviewRow[]> {
-  const { data, error } = await client.rpc('planning_assignment_overview');
+  const { data, error } = await client.rpc('planning_assignment_overview_with_revisions');
 
   if (error) throwPlanningDataError('load-assignments', 'Impossible de charger les affectations.', error);
 
@@ -1269,15 +1273,16 @@ export async function fetchPlanningAssignmentOverviewRows(
 }
 
 export async function fetchPlanningDays(client: SupabaseClient): Promise<PlanningDayRecord[]> {
-  const { data, error } = await client
-    .from('planning_days')
-    .select(PLANNING_DAY_SELECT)
-    .order('work_date', { ascending: true })
-    .order('crew_name', { ascending: true });
-
-  if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
-
-  return mapPlanningDayRows((data || []) as PlanningDayRow[]);
+  const rows: PlanningDayRow[] = [];
+  for (let start = 0; ; start += PLANNING_READ_PAGE_SIZE) {
+    const { data, error } = await client.from('planning_days').select(PLANNING_DAY_SELECT)
+      .order('work_date', { ascending: true }).order('crew_name', { ascending: true })
+      .order('id', { ascending: true }).range(start, start + PLANNING_READ_PAGE_SIZE - 1);
+    if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
+    const page = (data || []) as PlanningDayRow[];
+    rows.push(...page);
+    if (page.length < PLANNING_READ_PAGE_SIZE) return mapPlanningDayRows(rows);
+  }
 }
 
 export async function fetchPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {

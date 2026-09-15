@@ -196,6 +196,8 @@ describe('ProceduresPage', () => {
     expect(screen.getAllByText('P145 - OIL SPILL SAIPEM COU').length).toBeGreaterThan(0);
     expect(screen.queryByText('PRO · URG · 4')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
+    expect(screen.queryByRole('link', { name: /installer le lanceur Windows/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /configurer le dossier synchronisé/i })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Projet'), 'P145 - OIL SPILL SAIPEM COU');
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();

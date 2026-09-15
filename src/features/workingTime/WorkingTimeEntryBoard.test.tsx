@@ -39,6 +39,8 @@ function Harness({
   onEditInterval = vi.fn(),
   onRequestVoid = vi.fn(),
   planningContextLoading = false,
+  planningVesselId = 7,
+  approverName = 'Camille CAPITAINE',
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   saveDraft?: boolean;
@@ -47,13 +49,15 @@ function Harness({
   onEditInterval?: (interval: WorkingTimeInterval) => void;
   onRequestVoid?: (interval: WorkingTimeInterval) => void;
   planningContextLoading?: boolean;
+  planningVesselId?: number | null;
+  approverName?: string | null;
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
   const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
   return (
     <WorkingTimeEntryBoard
-      approverName="Camille CAPITAINE"
+      approverName={approverName}
       canEdit
       client={{} as SupabaseClient}
       comment=""
@@ -73,7 +77,7 @@ function Harness({
       periodStart="2026-08-03"
       personId={42}
       pendingPhases={pendingPhases}
-      planningVesselId={7}
+      planningVesselId={planningVesselId}
       planningContextLoading={planningContextLoading}
       showSaveDraft={saveDraft}
       showSubmitToCaptain={submitToCaptain}
@@ -213,6 +217,21 @@ describe('WorkingTimeEntryBoard', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
     expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+  });
+
+  it.each([7, null])('allows draft entry and submission without a captain (vessel %s)', async (vesselId) => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness saveDraft planningVesselId={vesselId} approverName={null} onSubmit={onSubmit} />);
+
+    expect(screen.getByText(/Approbation : Administrateur, Direction ou Armement/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.any(Array), 'save-draft');
+    expect(onSubmit).toHaveBeenCalledWith(expect.any(Array), 'submit-day');
   });
 
   it('makes the comment mandatory when the server detects an alert', async () => {

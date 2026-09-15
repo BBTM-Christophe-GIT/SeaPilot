@@ -1,6 +1,8 @@
 import { rangesOverlap } from './planningDates';
 import {
   getAllPlanningCrewEvents,
+  isPlanningPersonEmployedDuring,
+  isSedentaryPlanningFunction,
   formatPlanningPerson,
   normalizePlanningStatus,
   normalizePlanningText,
@@ -203,58 +205,41 @@ export function buildPlanningCrewLanes(
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
 ): PlanningCrewLane[] {
-  const events = eventPool.filter((event) => (
-    rangesOverlap(event.startsOn, event.endsOn, range.start, range.end)
-    && crewEventMatchesFilters(event, filters)
-  ));
-  const peopleById = new Map(overview.people.map((person) => [person.id, person]));
+  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
+  const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
+    && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters))
+    .map((event) => event.vesselId === null && vesselsByName.has(event.vessel)
+      ? { ...event, vesselId: vesselsByName.get(event.vessel)! } : event);
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
-  const linkedPersonForEvent = (event: PlanningCrewEvent) => (
-    event.personId === null
-      ? peopleByName.get(normalizePlanningText(event.person))
-      : peopleById.get(event.personId) || peopleByName.get(normalizePlanningText(event.person))
-  );
-  const grouped = new Map<string, PlanningCrewEvent[]>();
+  const groups = new Map<string, PlanningCrewLane>();
   events.forEach((event) => {
-    const linkedPerson = linkedPersonForEvent(event);
-    const key = grouping === 'people'
-      ? linkedPerson ? `person-${linkedPerson.id}` : event.personId === null ? `person-name-${normalizePlanningText(event.person)}` : `person-${event.personId}`
-      : `team-${normalizePlanningText(event.board || 'Sans équipe')}`;
-    grouped.set(key, [...(grouped.get(key) || []), event]);
+    const person = overview.people.find((item) => item.id === event.personId) || peopleByName.get(normalizePlanningText(event.person));
+    const key = person ? `person-${person.id}` : `person-name-${normalizePlanningText(event.person)}`;
+    const lane = groups.get(key) || { key, label: person ? formatPlanningPerson(person) : event.person,
+      detail: person?.functionLabel || event.functionLabel, personId: person?.id ?? event.personId,
+      vesselId: event.vesselId, vessel: event.vessel, watchGroup: event.board,
+      functionLabel: person?.functionLabel || event.functionLabel, events: [] };
+    lane.events.push(event);
+    groups.set(key, lane);
   });
-
-  return [...grouped.entries()]
-    .map(([key, laneEvents]) => {
-      const first = laneEvents[0];
-      const linkedPerson = linkedPersonForEvent(first);
-      const label = grouping === 'people' ? first.person : first.board || 'Sans équipe';
-      const detailValues = grouping === 'people'
-        ? [
-            linkedPerson?.functionLabel || first.functionLabel,
-            ...new Set(laneEvents.map((event) => event.vessel).filter(Boolean)),
-          ].filter(Boolean)
-        : [...new Set(laneEvents.map((event) => event.person).filter(Boolean))];
-      return {
-        key,
-        label,
-        detail: detailValues.join(' · '),
-        personId: grouping === 'people' ? linkedPerson?.id ?? first.personId : null,
-        vesselId: first.vesselId,
-        vessel: first.vessel,
-        watchGroup: first.board,
-        functionLabel: linkedPerson?.functionLabel || first.functionLabel,
-        events: laneEvents,
-      };
-    })
-    .sort((left, right) => {
-      if (grouping !== 'people') return left.label.localeCompare(right.label, 'fr');
-
-      const leftPerson = left.personId === null ? null : peopleById.get(left.personId);
-      const rightPerson = right.personId === null ? null : peopleById.get(right.personId);
-      return (leftPerson?.lastName || left.label).localeCompare(rightPerson?.lastName || right.label, 'fr')
-        || (leftPerson?.firstName || '').localeCompare(rightPerson?.firstName || '', 'fr')
-        || left.label.localeCompare(right.label, 'fr');
+  // Empty days still debit the counter, including a month with no assignment.
+  if (!filters.vesselName && !filters.eventType && !filters.status && !filters.responsible) {
+    overview.people.filter((person) => (person.active || Boolean(person.departedOn)) && Boolean(person.functionLabel)
+      && isPlanningPersonEmployedDuring(person, range)
+      && !isSedentaryPlanningFunction(person.functionLabel)
+      && (!filters.personName || filters.personName === formatPlanningPerson(person))).forEach((person) => {
+      const key = `person-${person.id}`;
+      if (!groups.has(key)) groups.set(key, { key, label: formatPlanningPerson(person), detail: person.functionLabel,
+        personId: person.id, vesselId: null, vessel: '', watchGroup: '', functionLabel: person.functionLabel, events: [] });
     });
+  }
+  return [...groups.values()].map((lane) => ({ ...lane,
+    detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
+      ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
+  })).sort((left, right) => (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
+    || (overview.people.find((person) => person.id === left.personId)?.lastName || left.label)
+      .localeCompare(overview.people.find((person) => person.id === right.personId)?.lastName || right.label, 'fr')
+    || left.label.localeCompare(right.label, 'fr'));
 }
 
 export function patchPlanningEvent(

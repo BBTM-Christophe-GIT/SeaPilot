@@ -40,7 +40,7 @@ describe('fetchCurrentUserRoles', () => {
 describe('fetchCurrentPersonSummary', () => {
   it('loads the HR identity linked to the authenticated user', async () => {
     const maybeSingle = vi.fn().mockResolvedValue({
-      data: { id: 12, first_name: 'Paul', last_name: 'DURAND', function_label: '2nd Capitaine', grade_label: 'Pont' },
+      data: { id: 12, first_name: 'Paul', last_name: 'DURAND', function_label: '2nd Capitaine', grade_label: 'Pont', active: true, hired_on: '2020-03-01', departed_on: '2026-09-09' },
       error: null,
     });
     const eq = vi.fn().mockReturnValue({ maybeSingle });
@@ -56,7 +56,11 @@ describe('fetchCurrentPersonSummary', () => {
       lastName: 'DURAND',
       functionLabel: '2nd Capitaine',
       gradeLabel: 'Pont',
+      active: true,
+      hiredOn: '2020-03-01',
+      departedOn: '2026-09-09',
     });
     expect(eq).toHaveBeenCalledWith('user_id', 'user-12');
+    expect(select).toHaveBeenCalledWith('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on');
   });
 });

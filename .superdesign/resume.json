@@ -339,10 +339,10 @@
         "src/features/shell/AppShell.tsx"
       ],
       "fingerprints": {
-        ".superdesign/design-system.md": "7a9ec19c879e89c258e1a8d294c99d16643470c8afce6c1c45c4396bdd74f762",
-        "src/features/disciplinary/DisciplinaryPage.tsx": "f013b028afdbc5bbebdf56846396eae2b79e92b7ebd81c5b2696645d22c17a9a",
-        "src/features/disciplinary/disciplinary.css": "9170a68744bcad5cbdbf86fd0f18fdb717c8bf6cb60fcd79167114e85931e072",
-        "src/features/shell/AppShell.tsx": "e2c9d69e93658b5f164dd2e14ecb2e36d780b8b8dc5d542fc2efca80f9573ce0"
+        ".superdesign/design-system.md": "ac011d0a21c58c675788a85db31ecf25baf2c46c4be35974312b5dd56bf99f8d",
+        "src/features/disciplinary/DisciplinaryPage.tsx": "73bb738b74130f3573a575a4ff64a56473666415d1f6f31c8d68030cc7c47584",
+        "src/features/disciplinary/disciplinary.css": "ef9c48f4ff2414ff474d515f3ad957e97a490fdcdf1e4994c9a8cd0fbb18e828",
+        "src/features/shell/AppShell.tsx": "d222a0c817587031fded16bb8dabf22c3efb14004c5ce1bd47d5ca6346394ba0"
       },
       "referenceIds": [
         "public-bbtm-logo.png"

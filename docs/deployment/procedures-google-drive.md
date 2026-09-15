@@ -5,10 +5,12 @@ Le fichier de travail peut être conservé dans Google Drive et ouvert dans Word
 ## Utilisation
 
 1. Installer Drive pour ordinateur et connecter le compte disposant de l’accès au dossier des sources.
-2. Dans le module Procédures, télécharger **Installer le lanceur Windows**, extraire entièrement l’archive et exécuter `Installer.cmd`.
+2. Dans **Administration → Documents et Google Drive**, télécharger **Installer le lanceur Windows**, extraire entièrement l’archive et exécuter `Installer.cmd`.
 3. Choisir le dossier synchronisé des sources, par exemple `G:\Mon Drive\SeaPilot\Procedures`. Cette configuration est propre à chaque utilisateur Windows ; le lecteur peut porter une autre lettre sur un autre PC.
 4. Enregistrer le document Office dans ce dossier. Dans **Nouveau document**, conserver **Google Drive synchronisé**, coller le lien Google du fichier et renseigner son chemin relatif au dossier choisi.
 5. Cliquer sur le titre dans SeaPilot : le navigateur peut demander l’autorisation de lancer SeaPilot Drive, puis le fichier local s’ouvre dans son application Windows. Enregistrer dans Office et attendre la fin de la synchronisation Drive avant d’éteindre le PC.
+
+La configuration du poste est regroupée dans `/modules/admin?section=documents`, accessible aux administrateurs selon les droits existants. Cette section reste consultable pendant le chargement des données d’administration. Le bandeau de configuration a été retiré du module Procédures. Administration propose cinq sections : Utilisateurs, Accès et rôles, Documents et Google Drive, Plan d’action, Imports et migration. La section choisie figure dans l’URL pour permettre les favoris et le retour du navigateur.
 
 **Voir dans Drive** ouvre le fichier authentifié sur le site Google, où il peut aussi être téléchargé. Le dossier Drive reste disponible dans le cloud lorsque ce PC est éteint. L’ouverture native nécessite un poste Windows configuré, Drive pour ordinateur et les applications Office installées.
 

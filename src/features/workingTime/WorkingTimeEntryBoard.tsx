@@ -451,12 +451,12 @@ export function WorkingTimeEntryBoard({
           {planningContextLoading
             ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p>
             : !planningVesselId
-              ? <p className="working-time-planning-context is-missing">Aucune affectation Planning « En mer » ou « A terre » active pour cette journée.</p>
-              : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Aucun capitaine approbateur disponible'}</p>}
+              ? <p className="working-time-planning-context">Aucune affectation Planning pour cette journée. Saisie possible · Approbation : Administrateur, Direction ou Armement.</p>
+              : <p className="working-time-planning-context">Affectation Planning appliquée{planningWatchGroup ? ` · ${planningWatchGroup}` : ''}{approverName ? ` · Approbateur : ${approverName}` : ' · Approbation : Administrateur, Direction ou Armement (aucun capitaine disponible)'}</p>}
           <div className="working-time-form-actions">
             {editingIntervalId ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked} type="submit" value="save-correction"><Save aria-hidden="true" size={16} />Enregistrer la correction</button> : null}
-            {!editingIntervalId && showSaveDraft ? <button disabled={isSaving || !combinedPhases.length || selectionBlocked || !planningVesselId} type="submit" value="save-draft"><Save aria-hidden="true" size={16} />Enregistrer le brouillon</button> : null}
-            {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked || !planningVesselId || !approverName} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}
+            {!editingIntervalId && showSaveDraft ? <button disabled={isSaving || planningContextLoading || !combinedPhases.length || selectionBlocked} type="submit" value="save-draft"><Save aria-hidden="true" size={16} />Enregistrer le brouillon</button> : null}
+            {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || planningContextLoading || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}
             {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate-day"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button> : null}
             {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>

@@ -1,3 +1,4 @@
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   ArchiveRestore, ArrowLeft, BellRing, Check, ChevronDown, ChevronRight, CircleAlert, Download, ExternalLink,
   FileCheck2, FileClock, FilePlus2, Link2, LoaderCircle, MailCheck, Paperclip, PenLine,
@@ -641,7 +642,7 @@ export function ServiceNotesPage() {
   const recipientCount = distributed.reduce((total, note) => total + note.recipients.length, 0);
   const pendingForMe = visibleNotes.filter((note) => note.status === 'published' && note.recipients.some((recipient) => recipient.userId === currentUserId)
     && !note.signatures.some((signature) => signature.userId === currentUserId)).length;
-  const vesselOptions = Array.from(new Set(visibleNotes.flatMap(serviceNoteVesselNames))).sort((a, b) => a.localeCompare(b, 'fr'));
+  const vesselOptions = Array.from(new Set(visibleNotes.flatMap(serviceNoteVesselNames))).sort(compareFleetNames);
   const hasSignedSelected = Boolean(selectedNote?.signatures.some((signature) => signature.userId === currentUserId));
   const isRecipientSelected = Boolean(selectedNote?.recipients.some((recipient) => recipient.userId === currentUserId));
 

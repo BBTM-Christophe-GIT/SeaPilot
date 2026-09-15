@@ -1,7 +1,7 @@
 // Transcribed from the user's inspection notice. Codes identify a different check for each accessory.
 export const CONTROL_CODES = ['EG', 'ID', 'NID', 'V1', 'V2', 'V3', 'V4', 'V5'] as const;
 export type ControlCode = typeof CONTROL_CODES[number];
-export type AccessoryCode = 'SH' | 'HK' | 'SL' | 'CH' | 'WI' | 'RO' | 'PU' | 'HC' | 'TL';
+export type AccessoryCode = 'SH' | 'HK' | 'SL' | 'CH' | 'WI' | 'RO' | 'PU' | 'HC' | 'TL' | 'AN' | 'PN' | 'GP';
 export type TowingType = 'chain_bridle' | 'textile_line' | 'towing_wire' | 'winch_wire' | 'textile_bridle';
 export interface AccessoryItem { material_type: string; towing_type?: TowingType | null; description?: string }
 export interface ControlText { fr: string; en: string }
@@ -43,6 +43,19 @@ export const ACCESSORIES: AccessoryDefinition[] = [
     V1: point('Vérification de l’âme du câble, si elle existe.', 'Check the wire-rope core, where present.'),
     V2: point('Réduction du diamètre du câble : < 10 % pour un câble standard et < 3 % pour un câble antigiratoire.', 'Wire-rope diameter reduction: < 10% for standard rope and < 3% for rotation-resistant rope.'),
   } },
+  { code: 'AN', fr: 'Anneaux de levage', en: 'Lifting rings', aliases: ['Anneau', 'Anneaux'], checks: {
+    EG: point('Absence de fissures, rayures profondes, corrosion excessive et déformations. Anneau ni tordu ni ouvert.', 'No cracks, deep scratches, excessive corrosion or deformation. The ring must not be twisted or open.'),
+    ID: point('Présence de la plaque / étiquette constructeur, du numéro d’identification et de la CMU.', 'Presence of the manufacturer’s plate / label, identification number and SWL.'),
+  } },
+  { code: 'PN', fr: 'Pinces à tôles', en: 'Plate lifting clamps', aliases: ['Pince', 'Pinces', 'Pinces de levage'], checks: {
+    EG: point('Corps, soudures et zones contraintes : absence de fissures, torsion, déformation ou ouverture anormale. Œillet / manille d’articulation sans ovalisation, allongement ni axe plié.', 'Body, welds and stressed areas: no cracks, twisting, deformation or abnormal opening. Lifting eye / pivot shackle: no ovalisation, elongation or bent pin.'),
+    ID: point('CMU et capacité d’ouverture (épaisseur de tôle admissible) parfaitement lisibles sur la plaque ou le corps de la pince.', 'SWL and jaw opening capacity (permitted plate thickness) clearly legible on the plate or clamp body.'),
+    V1: point('Mâchoires : dents et cannelures ni émoussées, ébréchées, aplaties ni encrassées. Retirer limaille, peinture, graisse et huile entre came et base. Came pivotant librement sans point dur.', 'Jaws: teeth and grooves must not be blunt, chipped, flattened or fouled. Remove swarf, paint, grease and oil between cam and base. The cam must pivot freely without tight spots.'),
+    V2: point('Verrouillage initial fonctionnel, ni trop dur ni trop mou. Ressorts ni détendus, cassés, déformés ni corrodés. Contrôler l’usure et le jeu des axes selon le fabricant (exemple indiqué : 0,5 mm). Ouverture et mouvement libres ; lubrifier le mécanisme selon ses préconisations.', 'Initial locking operates correctly, neither too stiff nor too loose. Springs must not be slack, broken, deformed or corroded. Check pin wear and clearance against manufacturer limits (stated example: 0.5 mm). Free opening and movement; lubricate as instructed.'),
+    V3: point('Poids et épaisseur de la tôle compatibles avec la capacité de la pince. Respecter la charge minimale de serrage prescrite par le fabricant, lorsqu’elle existe (exemple indiqué : 10 % de la CMU).', 'Plate weight and thickness compatible with clamp capacity. Observe the manufacturer’s minimum gripping load where specified (stated example: 10% of SWL).'),
+  } },
+  // The workbook identifies grapples, but no inspection notice has been supplied yet.
+  { code: 'GP', fr: 'Grappins', en: 'Grapples', aliases: ['Grappin'], checks: {} },
   { code: 'RO', fr: 'Aussières textiles', en: 'Ropes', aliases: ['Aussière', 'Aussière textile'], checks: {} },
   { code: 'PU', fr: 'Moufles et poulies de retour', en: 'Blocks and return pulleys', aliases: ['Poulie', 'Poulies', 'Moufle'], checks: {
     EG: point('État général : absence de fissure, déformation, corrosion et usure excessive.', 'General condition: no cracks, deformation, corrosion or excessive wear.'),

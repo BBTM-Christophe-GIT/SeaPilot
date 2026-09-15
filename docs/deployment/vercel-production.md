@@ -1,5 +1,32 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.40.0` ajoute **Ressources Humaines → Sanctions Disciplinaires** pour Administration et Direction :
+modèles Word BBTM modifiables, rappels juridiques et classement dans un dossier Google Drive confidentiel.
+La migration `20260915085025_disciplinary_sanctions.sql` a été appliquée avant le client.
+Voir [disciplinary-sanctions.md](./disciplinary-sanctions.md) pour les réglages de poste et les contrôles d’accès.
+
+Les acceptations et refus de congés sont notifiés à l'émetteur dans la cloche.
+La migration `20260910182329_planning_leave_decision_notifications.sql` précède le
+client et est appliquée à SeaPilot. Voir
+[planning-leave-decision-notifications.md](./planning-leave-decision-notifications.md).
+
+« Demander des congés » ouvre un formulaire dédié avec le profil connecté présélectionné.
+Indisponibilité est remplacée par Congés dans les demandes, et les libellés Vacance(s)
+du Planning deviennent Congés. Appliquer la migration
+`20260910132240_normalize_planning_unavailability_to_leave.sql` avant le client
+(déjà appliquée à SeaPilot le 10 septembre). Voir
+[planning-leave-request.md](./planning-leave-request.md).
+
+Le centre « Absences et conflits » s'ouvre dans une modale centrée avec des boutons
+contrastés et adaptés au mobile. Aucune migration n'est requise. Voir
+[planning-absence-modal.md](./planning-absence-modal.md).
+
+Version `3.39.6` permet à un Marin de saisir et signer ses heures sans capitaine pour la journée,
+y compris sans affectation Planning. L'approbation revient alors à un Administrateur, à la Direction
+ou à l'Armement de la même société. Appliquer
+`supabase/migrations/20260908211213_working_time_management_approval_fallback.sql` avant le client.
+Voir [working-time-management-fallback-v3-39-6.md](./working-time-management-fallback-v3-39-6.md).
+
 Version `3.39.5` limite les échéances de l'accueil aux 90 prochains jours inclus, même si le statut importé
 du document est « manquant », « à valider » ou périmé. Les alertes échues ou sans date restent visibles.
 Les lignes rouges et orange sont davantage contrastées, y compris au survol. Aucune migration n'est requise.
