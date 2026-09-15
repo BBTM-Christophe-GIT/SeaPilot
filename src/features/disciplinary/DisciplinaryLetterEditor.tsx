@@ -4,9 +4,9 @@ import { Field } from './DisciplinaryForm';
 import { frenchDate, type DisciplinaryLetter } from './disciplinaryModel';
 import { imageFileDataUrl } from './disciplinaryDocx';
 
-export function DisciplinaryLetterEditor({ letter, onChange, onError, disabled = false }: { letter: DisciplinaryLetter; onChange: (letter: DisciplinaryLetter) => void; onError: (error: string) => void; disabled?: boolean }) {
+export function DisciplinaryLetterEditor({ letter, onChange, onError, disabled = false, identityDisabled = false }: { letter: DisciplinaryLetter; onChange: (letter: DisciplinaryLetter) => void; onError: (error: string) => void; disabled?: boolean; identityDisabled?: boolean }) {
   const update = (key: keyof DisciplinaryLetter, value: string) => onChange({ ...letter, [key]: value });
-  return <div className="disciplinary-letter-editor">
+  return <fieldset disabled={disabled} className="disciplinary-letter-editor">
     <div className="disciplinary-form">
       <Field label="Date du courrier"><input type="date" value={letter.date} onChange={(e) => update('date', e.target.value)} /></Field>
       <Field label="Objet"><input value={letter.subject} onChange={(e) => update('subject', e.target.value)} /></Field>
@@ -19,12 +19,12 @@ export function DisciplinaryLetterEditor({ letter, onChange, onError, disabled =
       <p className="disciplinary-place">Cherbourg-en-Cotentin, le {frenchDate(letter.date)}</p>
       <strong>Objet : {letter.subject}</strong>
       <div className="disciplinary-letter-body"><ServiceNoteRichTextEditor ariaLabel="Corps du courrier modifiable" toolbarLabel="Mise en forme du courrier" disabled={disabled} value={disciplinaryBodyToHtml(letter.body)} onChange={(value) => update('body', value)} /></div>
-      <div className="disciplinary-signature"><Field label="Prénom et NOM de l’émetteur"><input value={letter.emitterName} onChange={(e) => update('emitterName', e.target.value)} /></Field><Field label="Fonction de l’émetteur"><input value={letter.emitterFunction} onChange={(e) => update('emitterFunction', e.target.value)} /></Field>
+      <div className="disciplinary-signature"><Field label="Prénom et NOM de l’émetteur"><input value={letter.emitterName} readOnly /></Field><Field label="Fonction de l’émetteur"><input disabled={identityDisabled} value={letter.emitterFunction} onChange={(e) => update('emitterFunction', e.target.value)} /></Field>
         {letter.signatureDataUrl ? <img src={letter.signatureDataUrl} alt="Signature de l’émetteur" /> : <small>Signature à ajouter</small>}
-        <label className="disciplinary-signature-upload">{letter.signatureDataUrl ? 'Remplacer la signature' : 'Ajouter ma signature'}<input aria-label="Signature de l’émetteur" type="file" accept="image/png,image/jpeg" onChange={(e) => { const file = e.target.files?.[0]; if (file) void imageFileDataUrl(file).then((url) => update('signatureDataUrl', url)).catch((error) => onError(error.message)); }} /></label>
+        <label className="disciplinary-signature-upload">{letter.signatureDataUrl ? 'Remplacer la signature' : 'Ajouter ma signature'}<input aria-label="Signature de l’émetteur" disabled={disabled || identityDisabled} type="file" accept="image/png,image/jpeg" onChange={(e) => { const file = e.target.files?.[0]; if (file) void imageFileDataUrl(file).then((url) => update('signatureDataUrl', url)).catch((error) => onError(error.message)); }} /></label>
       </div>
       <footer>BBTM sas · Remorquages – Travaux Maritimes – Énergies Marines Renouvelables<br />Siren : 884 601 170 · 4 rue Pierre Guinard · 76600 LE HAVRE · www.bbtm.fr</footer>
     </div>
-    <p className="disciplinary-muted">Le fichier Word conserve l’en-tête, le pied de page et la mise en page du modèle BBTM fourni. Vous pourrez aussi le modifier dans Word après son classement.</p>
-  </div>;
+    <p className="disciplinary-muted">Le fichier Word conserve l’en-tête, le pied de page et la mise en page du modèle BBTM fourni. La validation fige la version conservée dans SeaPilot ; une copie ouverte dans Word reste un fichier externe.</p>
+  </fieldset>;
 }

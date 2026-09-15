@@ -4,12 +4,33 @@
 
 Route : `/modules/disciplinary`, famille Ressources Humaines.
 
-- Sélection des collaborateurs en poste (dates d’embauche/départ). Les dossiers existants restent consultables après le départ.
+- La colonne gauche liste uniquement les collaborateurs ayant un dossier. « Nouveau dossier » ouvre le sélecteur des collaborateurs en poste (dates d’embauche/départ). Les dossiers existants restent consultables après le départ.
 - Six sanctions : avertissement, blâme, mise à pied disciplinaire, mutation, rétrogradation, licenciement en CDI. Trois qualifications de faute et cinq motifs alcool/stupéfiants avec définitions contextualisées.
 - Convocation, notification/proposition de sanction et mise à pied conservatoire distincte. L’application ne décide pas automatiquement de la qualification et n’envoie aucun courrier.
-- Courrier entièrement modifiable, adresse et identité préremplies. Date de Paris, mention « Cherbourg-en-Cotentin », nom/fonction de l’émetteur et signature alignés à droite. Signature active du profil récupérée lorsqu’elle existe, ou image PNG/JPEG ajoutée dans l’éditeur.
-- Export Word natif utilisant le package du papier à en-tête BBTM fourni : en-têtes, pieds de page, images et paramètres de page conservés. Le brouillon incomplet est marqué PROJET à l’export. Après une modification de la préparation, une nouvelle relecture ou régénération est requise pour classer le courrier final.
-- Brouillons enregistrés avec contrôle de concurrence ; chaque classement crée un fichier distinct et une référence immuable. « Reprendre le modèle initial » recharge le texte du classement ; les modifications ultérieures dans Word sont dans le fichier Drive.
+- Courrier modifiable avant validation, adresse et identité préremplies. Date de Paris, mention « Cherbourg-en-Cotentin », nom/fonction de l’émetteur et signature alignés à droite. Signature active du profil récupérée lorsqu’elle existe, ou image PNG/JPEG ajoutée dans l’éditeur.
+- Export Word natif utilisant le package du papier à en-tête BBTM fourni : en-têtes, pieds de page, images et paramètres de page conservés. Tout courrier non validé est marqué PROJET à l’export. Après une modification de la préparation, une nouvelle relecture ou régénération est requise pour classer le courrier final.
+- Brouillons enregistrés avec contrôle de concurrence ; chaque classement crée un fichier distinct et une référence immuable. Les courriers validés sont conservés dans le dossier même lorsque le courrier suivant est préparé. Les modifications externes dans Word concernent le fichier Drive, pas le courrier validé dans SeaPilot.
+
+## Relecture, partage et validation — v3.42.0
+
+1. Enregistrer le dossier et générer le courrier. L’émetteur initial est le profil connecté.
+2. Dans **Relecture et partage**, choisir un ou plusieurs destinataires Administration/Direction de la même entreprise puis **Partager et notifier**. La cloche mène directement à la relecture du bon dossier. Aucun courrier n’est envoyé au collaborateur.
+3. L’émetteur enregistre ses corrections directement. Un autre profil autorisé modifie la préparation ou le courrier puis **Proposer les modifications** : chaque champ modifié devient une proposition indépendante. Les données officielles ne sont remplacées qu’après acceptation.
+4. L’émetteur **accepte ou rejette** chaque proposition. Les deux versions sont affichées, avec leur mise en forme nettoyée. Une proposition dont le champ a changé entre-temps est refusée à l’acceptation : il faut la rejeter ou demander une nouvelle proposition. Commentaires, auteurs, dates et décisions restent consultables.
+5. L’émetteur actuel ou Administration peut changer l’émetteur vers un profil Administration/Direction autorisé. Le nom est issu du profil ; l’ancienne signature est effacée et le nouvel émetteur est notifié.
+6. L’émetteur peut **Valider le courrier** après enregistrement, relecture et traitement des propositions. La préparation et le courrier courant deviennent non modifiables. La validation crée une copie immuable consultable dans **Dossier et pièces → Courriers validés**.
+7. **Préparer un autre courrier dans ce dossier** permet notamment d’enchaîner convocation et notification. Le précédent courrier validé reste conservé. Le classement Drive accepte uniquement une copie conforme à un courrier validé du dossier.
+8. **Suivi** permet de consigner les faits constatés, la convocation envoyée, l’entretien réalisé, la notification, le début/la fin de sanction et la clôture, avec date et note. Pièces jointes et suivi peuvent être ajoutés après validation.
+
+Le partage ne modifie pas les droits Google Drive et n’élargit jamais l’accès applicatif à d’autres rôles. La validation verrouille le contenu conservé dans SeaPilot ; elle ne bloque pas les modifications d’une copie Word externe. Une signature insérée n’est pas un service de signature électronique certifiée.
+
+Migrations `20260915125415_disciplinary_collaboration.sql` et `20260915130254_disciplinary_validated_letters.sql`, appliquées au projet lié. Les écritures passent par des RPC atomiques : rôle, entreprise, émetteur, état, version et propositions contrôlés côté serveur. Les tables de relecture, participants, événements, notifications et courriers validés sont soumises à RLS. Les notifications ne sont lisibles/modifiables que par leur destinataire encore autorisé. Les fonctions à privilèges élevés résident dans le schéma privé, avec façades publiques sans élévation.
+
+Le logo applicatif fourni est utilisé dans le menu (normal/compact) et les écrans d’authentification. Le papier à en-tête BBTM des courriers reste le modèle fourni.
+
+Recette v3.42.0 : suite automatisée, build de production et lint ciblé réussis. Les liens de notification rechargent les corrections du serveur, y compris pour un dossier déjà ouvert ou créé après le chargement de la liste.
+
+Contrôles : tests React des parcours de création, pièces par dossier, édition par un relecteur, verrouillage, décisions, partage multiple et conservation d’un commentaire en cas d’échec ; tests de cloche pour les cinq profils ; tests SQL en transactions annulées pour les autorisations, conflits, décisions, notifications privées, transfert d’émetteur, archives immuables et courrier suivant. Vérification visuelle dans le navigateur, bureau et mobile 390 px ; aucun envoi réel de notification pendant la recette.
 
 ## Accès et données
 

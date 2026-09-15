@@ -83,12 +83,21 @@ export interface DisciplinaryLetter {
 export interface DisciplinaryCase {
   id: string; company_id: number; person_id: number; case_date: string; data: DisciplinaryForm;
   letter: DisciplinaryLetter | null; updated_at: string;
+  issuer_id: string; workflow_status: 'draft' | 'in_review' | 'validated';
+  validated_at?: string | null; validated_by?: string | null;
 }
 export interface DisciplinaryDocument {
   id: string; case_id: string; file_name: string; drive_path: string; drive_url: string; document_date: string;
   kind: 'letter' | 'attachment'; created_at: string; letter_snapshot: DisciplinaryLetter | null;
 }
 
+export function formFingerprint(form: DisciplinaryForm): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(form).sort(([a], [b]) => a.localeCompare(b))));
+}
+export function isLetterReviewed(form: DisciplinaryForm, letter: DisciplinaryLetter): boolean {
+  try { return formFingerprint(JSON.parse(letter.reviewedForm || 'null')) === formFingerprint(form); }
+  catch { return false; }
+}
 export function todayParis(date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }
@@ -214,12 +223,12 @@ export function generateLetter(form: DisciplinaryForm, kind: LetterKind, emitter
   }
   const bodyHtml = disciplinaryTextToHtml(`Madame, Monsieur,\n\n${body}\n\nVeuillez agréer, Madame, Monsieur, l’expression de nos salutations distinguées.`)
     .replace(/<p>\uE000(\d+)\uE001<\/p>/g, (_, index: string) => fragments[Number(index)] || '');
-  return { kind, date: todayParis(), subject, body: bodyHtml, employeeName: form.employeeName, address: form.address, emitterName: emitter.name, emitterFunction: emitter.function, signatureDataUrl: emitter.signature || '', reviewedForm: JSON.stringify(form) };
+  return { kind, date: todayParis(), subject, body: bodyHtml, employeeName: form.employeeName, address: form.address, emitterName: emitter.name, emitterFunction: emitter.function, signatureDataUrl: emitter.signature || '', reviewedForm: formFingerprint(form) };
 }
 
 export function letterIssues(form: DisciplinaryForm, letter: DisciplinaryLetter): string[] {
   const errors: string[] = [];
-  if (letter.reviewedForm !== JSON.stringify(form)) errors.push('La préparation a changé : relire et adapter le courrier, puis confirmer sa relecture ou régénérer le modèle.');
+  if (!isLetterReviewed(form, letter)) errors.push('La préparation a changé : relire et adapter le courrier, puis confirmer sa relecture ou régénérer le modèle.');
   if (!letter.subject.trim() || !disciplinaryBodyHasContent(letter.body)) errors.push('Renseigner l’objet et le corps du courrier.');
   if (!letter.employeeName.trim() || !letter.address.trim()) errors.push('Renseigner le nom et l’adresse du collaborateur.');
   if (!letter.emitterName.trim() || !letter.emitterFunction.trim()) errors.push('Renseigner le nom et la fonction de l’émetteur.');

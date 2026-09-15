@@ -1,0 +1,6 @@
+.seapilot-logo { display: block; position: relative; width: 212px; max-width: 100%; aspect-ratio: 3.2; overflow: hidden; background: #000; border-radius: 5px; flex-shrink: 0; }
+.seapilot-logo img { position: absolute; width: 112%; max-width: none; height: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.login-brand:has(.seapilot-logo) { width: auto; height: auto; background: transparent; padding: 0; }
+.login-brand .seapilot-logo { width: 280px; }
+.sidebar-is-collapsed .sidebar .seapilot-logo { width: 44px; height: 44px; aspect-ratio: 1; }
+.sidebar-is-collapsed .sidebar .seapilot-logo img { width: 176px; left: -12px; top: -23px; transform: none; }

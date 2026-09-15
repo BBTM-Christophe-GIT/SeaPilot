@@ -84,7 +84,7 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Connexion à BBTM' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connexion à SeaPilot' })).toBeInTheDocument();
   });
 
   it('opens the Planning application directly with safe demo data on a preview deployment', async () => {
@@ -103,7 +103,7 @@ describe('App', () => {
     expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Connexion à BBTM' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();
   }, 60_000);
 
   it('renders the fleet certificates module with imported certificate data', async () => {

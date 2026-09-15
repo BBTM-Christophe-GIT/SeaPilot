@@ -21,6 +21,8 @@ describe('disciplinary role and UI workflows', () => {
   it('selects a named active collaborator, explains choices and preserves editable letter text', async () => {
     const user = userEvent.setup();
     renderPage('direction', undefined, true);
+    expect(screen.queryByRole('button', { name: /Luc MARTIN/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Nouveau dossier' }));
     await user.click(await screen.findByRole('button', { name: /Luc MARTIN/ }));
     await user.selectOptions(screen.getByLabelText(/^Motif/), 'comportement_evocateur');
     for (const label of ['Faits observés', 'Éléments justificatifs', 'Obligations et consignes applicables', 'Modalités de la sanction']) {

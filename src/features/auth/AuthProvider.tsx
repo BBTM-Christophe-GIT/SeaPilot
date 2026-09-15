@@ -1,3 +1,4 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -36,7 +37,7 @@ function AuthConfigurationError({ error }: { error: Error }) {
     <main className="configuration-page" role="alert">
       <section className="configuration-panel" aria-label="Configuration application">
         <div className="login-brand">
-          <strong>BBTM</strong>
+          <SeaPilotLogo />
         </div>
         <h1>Configuration Supabase incomplete</h1>
         <p>
