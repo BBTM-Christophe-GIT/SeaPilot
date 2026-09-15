@@ -1,9 +1,10 @@
-param([string]$SyncRoot, [string]$DisciplinaryRoot)
+param([string]$SeaPilotRoot, [string]$SyncRoot, [string]$DisciplinaryRoot, [switch]$NoConfigure)
 $ErrorActionPreference = 'Stop'
 $installFolder = Join-Path $env:LOCALAPPDATA 'SeaPilotDrive'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $PSScriptRoot 'SeaPilotDrive.cs'
-if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source)) {
+$bridgeSource = Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs'
+if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source) -or !(Test-Path -LiteralPath $bridgeSource)) {
     throw 'Extrayez toutes les pieces de l archive avant installation. .NET Framework 4 est requis.'
 }
 if ($SyncRoot) {
@@ -16,7 +17,7 @@ if ($DisciplinaryRoot) {
 }
 New-Item -ItemType Directory -Path $installFolder -Force | Out-Null
 $executable = Join-Path $installFolder 'SeaPilotDrive.exe'
-& $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll "/out:$executable" $source
+& $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$executable" $source $bridgeSource
 if ($LASTEXITCODE -ne 0) { throw 'Compilation du lanceur impossible.' }
 $protocolKey = 'HKCU:\Software\Classes\seapilot-drive'
 New-Item -Path "$protocolKey\shell\open\command" -Force | Out-Null
@@ -26,11 +27,26 @@ Set-Item -Path "$protocolKey\shell\open\command" -Value ('"' + $executable + '" 
 if ($SyncRoot) {
     New-Item -Path 'HKCU:\Software\SeaPilot\Drive' -Force | Out-Null
     New-ItemProperty -Path 'HKCU:\Software\SeaPilot\Drive' -Name Root -Value $SyncRoot -PropertyType String -Force | Out-Null
-} elseif (!$DisciplinaryRoot) {
-    Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure' -WindowStyle Hidden
 }
 if ($DisciplinaryRoot) {
     New-Item -Path 'HKCU:\Software\SeaPilot\Drive' -Force | Out-Null
     New-ItemProperty -Path 'HKCU:\Software\SeaPilot\Drive' -Name DisciplinaryRoot -Value $DisciplinaryRoot -PropertyType String -Force | Out-Null
 }
 Write-Output 'Lanceur SeaPilot Drive installe pour cet utilisateur Windows.'
+
+# Upgrade the former per-module settings only when they identify the same SeaPilot parent.
+$settingsPath = 'HKCU:\Software\SeaPilot\Drive'
+$previous = Get-ItemProperty -Path $settingsPath -ErrorAction SilentlyContinue
+if (!$SeaPilotRoot -and $previous.SeaPilotRoot) { $SeaPilotRoot = $previous.SeaPilotRoot }
+if (!$SeaPilotRoot -and $previous.Root -and $previous.DisciplinaryRoot) {
+    $procedureParent = Split-Path -Parent $previous.Root
+    if ($procedureParent -eq (Split-Path -Parent $previous.DisciplinaryRoot) -and (Split-Path -Leaf $procedureParent) -eq 'SeaPilot') { $SeaPilotRoot = $procedureParent }
+}
+if ($SeaPilotRoot) {
+    $SeaPilotRoot = (Resolve-Path -LiteralPath $SeaPilotRoot -ErrorAction Stop).Path.TrimEnd('\')
+    if (!(Test-Path -LiteralPath $SeaPilotRoot -PathType Container) -or (Split-Path -Leaf $SeaPilotRoot) -ne 'SeaPilot') { throw 'Selectionnez la racine SeaPilot.' }
+    New-Item -Path $settingsPath -Force | Out-Null
+    New-ItemProperty -Path $settingsPath -Name SeaPilotRoot -Value $SeaPilotRoot -PropertyType String -Force | Out-Null
+} elseif (!$NoConfigure) {
+    Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure' -WindowStyle Hidden
+}

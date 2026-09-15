@@ -1,3 +1,4 @@
+import { connectLocalDrive, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import { FilePenLine, FolderOpen, Plus, Save, Search, Upload, Download, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -7,7 +8,7 @@ import { DisciplinaryForm, Field } from './DisciplinaryForm';
 import { DisciplinaryLetterEditor } from './DisciplinaryLetterEditor';
 import { DisciplinaryProcedure } from './DisciplinaryProcedure';
 import { buildDisciplinaryDocx, downloadBlob, imageFileDataUrl } from './disciplinaryDocx';
-import { ATTACHMENT_TYPES, chooseDriveDirectory, disciplinaryDesktopUri, documentDrivePath, safeDrivePart, validateDisciplinaryPath, validateDriveUrl, writeDriveFile, type DriveDirectory } from './disciplinaryDrive';
+import { ATTACHMENT_TYPES, ensureCollaboratorDriveFolder, disciplinaryDesktopUri, documentDrivePath, safeDrivePart, validateDisciplinaryPath, validateDriveUrl, writeDriveFile } from './disciplinaryDrive';
 import { fetchDisciplinaryData, fetchDisciplinaryDocuments, registerDisciplinaryDocument, saveDisciplinaryCase } from './disciplinaryQueries';
 import { frenchDate, generateLetter, initialForm, isEmployed, letterIssues, LETTER_KINDS, personName, SANCTIONS, todayParis, type DisciplinaryCase, type DisciplinaryDocument, type DisciplinaryLetter, type DisciplinaryPerson, type LetterKind } from './disciplinaryModel';
 import './disciplinary.css';
@@ -38,7 +39,6 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
   const [message, setMessage] = useState('');
   const [kind, setKind] = useState<LetterKind>('notification');
   const [signature, setSignature] = useState('');
-  const [drive, setDrive] = useState<DriveDirectory | null>(null);
   const [link, setLink] = useState({ path: '', url: '', date: todayParis() });
 
   useEffect(() => {
@@ -107,10 +107,11 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
     const letter = generateLetter(current.data, kind, { name: actor ? personName(actor) : '', function: actor?.functionLabel || '', signature });
     edit({ ...current, letter }); setTab('letter');
   }
-  async function saveFile(file: Blob, name: string, documentKind: 'letter' | 'attachment', date: string, snapshot: DisciplinaryLetter | null, record: DisciplinaryCase) {
-    if (!drive) throw new Error('Choisissez le dossier Google Drive confidentiel.');
-    const id = crypto.randomUUID(), path = documentDrivePath(record, date, name, id);
-    await writeDriveFile(drive, path, file);
+  async function saveFile(file: Blob, name: string, documentKind: 'letter' | 'attachment', date: string, snapshot: DisciplinaryLetter | null, record: DisciplinaryCase, connection: LocalDriveConnection) {
+    const { folder } = await ensureCollaboratorDriveFolder(context.client, connection, record);
+    const id = crypto.randomUUID(), path = documentDrivePath(record, date, name, id, folder);
+    try { await writeDriveFile(context.client, connection, record, path, file); }
+    catch (error) { setLink({ path, url: '', date }); throw error; }
     const metadata = { id, case_id: record.id, file_name: path.split('/').at(-1)!, drive_path: path, drive_url: '', document_date: date, kind: documentKind, letter_snapshot: snapshot };
     try {
       const doc = await registerDisciplinaryDocument(context.client, metadata);
@@ -122,17 +123,19 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
   }
   async function archiveLetter() {
     if (!current?.letter || issues.length) throw new Error('Complétez les points de relecture avant le classement final.');
-    if (!drive) throw new Error('Choisissez le dossier Google Drive confidentiel avant le classement.');
+    if (context.previewMode) throw new Error('Préversion : classement désactivé.');
+    const connection = await connectLocalDrive();
     const saved = await save(), letter = saved.letter!;
     const blob = await buildDisciplinaryDocx(letter);
-    await saveFile(blob, `${letter.date} - ${safeDrivePart(letter.subject)}.docx`, 'letter', letter.date, letter, saved);
+    await saveFile(blob, `${letter.date} - ${safeDrivePart(letter.subject)}.docx`, 'letter', letter.date, letter, saved, connection);
     setTab('documents'); setMessage('Courrier classé dans le dossier synchronisé. Attendez la fin de la synchronisation Google Drive.');
   }
   async function attach(files: File[]) {
     if (!files.length) return;
-    if (!drive) throw new Error('Choisissez le dossier Google Drive confidentiel avant d’ajouter des pièces.');
+    if (context.previewMode) throw new Error('Préversion : classement désactivé.');
+    const connection = await connectLocalDrive();
     const saved = await save();
-    for (const file of files) await saveFile(file, file.name, 'attachment', link.date, null, saved);
+    for (const file of files) await saveFile(file, file.name, 'attachment', link.date, null, saved, connection);
     setMessage(`${files.length} pièce(s) classée(s) dans le dossier synchronisé. Attendez la fin de la synchronisation Google Drive.`);
   }
   async function linkExisting() {
@@ -170,17 +173,14 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
             <div className="disciplinary-actions"><button disabled={busy} onClick={() => void run(async () => { const letter = current.letter!; const blob = await buildDisciplinaryDocx({ ...letter, subject: issues.length ? `PROJET — ${letter.subject}` : letter.subject }); downloadBlob(blob, `${letter.date} - ${issues.length ? 'PROJET - ' : ''}${safeDrivePart(letter.subject)}.docx`); })}><Download size={16} />Télécharger Word</button><button className="disciplinary-primary" disabled={busy || context.previewMode || issues.length > 0} onClick={() => void run(archiveLetter)}><FolderOpen size={16} />Classer dans Google Drive</button></div>
             {issues.length ? <details className="disciplinary-review" open><summary>À compléter avant le classement final ({issues.length})</summary><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></details> : null}
             {current.letter.reviewedForm !== JSON.stringify(current.data) ? <button disabled={busy} onClick={() => edit({ ...current, letter: { ...current.letter!, reviewedForm: JSON.stringify(current.data) } })}>Confirmer la relecture du courrier après modification</button> : null}
-            {!drive ? <button onClick={() => setTab('documents')}>Choisir le dossier Drive pour le classement</button> : null}
             <DisciplinaryLetterEditor disabled={busy} letter={current.letter} onChange={(letter) => edit({ ...current, letter })} onError={setError} />
           </> : <div className="disciplinary-empty"><FilePenLine size={32} /><p>Générez le modèle depuis l’onglet Préparation.</p><button onClick={() => setTab('preparation')}>Préparer le courrier</button></div> : null}
           {tab === 'documents' ? <>
-            <div className="disciplinary-drive"><h3>Google Drive synchronisé</h3><p>Choisissez le dossier confidentiel « Sanctions Disciplinaires » de Google Drive pour ordinateur. Son partage doit être limité à Administration et Direction.</p><button disabled={busy || context.previewMode} onClick={() => { try { const selected = chooseDriveDirectory(); void run(async () => { const directory = await selected; setDrive(directory); setMessage(`Dossier choisi : ${directory.name}`); }); } catch (e) { setError((e as Error).message); } }}><FolderOpen size={16} />{drive ? `Dossier : ${drive.name}` : 'Choisir le dossier Google Drive'}</button>
-              <p className="disciplinary-muted">Sur chaque PC : <a href="/connectors/seapilot-drive-windows.zip" download>installer le lanceur Windows à jour</a>, puis <a href="seapilot-drive://disciplinary/configure">configurer ce même dossier pour l’ouverture dans Office</a>. Les fichiers sont écrits localement puis synchronisés par Google Drive.</p>
-            </div>
-            <div className="disciplinary-upload"><Field label="Date de classement des pièces"><input type="date" required value={link.date} onChange={(e) => setLink({ ...link, date: e.target.value })} /></Field><label className="disciplinary-file-button"><Upload size={16} />Ajouter des pièces jointes<input type="file" multiple accept={ATTACHMENT_TYPES} disabled={busy || context.previewMode || !drive || !link.date} onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ''; void run(() => attach(files)); }} /></label></div>
-            <p className="disciplinary-muted">Classement : entreprise / Prénom NOM – identifiant / AAAA-MM-JJ. Les nouvelles versions conservent les fichiers antérieurs.</p>
+            <p className="disciplinary-muted">Classement automatique : SeaPilot / Sanctions Disciplinaires / {current.data.employeeName} / date. Le dossier du collaborateur est créé automatiquement.</p>
+            <div className="disciplinary-upload"><Field label="Date de classement des pièces"><input type="date" required value={link.date} onChange={(e) => setLink({ ...link, date: e.target.value })} /></Field><label className="disciplinary-file-button"><Upload size={16} />Ajouter des pièces jointes<input type="file" multiple accept={ATTACHMENT_TYPES} disabled={busy || context.previewMode || !link.date} onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ''; void run(() => attach(files)); }} /></label></div>
+            <p className="disciplinary-muted">Les documents sont classés par date (AAAA-MM-JJ). Les nouvelles versions conservent les fichiers antérieurs.</p>
             <div className="disciplinary-documents">{selectedDocuments.map((doc) => <article key={doc.id}><div><strong>{doc.file_name}</strong><small>{frenchDate(doc.document_date)} · {doc.kind === 'letter' ? 'Courrier Word' : 'Pièce jointe'}</small><small>{doc.drive_path}</small></div><div className="disciplinary-document-actions"><a href={disciplinaryDesktopUri(doc.drive_path)}><ExternalLink size={15} />Ouvrir le fichier</a>{doc.drive_url ? <a href={validateDriveUrl(doc.drive_url)} target="_blank" rel="noreferrer">Voir dans Drive</a> : null}{doc.letter_snapshot ? <button disabled={busy} onClick={() => { if (mayLeave()) { const original = cases.find((c) => c.id === doc.case_id); if (original) { edit({ ...original, letter: doc.letter_snapshot }); setTab('letter'); } } }}>Reprendre le modèle initial</button> : null}</div></article>)}{!selectedDocuments.length ? <div className="disciplinary-empty"><FolderOpen size={28} /><p>Aucun document classé pour ce collaborateur.</p></div> : null}</div>
-            <details className="disciplinary-details"><summary>Lier un fichier déjà enregistré dans Drive</summary><p>Après un enregistrement manuel, indiquez son chemin dans le dossier confidentiel. Les liens Drive restent privés.</p><div className="disciplinary-form"><Field label="Chemin relatif du fichier" wide><input value={link.path} onChange={(e) => setLink({ ...link, path: e.target.value })} placeholder="1/Prénom NOM - 123/2026-09-15/courrier.docx" /></Field><Field label="Lien Google Drive (facultatif)" wide><input type="url" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} /></Field><button disabled={busy || context.previewMode || !link.path || !link.date} onClick={() => void run(linkExisting)}>Lier au dossier</button></div></details>
+            <details className="disciplinary-details"><summary>Lier un fichier déjà enregistré dans Drive</summary><p>Après un enregistrement manuel, indiquez son chemin dans le dossier confidentiel. Les liens Drive restent privés.</p><div className="disciplinary-form"><Field label="Chemin relatif du fichier" wide><input value={link.path} onChange={(e) => setLink({ ...link, path: e.target.value })} placeholder="Prénom NOM - c1-p123/2026-09-15/courrier.docx" /></Field><Field label="Lien Google Drive (facultatif)" wide><input type="url" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} /></Field><button disabled={busy || context.previewMode || !link.path || !link.date} onClick={() => void run(linkExisting)}>Lier au dossier</button></div></details>
             <p className="disciplinary-muted">« Reprendre le modèle initial » recharge le texte au moment du classement. Les modifications ultérieures dans Word se consultent avec « Ouvrir le fichier ».</p>
           </> : null}
         </>}

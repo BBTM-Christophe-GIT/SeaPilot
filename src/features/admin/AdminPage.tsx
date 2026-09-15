@@ -38,6 +38,7 @@ const ADMIN_SECTIONS = [
 
 interface AdminPageProps {
   client?: SupabaseClient;
+  previewMode?: boolean;
 }
 
 function sortRoles(roles: RoleKey[]): RoleKey[] {
@@ -74,7 +75,7 @@ function updateNavigationPermissions(
   );
 }
 
-export function AdminPage({ client = supabase }: AdminPageProps) {
+export function AdminPage({ client = supabase, previewMode = false }: AdminPageProps) {
   const [searchParams] = useSearchParams();
   const activeSection = ADMIN_SECTIONS.find((section) => section.key === searchParams.get('section'))?.key ?? 'users';
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -430,7 +431,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
         </div>
       </section>
 
-      {activeSection === 'documents' ? <AdminGoogleDriveSetup /> : null}
+      {activeSection === 'documents' ? <AdminGoogleDriveSetup client={client} previewMode={previewMode} /> : null}
 
       <section className="admin-panel admin-action-plan-settings" hidden={activeSection !== 'action-plan' || isLoading} aria-label="Réglages du Plan d'action">
         <div className="admin-header admin-section-header">

@@ -1,6 +1,6 @@
 # SeaPilot Vercel Production Notes
 
-Version `3.40.1` ajoute le texte enrichi aux quatre champs de préparation des sanctions disciplinaires et au courrier modifiable. La mise en forme est conservée dans les brouillons et les fichiers Word classés dans Drive. Aucune migration supplémentaire n’est requise.
+Version `3.41.0` centralise le lanceur Windows et la racine Google Drive dans Administration. Procédures et Sanctions Disciplinaires utilisent le même protocole ; les dossiers des collaborateurs sont créés automatiquement. Appliquer `20260915115648_desktop_drive_scope.sql` (déjà appliquée au projet lié), puis mettre à jour une fois le lanceur Windows avec l’archive fournie. Voir [la configuration commune](./shared-windows-drive-launcher.md).
 
 Version `3.40.0` ajoute **Ressources Humaines → Sanctions Disciplinaires** pour Administration et Direction :
 modèles Word BBTM modifiables, rappels juridiques et classement dans un dossier Google Drive confidentiel.

@@ -30,9 +30,9 @@ describe('Google Drive source links', () => {
   it('encodes accents without putting executable shell text in the protocol', () => {
     const path = 'URG/Procédure été (1).docx';
     const uri = buildGoogleDriveDesktopUri(path);
-    expect(uri).toMatch(/^seapilot-drive:\/\/open\/[A-Za-z0-9_-]+$/);
+    expect(uri).toMatch(/^seapilot-drive:\/\/root\/open\/[A-Za-z0-9_-]+$/);
     const payload = uri.split('/').pop()!.replace(/-/g, '+').replace(/_/g, '/');
-    expect(new TextDecoder().decode(Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0)))).toBe(path);
+    expect(new TextDecoder().decode(Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0)))).toBe(`Procedures/${path}`);
   });
 
   it('opens and downloads the current Drive source instead of its Supabase backup', async () => {

@@ -8,6 +8,15 @@ on:
   pull_request:
 
 jobs:
+  windows-drive-launcher:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Test shared Windows Drive launcher
+        shell: powershell
+        run: ./scripts/drive/Test-SeaPilotDrive.ps1
+
   test-build:
     runs-on: ubuntu-latest
 

@@ -104,16 +104,16 @@ describe('AdminPage', () => {
     await user.click(documentsLink);
 
     expect(documentsLink).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('heading', { name: 'Ouvrir les documents dans Word ou Excel' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Gestion des utilisateurs' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip');
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
-    expect(screen.getByRole('link', { name: 'Configurer le dossier sur ce PC' })).toHaveAttribute('href', 'seapilot-drive://configure');
-    expect(screen.getByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).toHaveAttribute('href', 'seapilot-drive://disciplinary/configure');
+    expect(screen.getByLabelText('Chemin du dossier SeaPilot sur ce PC')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Utilisateurs' }));
     expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
-    expect(screen.queryByRole('heading', { name: 'Ouvrir les documents dans Word ou Excel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).not.toBeInTheDocument();
   });
 
   it('keeps the bookmarked Drive instructions available while administrative data is loading', () => {
@@ -125,7 +125,7 @@ describe('AdminPage', () => {
     };
     renderAdminPage(client, 'documents');
 
-    expect(screen.getByRole('link', { name: 'Configurer le dossier sur ce PC' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Vérifier ce PC' })).toBeVisible();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 

@@ -92,3 +92,9 @@
   .admin-drive-usage { padding: 16px; }
   .admin-users .admin-header-actions { flex-wrap: wrap; }
 }
+
+.admin-root-label { display: flex; flex-direction: column; gap: 8px; font-weight: 600; margin: 16px 0; }
+.admin-root-label input { width: 100%; max-width: 620px; padding: 11px 12px; border: 1px solid #c7d2df; border-radius: 6px; background: white; font: inherit; }
+.admin-root-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-root-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.admin-root-error { color: #9b1c1c; background: #fff1f1; padding: 14px; border-radius: 6px; }
