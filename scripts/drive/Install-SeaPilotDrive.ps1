@@ -4,7 +4,8 @@ $installFolder = Join-Path $env:LOCALAPPDATA 'SeaPilotDrive'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $PSScriptRoot 'SeaPilotDrive.cs'
 $bridgeSource = Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs'
-if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source) -or !(Test-Path -LiteralPath $bridgeSource)) {
+$binaryInstaller = Join-Path $PSScriptRoot 'Install-SeaPilotDriveBinary.ps1'
+if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source) -or !(Test-Path -LiteralPath $bridgeSource) -or !(Test-Path -LiteralPath $binaryInstaller)) {
     throw 'Extrayez toutes les pieces de l archive avant installation. .NET Framework 4 est requis.'
 }
 if ($SyncRoot) {
@@ -15,10 +16,8 @@ if ($DisciplinaryRoot) {
     $DisciplinaryRoot = (Resolve-Path -LiteralPath $DisciplinaryRoot -ErrorAction Stop).Path
     if (!(Test-Path -LiteralPath $DisciplinaryRoot -PathType Container)) { throw 'Dossier disciplinaire invalide.' }
 }
-New-Item -ItemType Directory -Path $installFolder -Force | Out-Null
-$executable = Join-Path $installFolder 'SeaPilotDrive.exe'
-& $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$executable" $source $bridgeSource
-if ($LASTEXITCODE -ne 0) { throw 'Compilation du lanceur impossible.' }
+. $binaryInstaller
+$executable = Install-SeaPilotDriveBinary -InstallFolder $installFolder -Compiler $compiler -Sources @($source, $bridgeSource)
 $protocolKey = 'HKCU:\Software\Classes\seapilot-drive'
 New-Item -Path "$protocolKey\shell\open\command" -Force | Out-Null
 Set-Item -Path $protocolKey -Value 'URL:SeaPilot Google Drive'

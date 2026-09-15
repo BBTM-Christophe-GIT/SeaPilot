@@ -1,4 +1,21 @@
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archivePath = Join-Path $PSScriptRoot '..\..\public\connectors\seapilot-drive-windows.zip'
+$archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
+try {
+    foreach ($name in @('SeaPilotDrive.cs', 'SeaPilotDriveBridge.cs', 'Install-SeaPilotDrive.ps1', 'Install-SeaPilotDriveBinary.ps1', 'Installer.cmd', 'LISEZ-MOI.txt')) {
+        $entry = $archive.GetEntry($name)
+        if (!$entry) { throw "Installer archive is missing $name." }
+        $reader = [IO.StreamReader]::new($entry.Open())
+        try {
+            # Git may normalize line endings on the Windows CI runner.
+            $packedText = $reader.ReadToEnd().Replace("`r`n", "`n")
+            $sourceText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $name)).Replace("`r`n", "`n")
+            if ($packedText -cne $sourceText) { throw "Installer archive is outdated: $name." }
+        } finally { $reader.Dispose() }
+    }
+    Write-Output 'PASS: installer archive contains the exact current sources.'
+} finally { $archive.Dispose() }
 Add-Type -Path @((Join-Path $PSScriptRoot 'SeaPilotDrive.cs'), (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')) -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions
 # Hosted Windows runners can expose TEMP using an 8.3 short username. Compare
 # canonical full paths, as the launcher does, instead of short/long spellings.
@@ -90,4 +107,35 @@ try {
     try { Invoke-RestMethod -Uri "$endpoint/health" -Headers @{ Origin = 'https://untrusted.example' } -TimeoutSec 5 | Out-Null } catch { $denied = $true }
     if (!$denied) { throw 'Untrusted browser accepted.' }
     Write-Output 'PASS: real loopback HTTP session, origin/nonce checks and authentication required for writes.'
+    . (Join-Path $PSScriptRoot 'Install-SeaPilotDriveBinary.ps1')
+    $installTestFolder = Join-Path $testRoot 'installed'
+    New-Item -ItemType Directory -Path $installTestFolder | Out-Null
+    $legacyExecutable = Join-Path $installTestFolder 'SeaPilotDrive.exe'
+    Copy-Item -LiteralPath $testExecutable -Destination $legacyExecutable
+    $legacyLock = [IO.File]::Open($legacyExecutable, 'Open', 'Read', 'Read')
+    try {
+        $sources = @((Join-Path $PSScriptRoot 'SeaPilotDrive.cs'), (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs'))
+        $published = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
+        $nextPort = Get-Random -Minimum 49152 -Maximum 65535
+        while ($nextPort -eq $port) { $nextPort = Get-Random -Minimum 49152 -Maximum 65535 }
+        $nextProcess = Start-Process -FilePath $published -ArgumentList "seapilot-drive://connect/$nextPort/$nonce" -WindowStyle Hidden -PassThru
+        try {
+            $nextEndpoint = "http://127.0.0.1:$nextPort/$nonce/health"
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+                try { Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 150 }
+            }
+            if (!$ready) { throw 'Installed launcher did not start.' }
+            $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
+            if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.0.0') { throw 'Update interrupted the running launcher.' }
+            $invalidSource = Join-Path $testRoot 'invalid.cs'
+            Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
+            $failed = $false
+            try { Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources @($invalidSource) | Out-Null } catch { $failed = $true }
+            if (!$failed -or !(Test-Path -LiteralPath $replacement)) { throw 'Failed compilation damaged the installed launcher.' }
+            if ((Get-ChildItem -LiteralPath $installTestFolder -Filter '*.exe').Count -ne 3) { throw 'Failed compilation left an incomplete executable.' }
+            Write-Output 'PASS: locked legacy executable, repeated installation while launcher runs, uninterrupted session and compiler failure recovery.'
+        } finally { Stop-Process -Id $nextProcess.Id -ErrorAction SilentlyContinue }
+    } finally { $legacyLock.Dispose() }
 } finally { Stop-Process -Id $nativeProcess.Id -ErrorAction SilentlyContinue }

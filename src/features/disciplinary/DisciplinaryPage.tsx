@@ -35,6 +35,7 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
   const appliedLink = useRef<{ key: string; search: string } | null>(null);
   const [picker, setPicker] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
+  const [issuerChoice, setIssuerChoice] = useState<string | null>(null);
   const [actorId, setActorId] = useState('');
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [collaboration, setCollaboration] = useState<Collaboration>(EMPTY_COLLABORATION);
@@ -164,27 +165,39 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
   }
   async function workflowAction(action: WorkflowAction, payload: Record<string, unknown> = {}) {
     return run(async () => {
-      if (!current?.updated_at) throw new Error('Enregistrez le dossier avant cette action.');
-      if (dirty) throw new Error('Enregistrez ou proposez vos modifications avant cette action.');
-      let saved = current;
+      if (!current) throw new Error('Choisissez un dossier.');
+      let record = current;
+      const proposalsSaved = action === 'issuer' && dirty && !isIssuer;
+      if (action === 'issuer') {
+        if (locked || (!isIssuer && !context.roles.includes('admin'))) throw new Error('Le changement d’émetteur est réservé à l’émetteur actuel ou à Administration avant validation.');
+        if (!reviewers.some((person) => person.id === payload.issuer_id)) throw new Error('Choisissez un profil Administration ou Direction autorisé.');
+        if (payload.issuer_id === current.issuer_id) return;
+        // Keep the draft under its original issuer before transferring it. A
+        // reviewer’s unsaved changes remain proposals, as in the normal save flow.
+        if (!record.updated_at || dirty) record = await save(record);
+      } else {
+        if (!record.updated_at) throw new Error('Enregistrez le dossier avant cette action.');
+        if (dirty) throw new Error('Enregistrez ou proposez vos modifications avant cette action.');
+      }
+      let saved = record;
       if (context.previewMode) {
         const now = new Date().toISOString();
-        const next = structuredClone(previewCollaboration[current.id] || EMPTY_COLLABORATION);
-        if (action === 'share') { next.participants = (payload.recipients as string[]).map((user_id) => ({ user_id })); saved = { ...current, workflow_status: 'in_review', updated_at: now }; }
-        if (action === 'comment') next.reviews.unshift({ id: crypto.randomUUID(), case_id: current.id, author_id: actorId, author_name: reviewers[0].name, kind: 'comment', target: null, field: null, before_value: null, after_value: null, comment: String(payload.comment), status: 'pending', created_at: now, decided_at: null });
-        if (action === 'issuer') { const person = reviewers.find((r) => r.id === payload.issuer_id)!; saved = { ...current, issuer_id: person.id, updated_at: now, letter: current.letter ? { ...current.letter, emitterName: person.name, emitterFunction: person.function, signatureDataUrl: '' } : null }; }
-        if (action === 'validate') { saved = { ...current, workflow_status: 'validated', validated_at: now, validated_by: actorId, updated_at: now }; next.letters.unshift({ id: crypto.randomUUID(), letter: current.letter!, validated_at: now }); }
-        if (action === 'new_letter') saved = { ...current, letter: null, workflow_status: 'draft', validated_at: null, validated_by: null, updated_at: now };
+        const next = structuredClone(previewCollaboration[record.id] || EMPTY_COLLABORATION);
+        if (action === 'share') { next.participants = (payload.recipients as string[]).map((user_id) => ({ user_id })); saved = { ...record, workflow_status: 'in_review', updated_at: now }; }
+        if (action === 'comment') next.reviews.unshift({ id: crypto.randomUUID(), case_id: record.id, author_id: actorId, author_name: reviewers[0].name, kind: 'comment', target: null, field: null, before_value: null, after_value: null, comment: String(payload.comment), status: 'pending', created_at: now, decided_at: null });
+        if (action === 'issuer') { const person = reviewers.find((r) => r.id === payload.issuer_id)!; saved = { ...record, issuer_id: person.id, updated_at: now, letter: record.letter ? { ...record.letter, emitterName: person.name, emitterFunction: person.function, signatureDataUrl: '' } : null }; }
+        if (action === 'validate') { saved = { ...record, workflow_status: 'validated', validated_at: now, validated_by: actorId, updated_at: now }; next.letters.unshift({ id: crypto.randomUUID(), letter: record.letter!, validated_at: now }); }
+        if (action === 'new_letter') saved = { ...record, letter: null, workflow_status: 'draft', validated_at: null, validated_by: null, updated_at: now };
         next.events.unshift({ id: crypto.randomUUID(), actor_name: reviewers[0].name, kind: action, detail: payload as Record<string, string>, created_at: now });
-        setPreviewCollaboration((all) => ({ ...all, [current.id]: next }));
+        setPreviewCollaboration((all) => ({ ...all, [record.id]: next }));
       } else {
-        saved = await mutateDisciplinaryCase(context.client, current, action, payload);
+        saved = await mutateDisciplinaryCase(context.client, record, action, payload);
         setCurrent(saved); setCases((all) => [saved, ...all.filter((c) => c.id !== saved.id)]);
         setCollaboration(await fetchCollaboration(context.client, saved.id));
       }
       if (action === 'new_letter') { setTab('preparation'); setKind('notification'); }
       setCurrent(saved); setCases((all) => [saved, ...all.filter((c) => c.id !== saved.id)]);
-      setMessage(context.previewMode ? 'Démonstration mise à jour, sans envoi ni enregistrement réel.' : action === 'share' ? 'Courrier partagé. Les destinataires ont reçu une notification dans leur cloche.' : action === 'validate' ? 'Courrier validé et verrouillé.' : 'Action enregistrée.');
+      setMessage(context.previewMode ? 'Démonstration mise à jour, sans envoi ni enregistrement réel.' : action === 'issuer' ? `Émetteur modifié. Sa fonction a été renseignée et l’ancienne signature retirée.${proposalsSaved ? ' Vos corrections ont été proposées pour relecture.' : ''}` : action === 'share' ? 'Courrier partagé. Les destinataires ont reçu une notification dans leur cloche.' : action === 'validate' ? 'Courrier validé et verrouillé.' : 'Action enregistrée.');
     });
   }
   async function refreshCurrent() {
@@ -274,7 +287,8 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
             {isIssuer && !locked ? <button className="disciplinary-primary" disabled={busy || collaborationLoading || dirty || !current.updated_at || issues.length > 0 || pendingChanges > 0} onClick={() => { if (window.confirm('Valider ce courrier ? Son contenu et sa préparation seront verrouillés.')) void workflowAction('validate'); }}>Valider le courrier</button> : null}
             {!locked && pendingChanges ? <p className="disciplinary-muted">{pendingChanges} modification(s) en attente dans « Relecture et partage ».</p> : null}
             {isIssuer && !locked && signature && !current.letter.signatureDataUrl ? <button disabled={busy} onClick={() => edit({ ...current, letter: { ...current.letter!, signatureDataUrl: signature } })}>Utiliser ma signature enregistrée</button> : null}
-            <DisciplinaryLetterEditor disabled={busy || locked} identityDisabled={!isIssuer} letter={current.letter} onChange={(letter) => edit({ ...current, letter })} onError={setError} />
+            <DisciplinaryLetterEditor disabled={busy || locked} identityDisabled={!isIssuer} letter={current.letter} onChange={(letter) => edit({ ...current, letter })} onError={setError}
+              issuerSelection={locked ? undefined : { value: current.issuer_id, options: reviewers, disabled: !isIssuer && !context.roles.includes('admin'), onChange: setIssuerChoice }} />
           </> : <div className="disciplinary-empty"><FilePenLine size={32} /><p>Générez le modèle depuis l’onglet Préparation.</p><button onClick={() => setTab('preparation')}>Préparer le courrier</button></div> : null}
           {tab === 'documents' ? <>
             <div className="disciplinary-actions"><button onClick={() => setTab('letter')}>Consulter le courrier</button><button onClick={() => setTab('timeline')}>Suivi de la procédure</button></div>
@@ -291,5 +305,10 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
       </fieldset>
       {current ? <DisciplinaryProcedure form={current.data} /> : <aside className="disciplinary-procedure"><h2>Procédure légale</h2><p>Les définitions, délais, préavis et indemnités s’afficheront selon vos choix.</p></aside>}
     </div>
+    {issuerChoice ? <AppDialog title="Changer l’émetteur" size="sm" onClose={() => setIssuerChoice(null)} footer={<><button onClick={() => setIssuerChoice(null)}>Annuler</button><button className="disciplinary-primary" onClick={() => { const id = issuerChoice; setIssuerChoice(null); void workflowAction('issuer', { issuer_id: id }); }}>Confirmer le changement</button></>}>
+      <p><strong>{reviewers.find((person) => person.id === issuerChoice)?.name}</strong> deviendra l’émetteur de ce courrier.</p>
+      <p>Sa fonction sera renseignée et la signature actuelle sera retirée.</p>
+      {dirty ? <p>{isIssuer ? 'Les modifications en cours seront enregistrées avant le changement.' : 'Les corrections en cours seront proposées pour relecture avant le changement.'}</p> : null}
+    </AppDialog> : null}
   </section>;
 }

@@ -1,10 +1,20 @@
-# Lanceur Windows commun — v3.41.0
+# Lanceur Windows commun — v3.42.1
 
 ## Configuration
 
 Un seul exécutable, protocole `seapilot-drive` et réglage `HKCU\Software\SeaPilot\Drive\SeaPilotRoot` pour tous les modules. L’interface de configuration est dans Administration → Documents et Google Drive ; elle est désactivée dans la préversion. Le réglage est propre à l’utilisateur Windows et au PC, sans chemin personnel enregistré dans Supabase.
 
-Installer l’archive mise à jour une fois. Elle contient `Installer.cmd`, `Install-SeaPilotDrive.ps1`, `SeaPilotDrive.cs`, `SeaPilotDriveBridge.cs` et `LISEZ-MOI.txt`. Le compilateur .NET Framework 4 présent sur Windows produit le lanceur dans `%LOCALAPPDATA%\SeaPilotDrive`, sans installation de service. L’installation préserve les anciens réglages ; `SeaPilotRoot` devient prioritaire. L’option `-SeaPilotRoot` permet un déploiement administré sans dialogue.
+Installer l’archive mise à jour une fois. Elle contient `Installer.cmd`, `Install-SeaPilotDrive.ps1`, `Install-SeaPilotDriveBinary.ps1`, `SeaPilotDrive.cs`, `SeaPilotDriveBridge.cs` et `LISEZ-MOI.txt`. Le compilateur .NET Framework 4 présent sur Windows produit le lanceur dans `%LOCALAPPDATA%\SeaPilotDrive`, sans installation de service. L’installation préserve les anciens réglages ; `SeaPilotRoot` devient prioritaire. L’option `-SeaPilotRoot` permet un déploiement administré sans dialogue.
+
+Depuis v3.42.1, chaque installation compile un `SeaPilotDrive-<identifiant>.exe` distinct avant de modifier l’enregistrement du protocole commun. Cela corrige CS0016 lorsqu’un ancien exécutable est encore utilisé. Aucun processus n’est arrêté : les transferts ouverts se terminent normalement. Une compilation échouée conserve la version précédemment enregistrée ; les anciens binaires restent disponibles dans le dossier d’installation. L’API du lanceur reste 2.0.0.
+
+Après cette mise à jour, recharger SeaPilot puis cliquer sur **Vérifier ce PC**. Le chemin enregistré est conservé. Une connexion encore refusée doit être vérifiée dans les autorisations du navigateur pour l’ouverture du protocole et la connexion locale.
+
+Reconstruire l’archive après toute modification des fichiers distribués :
+
+```powershell
+Compress-Archive -LiteralPath scripts/drive/SeaPilotDrive.cs,scripts/drive/SeaPilotDriveBridge.cs,scripts/drive/Install-SeaPilotDrive.ps1,scripts/drive/Install-SeaPilotDriveBinary.ps1,scripts/drive/Installer.cmd,scripts/drive/LISEZ-MOI.txt -DestinationPath public/connectors/seapilot-drive-windows.zip -Force
+```
 
 La configuration authentifiée prépare les dossiers des collaborateurs en poste de l’entreprise active (dates RH à Paris). Elle exige le rôle Administration ; la création et l’écriture disciplinaires exigent les droits Administration/Direction de la même entreprise. Le dossier confidentiel parent doit exister : il n’est pas créé automatiquement avec un partage hérité potentiellement trop large. Le réglage précédent n’est remplacé qu’après réussite de la préparation ; un échec intermédiaire peut laisser des dossiers vides, réutilisés à la prochaine tentative.
 
@@ -32,6 +42,7 @@ Les partages Google Drive et les droits locaux Windows restent indépendants de 
 
 - Vitest : configuration unique, préversion isolée, URI des deux modules, authentification, refus d’écriture, accusé de réception, absence de configuration dans les dossiers individuels.
 - `powershell -NoProfile -File scripts/drive/Test-SeaPilotDrive.ps1` : compilation réelle, URI existantes et futur module, dossier stable après changement de nom, écriture/non-écrasement, chemins malveillants/jonctions, connexion HTTP locale réelle et rejet d’origine/session/auth absentes.
+- Mise à jour testée avec ancien exécutable verrouillé, session native active, deux installations successives et compilation volontairement invalide ; contrôle de correspondance entre l’archive distribuée et les sources.
 - `supabase/tests/disciplinary_access_test.sql` : Administration et Direction autorisées ; Armement, Capitaine, Marin, anonyme, autre entreprise, module inconnu ou désactivé refusés. Transaction annulée, sans données de test persistantes.
 - Contrôle de l’interface Administration et Dossier et pièces en préversion, bureau et mobile ; lint et build de production.
 

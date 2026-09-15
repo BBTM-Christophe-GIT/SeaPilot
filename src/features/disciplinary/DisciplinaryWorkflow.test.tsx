@@ -18,14 +18,18 @@ const base: DisciplinaryCase = { id: 'case-1', company_id: 1, person_id: 1, case
 const proposals: Collaboration = { ...EMPTY_COLLABORATION, reviews: [{ id: 'review-1', case_id: base.id, author_id: 'reviewer', author_name: 'Camille ADMINISTRATION', kind: 'change', target: 'letter', field: 'body', before_value: '<p>Ancien texte</p>', after_value: '<p><b>Nouveau texte</b><img src=x onerror=alert(1)></p>', comment: '', status: 'pending', created_at: base.updated_at, decided_at: null }] };
 function page(actorId = 'issuer', rows = [base], route = '/') {
   vi.mocked(fetchDisciplinaryData).mockResolvedValue({ actorId, people, reviewers, cases: rows });
-  return render(<MemoryRouter initialEntries={[route]}><Routes><Route element={<><Link to="/?case=case-1&tab=review">Ouvrir la notification de test</Link><Outlet context={{ roles: [actorId === 'issuer' ? 'direction' : 'admin'], client: {}, previewMode: false, currentPerson: null }} /></>}><Route path="*" element={<DisciplinaryPage />} /></Route></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[route]}><Routes><Route element={<><Link to="/?case=case-1&tab=review">Ouvrir la notification de test</Link><Outlet context={{ roles: [actorId === 'reviewer' ? 'admin' : 'direction'], client: {}, previewMode: false, currentPerson: null }} /></>}><Route path="*" element={<DisciplinaryPage />} /></Route></Routes></MemoryRouter>);
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.mocked(fetchDisciplinaryDocuments).mockResolvedValue([]);
   vi.mocked(fetchCollaboration).mockResolvedValue(EMPTY_COLLABORATION);
   vi.mocked(saveDisciplinaryCase).mockImplementation(async (_client, record) => ({ ...record, updated_at: '2026-09-15T11:00:00Z' }));
-  vi.mocked(mutateDisciplinaryCase).mockImplementation(async (_client, record, action) => ({ ...record, letter: action === 'new_letter' ? null : record.letter, workflow_status: action === 'new_letter' ? 'draft' : action === 'validate' ? 'validated' : record.workflow_status, validated_at: '2026-09-15T11:00:00Z', updated_at: '2026-09-15T11:00:00Z' }));
+  vi.mocked(mutateDisciplinaryCase).mockImplementation(async (_client, record, action, payload) => {
+    const issuer = action === 'issuer' ? reviewers.find((person) => person.id === payload?.issuer_id) : undefined;
+    return { ...record, issuer_id: issuer?.id || record.issuer_id, letter: action === 'new_letter' ? null : issuer && record.letter ? { ...record.letter, emitterName: issuer.name, emitterFunction: issuer.function, signatureDataUrl: '' } : record.letter, workflow_status: action === 'new_letter' ? 'draft' : action === 'validate' ? 'validated' : record.workflow_status, validated_at: '2026-09-15T11:00:00Z', updated_at: '2026-09-15T11:00:00Z' };
+  });
 });
 describe('disciplinary cases and workflow', () => {
   it('lists only people with cases and offers active employees in New case', async () => {
@@ -55,7 +59,7 @@ describe('disciplinary cases and workflow', () => {
     await user.click(await screen.findByRole('button', { name: /Luc MARTIN/ }));
     await user.click(screen.getByRole('tab', { name: 'Courrier modifiable' }));
     await user.clear(screen.getByLabelText('Objet')); await user.type(screen.getByLabelText('Objet'), 'Nouvel objet');
-    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveAttribute('readonly');
+    expect(screen.getByRole('combobox', { name: 'Prénom et NOM de l’émetteur' })).toBeEnabled();
     expect(screen.getByLabelText('Fonction de l’émetteur')).toBeDisabled();
     expect(screen.getByLabelText('Signature de l’émetteur')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Valider le courrier' })).not.toBeInTheDocument();
@@ -71,6 +75,8 @@ describe('disciplinary cases and workflow', () => {
     await waitFor(() => expect(mutateDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: base.id }), 'validate', {}));
     expect(await screen.findByText(/La préparation et le courrier sont verrouillés/)).toBeInTheDocument();
     expect(screen.getByLabelText('Objet')).toBeDisabled();
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toBeDisabled();
+    expect(screen.queryByRole('combobox', { name: 'Prénom et NOM de l’émetteur' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Corps du courrier modifiable' })).toHaveAttribute('contenteditable', 'false');
     await user.click(screen.getByRole('tab', { name: 'Préparation' }));
     expect(screen.getByLabelText('Adresse postale')).toBeDisabled();
@@ -121,6 +127,92 @@ describe('disciplinary cases and workflow', () => {
     expect(await screen.findByRole('button', { name: 'Valider le courrier' })).toBeDisabled();
   });
 });
+describe('emitter picker in the letter', () => {
+  async function openLetter(actorId = 'issuer', rows = [base]) {
+    const user = userEvent.setup(); page(actorId, rows);
+    await user.click(await screen.findByRole('button', { name: /Luc MARTIN/ }));
+    await user.click(screen.getByRole('tab', { name: 'Courrier modifiable' }));
+    return user;
+  }
+  it.each(['issuer', 'reviewer'])('lets %s select an eligible emitter and removes the previous signature', async (actorId) => {
+    const user = await openLetter(actorId);
+    const picker = screen.getByRole('combobox', { name: 'Prénom et NOM de l’émetteur' });
+    expect(within(picker).getAllByRole('option').map((option) => option.textContent)).toEqual(reviewers.map((person) => person.name));
+    await user.selectOptions(picker, 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    await waitFor(() => expect(picker).toHaveDisplayValue('Camille ADMINISTRATION'));
+    expect(mutateDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), base, 'issuer', { issuer_id: 'reviewer' });
+    expect(screen.getByLabelText('Fonction de l’émetteur')).toHaveValue('Administration');
+    expect(screen.queryByRole('img', { name: 'Signature de l’émetteur' })).not.toBeInTheDocument();
+    expect(saveDisciplinaryCase).not.toHaveBeenCalled();
+  });
+  it('saves the edited draft before transferring with the returned version', async () => {
+    const user = await openLetter();
+    await user.clear(screen.getByLabelText('Objet')); await user.type(screen.getByLabelText('Objet'), 'Objet à conserver');
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    await waitFor(() => expect(mutateDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ issuer_id: 'issuer', updated_at: '2026-09-15T11:00:00Z', letter: expect.objectContaining({ subject: 'Objet à conserver' }) }), 'issuer', { issuer_id: 'reviewer' }));
+    expect(screen.getByLabelText('Objet')).toHaveValue('Objet à conserver');
+  });
+  it('creates a new draft under its original emitter before transferring it', async () => {
+    const user = userEvent.setup(); page('issuer', []);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Nouveau dossier' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Nouveau dossier' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Luc MARTIN/ }));
+    await user.click(screen.getByRole('button', { name: 'Générer le courrier' }));
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    await waitFor(() => expect(mutateDisciplinaryCase).toHaveBeenCalled());
+    expect(saveDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ updated_at: '', issuer_id: 'issuer', letter: expect.objectContaining({ emitterName: 'Marie DIRECTION' }) }));
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveDisplayValue('Camille ADMINISTRATION');
+  });
+  it('preserves administrator corrections as proposals before transferring', async () => {
+    vi.mocked(saveDisciplinaryCase).mockResolvedValue({ ...base, updated_at: '2026-09-15T12:00:00Z' });
+    const user = await openLetter('reviewer');
+    await user.clear(screen.getByLabelText('Objet')); await user.type(screen.getByLabelText('Objet'), 'Correction proposée');
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'third');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    expect(await screen.findByText(/Vos corrections ont été proposées pour relecture/)).toBeInTheDocument();
+    expect(saveDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ letter: expect.objectContaining({ subject: 'Correction proposée' }) }));
+    expect(mutateDisciplinaryCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ updated_at: '2026-09-15T12:00:00Z', letter: base.letter }), 'issuer', { issuer_id: 'third' });
+  });
+  it('keeps the old emitter and draft when a transfer fails', async () => {
+    vi.mocked(mutateDisciplinaryCase).mockRejectedValueOnce(new Error('Version modifiée ailleurs'));
+    const user = await openLetter();
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Version modifiée ailleurs');
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveDisplayValue('Marie DIRECTION');
+    expect(screen.getByRole('img', { name: 'Signature de l’émetteur' })).toBeInTheDocument();
+  });
+  it('does not transfer if saving the current edits fails', async () => {
+    vi.mocked(saveDisciplinaryCase).mockRejectedValueOnce(new Error('Enregistrement impossible'));
+    const user = await openLetter();
+    await user.clear(screen.getByLabelText('Objet')); await user.type(screen.getByLabelText('Objet'), 'Brouillon local');
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Confirmer le changement' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement impossible');
+    expect(mutateDisciplinaryCase).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Objet')).toHaveValue('Brouillon local');
+  });
+  it('allows canceling without saving or changing the signature', async () => {
+    // The application confirmation can be canceled without touching the draft.
+    const user = await openLetter();
+    await user.selectOptions(screen.getByLabelText('Prénom et NOM de l’émetteur'), 'reviewer');
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(mutateDisciplinaryCase).not.toHaveBeenCalled();
+    expect(saveDisciplinaryCase).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveDisplayValue('Marie DIRECTION');
+    expect(screen.getByRole('img', { name: 'Signature de l’émetteur' })).toBeInTheDocument();
+  });
+  it('prevents a non-emitter Direction profile from transferring the letter', async () => {
+    await openLetter('third');
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toBeDisabled();
+    expect(screen.getByLabelText('Objet')).toBeEnabled();
+    expect(mutateDisciplinaryCase).not.toHaveBeenCalled();
+  });
+});
+
 describe('review and sharing panel', () => {
   it('shares with multiple recipients and displays sanitized formatting for each decision', async () => {
     const user = userEvent.setup(); const onAction = vi.fn().mockResolvedValue(true);
