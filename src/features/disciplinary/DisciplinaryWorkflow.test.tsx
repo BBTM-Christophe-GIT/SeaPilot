@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Outlet, Route, Routes, Link } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DisciplinaryPage } from './DisciplinaryPage';
 import { DisciplinaryReviewPanel } from './DisciplinaryReviewPanel';
@@ -18,7 +18,7 @@ const base: DisciplinaryCase = { id: 'case-1', company_id: 1, person_id: 1, case
 const proposals: Collaboration = { ...EMPTY_COLLABORATION, reviews: [{ id: 'review-1', case_id: base.id, author_id: 'reviewer', author_name: 'Camille ADMINISTRATION', kind: 'change', target: 'letter', field: 'body', before_value: '<p>Ancien texte</p>', after_value: '<p><b>Nouveau texte</b><img src=x onerror=alert(1)></p>', comment: '', status: 'pending', created_at: base.updated_at, decided_at: null }] };
 function page(actorId = 'issuer', rows = [base], route = '/') {
   vi.mocked(fetchDisciplinaryData).mockResolvedValue({ actorId, people, reviewers, cases: rows });
-  return render(<MemoryRouter initialEntries={[route]}><Routes><Route element={<Outlet context={{ roles: [actorId === 'issuer' ? 'direction' : 'admin'], client: {}, previewMode: false, currentPerson: null }} />}><Route path="*" element={<DisciplinaryPage />} /></Route></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[route]}><Routes><Route element={<><Link to="/?case=case-1&tab=review">Ouvrir la notification de test</Link><Outlet context={{ roles: [actorId === 'issuer' ? 'direction' : 'admin'], client: {}, previewMode: false, currentPerson: null }} /></>}><Route path="*" element={<DisciplinaryPage />} /></Route></Routes></MemoryRouter>);
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -93,6 +93,25 @@ describe('disciplinary cases and workflow', () => {
     page('issuer', [base], '/?case=case-1&tab=review');
     expect(await screen.findByRole('heading', { name: 'Émetteur du courrier' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Relecture et partage' })).toHaveAttribute('aria-selected', 'true');
+  });
+  it('reloads the current case when opening the same bell link twice', async () => {
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: /Luc MARTIN/ }));
+    for (const subject of ['Objet actualisé une fois', 'Objet actualisé deux fois']) {
+      vi.mocked(fetchDisciplinaryData).mockResolvedValue({ actorId: 'issuer', people, reviewers, cases: [{ ...base, letter: { ...base.letter!, subject } }] });
+      await user.click(screen.getByRole('link', { name: 'Ouvrir la notification de test' }));
+      await screen.findByRole('heading', { name: 'Émetteur du courrier' });
+      await user.click(screen.getByRole('tab', { name: 'Courrier modifiable' }));
+      await waitFor(() => expect(screen.getByLabelText('Objet')).toHaveValue(subject));
+    }
+  });
+  it('opens a notification for a case created after the collaborator list was loaded', async () => {
+    const user = userEvent.setup(); page('issuer', []);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Nouveau dossier' })).toBeEnabled());
+    vi.mocked(fetchDisciplinaryData).mockResolvedValue({ actorId: 'issuer', people, reviewers, cases: [base] });
+    await user.click(screen.getByRole('link', { name: 'Ouvrir la notification de test' }));
+    expect(await screen.findByRole('heading', { name: 'Émetteur du courrier' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
   it('requires decisions on pending corrections before validation', async () => {
     vi.mocked(fetchCollaboration).mockResolvedValue(proposals);

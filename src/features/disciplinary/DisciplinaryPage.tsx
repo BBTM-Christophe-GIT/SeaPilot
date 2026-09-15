@@ -1,7 +1,7 @@
 import { connectLocalDrive, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import { FilePenLine, FolderOpen, Plus, Save, Search, Upload, Download, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { fetchWorkingTimeProfileSignatures } from '../workingTime/workingTimeSignatureQueries';
 import { DisciplinaryForm, Field } from './DisciplinaryForm';
@@ -31,7 +31,8 @@ export function DisciplinaryPage() {
 }
 function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) {
   const [params, setParams] = useSearchParams();
-  const appliedLink = useRef<string | null>(null);
+  const location = useLocation();
+  const appliedLink = useRef<{ key: string; search: string } | null>(null);
   const [picker, setPicker] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
   const [actorId, setActorId] = useState('');
@@ -68,18 +69,28 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
     return () => { live = false; };
   }, [context.client, context.previewMode]);
   useEffect(() => {
-    if (loading || appliedLink.current === params.toString()) return;
+    if (loading || appliedLink.current?.key === location.key) return;
     const id = params.get('case');
     const record = cases.find((row) => row.id === id);
-    if (record && dirty && current?.id !== record.id && !window.confirm('Ce dossier contient des modifications non enregistrées. Les abandonner pour ouvrir le dossier de la notification ?')) {
-      setParams(appliedLink.current || ''); return;
+    if (id && dirty && current?.id !== id && !window.confirm('Ce dossier contient des modifications non enregistrées. Les abandonner pour ouvrir le dossier de la notification ?')) {
+      setParams(appliedLink.current?.search || ''); return;
     }
-    appliedLink.current = params.toString();
+    appliedLink.current = { key: location.key, search: params.toString() };
     if (!id) return;
-    if (!record) { setError('Le dossier de cette notification est inaccessible.'); return; }
-    if (!dirty || current?.id !== record.id) { setCurrent(record); setDirty(false); }
     setTab(params.get('tab') === 'review' ? 'review' : 'documents');
-  }, [params, setParams, cases, loading, dirty, current?.id]);
+    if (dirty && current?.id === id) { setError('Enregistrez ou proposez vos modifications, puis rouvrez la notification pour actualiser le dossier.'); return; }
+    if (context.previewMode) { if (record) { setCurrent(record); setDirty(false); } else setError('Dossier de démonstration introuvable.'); return; }
+    let live = true;
+    // A bell link can target the already open URL. Its navigation key changes
+    // on every click, so reload the server version and comments in that case too.
+    void fetchDisciplinaryData(context.client).then(async (result) => {
+      const latest = result.cases.find((c) => c.id === id);
+      if (!latest) throw new Error('Le dossier de cette notification est inaccessible.');
+      const [review, docs] = await Promise.all([fetchCollaboration(context.client, id), fetchDisciplinaryDocuments(context.client, result.cases.map((c) => c.id))]);
+      if (live) { setCurrent(latest); setCases(result.cases); setPeople(result.people); setReviewers(result.reviewers); setActorId(result.actorId); setCollaboration(review); setDocuments(docs); setDirty(false); setError(''); }
+    }).catch((e) => { if (live) setError(e.message || 'Actualisation du dossier impossible.'); });
+    return () => { live = false; };
+  }, [params, setParams, location.key, cases, loading, dirty, current?.id, context.client, context.previewMode]);
   useEffect(() => {
     let live = true;
     setCollaboration(EMPTY_COLLABORATION);

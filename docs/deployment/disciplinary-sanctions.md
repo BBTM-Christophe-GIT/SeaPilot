@@ -28,7 +28,7 @@ Migrations `20260915125415_disciplinary_collaboration.sql` et `20260915130254_di
 
 Le logo applicatif fourni est utilisé dans le menu (normal/compact) et les écrans d’authentification. Le papier à en-tête BBTM des courriers reste le modèle fourni.
 
-Recette v3.42.0 : 1 460 tests automatisés réussis, build de production et lint ciblé réussis.
+Recette v3.42.0 : suite automatisée, build de production et lint ciblé réussis. Les liens de notification rechargent les corrections du serveur, y compris pour un dossier déjà ouvert ou créé après le chargement de la liste.
 
 Contrôles : tests React des parcours de création, pièces par dossier, édition par un relecteur, verrouillage, décisions, partage multiple et conservation d’un commentaire en cas d’échec ; tests de cloche pour les cinq profils ; tests SQL en transactions annulées pour les autorisations, conflits, décisions, notifications privées, transfert d’émetteur, archives immuables et courrier suivant. Vérification visuelle dans le navigateur, bureau et mobile 390 px ; aucun envoi réel de notification pendant la recette.
 
