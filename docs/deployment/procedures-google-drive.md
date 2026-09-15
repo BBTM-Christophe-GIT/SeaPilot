@@ -36,7 +36,7 @@ Le lanceur est compilé localement avec .NET Framework 4 depuis le C# fourni, pu
 Sources de l’installateur : `scripts/drive/`. Après un changement de ces sources, reconstruire l’archive servie par Vercel :
 
 ```powershell
-Compress-Archive -LiteralPath scripts/drive/SeaPilotDrive.cs,scripts/drive/Install-SeaPilotDrive.ps1,scripts/drive/Installer.cmd,scripts/drive/LISEZ-MOI.txt -DestinationPath public/connectors/seapilot-drive-windows.zip -Force
+Compress-Archive -LiteralPath scripts/drive/SeaPilotDrive.cs,scripts/drive/SeaPilotDriveBridge.cs,scripts/drive/Install-SeaPilotDrive.ps1,scripts/drive/Install-SeaPilotDriveBinary.ps1,scripts/drive/Installer.cmd,scripts/drive/LISEZ-MOI.txt -DestinationPath public/connectors/seapilot-drive-windows.zip -Force
 ```
 
 L’archive contient les sources et le script d’installation, pas un exécutable opaque téléchargé. L’installation par script peut nécessiter l’autorisation de la politique de sécurité du poste.

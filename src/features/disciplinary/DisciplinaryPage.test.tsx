@@ -37,7 +37,7 @@ describe('disciplinary role and UI workflows', () => {
     expect(body.querySelector('strong')).toHaveTextContent('Constat factuel de test.');
     expect(body.querySelector('li')).toHaveTextContent('Observation datée');
     expect(body).toHaveTextContent('ne constitue pas un fondement de dépistage des stupéfiants');
-    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveValue('Marie DIRECTION');
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveDisplayValue('Marie DIRECTION');
     expect(screen.getByText(`Cherbourg-en-Cotentin, le ${new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris' }).format(new Date())}`)).toBeInTheDocument();
     await user.clear(body); await user.type(body, 'Texte modifié par la direction.');
     await user.click(screen.getByRole('tab', { name: 'Dossier et pièces' }));
