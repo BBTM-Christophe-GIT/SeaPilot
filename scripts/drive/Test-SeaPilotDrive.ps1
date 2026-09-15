@@ -139,3 +139,6 @@ try {
         } finally { Stop-Process -Id $nextProcess.Id -ErrorAction SilentlyContinue }
     } finally { $legacyLock.Dispose() }
 } finally { Stop-Process -Id $nativeProcess.Id -ErrorAction SilentlyContinue }
+# The deliberately invalid compiler fixture is checked above. Report the test
+# outcome rather than its expected native exit code to the GitHub Actions shell.
+exit 0
