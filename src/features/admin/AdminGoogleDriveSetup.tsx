@@ -50,6 +50,14 @@ export function AdminGoogleDriveSetup() {
         <p>Les PDF publiés restent des versions distinctes : une modification du fichier de travail ne les remplace pas automatiquement.</p>
         <Link to="/modules/procedures">Ouvrir le module Procédures<ArrowRight aria-hidden="true" size={16} /></Link>
       </div>
+      <div className="admin-drive-usage">
+        <h3>Sanctions Disciplinaires : dossier confidentiel</h3>
+        <p>Utilisez un dossier distinct, partagé exclusivement avec les comptes Administration et Direction autorisés. Ce réglage est indépendant de celui des procédures.</p>
+        <p className="admin-drive-path">Exemple : <code>G:\Mon Drive\SeaPilot\Sanctions Disciplinaires</code></p>
+        <a className="admin-secondary-button" href="seapilot-drive://disciplinary/configure"><FolderSync aria-hidden="true" size={16} />Configurer le dossier disciplinaire sur ce PC</a>
+        <p>Dans le module, choisissez ce même dossier pour enregistrer les courriers Word et les pièces jointes. Les droits Google Drive doivent être mis à jour séparément lors d’un changement de profil.</p>
+        <Link to="/modules/disciplinary">Ouvrir les Sanctions Disciplinaires<ArrowRight aria-hidden="true" size={16} /></Link>
+      </div>
     </section>
   );
 }

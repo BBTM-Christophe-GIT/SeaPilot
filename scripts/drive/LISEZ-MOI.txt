@@ -14,3 +14,9 @@ Les droits SeaPilot et Google Drive sont independants : partagez les sources uni
 Les PDF publies dans SeaPilot restent des versions distinctes et ne sont pas mis a jour par une sauvegarde dans Office.
 
 Desinstallation : supprimer la cle HKCU\Software\Classes\seapilot-drive et le dossier %LOCALAPPDATA%\SeaPilotDrive.
+
+SANCTIONS DISCIPLINAIRES
+Le module utilise un dossier Google Drive confidentiel distinct, partage uniquement avec Administration et Direction.
+Dans le module, configurez ce dossier via le lien dedie puis choisissez le meme dossier dans le navigateur.
+Word, PDF et images s'ouvrent dans leur application Windows. Les executables et documents a macros sont refuses.
+Le dossier des Procedures reste configure separement. La fin de la synchronisation doit etre verifiee dans Google Drive.

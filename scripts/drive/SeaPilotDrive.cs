@@ -36,7 +36,8 @@ public static class SeaPilotDrive
     {
         if (String.IsNullOrWhiteSpace(root) || !Path.IsPathRooted(root) || !Directory.Exists(root))
             throw new IOException("Configurez le dossier Google Drive synchronise dans SeaPilot.");
-        const string prefix = "seapilot-drive://open/";
+        bool disciplinary = launchUri != null && launchUri.StartsWith("seapilot-drive://disciplinary/open/", StringComparison.Ordinal);
+        string prefix = disciplinary ? "seapilot-drive://disciplinary/open/" : "seapilot-drive://open/";
         if (launchUri == null || !launchUri.StartsWith(prefix, StringComparison.Ordinal) || launchUri.Length > 2100)
             throw new ArgumentException("Lien SeaPilot invalide.");
         string payload = launchUri.Substring(prefix.Length);
@@ -45,7 +46,7 @@ public static class SeaPilotDrive
         payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
         string relative = new UTF8Encoding(false, true).GetString(Convert.FromBase64String(payload));
         if (relative.Length == 0 || relative.Length > 500 || relative.Contains("\\")
-            || !Regex.IsMatch(relative, @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt)\z", RegexOptions.IgnoreCase))
+            || !Regex.IsMatch(relative, disciplinary ? @"\.(docx|xlsx|pptx|odt|ods|odp|txt|pdf|png|jpe?g)\z" : @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt)\z", RegexOptions.IgnoreCase))
             throw new ArgumentException("Format de fichier non autorise.");
         foreach (string part in relative.Split('/'))
         {
@@ -65,14 +66,14 @@ public static class SeaPilotDrive
         return fullPath;
     }
 
-    static void Configure()
+    static void Configure(bool disciplinary)
     {
         using (var dialog = new FolderBrowserDialog())
         {
-            dialog.Description = "Selectionnez le dossier Google Drive SeaPilot / Procedures synchronise sur ce PC.";
+            dialog.Description = disciplinary ? "Selectionnez le dossier Google Drive confidentiel Sanctions Disciplinaires (Administration et Direction uniquement)." : "Selectionnez le dossier Google Drive SeaPilot / Procedures synchronise sur ce PC.";
             dialog.ShowNewFolderButton = false;
             if (dialog.ShowDialog() != DialogResult.OK) return;
-            using (var key = Registry.CurrentUser.CreateSubKey(SettingsKey)) key.SetValue("Root", dialog.SelectedPath);
+            using (var key = Registry.CurrentUser.CreateSubKey(SettingsKey)) key.SetValue(disciplinary ? "DisciplinaryRoot" : "Root", dialog.SelectedPath);
             MessageBox.Show("Dossier SeaPilot configure :\n" + dialog.SelectedPath, "SeaPilot Drive");
         }
     }
@@ -85,11 +86,17 @@ public static class SeaPilotDrive
             if (args.Length != 1) throw new ArgumentException("Un seul lien SeaPilot est attendu.");
             if (args[0] == "seapilot-drive://configure" || args[0] == "seapilot-drive://configure/")
             {
-                Configure();
+                Configure(false);
+                return 0;
+            }
+            if (args[0] == "seapilot-drive://disciplinary/configure" || args[0] == "seapilot-drive://disciplinary/configure/")
+            {
+                Configure(true);
                 return 0;
             }
             string root;
-            using (var key = Registry.CurrentUser.OpenSubKey(SettingsKey)) root = key == null ? null : key.GetValue("Root") as string;
+            bool disciplinary = args[0].StartsWith("seapilot-drive://disciplinary/open/", StringComparison.Ordinal);
+            using (var key = Registry.CurrentUser.OpenSubKey(SettingsKey)) root = key == null ? null : key.GetValue(disciplinary ? "DisciplinaryRoot" : "Root") as string;
             string path = ResolvePath(root, args[0]);
             // Pass the verified filename directly to Windows, never to cmd or PowerShell.
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });

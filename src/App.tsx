@@ -28,6 +28,7 @@ const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ 
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
+const DisciplinaryPage = lazy(() => import('./features/disciplinary/DisciplinaryPage').then((module) => ({ default: module.DisciplinaryPage })));
 const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
 
 interface AppProps {
@@ -79,6 +80,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <HumanResourcesPage />
                 ) : module.key === 'annualReviews' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des entretiens…</div>}><AnnualReviewsPage /></Suspense>
+                ) : module.key === 'disciplinary' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des dossiers disciplinaires…</div>}><DisciplinaryPage /></Suspense>
                 ) : module.key === 'workingTime' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du suivi du temps de travail…</div>}><WorkingTimePage /></Suspense>
                 ) : module.key === 'procedures' ? (

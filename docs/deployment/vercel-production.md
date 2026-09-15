@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.40.0` ajoute **Ressources Humaines → Sanctions Disciplinaires** pour Administration et Direction :
+modèles Word BBTM modifiables, rappels juridiques et classement dans un dossier Google Drive confidentiel.
+La migration `20260915085025_disciplinary_sanctions.sql` a été appliquée avant le client.
+Voir [disciplinary-sanctions.md](./disciplinary-sanctions.md) pour les réglages de poste et les contrôles d’accès.
+
 Les acceptations et refus de congés sont notifiés à l'émetteur dans la cloche.
 La migration `20260910182329_planning_leave_decision_notifications.sql` précède le
 client et est appliquée à SeaPilot. Voir

@@ -49,6 +49,7 @@ describe('module access', () => {
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
       ['Ressources Humaines', 'Entretien Professionnel et d’Evaluation', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],
+      ['Ressources Humaines', 'Sanctions Disciplinaires', 'submenu'],
       ['Maintenance', 'Marad', 'submenu'],
       ['Maintenance', 'Documents Techniques', 'submenu'],
       ['Levage', 'Levage', 'direct'],

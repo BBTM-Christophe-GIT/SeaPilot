@@ -109,6 +109,7 @@ describe('AdminPage', () => {
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip');
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
     expect(screen.getByRole('link', { name: 'Configurer le dossier sur ce PC' })).toHaveAttribute('href', 'seapilot-drive://configure');
+    expect(screen.getByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).toHaveAttribute('href', 'seapilot-drive://disciplinary/configure');
 
     await user.click(screen.getByRole('link', { name: 'Utilisateurs' }));
     expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
@@ -398,6 +399,11 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Navires visible pour Admin' })).toBeChecked();
     expect(screen.getByText('Navires')).toBeInTheDocument();
     expect(projectsForSailor).not.toBeChecked();
+    for (const profile of ['Armement', 'Capitaine', 'Marin']) {
+      const restricted = screen.getByRole('checkbox', { name: `Sanctions Disciplinaires visible pour ${profile}` });
+      expect(restricted).not.toBeChecked(); expect(restricted).toBeDisabled();
+    }
+    expect(screen.getByRole('checkbox', { name: 'Sanctions Disciplinaires visible pour Direction' })).toBeEnabled();
 
     await user.click(projectsForSailor);
 

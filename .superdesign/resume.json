@@ -330,6 +330,42 @@
         }
       },
       "updatedAt": "2026-09-03T22:48:00Z"
+    },
+    "/modules/disciplinary": {
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/features/disciplinary/DisciplinaryPage.tsx",
+        "src/features/disciplinary/disciplinary.css",
+        "src/features/shell/AppShell.tsx"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "ac011d0a21c58c675788a85db31ecf25baf2c46c4be35974312b5dd56bf99f8d",
+        "src/features/disciplinary/DisciplinaryPage.tsx": "73bb738b74130f3573a575a4ff64a56473666415d1f6f31c8d68030cc7c47584",
+        "src/features/disciplinary/disciplinary.css": "ef9c48f4ff2414ff474d515f3ad957e97a490fdcdf1e4994c9a8cd0fbb18e828",
+        "src/features/shell/AppShell.tsx": "d222a0c817587031fded16bb8dabf22c3efb14004c5ce1bd47d5ca6346394ba0"
+      },
+      "referenceIds": [
+        "public-bbtm-logo.png"
+      ],
+      "designSystemPath": ".superdesign/design-system.md",
+      "activeDraftId": "b5a55e78-3769-45aa-a5ae-8ede7142a252",
+      "projectId": "f9960330-f385-426d-9e3c-dedc8ae59b48",
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-bbtm-logo.png",
+          "sourcePath": "public/bbtm-logo.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/f9960330-f385-426d-9e3c-dedc8ae59b48/brand-assets/public-bbtm-logo.png/bbtm-logo.png"
+        }
+      },
+      "drafts": {
+        "b5a55e78-3769-45aa-a5ae-8ede7142a252": {
+          "title": "SeaPilot — Sanctions Disciplinaires — Module validé",
+          "currentVersion": 1,
+          "visualDirection": "Interface BBTM, trois colonnes, panneaux blancs et actions bleues"
+        }
+      },
+      "targetKind": "new-ui",
+      "updatedAt": "2026-09-15T09:04:42.4321947Z"
     }
   }
 }

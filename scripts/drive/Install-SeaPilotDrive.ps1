@@ -1,4 +1,4 @@
-param([string]$SyncRoot)
+param([string]$SyncRoot, [string]$DisciplinaryRoot)
 $ErrorActionPreference = 'Stop'
 $installFolder = Join-Path $env:LOCALAPPDATA 'SeaPilotDrive'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -9,6 +9,10 @@ if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source)) {
 if ($SyncRoot) {
     $SyncRoot = (Resolve-Path -LiteralPath $SyncRoot -ErrorAction Stop).Path
     if (!(Test-Path -LiteralPath $SyncRoot -PathType Container)) { throw 'Dossier synchronise invalide.' }
+}
+if ($DisciplinaryRoot) {
+    $DisciplinaryRoot = (Resolve-Path -LiteralPath $DisciplinaryRoot -ErrorAction Stop).Path
+    if (!(Test-Path -LiteralPath $DisciplinaryRoot -PathType Container)) { throw 'Dossier disciplinaire invalide.' }
 }
 New-Item -ItemType Directory -Path $installFolder -Force | Out-Null
 $executable = Join-Path $installFolder 'SeaPilotDrive.exe'
@@ -22,7 +26,11 @@ Set-Item -Path "$protocolKey\shell\open\command" -Value ('"' + $executable + '" 
 if ($SyncRoot) {
     New-Item -Path 'HKCU:\Software\SeaPilot\Drive' -Force | Out-Null
     New-ItemProperty -Path 'HKCU:\Software\SeaPilot\Drive' -Name Root -Value $SyncRoot -PropertyType String -Force | Out-Null
-} else {
-    Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure'
+} elseif (!$DisciplinaryRoot) {
+    Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure' -WindowStyle Hidden
+}
+if ($DisciplinaryRoot) {
+    New-Item -Path 'HKCU:\Software\SeaPilot\Drive' -Force | Out-Null
+    New-ItemProperty -Path 'HKCU:\Software\SeaPilot\Drive' -Name DisciplinaryRoot -Value $DisciplinaryRoot -PropertyType String -Force | Out-Null
 }
 Write-Output 'Lanceur SeaPilot Drive installe pour cet utilisateur Windows.'
