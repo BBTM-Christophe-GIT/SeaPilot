@@ -1,0 +1,95 @@
+.planning-workspace.is-project-view {
+  display: flex;
+  height: calc(100dvh - var(--planning-project-top, 78px) - 18px);
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planning-workspace.is-project-view .planning-command-header {
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-project-view .module-family {
+  display: none;
+}
+
+.planning-workspace.is-project-view .planning-notices {
+  max-height: 72px;
+  overflow: auto;
+  flex: 0 0 auto;
+}
+
+.planning-workspace.is-project-view .planning-layout {
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.planning-workspace.is-project-view .planning-board-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.planning-workspace.is-project-view .planning-board-toolbar {
+  min-height: 48px;
+  flex: 0 0 auto;
+  gap: 6px 10px;
+  padding: 6px 10px;
+}
+
+.planning-workspace.is-project-view .planning-calendar-scroll {
+  --planning-label-width: 190px;
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+}
+
+.planning-timeline-row.is-fleet.is-projects-only .planning-row-label {
+  min-height: 0;
+  padding-block: 3px;
+}
+
+.planning-project-vessel-name {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.planning-project-vessel-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planning-project-vessel-name small {
+  flex-shrink: 0;
+}
+
+.planning-timeline-row.is-projects-only.has-project-stacks .planning-project-bar {
+  align-self: start;
+}
+
+@media (max-width: 1400px) {
+  .planning-workspace.is-project-view .planning-board-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planning-workspace.is-project-view .planning-toolbar-navigation {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 600px) {
+  .planning-workspace.is-project-view .planning-calendar-scroll {
+    --planning-label-width: 154px;
+  }
+
+  .planning-project-vessel-name small {
+    display: none;
+  }
+}

@@ -60,7 +60,7 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(stack.stackById.get(3)).toBe(0);
   });
 
-  it('renders overlapping vessel projects on separate visual sub-rows', () => {
+  it.each([false, true])('renders overlapping projects on separate sub-rows (projectsOnly=%s)', (projectsOnly) => {
     const project = (id: number, title: string, startsOn: string, endsOn: string): PlanningProjectRecord => ({
       id,
       title,
@@ -78,6 +78,7 @@ describe('Planning timeline visit and leave rendering', () => {
       sourceLabel: 'test',
     });
     const { container } = render(<PlanningFleetTimelineRow
+      projectsOnly={projectsOnly}
       crewCount={4}
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
@@ -120,7 +121,7 @@ describe('Planning timeline visit and leave rendering', () => {
     const bars = Array.from(container.querySelectorAll<HTMLElement>('.planning-project-bar'));
     expect(row).toHaveClass('has-project-stacks');
     expect(row).toHaveAttribute('data-project-stack-count', '2');
-    expect(row.style.minHeight).toBe('101px');
+    expect(row.style.minHeight).toBe(projectsOnly ? '65px' : '101px');
     expect(bars.map((bar) => bar.dataset.projectStack)).toEqual(['0', '1']);
     expect(bars.map((bar) => bar.style.marginTop)).toEqual(['7px', '34px']);
   });

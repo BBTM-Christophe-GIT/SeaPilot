@@ -3,6 +3,7 @@ import type { PlanningOverview } from './planningQueries';
 import {
   buildPlanningCrewLanes,
   buildPlanningFleetLanes,
+  buildPlanningProjectLanes,
   patchPlanningEvent,
   planningCrewEventType,
   removePlanningEvent,
@@ -37,6 +38,24 @@ const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
 describe('planning P0.2 views', () => {
+  it('keeps empty active vessels in the project view without crew or location data', () => {
+    const lanes = buildPlanningProjectLanes(overview, range, emptyFilters);
+    expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
+    expect(lanes[0].projects).toHaveLength(1);
+    expect(lanes[1].projects).toHaveLength(0);
+    expect(lanes.every((lane) => !lane.assignments.length && !lane.locations.length)).toBe(true);
+    expect(buildPlanningProjectLanes(overview, { start: '2027-01-01', end: '2027-01-31' }, emptyFilters)).toHaveLength(2);
+  });
+
+  it('filters multi-vessel projects to the selected vessel and retains historical project lanes', () => {
+    const source = { ...overview, projects: [{ ...overview.projects[0], vesselIds: [1, 2, 99], vesselNames: ['COTENTIN', 'SUROIT', 'HISTORIQUE'] }] };
+    const lanes = buildPlanningProjectLanes(source, range, { ...emptyFilters, vesselName: 'SUROIT' });
+    expect(lanes.map((lane) => lane.label)).toEqual(['SUROIT']);
+    expect(lanes[0].projects).toHaveLength(1);
+    expect(buildPlanningProjectLanes(source, range, emptyFilters).map((lane) => lane.label)).toEqual(['COTENTIN', 'HISTORIQUE', 'SUROIT']);
+    expect(buildPlanningProjectLanes(source, range, { ...emptyFilters, status: 'Annulé' }).every((lane) => !lane.projects.length)).toBe(true);
+  });
+
   it('builds fleet lanes only for vessels with visible crew and filters event metadata', () => {
     const lanes = buildPlanningFleetLanes(overview, range, { ...emptyFilters, eventType: 'transit', responsible: 'Jean MARTIN' });
     expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN']);
