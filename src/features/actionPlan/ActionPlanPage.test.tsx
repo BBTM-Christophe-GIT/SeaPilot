@@ -87,6 +87,7 @@ function createClient(actions: unknown[] = [openAction, closedAction], editButto
       upload: vi.fn().mockImplementation((path: string) => Promise.resolve({ data: { path }, error: null })),
     }) },
     rpc: vi.fn().mockImplementation((functionName: string, parameters?: Record<string, unknown>) => {
+      if (functionName === 'action_plan_current_vessel_scope') return Promise.resolve({ data: [12], error: null });
       if (functionName === 'action_item_create') {
         return Promise.resolve({ data: {
           ...created,
@@ -241,6 +242,106 @@ function renderWithProfile(client: unknown, roles = ['armement']) {
 }
 
 describe('ActionPlanPage', () => {
+  it('hides closed reports by default, retrieves them through status and opens the detail only on a report click', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    const { container } = render(<ActionPlanPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: "Plan d'action" });
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
+    expect(screen.queryByText(closedAction.title)).not.toBeInTheDocument();
+    expect(container.querySelector('.action-fleet-detail-pane')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Afficher SUROIT · 1 élément' }));
+    expect(container.querySelector('.action-fleet-detail-pane')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Statut'), 'closed');
+    expect(screen.getByText(closedAction.title)).toBeInTheDocument();
+    expect(container.querySelector('.action-fleet-detail-pane')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Vérifier la filtration machine · SUROIT/ }));
+    expect(screen.getByRole('heading', { name: closedAction.title })).toBeInTheDocument();
+    expect(container.querySelector('.action-fleet-layout')).toHaveClass('has-detail');
+    await user.click(screen.getByRole('button', { name: 'Fermer le rapport' }));
+    expect(container.querySelector('.action-fleet-detail-pane')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Statut'), '');
+    await user.click(screen.getByRole('button', { name: 'Tout afficher · 2' }));
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
+    expect(screen.queryByText(closedAction.title)).not.toBeInTheDocument();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps personal reports returned by RLS while limiting %s vessel cards and creation to the current assignment', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient([
+      openAction,
+      { ...closedAction, vessel_id: 12, vessel_name: 'GOURY', action_type_key: 'audit_internal' },
+      { ...openAction, id: 812, vessel_id: null, vessel_name: '', title: 'Mon rapport sans navire' },
+      { ...openAction, id: 813, vessel_id: 13, vessel_name: 'SUROIT', title: 'Mon rapport d’un autre navire' },
+    ]);
+    render(<ActionPlanPage client={client as never} roles={[role]} />);
+    await screen.findByRole('heading', { name: "Plan d'action" });
+    const nav = within(screen.getByRole('navigation', { name: 'Navires et lieux du plan d’action' }));
+    expect(nav.queryByText('Sans navire / lieu')).not.toBeInTheDocument();
+    expect(nav.queryByText('SUROIT')).not.toBeInTheDocument();
+    const card = nav.getByRole('button', { name: 'Afficher GOURY · 2 éléments' }).closest('section');
+    expect(card).toHaveClass('is-treatment-low');
+    expect(nav.getByLabelText('GOURY : 50 % des éléments soldés')).toHaveClass('is-red');
+    expect(nav.getByRole('button', { name: 'GOURY · Audits · 1 élément non soldé' })).toHaveTextContent('1');
+    expect(screen.getByText('Mon rapport sans navire')).toBeInTheDocument();
+    expect(screen.getByText('Mon rapport d’un autre navire')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Mon rapport d’un autre navire · SUROIT/ }));
+    expect(screen.getByRole('heading', { name: 'Mon rapport d’un autre navire' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Afficher GOURY · 2 éléments' }));
+    expect(screen.queryByText('Mon rapport d’un autre navire')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tout afficher · 4' }));
+    expect(screen.getByText('Mon rapport d’un autre navire')).toBeInTheDocument();
+    expect(client.rpc).toHaveBeenCalledWith('action_plan_current_vessel_scope');
+    await user.selectOptions(screen.getByLabelText('Statut'), 'closed');
+    expect(nav.getByLabelText('GOURY : 50 % des éléments soldés')).toBeInTheDocument();
+    expect(nav.getByRole('button', { name: 'GOURY · Audits · 1 élément non soldé' })).toBeInTheDocument();
+    expect(screen.getByText(closedAction.title)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Nouveau rapport' }));
+    expect(within(screen.getByLabelText('Navire / lieu *')).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sélectionner un navire', 'GOURY']);
+  });
+
+  it('keeps unassigned reports in the general management list without a navigation card', async () => {
+    const { client } = createClient([{ ...openAction, vessel_id: null, vessel_name: '' }]);
+    render(<ActionPlanPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: "Plan d'action" });
+    expect(within(screen.getByRole('navigation')).queryByText('Sans navire / lieu')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Réaliser une analyse d'eau · Sans navire/ })).toBeInTheDocument();
+  });
+
+  it.each([false, true])('does not fall back to the fleet with no assignment or a scope error (error=%s)', async (fail) => {
+    const { client } = createClient([]);
+    client.rpc.mockResolvedValue({ data: [], error: fail ? { message: 'Scope unavailable' } : null });
+    render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
+    if (fail) await screen.findByText("Impossible de charger le plan d'action.");
+    else await screen.findByText('Aucun élément accessible.');
+    expect(screen.queryByText('GOURY')).not.toBeInTheDocument();
+    expect(screen.queryByText('SUROIT')).not.toBeInTheDocument();
+    expect(screen.queryByText(openAction.title)).not.toBeInTheDocument();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('retains personal reports for %s even without a current assignment', async (role) => {
+    const { client } = createClient([{ ...openAction, title: 'Rapport dont je suis responsable' }]);
+    client.rpc.mockResolvedValue({ data: [], error: null });
+    render(<ActionPlanPage client={client as never} roles={[role]} />);
+    await screen.findByText('Rapport dont je suis responsable');
+    expect(screen.queryByRole('button', { name: /^Afficher GOURY/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toBeInTheDocument();
+  });
+
+  it('keeps an explicitly targeted closed notification report readable', async () => {
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, '', '?action=811');
+    try {
+      const { client } = createClient();
+      renderWithProfile(client);
+      expect(await screen.findByRole('heading', { name: closedAction.title })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Statut'), { target: { value: '' } });
+      expect(screen.queryByRole('heading', { name: closedAction.title })).not.toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, '', previousUrl);
+    }
+  });
+
   it('opens a notification target and allows another report without carrying its draft followup', async () => {
     const user = userEvent.setup();
     const { client } = createClient([openAction, { ...openAction, id: 812, title: 'Deuxième contrôle' }]);
@@ -275,7 +376,7 @@ describe('ActionPlanPage', () => {
     const queue = within(screen.getByRole('complementary', { name: 'Éléments du plan d’action' }));
     expect(queue.getByRole('status')).toHaveTextContent('2 éléments');
     expect(queue.queryByText('Contrôler le Yard')).not.toBeInTheDocument();
-    await user.click(nav.getByRole('button', { name: 'GOURY · Actions · 1 élément' }));
+    await user.click(nav.getByRole('button', { name: 'GOURY · Actions · 1 élément non soldé' }));
     expect(queue.getByRole('status')).toHaveTextContent('1 élément');
     expect(queue.getByText('Ranger le pont')).toBeInTheDocument();
     expect(queue.queryByText(openAction.title)).not.toBeInTheDocument();
@@ -283,12 +384,13 @@ describe('ActionPlanPage', () => {
     expect(queue.getByText('Aucun rapport ne correspond aux filtres.')).toBeInTheDocument();
     expect(nav.getByRole('button', { name: 'Afficher GOURY · 2 éléments' })).toBeInTheDocument();
     await user.click(nav.getByRole('button', { name: 'Tout afficher · 5' }));
-    expect(queue.getByRole('status')).toHaveTextContent('5 éléments');
-    expect(screen.getByLabelText('Statut')).toHaveValue('');
+    expect(queue.getByRole('status')).toHaveTextContent('4 éléments');
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
     await user.click(nav.getByRole('button', { name: 'Afficher Yard - LE HAVRE · 1 élément' }));
-    expect(screen.getByRole('heading', { name: 'Contrôler le Yard' })).toBeInTheDocument();
+    expect(queue.getByText('Contrôler le Yard')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Contrôler le Yard' })).not.toBeInTheDocument();
     await user.click(nav.getByRole('button', { name: 'Afficher Bureau - LE HAVRE · 1 élément' }));
-    expect(screen.getByRole('heading', { name: 'Vérifier les bureaux' })).toBeInTheDocument();
+    expect(queue.getByText('Vérifier les bureaux')).toBeInTheDocument();
   });
 
   it('does not leak empty fleet entries or reports into an empty Marin fixture', async () => {
@@ -311,12 +413,16 @@ describe('ActionPlanPage', () => {
     expect(screen.queryByRole('button', { name: 'Indicateurs HSE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Date - titre')).not.toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { name: openAction.title })).not.toBeInTheDocument();
+    expect(screen.queryByText(closedAction.title)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     expect(screen.getByRole('heading', { name: "Réaliser une analyse d'eau" })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /GOURY.*Audit Interne - BBTM.*31\/08\/2026.*En retard/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('img', { name: 'Photo du constat' })).toHaveAttribute('src', 'https://evidence.example/1/810/photo-source.jpg');
 
     fireEvent.change(screen.getByLabelText("Type d'évènement"), { target: { value: 'Audit Interne - BBTM' } });
-    expect(screen.getByRole('heading', { name: "Réaliser une analyse d'eau" })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: openAction.title })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ })).toBeInTheDocument();
     expect(screen.queryByText('Vérifier la filtration machine')).not.toBeInTheDocument();
 
   });
@@ -357,6 +463,7 @@ describe('ActionPlanPage', () => {
     await screen.findByRole('heading', { name: "Plan d'action" });
     expect(screen.getByRole('button', { name: 'Nouveau rapport' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Traiter l’action' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await user.type(screen.getByLabelText('Commentaire de suivi'), 'Contrôle terminé à bord.');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le suivi' }));
     expect(client.rpc).toHaveBeenCalledWith('action_item_add_treatment_followup', expect.objectContaining({
@@ -376,6 +483,7 @@ describe('ActionPlanPage', () => {
     renderWithProfile(client);
 
     await screen.findByRole('heading', { name: "Plan d'action" });
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await user.click(screen.getByRole('button', { name: 'Approuver le rapport' }));
     const dialog = within(screen.getByRole('dialog', { name: pendingAction.title }));
     await user.selectOptions(dialog.getByLabelText("Cause de l'anomalie *"), 'Panne Equipement');
@@ -394,6 +502,7 @@ describe('ActionPlanPage', () => {
     const { client } = createClient([openAction]);
     renderWithProfile(client, ['admin']);
 
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     expect(await screen.findByText('Commande validée auprès du fournisseur.')).toBeInTheDocument();
     expect(screen.getAllByText('Arthur MAREST').length).toBeGreaterThan(0);
     expect(screen.getByRole('img', { name: 'Signature de Arthur MAREST' })).toHaveAttribute('src', 'https://evidence.example/1/1010/signature.png');
@@ -428,6 +537,7 @@ describe('ActionPlanPage', () => {
     const { client } = createClient([pendingClosure]);
     render(<MemoryRouter><ActionPlanPage client={client as never} roles={['direction']} /></MemoryRouter>);
 
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     expect(await screen.findByText('Contre-validation obligatoire')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Commentaire de contre-validation'), 'Ajouter la photo du contrôle final.');
     await user.click(screen.getByRole('button', { name: 'Refuser' }));
@@ -445,6 +555,7 @@ describe('ActionPlanPage', () => {
     const { client } = createClient([openAction]);
     renderWithProfile(client, ['admin']);
 
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     await user.click(screen.getByRole('button', { name: 'Modifier la fiche' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Modifier la fiche' }));
@@ -466,6 +577,7 @@ describe('ActionPlanPage', () => {
   it('exposes every captured management command only to Direction and Admin', async () => {
     const { client } = createClient([openAction]);
     render(<ActionPlanPage client={client as never} roles={['direction']} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     expect(screen.getByRole('button', { name: 'Modifier la fiche' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Gérer les types' })).toBeInTheDocument();
@@ -475,6 +587,7 @@ describe('ActionPlanPage', () => {
   it('honors the Administration setting that hides factual correction', async () => {
     const { client } = createClient([openAction], false);
     renderWithProfile(client, ['admin']);
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     expect(screen.queryByRole('button', { name: 'Modifier la fiche' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Gérer les types' })).toBeInTheDocument();
@@ -484,6 +597,7 @@ describe('ActionPlanPage', () => {
     const user = userEvent.setup();
     const { client } = createClient([openAction]);
     renderWithProfile(client, ['admin']);
+    fireEvent.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
     await screen.findByRole('heading', { name: "Réaliser une analyse d'eau" });
     const manageTypesButton = screen.getByRole('button', { name: 'Gérer les types' });
     expect(manageTypesButton.closest('.action-queue-management')).not.toBeNull();

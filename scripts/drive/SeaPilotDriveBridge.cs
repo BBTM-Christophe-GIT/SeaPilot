@@ -13,7 +13,8 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.0.0";
+    public const string Version = "2.1.0";
+    public const int ConnectionPortCount = 16;
     const int MaxBody = 36 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
     static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength = MaxBody, RecursionLimit = 25 }; }
@@ -198,7 +199,7 @@ public static class SeaPilotDriveBridge
                     || request.Length != 3 || request[2] != "HTTP/1.1" || (request[1] != "/" + nonce + "/health" && request[1] != "/" + nonce + "/request"))
                     throw new UnauthorizedAccessException("Origine ou session locale refusee.");
                 if (request[0] == "OPTIONS") { Respond(stream, 200, origin, new { ok = true }); return; }
-                if (request[0] == "GET" && request[1].EndsWith("/health")) { Respond(stream, 200, origin, new { version = Version }); return; }
+                if (request[0] == "GET" && request[1].EndsWith("/health")) { Respond(stream, 200, origin, new { version = Version, nonce = nonce }); return; }
                 int length;
                 if (request[0] != "POST" || !request[1].EndsWith("/request") || headers.ContainsKey("Transfer-Encoding")
                     || !headers.ContainsKey("Content-Length") || !Int32.TryParse(headers["Content-Length"], out length) || length <= 0 || length > MaxBody
@@ -218,11 +219,34 @@ public static class SeaPilotDriveBridge
             }
         }
     }
+    // Spread candidates across the dynamic range: Windows often excludes entire
+    // consecutive ranges. Keep this sequence in sync with localDriveLauncher.ts.
+    public static int ConnectionPort(int firstPort, int attempt)
+    {
+        if (firstPort < 49152 || firstPort > 65535 || attempt < 0 || attempt >= ConnectionPortCount)
+            throw new ArgumentException("Port de connexion locale invalide.");
+        return 49152 + (firstPort - 49152 + attempt * 1019) % 16384;
+    }
+    public static TcpListener StartListener(int firstPort)
+    {
+        for (int attempt = 0; attempt < ConnectionPortCount; attempt++)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, ConnectionPort(firstPort, attempt));
+            listener.ExclusiveAddressUse = true;
+            try { listener.Start(8); return listener; }
+            catch (SocketException error)
+            {
+                listener.Stop();
+                if (error.SocketErrorCode != SocketError.AccessDenied && error.SocketErrorCode != SocketError.AddressAlreadyInUse) throw;
+            }
+        }
+        throw new IOException("Windows bloque les ports de connexion locale de SeaPilot. Votre dossier Drive reste configure. Contactez votre assistance informatique pour autoriser le lanceur SeaPilot.");
+    }
     public static void Serve(int port, string nonce)
     {
         if (port < 49152 || port > 65535 || !Regex.IsMatch(nonce, @"\A[a-f0-9]{32}\z")) throw new ArgumentException("Session locale invalide.");
-        var listener = new TcpListener(IPAddress.Loopback, port);
-        listener.ExclusiveAddressUse = true; listener.Start(8);
+        var listener = StartListener(port);
+        port = ((IPEndPoint)listener.LocalEndpoint).Port;
         try
         {
             DateTime until = DateTime.UtcNow.AddMinutes(3);

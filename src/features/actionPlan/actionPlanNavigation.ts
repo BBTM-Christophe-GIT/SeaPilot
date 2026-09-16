@@ -1,5 +1,5 @@
 import { compareFleetAssets, fleetAssetKind, fleetDisplayName, fleetIllustration, normalizeFleetName, type FleetAssetKind } from '../fleet/fleetDisplay';
-import type { ActionItemRecord, ActionTypeCatalogRecord, VesselOption } from './actionPlanQueries';
+import { isActionClosed, type ActionItemRecord, type ActionTypeCatalogRecord, type VesselOption } from './actionPlanQueries';
 
 export const ACTION_CATEGORIES = [
   { key: 'audit', label: 'Audits' },
@@ -15,6 +15,16 @@ export interface ActionAssetGroup {
   lengthOverall?: string;
   image: string;
   actions: ActionItemRecord[];
+}
+
+export function actionTreatmentSummary(actions: ActionItemRecord[]) {
+  const closed = actions.filter(isActionClosed).length;
+  const percentage = actions.length ? closed / actions.length * 100 : 0;
+  return {
+    open: actions.length - closed,
+    percentage,
+    tone: percentage > 90 ? 'green' : percentage < 75 ? 'red' : 'orange',
+  };
 }
 
 export function actionCategory(action: ActionItemRecord, types: ActionTypeCatalogRecord[]): ActionCategory {

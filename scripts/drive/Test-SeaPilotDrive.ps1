@@ -17,6 +17,38 @@ try {
     Write-Output 'PASS: installer archive contains the exact current sources.'
 } finally { $archive.Dispose() }
 Add-Type -Path @((Join-Path $PSScriptRoot 'SeaPilotDrive.cs'), (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')) -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions
+if ([SeaPilotDriveBridge]::ConnectionPort(65535, 1) -ne 50170 -or [SeaPilotDriveBridge]::ConnectionPort(65535, 2) -ne 51189) { throw 'Native port discovery differs from the browser.' }
+# Hold every bindable candidate to reproduce exhaustion without changing Windows
+# reservations, firewall rules, services or any installed launcher configuration.
+$blockedListeners = @()
+$blockedStart = Get-Random -Minimum 49152 -Maximum 65536
+try {
+    for ($candidate = 0; $candidate -lt 16; $candidate++) {
+        $blocked = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, [SeaPilotDriveBridge]::ConnectionPort($blockedStart, $candidate))
+        $blocked.ExclusiveAddressUse = $true
+        try { $blocked.Start(); $blockedListeners += $blocked } catch [Net.Sockets.SocketException] { $blocked.Stop() }
+    }
+    $denied = $false
+    try { $unexpected = [SeaPilotDriveBridge]::StartListener($blockedStart); $unexpected.Stop() }
+    catch [IO.IOException] { $denied = $_.Exception.Message -match 'dossier Drive reste configure' }
+    if (!$denied) { throw 'Blocked ports did not return an actionable error.' }
+} finally { foreach ($blocked in $blockedListeners) { $blocked.Stop() } }
+# Exercise actual excluded ports on PCs that have them (including the affected PC).
+$excluded = netsh interface ipv4 show excludedportrange protocol=tcp
+foreach ($line in $excluded) {
+    if ($line -match '^\s+(\d+)\s+(\d+)') {
+        $reservedPort = [int]$Matches[1]
+        if ($reservedPort -lt 49152 -or $reservedPort -gt 65535) { continue }
+        $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $reservedPort)
+        try { $probe.Start(); $probe.Stop(); continue } catch [Net.Sockets.SocketException] { $probe.Stop() }
+        $fallback = [SeaPilotDriveBridge]::StartListener($reservedPort)
+        try { if ($fallback.LocalEndpoint.Port -eq $reservedPort) { throw 'Reserved port was not skipped.' } }
+        finally { $fallback.Stop() }
+        Write-Output "PASS: Windows-reserved port $reservedPort skipped automatically."
+        break
+    }
+}
+Write-Output 'PASS: bounded port discovery, wraparound and fully blocked ports.'
 # Hosted Windows runners can expose TEMP using an 8.3 short username. Compare
 # canonical full paths, as the launcher does, instead of short/long spellings.
 $testRoot = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('seapilot-drive-test-' + [guid]::NewGuid())))
@@ -68,6 +100,10 @@ if ([SeaPilotDriveBridge]::EnsurePersonFolder($disciplinaryRoot, 2, 41, 'Camille
 $relative = "$personFolder/2026-09-15/courrier.docx"
 [SeaPilotDriveBridge]::WriteFile($disciplinaryRoot, $relative, [Text.Encoding]::UTF8.GetBytes('native write fixture'))
 if ([IO.File]::ReadAllText((Join-Path $disciplinaryRoot $relative)) -ne 'native write fixture') { throw 'Native write verification failed.' }
+$pdfBytes = [Text.Encoding]::ASCII.GetBytes("%PDF-1.4`n% SeaPilot binary attachment fixture`n%%EOF")
+$pdfRelative = "$personFolder/2026-09-16/piece.pdf"
+[SeaPilotDriveBridge]::WriteFile($disciplinaryRoot, $pdfRelative, $pdfBytes)
+if ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $disciplinaryRoot $pdfRelative))) -ne [Convert]::ToBase64String($pdfBytes)) { throw 'PDF attachment bytes changed during native writing.' }
 try { [SeaPilotDriveBridge]::WriteFile($disciplinaryRoot, $relative, [byte[]](1,2,3)); throw 'Overwrite accepted.' } catch [IO.IOException] { }
 New-Item -ItemType Junction -Path (Join-Path $disciplinaryRoot 'outside') -Value $outsideRoot | Out-Null
 foreach ($relative in @('../escape/file.docx','outside/child/file.docx','NUL/file.docx','person/date/macro.docm','person/date/run.exe')) {
@@ -87,9 +123,14 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $testExecutable = Join-Path $testRoot 'SeaPilotDriveTest.exe'
 & $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$testExecutable" (Join-Path $PSScriptRoot 'SeaPilotDrive.cs') (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Launcher compile failed.' }
-$port = Get-Random -Minimum 49152 -Maximum 65535
+$blocker = [SeaPilotDriveBridge]::StartListener((Get-Random -Minimum 49152 -Maximum 65536))
+$firstPort = $blocker.LocalEndpoint.Port
+$fallbackProbe = [SeaPilotDriveBridge]::StartListener($firstPort)
+$port = $fallbackProbe.LocalEndpoint.Port
+$fallbackProbe.Stop()
+if ($port -eq $firstPort) { throw 'Occupied port was not skipped.' }
 $nonce = ([guid]::NewGuid()).ToString('N')
-$nativeProcess = Start-Process -FilePath $testExecutable -ArgumentList "seapilot-drive://connect/$port/$nonce" -WindowStyle Hidden -PassThru
+$nativeProcess = Start-Process -FilePath $testExecutable -ArgumentList "seapilot-drive://connect/$firstPort/$nonce" -WindowStyle Hidden -PassThru
 try {
     $endpoint = "http://127.0.0.1:$port/$nonce"
     $allowedHeaders = @{ Origin = 'http://localhost:5178' }
@@ -97,7 +138,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.0.0') { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.1.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -116,8 +157,9 @@ try {
     try {
         $sources = @((Join-Path $PSScriptRoot 'SeaPilotDrive.cs'), (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs'))
         $published = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
-        $nextPort = Get-Random -Minimum 49152 -Maximum 65535
-        while ($nextPort -eq $port) { $nextPort = Get-Random -Minimum 49152 -Maximum 65535 }
+        $nextProbe = [SeaPilotDriveBridge]::StartListener((Get-Random -Minimum 49152 -Maximum 65536))
+        $nextPort = $nextProbe.LocalEndpoint.Port
+        $nextProbe.Stop()
         $nextProcess = Start-Process -FilePath $published -ArgumentList "seapilot-drive://connect/$nextPort/$nonce" -WindowStyle Hidden -PassThru
         try {
             $nextEndpoint = "http://127.0.0.1:$nextPort/$nonce/health"
@@ -128,7 +170,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.0.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.1.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false
@@ -138,7 +180,7 @@ try {
             Write-Output 'PASS: locked legacy executable, repeated installation while launcher runs, uninterrupted session and compiler failure recovery.'
         } finally { Stop-Process -Id $nextProcess.Id -ErrorAction SilentlyContinue }
     } finally { $legacyLock.Dispose() }
-} finally { Stop-Process -Id $nativeProcess.Id -ErrorAction SilentlyContinue }
+} finally { Stop-Process -Id $nativeProcess.Id -ErrorAction SilentlyContinue; $blocker.Stop() }
 # The deliberately invalid compiler fixture is checked above. Report the test
 # outcome rather than its expected native exit code to the GitHub Actions shell.
 exit 0
