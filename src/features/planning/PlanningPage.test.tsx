@@ -2127,4 +2127,3 @@ describe('PlanningPage cockpit', () => {
     expect(bar).toHaveClass('is-dragging');
   });
 });
-

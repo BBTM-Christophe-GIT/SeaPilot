@@ -25,3 +25,13 @@ Aucune migration, nouvelle dépendance ni variable d'environnement n'est nécess
 ## Validation
 
 Les tests couvrent les navires vides, les projets multi-navires, les filtres, l'ouverture du catalogue, la modification et la suppression depuis la nouvelle vue, et la lecture seule des profils Marin et Capitaine. La suite existante vérifie aussi le catalogue, les droits et l'empilement des barres. La validation visuelle utilise des données locales de prévisualisation pour le profil gestionnaire.
+
+Contrôle du 16 septembre 2026 sur le build compilé, dans le navigateur intégré :
+
+| Fenêtre | Bas du planning | Hauteur de la page | Résultat |
+| --- | ---: | ---: | --- |
+| 1536 × 864 | 846 px | 864 px | Aucun débordement vertical |
+| 1366 × 768 | 750 px | 768 px | Aucun débordement vertical |
+| 390 × 844 | 826 px | 844 px | Aucun débordement de page ; commandes et calendrier défilants |
+
+Les lignes mesurées sont de 38 px, ou 65 px pour deux projets simultanés. Le catalogue s'ouvre depuis le bouton du navire avec la date préremplie. Le menu des projets conserve les actions Modifier, Dupliquer, Statut, Annuler et Supprimer. La console ne contient aucune erreur. Les écritures sont vérifiées par les tests de composants et de requêtes, sans modifier les données réelles pendant le contrôle visuel.

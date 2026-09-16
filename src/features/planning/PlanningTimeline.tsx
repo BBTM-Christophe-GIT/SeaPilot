@@ -330,7 +330,7 @@ function PlanningFleetTimelineRowContent({
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
       >
-        {projectsOnly ? <span className="planning-project-vessel-name"><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
+        {projectsOnly ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}

@@ -48,8 +48,24 @@
 }
 
 .planning-timeline-row.is-fleet.is-projects-only .planning-row-label {
+  display: flex;
   min-height: 0;
+  align-items: center;
+  gap: 6px;
   padding-block: 3px;
+}
+
+.planning-timeline-row.is-projects-only .planning-vessel-actions {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.planning-timeline-row.is-projects-only .planning-project-title {
+  text-align: left;
+}
+
+.planning-timeline-row.is-fleet.is-projects-only .planning-project-bar {
+  font-size: .68rem;
 }
 
 .planning-project-vessel-name {
