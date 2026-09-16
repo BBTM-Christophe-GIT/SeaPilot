@@ -524,8 +524,8 @@ describe('PlanningPage cockpit', () => {
     const { client } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
     const { container } = render(<PlanningPage client={client as never} roles={['armement']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Projet', exact: true }));
-    expect(screen.getByRole('tab', { name: 'Projet', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    expect(screen.getByRole('tab', { name: 'Projet' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('region', { name: 'Calendrier des projets' })).toBeInTheDocument();
     expect(container.querySelectorAll('.is-projects-only')).toHaveLength(2);
     expect(container.querySelector('.planning-workspace')).toHaveClass('is-project-view');
@@ -542,7 +542,7 @@ describe('PlanningPage cockpit', () => {
     const { client, updateProject, deleteProject } = createClient({ projects: [planningProjectRow], updatedProject: { ...planningProjectRow, title: 'Transit Barfleur' } });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Projet', exact: true }));
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
     await user.dblClick(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
     const dialog = screen.getByRole('dialog');
     await user.clear(within(dialog).getByLabelText('Titre'));
@@ -553,7 +553,7 @@ describe('PlanningPage cockpit', () => {
     expect(bar).toHaveAttribute('draggable', 'true');
     expect(bar.querySelectorAll('.planning-resize-handle')).toHaveLength(2);
     fireEvent.contextMenu(bar);
-    await user.click(screen.getByRole('menuitem', { name: 'Supprimer', exact: true }));
+    await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
     await user.click(screen.getByRole('button', { name: 'Supprimer définitivement' }));
     await waitFor(() => expect(deleteProject).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: /Transit Transit Barfleur/ })).not.toBeInTheDocument();
@@ -565,7 +565,7 @@ describe('PlanningPage cockpit', () => {
     const { client, updateProject } = createClient({ projects: [planningProjectRow], updatedProject: { ...planningProjectRow, starts_on: '2026-07-11', ends_on: '2026-07-13' } });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Projet', exact: true }));
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
     const payload: Record<string, string> = { 'application/x-seapilot-project': '600', 'application/x-seapilot-project-vessel': '1' };
     fireEvent.drop(screen.getByRole('button', { name: `Planifier un projet pour COTENTIN le ${formatPlanningDate('2026-07-11')}` }), {
       dataTransfer: { types: Object.keys(payload), getData: (key: string) => payload[key] || '' },
@@ -582,7 +582,7 @@ describe('PlanningPage cockpit', () => {
     });
     render(<PlanningPage client={client as never} roles={[role]} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    await user.click(screen.getByRole('tab', { name: 'Projet', exact: true }));
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
     const bar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
     expect(bar).toHaveAttribute('draggable', 'false');
     expect(bar.querySelector('.planning-resize-handle')).toBeNull();
@@ -2127,3 +2127,4 @@ describe('PlanningPage cockpit', () => {
     expect(bar).toHaveClass('is-dragging');
   });
 });
+
