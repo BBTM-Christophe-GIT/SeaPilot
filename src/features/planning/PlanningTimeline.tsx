@@ -126,6 +126,7 @@ function buildPlanningVisitStack(
 }
 
 function PlanningFleetTimelineRowContent({
+  projectsOnly = false,
   lane,
   days,
   editable,
@@ -152,6 +153,7 @@ function PlanningFleetTimelineRowContent({
   onSelect,
   onToggle,
 }: TimelineBaseProps & {
+  projectsOnly?: boolean;
   lane: PlanningFleetLane;
   dayWidth: number;
   expanded: boolean;
@@ -185,7 +187,7 @@ function PlanningFleetTimelineRowContent({
   const [visitMovePreview, setVisitMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const watchGroup = 'Bordée 1';
-  const canDropPerson = editable && !hasBoards && lane.vesselId !== null;
+  const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
   const projectStack = buildPlanningProjectStack(lane.projects.map((project) => {
     const preview = resizePreview?.id === project.id ? resizePreview : null;
@@ -217,7 +219,7 @@ function PlanningFleetTimelineRowContent({
   const visitStack = buildPlanningVisitStack(visitTimelineItems, days);
   const maxVisitStack = visitStack.count;
   const additionalProjectStacks = Math.max(0, projectStack.count - 1);
-  const rowMinHeight = maxVisitStack
+  const rowMinHeight = projectsOnly ? 38 + additionalProjectStacks * 27 : maxVisitStack
     ? 76 + additionalProjectStacks * 27 + maxVisitStack * 25
     : projectStack.count > 1
       ? 74 + additionalProjectStacks * 27
@@ -314,7 +316,7 @@ function PlanningFleetTimelineRowContent({
   };
   return (
     <div
-      className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
+      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
       data-project-stack-count={projectStack.count}
       data-vessel={lane.vessel}
       style={rowMinHeight ? { minHeight: rowMinHeight } : undefined}
@@ -328,15 +330,16 @@ function PlanningFleetTimelineRowContent({
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
       >
-        <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
+        {projectsOnly ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
-        </button>
+        </button>}
         <div aria-label={`Actions pour ${lane.label}`} className="planning-vessel-actions" role="group">
           <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
-          {editable ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
-          {editable ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
+          {editable && projectsOnly ? <button aria-label={`Ajouter un projet à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenCell(lane, days[0].date)} title="Ajouter un projet" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable && !projectsOnly ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable && !projectsOnly ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
         </div>
       </div>
       {days.map((day, index) => {

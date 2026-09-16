@@ -3,6 +3,7 @@ import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
 import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import './planningProjectView.css';
 import { displayBrandName } from '../../lib/branding';
 import {
   Activity,
@@ -173,6 +174,7 @@ import { PlanningCrewTimelineRow, PlanningFleetBoardTimelineRow, PlanningFleetTi
 import {
   buildPlanningCrewLanes,
   buildPlanningFleetLanes,
+  buildPlanningProjectLanes,
   patchPlanningEvent,
   planningConfirmationLabel,
   planningCrewEventTypeLabel,
@@ -522,7 +524,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const planningData = usePlanningCoreOverview(overview);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
-  const perspective = readPermissions.canViewCrewPlanning ? requestedPerspective : 'fleet';
+  const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
   const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -652,6 +654,19 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     document.addEventListener('fullscreenchange', handleFullscreen);
     return () => document.removeEventListener('fullscreenchange', handleFullscreen);
   }, []);
+
+  useEffect(() => {
+    if (perspective !== 'projects' || !hasLoaded) return;
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const fitToViewport = () => {
+      const top = workspace.getBoundingClientRect().top + window.scrollY;
+      workspace.style.setProperty('--planning-project-top', `${isFullscreen ? 0 : top}px`);
+    };
+    fitToViewport();
+    window.addEventListener('resize', fitToViewport);
+    return () => window.removeEventListener('resize', fitToViewport);
+  }, [hasLoaded, isFullscreen, perspective]);
 
   useEffect(() => {
     let active = true;
@@ -784,6 +799,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const fleetLanes = useMemo(
     () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents),
     [allPlanningCrewEvents, filters, planningData, range],
+  );
+  const projectLanes = useMemo(
+    () => perspective === 'projects' ? buildPlanningProjectLanes(planningData, range, filters) : [],
+    [filters, perspective, planningData, range],
   );
   const fleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
@@ -950,7 +969,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     [allPlanningCrewEvents, planningData.projects],
   );
   const statusOptions = useMemo(
-    () => perspective === 'fleet'
+    () => perspective !== 'crew'
       ? uniqueSorted([...PROJECT_STATUSES, ...planningData.projects.map((project) => project.status)])
       : uniqueSorted([...PLANNING_STATUSES, 'provisional', 'confirmed', 'cancelled']),
     [planningData.projects, perspective],
@@ -1002,9 +1021,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   function changePerspective(next: PlanningPerspective) {
     if (next === 'crew' && !readPermissions.canViewCrewPlanning) return;
     setPerspective(next);
+    setSelectedGridCells(new Map());
+    setGridClipboard(null);
     setFilters((current) => ({
       ...current,
-      personName: next === 'fleet' ? '' : current.personName,
+      personName: next !== 'crew' ? '' : current.personName,
       eventType: '',
       status: '',
       responsible: '',
@@ -2415,6 +2436,41 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   if (!permissions.canRead) {
     return <div className="admin-state" role="alert">Vous n’avez pas accès au module Planning.</div>;
   }
+
+  function renderFleetLane(lane: PlanningFleetLane, rowKey: string, projectsOnly = false) {
+    return (
+      <PlanningFleetTimelineRow
+        projectsOnly={projectsOnly}
+        crewCount={fleetTreeCounts.get(rowKey) || 0}
+        dayWidth={effectiveDayWidth}
+        days={days}
+        editable={canEditPlanning}
+        expanded={!collapsedFleetNodes.has(rowKey)}
+        hasBoards={lane.vesselId !== null && fleetVesselIdsWithBoards.has(lane.vesselId)}
+        key={rowKey}
+        lane={lane}
+        onAddBoard={openNewBoard}
+        onAssignPerson={(personId, targetLane, watchGroup) => void assignPersonByDrop(personId, targetLane, watchGroup)}
+        onOpenCell={openProjectPicker}
+        onMove={(projectId, sourceVesselId, targetLane, date) => void moveProject(projectId, sourceVesselId, targetLane, date)}
+        onCreateVisit={openNewVesselVisit}
+        onOpen={openProjectEditor}
+        onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
+        onOpenVisit={openVesselVisit}
+        onOpenVessel={openVesselEditor}
+        onMoveVisit={(visitId, targetLane, date) => void moveTechnicalStop(visitId, targetLane, date)}
+        onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
+        onResizeVisit={(visit, edge, delta) => void resizeTechnicalStop(visit, edge, delta)}
+        onSelect={setSelectedTimelineId}
+        onToggle={() => toggleFleetNode(rowKey)}
+        pendingId={pendingMutationId}
+        selectedId={selectedTimelineId}
+        touchDropTarget={touchDropTarget}
+        visits={projectsOnly || lane.vesselId === null ? EMPTY_VESSEL_VISITS : vesselVisitsByVessel.get(lane.vesselId) || EMPTY_VESSEL_VISITS}
+      />
+    );
+  }
+
   if (isInitialLoading) return <div className="admin-state" role="status">Chargement du planning...</div>;
   if (!hasLoaded && loadErrorMessage) {
     return (
@@ -2426,7 +2482,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   return (
-    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}${isPersonalPlanningView ? ' is-personal' : ''}`} ref={workspaceRef}>
+    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}${isPersonalPlanningView ? ' is-personal' : ''}${perspective === 'projects' ? ' is-project-view' : ''}`} ref={workspaceRef}>
       <header className="planning-command-header">
         <div>
           <p className="module-family">Planning</p>
@@ -2443,7 +2499,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       ) : null}
 
-      <div className="planning-command-layout">
+      {perspective !== 'projects' ? <div className="planning-command-layout">
         <nav aria-label="Menu du planning" className="planning-module-toolbar">
           <div className="planning-ribbon-scroll">
             {isPersonalPlanningView ? (
@@ -2487,14 +2543,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           onPublish={handlePublishPlanning}
           release={latestRelease}
         /> : null}
-      </div>
+      </div> : null}
 
       <div className="planning-layout">
-        <section className="planning-board-card" aria-label="Calendrier des affectations">
+        <section className="planning-board-card" aria-label={perspective === 'projects' ? 'Calendrier des projets' : 'Calendrier des affectations'}>
           <div className="planning-board-toolbar">
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
+                <button aria-selected={perspective === 'projects'} className={perspective === 'projects' ? 'is-active' : ''} onClick={() => changePerspective('projects')} role="tab" type="button">Projet</button>
                 {readPermissions.canViewCrewPlanning ? <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button> : null}
               </div>
               {perspective === 'fleet' ? (
@@ -2503,6 +2560,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   {isFleetFullyExpanded ? 'Tout replier' : 'Tout déplier'}
                 </button>
               ) : null}
+              {canManageCommercialProjects && perspective === 'projects' ? <button className="planning-primary-action" onClick={createProjectFromPlanning} type="button"><Plus aria-hidden="true" size={17} />Nouveau projet</button> : null}
               {canEditPlanning && perspective === 'crew' ? (
                 <button className="planning-primary-action" onClick={() => openAssignment()} type="button">
                   <Plus aria-hidden="true" size={17} />Créer une affectation
@@ -2540,7 +2598,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             {isFiltersOpen ? <div className="planning-filter-strip" aria-label="Filtres du planning">
               <label className="planning-select-control"><Ship aria-hidden="true" size={16} /><span className="sr-only">Filtre navire</span><select aria-label="Filtre navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               {perspective === 'crew' ? <label className="planning-select-control"><Search aria-hidden="true" size={16} /><span className="sr-only">Filtre marin</span><select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}><option value="">Tous les marins</option>{personOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
-              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective === 'fleet' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
+              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre statut</span><select aria-label="Filtre statut" onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}><option value="">Tous les statuts</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'provisional' || status === 'confirmed' || status === 'cancelled' ? planningConfirmationLabel(status) : planningStatusDisplayLabel(status)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre responsable</span><select aria-label="Filtre responsable" onChange={(event) => setFilters((current) => ({ ...current, responsible: event.target.value }))} value={filters.responsible}><option value="">Tous les responsables</option>{responsibleOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <button className="planning-filter-reset" disabled={!activeFilterCount} onClick={() => setFilters(EMPTY_FILTERS)} type="button"><X aria-hidden="true" size={14} />Réinitialiser</button>
@@ -2574,47 +2632,20 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               })}
             </div>
             <div className="planning-calendar-grid planning-calendar-days">
-              <div className="planning-calendar-corner planning-calendar-label-heading">{perspective === 'fleet' ? 'Navires · Bordées · Marins' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}</div>
+              <div className="planning-calendar-corner planning-calendar-label-heading">{perspective === 'projects' ? 'Navires · Projets' : perspective === 'fleet' ? 'Navires · Bordées · Marins' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}</div>
               {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayDate ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
             </div>
 
             <div className="planning-calendar-body">
+              {perspective === 'projects' ? projectLanes.map((lane) => renderFleetLane(lane, lane.key, true)) : null}
+              {perspective === 'projects' && !projectLanes.length ? <div className="planning-calendar-empty"><p>Aucun navire ne correspond à ces filtres.</p></div> : null}
               {perspective === 'fleet' && fleetRows.length ? fleetRows.map((row) => {
                 if (row.type !== 'vessel' && collapsedFleetNodes.has(row.vesselKey)) return null;
                 if (row.type === 'person' && collapsedFleetNodes.has(row.boardKey)) return null;
                 if (row.type === 'vessel') {
                   const lane = fleetLanesByVessel.get(row.vessel);
                   if (!lane) return null;
-                  return (
-                    <PlanningFleetTimelineRow
-                      crewCount={fleetTreeCounts.get(row.key) || 0}
-                      dayWidth={effectiveDayWidth}
-                      days={days}
-                      editable={canEditPlanning}
-                      expanded={!collapsedFleetNodes.has(row.key)}
-                      hasBoards={lane.vesselId !== null && fleetVesselIdsWithBoards.has(lane.vesselId)}
-                      key={row.key}
-                      lane={lane}
-                      onAddBoard={openNewBoard}
-                      onAssignPerson={(personId, targetLane, watchGroup) => void assignPersonByDrop(personId, targetLane, watchGroup)}
-                      onOpenCell={openProjectPicker}
-                      onMove={(projectId, sourceVesselId, targetLane, date) => void moveProject(projectId, sourceVesselId, targetLane, date)}
-                      onCreateVisit={openNewVesselVisit}
-                      onOpen={openProjectEditor}
-                      onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
-                      onOpenVisit={openVesselVisit}
-                      onOpenVessel={openVesselEditor}
-                      onMoveVisit={(visitId, targetLane, date) => void moveTechnicalStop(visitId, targetLane, date)}
-                      onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
-                      onResizeVisit={(visit, edge, delta) => void resizeTechnicalStop(visit, edge, delta)}
-                      onSelect={setSelectedTimelineId}
-                      onToggle={() => toggleFleetNode(row.key)}
-                      pendingId={pendingMutationId}
-                      selectedId={selectedTimelineId}
-                      touchDropTarget={touchDropTarget}
-                      visits={lane.vesselId === null ? EMPTY_VESSEL_VISITS : vesselVisitsByVessel.get(lane.vesselId) || EMPTY_VESSEL_VISITS}
-                    />
-                  );
+                  return renderFleetLane(lane, row.key);
                 }
                 if (row.type === 'board') {
                   return (
@@ -2718,7 +2749,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           </div>
         </section>
 
-        {!isPersonalPlanningView && (perspective === 'fleet' || isOperationalPanelOpen) ? <aside className="planning-side-card" aria-label={isOperationalPanelOpen ? 'Suivi opérationnel du planning' : 'Marins non affectés'}>
+        {perspective !== 'projects' && !isPersonalPlanningView && (perspective === 'fleet' || isOperationalPanelOpen) ? <aside className="planning-side-card" aria-label={isOperationalPanelOpen ? 'Suivi opérationnel du planning' : 'Marins non affectés'}>
           {isOperationalPanelOpen ? (
             <>
               <header className="planning-side-heading"><div><Wrench aria-hidden="true" size={19} /><span><small>Suivi opérationnel</small><strong>{SIDE_TABS.find((tab) => tab.key === sideTab)?.label}</strong></span></div><button aria-label="Fermer le suivi opérationnel" onClick={() => setIsOperationalPanelOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header>

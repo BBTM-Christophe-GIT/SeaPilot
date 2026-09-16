@@ -21,7 +21,7 @@ import type {
 } from './planningQueries';
 import { PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
 
-export type PlanningPerspective = 'fleet' | 'crew';
+export type PlanningPerspective = 'fleet' | 'projects' | 'crew';
 export type PlanningCrewGrouping = 'people' | 'teams';
 
 export interface PlanningFleetLane {
@@ -129,6 +129,31 @@ function crewEventMatchesFilters(event: PlanningCrewEvent, filters: PlanningFilt
 function vesselDetail(vessel: PlanningVessel | undefined): string {
   if (!vessel) return 'Navire historique';
   return vessel.acronym || 'Navire actif';
+}
+
+export function buildPlanningProjectLanes(
+  overview: PlanningOverview,
+  range: PlanningDateRange,
+  filters: PlanningFilters,
+): PlanningFleetLane[] {
+  const lanes = buildPlanningFleetLanes({ ...overview, assignments: [], days: [] }, range, filters, []);
+  const lanesByVessel = new Map(lanes.map((lane) => [lane.vessel, lane]));
+  overview.vessels.filter((vessel) => vessel.active).forEach((vessel) => {
+    if (lanesByVessel.has(vessel.name)) return;
+    lanesByVessel.set(vessel.name, {
+      key: `fleet-${vessel.id}`,
+      vesselId: vessel.id,
+      label: vessel.name,
+      detail: vesselDetail(vessel),
+      vessel: vessel.name,
+      projects: [],
+      assignments: [],
+      locations: [],
+    });
+  });
+  return [...lanesByVessel.values()]
+    .filter((lane) => !filters.vesselName || lane.vessel === filters.vesselName)
+    .sort((left, right) => left.label.localeCompare(right.label, 'fr'));
 }
 
 export function buildPlanningFleetLanes(

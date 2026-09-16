@@ -303,6 +303,7 @@ function createClient(options: {
   const updateProjectSingle = vi.fn().mockResolvedValue({ data: options.updatedProject || planningProjectRow, error: null });
   const updateProjectEq = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: updateProjectSingle }) });
   const updateProject = vi.fn().mockReturnValue({ eq: updateProjectEq });
+  const deleteProject = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
   const updateAssignmentEq = vi.fn().mockResolvedValue({ error: null });
   const updateAssignment = vi.fn().mockReturnValue({ eq: updateAssignmentEq });
   const vesselOrder = vi.fn();
@@ -350,6 +351,7 @@ function createClient(options: {
       return {
         insert: insertProject,
         update: updateProject,
+        delete: deleteProject,
       };
     }
     if (table === 'fleet_certificates') {
@@ -513,10 +515,84 @@ function createClient(options: {
     }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
-  return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, updateAssignment, vesselOrder };
+  return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, deleteProject, updateAssignment, vesselOrder };
 }
 
 describe('PlanningPage cockpit', () => {
+  it('shows a compact project-only view with empty vessels and opens the existing project picker', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    expect(screen.getByRole('tab', { name: 'Projet' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Calendrier des projets' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.is-projects-only')).toHaveLength(2);
+    expect(container.querySelector('.planning-workspace')).toHaveClass('is-project-view');
+    expect(container.querySelector('.is-fleet-person, .is-fleet-board, .planning-side-card')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Menu du planning' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ajouter une bordée|Ajouter une visite/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ajouter un projet à SUROIT' }));
+    expect(await screen.findByRole('dialog', { name: 'Rattacher l’opération à un projet' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Rechercher un projet par mot-clé')).toBeInTheDocument();
+  });
+
+  it('edits and deletes projects through the existing workflows in the project view', async () => {
+    const user = userEvent.setup();
+    const { client, updateProject, deleteProject } = createClient({ projects: [planningProjectRow], updatedProject: { ...planningProjectRow, title: 'Transit Barfleur' } });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    await user.dblClick(screen.getByRole('button', { name: /Transit Transit Cherbourg/ }));
+    const dialog = screen.getByRole('dialog');
+    await user.clear(within(dialog).getByLabelText('Titre'));
+    await user.type(within(dialog).getByLabelText('Titre'), 'Transit Barfleur');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(updateProject).toHaveBeenCalled();
+    const bar = await screen.findByRole('button', { name: /Transit Transit Barfleur/ });
+    expect(bar).toHaveAttribute('draggable', 'true');
+    expect(bar.querySelectorAll('.planning-resize-handle')).toHaveLength(2);
+    fireEvent.contextMenu(bar);
+    await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer définitivement' }));
+    await waitFor(() => expect(deleteProject).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /Transit Transit Barfleur/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ajouter un projet à COTENTIN' })).toBeInTheDocument();
+  });
+
+  it('moves a project from the compact timeline and preserves its duration', async () => {
+    const user = userEvent.setup();
+    const { client, updateProject } = createClient({ projects: [planningProjectRow], updatedProject: { ...planningProjectRow, starts_on: '2026-07-11', ends_on: '2026-07-13' } });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    const payload: Record<string, string> = { 'application/x-seapilot-project': '600', 'application/x-seapilot-project-vessel': '1' };
+    fireEvent.drop(screen.getByRole('button', { name: `Planifier un projet pour COTENTIN le ${formatPlanningDate('2026-07-11')}` }), {
+      dataTransfer: { types: Object.keys(payload), getData: (key: string) => payload[key] || '' },
+    });
+    await waitFor(() => expect(updateProject).toHaveBeenCalledWith(expect.objectContaining({ starts_on: '2026-07-11', ends_on: '2026-07-13' })));
+    expect(await screen.findByText('Opération déplacée et synchronisée sur ses navires.')).toBeInTheDocument();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps the published project view read-only for %s', async (role) => {
+    const user = userEvent.setup();
+    const { client, updateProject, deleteProject } = createClient({
+      versions: [{ id: 1, publication_id: 1, version_number: 1, comment: '', created_at: '2026-07-13T10:00:00Z', created_by: 'user-publish', created_by_name: 'Direction BBTM' }],
+      publishedSnapshot: { assignments: [], days: [], periods: [], projects: [planningProjectRow], handovers: [], derogations: [] },
+    });
+    render(<PlanningPage client={client as never} roles={[role]} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    const bar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    expect(bar).toHaveAttribute('draggable', 'false');
+    expect(bar.querySelector('.planning-resize-handle')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ajouter un projet|Nouveau projet/ })).not.toBeInTheDocument();
+    fireEvent.contextMenu(bar);
+    expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(deleteProject).not.toHaveBeenCalled();
+  });
+
   it('keeps P2.2 hidden by default and exposes it only after the flag and server access agree', async () => {
     const { client, rpc } = createClient({ projects: [planningProjectRow] });
     const { rerender } = render(<PlanningPage client={client as never} roles={['admin']} />);
