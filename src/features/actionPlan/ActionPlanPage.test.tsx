@@ -266,13 +266,13 @@ describe('ActionPlanPage', () => {
     expect(screen.queryByText(closedAction.title)).not.toBeInTheDocument();
   });
 
-  it.each(['marin', 'capitaine'] as const)('limits reports, counts and creation vessels to the current %s assignment', async (role) => {
+  it.each(['marin', 'capitaine'] as const)('keeps personal reports returned by RLS while limiting %s vessel cards and creation to the current assignment', async (role) => {
     const user = userEvent.setup();
     const { client } = createClient([
       openAction,
       { ...closedAction, vessel_id: 12, vessel_name: 'GOURY', action_type_key: 'audit_internal' },
-      { ...openAction, id: 812, vessel_id: null, vessel_name: '', title: 'Rapport historique sans navire' },
-      { ...openAction, id: 813, vessel_id: 13, vessel_name: 'SUROIT', title: 'Rapport d’un autre navire' },
+      { ...openAction, id: 812, vessel_id: null, vessel_name: '', title: 'Mon rapport sans navire' },
+      { ...openAction, id: 813, vessel_id: 13, vessel_name: 'SUROIT', title: 'Mon rapport d’un autre navire' },
     ]);
     render(<ActionPlanPage client={client as never} roles={[role]} />);
     await screen.findByRole('heading', { name: "Plan d'action" });
@@ -283,8 +283,14 @@ describe('ActionPlanPage', () => {
     expect(card).toHaveClass('is-treatment-low');
     expect(nav.getByLabelText('GOURY : 50 % des éléments soldés')).toHaveClass('is-red');
     expect(nav.getByRole('button', { name: 'GOURY · Audits · 1 élément non soldé' })).toHaveTextContent('1');
-    expect(screen.queryByText('Rapport historique sans navire')).not.toBeInTheDocument();
-    expect(screen.queryByText('Rapport d’un autre navire')).not.toBeInTheDocument();
+    expect(screen.getByText('Mon rapport sans navire')).toBeInTheDocument();
+    expect(screen.getByText('Mon rapport d’un autre navire')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Mon rapport d’un autre navire · SUROIT/ }));
+    expect(screen.getByRole('heading', { name: 'Mon rapport d’un autre navire' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Afficher GOURY · 2 éléments' }));
+    expect(screen.queryByText('Mon rapport d’un autre navire')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tout afficher · 4' }));
+    expect(screen.getByText('Mon rapport d’un autre navire')).toBeInTheDocument();
     expect(client.rpc).toHaveBeenCalledWith('action_plan_current_vessel_scope');
     await user.selectOptions(screen.getByLabelText('Statut'), 'closed');
     expect(nav.getByLabelText('GOURY : 50 % des éléments soldés')).toBeInTheDocument();
@@ -303,7 +309,7 @@ describe('ActionPlanPage', () => {
   });
 
   it.each([false, true])('does not fall back to the fleet with no assignment or a scope error (error=%s)', async (fail) => {
-    const { client } = createClient();
+    const { client } = createClient([]);
     client.rpc.mockResolvedValue({ data: [], error: fail ? { message: 'Scope unavailable' } : null });
     render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
     if (fail) await screen.findByText("Impossible de charger le plan d'action.");
@@ -311,6 +317,15 @@ describe('ActionPlanPage', () => {
     expect(screen.queryByText('GOURY')).not.toBeInTheDocument();
     expect(screen.queryByText('SUROIT')).not.toBeInTheDocument();
     expect(screen.queryByText(openAction.title)).not.toBeInTheDocument();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('retains personal reports for %s even without a current assignment', async (role) => {
+    const { client } = createClient([{ ...openAction, title: 'Rapport dont je suis responsable' }]);
+    client.rpc.mockResolvedValue({ data: [], error: null });
+    render(<ActionPlanPage client={client as never} roles={[role]} />);
+    await screen.findByText('Rapport dont je suis responsable');
+    expect(screen.queryByRole('button', { name: /^Afficher GOURY/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toBeInTheDocument();
   });
 
   it('keeps an explicitly targeted closed notification report readable', async () => {

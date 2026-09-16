@@ -29,20 +29,26 @@ rapport après son affichage.
 
 ## Droits et déploiement
 
-Appliquer `20260916205252_action_plan_assigned_vessel_scope.sql` avant le client
+Appliquer `20260916205252_action_plan_assigned_vessel_scope.sql`, puis
+`20260916212108_action_plan_personal_report_access.sql` avant le client
 (appliquée au projet SeaPilot). Aucune variable d’environnement à modifier.
 
-Pour Marin et Capitaine, seuls les navires de leurs propres affectations Planning
-en cours sont accessibles : date du jour à Paris comprise entre début et fin,
-affectation non annulée. Une affectation passée ou future ne donne aucun accès.
-Sans affectation courante, aucun rapport n’est visible. Les droits de gestion
+Pour Marin et Capitaine, les cartes de navires et le formulaire de création sont
+limités à leurs propres affectations Planning en cours : date du jour à Paris
+comprise entre début et fin, affectation non annulée. Les rapports dont ils sont
+auteurs ou responsables restent visibles dans **Tout afficher**, même sur un
+autre navire ou sans affectation courante. Ils n’obtiennent pas accès aux autres
+rapports de cet autre navire. Les droits de gestion
 Administration, Direction et Armement conservent leur périmètre entreprise.
 
-La RLS applique cette restriction aux rapports natifs et importés, y compris
-quand la personne est émettrice ou responsable d’un rapport d’un autre navire.
+La RLS applique cette règle aux rapports natifs et importés. Le retrait de la
+responsabilité retire immédiatement l’accès personnel, sauf si la personne est
+également auteur ou affectée au navire. Les rapports sans navire restent eux aussi
+accessibles à leurs auteurs et responsables.
 La confidentialité des signalements sensibles est conservée. Le RPC
-`action_plan_current_vessel_scope` limite aussi le formulaire de création et les
-indicateurs frontend. Un échec de ce RPC bloque le chargement, sans repli vers
+`action_plan_current_vessel_scope` limite le formulaire de création et les cartes
+frontend. Les rapports renvoyés par la RLS sont conservés sans second filtrage par
+navire. Un échec de ce RPC bloque le chargement, sans repli vers
 toute la flotte. Les fixtures SQL utilisent de vraies identités authenticated
 dans une transaction annulée, sans simulation d’un profil administrateur.
 

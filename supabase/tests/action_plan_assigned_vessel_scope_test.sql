@@ -48,9 +48,10 @@ begin
            (company, vessel, 'TEST-ACTION-SCOPE-NATIVE', 'Non soldé', null, 'seapilot', 'action_progress'),
            (company, vessel, 'TEST-ACTION-SCOPE-CONFIDENTIAL', 'Non soldé', null, 'sharepoint', 'discrimination_human_rights'),
            (company, other_vessel, 'TEST-ACTION-SCOPE-OTHER', 'Non soldé', null, 'sharepoint', 'action_progress'),
+           (company, other_vessel, 'TEST-ACTION-SCOPE-UNRELATED', 'Non soldé', null, 'sharepoint', 'action_progress'),
            (company, null, 'TEST-ACTION-SCOPE-UNASSIGNED', 'Non soldé', null, 'sharepoint', 'action_progress');
   select id into foreign_report from public.action_items where title = 'TEST-ACTION-SCOPE-OTHER';
-  -- Ownership and personal assignment must not bypass the vessel boundary.
+  -- Personal ownership/responsibility survives vessel changes; unrelated reports do not.
   update public.action_items set issuer_person_id = sailor where id = foreign_report;
   insert into public.action_item_assignees (company_id, action_item_id, assignee_kind, person_id, display_name_snapshot)
     values (company, foreign_report, 'person', captain, 'Scope captain');
@@ -61,17 +62,17 @@ begin
     select public.action_plan_current_vessel_scope() into scope;
     if scope <> array[vessel] then raise exception 'Incorrect assigned vessel scope for %: %', actor, scope; end if;
     select array_agg(title order by title) into visible from public.action_items where title like 'TEST-ACTION-SCOPE-%';
-    if visible is distinct from array['TEST-ACTION-SCOPE-CLOSED', 'TEST-ACTION-SCOPE-NATIVE', 'TEST-ACTION-SCOPE-OPEN'] then
+    if visible is distinct from array['TEST-ACTION-SCOPE-CLOSED', 'TEST-ACTION-SCOPE-NATIVE', 'TEST-ACTION-SCOPE-OPEN', 'TEST-ACTION-SCOPE-OTHER'] then
       raise exception 'RLS leaked or hid reports for %: %', actor, visible;
     end if;
-    if public.action_item_user_can_read(foreign_report) then raise exception 'Direct report access bypassed scope'; end if;
+    if not public.action_item_user_can_read(foreign_report) then raise exception 'Personal report inaccessible on another vessel'; end if;
     set local role postgres;
   end loop;
 
   perform set_config('request.jwt.claim.sub', '7c460000-0000-0000-0000-000000000003', true);
   set local role authenticated;
   select array_agg(title order by title) into visible from public.action_items where title like 'TEST-ACTION-SCOPE-%';
-  if cardinality(visible) <> 5 then raise exception 'Direction lost fleet access or gained confidential access: %', visible; end if;
+  if cardinality(visible) <> 6 then raise exception 'Direction lost fleet access or gained confidential access: %', visible; end if;
   set local role postgres;
 
   update public.planning_assignments set confirmation_status = 'cancelled'
@@ -80,7 +81,18 @@ begin
     perform set_config('request.jwt.claim.sub', actor::text, true);
     set local role authenticated;
     if cardinality(public.action_plan_current_vessel_scope()) <> 0 then raise exception 'Cancelled, future or past assignment leaked'; end if;
-    if exists (select 1 from public.action_items where title like 'TEST-ACTION-SCOPE-%') then raise exception 'Reports visible without current assignment'; end if;
+    select array_agg(title order by title) into visible from public.action_items where title like 'TEST-ACTION-SCOPE-%';
+    if visible is distinct from array['TEST-ACTION-SCOPE-OTHER'] then raise exception 'Incorrect personal access without current assignment: %', visible; end if;
+    set local role postgres;
+  end loop;
+
+  -- Withdrawing personal responsibility removes the access immediately.
+  delete from public.action_item_assignees where action_item_id = foreign_report;
+  update public.action_items set issuer_person_id = null where id = foreign_report;
+  foreach actor in array array['7c460000-0000-0000-0000-000000000001'::uuid, '7c460000-0000-0000-0000-000000000002'::uuid] loop
+    perform set_config('request.jwt.claim.sub', actor::text, true);
+    set local role authenticated;
+    if public.action_item_user_can_read(foreign_report) then raise exception 'Withdrawn personal access remains visible'; end if;
     set local role postgres;
   end loop;
 end;

@@ -161,6 +161,7 @@ export interface ActionPlanSettings {
 
 export interface ActionPlanData {
   actions: ActionItemRecord[];
+  assignedVesselIds?: number[];
   documents: ActionDocumentRecord[];
   actionTypes: ActionTypeCatalogRecord[];
   vessels: VesselOption[];
@@ -692,15 +693,15 @@ export async function fetchActionPlanData(client: SupabaseClient, restrictToAssi
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
   const currentLabels = new Map(actionTypes.map((type) => [type.key, type.label]));
-  const scopedActions = assignedVessels
-    ? actionsResult.value.filter((action) => action.vesselId !== null && assignedVessels.has(action.vesselId))
-    : actionsResult.value;
-  const actions = await hydrateActionThumbnailUrls(client, scopedActions.map((action) => ({
+  // RLS includes the current vessel plus reports authored by / assigned to this
+  // person, even on another vessel. Do not discard those personal reports here.
+  const actions = await hydrateActionThumbnailUrls(client, actionsResult.value.map((action) => ({
     ...action,
     actionType: currentLabels.get(action.actionTypeKey) || action.actionType,
   })));
   return {
     actions,
+    assignedVesselIds: assignedVessels ? [...assignedVessels] : undefined,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes,
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value.filter((vessel) => !assignedVessels || assignedVessels.has(vessel.id)) : [],

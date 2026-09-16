@@ -496,7 +496,7 @@ export function ActionPlanControlCenter(props: ControlCenterProps) {
   return <>
     <header className="action-control-page-header"><div><h1>Plan d'action</h1><p>Vos éléments, par navire et par catégorie.</p></div>{props.canCreate && <button onClick={props.onCreate} type="button"><Plus size={18} />Nouveau rapport</button>}</header>
     <div className={`action-control-layout action-fleet-layout${selected ? ' has-detail' : ''}${typesOpen ? ' has-types' : ''}`}>
-      <ActionPlanFleetNavigator assets={assets} onSelect={changeScope} onShowAll={() => { setSelectedId(null); props.onShowAll(); }} selectedAsset={props.filters.vessel} selectedCategory={props.filters.category} types={props.data.actionTypes} />
+      <ActionPlanFleetNavigator assets={assets} assignedVesselIds={props.data.assignedVesselIds} onSelect={changeScope} onShowAll={() => { setSelectedId(null); props.onShowAll(); }} selectedAsset={props.filters.vessel} selectedCategory={props.filters.category} types={props.data.actionTypes} />
       <aside className="action-control-queue" aria-label="Éléments du plan d’action">
         <header className="action-control-queue-header">
           <div className="action-control-queue-topbar"><div><h2>{activeAsset?.name || 'Toute la flotte'}</h2><span role="status">{props.actions.length} élément{props.actions.length === 1 ? '' : 's'}</span></div><button aria-label="Actualiser" onClick={props.onReload} type="button"><RefreshCw size={17} /></button></div>

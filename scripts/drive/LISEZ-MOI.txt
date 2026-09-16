@@ -1,5 +1,5 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.0.0
-INSTALLATEUR CORRIGE - 15/09/2026
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.1.0
+CONNEXION LOCALE CORRIGEE - 16/09/2026
 
 Une installation pour Procedures, Sanctions Disciplinaires et les futurs modules.
 
@@ -12,6 +12,7 @@ Une installation pour Procedures, Sanctions Disciplinaires et les futurs modules
 Le chemin est memorise par utilisateur Windows sur ce PC. Aucun chemin par module n'est a configurer. Une nouvelle installation est inutile pour ajouter un sous-dossier de module.
 Les anciens reglages de modules sont conserves pendant la mise a jour. Le reglage commun SeaPilotRoot devient prioritaire.
 En cas d'erreur CS0016 avec une ancienne archive, telechargez la nouvelle archive et relancez Installer.cmd. L'installation compile maintenant un fichier distinct puis met a jour le raccourci commun : aucun fichier utilise n'est ecrase et les transferts en cours peuvent se terminer. Les anciens executables restent dans le dossier d'installation.
+La version 2.1 contourne automatiquement les ports Windows reserves ou occupes (erreur de socket 10013/10048). Si le lanceur est deja installe, relancez Installer.cmd depuis cette nouvelle archive : la racine Drive est conservee, sans refaire sa configuration.
 Apres installation, rechargez la page SeaPilot, puis cliquez sur Verifier ce PC dans Administration > Documents et Google Drive. Si la connexion reste impossible, autorisez l'ouverture du lanceur et la connexion locale pour SeaPilot dans votre navigateur. Le chemin deja enregistre est conserve.
 
 Classement : SeaPilot / Sanctions Disciplinaires / Prenom NOM - c<entreprise>-p<collaborateur> / AAAA-MM-JJ / fichier.

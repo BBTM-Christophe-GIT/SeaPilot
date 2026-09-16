@@ -8,6 +8,30 @@ export interface LocalDriveStatus { root: string | null; version: string; collab
 let connection: LocalDriveConnection | null = null;
 let connecting: Promise<LocalDriveConnection> | null = null;
 
+// Matches SeaPilotDriveBridge.ConnectionPort. Spreading the candidates avoids
+// Windows reservations that cover whole consecutive port ranges.
+export function localDrivePorts(firstPort: number): number[] {
+  return Array.from({ length: 16 }, (_, attempt) => 49152 + (firstPort - 49152 + attempt * 1019) % 16384);
+}
+
+async function findLocalDrive(firstPort: number, nonce: string): Promise<string> {
+  const controller = new AbortController();
+  try {
+    return await Promise.any(localDrivePorts(firstPort).map(async (port, index) => {
+      const url = `http://127.0.0.1:${port}/${nonce}`;
+      const response = await fetch(`${url}/health`, {
+        cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
+      });
+      if (!response.ok) throw new Error('Connexion locale indisponible');
+      const health = await response.json();
+      // Older launchers can still connect on the original port while the update
+      // is installed. New launchers also prove which random session they serve.
+      if ((health.version === '2.1.0' && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return url;
+      throw new Error('Session locale incompatible');
+    }));
+  } finally { controller.abort(); }
+}
+
 export function launcherOpenUri(module: DriveModule, relativePath: string): string {
   const payload = btoa(Array.from(new TextEncoder().encode(`${DRIVE_MODULES[module]}/${relativePath}`), (byte) => String.fromCharCode(byte)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return `seapilot-drive://root/open/${payload}`;
@@ -19,20 +43,17 @@ export function connectLocalDrive(): Promise<LocalDriveConnection> {
   if (connecting) return connecting;
   const port = 49152 + crypto.getRandomValues(new Uint16Array(1))[0] % 16384;
   const nonce = crypto.randomUUID().replace(/-/g, '');
-  const url = `http://127.0.0.1:${port}/${nonce}`;
   const anchor = document.createElement('a'); anchor.href = `seapilot-drive://connect/${port}/${nonce}`; anchor.click();
   connecting = (async () => {
     for (let attempt = 0; attempt < 35; attempt++) {
       try {
-        const response = await fetch(`${url}/health`, { cache: 'no-store', signal: AbortSignal.timeout(1000) });
-        if (response.ok && (await response.json()).version === '2.0.0') {
-          connection = { url, expiresAt: Date.now() + 100_000 };
-          return connection;
-        }
+        const url = await findLocalDrive(port, nonce);
+        connection = { url, expiresAt: Date.now() + 100_000 };
+        return connection;
       } catch { /* Wait for Windows to start the user-authorized launcher. */ }
       await new Promise((resolve) => window.setTimeout(resolve, 500));
     }
-    throw new Error('Le lanceur SeaPilot ne répond pas. Faites configurer ce PC dans Administration → Documents et Google Drive, puis autorisez son ouverture et la connexion locale si le navigateur le demande.');
+    throw new Error('La connexion locale au lanceur SeaPilot est indisponible. Installez sa dernière version depuis Administration → Documents et Google Drive : le dossier déjà configuré sera conservé. Autorisez son ouverture et la connexion locale si le navigateur le demande.');
   })().finally(() => { connecting = null; });
   return connecting;
 }

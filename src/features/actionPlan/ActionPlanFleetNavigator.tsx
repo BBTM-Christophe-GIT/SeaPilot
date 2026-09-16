@@ -16,12 +16,14 @@ function AssetImage({ asset }: { asset: ActionAssetGroup }) {
     : <Icon aria-hidden="true" size={42} />;
 }
 
-export function ActionPlanFleetNavigator({ assets, types, selectedAsset, selectedCategory, onSelect, onShowAll }: {
+export function ActionPlanFleetNavigator({ assets, types, selectedAsset, selectedCategory, onSelect, onShowAll, assignedVesselIds }: {
   assets: ActionAssetGroup[]; types: ActionTypeCatalogRecord[]; selectedAsset: string; selectedCategory: string;
+  assignedVesselIds?: number[];
   onSelect(asset: string, category: string): void; onShowAll(): void;
 }) {
   const total = assets.reduce((sum, asset) => sum + asset.actions.length, 0);
-  const visibleAssets = assets.filter((asset) => asset.key !== 'unassigned');
+  const visibleAssets = assets.filter((asset) => asset.key !== 'unassigned'
+    && (!assignedVesselIds || assignedVesselIds.some((id) => asset.key === `vessel:${id}`)));
   return <nav className="action-fleet-nav" aria-label="Navires et lieux du plan d’action">
     <header><button aria-pressed={!selectedAsset && !selectedCategory} className="action-fleet-all" onClick={onShowAll} type="button"><Rows3 size={19} />Tout afficher <span>· {total}</span></button><p>Flotte, quai et bureaux</p></header>
     <div className="action-fleet-assets">{visibleAssets.map((asset) => {
