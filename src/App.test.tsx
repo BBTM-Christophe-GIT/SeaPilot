@@ -783,6 +783,9 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Afficher COTENTIN · 1 élément' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Audit pont COTENTIN' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
+    fireEvent.click(screen.getByRole('button', { name: /Audit pont COTENTIN · COTENTIN/ }));
     expect(screen.getByRole('heading', { name: 'Audit pont COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText('Controle pont')).toBeInTheDocument();
     expect(screen.getByText('Remplacer garde-corps')).toBeInTheDocument();
