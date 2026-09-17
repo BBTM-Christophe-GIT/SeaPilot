@@ -3292,9 +3292,6 @@ function PersonDetailsPanel({
         <div className="hr-profile-identity">
           <div className="hr-profile-name-row">
             <h2>{formatPersonName(person)}</h2>
-            <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>
-              {person.active ? 'Actif' : 'Inactif'}
-            </span>
           </div>
           <p>
             {normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}

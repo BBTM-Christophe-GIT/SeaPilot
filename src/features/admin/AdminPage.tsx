@@ -27,6 +27,10 @@ import {
 import { InviteUserDialog } from './InviteUserDialog';
 import { AdminGoogleDriveSetup } from './AdminGoogleDriveSetup';
 import { AdminCollaboratorCoverage } from './AdminCollaboratorCoverage';
+import {
+  adminUserEmploymentStatus, fetchAdminCollaborators, filterAdminUsers, mapAdminCollaborators,
+  type AdminCollaboratorRow, type AdminPopulation,
+} from './adminCollaborators';
 import './adminSections.css';
 
 const ADMIN_SECTIONS = [
@@ -80,6 +84,9 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
   const [searchParams] = useSearchParams();
   const activeSection = ADMIN_SECTIONS.find((section) => section.key === searchParams.get('section'))?.key ?? 'users';
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [people, setPeople] = useState<AdminCollaboratorRow[]>([]);
+  const [population, setPopulation] = useState<AdminPopulation>('current');
+  const [directoryReady, setDirectoryReady] = useState(false);
   const [importSources, setImportSources] = useState<SharePointImportSource[]>([]);
   const [navigationPermissions, setNavigationPermissions] = useState<NavigationPermission[]>([]);
   const [actionPlanSettings, setActionPlanSettings] = useState<ActionPlanAdminSettings>({ editButtonEnabled: true });
@@ -96,6 +103,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
     let isMounted = true;
 
     setIsLoading(true);
+    setDirectoryReady(false);
     setErrorMessage(null);
 
     Promise.all([
@@ -103,10 +111,13 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
       fetchSharePointImportSources(client),
       fetchNavigationPermissions(client),
       fetchActionPlanAdminSettings(client).catch(() => ({ editButtonEnabled: true })),
+      fetchAdminCollaborators(client),
     ])
-      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions, loadedActionPlanSettings]) => {
+      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions, loadedActionPlanSettings, loadedPeople]) => {
         if (isMounted) {
           setUsers(loadedUsers);
+          setPeople(loadedPeople);
+          setDirectoryReady(true);
           setImportSources(loadedImportSources);
           setNavigationPermissions(loadedNavigationPermissions);
           setActionPlanSettings(loadedActionPlanSettings);
@@ -199,6 +210,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
     try {
       const message = await deleteSeaPilotUser(client, user.id);
       setUsers((currentUsers) => currentUsers.filter((candidate) => candidate.id !== user.id));
+      setPeople((currentPeople) => currentPeople.map((person) => person.user_id === user.id ? { ...person, user_id: null } : person));
       setStatusMessage(message);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible de supprimer cet utilisateur.");
@@ -216,8 +228,9 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
     }
 
     try {
-      const loadedUsers = await fetchAdminUsers(client);
+      const [loadedUsers, loadedPeople] = await Promise.all([fetchAdminUsers(client), fetchAdminCollaborators(client)]);
       setUsers(loadedUsers);
+      setPeople(loadedPeople);
     } catch {
       setErrorMessage("Le compte a bien été créé, mais la liste des utilisateurs n'a pas pu être actualisée.");
     }
@@ -241,6 +254,9 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
       setIsSavingActionPlanSettings(false);
     }
   }
+
+  const collaborators = mapAdminCollaborators(people, users);
+  const visibleUsers = filterAdminUsers(users, collaborators, population);
 
   return (
     <section className="admin-page">
@@ -270,9 +286,22 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
 
       {isLoading && activeSection !== 'documents' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
 
-      {activeSection === 'users' && !isLoading ? <AdminCollaboratorCoverage client={client} users={users} /> : null}
+      {activeSection === 'users' && !isLoading && directoryReady ? (
+        <>
+          <section className="admin-panel admin-population" aria-label="Population des collaborateurs">
+            <label htmlFor="admin-population">Collaborateurs affichés</label>
+            <select id="admin-population" value={population} onChange={(event) => setPopulation(event.target.value as AdminPopulation)}>
+              <option value="current">En poste</option>
+              <option value="former">Anciens collaborateurs</option>
+              <option value="all">Tous les collaborateurs</option>
+            </select>
+            <p className="admin-section-description">Ce filtre s’applique aux deux tableaux. Les comptes sans fiche RH restent accessibles dans la vue « En poste ».</p>
+          </section>
+          <AdminCollaboratorCoverage collaborators={collaborators} population={population} />
+        </>
+      ) : null}
 
-      <section className="admin-panel admin-users" hidden={activeSection !== 'users' || isLoading} aria-labelledby="admin-users-title">
+      <section className="admin-panel admin-users" hidden={activeSection !== 'users' || isLoading || !directoryReady} aria-labelledby="admin-users-title">
         <div className="admin-header">
           <div>
             <h2 id="admin-users-title">Gestion des utilisateurs</h2>
@@ -281,7 +310,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
           <div className="admin-header-actions">
             <div className="admin-summary" aria-label="Nombre d'utilisateurs">
               <Users aria-hidden="true" size={18} />
-              <strong>{users.length}</strong>
+              <strong>{visibleUsers.length}</strong>
             </div>
             <button className="admin-primary-button" onClick={() => setIsInviteDialogOpen(true)} type="button">
               <UserPlus aria-hidden="true" size={18} />
@@ -290,11 +319,11 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
           </div>
         </div>
 
-        {users.length === 0 ? (
-          <div className="admin-state">Aucun profil utilisateur trouve.</div>
+        {visibleUsers.length === 0 ? (
+          <div className="admin-state">Aucun compte utilisateur dans cette catégorie.</div>
         ) : (
           <div className="admin-table-wrap">
-            <table className="admin-table">
+            <table className="admin-table" aria-label="Comptes SeaPilot">
               <thead>
                 <tr>
                   <th scope="col">Utilisateur</th>
@@ -307,11 +336,12 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {visibleUsers.map((user) => (
                   <tr key={user.id}>
                     <th scope="row">
                       <span className="admin-user-name">{user.displayName}</span>
                       <span className="admin-user-email">{user.email}</span>
+                      {adminUserEmploymentStatus(user, collaborators) === 'former' ? <span className="admin-warning-chip">Ancien collaborateur</span> : null}
                     </th>
                     {ROLE_KEYS.map((role) => {
                       const operationKey = `${user.id}:${role}`;
