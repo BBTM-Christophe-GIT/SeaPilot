@@ -1,0 +1,75 @@
+.manager-home-page .manager-home-workspace {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.manager-home-vessel-bar {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--manager-border);
+  padding: 12px 20px;
+}
+
+.manager-home-vessel-bar > strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--manager-heading);
+  font-size: 0.72rem;
+}
+
+.manager-home-vessel-bar > small {
+  color: var(--manager-muted);
+  font-size: 0.6rem;
+}
+
+.manager-home-vessel-filters {
+  flex-wrap: wrap;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.manager-home-queue .manager-home-filters {
+  flex-wrap: wrap;
+}
+
+.manager-home-filters button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.manager-home-count,
+.manager-home-group > header .manager-home-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 21px;
+  min-height: 21px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--manager-ink);
+  background: #e9eff7;
+  font-size: 0.62rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-home-filters button.is-selected .manager-home-count {
+  color: #fff;
+  background: #ffffff30;
+}
+
+.manager-home-queue-copy .manager-home-row-vessels {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: normal;
+}
+
+@media (max-width: 680px) {
+  .manager-home-vessel-bar { padding: 12px 10px; }
+  .manager-home-vessel-filters { max-height: none; }
+  .manager-home-vessel-filters button { min-height: 40px; }
+}

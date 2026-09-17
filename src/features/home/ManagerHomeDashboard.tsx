@@ -23,7 +23,10 @@ import {
   type ManagerHomeGroupKey,
   type ManagerHomeItem,
   type ManagerHomeTone,
+  type ManagerHomeDashboardResult,
 } from './managerHomeData';
+import { itemMatchesVessel } from './managerHomeVessels';
+import './managerHomeVessels.css';
 
 interface ManagerHomeDashboardProps {
   client: SupabaseClient;
@@ -58,13 +61,15 @@ const FILTERS: Array<{ key: ManagerHomeFilter; label: string }> = [
   { key: 'week', label: 'Cette semaine' },
   { key: 'purchases', label: 'Achats' },
   { key: 'documents', label: 'Documents' },
-  { key: 'fleet', label: 'Flotte' },
+  { key: 'procedures', label: 'Procédures QHSE' },
+  { key: 'fleet', label: 'Documents flotte' },
   { key: 'workingTime', label: 'Temps de travail' },
   { key: 'humanResources', label: 'Ressources humaines' },
 ];
 
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const TONE_PRIORITY: ManagerHomeTone[] = ['danger', 'warning', 'success'];
+const EMPTY_RESULT: ManagerHomeDashboardResult = { items: [], vessels: [], unavailableSources: [], scopeLabel: null };
 
 function parseIsoDate(value: string): Date {
   const [year, month, day] = value.split('-').map(Number);
@@ -235,6 +240,9 @@ function QueueRow({ item }: { item: ManagerHomeItem }) {
       <span className="manager-home-queue-copy">
         <strong>{item.title}</strong>
         <small>{item.context}</small>
+        {item.vessels.length && ['workingTime', 'humanResources'].includes(item.group)
+          ? <small className="manager-home-row-vessels"><Ship aria-hidden="true" size={12} />{item.vessels.map((vessel) => vessel.name).join(' · ')}</small>
+          : null}
       </span>
       <span className="manager-home-queue-deadline">
         <strong>{item.deadline}</strong>
@@ -248,36 +256,57 @@ function QueueRow({ item }: { item: ManagerHomeItem }) {
 export function ManagerHomeDashboard({ client, firstName, personId, roles }: ManagerHomeDashboardProps) {
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toLocalIsoDate(now), [now]);
-  const [items, setItems] = useState<ManagerHomeItem[]>([]);
-  const [unavailableSources, setUnavailableSources] = useState<string[]>([]);
-  const [scopeLabel, setScopeLabel] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const roleKey = [...roles].sort().join(',');
+  const [loaded, setLoaded] = useState<{
+    client: SupabaseClient; personId: number | null; roleKey: string; result: ManagerHomeDashboardResult;
+  } | null>(null);
+  const isLoading = !loaded || loaded.client !== client || loaded.personId !== personId || loaded.roleKey !== roleKey;
+  const { items, vessels, unavailableSources, scopeLabel } = isLoading ? EMPTY_RESULT : loaded.result;
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [displayedMonth, setDisplayedMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1, 12));
   const [selectedFilter, setSelectedFilter] = useState<ManagerHomeFilter>('all');
+  const [selectedVessel, setSelectedVessel] = useState('all');
 
   useEffect(() => {
     let active = true;
-    setIsLoading(true);
-    void fetchManagerHomeDashboard(client, now, { personId, roles }).then((result) => {
+    void fetchManagerHomeDashboard(client, now, { personId, roles: roleKey.split(',').filter(Boolean) as RoleKey[] }).then((result) => {
       if (!active) return;
-      setItems(result.items);
-      setUnavailableSources(result.unavailableSources);
-      setScopeLabel(result.scopeLabel);
-      setIsLoading(false);
+      setLoaded({ client, personId, roleKey, result });
     });
     return () => { active = false; };
-  }, [client, now, personId, roles]);
+  }, [client, now, personId, roleKey]);
 
-  const visibleItems = useMemo(() => items.filter((item) =>
-    item.queueVisibleDates.includes(selectedDate) && itemMatchesFilter(item, selectedFilter),
-  ), [items, selectedDate, selectedFilter]);
+  const dateItems = useMemo(() => items.filter((item) => item.queueVisibleDates.includes(selectedDate)), [items, selectedDate]);
+  const vesselCountItems = useMemo(() => dateItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [dateItems, selectedFilter]);
+  const vesselOptions = [
+    { key: 'all', name: scopeLabel ? 'Flotte autorisée' : 'Toute la flotte' },
+    ...vessels,
+    { key: 'unassigned', name: 'Sans navire' },
+  ].map((vessel) => ({
+    ...vessel,
+    count: vesselCountItems.filter((item) => itemMatchesVessel(item, vessel.key)).length,
+  })).filter((vessel) => vessel.key === 'all' || vessel.count > 0);
+  const activeVessel = vesselOptions.some((vessel) => vessel.key === selectedVessel) ? selectedVessel : 'all';
+  const vesselItems = useMemo(() => items.filter((item) => itemMatchesVessel(item, activeVessel)), [items, activeVessel]);
+  const categoryItems = useMemo(() => dateItems.filter((item) => itemMatchesVessel(item, activeVessel)), [dateItems, activeVessel]);
+  const visibleItems = useMemo(() => categoryItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [categoryItems, selectedFilter]);
+  const calendarItems = useMemo(() => vesselItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [vesselItems, selectedFilter]);
+  function changeFilters(date: string, filter: ManagerHomeFilter) {
+    setSelectedDate(date);
+    setSelectedFilter(filter);
+    if (!items.some((item) => item.queueVisibleDates.includes(date)
+      && itemMatchesFilter(item, filter) && itemMatchesVessel(item, activeVessel))) {
+      setSelectedVessel('all');
+    } else {
+      setSelectedVessel(activeVessel);
+    }
+  }
   const visibleGroups = useMemo(() => QUEUE_GROUPS.map((group) => ({
     ...group,
     items: visibleItems.filter((item) => item.group === group.key),
   })).filter((group) => group.items.length > 0), [visibleItems]);
-  const urgentCount = useMemo(() => items.filter((item) => item.urgent).length, [items]);
-  const weekCount = useMemo(() => items.filter((item) => item.thisWeek).length, [items]);
+  const urgentCount = useMemo(() => vesselItems.filter((item) => item.urgent).length, [vesselItems]);
+  const weekCount = useMemo(() => vesselItems.filter((item) => item.thisWeek).length, [vesselItems]);
 
   return (
     <section className="manager-home-page" data-testid="manager-home-dashboard">
@@ -294,7 +323,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
             {scopeLabel ? <small className="manager-home-scope">Périmètre : {scopeLabel}</small> : null}
           </div>
           <dl className="manager-home-metrics">
-            <div><dt>éléments à traiter</dt><dd>{items.length}</dd></div>
+            <div><dt>éléments à traiter</dt><dd>{vesselItems.length}</dd></div>
             <div><dt>urgents</dt><dd className="is-danger">{urgentCount}</dd></div>
             <div><dt>cette semaine</dt><dd className="is-warning">{weekCount}</dd></div>
           </dl>
@@ -304,12 +333,31 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
           </Link>
         </header>
 
+        <div className="manager-home-vessel-bar" aria-busy={isLoading}>
+          <strong><Ship aria-hidden="true" size={16} />Navires</strong>
+          <div className="manager-home-filters manager-home-vessel-filters" role="group" aria-label="Filtrer par navire">
+            {vesselOptions.map((vessel) => (
+              <button
+                aria-pressed={activeVessel === vessel.key}
+                className={activeVessel === vessel.key ? 'is-selected' : ''}
+                disabled={isLoading}
+                key={vessel.key}
+                onClick={() => setSelectedVessel(vessel.key)}
+                type="button"
+              >
+                {vessel.name}{' '}<span className="manager-home-count">{vessel.count}</span>
+              </button>
+            ))}
+          </div>
+          <small>Pastilles : éléments à traiter à la date et selon les filtres choisis.</small>
+        </div>
+
         <div className="manager-home-main">
           <CalendarPanel
             displayedMonth={displayedMonth}
-            items={items}
+            items={calendarItems}
             onChangeMonth={(month) => setDisplayedMonth(new Date(month.getFullYear(), month.getMonth(), 1, 12))}
-            onSelectDate={setSelectedDate}
+            onSelectDate={(date) => changeFilters(date, selectedFilter)}
             selectedDate={selectedDate}
             todayKey={todayKey}
           />
@@ -321,20 +369,20 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
                   <span>File consolidée</span>
                   <h2 id="manager-home-queue-title">{queueDateLabel(selectedDate)} — {visibleItems.length} élément{visibleItems.length > 1 ? 's' : ''}</h2>
                 </div>
-                <small>{visibleItems.length} affiché{visibleItems.length > 1 ? 's' : ''} sur {items.length}</small>
+                <small>{visibleItems.length} affiché{visibleItems.length > 1 ? 's' : ''} sur {vesselItems.length}</small>
               </div>
               <div className="manager-home-filters" role="group" aria-label="Filtres de la file">
                 {FILTERS.map((filter) => {
-                  const count = filterCount(items, filter.key);
+                  const count = filterCount(categoryItems, filter.key);
                   return (
                     <button
                       aria-pressed={selectedFilter === filter.key}
                       className={`${selectedFilter === filter.key ? 'is-selected' : ''} ${filter.key === 'urgent' ? 'is-danger' : filter.key === 'week' ? 'is-warning' : ''}`.trim()}
                       key={filter.key}
-                      onClick={() => setSelectedFilter(filter.key)}
+                      onClick={() => changeFilters(selectedDate, filter.key)}
                       type="button"
                     >
-                      {filter.label}{['all', 'urgent', 'week'].includes(filter.key) ? ` ${count}` : ''}
+                      {filter.label}{' '}<span className="manager-home-count">{count}</span>
                     </button>
                   );
                 })}
@@ -357,7 +405,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
                   <section className="manager-home-group" key={group.key} aria-labelledby={`manager-home-group-${group.key}`}>
                     <header>
                       <h3 id={`manager-home-group-${group.key}`}><Icon aria-hidden="true" size={15} />{group.label}</h3>
-                      <span>{group.items.length} élément{group.items.length > 1 ? 's' : ''}</span>
+                      <span className="manager-home-count" aria-label={`${group.items.length} élément${group.items.length > 1 ? 's' : ''}`}>{group.items.length}</span>
                     </header>
                     {group.items.map((item) => <QueueRow item={item} key={item.id} />)}
                   </section>
