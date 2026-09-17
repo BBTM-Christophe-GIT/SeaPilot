@@ -37,7 +37,7 @@ Limites : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conve
 
 - Tests React avec fixtures distinctes Admin, Direction, Armement, Capitaine et Marin ; aucune vue simulée de la session de l'administrateur ne sert de preuve de droits.
 - `supabase/tests/expense_notes_access_test.sql` : transaction annulée en fin de test ; vérifie les cinq rôles, une deuxième société, les PDF privés, l'émetteur modifiable, le créateur immuable, le paramétrage et les calculs serveur.
-- Tests du service d'envoi avec relais simulé : authentification, RLS, doublons, succès, refus et résultats ambigus.
+- `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec relais simulé (authentification, RLS, doublons, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
 - Tests PDF réels pour l'ordre des pages, les fichiers invalides et les descriptions longues.
 - Vérification visuelle sur ordinateur et mobile ; la préversion n'enregistre ni ne transmet de note.
 - La réception d'un premier document réel dans Inexweb reste à constater en exploitation. Les tests automatisés n'envoient pas de faux justificatif à la comptabilité.

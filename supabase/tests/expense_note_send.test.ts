@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createExpenseSendHandler } from '../../../supabase/functions/expense-note-send/handler';
+import { createExpenseSendHandler } from '../functions/expense-note-send/handler';
 
 const ID = 'aa100000-0000-4000-8000-000000000001';
 function setup({ visible = true, status = 'pending', user = true, claim = true }: { visible?: boolean; status?: string; user?: boolean; claim?: boolean } = {}) {
