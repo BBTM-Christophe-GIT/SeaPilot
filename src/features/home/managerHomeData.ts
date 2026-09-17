@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
+import { buildManagerHomeVessels, normalizeHomeVesselName, type ManagerHomeVessel, type ManagerHomeVesselIndex } from './managerHomeVessels';
 
 export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
 export type ManagerHomeTone = 'danger' | 'warning' | 'success';
-export type ManagerHomeFilter = 'all' | 'urgent' | 'week' | 'purchases' | 'documents' | 'fleet' | 'workingTime' | 'humanResources';
+export type ManagerHomeFilter = 'all' | 'urgent' | 'week' | 'purchases' | 'documents' | 'procedures' | 'fleet' | 'workingTime' | 'humanResources';
 
 export interface ManagerHomeItem {
   id: string;
@@ -22,12 +23,14 @@ export interface ManagerHomeItem {
   queueTone: ManagerHomeTone;
   urgent: boolean;
   thisWeek: boolean;
+  vessels: ManagerHomeVessel[];
 }
 
 export interface ManagerHomeDashboardResult {
   items: ManagerHomeItem[];
   unavailableSources: string[];
   scopeLabel: string | null;
+  vessels: ManagerHomeVessel[];
 }
 
 interface PurchaseRequestRow {
@@ -111,6 +114,7 @@ export interface ManagerHomeAssignmentRow {
 }
 
 export interface ManagerHomeAssignmentScope {
+  assignments: ManagerHomeAssignmentRow[];
   vesselIds: number[];
   vesselNames: string[];
   personIds: number[];
@@ -118,6 +122,7 @@ export interface ManagerHomeAssignmentScope {
 }
 
 export interface ManagerHomeSourceRows {
+  assignments?: ManagerHomeAssignmentRow[];
   purchases: PurchaseRequestRow[];
   procedures: ProcedureReviewRow[];
   fleetCertificates: FleetCertificateRow[];
@@ -131,13 +136,6 @@ const UPCOMING_HORIZON_DAYS = 90;
 
 function normalize(value: string | null | undefined): string {
   return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
-
-function normalizeVesselName(value: string | null | undefined): string {
-  return normalize(value)
-    .replace(/^(?:m\s*\/?\s*v|mv)\s+/, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
 }
 
 export function toLocalIsoDate(date: Date): string {
@@ -283,6 +281,7 @@ export function buildManagerHomeAssignmentScope(
   );
 
   return {
+    assignments: scopedAssignments,
     vesselIds,
     vesselNames: [...new Set(actorAssignments.map(assignmentVesselName).filter(Boolean))],
     personIds: [...new Set([
@@ -298,9 +297,9 @@ function rowMatchesVesselScope(
   vesselName: string | null,
   scope: ManagerHomeAssignmentScope,
 ): boolean {
-  if (vesselId != null && scope.vesselIds.includes(vesselId)) return true;
-  const normalizedName = normalizeVesselName(vesselName);
-  return Boolean(normalizedName) && scope.vesselNames.some((name) => normalizeVesselName(name) === normalizedName);
+  if (vesselId != null) return scope.vesselIds.includes(vesselId);
+  const normalizedName = normalizeHomeVesselName(vesselName);
+  return Boolean(normalizedName) && scope.vesselNames.some((name) => normalizeHomeVesselName(name) === normalizedName);
 }
 
 export function filterManagerHomeSourcesForScope(
@@ -312,6 +311,7 @@ export function filterManagerHomeSourcesForScope(
   const scopedPeopleByAlias = buildPeopleByUniqueAlias(scopedPeople);
 
   return {
+    assignments: scope.assignments,
     purchases: sources.purchases.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
     procedures: sources.procedures.filter((row) => rowMatchesVesselScope(null, row.vessel_name, scope)),
     fleetCertificates: sources.fleetCertificates.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
@@ -378,7 +378,7 @@ function purchaseStage(row: PurchaseRequestRow): 'to_process' | 'ordered' | 'rec
   return 'to_process';
 }
 
-function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem[] {
+function purchaseItems(rows: PurchaseRequestRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     const stage = purchaseStage(row);
@@ -406,6 +406,7 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem
 
     return [{
       id: `purchase-${row.id}`,
+      vessels: vessels.forRow(row.vessel_id, row.vessel_name),
       group: 'purchases',
       tags: ['purchases'],
       title: `${formatRequestNumber(row)} · ${row.title || 'Demande d’achat'}`,
@@ -435,7 +436,7 @@ function effectiveFleetStatus(row: FleetCertificateRow, today: Date): string {
   return status || 'valid';
 }
 
-function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): ManagerHomeItem[] {
+function fleetCertificateItems(rows: FleetCertificateRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     if (row.is_active_fleet === false) return [];
@@ -466,6 +467,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
 
     return [{
       id: `fleet-${row.id}`,
+      vessels: vessels.forRow(row.vessel_id, row.vessel_name),
       group: 'fleetDocuments',
       tags: ['documents', 'fleet'],
       title: row.document_title || row.title || 'Document flotte',
@@ -484,7 +486,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
   });
 }
 
-function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerHomeItem[] {
+function procedureReviewItems(rows: ProcedureReviewRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     if (normalize(row.status).includes('archive')) return [];
@@ -494,8 +496,9 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
     const queueTone = queueToneForDueDate(alert.dueDate, today);
     return [{
       id: `procedure-review-${row.id}`,
+      vessels: vessels.forRow(null, row.vessel_name),
       group: 'procedures',
-      tags: ['documents'],
+      tags: ['documents', 'procedures'],
       title: `${row.procedure_code ? `${row.procedure_code} · ` : ''}${row.title}`,
       context: `Procédures QHSE · ${scope}`,
       deadline: alert.daysUntilDue < 0
@@ -514,7 +517,7 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
   });
 }
 
-function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
+function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const peopleByUniqueAlias = buildPeopleByUniqueAlias(people);
   const todayKey = toLocalIsoDate(today);
@@ -544,6 +547,7 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
 
     return [{
       id: `hr-document-${row.id}`,
+      vessels: vessels.forPerson(person?.id ?? row.person_id),
       group: 'humanResources',
       tags: ['documents', 'humanResources'],
       title,
@@ -562,7 +566,7 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
   });
 }
 
-function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
+function contractItems(rows: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   return rows.flatMap((person) => {
     const departedOn = person.departed_on?.slice(0, 10) || '';
     if (!departedOn || person.active === false) return [];
@@ -574,6 +578,7 @@ function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
 
     return [{
       id: `contract-${person.id}`,
+      vessels: vessels.forPerson(person.id),
       group: 'humanResources',
       tags: ['humanResources'],
       title: `Contrat ${name}`,
@@ -600,7 +605,7 @@ function workingTimeTitle(codes: string[]): string {
   return 'Non-conformité du temps de travail';
 }
 
-function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
+function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const latestByPerson = new Map<number, WorkingTimeCalculationRow>();
   [...rows]
@@ -621,6 +626,7 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
 
     return [{
       id: `working-time-${row.id}`,
+      vessels: vessels.forPerson(row.person_id),
       group: 'workingTime',
       tags: ['workingTime'],
       title: workingTimeTitle(row.violation_codes || []),
@@ -643,13 +649,14 @@ const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'procedu
 const TONE_ORDER: ManagerHomeTone[] = ['danger', 'warning', 'success'];
 
 export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = new Date()): ManagerHomeItem[] {
+  const vessels = buildManagerHomeVessels(sources);
   return [
-    ...purchaseItems(sources.purchases, today),
-    ...workingTimeItems(sources.workingTimeCalculations, sources.people, today),
-    ...procedureReviewItems(sources.procedures, today),
-    ...fleetCertificateItems(sources.fleetCertificates, today),
-    ...hrDocumentItems(sources.hrDocuments, sources.people, today),
-    ...contractItems(sources.people, today),
+    ...purchaseItems(sources.purchases, today, vessels),
+    ...workingTimeItems(sources.workingTimeCalculations, sources.people, today, vessels),
+    ...procedureReviewItems(sources.procedures, today, vessels),
+    ...fleetCertificateItems(sources.fleetCertificates, today, vessels),
+    ...hrDocumentItems(sources.hrDocuments, sources.people, today, vessels),
+    ...contractItems(sources.people, today, vessels),
   ].sort((left, right) =>
     GROUP_ORDER.indexOf(left.group) - GROUP_ORDER.indexOf(right.group)
     || TONE_ORDER.indexOf(left.queueTone) - TONE_ORDER.indexOf(right.queueTone)
@@ -696,25 +703,27 @@ export async function fetchManagerHomeDashboard(
   const assignmentScoped = isAssignmentScopedViewer(viewer.roles);
   let scope: ManagerHomeAssignmentScope | null = null;
 
+  if (assignmentScoped && !viewer.personId) {
+    return { items: [], vessels: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
+  }
+
+  const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
+    .from('planning_assignments')
+    .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
+    .lte('starts_on', todayKey)
+    .gte('ends_on', todayKey)
+    .neq('confirmation_status', 'cancelled'));
   if (assignmentScoped) {
-    if (!viewer.personId) {
-      return { items: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
-    }
-
-    const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
-      .from('planning_assignments')
-      .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
-      .lte('starts_on', todayKey)
-      .gte('ends_on', todayKey)
-      .neq('confirmation_status', 'cancelled'));
     if (assignments.error) {
-      return { items: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
+      return { items: [], vessels: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
     }
 
-    scope = buildManagerHomeAssignmentScope(assignments.rows, viewer.personId);
+    scope = buildManagerHomeAssignmentScope(assignments.rows, viewer.personId!);
     if (!scope.vesselIds.length) {
-      return { items: [], unavailableSources: [], scopeLabel: 'Aucune affectation active' };
+      return { items: [], vessels: [], unavailableSources: [], scopeLabel: 'Aucune affectation active' };
     }
+    // The database also enforces this personal scope for real Marin accounts.
+    if (!viewer.roles.includes('capitaine')) scope.personIds = [viewer.personId!];
   }
 
   const assignmentScope = scope;
@@ -773,8 +782,9 @@ export async function fetchManagerHomeDashboard(
     }),
   ]);
 
-  const results = [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
+  const results = [assignments, purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
   const sources: ManagerHomeSourceRows = {
+    assignments: assignments.rows,
     purchases: purchases.rows,
     procedures: procedures.rows,
     fleetCertificates: fleetCertificates.rows,
@@ -787,6 +797,7 @@ export async function fetchManagerHomeDashboard(
 
   return {
     items,
+    vessels: buildManagerHomeVessels(filteredSources).vessels,
     unavailableSources: results.filter((result) => result.error).map((result) => result.label),
     scopeLabel: assignmentScope ? assignmentScopeLabel(assignmentScope) : null,
   };
