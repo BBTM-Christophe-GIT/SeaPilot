@@ -120,6 +120,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   actionPlan: ClipboardCheck,
   dpr: Gauge,
   purchaseRequests: ShoppingCart,
+  expenseNotes: ReceiptText,
   serviceProviders: Store,
   billingElements: ReceiptText,
   planning: CalendarDays,

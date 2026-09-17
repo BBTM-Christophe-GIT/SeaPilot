@@ -10,6 +10,7 @@ export type ModuleKey =
   | 'actionPlan'
   | 'dpr'
   | 'purchaseRequests'
+  | 'expenseNotes'
   | 'serviceProviders'
   | 'billingElements'
   | 'planning'
@@ -113,6 +114,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ['admin', 'direction'],
   },
+  { key: 'expenseNotes', label: 'Notes de frais', family: 'Achats', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'billingElements',
     label: 'Éléments de facturation',
