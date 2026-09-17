@@ -1,4 +1,16 @@
-# Notes de frais — v3.43.0
+# Notes de frais — v3.44.0
+
+## Formulaires compacts et véhicules personnels
+
+- La disposition horizontale retenue place la saisie à gauche et les justificatifs à droite. La fenêtre Dépense mesure au maximum 860 px de large ; les indemnités 1 040 px. Sur petit écran, les justificatifs passent sous les champs et le pied conserve le total et l'action d'émission.
+- La description est dépliable sans perdre son contenu. Les déplacements kilométriques sont des lignes compactes ; les règles NDF, les péages et les montants électriques restent inchangés.
+- Dans **Indemnités kilométriques → Mes véhicules**, chaque compte peut conserver plusieurs modèles avec puissance fiscale et carburant. **Nouveau véhicule / saisie ponctuelle** permet une nouvelle saisie ; **Enregistrer ce véhicule** la rend réutilisable dans les sessions suivantes. Sélectionner un véhicule préremplit la note. **Modifier** puis **Mettre à jour le véhicule** actualise le carnet ; le retrait est confirmé dans le formulaire.
+- Le carnet appartient au compte connecté dans sa société active, indépendamment du nom d'émetteur choisi sur la note. Aucun rôle, y compris Admin/Direction, ne consulte les véhicules des autres comptes. La saisie manuelle reste disponible si le chargement échoue.
+- Les informations du véhicule sont copiées dans le JSON de chaque note, sans clé étrangère vers le carnet. Modifier ou retirer un véhicule ne modifie donc jamais une note existante ni son PDF.
+
+Migration préalable : `20260917134330_expense_personal_vehicles.sql` (appliquée à SeaPilot le 17 septembre 2026). Aucun changement de l'Edge Function d'envoi ni des anciennes tables n'est nécessaire. Un retour arrière du frontend peut conserver cette table et ses données.
+
+Validation : 34 tests du module (formulaire, véhicules, profils, calculs, PDF et requêtes) ; 46 assertions SQL dans `supabase/tests/expense_personal_vehicles_test.sql` avec véritables rôles Admin/Direction/Armement/Capitaine/Marin, deuxième société, propriété immuable, accès anonyme/inactif et conservation d'une note émise. Les fixtures SQL sont intégralement annulées. Aucun faux document n'est envoyé à la comptabilité.
 
 ## Parcours
 

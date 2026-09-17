@@ -585,8 +585,8 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ })).toHaveTextContent('P-2026-014');
     expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
-    expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
-    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
+    expect(await screen.findByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
+    expect(await screen.findByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
       'href',
       'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',

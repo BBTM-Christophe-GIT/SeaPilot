@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.44.0` compacte les fenêtres Dépense et Indemnités kilométriques et ajoute le carnet personnel de véhicules. La migration `20260917134330_expense_personal_vehicles.sql` a été appliquée avant le frontend. Le carnet est isolé par compte et société ; les notes émises gardent leurs informations historiques. Voir [expense-notes.md](./expense-notes.md).
+
 Version `3.42.1` permet de choisir directement l’émetteur dans le pied du courrier parmi les profils Administration et Direction autorisés. Les brouillons sont enregistrés avant transfert, les corrections des relecteurs restent des propositions et la signature précédente est retirée. L’archive du lanceur corrige CS0016 en compilant un nouvel exécutable avant de mettre à jour le protocole, sans interrompre la version en cours. Aucune migration ni modification des droits n’est nécessaire.
 
 Version `3.42.0` ajoute la relecture collaborative des courriers disciplinaires, les notifications privées, le changement d’émetteur, la validation et les courriers successifs d’un même dossier. La liste des collaborateurs contient uniquement ceux ayant un dossier. Le logo fourni remplace l’identité applicative. Les migrations `20260915125415_disciplinary_collaboration.sql` et `20260915130254_disciplinary_validated_letters.sql` précèdent le client et sont appliquées au projet lié. Voir [le fonctionnement détaillé](./disciplinary-sanctions.md). Le lanceur Windows 2.0.0 reste commun à tous les modules.
