@@ -23,7 +23,7 @@ final result: passed
 ## Interactions et validation
 
 - Navigateur : bascule Dépense/Indemnités, ouverture/repli de description, sélection véhicule Diesel/électrique, préremplissage, calcul de 120 km = 72,72 €, saisie électrique = 45,50 €, ajout d'un troisième véhicule de démonstration ; aucune erreur console relevée.
-- Tests : 46 tests ciblés frontend/service d'envoi/préversion ; 9 tests App passés isolément ; compilation production et lint des fichiers modifiés. L'exécution globale locale a été interrompue après un échec Projets non reproduit isolément ; validation globale également confiée à CI.
+- Tests : 46 tests ciblés frontend/service d'envoi/préversion ; 9 tests App passés isolément ; compilation production et lint des fichiers modifiés. L'exécution globale locale a été interrompue après un échec Projets non reproduit isolément, identique à celui du dernier CI de main (35225098373). Le test attend désormais le chargement asynchrone des documents après ouverture de l'onglet ; aucun code du module Projets n'a été modifié. Validation globale également confiée à CI.
 - Base : 46 assertions transactionnelles sur les rôles réels et deux sociétés, accès inter-comptes refusés, droits anonymes/inactifs refusés, propriété immuable et snapshot émis préservé après modification/retrait du véhicule. Audit Supabase : aucun signalement sur la nouvelle table ; signalements existants sur d'autres objets hors périmètre.
 - Limite volontaire : pas d'émission de faux justificatif à la comptabilité pendant la recette.
 
