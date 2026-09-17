@@ -434,6 +434,8 @@ describe('HumanResourcesPage', () => {
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     const identitySection = within(profile).getByRole('button', { name: 'Identité et poste' });
+    expect(within(profile).queryByText('Actif', { exact: true })).not.toBeInTheDocument();
+    expect(within(profile).queryByText('Inactif', { exact: true })).not.toBeInTheDocument();
     const contractSection = within(profile).getByRole('button', { name: 'Contrat et dates' });
     const contactSection = within(profile).getByRole('button', { name: 'Coordonnées' });
     const emergencySection = within(profile).getByRole('button', { name: 'Contact urgence' });

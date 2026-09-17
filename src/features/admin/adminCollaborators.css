@@ -1,3 +1,9 @@
+.admin-population { grid-template-columns: auto minmax(180px, 300px); align-items: center; gap: 12px; }
+.admin-population label { font-weight: 700; }
+.admin-population select { padding: 10px 12px; border: 1px solid #d8e1ec; border-radius: 8px; background: white; color: #253044; font: inherit; }
+.admin-population select:focus-visible { outline: 3px solid #7bb4e8; outline-offset: 3px; }
+.admin-population p { grid-column: 1 / -1; margin: 0; }
+
 .admin-collaborator-filters { display: flex; flex-wrap: wrap; gap: 10px; }
 .admin-collaborator-filters button {
   display: inline-flex;
@@ -20,6 +26,7 @@
 .admin-collaborator-table th:first-child { min-width: 180px; }
 
 @media (max-width: 600px) {
+  .admin-population { grid-template-columns: 1fr; }
   .admin-collaborator-filters { flex-direction: column; }
   .admin-collaborator-filters button { justify-content: space-between; }
 }

@@ -1,34 +1,15 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
-import { fetchAdminCollaborators, mapAdminCollaborators, type AdminCollaboratorRow } from './adminCollaborators';
-import type { AdminUser } from './adminQueries';
+import { useState } from 'react';
+import type { AdminCollaborator, AdminPopulation } from './adminCollaborators';
 import './adminCollaborators.css';
 
 interface AdminCollaboratorCoverageProps {
-  client: SupabaseClient;
-  users: AdminUser[];
+  collaborators: AdminCollaborator[];
+  population: AdminPopulation;
 }
 
-export function AdminCollaboratorCoverage({ client, users }: AdminCollaboratorCoverageProps) {
-  const [people, setPeople] = useState<AdminCollaboratorRow[]>([]);
+export function AdminCollaboratorCoverage({ collaborators: allCollaborators, population }: AdminCollaboratorCoverageProps) {
   const [filter, setFilter] = useState<'all' | 'account' | 'email'>('all');
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  // Refresh HR links after invitations or account deletion, but not role edits.
-  const accountKeys = JSON.stringify(users.map(({ id, email }) => [id, email]));
-
-  useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    setHasError(false);
-    fetchAdminCollaborators(client)
-      .then((rows) => { if (!cancelled) setPeople(rows); })
-      .catch(() => { if (!cancelled) setHasError(true); })
-      .finally(() => { if (!cancelled) setIsLoading(false); });
-    return () => { cancelled = true; };
-  }, [client, accountKeys]);
-
-  const collaborators = mapAdminCollaborators(people, users);
+  const collaborators = allCollaborators.filter((person) => population === 'all' || person.employmentStatus === population);
   const missingAccount = collaborators.filter((person) => !person.hasAccount);
   const missingEmail = collaborators.filter((person) => !person.hasBbtmEmail);
   const all = collaborators.filter((person) => !person.hasAccount || !person.hasBbtmEmail);
@@ -44,13 +25,9 @@ export function AdminCollaboratorCoverage({ client, users }: AdminCollaboratorCo
       <div>
         <h2 id="admin-collaborators-title">Collaborateurs sans compte ou sans adresse BBTM</h2>
         <p className="admin-section-description">
-          Collaborateurs en poste, y compris ceux sans adresse email.
+          {population === 'current' ? 'Collaborateurs en poste' : population === 'former' ? 'Anciens collaborateurs' : 'Tous les collaborateurs'}, y compris ceux sans adresse email.
         </p>
       </div>
-      {isLoading ? <p role="status">Chargement des collaborateurs…</p> : hasError ? (
-        <p className="form-error" role="alert">Impossible de charger les collaborateurs. Rechargez la page pour réessayer.</p>
-      ) : (
-        <>
           <div className="admin-collaborator-filters" role="group" aria-label="Filtrer les collaborateurs">
             {filters.map(({ key, label, count }) => (
               <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>
@@ -76,6 +53,10 @@ export function AdminCollaboratorCoverage({ client, users }: AdminCollaboratorCo
                       <th scope="row">
                         <span className="admin-user-name">{person.displayName}</span>
                         {person.functionLabel ? <span className="admin-user-email">{person.functionLabel}</span> : null}
+                        {person.employmentStatus === 'former' ? <span className="admin-user-email">
+                          Ancien collaborateur{person.departedOn ? ` · Départ le ${person.departedOn.split('-').reverse().join('/')}` : ''}
+                        </span> : null}
+                        {person.employmentStatus === 'upcoming' ? <span className="admin-user-email">Arrivée à venir</span> : null}
                       </th>
                       <td>
                         <span>{person.email || 'Non renseignée'}</span>
@@ -93,8 +74,6 @@ export function AdminCollaboratorCoverage({ client, users }: AdminCollaboratorCo
               </table>
             </div>
           )}
-        </>
-      )}
     </section>
   );
 }

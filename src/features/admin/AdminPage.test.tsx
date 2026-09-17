@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -33,7 +33,11 @@ function createNavigationPermissionsQuery(data: unknown[] = []) {
   };
 }
 
-function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] } = {}) {
+function createPeopleQuery(data: unknown[] = []) {
+  return { select: () => ({ order: () => ({ range: async () => ({ data, error: null }) }) }) };
+}
+
+function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[]; people?: unknown[] } = {}) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -70,7 +74,7 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
       }
 
       if (table === 'people') {
-        return { select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) };
+        return createPeopleQuery(options.people);
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -87,6 +91,61 @@ function renderAdminPage(client: unknown, section = 'users') {
 }
 
 describe('AdminPage', () => {
+  it('hides departed people in both tables by default and permits explicit deletion from the former filter', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const invoke = vi.fn().mockResolvedValue({ data: { message: 'Utilisateur supprimé.' }, error: null });
+    const client = {
+      ...createAdminClient({
+        profiles: [
+          { id: 'current', display_name: 'En Poste', email: 'current@example.test', user_roles: [] },
+          { id: 'former', display_name: 'Ancienne Collègue', email: 'former@example.test', user_roles: [{ role_key: 'marin' }] },
+        ],
+        people: [
+          { id: 1, user_id: 'current', first_name: 'En', last_name: 'Poste', email: 'current@example.test', active: true, hired_on: '2020-01-01', departed_on: null },
+          { id: 2, user_id: 'former', first_name: 'Ancienne', last_name: 'Collègue', email: 'former@example.test', active: true, hired_on: '2020-01-01', departed_on: '2025-12-18' },
+        ],
+      }),
+      functions: { invoke },
+    };
+    renderAdminPage(client);
+    const filter = await screen.findByRole('combobox', { name: 'Collaborateurs affichés' });
+    expect(filter).toHaveValue('current');
+    expect(screen.queryByText('Ancienne Collègue')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Comptes SeaPilot' })).getByText('En Poste')).toBeVisible();
+    expect(screen.getByLabelText("Nombre d'utilisateurs")).toHaveTextContent('1');
+    await user.selectOptions(filter, 'former');
+    const accounts = screen.getByRole('table', { name: 'Comptes SeaPilot' });
+    expect(within(accounts).getByText('Ancienne Collègue')).toBeVisible();
+    expect(within(screen.getByRole('table', { name: 'Collaborateurs sans compte ou sans adresse BBTM' })).getByText('Ancienne Collègue')).toBeVisible();
+    expect(screen.queryByText('En Poste')).not.toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+    await user.selectOptions(filter, 'all');
+    expect(screen.getByLabelText("Nombre d'utilisateurs")).toHaveTextContent('2');
+    await user.selectOptions(filter, 'former');
+    await user.click(screen.getByRole('button', { name: 'Supprimer former@example.test' }));
+    expect(invoke).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Supprimer former@example.test' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('admin-manage-user', { body: { action: 'delete', userId: 'former' } }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Supprimer former@example.test' })).not.toBeInTheDocument());
+    expect(screen.getByText('Ancienne Collègue')).toBeVisible();
+    expect(screen.getByText('Sans compte')).toBeVisible();
+    expect(filter).toHaveValue('former');
+    confirm.mockRestore();
+  });
+
+  it('does not show an unfiltered account list when HR data cannot load', async () => {
+    const base = createAdminClient();
+    const client = { from: (table: string) => table === 'people'
+      ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: new Error('Denied') }) }) }) }
+      : base.from(table) };
+    renderAdminPage(client);
+    expect(await screen.findByText('Impossible de charger les utilisateurs.')).toBeVisible();
+    expect(screen.queryByRole('table', { name: 'Comptes SeaPilot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Collaborateurs affichés' })).not.toBeInTheDocument();
+  });
+
   it('loads administration with the isolated preview fixtures', async () => {
     const user = userEvent.setup();
     renderAdminPage(previewSupabaseClient);
@@ -162,6 +221,7 @@ describe('AdminPage', () => {
         if (table === 'people') {
           return {
             select: vi.fn().mockReturnValue({
+              order: () => ({ range: async () => ({ data: [], error: null }) }),
               eq: vi.fn().mockReturnValue({
                 is: vi.fn().mockReturnValue({
                   order: vi.fn().mockReturnValue({
@@ -184,6 +244,7 @@ describe('AdminPage', () => {
           };
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -316,6 +377,7 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -362,6 +424,7 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -394,6 +457,7 @@ describe('AdminPage', () => {
           return { ...createNavigationPermissionsQuery(), upsert };
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };

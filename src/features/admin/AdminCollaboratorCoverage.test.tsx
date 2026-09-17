@@ -1,33 +1,28 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { AdminCollaboratorCoverage } from './AdminCollaboratorCoverage';
-import type { AdminCollaboratorRow } from './adminCollaborators';
+import { mapAdminCollaborators, type AdminCollaboratorRow } from './adminCollaborators';
 import type { AdminUser } from './adminQueries';
 
+const dates = { hired_on: '2020-01-01', departed_on: null };
 const people: AdminCollaboratorRow[] = [
-  { id: 1, user_id: null, first_name: 'Alice', last_name: 'SansCompte', email: 'alice@bbtm.fr', function_label: 'Marin', active: true },
-  { id: 2, user_id: 'bob', first_name: 'Bob', last_name: 'Externe', email: 'bob@example.test', function_label: 'Capitaine', active: true },
-  { id: 3, user_id: null, first_name: 'Claire', last_name: 'SansEmail', email: null, function_label: null, active: true },
-  { id: 4, user_id: 'david', first_name: 'David', last_name: 'Complet', email: 'david@bbtm.fr', function_label: null, active: true },
-  { id: 5, user_id: null, first_name: 'Ancien', last_name: 'Collaborateur', email: null, function_label: null, active: false },
+  { ...dates, id: 1, user_id: null, first_name: 'Alice', last_name: 'SansCompte', email: 'alice@bbtm.fr', function_label: 'Marin', active: true },
+  { ...dates, id: 2, user_id: 'bob', first_name: 'Bob', last_name: 'Externe', email: 'bob@example.test', function_label: 'Capitaine', active: true },
+  { ...dates, id: 3, user_id: null, first_name: 'Claire', last_name: 'SansEmail', email: null, function_label: null, active: true },
+  { ...dates, id: 4, user_id: 'david', first_name: 'David', last_name: 'Complet', email: 'david@bbtm.fr', function_label: null, active: true },
+  { ...dates, id: 5, user_id: null, first_name: 'Ancien', last_name: 'Collaborateur', email: null, function_label: null, active: true, departed_on: '2025-12-18' },
 ];
 const users: AdminUser[] = [
   { id: 'bob', email: 'bob@example.test', displayName: 'Bob', roles: ['capitaine'] },
   { id: 'david', email: 'david@bbtm.fr', displayName: 'David', roles: ['marin'] },
 ];
 
-function createClient(data = people) {
-  const range = vi.fn().mockResolvedValue({ data, error: null });
-  return { range, client: { from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range }) }) }) }) } };
-}
-
 describe('AdminCollaboratorCoverage', () => {
-  it('shows active collaborators once and filters each category, including missing email', async () => {
+  it('shows current collaborators once and filters each category, excluding departed active records', async () => {
     const user = userEvent.setup();
-    const { client } = createClient();
-    render(<AdminCollaboratorCoverage client={client as never} users={users} />);
-    const table = await screen.findByRole('table');
+    render(<AdminCollaboratorCoverage collaborators={mapAdminCollaborators(people, users)} population="current" />);
+    const table = screen.getByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(screen.queryByText('David Complet')).not.toBeInTheDocument();
     expect(screen.getByText('Non renseignée')).toBeVisible();
@@ -40,36 +35,23 @@ describe('AdminCollaboratorCoverage', () => {
     expect(screen.getByText('Bob Externe')).toBeVisible();
     expect(screen.getByText('Claire SansEmail')).toBeVisible();
     expect(screen.queryByText('Alice SansCompte')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sans adresse @bbtm.fr 2' })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: 'Tous les cas 3' }));
     expect(within(table).getAllByRole('row')).toHaveLength(4);
   });
 
-  it('refreshes after account creation or deletion while retaining the selected filter', async () => {
+  it('updates counts when former/all populations are chosen, preserving the category filter', async () => {
     const user = userEvent.setup();
-    const { client, range } = createClient([people[0]]);
-    const { rerender } = render(<AdminCollaboratorCoverage client={client as never} users={[]} />);
-    await user.click(await screen.findByRole('button', { name: 'Sans compte SeaPilot 1' }));
-    range.mockResolvedValue({ data: [{ ...people[0], user_id: 'alice' }], error: null });
-    rerender(<AdminCollaboratorCoverage client={client as never} users={[
-      { id: 'alice', displayName: 'Alice', email: 'alice@bbtm.fr', roles: ['marin'] },
-    ]} />);
-    expect(await screen.findByText('Aucun collaborateur dans cette catégorie.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Sans compte SeaPilot 0' })).toHaveAttribute('aria-pressed', 'true');
-    range.mockResolvedValue({ data: [people[0]], error: null });
-    rerender(<AdminCollaboratorCoverage client={client as never} users={[]} />);
-    expect(await screen.findByText('Alice SansCompte')).toBeVisible();
-    await waitFor(() => expect(range).toHaveBeenCalledTimes(3));
-  });
-
-  it('shows a loading state and an explicit error without misleading zero counts', async () => {
-    const { client, range } = createClient();
-    let resolve!: (value: unknown) => void;
-    range.mockReturnValue(new Promise((done) => { resolve = done; }));
-    render(<AdminCollaboratorCoverage client={client as never} users={users} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Chargement des collaborateurs');
-    resolve({ data: null, error: new Error('Access denied') });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de charger les collaborateurs');
-    expect(screen.queryByRole('button', { name: /Tous les cas/ })).not.toBeInTheDocument();
+    const collaborators = mapAdminCollaborators(people, users);
+    const { rerender } = render(<AdminCollaboratorCoverage collaborators={collaborators} population="current" />);
+    await user.click(screen.getByRole('button', { name: 'Sans compte SeaPilot 2' }));
+    rerender(<AdminCollaboratorCoverage collaborators={collaborators} population="former" />);
+    expect(screen.getByText('Ancien Collaborateur')).toBeVisible();
+    expect(screen.getByText('Ancien collaborateur · Départ le 18/12/2025')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sans compte SeaPilot 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('Alice SansCompte')).not.toBeInTheDocument();
+    rerender(<AdminCollaboratorCoverage collaborators={collaborators} population="all" />);
+    expect(screen.getByText('Alice SansCompte')).toBeVisible();
+    expect(screen.getByText('Ancien Collaborateur')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sans compte SeaPilot 3' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
