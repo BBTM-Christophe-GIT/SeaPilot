@@ -1,7 +1,11 @@
 # Accueil : filtre flotte/navire et pastilles
 
-Le bandeau **Navires** propose toute la flotte accessible, chaque navire connu des
-sources autorisées et **Sans navire** lorsque des éléments n'ont pas d'affectation.
+Le bandeau **Navires** propose toute la flotte accessible et uniquement les navires
+ayant au moins un élément à traiter à la date et dans la catégorie sélectionnées.
+**Sans navire** apparaît uniquement si des éléments sans affectation correspondent
+aux mêmes filtres. Le choix **Toute la flotte** reste disponible, même à zéro.
+Si un changement de date ou de catégorie masque le navire sélectionné, la vue
+revient à toute la flotte autorisée.
 Le choix filtre la file, le calendrier, les prochaines dates clés et les totaux.
 Les filtres de catégorie peuvent être combinés au choix du navire.
 

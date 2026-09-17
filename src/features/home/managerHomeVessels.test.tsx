@@ -126,10 +126,13 @@ describe('home vessel associations and real profile scopes', () => {
 
 describe('home vessel and category filter interaction', () => {
   it('updates badges, queue, totals and calendar when vessel, category and date change', async () => {
-    render(<MemoryRouter><ManagerHomeDashboard client={clientFor().client} firstName="Test" personId={42} roles={['admin']} /></MemoryRouter>);
+    const sources = fixture();
+    sources.assignments!.push({ vessel_id: 12, crew_person_id: 99, captain_person_id: null, watch_group: 'A', vessels: { name: 'NAVIRE SANS ALERTE' } });
+    render(<MemoryRouter><ManagerHomeDashboard client={clientFor(sources).client} firstName="Test" personId={42} roles={['admin']} /></MemoryRouter>);
     const vesselFilters = screen.getByRole('group', { name: 'Filtrer par navire' });
     const categoryFilters = screen.getByRole('group', { name: 'Filtres de la file' });
     await within(vesselFilters).findByRole('button', { name: 'GOURY 8' });
+    expect(within(vesselFilters).queryByRole('button', { name: /NAVIRE SANS ALERTE/ })).not.toBeInTheDocument();
     expect(within(vesselFilters).getByRole('button', { name: 'Toute la flotte 13' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(within(vesselFilters).getByRole('button', { name: 'GOURY 8' }));
     expect(screen.queryByText(/Achat 11/)).not.toBeInTheDocument();
@@ -140,17 +143,24 @@ describe('home vessel and category filter interaction', () => {
     fireEvent.click(within(categoryFilters).getByRole('button', { name: 'Achats 1' }));
     expect(within(vesselFilters).getByRole('button', { name: 'Toute la flotte 2' })).toBeInTheDocument();
     expect(within(vesselFilters).getByRole('button', { name: 'GOURY 1' })).toBeInTheDocument();
+    expect(within(vesselFilters).queryByRole('button', { name: /Sans navire/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Document 42/)).not.toBeInTheDocument();
     fireEvent.click(within(vesselFilters).getByRole('button', { name: 'KROKDUR 1' }));
     expect(screen.getByText(/Achat 11/)).toBeInTheDocument();
     expect(screen.queryByText(/Achat 10/)).not.toBeInTheDocument();
     fireEvent.click(within(categoryFilters).getByRole('button', { name: 'Documents flotte 1' }));
+    expect(within(vesselFilters).queryByRole('button', { name: /GOURY/ })).not.toBeInTheDocument();
     const calendar = screen.getByRole('complementary', { name: 'Calendrier des échéances' });
     fireEvent.click(within(calendar).getByRole('button', { name: /Classe KROKDUR/ }));
     expect(within(vesselFilters).getByRole('button', { name: 'KROKDUR 1' })).toBeInTheDocument();
     expect(within(categoryFilters).getByRole('button', { name: 'Achats 0' })).toBeInTheDocument();
     fireEvent.click(within(categoryFilters).getByRole('button', { name: 'Achats 0' }));
     expect(screen.getByText('Aucun élément ne correspond à cette date et à ce filtre.')).toBeInTheDocument();
+    expect(within(vesselFilters).getAllByRole('button')).toHaveLength(1);
+    expect(within(vesselFilters).getByRole('button', { name: 'Toute la flotte 0' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(categoryFilters).getByRole('button', { name: 'Tous 1' }));
+    expect(within(vesselFilters).getByRole('button', { name: 'Toute la flotte 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(vesselFilters).getByRole('button', { name: 'KROKDUR 1' })).toBeInTheDocument();
   });
 
   it('clears the previous profile data while a new profile is loading', async () => {

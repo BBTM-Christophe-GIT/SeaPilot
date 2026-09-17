@@ -276,20 +276,31 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
     return () => { active = false; };
   }, [client, now, personId, roleKey]);
 
-  const hasUnassigned = items.some((item) => item.vessels.length === 0);
-  const activeVessel = vessels.some((vessel) => vessel.key === selectedVessel)
-    || (selectedVessel === 'unassigned' && hasUnassigned) ? selectedVessel : 'all';
-  const vesselItems = useMemo(() => items.filter((item) => itemMatchesVessel(item, activeVessel)), [items, activeVessel]);
   const dateItems = useMemo(() => items.filter((item) => item.queueVisibleDates.includes(selectedDate)), [items, selectedDate]);
-  const categoryItems = useMemo(() => dateItems.filter((item) => itemMatchesVessel(item, activeVessel)), [dateItems, activeVessel]);
-  const visibleItems = useMemo(() => categoryItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [categoryItems, selectedFilter]);
   const vesselCountItems = useMemo(() => dateItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [dateItems, selectedFilter]);
-  const calendarItems = useMemo(() => vesselItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [vesselItems, selectedFilter]);
   const vesselOptions = [
     { key: 'all', name: scopeLabel ? 'Flotte autorisée' : 'Toute la flotte' },
     ...vessels,
-    ...(hasUnassigned ? [{ key: 'unassigned', name: 'Sans navire' }] : []),
-  ];
+    { key: 'unassigned', name: 'Sans navire' },
+  ].map((vessel) => ({
+    ...vessel,
+    count: vesselCountItems.filter((item) => itemMatchesVessel(item, vessel.key)).length,
+  })).filter((vessel) => vessel.key === 'all' || vessel.count > 0);
+  const activeVessel = vesselOptions.some((vessel) => vessel.key === selectedVessel) ? selectedVessel : 'all';
+  const vesselItems = useMemo(() => items.filter((item) => itemMatchesVessel(item, activeVessel)), [items, activeVessel]);
+  const categoryItems = useMemo(() => dateItems.filter((item) => itemMatchesVessel(item, activeVessel)), [dateItems, activeVessel]);
+  const visibleItems = useMemo(() => categoryItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [categoryItems, selectedFilter]);
+  const calendarItems = useMemo(() => vesselItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [vesselItems, selectedFilter]);
+  function changeFilters(date: string, filter: ManagerHomeFilter) {
+    setSelectedDate(date);
+    setSelectedFilter(filter);
+    if (!items.some((item) => item.queueVisibleDates.includes(date)
+      && itemMatchesFilter(item, filter) && itemMatchesVessel(item, activeVessel))) {
+      setSelectedVessel('all');
+    } else {
+      setSelectedVessel(activeVessel);
+    }
+  }
   const visibleGroups = useMemo(() => QUEUE_GROUPS.map((group) => ({
     ...group,
     items: visibleItems.filter((item) => item.group === group.key),
@@ -334,7 +345,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
                 onClick={() => setSelectedVessel(vessel.key)}
                 type="button"
               >
-                {vessel.name}{' '}<span className="manager-home-count">{vesselCountItems.filter((item) => itemMatchesVessel(item, vessel.key)).length}</span>
+                {vessel.name}{' '}<span className="manager-home-count">{vessel.count}</span>
               </button>
             ))}
           </div>
@@ -346,7 +357,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
             displayedMonth={displayedMonth}
             items={calendarItems}
             onChangeMonth={(month) => setDisplayedMonth(new Date(month.getFullYear(), month.getMonth(), 1, 12))}
-            onSelectDate={setSelectedDate}
+            onSelectDate={(date) => changeFilters(date, selectedFilter)}
             selectedDate={selectedDate}
             todayKey={todayKey}
           />
@@ -368,7 +379,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
                       aria-pressed={selectedFilter === filter.key}
                       className={`${selectedFilter === filter.key ? 'is-selected' : ''} ${filter.key === 'urgent' ? 'is-danger' : filter.key === 'week' ? 'is-warning' : ''}`.trim()}
                       key={filter.key}
-                      onClick={() => setSelectedFilter(filter.key)}
+                      onClick={() => changeFilters(selectedDate, filter.key)}
                       type="button"
                     >
                       {filter.label}{' '}<span className="manager-home-count">{count}</span>
