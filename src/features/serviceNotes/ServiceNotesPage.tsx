@@ -445,7 +445,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           </section>
           <section className="service-note-form-section">
             <header><span>03</span><div><h2>Message</h2><p>Ce texte constituera le corps de la note commune.</p></div></header>
-            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => { setSaveState('saving'); setDraft((current) => ({ ...current, body })); }} value={draft.body} /></label>
+            <div className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => { setSaveState('saving'); setDraft((current) => ({ ...current, body })); }} value={draft.body} /></div>
           </section>
           <section className="service-note-form-section">
             <header><span>04</span><div><h2>Pièces jointes et liens</h2><p>Le nom sans extension sera inventorié dans la note.</p></div></header>
@@ -546,7 +546,7 @@ function ServiceNoteInformationEditor({ note, client, authorSignatureUrl, signat
           </section>
           <section className="service-note-form-section">
             <header><span>02</span><div><h2>Message</h2><p>Complétez ou corrigez le contenu du document.</p></div></header>
-            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => changeInformation({ body })} value={information.body} /></label>
+            <div className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => changeInformation({ body })} value={information.body} /></div>
           </section>
           {message ? <div className="service-note-inline-error" role="alert"><CircleAlert size={17} />{message}</div> : null}
           <div className="service-note-editor-footer"><button className="is-secondary" disabled={saveState === 'saving'} onClick={onBack} type="button">Annuler</button><button className="is-primary" disabled={!canSave || saveState === 'saving'} onClick={() => void handleSave()} type="button"><Save size={17} />{saveState === 'saving' ? 'Enregistrement…' : 'Enregistrer les informations'}</button></div>
