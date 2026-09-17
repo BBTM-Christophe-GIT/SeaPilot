@@ -23,6 +23,7 @@ import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
+const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
 const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
@@ -94,6 +95,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des éléments de facturation…</div>}><BillingElementsPage /></Suspense>
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
+                ) : module.key === 'expenseNotes' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des notes de frais…</div>}><ExpenseNotesPage /></Suspense>
                 ) : module.key === 'serviceProviders' ? (
                   <ServiceProvidersPage />
                 ) : module.key === 'lifting' ? (
