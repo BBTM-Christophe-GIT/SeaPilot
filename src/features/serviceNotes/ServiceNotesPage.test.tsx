@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
@@ -15,6 +16,22 @@ function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
 }
 
 describe('ServiceNotesPage', () => {
+  it('keeps focus in the message when clicking and typing in a draft', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /Brouillons/ }));
+    await user.click(screen.getByText('Organisation des exercices trimestriels'));
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const editor = await screen.findByRole('textbox', { name: 'Contenu' });
+
+    await user.click(editor);
+    expect(editor).toHaveFocus();
+    await user.keyboard('Bonjour, voici la note de service.');
+    expect(editor).toHaveTextContent('Bonjour, voici la note de service.');
+    expect(editor).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Style de paragraphe' })).not.toHaveFocus();
+  });
+
   it('shows the QHSE library and one common signing document', async () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Notes de Service' })).toBeInTheDocument();
