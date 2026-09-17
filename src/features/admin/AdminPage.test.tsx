@@ -69,6 +69,10 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
         return createNavigationPermissionsQuery();
       }
 
+      if (table === 'people') {
+        return { select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     }),
   };
@@ -89,6 +93,7 @@ describe('AdminPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeVisible();
     expect(screen.getByText('admin@example.invalid')).toBeVisible();
+    expect(await screen.findByRole('table', { name: 'Collaborateurs sans compte ou sans adresse BBTM' })).toBeVisible();
     expect(screen.queryByText('Impossible de charger les utilisateurs.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Imports et migration' }));
     expect(screen.getByText('Procédures — démonstration')).toBeVisible();

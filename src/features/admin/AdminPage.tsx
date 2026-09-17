@@ -26,6 +26,7 @@ import {
 } from './adminQueries';
 import { InviteUserDialog } from './InviteUserDialog';
 import { AdminGoogleDriveSetup } from './AdminGoogleDriveSetup';
+import { AdminCollaboratorCoverage } from './AdminCollaboratorCoverage';
 import './adminSections.css';
 
 const ADMIN_SECTIONS = [
@@ -268,6 +269,8 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
       </div>
 
       {isLoading && activeSection !== 'documents' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
+
+      {activeSection === 'users' && !isLoading ? <AdminCollaboratorCoverage client={client} users={users} /> : null}
 
       <section className="admin-panel admin-users" hidden={activeSection !== 'users' || isLoading} aria-labelledby="admin-users-title">
         <div className="admin-header">

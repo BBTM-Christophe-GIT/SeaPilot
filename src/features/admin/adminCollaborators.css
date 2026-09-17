@@ -1,0 +1,25 @@
+.admin-collaborator-filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-collaborator-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #52647b;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.admin-collaborator-filters button[aria-pressed="true"] { border-color: #0c5598; color: #0c5598; background: #edf5ff; }
+.admin-collaborator-filters button:focus-visible { outline: 3px solid #7bb4e8; outline-offset: 3px; }
+.admin-collaborator-filters strong { min-width: 24px; padding: 2px 6px; border-radius: 12px; background: #edf2f7; text-align: center; }
+.admin-collaborator-count { margin: 0; color: #667085; font-size: 0.88rem; }
+.admin-collaborator-table td { text-align: left; overflow-wrap: anywhere; }
+.admin-collaborator-table th:first-child { min-width: 180px; }
+
+@media (max-width: 600px) {
+  .admin-collaborator-filters { flex-direction: column; }
+  .admin-collaborator-filters button { justify-content: space-between; }
+}
