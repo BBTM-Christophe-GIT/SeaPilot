@@ -1,5 +1,6 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -215,6 +216,8 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  useful_links: PREVIEW_USEFUL_LINKS,
+  useful_link_categories: PREVIEW_LINK_CATEGORIES,
   procedures: [
     {
       id: 8101, procedure_code: 'GEN 01-A', title: 'Manuel Qualité Santé Sécurité Environnement', status: 'published',
@@ -1654,9 +1657,12 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
-function createPreviewQuery(result: PreviewResult): object {
+function createPreviewQuery(result: PreviewResult, readOnly = false): object {
   const query: object = new Proxy({}, {
     get(_target, property) {
+      if (readOnly && ['insert', 'update', 'delete', 'upsert'].includes(String(property))) {
+        return () => createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
+      }
       if (property === 'then') {
         return (resolve: (value: PreviewResult) => unknown, reject?: (reason: unknown) => unknown) =>
           Promise.resolve(result).then(resolve, reject);
@@ -1741,6 +1747,7 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'useful_links_can_manage') return createPreviewQuery({ data: true, error: null });
   if (functionName === 'service_note_targeting_options') {
     const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
     if (!note) return createPreviewQuery({ data: null, error: { message: 'Brouillon de démonstration introuvable.' } });
@@ -2520,7 +2527,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 
 export const previewSupabaseClient = {
   from: (table: string) => table in PREVIEW_ROWS
-    ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null })
+    ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {

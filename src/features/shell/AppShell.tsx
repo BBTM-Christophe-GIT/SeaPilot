@@ -21,6 +21,7 @@ import {
   Gauge,
   Home,
   LayoutDashboard,
+  Link2,
   LogOut,
   Mail,
   Menu,
@@ -136,6 +137,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   technicalDocuments: BookOpenCheck,
   lifting: LiftingOperationsIcon,
   admin: Settings,
+  usefulLinks: Link2,
 };
 
 function getRequestedModule(pathname: string) {

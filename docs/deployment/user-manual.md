@@ -1,5 +1,7 @@
 # Manuel d’utilisation — v3.47.0
 
+Depuis la v3.48.0, la notice [Liens utiles](./useful-links.md) complète ce catalogue : 18 notices sont disponibles lorsque tous les modules du Marin sont autorisés. Les vérifications ci-dessous décrivent la livraison initiale du manuel.
+
 L’icône point d’interrogation entre la cloche et l’identité ouvre `/manual`. Le sommaire reprend les noms des modules du Marin et propose une recherche dans les titres et le contenu, sans distinction de casse ni d’accents. Chaque notice contient l’objectif, le périmètre Marin, les étapes, les points à retenir et un lien vers le module. Une notice peut être ouverte directement via `/manual/:moduleKey`.
 
 Les 17 notices couvrent Accueil, KPI, Certificats flotte, Procédures QHSE, Notes de Service, Plan d’Action, QHSE documentaire (route historique), Daily Progress Report, Navires, Demande d’Achat, Notes de frais, Planning, RH / Brevets, Suivi du Temps de travail, Marad, Documents Techniques et Levage. Les deux écrans en attente de migration sont explicitement décrits comme tels.
