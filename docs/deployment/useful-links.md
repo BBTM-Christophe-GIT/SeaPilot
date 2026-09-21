@@ -34,7 +34,8 @@ Exécuter `supabase/tests/useful_links_access_test.sql` dans une transaction ann
 authentifiées distinctes Administration, Direction, Armement, Capitaine et Marin ; lectures, écritures,
 révocation, société, appartenance inactive et accès anonyme. Ne pas utiliser le simulateur de profil.
 
-Tests client : `pnpm test src/features/usefulLinks src/features/permissions src/features/shell/AppShell.test.tsx src/features/admin/AdminPage.test.tsx src/App.test.tsx`.
+Le manuel intégré comprend une notice Liens utiles pour les profils autorisés.
+Tests client : `pnpm test src/features/usefulLinks src/features/manual src/features/permissions src/features/shell/AppShell.test.tsx src/features/admin/AdminPage.test.tsx src/App.test.tsx`.
 Vérification : `pnpm lint`, `pnpm build`, puis recherche, édition et affichage mobile dans un navigateur.
 En cas de retour au client précédent, conserver les tables et désactiver les permissions du module ;
 ne pas supprimer les liens saisis par les utilisateurs.

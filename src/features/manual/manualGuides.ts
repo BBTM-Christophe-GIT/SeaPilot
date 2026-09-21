@@ -9,6 +9,17 @@ export interface ManualGuide {
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  usefulLinks: {
+    purpose: 'Retrouver les portails, les outils et les réunions utiles à votre activité dans le répertoire partagé de votre société.',
+    access: 'L’accès est activé par profil dans Administration. Marin, Capitaine et Armement consultent le répertoire ; Administration et Direction peuvent gérer les liens et les catégories.',
+    steps: [
+      { title: 'Ouvrir le répertoire', detail: 'Dans le menu Accueil, choisissez Liens utiles. Les sites sont présentés par titre et par catégorie avec leur icône.' },
+      { title: 'Retrouver un lien', detail: 'Saisissez un titre ou une catégorie dans la recherche, ou choisissez une catégorie. Tous les liens permet de retirer le filtre de catégorie.' },
+      { title: 'Ouvrir le site', detail: 'Cliquez sur la carte du lien. Le portail s’ouvre dans un nouvel onglet ; identifiez-vous sur ce site s’il le demande.' },
+      { title: 'Faire mettre à jour le répertoire', detail: 'Demandez à Administration ou Direction d’ajouter, de renommer ou de supprimer un lien. Les responsables utilisent Ajouter un lien, les boutons de modification des cartes et Catégories. Supprimer une catégorie conserve ses liens dans Sans catégorie.' },
+    ],
+    reminders: ['L’accès à Liens utiles ne donne pas automatiquement les droits de connexion aux sites externes.', 'Si un lien ne fonctionne plus, signalez-le à un responsable du répertoire.'],
+  },
   home: {
     purpose: 'Retrouver vos informations utiles et les actions à traiter dès votre connexion.',
     access: 'Les informations affichées dépendent de votre profil et de votre périmètre personnel.',
