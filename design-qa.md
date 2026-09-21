@@ -1,3 +1,34 @@
+# Design QA — Notes de frais compactes et véhicules personnels, v3.44.0
+
+final result: passed
+
+## Références et preuves
+
+- Dépense : `docs/design/compact-expenses/expense-reference.png` (troisième proposition sélectionnée, 1448 × 1086).
+- Kilométrique : `docs/design/compact-expenses/mileage-reference.png` (adaptation, 1448 × 1086). La demande complémentaire ajoute ensuite le carnet de véhicules ; le sélecteur compact remplace les trois champs lorsque le véhicule est déjà enregistré.
+- Rendus navigateur : `expense-desktop.png` et `mileage-desktop.png` dans le même dossier, viewport CSS et images 1440 × 1000. Dépense vide ; kilométrique avec véhicule Diesel enregistré, trajet de 120 km et total 72,72 €. Données de démonstration, sans émission réelle.
+- Comparaison complète, source à gauche / rendu à droite : `expense-comparison.png`, `mileage-comparison.png` ; chaque vue est ajustée proportionnellement dans 720 × 540, sans déformation.
+- Comparaison focalisée sur les fenêtres : `expense-detail-comparison.png`, `mileage-detail-comparison.png` ; cadres recadrés puis ramenés à la même largeur de 720 px. Les différences de taille du canevas et de fond de page ne sont pas traitées comme des défauts.
+- Mobile : `expense-mobile.png`, `mileage-mobile.png`, viewport 390 × 844. Corps défilant, en-tête et total/action toujours visibles ; contenu mesuré à 373 px sans débordement horizontal. Le second état est volontairement défilé vers le trajet électrique et son montant de 45,50 €.
+
+## Vérification des surfaces et historique
+
+- Typographie : Inter/system existant, contrôles 14 px, libellés 13 px, hiérarchie titre/champs/aide conservée. Les captures desktop du panneau navigateur sont moins nettes que les maquettes générées ; contrôle complémentaire au format mobile et des styles DOM. Pas de police décorative ni d'actif raster ajouté à l'interface.
+- Disposition : fenêtre Dépense 860 × 533 px et kilométrique avec véhicule sélectionné 1040 × 804 px à ce viewport, sans défilement interne dans ces états. Justificatifs à droite, champs regroupés, description repliée. La note d'irréversibilité existante et le total restent visibles ; ils ne figuraient pas tous dans la maquette Dépense et sont conservés intentionnellement.
+- Couleurs : action principale bleue #0c5598, bordures discrètes, surface blanche, rayon 8 px. Icônes Lucide natives existantes, sans faux actifs dessinés.
+- Contenu : fonctions/période et véhicule restent des champs texte là où la maquette générée dessinait des chevrons. Le carnet personnel correspond à la demande complémentaire ; les données d'identité et navire sont des fixtures, pas celles de l'utilisateur.
+- Première recette mobile : [P2] la page sous la fenêtre restait défilable et ajoutait une barre horizontale. Correction : verrouillage du scroll du body uniquement pendant l'ouverture de cette fenêtre. Recapture mobile et mesures : aucun débordement horizontal du contenu ; pied à y=843 pour viewport de 844 px.
+- Recette finale : les comparaisons complètes/focalisées et les nouvelles captures mobiles ont été ouvertes et inspectées. Aucun P0/P1/P2 restant. Pas de question bloquante.
+
+## Interactions et validation
+
+- Navigateur : bascule Dépense/Indemnités, ouverture/repli de description, sélection véhicule Diesel/électrique, préremplissage, calcul de 120 km = 72,72 €, saisie électrique = 45,50 €, ajout d'un troisième véhicule de démonstration ; aucune erreur console relevée.
+- Tests : 46 tests ciblés frontend/service d'envoi/préversion ; 9 tests App passés isolément ; compilation production et lint des fichiers modifiés. L'exécution globale locale a été interrompue après un échec Projets non reproduit isolément, identique à celui du dernier CI de main (35225098373). Le test attend désormais le chargement asynchrone des documents après ouverture de l'onglet ; aucun code du module Projets n'a été modifié. Validation globale également confiée à CI.
+- Base : 46 assertions transactionnelles sur les rôles réels et deux sociétés, accès inter-comptes refusés, droits anonymes/inactifs refusés, propriété immuable et snapshot émis préservé après modification/retrait du véhicule. Audit Supabase : aucun signalement sur la nouvelle table ; signalements existants sur d'autres objets hors périmètre.
+- Limite volontaire : pas d'émission de faux justificatif à la comptabilité pendant la recette.
+
+---
+
 # Design QA — Plan d’action vertical, v3.39.13
 
 final result: passed
