@@ -133,6 +133,7 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
+  includeEmptyVessels?: boolean;
 }
 
 export interface PlanningAlert {
@@ -576,6 +577,9 @@ export function buildPlanningCrewRows(
   const vesselNames = new Set([
     ...events.map((event) => event.vessel),
     ...boardRows.map((entry) => entry.vessel.name),
+    ...(options.includeEmptyVessels && !filters.personName ? overview.vessels
+      .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
+      .map((vessel) => vessel.name) : []),
   ]);
 
   const rows: PlanningCrewRow[] = [];

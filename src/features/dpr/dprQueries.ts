@@ -162,15 +162,16 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
     .order('dpr_number', { ascending: false, nullsFirst: false })
     .limit(1000);
 
-  const [reportResult, projectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
+  const [reportResult, projectResult, reportProjectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
     reportPromise,
     client.from('projects').select('id,project_code,title').order('project_code'),
+    client.rpc('dpr_report_projects'),
     client.from('vessels').select('id,name').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     fetchDprEntryContext(client, new Date().toISOString().slice(0, 10)),
   ]);
-  const firstError = [reportResult, projectResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
+  const firstError = [reportResult, projectResult, reportProjectResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
   if (firstError) throw firstError;
   const reportIds = (reportResult.data || []).map((row) => Number(row.id));
   const emptyResult = { data: [], error: null };
@@ -181,7 +182,10 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
   ]) : [emptyResult, emptyResult, emptyResult];
   const relatedError = [metricResult, incidentResult, fileResult].find((result) => result.error)?.error;
   if (relatedError) throw relatedError;
-  const catalogProjects = (projectResult.data || []).map((row) => ({ id: Number(row.id), code: text(row.project_code), title: text(row.title) }));
+  const projectRows = [...(projectResult.data || []), ...((reportProjectResult.data || []) as Array<{ id: number; project_code: string; title: string }>)];
+  const catalogProjects = [...new Map(projectRows.map((row) => [Number(row.id), {
+    id: Number(row.id), code: text(row.project_code), title: text(row.title),
+  }])).values()].sort((left, right) => left.code.localeCompare(right.code, 'fr'));
   const projects = entryContext.project && !catalogProjects.some((project) => project.id === entryContext.project?.id)
     ? [...catalogProjects, entryContext.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
     : catalogProjects;

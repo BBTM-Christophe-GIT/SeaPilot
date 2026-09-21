@@ -60,8 +60,9 @@ describe('DPR Supabase commands', () => {
     const from = vi.fn((table: string) => ({
       select: vi.fn(() => table === 'dpr_reports' ? reports : table === 'profiles' ? profiles : table === 'people' ? people : empty),
     }));
-    const rpc = vi.fn()
-      .mockResolvedValueOnce({ data: { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null });
+    const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
+      data: name === 'dpr_report_projects' ? [] : { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null,
+    }));
     const client = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'sailor-user', email: 'arthur@example.invalid' } } }) },
       from,
@@ -76,6 +77,35 @@ describe('DPR Supabase commands', () => {
       expect.objectContaining({ id: 42, createdBy: 'sailor-user', createdAt: '2026-08-14T08:00:00Z' }),
     ]);
     expect(dashboard.currentUserId).toBe('sailor-user');
+  });
+
+  it('resolves historical DPR projects when RLS hides the commercial catalog', async () => {
+    const rows = {
+      profiles: queryResult({ display_name: 'Field profile' }),
+      people: queryResult({ id: 18 }),
+      dpr_reports: queryResult([
+        { id: 1, project_id: 60, report_date: '2026-08-14', status: 'validated' },
+        { id: 2, project_id: 61, report_date: '2025-01-01', status: 'validated' },
+      ]),
+    };
+    const empty = queryResult([]);
+    const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
+      data: name === 'dpr_report_projects'
+        ? [{ id: 60, project_code: 'P268', title: 'Current project' }, { id: 61, project_code: 'P144', title: 'Historical project' }]
+        : { project: { id: 60, code: 'P268', title: 'Current project' }, people: [] },
+      error: null,
+    }));
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'field-user' } } }) },
+      from: vi.fn((table: string) => rows[table as keyof typeof rows] || empty),
+      rpc,
+    };
+    const dashboard = await fetchDprDashboard(client as never);
+    expect(dashboard.reports.map((report) => report.projectCode)).toEqual(['P268', 'P144']);
+    expect(dashboard.references.projects).toHaveLength(2);
+    expect(rpc).toHaveBeenCalledWith('dpr_report_projects');
+    rpc.mockImplementation((name: string) => Promise.resolve({ data: [], error: name === 'dpr_report_projects' ? { message: 'Permission denied' } : null }));
+    await expect(fetchDprDashboard(client as never)).rejects.toEqual({ message: 'Permission denied' });
   });
 
   it('saves the complete six-step payload through the transactional RPC', async () => {
