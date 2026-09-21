@@ -23,6 +23,7 @@ export type ModuleKey =
   | 'marad'
   | 'technicalDocuments'
   | 'lifting'
+  | 'usefulLinks'
   | 'admin';
 
 export type ModuleFamily =
@@ -163,6 +164,7 @@ export const APP_MODULES: AppModule[] = [
     allowedRoles: ALL_ROLES,
   },
   { key: 'lifting', label: 'Levage', family: 'Levage', navigationKind: 'direct', allowedRoles: ALL_ROLES },
+  { key: 'usefulLinks', label: 'Liens utiles', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   {
     key: 'admin',
     label: 'Administration',

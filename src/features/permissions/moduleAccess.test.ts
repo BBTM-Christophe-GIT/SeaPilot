@@ -54,6 +54,7 @@ describe('module access', () => {
       ['Maintenance', 'Marad', 'submenu'],
       ['Maintenance', 'Documents Techniques', 'submenu'],
       ['Levage', 'Levage', 'direct'],
+      ['Accueil', 'Liens utiles', 'direct'],
       ['Administration', 'Administration', 'direct'],
     ]);
     expect(NAVIGATION_MODULES.map((module) => module.key)).not.toContain('billingElements');
