@@ -28,7 +28,7 @@ interface AppDialogProps {
 function focusableElements(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(
     'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+  )).filter((element) => !element.closest('[hidden], [aria-hidden="true"]') && !element.matches(':disabled'));
 }
 
 export function AppDialog({

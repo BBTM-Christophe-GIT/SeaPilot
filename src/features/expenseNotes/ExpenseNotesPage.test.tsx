@@ -9,6 +9,7 @@ import type { RoleKey } from '../permissions/roles';
 const queries = vi.hoisted(() => ({ notes: vi.fn(), identity: vi.fn(), vessels: vi.fn(), people: vi.fn(), settings: vi.fn(), save: vi.fn(), submit: vi.fn(), send: vi.fn(), download: vi.fn(), assignment: vi.fn() }));
 vi.mock('./expenseNoteQueries', () => ({ fetchExpenseNotes: queries.notes, fetchExpenseIdentity: queries.identity, fetchExpenseVessels: queries.vessels, fetchExpensePeople: queries.people, fetchExpenseSettings: queries.settings, saveExpenseSettings: queries.save, submitExpenseNote: queries.submit, transmitExpenseNote: queries.send, downloadExpenseNote: queries.download }));
 vi.mock('../purchaseRequests/purchaseRequestQueries', () => ({ fetchCurrentAssignedVessel: queries.assignment }));
+vi.mock('./expenseVehicleQueries', () => ({ PREVIEW_VEHICLES: [], fetchPersonalVehicles: async () => [] }));
 
 function show(role: RoleKey) {
   render(<MemoryRouter><Routes><Route element={<Outlet context={{ client: {}, roles: [role], previewMode: false, currentPerson: { id: 1, functionLabel: 'Matelot' } }} />}><Route index element={<ExpenseNotesPage />} /></Route></Routes></MemoryRouter>);
@@ -24,6 +25,12 @@ beforeEach(() => {
   queries.save.mockResolvedValue(undefined);
 });
 describe('NDF profile fixtures', () => {
+  it.each(['marin', 'capitaine', 'armement', 'admin', 'direction'] as const)('%s can open the personal vehicle book from the menu', async (role) => {
+    show(role); await screen.findByText('Fournitures pour la passerelle');
+    fireEvent.click(screen.getByRole('button', { name: 'Mes véhicules' }));
+    const book = await screen.findByRole('dialog', { name: 'Mes véhicules' });
+    expect(await within(book).findByRole('button', { name: 'Ajouter un véhicule' })).toBeEnabled();
+  });
   it.each(['marin', 'capitaine', 'armement'] as const)('%s shows only notes created from their account', async (role) => {
     show(role);
     expect(await screen.findByText('Fournitures pour la passerelle')).toBeInTheDocument();

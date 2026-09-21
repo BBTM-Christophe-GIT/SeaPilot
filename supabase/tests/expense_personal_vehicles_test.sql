@@ -1,5 +1,7 @@
 -- Actual authenticated roles; every fixture is rolled back, with no emails or PDF uploads.
 begin;
+-- Rollback restores the administrator's live module permissions.
+update public.role_module_permissions set is_visible=true where module_key='expenseNotes';
 create temp table vehicle_test_results(label text);
 create function pg_temp.vehicle_assert(condition boolean, label text) returns void
 language plpgsql security definer set search_path = pg_temp as $$
@@ -27,6 +29,13 @@ do $$ declare n integer; begin
     perform pg_temp.vehicle_assert((select bool_and(user_id=auth.uid() and company_id=public.current_planning_company_id()) from public.expense_personal_vehicles),'server owner and company for role ' || n);
     update public.expense_personal_vehicles set fiscal_power='7 CV' where vehicle='Test diesel';
     perform pg_temp.vehicle_assert((select fiscal_power='7 CV' from public.expense_personal_vehicles where vehicle='Test diesel'),'owner update for role ' || n);
+    perform public.set_expense_default_vehicle((select id from public.expense_personal_vehicles where vehicle='Test diesel'));
+    perform pg_temp.vehicle_assert((select count(*)=1 from public.expense_personal_vehicles where is_default),'one persisted default for role ' || n);
+    perform public.set_expense_default_vehicle((select id from public.expense_personal_vehicles where vehicle='Test electric'));
+    perform pg_temp.vehicle_assert((select count(*)=1 and bool_and(vehicle='Test electric') from public.expense_personal_vehicles where is_default),'atomic default switch for role ' || n);
+    perform public.set_expense_default_vehicle(null);
+    perform pg_temp.vehicle_assert((select count(*)=0 from public.expense_personal_vehicles where is_default),'clear default for role ' || n);
+    perform public.set_expense_default_vehicle((select id from public.expense_personal_vehicles where vehicle='Test diesel'));
   end loop;
   for n in 1..6 loop
     perform set_config('request.jwt.claim.sub','da200000-0000-4000-8000-' || lpad(n::text,12,'0'),true);
@@ -37,8 +46,29 @@ do $$ declare n integer; begin
     perform pg_temp.vehicle_assert(not found,'cannot delete another account role ' || n);
   end loop;
 end; $$;
+reset role;
+select set_config('test.foreign_vehicle',(select id::text from public.expense_personal_vehicles where user_id='da200000-0000-4000-8000-000000000002' limit 1),true);
+select set_config('test.other_company_vehicle',(select id::text from public.expense_personal_vehicles where user_id='da200000-0000-4000-8000-000000000006' limit 1),true);
+set local role authenticated;
 select set_config('request.jwt.claim.sub','da200000-0000-4000-8000-000000000001',true);
 do $$ begin
+  begin
+    perform public.set_expense_default_vehicle(current_setting('test.foreign_vehicle')::uuid);
+    raise exception 'foreign default unexpectedly allowed';
+  exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'cannot choose another profile vehicle'); end;
+  begin
+    perform public.set_expense_default_vehicle(current_setting('test.other_company_vehicle')::uuid);
+    raise exception 'foreign company default unexpectedly allowed';
+  exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'cannot choose another company vehicle'); end;
+  begin
+    perform public.set_expense_default_vehicle('00000000-0000-4000-8000-000000000099');
+    raise exception 'missing default unexpectedly allowed';
+  exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'missing vehicle cannot replace default'); end;
+  perform pg_temp.vehicle_assert((select count(*)=1 and bool_and(vehicle='Test diesel') from public.expense_personal_vehicles where is_default),'failed changes preserve prior default');
+  begin
+    update public.expense_personal_vehicles set is_default=true;
+    raise exception 'multiple defaults unexpectedly allowed';
+  exception when unique_violation then perform pg_temp.vehicle_assert(true,'unique index rejects two defaults'); end;
   begin
     update public.expense_personal_vehicles set user_id='da200000-0000-4000-8000-000000000002';
     raise exception 'owner reassignment unexpectedly allowed';
@@ -72,11 +102,18 @@ update public.expense_notes set status='issued' where id='da210000-0000-4000-800
 update public.expense_personal_vehicles set vehicle='Renamed',fiscal_power='8 CV',fuel='hybrid' where vehicle='Test diesel';
 delete from public.expense_personal_vehicles where vehicle='Renamed';
 select pg_temp.vehicle_assert((select count(*)=1 from public.expense_personal_vehicles),'owner can remove vehicle');
+select pg_temp.vehicle_assert((select count(*)=0 from public.expense_personal_vehicles where is_default),'deleting default leaves no stale preference');
 select pg_temp.vehicle_assert((select mileage->>'vehicle'='Test diesel' and mileage->>'fiscalPower'='7 CV' and mileage->>'fuel'='diesel' and amount=72.72 from public.expense_notes where id='da210000-0000-4000-8000-000000000001'),'issued snapshot unchanged after vehicle edit and deletion');
 reset role;
 update public.company_memberships set active=false where user_id='da200000-0000-4000-8000-000000000001';
 set local role authenticated;
 select pg_temp.vehicle_assert((select count(*)=0 from public.expense_personal_vehicles),'inactive member cannot read vehicles');
+do $$ begin
+  begin
+    perform public.set_expense_default_vehicle(null);
+    raise exception 'inactive default change unexpectedly allowed';
+  exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'inactive member cannot change default'); end;
+end; $$;
 do $$ begin
   begin
     insert into public.expense_personal_vehicles(vehicle,fiscal_power,fuel) values ('Inactive','5','diesel');
@@ -90,6 +127,17 @@ do $$ begin
     perform * from public.expense_personal_vehicles;
     raise exception 'anonymous read unexpectedly allowed';
   exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'anonymous access denied'); end;
+end; $$;
+reset role;
+select pg_temp.vehicle_assert(not has_function_privilege('anon','public.set_expense_default_vehicle(uuid)','execute'),'anonymous cannot set default');
+update public.role_module_permissions set is_visible=false where module_key='expenseNotes' and role_key='capitaine';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','da200000-0000-4000-8000-000000000002',true);
+do $$ begin
+  begin
+    perform public.set_expense_default_vehicle(null);
+    raise exception 'disabled module default change unexpectedly allowed';
+  exception when insufficient_privilege then perform pg_temp.vehicle_assert(true,'disabled module cannot set default'); end;
 end; $$;
 reset role;
 select count(*) as passed_checks, array_agg(label) as checks from vehicle_test_results;

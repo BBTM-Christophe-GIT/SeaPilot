@@ -1,3 +1,38 @@
+# Design QA — Notes de frais en accordéon et véhicule par défaut, v3.45.0
+
+final result: passed
+
+## Références et preuves
+
+- Source retenue : proposition 2, `docs/design/expense-accordion/reference.png`, 853 × 1844, copie de `C:/Users/chris/.codex/generated_images/01a0af87-c823-73b3-9443-252aa6df9c9d/exec-9b58d13a-c85e-4134-90b0-55f3ddbee2f2.png`.
+- Écran local `/modules/expenseNotes?preview=1`, données de démonstration. Les images suivantes sont dans `docs/design/expense-accordion/`.
+- Mobile : `mobile-top.png`, `mobile-bottom.png`, `vehicles-mobile.png` à 390 × 844 ; `mobile-320.png` à 320 × 740. La dernière capture montre volontairement un message de validation après tentative avec objet manquant, sans émission.
+- Ordinateur : `expense-desktop.png`, `mileage-desktop.png`, viewport 1440 × 1000. Informations ouvertes, autres sections selon l'état de saisie. Le panneau navigateur rend les captures desktop moins nettes ; les styles et dimensions ont aussi été contrôlés dans le DOM.
+- `comparison.png` : source ramenée proportionnellement à 390 px de large, puis haut et bas de la saisie mobile à la même densité. `controls-comparison.png` : recadrage des déplacements, sans étirement. Comparaisons complète et ciblée ouvertes et inspectées, ainsi que le carnet et le petit écran.
+
+## Fidélité et adaptations
+
+| Surface | Résultat |
+| --- | --- |
+| Typographie | Police existante du produit, titre 23 px, titres de sections 17 px, champs 16 px, libellés 14 px ; lecture et hiérarchie conservées. |
+| Disposition | Onglets segmentés puis Informations / Mon véhicule / Déplacements / Compléments. Résumés lorsque les sections sont repliées. Date sur la ligne du trajet, distance et montant côte à côte. Pied permanent avec total et action. |
+| Couleurs et formes | Fond blanc, texte marine, bordures discrètes, sélection et action bleues #215cc5, rayons de 6 à 9 px. |
+| Actifs | Icônes Lucide et en-tête AppDialog existants. Le faux logo dessiné dans la maquette n'est pas ajouté au produit. Aucun actif raster requis dans l'interface. |
+| Contenu | Libellés français, carburant/puissance dans le résumé véhicule, règles NDF et avertissement d'émission conservés. Identités et navires des captures sont des fixtures. |
+
+Écarts intentionnels : les contrôles mesurent au moins 44 px, contre environ 34 px dans la référence. Ce confort tactile ajoute du défilement ; Compléments reste accessible sous le trajet et le pied reste visible. Informations s'ouvre initialement pour les champs obligatoires ; Mon véhicule se replie après chargement du véhicule par défaut. Les champs Objet, Fonction et Période restent disponibles. Les justificatifs des captures diffèrent de l'exemple illustratif de la source ; aucune pièce réelle n'a été ajoutée.
+
+## Itérations et vérification finale
+
+- Titre agrandi et date déplacée sur la ligne « Trajet 1 » après comparaison pour rapprocher la hiérarchie et réduire l'encombrement.
+- Champs masqués retirés du cycle de focus du dialogue. Une tentative avec un champ obligatoire dans une section repliée ouvre la section et place le focus sur le premier champ invalide ; les données ne sont pas soumises.
+- Mesures mobiles : dialogue 390 × 844 puis 320 × 740, pied au bas du viewport ; aucun débordement horizontal des sections. Corps défilant, contrôles et boutons accessibles à 320 px. Les captures peuvent être mises à l'échelle par le panneau navigateur, les mesures CSS font foi.
+- Interactions : choix de Renault électrique par défaut dans le carnet, reprise dans une nouvelle note ; sélection de Peugeot Diesel, 80 km et 6,50 € de péages = 54,98 € ; repli/dépli des sections et conservation de la saisie. Console sans erreur pertinente. Pas d'émission réelle.
+- Tests : 59 tests ciblés (9 fichiers), lint ciblé et compilation production réussis. 73 assertions SQL transactionnelles vérifient les profils réels Marin/Capitaine/Armement/Direction/Admin, les choix successifs, le retrait, les deux sociétés, les refus d'accès et les snapshots historiques. Les fixtures ne changent pas les réglages des modules en production.
+- Audit final : comparaisons et captures finales inspectées, aucun P0/P1/P2 restant dans ce périmètre. Aucun point bloquant.
+
+---
+
 # Design QA — Notes de frais compactes et véhicules personnels, v3.44.0
 
 final result: passed

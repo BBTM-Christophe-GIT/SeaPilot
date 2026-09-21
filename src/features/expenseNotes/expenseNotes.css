@@ -4,105 +4,98 @@
 .expense-page .planning-ribbon-actions{grid-template-rows:65px}.expense-page .planning-ribbon-group{grid-template-rows:65px 20px}
 .expense-page .planning-module-toolbar{min-height:90px}
 
-/* Compact note entry. Keep these rules scoped away from the settings dialog. */
-body:has(.expense-entry) { overflow: hidden; }
-.expense-entry .app-dialog {
-  --dialog-width: 860px;
-  border-radius: 8px;
+/* Accordion note entry: one touch-friendly flow on mobile and desktop. */
+body:has(.expense-entry), body:has(.expense-vehicles-dialog) { overflow: hidden; }
+.expense-entry .app-dialog { --dialog-width: 760px; border-radius: 12px; }
+.expense-entry .app-dialog__header { padding: 20px 24px 12px; border: 0; }
+.expense-entry .app-dialog__header h2 { font-size: 23px; }
+.expense-entry .app-dialog__content { padding: 6px 24px 24px; }
+.expense-entry .app-dialog__footer { padding: 16px 24px; box-shadow: none; justify-content: space-between; flex-wrap: nowrap; background: white; gap: 16px; }
+.expense-entry .expense-form { gap: 16px; }
+.expense-entry .expense-form__fields { gap: 18px; }
+.expense-entry .expense-tabs { padding: 0; gap: 0; border: 1px solid #cbd9e6; border-radius: 8px; background: #f5f7fa; overflow: hidden; }
+.expense-entry .expense-tabs button { min-height: 46px; padding: 10px 12px; font-size: 15px; color: #526980; border-radius: 7px; }
+.expense-entry .expense-tabs button[aria-pressed=true] { background: #215cc5; color: white; box-shadow: none; }
+.expense-entry__sections { display: grid; gap: 12px; min-width: 0; }
+.expense-entry-section { border: 1px solid #ccd9e6; border-radius: 9px; min-width: 0; overflow: hidden; background: white; }
+.expense-entry .expense-entry-section h3 { margin: 0; }
+.expense-entry-section h3 > button { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 60px; padding: 14px 18px; background: transparent; border: 0; text-align: left; color: #17243a; font: inherit; }
+.expense-entry-section h3 > button > svg { flex-shrink: 0; color: #466079; }
+.expense-entry-section h3 > button > span { flex: 1; min-width: 0; }
+.expense-entry-section strong { display: block; font-size: 17px; line-height: 1.35; font-weight: 700; }
+.expense-entry-section small { display: block; margin-top: 4px; font-size: 14px; line-height: 1.45; font-weight: 400; color: #627a93; overflow-wrap: anywhere; }
+.expense-entry-section__chevron { transition: transform .15s; }
+.expense-entry-section [aria-expanded=true] .expense-entry-section__chevron { transform: rotate(180deg); }
+.expense-entry-section__body { display: grid; gap: 16px; padding: 16px 18px 18px; border-top: 1px solid #dbe4ed; }
+.expense-entry-section__body[hidden] { display: none; }
+.expense-entry .expense-form label, .expense-vehicles-dialog .expense-form label { gap: 6px; font-size: 14px; min-width: 0; color: #435e76; }
+.expense-entry .expense-form input, .expense-entry .expense-form select, .expense-entry .expense-form textarea,
+.expense-vehicles-dialog .expense-form input, .expense-vehicles-dialog .expense-form select {
+  min-width: 0; min-height: 44px; border-radius: 6px; padding: 9px 10px; font-size: 16px;
 }
-.expense-entry--mileage .app-dialog { --dialog-width: 1040px; }
-.expense-entry .app-dialog__header { padding: 18px 24px 6px; border-bottom: 0; }
-.expense-entry .app-dialog__content { padding: 6px 24px 22px; }
-.expense-entry .app-dialog__footer { padding: 14px 24px; box-shadow: none; justify-content: space-between; }
-.expense-entry .expense-form { gap: 14px; }
-.expense-entry .expense-form__identity { font-size: 13px; }
-.expense-entry .expense-form__fields { gap: 20px; }
-.expense-entry .expense-tabs { padding: 0; gap: 20px; border-radius: 0; background: transparent; border-bottom: 1px solid #d8e0ea; }
-.expense-entry .expense-tabs button { flex: 0 1 auto; min-height: 42px; margin-bottom: -1px; padding: 9px 12px; border-radius: 0; border-bottom: 2px solid transparent; font-size: 14px; }
-.expense-entry .expense-tabs button[aria-pressed=true] { box-shadow: none; color: #0c5598; border-bottom-color: #0c5598; }
-.expense-entry__layout { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 24px; }
-.expense-entry__main { display: grid; align-content: start; gap: 16px; min-width: 0; }
-.expense-entry .expense-form__grid { gap: 14px; }
-.expense-entry .expense-form label { gap: 6px; font-size: 13px; min-width: 0; color: #425e73; }
-.expense-entry .expense-form input,
-.expense-entry .expense-form select,
-.expense-entry .expense-form textarea { min-width: 0; min-height: 40px; border-radius: 6px; padding: 8px 10px; font-size: 14px; }
-.expense-entry .expense-form input:focus,
-.expense-entry .expense-form select:focus,
-.expense-entry .expense-form textarea:focus { outline-color: #0c66b7; }
-.expense-entry input[type=date] { padding-inline: 7px; }
-.expense-entry button:focus-visible { outline: 2px solid #0c66b7; outline-offset: 2px; }
-.expense-entry__payment { display: grid; grid-template-columns: 1.1fr 1.1fr 1fr; gap: 12px; }
-.expense-entry__subject { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 14px; }
-.expense-entry__vehicle { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 12px; }
-.expense-entry__description { display: grid; gap: 10px; }
-.expense-entry__disclosure { display: flex; align-items: center; gap: 8px; width: fit-content; min-height: 32px; padding: 2px 0; border: 0; background: transparent; color: #0c5598; font: inherit; font-size: 14px; }
-.expense-entry__disclosure[aria-expanded=true] svg { transform: rotate(180deg); }
-.expense-entry .expense-files { display: flex; flex-direction: column; gap: 12px; padding: 0 0 0 20px; border: 0; border-left: 1px solid #d8e0ea; border-radius: 0; background: transparent; min-width: 0; }
-.expense-entry h3 { margin: 0; font-size: 14px; color: #182132; }
-.expense-entry .expense-files h3 span { font-weight: 400; }
-.expense-entry .expense-files > .expense-button { width: 100%; white-space: normal; padding: 9px 6px; min-height: 40px; }
-.expense-entry .expense-files svg { flex-shrink: 0; }
-.expense-entry .expense-file { gap: 6px; }
+.expense-entry .expense-form input:focus, .expense-entry .expense-form select:focus, .expense-entry .expense-form textarea:focus { outline-color: #215cc5; }
+.expense-entry button:focus-visible, .expense-vehicles-dialog button:focus-visible { outline: 2px solid #215cc5; outline-offset: -3px; }
+.expense-entry .expense-button, .expense-vehicles-dialog .expense-button { min-height: 44px; font-size: 14px; white-space: normal; }
+.expense-entry__subject { display: grid; grid-template-columns: minmax(0, 1fr) 165px; gap: 14px; }
+.expense-entry__vehicle { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; }
+.expense-entry__disclosure { border: 0; background: transparent; padding: 8px 0; min-height: 44px; color: #215cc5; font: inherit; font-size: 14px; text-align: left; }
+.expense-entry .expense-files { display: grid; gap: 12px; padding: 0; border: 0; border-radius: 0; background: transparent; min-width: 0; }
+.expense-entry .expense-files h4 { margin: 0; font-size: 14px; }
+.expense-entry .expense-files svg, .expense-entry .expense-file button { flex-shrink: 0; }
 .expense-entry .expense-file span { min-width: 0; }
-.expense-entry .expense-file button { flex-shrink: 0; padding: 6px; }
-.expense-entry .expense-hint { line-height: 1.5; color: #667b8d; }
-.expense-entry__issue-hint { margin-top: auto; padding-top: 12px; }
-.expense-entry__total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-size: 13px; }
-.expense-entry__total output { color: #0c5598; font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.expense-entry__actions { display: flex; gap: 10px; }
-.expense-entry .app-dialog__footer .expense-button--primary { background: #0c5598; border-color: #0c5598; color: white; }
-.expense-entry .app-dialog__footer .expense-button--primary:hover { background: #0c3f78; }
-.expense-entry .expense-mileage { gap: 14px; min-width: 0; }
-.expense-entry__trips-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; justify-content: space-between; }
-.expense-entry__trips { display: grid; gap: 12px; }
-.expense-entry .expense-entry__trip { display: grid; grid-template-columns: 132px minmax(110px, 1.4fr) minmax(90px, 1fr) 65px 82px 32px; gap: 8px; align-items: end; margin: 0; padding: 0; border: 0; min-width: 0; }
-.expense-entry .expense-entry__trip input { padding-inline: 6px; }
-.expense-entry__trip-amount { display: grid; gap: 6px; font-size: 13px; color: #425e73; }
+.expense-entry .expense-hint { line-height: 1.5; font-size: 12px; color: #667b8d; }
+.expense-entry__total { display: grid; gap: 3px; font-size: 13px; flex-shrink: 0; color: #627a93; }
+.expense-entry__total output { color: #17243a; font-size: 26px; line-height: 1.2; font-weight: 750; font-variant-numeric: tabular-nums; }
+.expense-entry__actions { display: grid; gap: 5px; min-width: 0; }
+.expense-entry__actions small { font-size: 11px; color: #627a93; text-align: center; }
+.expense-entry .app-dialog__footer .expense-button--primary, .expense-vehicles-dialog .expense-button--primary { background: #215cc5; border-color: #215cc5; color: white; padding: 12px 24px; font-size: 15px; font-weight: 650; }
+.expense-entry .app-dialog__footer .expense-button--primary:hover, .expense-vehicles-dialog .expense-button--primary:hover { background: #194da9; }
+.expense-entry__trips { display: grid; gap: 18px; }
+.expense-entry .expense-entry__trip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.expense-entry .expense-entry__trip > legend { padding: 0; margin: 0; }
+.expense-entry__trip-heading { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.expense-entry__trip-heading strong { font-size: 15px; }
+.expense-entry__trip-date { max-width: 168px; }
+.expense-entry__trip-date input { width: 100%; }
+.expense-entry__trip + .expense-entry__trip { border-top: 1px solid #dbe4ed; padding-top: 16px; }
+.expense-entry__trip-amount { display: grid; align-content: start; gap: 6px; font-size: 14px; color: #435e76; }
 .expense-entry__trip-amount > span { font-weight: 650; }
-.expense-entry__trip-amount output { display: flex; align-items: center; min-height: 40px; font-size: 14px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; color: #182132; }
-.expense-entry .expense-entry__remove-trip { padding: 6px; min-height: 40px; }
-.expense-entry__trip-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
-.expense-entry__trip-actions > button { min-height: 40px; color: #0c5598; }
-.expense-entry .expense-tolls { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-.expense-entry .expense-tolls input { width: 100px; }
+.expense-entry__trip-amount output { display: flex; align-items: center; min-height: 44px; padding: 9px 12px; box-sizing: border-box; border: 1px solid #d4dfe9; border-radius: 6px; background: #f1f5f8; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: #17243a; }
+.expense-entry__remove-trip { grid-column: 1/-1; justify-self: start; }
+.expense-entry .expense-entry__add-trip { color: #215cc5; width: 100%; border-top: 1px solid #cbd9e6; }
 .expense-vehicle-picker { min-width: 0; display: grid; gap: 12px; margin: 0; padding: 0; border: 0; }
 .expense-vehicle-picker__selection { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
-.expense-vehicle-picker__selection > label { flex: 1; min-width: 180px; }
+.expense-vehicle-picker__selection > label { flex: 1; min-width: 160px; }
 .expense-vehicle-picker__actions { display: flex; gap: 6px; }
-.expense-vehicle-picker__actions button { min-height: 40px; }
 .expense-vehicle-picker__save { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.expense-vehicle-picker__confirmation { padding: 12px; background: #f3f6f9; font-size: 13px; border-radius: 6px; }
+.expense-vehicle-picker__confirmation { padding: 12px; background: #f3f6f9; font-size: 14px; border-radius: 6px; }
 .expense-vehicle-picker__confirmation p { margin: 0 0 8px; }
 .expense-vehicle-picker__confirmation button + button { margin-left: 8px; }
-@media (max-width: 960px) {
-  .expense-entry--mileage .expense-entry__layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .expense-entry--mileage .expense-files { border-left: 0; border-top: 1px solid #d8e0ea; padding: 16px 0 0; }
-  .expense-entry--mileage .expense-files > .expense-button { width: fit-content; padding-inline: 12px; }
-  .expense-entry--mileage .expense-entry__issue-hint { padding-top: 0; }
+.expense-vehicles-dialog .app-dialog { --dialog-width: 640px; }
+.expense-vehicles-dialog h3 { font-size: 16px; margin: 0; }
+.expense-vehicle-list { display: grid; }
+.expense-vehicle-list__item { display: flex; justify-content: space-between; gap: 14px; padding: 16px 0; border-bottom: 1px solid #dbe4ed; }
+.expense-vehicle-list__item:first-child { padding-top: 0; }
+.expense-vehicle-list__item > div { min-width: 0; }
+.expense-vehicle-list__item h3 { overflow-wrap: anywhere; }
+.expense-vehicle-list__item p { margin: 6px 0; font-size: 14px; color: #627a93; }
+.expense-vehicle-list__actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: end; max-width: 195px; }
+.expense-vehicle-default { display: flex; align-items: center; gap: 6px; color: #215cc5; font-size: 13px; }
+@media (max-width: 600px) {
+  .expense-entry .app-dialog-backdrop, .expense-vehicles-dialog .app-dialog-backdrop { padding: 0; }
+  .expense-entry .app-dialog, .expense-vehicles-dialog .app-dialog { width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+  .expense-entry .app-dialog__header { padding: 16px 18px 10px; }
+  .expense-entry .app-dialog__content { padding: 6px 16px 20px; }
+  .expense-entry .app-dialog__footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); gap: 12px; }
+  .expense-entry .expense-form__grid, .expense-entry__subject, .expense-entry__vehicle { grid-template-columns: 1fr; }
+  .expense-entry-section h3 > button { padding: 13px 14px; gap: 12px; }
+  .expense-entry-section__body { padding: 14px; gap: 14px; }
+  .expense-entry__trip-route, .expense-entry__trip-reason { grid-column: 1/-1; }
+  .expense-entry__total output { font-size: 25px; }
+  .expense-entry__actions { flex: 1; max-width: 230px; }
+  .expense-entry .app-dialog__footer .expense-button--primary { padding-inline: 10px; }
+  .expense-vehicles-dialog .app-dialog__content { padding: 18px; }
+  .expense-vehicle-list__item { flex-direction: column; gap: 8px; }
+  .expense-vehicle-list__actions { max-width: none; justify-content: start; }
 }
-@media (max-width: 700px) {
-  .expense-entry .app-dialog__header { padding: 14px 16px 6px; }
-  .expense-entry .app-dialog__content { padding: 6px 16px 18px; }
-  .expense-entry .app-dialog__footer { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
-  .expense-entry__layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .expense-entry .expense-form__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .expense-entry .expense-files { border-left: 0; border-top: 1px solid #d8e0ea; padding: 16px 0 0; }
-  .expense-entry .expense-files > .expense-button { width: fit-content; padding-inline: 12px; }
-  .expense-entry__issue-hint { padding-top: 0; }
-  .expense-entry .expense-entry__trip { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #e3e9f0; padding-top: 12px; }
-  .expense-entry__remove-trip { justify-self: end; }
-  .expense-entry__actions { margin-left: auto; }
-}
-@media (max-width: 480px) {
-  .expense-entry .expense-form__grid,
-  .expense-entry__subject,
-  .expense-entry__vehicle { grid-template-columns: minmax(0, 1fr); }
-  .expense-entry__payment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .expense-entry__payment > label:first-child { grid-column: 1 / -1; }
-  .expense-entry .expense-tabs { gap: 4px; }
-  .expense-entry .expense-tabs button { padding-inline: 7px; font-size: 13px; }
-  .expense-entry__total { width: 100%; justify-content: space-between; }
-  .expense-entry__actions { width: 100%; }
-  .expense-entry__actions > button { flex: 1; padding-inline: 10px; }
-}
+@media (prefers-reduced-motion: reduce) { .expense-entry-section__chevron { transition: none; } }
