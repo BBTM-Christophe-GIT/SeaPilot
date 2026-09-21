@@ -121,4 +121,3 @@ $$;
 
 revoke execute on function public.planning_visible_release_snapshot(jsonb)
   from public, anon, authenticated;
-

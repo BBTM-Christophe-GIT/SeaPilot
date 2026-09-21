@@ -12,6 +12,7 @@ Appliquer `20260921121717_dpr_project_labels_and_planning_fleet_read.sql` avant 
 
 - Avant correction, le compte réel Arthur MAREST pouvait lire 947 DPR liés à 22 projets, avec zéro ligne dans le catalogue commercial. Après migration : 22 libellés résolus, zéro DPR lié sans libellé ; catalogue commercial toujours inaccessible.
 - `supabase/tests/dpr_projects_planning_fleet_test.sql` utilise des comptes authentifiés Capitaine et Marin, deux sociétés et une transaction annulée : projets autorisés/historiques, refus des projets sans DPR autorisé, lecture de toute la flotte publiée, dernière diffusion uniquement, absence de montants, refus de publication, isolation entre sociétés et refus anonyme.
+- Parcours navigateur Chrome (fixtures de profils réels, bureau 1440 × 1000) : navire par défaut, changement de navire, flotte complète et conservation après actualisation pour Capitaine et Marin ; deux groupes projets DPR avec catalogue commercial masqué. Aucun message d’erreur console. Contrôle complémentaire DPR à 390 × 844.
 - Tests React : filtrage initial, changement de navire, totalité de la flotte, persistance du choix après rafraîchissement et absence d'actions d'édition pour chaque profil réel. Aucun profil simulé depuis une session administrateur ne sert de preuve d'accès.
 
 ## Retour arrière
