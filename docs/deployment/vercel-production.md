@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.44.1` limite les listes d'émetteurs NDF aux personnes en poste selon les dates RH du jour à Paris. Appliquer `20260921081145_expense_current_issuers.sql` avant le frontend. Les anciennes notes restent consultables et recherchables. Voir [expense-notes.md](./expense-notes.md).
+
 Version `3.44.0` compacte les fenêtres Dépense et Indemnités kilométriques et ajoute le carnet personnel de véhicules. La migration `20260917134330_expense_personal_vehicles.sql` a été appliquée avant le frontend. Le carnet est isolé par compte et société ; les notes émises gardent leurs informations historiques. Voir [expense-notes.md](./expense-notes.md).
 
 Version `3.42.1` permet de choisir directement l’émetteur dans le pied du courrier parmi les profils Administration et Direction autorisés. Les brouillons sont enregistrés avant transfert, les corrections des relecteurs restent des propositions et la signature précédente est retirée. L’archive du lanceur corrige CS0016 en compilant un nouvel exécutable avant de mettre à jour le protocole, sans interrompre la version en cours. Aucune migration ni modification des droits n’est nécessaire.

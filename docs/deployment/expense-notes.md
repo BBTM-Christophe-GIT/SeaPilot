@@ -1,4 +1,10 @@
-# Notes de frais — v3.44.0
+# Notes de frais — v3.44.1
+
+## Émetteurs en poste
+
+Les listes d'émetteurs des formulaires Dépense/Indemnités kilométriques et du filtre d'historique proposent uniquement les personnes actuellement en poste : fiche active, date d'entrée renseignée et atteinte, départ absent ou strictement après aujourd'hui (heure de Paris). Le RPC conserve la présélection du compte connecté et les restrictions de société et de profil. Les anciens collaborateurs restent présents sur leurs notes historiques, consultables et recherchables.
+
+Migration `20260921081145_expense_current_issuers.sql` appliquée avant le frontend le 21 septembre 2026. Elle remplace uniquement la fonction de lecture du répertoire ; elle ne modifie ni les fiches RH ni les notes. Les 55 assertions SQL couvrent les dates limites, les cinq profils réels, une deuxième société et les accès anonyme/inactif/module masqué. La matrice d'accès utilisée par les fixtures est annulée avec la transaction, sans modifier les réglages administrateur. Les 46 tests ciblés couvrent le module et l'envoi, notamment le filtre, la recherche historique et le départ d'une personne après actualisation.
 
 ## Formulaires compacts et véhicules personnels
 
@@ -29,7 +35,7 @@ Migration : `20260917092601_expense_notes.sql`.
 
 `expense_notes` conserve le créateur immuable (`created_by`, `creator_name`), l'émetteur choisi (`issuer_person_id`, `issuer_name`), le navire, les montants et les détails kilométriques. La RLS impose société active + adhésion active + compte créateur ; seuls Admin/Direction ont une lecture élargie aux notes émises de cette société. Le changement de libellé d'émetteur n'étend jamais les accès.
 
-`expense_note_settings` est lisible dans la société et modifiable uniquement par Admin. Le RPC `expense_note_people` expose seulement les identifiants et noms actifs de la société pour le choix de l'émetteur, sans ouvrir les dossiers RH.
+`expense_note_settings` est lisible dans la société et modifiable uniquement par Admin. Le RPC `expense_note_people` expose seulement les identifiants et noms des personnes en poste dans la société pour le choix de l'émetteur, sans ouvrir les dossiers RH. Son indicateur `is_current` désigne la personne liée au compte connecté, et non son statut d'emploi.
 
 Le bucket privé `expense-note-pdfs` suit les mêmes règles de lecture. Un PDF peut être téléversé uniquement sur le chemin calculé par le serveur pour une note en préparation du compte connecté. Les documents émis ne peuvent être remplacés ni supprimés par les utilisateurs. Le client ne peut modifier ni le créateur, ni les montants enregistrés, ni l'état de livraison.
 
