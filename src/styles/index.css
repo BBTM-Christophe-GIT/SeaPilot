@@ -717,6 +717,25 @@ button:disabled {
   position: relative;
 }
 
+.topbar-manual-link {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.topbar-manual-link:hover,
+.topbar-manual-link[aria-current='page'] {
+  color: #bfdbfe;
+  background: #1e293b;
+}
+
+.topbar-manual-link:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .topbar-notification-badge {
   position: absolute;
   top: 1px;

@@ -65,6 +65,7 @@ interface AppShellProps {
 }
 
 export interface AppShellOutletContext {
+  visibleModules?: AppModule[];
   roles: RoleKey[];
   client: SupabaseClient;
   previewMode: boolean;
@@ -390,6 +391,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }
 
   const requestedModule = getRequestedModule(location.pathname);
+  const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
   const activeVisibleModules = visibleModules;
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
@@ -597,9 +599,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             >
               <Menu aria-hidden="true" size={20} />
             </button>
-            <span>{requestedModule?.family || 'BBTM'}</span>
+            <span>{isManualPage ? 'Aide' : requestedModule?.family || 'BBTM'}</span>
             <ChevronRight aria-hidden="true" size={16} />
-            <strong>{requestedModule?.label || 'Accueil'}</strong>
+            <strong>{isManualPage ? 'Manuel d’utilisation' : requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
           </div>
 
@@ -623,6 +625,16 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                 <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'actionPlan') ? <Link to="/modules/actionPlan">Plan d&apos;action</Link> : null}{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
               </div> : null}
             </div>
+            <Link
+              aria-label="Manuel d’utilisation"
+              aria-current={isManualPage ? 'page' : undefined}
+              className="topbar-icon-button topbar-manual-link"
+              onClick={() => { setIsNotificationsOpen(false); setIsUserMenuOpen(false); }}
+              title="Manuel d’utilisation"
+              to="/manual"
+            >
+              <Settings aria-hidden="true" size={19} />
+            </Link>
             <div className="user-menu">
               <button
                 aria-expanded={isUserMenuOpen}
@@ -659,7 +671,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client, previewMode, currentPerson } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>
