@@ -4,6 +4,7 @@ do $$
 declare
   company bigint;
   other_company bigint;
+  other_category uuid;
   actor uuid;
   role_name text;
   index integer := 0;
@@ -12,7 +13,9 @@ declare
   affected integer;
 begin
   select id into strict company from public.companies where code='bbtm';
-  select id into other_company from public.companies where id<>company limit 1;
+  insert into public.companies(code,name) values('useful-links-fixture-' || gen_random_uuid()::text,'Links isolation fixture') returning id into other_company;
+  insert into public.useful_link_categories(company_id,name) values(other_company,'Other company category') returning id into other_category;
+  insert into public.useful_links(company_id,category_id,title,url) values(other_company,other_category,'Other company link','https://example.invalid/other');
   update public.role_module_permissions set is_visible=true where module_key='usefulLinks';
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
     index := index+1;
@@ -34,6 +37,8 @@ begin
     assert public.useful_links_has_access(), 'Profile cannot read enabled module';
     assert (select count(*)=1 from public.useful_links where id=link), 'Link missing for allowed role';
     assert (select count(*)=1 from public.useful_link_categories where id=category), 'Category missing for allowed role';
+    assert (select count(*)=0 from public.useful_links where company_id=other_company), 'Cross-company link readable';
+    assert (select count(*)=0 from public.useful_link_categories where company_id=other_company), 'Cross-company category readable';
     if role_name in ('admin','direction') then
       assert public.useful_links_can_manage(), 'Manager denied';
       update public.useful_links set title='Updated fixture' where id=link;
@@ -49,6 +54,11 @@ begin
       get diagnostics affected = row_count;
       assert affected=1, 'Category CRUD failed';
       if other_company is not null then
+        begin
+          update public.useful_links set category_id=other_category where id=link;
+          raise exception 'Cross-company category assignment allowed';
+        exception when foreign_key_violation then null;
+        end;
         begin
           insert into public.useful_links(company_id,title,url) values(other_company,'Cross company','https://example.invalid/');
           raise exception 'Cross-company insert allowed';
