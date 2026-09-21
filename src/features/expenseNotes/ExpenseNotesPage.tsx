@@ -54,11 +54,18 @@ export function ExpenseNotesPage() {
   }, [client, previewMode, revision, currentPersonId]);
 
   const scopedNotes = useMemo(() => allNotes ? notes : notes.filter((note) => note.created_by === identity?.id), [allNotes, notes, identity]);
-  const people = useMemo(() => [...new Map(scopedNotes.map((note) => [expenseIssuerKey(note), note.issuer_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr')), [scopedNotes]);
+  const people = useMemo(() => {
+    const employedIds = new Set(directory.map((person) => person.id));
+    return [...new Map(scopedNotes
+      .filter((note) => note.issuer_person_id !== null && employedIds.has(note.issuer_person_id))
+      .map((note) => [expenseIssuerKey(note), note.issuer_name])).entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+  }, [scopedNotes, directory]);
+  const activePersonFilter = people.some(([id]) => id === personFilter) ? personFilter : 'all';
   const filterVessels = useMemo(() => [...new Map(scopedNotes.map((note) => [String(note.vessel_id ?? 'none'), note.vessel_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr')), [scopedNotes]);
   const filtered = useMemo(() => scopedNotes.filter((note) => (vesselFilter === 'all' || String(note.vessel_id ?? 'none') === vesselFilter)
-    && (!allNotes || personFilter === 'all' || expenseIssuerKey(note) === personFilter)
-    && `${note.title} ${note.description} ${note.issuer_name} ${note.vessel_name}`.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr'))), [scopedNotes, vesselFilter, allNotes, personFilter, search]);
+    && (!allNotes || activePersonFilter === 'all' || expenseIssuerKey(note) === activePersonFilter)
+    && `${note.title} ${note.description} ${note.issuer_name} ${note.vessel_name}`.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr'))), [scopedNotes, vesselFilter, allNotes, activePersonFilter, search]);
   const groups = useMemo(() => groupExpenseNotes(filtered), [filtered]);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
@@ -99,7 +106,7 @@ export function ExpenseNotesPage() {
     {message ? <p className="expense-message" role="status">{message}</p> : null}
     <div className="expense-stats"><div><span>Notes affichées</span><strong>{filtered.length}</strong></div><div><span>Montant total</span><strong>{formatExpenseMoney(filtered.reduce((sum, note) => sum + Number(note.amount), 0))}</strong></div><div><span>À transmettre / vérifier</span><strong>{filtered.filter((note) => note.delivery_status !== 'sent').length}</strong></div></div>
     <div className="expense-filters"><label>Navire<select value={vesselFilter} onChange={(e) => setVesselFilter(e.target.value)}><option value="all">Tous les navires</option>{filterVessels.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-      {allNotes ? <label>Émetteur<select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)}><option value="all">Toutes les personnes</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label> : null}
+      {allNotes ? <label>Émetteur<select value={activePersonFilter} onChange={(e) => setPersonFilter(e.target.value)}><option value="all">Toutes les personnes</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label> : null}
       <label className="expense-search">Rechercher<input type="search" placeholder="Objet, navire, émetteur…" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
       <button className="expense-button" onClick={() => { setVesselFilter('all'); setPersonFilter('all'); setSearch(''); }}>Réinitialiser</button>
     </div>

@@ -61,6 +61,29 @@ describe('NDF profile fixtures', () => {
     await screen.findByText('Paramètres enregistrés.');
     expect(queries.save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ default_payment_method: 'CB-GOURY' }));
   });
+  it.each(['admin', 'direction'] as const)('%s only lists employed issuers while retaining historical notes', async (role) => {
+    show(role); await screen.findByText('Fournitures de bureau — armement');
+    const filter = within(screen.getByLabelText('Émetteur'));
+    expect(filter.getByRole('option', { name: 'Camille Martin' })).toBeInTheDocument();
+    expect(filter.getByRole('option', { name: 'Alex Bernard' })).toBeInTheDocument();
+    expect(filter.queryByRole('option', { name: 'Louise Robert' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Objet, navire, émetteur…'), { target: { value: 'Louise Robert' } });
+    expect(screen.getByText('Fournitures de bureau — armement')).toBeInTheDocument();
+    expect(screen.queryByText('Petit matériel de pont')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvelle note' }));
+    const issuer = within(within(screen.getByRole('dialog')).getByLabelText('Émetteur'));
+    expect(issuer.getByRole('option', { name: 'Alex Bernard' })).toBeInTheDocument();
+    expect(issuer.queryByRole('option', { name: 'Louise Robert' })).not.toBeInTheDocument();
+  });
+  it('clears a stale issuer filter when the person leaves the current directory', async () => {
+    show('admin'); await screen.findByText('Petit matériel de pont');
+    fireEvent.change(screen.getByLabelText('Émetteur'), { target: { value: 'person:2' } });
+    queries.people.mockResolvedValue([{ id: 1, name: 'Camille Martin', is_current: true }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await screen.findByText('Fournitures pour la passerelle');
+    expect(screen.getByLabelText('Émetteur')).toHaveValue('all');
+    expect(within(screen.getByLabelText('Émetteur')).queryByRole('option', { name: 'Alex Bernard' })).not.toBeInTheDocument();
+  });
   it('keeps a successfully issued note visible when email delivery fails', async () => {
     queries.submit.mockResolvedValue({ ...EXPENSE_NOTE_PREVIEW[0], id: 'created', title: 'Nouvelle dépense', delivery_status: 'pending' });
     queries.send.mockRejectedValue(new Error('Transmission à reprendre'));
