@@ -24,6 +24,7 @@ import type { RoleKey } from './features/permissions/roles';
 
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
+const UserManualPage = lazy(() => import('./features/manual/UserManualPage').then((module) => ({ default: module.UserManualPage })));
 const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
@@ -58,6 +59,7 @@ export default function App({ previewModeOverride }: AppProps) {
           }
         >
           <Route index element={<Suspense fallback={<div className="admin-state" role="status">Chargement de votre accueil…</div>}><HomePage /></Suspense>} />
+          <Route path="manual/:moduleKey?" element={<Suspense fallback={<div className="admin-state" role="status">Chargement du manuel…</div>}><UserManualPage /></Suspense>} />
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
             <Route
               key={module.key}
